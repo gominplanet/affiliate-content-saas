@@ -28,6 +28,7 @@ import { learnProfileToPrompt } from '@/lib/learn'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
+import { composeWithNanoBananaPro, rehostToFal, NANO_BANANA_PRO_COST_MODEL } from '@/lib/thumbnail-generators'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { preflightWpPublish } from '@/lib/wp-preflight'
 import { listYouTubeChannels } from '@/lib/youtube-channels'
@@ -63,19 +64,35 @@ interface ResolvedProduct {
   /** Original creator's channel title + URL, for crediting public videos. */
   sourceChannelName: string | null
   sourceChannelUrl: string | null
+  /** Clean Amazon main product image, when the product resolved to an ASIN —
+   *  used as a reference to composite the "product VS product" hero. */
+  imageUrl: string | null
 }
 
 const slugify = (s: string) =>
   s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70)
 
-/** Replace any stray calendar year that isn't the current year. The writer
- *  (older model knowledge) tends to stamp a guide/comparison title with a past
- *  year like "2024"; the year in a round-up title should always be the year
- *  it's published. Only standalone 4-digit years 2000–2039 are touched, so a
- *  product model number like "5000mAh" is never mangled (no word boundary). */
-function fixYearToCurrent(s: string, year: number): string {
+/** Remove a calendar year (and its connective) from a title/meta. MVP never
+ *  stamps a year in a round-up title — a dated title ages badly and reads as
+ *  churned-out. Handles "... for 2026", "in 2026", "(2026)", "2026 Edition",
+ *  and any stray standalone year, then tidies the leftover punctuation/spacing.
+ *  Only 4-digit years 2000–2039 with a word boundary, so a model number like
+ *  "5000mAh" is never touched. */
+function stripYear(s: string): string {
   if (!s) return s
-  return s.replace(/\b20[0-3]\d\b/g, (m) => (m === String(year) ? m : String(year)))
+  let out = s
+    // "... in/for/of/— 2026" → drop the connective + the year.
+    .replace(/\s+(?:in|for|of|—|–|-)\s+20[0-3]\d\b/gi, '')
+    // "2026 Edition/Guide/Update/Roundup/Review/Showdown" → keep just the word.
+    .replace(/\b20[0-3]\d\s+(edition|guide|update|round-?up|review|showdown)\b/gi, '$1')
+    // "(2026)" / "[2026]".
+    .replace(/\s*[([]\s*20[0-3]\d\s*[)\]]/g, '')
+    // Any remaining standalone year.
+    .replace(/\b20[0-3]\d\b/g, '')
+  // Tidy: collapse spaces, pull punctuation back, drop dangling separators.
+  out = out.replace(/\s{2,}/g, ' ').replace(/\s+([:,.])/g, '$1')
+    .replace(/[:\-–—]\s*$/, '').replace(/^\s*[:\-–—]\s*/, '').trim()
+  return out
 }
 
 /** Strip affiliate/tracking query params from a resolved product URL so that
@@ -409,6 +426,7 @@ export async function POST(request: Request) {
       }
 
       let productName = identity?.name || videoTitle
+      let productImageUrl: string | null = null
       let pDescription = ''
       let bullets: string[] = []
       let affiliateUrl: string | null = null
@@ -444,6 +462,7 @@ export async function POST(request: Request) {
               if (p.title) productName = deriveProductName(p.title).canonical || p.title
               pDescription = p.description || ''
               bullets = p.bullets || []
+              if (p.imageUrl) productImageUrl = p.imageUrl // clean product shot for the VS hero
               matched = true
             }
           } catch { /* skip unreadable product */ }
@@ -517,7 +536,7 @@ export async function POST(request: Request) {
       // alone — but never attach a wrong link. Drop only if we know nothing.
       if (!matched && !identity) return null
 
-      return { videoId, videoTitle, productName, description: pDescription, bullets, transcript, affiliateUrl, isOwn, sourceChannelName, sourceChannelUrl }
+      return { videoId, videoTitle, productName, description: pDescription, bullets, transcript, affiliateUrl, isOwn, sourceChannelName, sourceChannelUrl, imageUrl: productImageUrl }
     } catch {
       return null
     }
@@ -534,8 +553,8 @@ export async function POST(request: Request) {
 - Name: ${p.productName}
 - Video title: ${p.videoTitle}
 - Source: ${p.isOwn
-    ? 'YOUR OWN video — write this product\'s section in FIRST PERSON ("I"/"we"), as the person who tested it on camera.'
-    : `PUBLIC video by "${p.sourceChannelName || 'another creator'}" — NOT your video. Write this product's section in THIRD PERSON. Credit ${p.sourceChannelName || 'the original creator'} (e.g. "In ${p.sourceChannelName || 'their'} video, they walk through…", "${p.sourceChannelName || 'the creator'} highlights…"). Summarize what THEIR video covers, drawn from the transcript below. NEVER write "I tested/used/tried/ran" this one — you did not personally test it. You may still recommend it to the reader where the transcript supports it.`}
+    ? 'YOUR OWN video — you tested this one hands-on. Write it in FIRST PERSON, in the blog\'s own voice, drawing on your real experience with it.'
+    : `Sourced from research + other coverage — you did NOT personally film a hands-on test of this one. Still write it in FIRST PERSON, in the blog\'s own voice, but frame it as what you found comparing/researching it ("we looked at…", "what stood out to us…", "on paper it…") — do NOT claim you personally tested it on camera, and never write in the third person or name the other creator.`}
 - Marketing description: ${(p.description || '').slice(0, 600)}
 - Key features: ${(p.bullets || []).slice(0, 6).join(' · ') || 'n/a'}
 - Transcript excerpt (${p.isOwn ? 'your REAL first-hand experience' : `${p.sourceChannelName || 'the creator'}'s coverage`} — only use facts actually stated here): ${(p.transcript || '').slice(0, 1500) || 'n/a'}`).join('\n\n')
@@ -545,14 +564,14 @@ export async function POST(request: Request) {
     : `This is a BUYING GUIDE. Assign each product a distinct "Best for ___" use-case (best for small spaces, best on a budget, best premium pick, etc.) — no single loser, help the reader self-select. Open with what matters when choosing in this category.`
 
   const anyPublic = resolved.some(p => !p.isOwn)
-  const sys = `You are an affiliate content creator writing a ${mode}. ${anyPublic
-    ? `IMPORTANT — the products below come from TWO kinds of source video, and EACH "PRODUCT N" block is tagged with its Source: (a) YOUR OWN videos → write those sections in FIRST PERSON ("I"/"we") as the person who tested them on camera; (b) OTHER creators' PUBLIC videos you are curating → write those in THIRD PERSON, credit the original creator by name, and summarize what their video covers — NEVER claim you personally tested those, and never use "I tested/used/tried" for them. Follow each block's Source tag exactly.`
-    : `You are the person who reviewed these products on camera, so write in FIRST PERSON ("I"/"we"). Never refer to "the reviewer" or use a third-person name.`} Only state facts that appear in each product's transcript excerpt or marketing description — NEVER invent specs, numbers, test results, or experiences. CRITICAL: each entry is ONE specific product (the exact one named in "PRODUCT N" below); write that section about ONLY that product — never substitute a different product, confuse two products, or attribute one product's features/specs to another. If a product's data is thin, write only what its own transcript supports rather than borrowing from another. ${BANNED_RULE}\n${learnBlock}`
+  const sys = `You are writing this ${mode} AS the author of this personal review blog — in their own first-person voice. VOICE + PERSPECTIVE: always FIRST PERSON. Match the exact first-person pronoun the writing-style sample below uses — if the sample says "we", write "we"; if it says "I", write "I". NEVER write in the third person about yourself, NEVER refer to yourself by name (e.g. never "Seb and Michelle tested…" — write "we tested…"), and never say "the reviewer". ${anyPublic
+    ? `Each "PRODUCT N" block is tagged with its Source: some you tested hands-on, some you compared from research/other coverage. Write ALL of them in that same first-person voice. For the ones you did not personally film, frame them honestly as what you found comparing/researching them ("we looked at…", "what stood out to us…") — do NOT fabricate a hands-on on-camera test, but stay first person and never switch to third person or credit another creator by name.`
+    : `You tested these hands-on, so write from your real first-hand experience.`} Only state facts that appear in each product's transcript excerpt or marketing description — NEVER invent specs, numbers, test results, or experiences. CRITICAL: each entry is ONE specific product (the exact one named in "PRODUCT N" below); write that section about ONLY that product — never substitute a different product, confuse two products, or attribute one product's features/specs to another. If a product's data is thin, write only what its own transcript supports rather than borrowing from another. ${BANNED_RULE}\n${learnBlock}`
 
   const userPrompt = `Write a ${mode === 'comparison' ? 'product comparison' : 'buying guide'} blog post covering these ${resolved.length} products.
 
-${topic?.trim() ? `TOPIC (use this): ${topic.trim()}` : `Infer the shared product CATEGORY from the products and create a compelling, SEO-friendly title for the ${mode} (e.g. "Best Wine Travel Protectors in ${currentYear}").`}
-DATE: Today is in ${currentYear}. If the title (or any heading) references a year, it MUST be ${currentYear} — never an earlier year. Do not invent or recall a different year.
+${topic?.trim() ? `TOPIC (use this): ${topic.trim()}` : `Infer the shared product CATEGORY from the products and create a compelling, SEO-friendly title for the ${mode} (e.g. "The Best Wine Travel Protectors, Tested").`}
+NO YEARS: NEVER put a calendar year or date in the title, the meta description, or any heading (no "2026", no "in 2026", no "2026 Edition"). A dated title ages badly — keep it evergreen.
 
 ${formatRules}
 
@@ -607,11 +626,10 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     const raw = (msg.content[0] as { type: string; text: string }).text
     const j = raw.match(/\{[\s\S]*\}/)
     parsed = JSON.parse(j?.[0] ?? raw)
-    // Bulletproof the date: correct any stray non-current year the model may
-    // have stamped on the title/meta (e.g. "2024"). Belt-and-suspenders with
-    // the DATE rule in the prompt above.
-    parsed.title = fixYearToCurrent(parsed.title, currentYear)
-    if (parsed.meta_description) parsed.meta_description = fixYearToCurrent(parsed.meta_description, currentYear)
+    // Strip any calendar year the model stamped on the title/meta — MVP titles
+    // stay evergreen. Belt-and-suspenders with the NO YEARS rule in the prompt.
+    parsed.title = stripYear(parsed.title)
+    if (parsed.meta_description) parsed.meta_description = stripYear(parsed.meta_description)
   } catch (err) {
     console.error('[blog/comparison] writing', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, 'Couldn’t write the comparison just now. Please try again in a moment.') }, { status: 502 })
@@ -752,15 +770,45 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       heroSrc = heroImageDataUrl
     } else if (process.env.FAL_KEY) {
       fal.config({ credentials: process.env.FAL_KEY })
-      const heroPrompt = `${parsed.hero_prompt || `An editorial hero photo representing ${title}`}. Bright, aspirational, magazine-style editorial photography, clean composition, premium lighting, high quality, photorealistic. ${NO_BRAND_IMAGE_CLAUSE} No text, no words, no letters, no logos anywhere.`
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const r = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
-        input: { prompt: heroPrompt, image_size: 'landscape_16_9', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2' },
-        pollInterval: 3000,
-      })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      heroSrc = ((r.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url ?? null
-      if (heroSrc) recordUsage({ userId: user.id, tier, feature: 'comparison_hero_image', model: 'fal-flux-pro-v1.1', images: 1 })
+
+      // COMPARISON → a "product VS product" hero built from the REAL product
+      // images (up to 4), so the reader sees the actual line-up head-to-head,
+      // like a YouTube comparison thumbnail. Only when we resolved ≥2 clean
+      // product shots; otherwise fall through to the category editorial hero.
+      if (mode === 'comparison') {
+        const shots = resolved.map(r => r.imageUrl).filter((u): u is string => !!u).slice(0, 4)
+        if (shots.length >= 2) {
+          const refs = (await Promise.all(shots.map(u => rehostToFal(u).catch(() => null)))).filter((u): u is string => !!u)
+          if (refs.length >= 2) {
+            const n = refs.length
+            const layout = n === 2 ? 'side by side — one on the left, one on the right'
+              : n === 3 ? 'three across in a single row, evenly spaced'
+              : 'in a balanced 2x2 grid'
+            const vsPrompt = `A bold, eye-catching "VERSUS" comparison HERO image for a product comparison. Show ALL ${n} products from the reference images ${layout}, each rendered large, crisp and TRUE TO ITS REFERENCE (exact shape, colour, materials and proportions). Place a bold stylised "VS" graphic between them. Energetic studio comparison background with dynamic light streaks, depth and premium contrast, modern and clean. Photorealistic product photography, dramatic lighting, landscape 16:9.
+CRITICAL RULES:
+- Reproduce each product EXACTLY as in its reference image. Do NOT swap, merge, redesign or invent products, and do NOT add any brand names, logos, labels, buttons or made-up text onto the products.
+- The ONLY text allowed anywhere in the whole image is the single word "VS". Nothing else.
+- Absolutely NO years, NO dates, NO numbers, NO percentages, NO captions, NO titles, NO watermarks, NO price tags, NO badges.`
+            const composed = await composeWithNanoBananaPro({ prompt: vsPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
+            heroSrc = composed[0] || null
+            if (heroSrc) recordUsage({ userId: user.id, tier, feature: 'comparison_hero_image', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
+          }
+        }
+      }
+
+      // Fallback (buying guides, or a comparison with <2 product shots / a failed
+      // compose): the category-themed editorial hero. Text-free, no brands.
+      if (!heroSrc) {
+        const heroPrompt = `${parsed.hero_prompt || `An editorial hero photo representing ${title}`}. Bright, aspirational, magazine-style editorial photography, clean composition, premium lighting, high quality, photorealistic. ${NO_BRAND_IMAGE_CLAUSE} No text, no words, no letters, no numbers, no years, no logos anywhere.`
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
+          input: { prompt: heroPrompt, image_size: 'landscape_16_9', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2' },
+          pollInterval: 3000,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        heroSrc = ((r.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url ?? null
+        if (heroSrc) recordUsage({ userId: user.id, tier, feature: 'comparison_hero_image', model: 'fal-flux-pro-v1.1', images: 1 })
+      }
     }
     if (heroSrc) {
       const media = await wpService.uploadImageFromUrl(heroSrc, `${slug}-hero.jpg`)
