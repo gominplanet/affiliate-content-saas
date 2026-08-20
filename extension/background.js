@@ -2250,16 +2250,23 @@ async function harvestEarningsInPage(opts) {
     const { type, start, end } = pickPeriod()
     if (!start) return null
     const source = findEarningsTables().some((t) => t.source === 'creator_connections') ? 'creator_connections' : 'scout'
-    const money = (re) => { const m = txt.match(re); return m ? parseFloat(m[1].replace(/,/g, '')) : null }
-    const intOf = (re) => { const m = txt.match(re); return m ? parseInt(m[1].replace(/,/g, ''), 10) : null }
-    // "Total Earnings (Includes Bonus)" is unique to the summary on the
-    // Commissions tab; on the CC tab "Total Earnings" appears only in the
-    // summary (no such column). Try the qualified label first, then the plain.
-    const earnings = money(/Total Earnings\s*\(Includes Bonus\)[\s\S]{0,30}?\$\s*([\d,]+\.\d{2})/i)
-      ?? money(/Total Earnings[\s\S]{0,30}?\$\s*([\d,]+\.\d{2})/i)
-    const revenue = money(/Total Revenue[\s\S]{0,30}?\$\s*([\d,]+\.\d{2})/i)
-    const units = intOf(/Shipped Items[\s\S]{0,20}?([\d][\d,]{0,11})/i)
-    const clicks = intOf(/(?:^|\n)\s*Clicks[\s\S]{0,20}?([\d][\d,]{0,11})/i)
+    // For each metric take the LARGEST value that follows its label anywhere on
+    // the page. The summary total is always bigger than any single product row
+    // (or a chart-legend label with no nearby number), so max-after-label lands
+    // the summary figure without needing the exact DOM layout.
+    const maxAfter = (labelSrc, currency) => {
+      const re = new RegExp(labelSrc + (currency ? '[\\s\\S]{0,30}?\\$\\s*([\\d,]+\\.\\d{2})' : '[\\s\\S]{0,25}?([\\d][\\d,]{0,11})'), 'gi')
+      let m, best = null
+      while ((m = re.exec(txt)) !== null) {
+        const v = parseFloat(m[1].replace(/,/g, ''))
+        if (isFinite(v) && (best == null || v > best)) best = v
+      }
+      return best
+    }
+    const earnings = maxAfter('Total Earnings', true)
+    const revenue = maxAfter('Total Revenue', true)
+    const units = maxAfter('Shipped Items', false)
+    const clicks = maxAfter('Clicks', false)
     if (earnings == null && revenue == null) return null
     return { source, periodType: type, periodStart: start, periodEnd: end, earnings, revenue, units, clicks }
   }
