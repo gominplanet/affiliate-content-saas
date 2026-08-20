@@ -46,24 +46,36 @@ async function pushCampaignsToMvp(token, campaigns) {
 // { reached, ok, upserted, error }.
 async function pushEarningsToMvp(earnings) {
   if (!Array.isArray(earnings) || earnings.length === 0) return { reached: true, ok: true, upserted: 0 }
-  try {
-    // Session bridge: the worker fetch carries the user's mvpaffiliate.io cookie
-    // (www.mvpaffiliate.io is in host_permissions), so the revived
-    // /api/storefront/ingest authenticates via the signed-in session — no token
-    // (the old cc_ingest_token was removed in 2026-08).
-    const res = await fetch(`${MVP_ORIGIN}/api/storefront/ingest`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ earnings }),
-    })
-    let body = null
-    try { body = await res.json() } catch (e) {}
-    if (res.ok) return { reached: true, ok: true, upserted: body && body.upserted }
-    return { reached: true, ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}` }
-  } catch (e) {
-    return { reached: false, ok: false, error: (e && e.message) || 'network error' }
+  // Session bridge: the worker fetch carries the user's mvpaffiliate.io cookie
+  // so the revived /api/storefront/ingest authenticates via the signed-in
+  // session. Try BOTH origins: the app is served on the apex mvpaffiliate.io,
+  // and a POST to www.mvpaffiliate.io 301-redirects to apex — a cross-origin
+  // credentialed redirect Chrome blocks as "Failed to fetch". Hitting the apex
+  // first (then www) avoids that. Both hosts are in host_permissions.
+  const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
+  let lastErr = 'network error'
+  for (const origin of origins) {
+    try {
+      const res = await fetch(`${origin}/api/storefront/ingest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        redirect: 'follow',
+        body: JSON.stringify({ earnings }),
+      })
+      let body = null
+      try { body = await res.json() } catch (e) {}
+      if (res.ok) return { reached: true, ok: true, upserted: body && body.upserted }
+      lastErr = (body && body.error) || `HTTP ${res.status}`
+      // A real HTTP response (e.g. 401) means we reached MVP — don't try the
+      // other origin, the session/endpoint is the issue, not the host.
+      return { reached: true, ok: false, status: res.status, error: lastErr }
+    } catch (e) {
+      lastErr = (e && e.message) || 'network error'
+      // Network-level failure (redirect/CORS/host) — try the next origin.
+    }
   }
+  return { reached: false, ok: false, error: lastErr }
 }
 
 // POST idea-list metadata / captured items into MVP, from the worker (same
@@ -2127,16 +2139,12 @@ async function harvestEarningsInPage(opts) {
   // reveal that table (the tab switch keeps the selected date range), so one
   // sync captures both commissions AND CC. Then click back to Commissions.
   await sleep(500)
+  // Scrape whatever earnings tables are on the current view. scrapeCurrent
+  // reads BOTH the Commissions and Creator Connections tables if the page has
+  // them rendered, so the creator syncs once per summary tab to capture both.
+  // (We deliberately don't auto-click the "Creator Connections" tab: that text
+  // also matches the top-nav link, which navigated the whole report away.)
   add(scrapeCurrent())
-  // Always reveal the Creator Connections table too (the tab switch keeps the
-  // selected date range), so one sync captures both commissions AND CC in
-  // either mode. Restore the Commissions tab after.
-  try {
-    if (clickByText('Creator Connections')) {
-      await sleep(2500); add(scrapeCurrent())
-      clickByText('Commissions')
-    }
-  } catch (e) {}
   if (!currentOnly) {
     for (const label of ['Last Week', 'This Month', 'Last Month']) {
       try {
