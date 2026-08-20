@@ -14,6 +14,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { type Tier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
 import { keepaProductFinder, fetchKeepaProductCard, fetchKeepaTokenStatus, keepaConfigured, type KeepaFinderFilters } from '@/services/keepa'
@@ -229,7 +230,7 @@ export async function GET(request: Request) {
     // have them; ASINs we've never seen just stay title/image/price.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
-    interface Sig { rating: number | null; reviewCount: number | null; monthlySold: number | null; category: string | null; parentAsin: string | null; salesRank: number | null; salesRankAvg90: number | null; salesRankCategory: string | null; listedSince: string | null }
+    interface Sig { rating: number | null; reviewCount: number | null; monthlySold: number | null; category: string | null; parentAsin: string | null; salesRank: number | null; salesRankAvg90: number | null; salesRankCategory: string | null; listedSince: string | null; priceNowCents?: number | null; priceWasCents?: number | null; discountPct?: number | null; imageUrl?: string | null; videoCount?: number | null; hasVideo?: boolean | null }
     const sig = new Map<string, Sig>()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const toSig = (r: any): Sig => ({
@@ -266,6 +267,28 @@ export async function GET(request: Request) {
       patch((dra ?? []) as any[]); patch((sca ?? []) as any[])
     } catch { /* avg90 column not applied yet — omit it */ }
 
+    // Our own persisted research cache (migration 265): the fullest FREE source —
+    // price + image + video + every signal, saved from a PRIOR live enrichment.
+    // Overrides the two caches above because it's the complete, purpose-built
+    // record for a research card (its sales_rank is already the real rank, no
+    // category-gating needed). This is what makes best-seller / repeat searches
+    // render rich without re-spending Keepa tokens.
+    try {
+      const CACHE_COLS = 'asin,image_url,price_now_cents,price_was_cents,discount_pct,rating,review_count,monthly_sold,video_count,has_video,category,parent_asin,sales_rank,sales_rank_avg90,sales_rank_category,listed_since'
+      const { data: pc } = await sb.from('amz_product_cache').select(CACHE_COLS).in('asin', found.asins)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of (pc ?? []) as any[]) {
+        sig.set(r.asin, {
+          rating: r.rating ?? null, reviewCount: r.review_count ?? null, monthlySold: r.monthly_sold ?? null,
+          category: r.category ?? null, parentAsin: r.parent_asin ?? null,
+          salesRank: r.sales_rank ?? null, salesRankAvg90: r.sales_rank_avg90 ?? null,
+          salesRankCategory: r.sales_rank_category ?? null, listedSince: r.listed_since ?? null,
+          priceNowCents: r.price_now_cents ?? null, priceWasCents: r.price_was_cents ?? null, discountPct: r.discount_pct ?? null,
+          imageUrl: r.image_url ?? null, videoCount: r.video_count ?? null, hasVideo: r.has_video ?? null,
+        })
+      }
+    } catch { /* amz_product_cache (265) not created yet — best-effort */ }
+
     // Live-enrich the top N (paid tiers) so the most-looked-at cards are full
     // even for never-cached products. Cached Keepa reads, bounded to LIVE_ENRICH_CAP.
     //
@@ -286,6 +309,37 @@ export async function GET(request: Request) {
       }
     }
 
+    // Persist what we just enriched into the shared research cache (265) so the
+    // next search that includes these ASINs renders rich for FREE — the token
+    // spend compounds instead of being thrown away. Service-role write, fully
+    // best-effort: a cache miss or a not-yet-created table never fails a search.
+    if (live.size) {
+      try {
+        const admin = createAdminClient()
+        const rows = [...live.entries()].map(([asin, c]) => ({
+          asin,
+          image_url: c.imageUrl ?? null,
+          price_now_cents: c.priceNowCents ?? null,
+          price_was_cents: c.priceWasCents ?? null,
+          discount_pct: c.discountPct ?? null,
+          rating: c.rating ?? null,
+          review_count: c.reviewCount ?? null,
+          monthly_sold: c.monthlySold ?? null,
+          video_count: c.videoCount ?? null,
+          has_video: c.hasCarouselVideo ?? null,
+          category: c.category ?? null,
+          parent_asin: c.parentAsin ?? null,
+          sales_rank: c.salesRank ?? null,
+          sales_rank_avg90: c.salesRankAvg90 ?? null,
+          sales_rank_category: c.salesRankCategory ?? null,
+          listed_since: c.listedSince ?? null,
+          refreshed_at: new Date().toISOString(),
+        }))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (admin as any).from('amz_product_cache').upsert(rows, { onConflict: 'asin' })
+      } catch { /* cache write is best-effort — never fail a search over it */ }
+    }
+
     const products = found.asins.map(asin => {
       const card = cards.get(asin)
       const s = sig.get(asin)
@@ -293,18 +347,21 @@ export async function GET(request: Request) {
       return {
         asin,
         title: card?.title ?? null,
-        imageUrl: card?.imageUrl ?? lc?.imageUrl ?? null,
-        // Creators-API price first (the tagged storefront price), then the live
-        // Keepa buy-box price for products the Creators API didn't return.
+        imageUrl: card?.imageUrl ?? lc?.imageUrl ?? s?.imageUrl ?? null,
+        // Creators-API price first (the tagged storefront price), then live Keepa,
+        // then our persisted research cache — so a card shows a price wherever we
+        // have one, not just when the Creators API returned it.
         priceNow: card?.priceCents != null ? Math.round(card.priceCents) / 100
-          : lc?.priceNowCents != null ? Math.round(lc.priceNowCents) / 100 : null,
-        priceWas: lc?.priceWasCents != null ? Math.round(lc.priceWasCents) / 100 : null,
-        discountPct: lc?.discountPct ?? null,
+          : lc?.priceNowCents != null ? Math.round(lc.priceNowCents) / 100
+          : s?.priceNowCents != null ? Math.round(s.priceNowCents) / 100 : null,
+        priceWas: lc?.priceWasCents != null ? Math.round(lc.priceWasCents) / 100
+          : s?.priceWasCents != null ? Math.round(s.priceWasCents) / 100 : null,
+        discountPct: lc?.discountPct ?? s?.discountPct ?? null,
         productUrl: taggedLink(asin, tag),
         rating: lc?.rating ?? s?.rating ?? null,
         reviewCount: lc?.reviewCount ?? s?.reviewCount ?? null,
         monthlySold: lc?.monthlySold ?? s?.monthlySold ?? null,
-        videoCount: lc?.videoCount ?? undefined,
+        videoCount: lc?.videoCount ?? s?.videoCount ?? undefined,
         category: lc?.category ?? s?.category ?? null,
         parentAsin: lc?.parentAsin ?? s?.parentAsin ?? null,
         salesRank: lc?.salesRank ?? s?.salesRank ?? null,
