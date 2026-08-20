@@ -17,7 +17,9 @@ import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
   Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame, Plus, Layers, Video, ChevronDown, Bookmark,
+  BarChart3, CalendarDays,
 } from 'lucide-react'
+import { formatSalesRank, formatAgeWithDate } from '@/lib/product-card-signals'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
 import WalmartOffers from '@/components/walmart/WalmartOffers'
@@ -60,6 +62,12 @@ interface Deal {
   opportunityScore: number | null
   /** Listing has a brand/merchant video in its image carousel. */
   hasVideo: boolean
+  /** Extra Keepa signals (parity with Oink). */
+  parentAsin: string | null
+  category: string | null
+  salesRank: number | null
+  salesRankCategory: string | null
+  listedSince: string | null
 }
 
 // Category filter options — mirror the cron's swept browse nodes.
@@ -732,6 +740,19 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, lock
             <TrendingUp size={12} /> {d.monthlySold.toLocaleString()}+ bought/mo
           </div>
         )}
+        {/* Keepa signals: sales rank, category, product age */}
+        {(() => {
+          const rank = formatSalesRank(d.salesRank, d.salesRankCategory)
+          const age = formatAgeWithDate(d.listedSince)
+          if (!rank && !d.category && !age) return null
+          return (
+            <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+              {rank && <span className="inline-flex items-center gap-1"><BarChart3 size={12} /> {rank}</span>}
+              {!rank && d.category && <span className="inline-flex items-center gap-1"><Layers size={12} /> {d.category}</span>}
+              {age && <span className="inline-flex items-center gap-1"><CalendarDays size={12} /> {age}</span>}
+            </div>
+          )
+        })()}
         {d.hasVideo && (
           <div className="inline-flex items-center gap-1 text-xs font-medium text-fuchsia-600 dark:text-fuchsia-400 w-fit"
                title="This listing has a product-carousel video — great for a Short or Reel">

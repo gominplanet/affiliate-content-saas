@@ -217,14 +217,27 @@ export async function GET(request: Request) {
     // have them; ASINs we've never seen just stay title/image/price.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
-    const sig = new Map<string, { rating: number | null; reviewCount: number | null; monthlySold: number | null }>()
+    interface Sig { rating: number | null; reviewCount: number | null; monthlySold: number | null; category: string | null; parentAsin: string | null; salesRank: number | null; salesRankCategory: string | null; listedSince: string | null }
+    const sig = new Map<string, Sig>()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const toSig = (r: any): Sig => ({
+      rating: r.rating ?? null, reviewCount: r.review_count ?? null, monthlySold: r.monthly_sold ?? null,
+      category: r.category ?? null, parentAsin: r.parent_asin ?? null,
+      // Only trust the numeric rank when the named category came with it (the
+      // deal cache seeds sales_rank with a category ref id until enrichment).
+      salesRank: r.sales_rank_category && r.sales_rank != null ? r.sales_rank : null,
+      salesRankCategory: r.sales_rank_category ?? null, listedSince: r.listed_since ?? null,
+    })
     try {
+      const COLS = 'asin,rating,review_count,monthly_sold,category,parent_asin,sales_rank,sales_rank_category,listed_since'
       const [{ data: sc }, { data: dr }] = await Promise.all([
-        sb.from('storefront_product_cards').select('asin,rating,review_count,monthly_sold').in('asin', found.asins),
-        sb.from('deal_radar_cache').select('asin,rating,review_count,monthly_sold').in('asin', found.asins),
+        sb.from('storefront_product_cards').select(COLS).in('asin', found.asins),
+        sb.from('deal_radar_cache').select(COLS).in('asin', found.asins),
       ])
-      for (const r of (dr ?? []) as Array<{ asin: string; rating: number | null; review_count: number | null; monthly_sold: number | null }>) sig.set(r.asin, { rating: r.rating, reviewCount: r.review_count, monthlySold: r.monthly_sold })
-      for (const r of (sc ?? []) as Array<{ asin: string; rating: number | null; review_count: number | null; monthly_sold: number | null }>) sig.set(r.asin, { rating: r.rating, reviewCount: r.review_count, monthlySold: r.monthly_sold }) // prefer our fresher storefront card
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of (dr ?? []) as any[]) sig.set(r.asin, toSig(r))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of (sc ?? []) as any[]) sig.set(r.asin, toSig(r)) // prefer our fresher storefront card
     } catch { /* enrichment is best-effort */ }
 
     const products = found.asins.map(asin => {
@@ -239,6 +252,11 @@ export async function GET(request: Request) {
         rating: s?.rating ?? null,
         reviewCount: s?.reviewCount ?? null,
         monthlySold: s?.monthlySold ?? null,
+        category: s?.category ?? null,
+        parentAsin: s?.parentAsin ?? null,
+        salesRank: s?.salesRank ?? null,
+        salesRankCategory: s?.salesRankCategory ?? null,
+        listedSince: s?.listedSince ?? null,
       }
     })
 

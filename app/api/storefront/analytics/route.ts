@@ -166,6 +166,10 @@ export async function GET(request: NextRequest) {
               review_count: c.reviewCount,
               monthly_sold: c.monthlySold,
               category: c.category,
+              parent_asin: c.parentAsin,
+              sales_rank: c.salesRank,
+              sales_rank_category: c.salesRankCategory,
+              listed_since: c.listedSince,
               refreshed_at: nowIso,
             })
           })

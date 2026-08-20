@@ -47,6 +47,12 @@ export async function GET(request: Request) {
       reviewCount: card.reviewCount,
       monthlySold: card.monthlySold ?? verdict.monthlySold,
       videoCount: card.videoCount,
+      // Extra Keepa signals (parity with Oink).
+      category: card.category ?? verdict.category,
+      parentAsin: card.parentAsin ?? verdict.parentAsin,
+      salesRank: card.salesRank ?? verdict.salesRank,
+      salesRankCategory: card.salesRankCategory ?? verdict.salesRankCategory,
+      listedSince: card.listedSince ?? verdict.listedSince,
     })
   } catch (err) {
     console.error('[product/deep-dive]', err instanceof Error ? err.message : err)
