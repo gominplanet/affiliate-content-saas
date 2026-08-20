@@ -57,6 +57,9 @@ export default function ArticlesPage() {
   const [notes, setNotes] = useState('')
   const [heroStyle, setHeroStyle] = useState<'generic' | 'face' | 'product'>('generic')
   const [productImageUrl, setProductImageUrl] = useState('')
+  // Opt-in: place images inside the article body (hero at top + one distinct
+  // editorial image mid-article). Off by default (one extra image generation).
+  const [inArticleImages, setInArticleImages] = useState(false)
   // Monetization: mention the creator's products/reviews THROUGHOUT the body, or
   // keep the article purely informational and only surface them at the end.
   const [productMode, setProductMode] = useState<'throughout' | 'end'>('end')
@@ -104,7 +107,7 @@ export default function ArticlesPage() {
       const r = await fetch('/api/articles/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish, heroStyle, productImageUrl, productMode }),
+        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish, heroStyle, productImageUrl, productMode, inArticleImages }),
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Generation failed')
@@ -467,6 +470,20 @@ export default function ArticlesPage() {
               style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
             />
           )}
+
+          {/* In-article images toggle */}
+          <label className="flex items-start gap-2.5 mt-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={inArticleImages}
+              onChange={e => setInArticleImages(e.target.checked)}
+              disabled={generating}
+              className="mt-0.5 w-4 h-4 rounded accent-[#7C3AED] flex-shrink-0"
+            />
+            <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>
+              <b style={{ color: 'var(--fg)' }}>Add images inside the article</b> &mdash; puts the hero photo at the top of the body and adds one more editorial image partway down, both with alt text. Adds one extra image to the render.
+            </span>
+          </label>
         </div>
 
         {/* Actions */}

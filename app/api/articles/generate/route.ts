@@ -38,8 +38,41 @@ import { pickRelatedPosts, type LinkCandidate } from '@/lib/internal-links'
 import { fal } from '@fal-ai/client'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithGptImage, composeWithNanoBananaPro, rehostToFal, rehostFacePhotos, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_PRO_COST_MODEL } from '@/lib/thumbnail-generators'
+import { pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+// Temporary/generated image hosts whose URLs expire — the in-article images
+// come from these and must be re-hosted to WordPress media on publish.
+const TEMP_IMG_HOST = /https?:\/\/[^"']*(fal\.(media|ai|run)|\.fal\.|oaidalle|openai|replicate\.delivery|blob\.core\.windows)/i
+
+/**
+ * Re-host in-body generated images (the opt-in in-article images) to WordPress
+ * media so they survive their temporary source URL expiring. The in-body hero
+ * reuses the featured image's WP url (no second upload); every other generated
+ * <img src> is uploaded once and its src rewritten. Leaves stable URLs (e.g. the
+ * related-reading YouTube thumbnails) untouched. Best-effort per image — a failed
+ * upload keeps the (maybe-expiring) source rather than dropping the image.
+ */
+async function rehostArticleBodyImages(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  wpService: any, html: string, slug: string, heroUrl: string | null, heroWpUrl: string | null,
+): Promise<string> {
+  let out = html
+  if (heroUrl && heroWpUrl) out = out.split(heroUrl).join(heroWpUrl) // in-body hero → featured WP url
+  const srcs = new Set<string>()
+  const re = /<img\b[^>]*\bsrc="([^"]+)"/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(out)) !== null) { if (TEMP_IMG_HOST.test(m[1])) srcs.add(m[1]) }
+  let i = 0
+  for (const src of srcs) {
+    try {
+      const media = await wpService.uploadImageFromUrl(src, `${slug}-body${++i}.jpg`)
+      if (media?.source_url) out = out.split(src).join(media.source_url)
+    } catch { /* keep the source URL rather than dropping the image */ }
+  }
+  return out
+}
 
 /**
  * "Related reading" — MVP picks the user's 3 most topically-related published
@@ -217,6 +250,11 @@ export async function POST(req: Request) {
     // relevant reviews into the body; 'end' (default) keeps the article purely
     // informational and only surfaces related posts in the end block.
     productMode?: string
+    // Opt-in: place images INSIDE the article body. When on, we embed the hero
+    // we already make at the top of the body AND generate one distinct editorial
+    // image mid-article — two images, both alt-texted. Off = hero stays featured-
+    // image-only (today's behavior).
+    inArticleImages?: boolean
     // When publishing straight from a preview, the client sends back the exact
     // HTML + title it showed, so we publish those bytes instead of re-running
     // the (costly, non-deterministic) writer and shipping something different.
@@ -597,6 +635,43 @@ VOICE / STYLE RULES:
     } catch { /* article still publishes without a hero */ }
   }
 
+  // ── In-article images (opt-in) ────────────────────────────────────────────
+  // Reuse the hero at the TOP of the body (also stays the featured image) and
+  // generate ONE distinct editorial image placed mid-article — two images, both
+  // with descriptive alt text. Only on a fresh generation; a preview→publish
+  // reuses the exact bytes (which already carry the images). The temporary
+  // fal/gpt image URLs are re-hosted to WordPress at publish (rehostArticleBodyImages).
+  const articleImg = (url: string, alt: string, top = false) =>
+    `\n<div class="wp-block-image" style="margin:${top ? '0 0 22px' : '22px 0'}"><img src="${esc(url)}" alt="${esc(alt)}" style="width:100%;height:auto;border-radius:12px" /></div>\n`
+  if (!preHtml && body.inArticleImages === true) {
+    // Second, DISTINCT editorial image — always generic editorial Flux (a
+    // different scene from the hero, and cheaper than re-composing a face).
+    let bodyImageUrl: string | null = null
+    try {
+      if (process.env.FAL_KEY) {
+        fal.config({ credentials: process.env.FAL_KEY })
+        const p = `A distinct editorial photograph capturing a different facet of ${topic}. Candid, detail-rich, magazine-style editorial photography, natural lighting, photorealistic, a clearly different scene and composition from a typical hero shot. ${NO_BRAND_IMAGE_CLAUSE} No text, no words, no letters, no logos anywhere.`
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
+          input: { prompt: p, image_size: 'landscape_16_9', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2' },
+          pollInterval: 3000,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        bodyImageUrl = ((r.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url ?? null
+        if (bodyImageUrl) recordUsage({ userId: user.id, tier, feature: 'article_body_image', model: 'fal-flux-pro-v1.1', images: 1 })
+      }
+    } catch { /* article still publishes without the mid image */ }
+
+    // Top: the hero, embedded in the body. Alt = the headline (descriptive + keyword).
+    if (heroUrl) html = articleImg(heroUrl, title, true) + html
+    // Mid: the second image, before a usable mid-article section break.
+    if (bodyImageUrl) {
+      const offs = pickBodyImageOffsets(html, 1)
+      const at = offs.length ? offs : [Math.floor(html.length / 2)]
+      html = insertImagesAtOffsets(html, at, [articleImg(bodyImageUrl, topic)])
+    }
+  }
+
   // ── Preview only — no WordPress write ─────────────────────────────────────
   if (!publish) {
     return NextResponse.json({ ok: true, title, html, heroUrl, meta: metaDesc, seoScore })
@@ -625,12 +700,20 @@ VOICE / STYLE RULES:
 
   // Upload the hero as the featured image (best-effort — publish regardless).
   let featuredMedia: number | undefined
+  let heroWpUrl: string | null = null
   if (heroUrl) {
     try {
       const media = await wpService.uploadImageFromUrl(heroUrl, `${slug}-hero.jpg`)
       if (media?.id) featuredMedia = media.id
+      if (media?.source_url) heroWpUrl = media.source_url
     } catch { /* publish without a featured image */ }
   }
+
+  // Re-host any in-body images (the opt-in in-article images) to WordPress media
+  // so they don't 404 when the temporary fal/gpt source URL expires. The in-body
+  // hero reuses the featured image's WP url (no second upload); the mid-article
+  // image is uploaded once. No-op when the body has no generated images.
+  html = await rehostArticleBodyImages(wpService, html, slug, heroUrl, heroWpUrl)
 
   let wpPost: { id: number; link: string }
   try {
