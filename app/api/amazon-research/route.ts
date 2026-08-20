@@ -16,7 +16,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { type Tier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
-import { keepaProductFinder, fetchKeepaProductCard, keepaConfigured, type KeepaFinderFilters } from '@/services/keepa'
+import { keepaProductFinder, fetchKeepaProductCard, fetchKeepaTokenStatus, keepaConfigured, type KeepaFinderFilters } from '@/services/keepa'
 import { getItemsByAsin, creatorsApiConfigured } from '@/services/amazon-creators'
 import { recordUsage } from '@/lib/ai-usage'
 import { ONSITE_RULES } from '@/lib/cc-smart-rules'
@@ -26,6 +26,18 @@ import { normalizeTier } from '@/lib/tier'
 // buy-to-review rules (carousel + real demand). Each ≈ 2 Keepa tokens, so it's
 // bounded and paid-only.
 const MVP_PICKS_VERIFY_CAP = 15
+
+// Live-enrich the TOP N results of every search (paid tiers) with a cached
+// Keepa product call (~1 token each, no offers). The finder only returns ASINs,
+// and cache-only enrichment leaves fresh searches (products we've never seen)
+// bare — so the first cards a creator actually looks at now carry full signals
+// (price, rating, sales, rank, trend, age, video). The rest stay light and use
+// the on-demand "Data" button. Trial stays cache-only (already daily-capped).
+const LIVE_ENRICH_CAP = 12
+// Only live-enrich when the shared Keepa pool has at least this much headroom
+// beyond the enrichment cost, so enrichment never tips the key toward the 429/
+// negative-balance state that makes searches return nothing.
+const LIVE_ENRICH_MIN_TOKENS = 150
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -254,24 +266,51 @@ export async function GET(request: Request) {
       patch((dra ?? []) as any[]); patch((sca ?? []) as any[])
     } catch { /* avg90 column not applied yet — omit it */ }
 
+    // Live-enrich the top N (paid tiers) so the most-looked-at cards are full
+    // even for never-cached products. Cached Keepa reads, bounded to LIVE_ENRICH_CAP.
+    //
+    // TOKEN GUARD: the shared operator key feeds Deal Radar + CC enrichment +
+    // this finder too, and it can run dry (a 429 with a negative balance is what
+    // makes a search return nothing). So we only spend the ~12 enrichment tokens
+    // when the pool has real headroom — the token-status read is FREE (doesn't
+    // consume tokens). Low/unknown balance → skip enrichment, fall back to
+    // cache-only signals. Enrichment must never be the thing that drains search.
+    const live = new Map<string, Awaited<ReturnType<typeof fetchKeepaProductCard>>>()
+    if (tier !== 'trial' && found.asins.length) {
+      const { tokensLeft } = await fetchKeepaTokenStatus()
+      if (tokensLeft != null && tokensLeft > LIVE_ENRICH_MIN_TOKENS) {
+        const slice = found.asins.slice(0, LIVE_ENRICH_CAP)
+        const enriched = await Promise.all(slice.map(async asin => ({ asin, card: await fetchKeepaProductCard(asin) })))
+        for (const { asin, card } of enriched) live.set(asin, card)
+        recordUsage({ userId: user.id, tier, feature: 'amazon_research_enrich', model: 'keepa-card' })
+      }
+    }
+
     const products = found.asins.map(asin => {
       const card = cards.get(asin)
       const s = sig.get(asin)
+      const lc = live.get(asin)
       return {
         asin,
         title: card?.title ?? null,
-        imageUrl: card?.imageUrl ?? null,
-        priceNow: card?.priceCents != null ? Math.round(card.priceCents) / 100 : null,
+        imageUrl: card?.imageUrl ?? lc?.imageUrl ?? null,
+        // Creators-API price first (the tagged storefront price), then the live
+        // Keepa buy-box price for products the Creators API didn't return.
+        priceNow: card?.priceCents != null ? Math.round(card.priceCents) / 100
+          : lc?.priceNowCents != null ? Math.round(lc.priceNowCents) / 100 : null,
+        priceWas: lc?.priceWasCents != null ? Math.round(lc.priceWasCents) / 100 : null,
+        discountPct: lc?.discountPct ?? null,
         productUrl: taggedLink(asin, tag),
-        rating: s?.rating ?? null,
-        reviewCount: s?.reviewCount ?? null,
-        monthlySold: s?.monthlySold ?? null,
-        category: s?.category ?? null,
-        parentAsin: s?.parentAsin ?? null,
-        salesRank: s?.salesRank ?? null,
-        salesRankAvg90: s?.salesRankAvg90 ?? null,
-        salesRankCategory: s?.salesRankCategory ?? null,
-        listedSince: s?.listedSince ?? null,
+        rating: lc?.rating ?? s?.rating ?? null,
+        reviewCount: lc?.reviewCount ?? s?.reviewCount ?? null,
+        monthlySold: lc?.monthlySold ?? s?.monthlySold ?? null,
+        videoCount: lc?.videoCount ?? undefined,
+        category: lc?.category ?? s?.category ?? null,
+        parentAsin: lc?.parentAsin ?? s?.parentAsin ?? null,
+        salesRank: lc?.salesRank ?? s?.salesRank ?? null,
+        salesRankAvg90: lc?.salesRankAvg90 ?? s?.salesRankAvg90 ?? null,
+        salesRankCategory: lc?.salesRankCategory ?? s?.salesRankCategory ?? null,
+        listedSince: lc?.listedSince ?? s?.listedSince ?? null,
       }
     })
 

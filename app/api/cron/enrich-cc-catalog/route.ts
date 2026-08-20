@@ -28,8 +28,17 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
-// Below this many Keepa tokens we stop, leaving headroom for Deal Radar.
-const MIN_TOKENS_TO_CONTINUE = 60
+// Reserve floor: background enrichment STOPS while the shared pool is below
+// this, so interactive Keepa calls (an AMZ Research finder search ~10 tokens, a
+// deep-dive ~3) always have headroom. Raised 60 → 500 (2026-08): at 60 the big
+// post-import enrichment pass pinned the pool near zero and drove it negative,
+// so live searches 429'd and returned nothing ("no results for halloween"). A
+// 500 reserve refills in ~25 min at +20/min and is worth far more than shaving
+// hours off a background 865k catalog fill. Override with CC_ENRICH_MIN_TOKENS.
+const MIN_TOKENS_TO_CONTINUE = (() => {
+  const n = Number(process.env.CC_ENRICH_MIN_TOKENS)
+  return Number.isFinite(n) && n >= 0 ? n : 500
+})()
 const STALE_DAYS = () => {
   const n = Number(process.env.CC_ENRICH_STALE_DAYS)
   // Default 45 (was 30): re-verify each enriched product every 45 days instead
