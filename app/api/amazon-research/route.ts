@@ -267,6 +267,29 @@ export async function GET(request: Request) {
       patch((dra ?? []) as any[]); patch((sca ?? []) as any[])
     } catch { /* avg90 column not applied yet — omit it */ }
 
+    // CC campaign catalog — a huge already-enriched pool (the CC cron keeps
+    // ~600k products' price/rating/rank/video fresh). Reading it here means any
+    // product that's in a Creator Connections campaign renders rich in AMZ
+    // Research for FREE. Keyed by rep_asin; safe 263-era columns only (no avg90)
+    // so it can't couple to migration 264. Sits below amz_product_cache in
+    // precedence (that one is the dedicated, freshest research record).
+    try {
+      const CC_COLS = 'rep_asin,image_url,price_now_cents,price_was_cents,discount_pct,rating,review_count,monthly_sold,video_count,category,parent_asin,sales_rank,sales_rank_category,listed_since'
+      const { data: cc } = await sb.from('cc_campaign_catalog').select(CC_COLS).in('rep_asin', found.asins)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of (cc ?? []) as any[]) {
+        sig.set(r.rep_asin, {
+          rating: r.rating ?? null, reviewCount: r.review_count ?? null, monthlySold: r.monthly_sold ?? null,
+          category: r.category ?? null, parentAsin: r.parent_asin ?? null,
+          salesRank: r.sales_rank_category && r.sales_rank != null ? r.sales_rank : null,
+          salesRankAvg90: null,
+          salesRankCategory: r.sales_rank_category ?? null, listedSince: r.listed_since ?? null,
+          priceNowCents: r.price_now_cents ?? null, priceWasCents: r.price_was_cents ?? null, discountPct: r.discount_pct ?? null,
+          imageUrl: r.image_url ?? null, videoCount: r.video_count ?? null, hasVideo: (r.video_count ?? 0) > 0,
+        })
+      }
+    } catch { /* cc catalog absent / column hiccup — best-effort */ }
+
     // Our own persisted research cache (migration 265): the fullest FREE source —
     // price + image + video + every signal, saved from a PRIOR live enrichment.
     // Overrides the two caches above because it's the complete, purpose-built
