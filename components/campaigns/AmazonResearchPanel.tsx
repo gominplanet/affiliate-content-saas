@@ -111,6 +111,15 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
     }).catch(() => {})
   }, [])
 
+  // Seed the search from a ?q= param so deep links prefill + auto-search — e.g.
+  // the Storefront Health "Replace" button lands here with the product's keyword.
+  useEffect(() => {
+    try {
+      const seed = (new URLSearchParams(window.location.search).get('q') || '').trim()
+      if (seed) setQ(seed.slice(0, 80))
+    } catch { /* no window / bad param — ignore */ }
+  }, [])
+
   const buildParams = useCallback((pageToLoad: number) => {
     const params = new URLSearchParams()
     if (q.trim()) params.set('q', q.trim())
