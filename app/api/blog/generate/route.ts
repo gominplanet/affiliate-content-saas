@@ -2328,11 +2328,15 @@ async function handleGenerate(request: Request) {
             const seed = Math.floor(Math.random() * 1_000_000_000) + i
             try {
               let falUrl: string | undefined
-              // ── Primary: re-render the REAL product photo (resolved from the
-              // Amazon / Geniuslink / affiliate link) into a fitting setting.
-              // This keeps the ACTUAL product accurate — what readers came to
-              // see — instead of guessing from random video frames.
-              if (falProductImageUrl) {
+              // ── Primary in-body shot: use the REAL product photo DIRECTLY, no
+              // AI re-render. Re-rendering the product tends to garble on-product
+              // brand text (e.g. "EUHOMY" → "EHHOMY") and physics — so the single
+              // most important "here's the product" image is the actual Amazon
+              // photo: accurate branding, zero hallucination. The ADDITIONAL
+              // images (i>0) still AI-render for lifestyle/scene variety.
+              if (i === 0 && falProductImageUrl) {
+                falUrl = falProductImageUrl
+              } else if (falProductImageUrl) {
                 // Identity-preserving re-render via Nano Banana (Gemini Imagen).
                 //
                 // We previously used Flux Kontext here. Kontext is great at
