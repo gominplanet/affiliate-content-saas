@@ -312,6 +312,14 @@ export async function GET(request: Request) {
  * (PATCHes WP from draft to publish); kind='social' goes to the existing
  * per-platform publishOne.
  */
+/** First http(s) URL in a string, or null. Used to recover the blog link from
+ *  a scheduled social caption when the underlying blog_posts row is gone. */
+function firstUrlIn(text: string | null | undefined): string | null {
+  if (!text) return null
+  const m = text.match(/https?:\/\/[^\s)]+/i)
+  return m ? m[0].replace(/[.,]+$/, '') : null
+}
+
 async function publishOne(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   admin: any,
@@ -387,13 +395,38 @@ async function publishOne(
       .single(),
   ])
 
-  const post: BlogPostRow | null = postRes.data
+  let post: BlogPostRow | null = postRes.data
   // Transparently decrypt every encrypted secret column on the
   // integrations row (2026-06-02 rollout). Downstream code reads
   // tokens via `integration.<field>` as before — they're plaintext
   // now thanks to the wrap.
   const integration: IntegrationRow | null = decryptIntegrationRow(intRes.data)
-  if (!post) throw new Error('Blog post no longer exists')
+
+  // Resilient fallback: the blog_posts row can be gone by the time a social
+  // row fires (the post was deleted from the library, or a WP delete left the
+  // Supabase row removed while the WordPress post stayed live). The auto-pilot
+  // cascade writes the caption as `title\n\nWP_URL`, so the link back to the
+  // still-live post survives on the scheduled_posts row itself. Rather than
+  // fail every push with a scary "Blog post no longer exists" — which reads as
+  // "your post vanished" when it hasn't — recover the URL from the caption and
+  // synthesize a minimal post so the text/link platforms still publish. Only
+  // when we genuinely can't recover a URL do we give up (with a clearer why).
+  if (!post) {
+    const recoveredUrl = firstUrlIn(row.body_text)
+    console.warn(`[process-scheduled] row ${row.id}: blog_posts ${row.blog_post_id} not found (deleted?) — ${recoveredUrl ? 'recovering URL from caption and continuing' : 'no URL in caption, cannot recover'}`)
+    if (!recoveredUrl) {
+      throw new Error('The original post was removed before this social push could publish')
+    }
+    post = {
+      id: row.blog_post_id,
+      // Caption is `title\n\nURL`; the text before the URL is the title.
+      title: row.body_text.split(recoveredUrl)[0].trim() || null,
+      wordpress_url: recoveredUrl,
+      wordpress_post_id: null,
+      youtube_videos: null,
+    }
+  }
+
   if (!integration) throw new Error('User has no integrations row')
   if (!post.wordpress_url) {
     throw new Error('Blog post has no published URL')

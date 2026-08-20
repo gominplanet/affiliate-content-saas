@@ -69,6 +69,15 @@ export async function DELETE(request: Request) {
       } catch { /* non-fatal */ }
     }
 
+    // Cancel any pending social pushes queued for this post BEFORE removing the
+    // row — otherwise they fire minutes later against a deleted post and show up
+    // as "failed / post no longer exists" in Recent activity. Only 'pending'
+    // rows are touched (a push already 'completed' stays as history).
+    if (postId) {
+      await supabase.from('scheduled_posts').delete()
+        .eq('blog_post_id', postId).eq('user_id', user.id).eq('status', 'pending')
+    }
+
     // Remove from Supabase if we have a UUID
     if (postId) {
       await supabase.from('blog_posts').delete().eq('id', postId).eq('user_id', user.id)
