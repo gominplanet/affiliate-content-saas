@@ -84,6 +84,11 @@ interface ScheduledRow {
   /** How many times this row has already been requeued after a transient
    *  failure. Bounded by MAX_PUBLISH_RETRIES. */
   retry_count?: number
+  /** Pre-rendered Pinterest pin (base64) + its mime, filled by the
+   *  prerender-pins cron. When present, the pinterest branch posts this
+   *  finished image instead of building one under the fire-time budget. */
+  image_data?: string | null
+  image_media_type?: string | null
 }
 
 // Transient upstream errors (network blips / 5xx / timeouts) shouldn't kill a
@@ -166,7 +171,7 @@ export async function GET(request: Request) {
     .update({ status: 'processing', claimed_at: nowIso, last_attempt_at: nowIso })
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
-    .select('id,user_id,blog_post_id,platform,body_text,social_account_id,retry_count')
+    .select('id,user_id,blog_post_id,platform,body_text,social_account_id,retry_count,image_data,image_media_type')
     .limit(MAX_PER_TICK)
 
   if (claimErr) {
@@ -186,6 +191,9 @@ export async function GET(request: Request) {
     body_text: (r.body_text as string) ?? '',
     social_account_id: (r.social_account_id as string | null | undefined) ?? null,
     retry_count: (r.retry_count as number | null | undefined) ?? 0,
+    // 'rendering' is a claim marker, not a real image — treat it as absent.
+    image_data: (r.image_data as string | null | undefined) ?? null,
+    image_media_type: (r.image_media_type === 'rendering' ? null : (r.image_media_type as string | null | undefined)) ?? null,
     kind: r.platform == null ? 'blog_publish' : 'social',
   }))
   if (rows.length === 0) {
@@ -826,6 +834,24 @@ async function publishOne(
       // needs the full post row (content/excerpt/image fields), which the cron's
       // lean select doesn't have — fetch it. Falls back to the thumbnail only if
       // composition fails, so a pin still goes out.
+      // FAST PATH: the prerender-pins cron already built the designed pin and
+      // stored it on this row. Post that finished image directly — no fire-time
+      // build, no 30s race, always the polished pin (the auto-pilot fix).
+      if (row.image_data) {
+        const { pinId } = await publishPinForPost({
+          p: post,
+          ig: integration,
+          site: null,
+          title: post.title || '',
+          description: row.body_text || post.title || '',
+          imageBase64: row.image_data,
+          mediaType: row.image_media_type ?? 'image/jpeg',
+        })
+        await admin.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', row.blog_post_id)
+        await recordSocialPermalink(admin, row.blog_post_id, 'pinterest', socialPermalink.pinterest(pinId))
+        return { externalId: pinId }
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: fullPost } = await admin.from('blog_posts').select('*').eq('id', row.blog_post_id).maybeSingle()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
