@@ -351,6 +351,17 @@ export async function requestStorefrontCatalogScan(url: string): Promise<IdeaSca
 }
 
 /**
+ * Read the creator's Creator Hub video table in a BACKGROUND SCOUT tab and
+ * record which products (ASINs) they have a video for, then push to MVP.
+ */
+export async function requestCreatorHubVideosScan(): Promise<IdeaScanResult> {
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_CREATORHUB_VIDEOS' }, 180000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, count: resp.count, error: resp.error }
+}
+
+/**
  * One-click storefront sync: SCOUT opens the Amazon Associates earnings report
  * in a BACKGROUND tab, scrapes the current view + the quick-ranges (Last Week /
  * This Month / Last Month), pushes them to MVP, and closes the tab. The user

@@ -127,6 +127,31 @@ async function pushCatalogToMvp(products) {
   return { reached: false, ok: false, error: lastErr }
 }
 
+// POST the ASINs the creator has Creator Hub videos for. Apex-first, same as
+// the other storefront pushes.
+async function pushVideosToMvp(asins) {
+  const rows = Array.isArray(asins) ? asins : []
+  if (!rows.length) return { reached: true, ok: true, upserted: 0 }
+  const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
+  let lastErr = 'network error'
+  for (const origin of origins) {
+    try {
+      const res = await fetch(`${origin}/api/storefront/videos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        redirect: 'follow',
+        body: JSON.stringify({ videos: rows }),
+      })
+      let body = null
+      try { body = await res.json() } catch (e) {}
+      if (res.ok) return { reached: true, ok: true, upserted: body && body.upserted }
+      return { reached: true, ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}` }
+    } catch (e) { lastErr = (e && e.message) || 'network error' }
+  }
+  return { reached: false, ok: false, error: lastErr }
+}
+
 // Draft an outreach message via MVP, from the WORKER (not the content script):
 // a content-script fetch amazon.com→mvpaffiliate.io is subject to Amazon's page
 // CSP `connect-src` and can be silently blocked. Same worker-first pattern as
@@ -2075,6 +2100,101 @@ async function scanStorefrontBackground(rawUrl) {
     if (!r.lists || !r.lists.length) return { ok: true, count: 0 }
     const push = await pushIdeaListToMvp({ lists: r.lists })
     return { ok: !!(push && push.ok), count: r.lists.length, error: (push && push.ok) ? undefined : (push && push.error) }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'scan-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
+// ── Creator Hub VIDEOS: read the creator's video table (each row is tied to a
+// product ASIN — the page fetches per-ASIN) and record which products they have
+// a video for. Self-contained: collect ASINs on the page, page through, return.
+async function harvestCreatorHubVideosInPage() {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const vis = (el) => { if (!el || !el.getBoundingClientRect) return false; const r = el.getBoundingClientRect(); return (r.width > 0 || r.height > 0) }
+  const rClick = (el) => {
+    try { el.scrollIntoView({ block: 'center' }) } catch (e) {}
+    const o = { bubbles: true, cancelable: true, view: window }
+    try { el.dispatchEvent(new MouseEvent('mousedown', o)) } catch (e) {}
+    try { el.dispatchEvent(new MouseEvent('mouseup', o)) } catch (e) {}
+    try { el.click() } catch (e) {}
+    try { el.dispatchEvent(new MouseEvent('click', o)) } catch (e) {}
+  }
+  // ASINs on the current page: data-asin attrs, /dp//product/ links, and bare
+  // B0-style tokens (Creator Hub rows reference the ASIN even when they show a
+  // video title). Paired with the nearest row title where we can find one.
+  function collect(into) {
+    document.querySelectorAll('[data-asin]').forEach((el) => {
+      const a = (el.getAttribute('data-asin') || '').trim().toUpperCase()
+      if (/^[A-Z0-9]{10}$/.test(a)) into.set(a, into.get(a) || rowTitle(el))
+    })
+    document.querySelectorAll('a[href*="/dp/"], a[href*="/product/"]').forEach((a) => {
+      const m = (a.getAttribute('href') || '').match(/\/(?:dp|product)\/([A-Z0-9]{10})/)
+      if (m && !into.has(m[1].toUpperCase())) into.set(m[1].toUpperCase(), rowTitle(a))
+    })
+    const html = document.body.innerHTML
+    const re = /\b(B0[0-9A-Z]{8})\b/g; let mm
+    while ((mm = re.exec(html)) !== null) { const a = mm[1].toUpperCase(); if (!into.has(a)) into.set(a, null) }
+  }
+  function rowTitle(el) {
+    const row = el.closest('tr,li,[role="row"],[data-testid]') || el.parentElement
+    let t = (row && (row.querySelector('a,h2,h3,[class*=title]') || {}).textContent) || ''
+    return (t || '').replace(/\s+/g, ' ').trim().slice(0, 200) || null
+  }
+  function sig() { return [...document.querySelectorAll('[data-asin]')].slice(0, 6).map((e) => e.getAttribute('data-asin')).join(',') + '|' + document.querySelectorAll('[data-asin]').length + '|' + document.body.innerHTML.length }
+  function findNext() {
+    for (const el of document.querySelectorAll('button,a,[role="button"],[aria-label]')) {
+      if (!vis(el)) continue
+      if (el.hasAttribute && el.hasAttribute('disabled')) continue
+      if (el.getAttribute && el.getAttribute('aria-disabled') === 'true') continue
+      const cls = (el.className && el.className.toString ? el.className.toString() : '').toLowerCase()
+      if (/disabled/.test(cls)) continue
+      const label = (((el.getAttribute && el.getAttribute('aria-label')) || '') + ' ' + (el.textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase()
+      if (/prev/.test(label)) continue
+      if ((/\bnext\b/.test(label) && label.length <= 16) || label === '›' || label === '→' || label === '»' || label === '>') return el
+    }
+    return null
+  }
+  const map = new Map()
+  // Let the table render, then scroll to load lazy rows.
+  await sleep(1200)
+  for (let i = 0; i < 8; i++) { try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {} await sleep(600) }
+  try { window.scrollTo(0, 0) } catch (e) {}
+  collect(map)
+  let last = map.size
+  for (let page = 0; page < 200; page++) {
+    const next = findNext(); if (!next) break
+    const before = sig()
+    rClick(next)
+    // wait for the table to turn over
+    let changed = false
+    for (let w = 0; w < 20; w++) { await sleep(400); if (sig() !== before) { changed = true; break } }
+    if (!changed) break
+    await sleep(500)
+    collect(map)
+    if (map.size === last) break
+    last = map.size
+  }
+  return { ok: true, asins: [...map.entries()].map(([asin, title]) => ({ asin, title })), signedOut: /\/ap\/signin/.test(location.href) }
+}
+
+async function scanCreatorHubVideosBackground() {
+  const url = 'https://www.amazon.com/creatorhub'
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(3000)
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestCreatorHubVideosInPage })
+    const r = (results && results[0] && results[0].result) || null
+    if (!r || !r.ok) return { ok: false, error: 'no-result' }
+    if (r.signedOut) return { ok: false, error: 'signed-out' }
+    const asins = (r.asins || []).filter((x) => x && /^[A-Z0-9]{10}$/.test(x.asin))
+    if (!asins.length) return { ok: false, error: 'no-videos' }
+    const push = await pushVideosToMvp(asins)
+    return { ok: !!(push && push.ok), count: asins.length, error: (push && push.ok) ? undefined : (push && push.error) }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'scan-failed' }
   } finally {
@@ -4668,6 +4788,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // + quick-ranges) in a BACKGROUND tab, push to MVP, then close.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
     scanStorefrontEarningsBackground()
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response
+  }
+  if (msg.type === 'MVP_SCAN_CREATORHUB_VIDEOS') {
+    // Read the Creator Hub video table (each row → a product ASIN) in a
+    // BACKGROUND tab and record which products the creator has a video for.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 175000)
+    scanCreatorHubVideosBackground()
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response

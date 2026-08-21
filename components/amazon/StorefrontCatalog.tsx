@@ -9,8 +9,8 @@
 // Self-contained: fetches /api/storefront/catalog and drives the SCOUT crawl.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2, Store, ExternalLink, Search } from 'lucide-react'
-import { requestStorefrontCatalogScan } from '@/lib/extension-frame'
+import { Loader2, Store, ExternalLink, Search, Video } from 'lucide-react'
+import { requestStorefrontCatalogScan, requestCreatorHubVideosScan } from '@/lib/extension-frame'
 
 const ACCENT = '#C2410C'
 const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -19,9 +19,9 @@ const int = (n: number) => n.toLocaleString('en-US')
 interface CatalogProduct {
   asin: string; title: string; image: string | null; listTitle: string | null
   earnings: number; revenue: number; units: number; clicks: number
-  conversion: number; epc: number; hasEarnings: boolean; amazonUrl: string
+  conversion: number; epc: number; hasEarnings: boolean; hasVideo: boolean; amazonUrl: string
 }
-interface CatalogData { ok?: boolean; hasData?: boolean; total?: number; withEarnings?: number; products?: CatalogProduct[] }
+interface CatalogData { ok?: boolean; hasData?: boolean; total?: number; withEarnings?: number; withVideo?: number; products?: CatalogProduct[] }
 type SortKey = 'earnings' | 'clicks' | 'conversion' | 'epc'
 
 const HANDLE_KEY = 'mvp-storefront-url'
@@ -35,6 +35,8 @@ export default function StorefrontCatalog() {
   const [sort, setSort] = useState<SortKey>('earnings')
   const [q, setQ] = useState('')
   const [onlyNoEarn, setOnlyNoEarn] = useState(false)
+  const [onlyNoVideo, setOnlyNoVideo] = useState(false)
+  const [syncingVideos, setSyncingVideos] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -76,9 +78,29 @@ export default function StorefrontCatalog() {
     } finally { setImporting(false) }
   }, [url, load])
 
+  const syncVideos = useCallback(async () => {
+    setSyncingVideos(true); setMsg(null)
+    try {
+      const r = await requestCreatorHubVideosScan()
+      if (r.ok) {
+        await load()
+        setMsg({ ok: true, text: r.count ? `Found ${r.count} product${r.count === 1 ? '' : 's'} you have a video for.` : 'Checked Creator Hub — no videos found.' })
+      } else if (r.error === 'not-installed') {
+        setMsg({ ok: false, text: 'Install SCOUT first — it reads your Creator Hub. Then Sync videos again.' })
+      } else if (r.error === 'no-videos') {
+        setMsg({ ok: false, text: 'Opened Creator Hub but couldn’t read any videos. Open it once on Amazon, then Sync videos again.' })
+      } else {
+        setMsg({ ok: false, text: `Couldn’t read Creator Hub just now${r.error ? ` (${r.error})` : ''}. Open it once on Amazon, then try again.` })
+      }
+    } catch {
+      setMsg({ ok: false, text: 'Video sync failed — try again in a moment.' })
+    } finally { setSyncingVideos(false) }
+  }, [load])
+
   const all = data?.products ?? []
   const filtered = all
     .filter((p) => (onlyNoEarn ? !p.hasEarnings : true))
+    .filter((p) => (onlyNoVideo ? !p.hasVideo : true))
     .filter((p) => (q ? (p.title || '').toLowerCase().includes(q.toLowerCase()) || p.asin.toLowerCase().includes(q.toLowerCase()) : true))
     .sort((a, b) => (b[sort] as number) - (a[sort] as number))
 
@@ -90,7 +112,7 @@ export default function StorefrontCatalog() {
           <p className="font-bold text-[14px]" style={{ color: 'var(--text)' }}>Your full storefront</p>
           {data?.hasData && (
             <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
-              — {int(data.total ?? 0)} products{typeof data.withEarnings === 'number' ? `, ${int(data.withEarnings)} earning` : ''}
+              — {int(data.total ?? 0)} products{typeof data.withEarnings === 'number' ? `, ${int(data.withEarnings)} earning` : ''}{typeof data.withVideo === 'number' ? `, ${int(data.withVideo)} with video` : ''}
             </span>
           )}
         </div>
@@ -112,6 +134,15 @@ export default function StorefrontCatalog() {
             style={{ backgroundColor: ACCENT }}
           >
             {importing ? <><Loader2 size={14} className="animate-spin" /> Importing…</> : 'Import full storefront'}
+          </button>
+          <button
+            onClick={() => void syncVideos()}
+            disabled={syncingVideos}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold border disabled:opacity-60"
+            style={{ borderColor: ACCENT, color: ACCENT }}
+            title="Read your Creator Hub to mark which products you have a video for"
+          >
+            {syncingVideos ? <><Loader2 size={14} className="animate-spin" /> Syncing videos…</> : <><Video size={14} /> Sync my videos</>}
           </button>
         </div>
         {msg && <p className="text-[12px] mt-2" style={{ color: msg.ok ? '#16a34a' : '#c0392b' }}>{msg.text}</p>}
@@ -137,6 +168,9 @@ export default function StorefrontCatalog() {
               <label className="inline-flex items-center gap-1 mr-2 cursor-pointer">
                 <input type="checkbox" checked={onlyNoEarn} onChange={(e) => setOnlyNoEarn(e.target.checked)} /> Not earning
               </label>
+              <label className="inline-flex items-center gap-1 mr-2 cursor-pointer">
+                <input type="checkbox" checked={onlyNoVideo} onChange={(e) => setOnlyNoVideo(e.target.checked)} /> No video
+              </label>
               Sort:
               {(['earnings', 'clicks', 'conversion', 'epc'] as SortKey[]).map((k) => (
                 <button key={k} onClick={() => setSort(k)} className="px-2 py-0.5 rounded-md capitalize"
@@ -151,7 +185,10 @@ export default function StorefrontCatalog() {
                   ? <img src={p.image} alt="" className="w-10 h-10 rounded-md object-cover flex-shrink-0" style={{ background: 'var(--surface-2, transparent)' }} />
                   : <div className="w-10 h-10 rounded-md flex-shrink-0" style={{ background: 'var(--border)' }} />}
                 <div className="flex-1 min-w-0">
-                  <p className="text-[12.5px] truncate" style={{ color: 'var(--text)' }}>{p.title}</p>
+                  <p className="text-[12.5px] truncate flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
+                    {p.hasVideo && <Video size={12} className="flex-shrink-0" style={{ color: ACCENT }} aria-label="Has video" />}
+                    <span className="truncate">{p.title}</span>
+                  </p>
                   <p className="text-[11px] truncate" style={{ color: 'var(--text-faint)' }}>{p.listTitle || p.asin}</p>
                 </div>
                 {p.hasEarnings ? (
