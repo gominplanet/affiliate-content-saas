@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { BrandProfileGuide } from '@/components/guide/tool-guides'
-import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2, AlertCircle } from 'lucide-react'
+import { Save, Check, Plus, Trash2, Upload, X, RefreshCw, Loader2, AlertCircle } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
 import GeniuslinkGroupsPanel from '@/components/brand/GeniuslinkGroupsPanel'
@@ -33,8 +33,6 @@ async function uploadBrandImage(
   return data.publicUrl
 }
 
-interface GearItem { name: string; url: string }
-interface GearSection { title: string; items: GearItem[] }
 interface FacebookGroup { name: string; url: string }
 
 // ─── Amazon-style niches ──────────────────────────────────────────────────────
@@ -201,12 +199,8 @@ interface BrandData {
   footer_bg_color: string
   // Writing Style / About You / Target Reader / Words to Avoid now
   // live on the LEARN page (single editing surface for voice).
-  gear_sections: GearSection[]
-  /** Free-text block the creator writes once and Co-Pilot appends verbatim to
-   *  EVERY YouTube description it generates (their socials, discount codes,
-   *  standard sign-off, emojis — anything). Their exact spacing / blank lines
-   *  are preserved. Distinct from gear_sections (structured name→link rows). */
-  youtube_description_block: string
+  // gear_sections + youtube_description_block moved to the YouTube page
+  // (/connect-youtube) — see components/youtube/YouTubeDescriptionSettings.
   /** Facebook Groups the user admins — saved for one-click manual sharing
    *  (Meta's API can't post to Groups, only Pages). */
   facebook_groups: FacebookGroup[]
@@ -301,8 +295,6 @@ const DEFAULT: BrandData = {
   secondary_color: '#34c759',
   header_bg_color: '',
   footer_bg_color: '',
-  gear_sections: [],
-  youtube_description_block: '',
   facebook_groups: [],
   logo_url: '',
   header_banner_url: '',
@@ -586,11 +578,8 @@ export default function BrandPage() {
         header_bg_color: (row as any).header_bg_color ?? '',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         footer_bg_color: (row as any).footer_bg_color ?? '',
-        // gear_sections + facebook_groups are JSONB; we always write the
-        // typed shape but the schema returns Json. Narrow at the read.
-        gear_sections: (row.gear_sections ?? []) as unknown as GearSection[],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        youtube_description_block: ((row as any).youtube_description_block as string | null) ?? '',
+        // facebook_groups is JSONB; we always write the typed shape but the
+        // schema returns Json. Narrow at the read.
         facebook_groups: (row.facebook_groups ?? []) as unknown as FacebookGroup[],
         logo_url: row.logo_url ?? '',
         header_banner_url: row.header_banner_url ?? '',
@@ -657,7 +646,7 @@ export default function BrandPage() {
     const { header_bg_color, footer_bg_color, ...mainBody } = normalized
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: dbError } = await supabase.from('brand_profiles').upsert(
-      // BrandData carries typed JSONB sub-shapes (GearSection[], FacebookGroup[])
+      // BrandData carries a typed JSONB sub-shape (FacebookGroup[])
       // that don't structurally satisfy the schema's Json union; narrow at the
       // insert boundary — payload is schema-correct at runtime.
       { ...mainBody, user_id: user.id } as never,
@@ -1463,129 +1452,6 @@ export default function BrandPage() {
                 />
               </div>
             </div>
-          </div>
-
-          {/* YouTube — everything MVP adds to the bottom of every description
-              it writes: structured link sections + a free-text custom block. */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">YouTube</h2>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-6">
-              Everything Co-Pilot adds to the bottom of every YouTube description it writes for you.
-            </p>
-
-            {/* Sub-section: structured link sections (gear, setup, recurring links) */}
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Description sections</h3>
-              <button
-                type="button"
-                onClick={() => set('gear_sections', [...data.gear_sections, { title: '', items: [{ name: '', url: '' }] }])}
-                className="flex items-center gap-1 text-xs text-[#7C3AED] hover:underline"
-              >
-                <Plus size={12} /> Add section
-              </button>
-            </div>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Titled blocks of name → link rows — great for your gear, editing setup, or any recurring affiliate links.
-            </p>
-            {data.gear_sections.length === 0 && (
-              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] italic">No sections yet. Click "Add section" to create one.</p>
-            )}
-            <div className="flex flex-col gap-5">
-              {data.gear_sections.map((section, si) => (
-                <div key={si} className="border border-gray-200 dark:border-white/10 rounded-xl p-4 flex flex-col gap-3">
-                  <div className="flex items-center gap-2">
-                    <GripVertical size={14} className="text-[#86868b] dark:text-[#8e8e93] flex-shrink-0" />
-                    <input
-                      type="text"
-                      value={section.title}
-                      onChange={e => {
-                        const updated = [...data.gear_sections]
-                        updated[si] = { ...updated[si], title: e.target.value }
-                        set('gear_sections', updated)
-                      }}
-                      placeholder="e.g. WHAT I USE TO RECORD MY VIDEOS"
-                      className="input-field text-xs font-semibold flex-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => set('gear_sections', data.gear_sections.filter((_, i) => i !== si))}
-                      className="text-[#ff3b30] hover:opacity-70 flex-shrink-0"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                  <div className="flex flex-col gap-2 pl-5">
-                    {section.items.map((item, ii) => (
-                      <div key={ii} className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={item.name}
-                          onChange={e => {
-                            const updated = [...data.gear_sections]
-                            updated[si].items[ii] = { ...updated[si].items[ii], name: e.target.value }
-                            set('gear_sections', updated)
-                          }}
-                          placeholder="Product name"
-                          className="input-field text-xs flex-1"
-                        />
-                        <input
-                          type="url"
-                          value={item.url}
-                          onChange={e => {
-                            const updated = [...data.gear_sections]
-                            updated[si].items[ii] = { ...updated[si].items[ii], url: e.target.value }
-                            set('gear_sections', updated)
-                          }}
-                          placeholder="https://amzn.to/..."
-                          className="input-field text-xs flex-1 font-mono"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updated = [...data.gear_sections]
-                            updated[si].items = updated[si].items.filter((_, i) => i !== ii)
-                            set('gear_sections', updated)
-                          }}
-                          className="text-[#86868b] hover:text-[#ff3b30] flex-shrink-0"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated = [...data.gear_sections]
-                        updated[si].items.push({ name: '', url: '' })
-                        set('gear_sections', updated)
-                      }}
-                      className="flex items-center gap-1 text-xs text-[#7C3AED] hover:underline self-start mt-1"
-                    >
-                      <Plus size={11} /> Add item
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Divider between the two sub-sections. */}
-            <div className="border-t border-gray-200 dark:border-white/10 my-6" />
-
-            {/* Sub-section: free-text custom block — Co-Pilot appends it verbatim. */}
-            <h3 className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Custom block</h3>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-              Write anything you want on <strong>every</strong> description — your socials, a discount code, a standard sign-off, emojis. Co-Pilot adds it exactly as you type it. Your spacing and line breaks are kept.
-            </p>
-            <textarea
-              value={data.youtube_description_block}
-              onChange={(e) => set('youtube_description_block', e.target.value)}
-              placeholder={'📸 Follow me:\nInstagram: https://instagram.com/yourname\nTikTok: https://tiktok.com/@yourname\n\n💸 Save 10% with code SAVE10'}
-              rows={8}
-              className="input-field text-sm font-mono resize-y whitespace-pre-wrap"
-            />
-            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">
-              Leave empty to skip it. Links here are added as-is (they aren&rsquo;t turned into affiliate links).
-            </p>
           </div>
         </div>
 

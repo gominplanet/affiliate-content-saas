@@ -16,6 +16,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { Youtube, Check, Loader2, LogOut, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { YouTubeChannelsManager } from '@/components/youtube/YouTubeChannelsManager'
+import { YouTubeDescriptionSettings } from '@/components/youtube/YouTubeDescriptionSettings'
 
 export default function ConnectYouTubePage() {
   const [loading, setLoading] = useState(true)
@@ -157,6 +158,12 @@ export default function ConnectYouTubePage() {
           Need to connect Instagram, TikTok, Pinterest, X and the rest? Those live on{' '}
           <a href="/connect-socials" className="text-[#7C3AED] hover:underline">Connect Socials</a>.
         </p>
+      </div>
+
+      {/* What MVP adds to every YouTube description Co-Pilot writes. Slightly
+          wider than the connect card so the name → link rows have room. */}
+      <div className="max-w-3xl">
+        <YouTubeDescriptionSettings />
       </div>
     </>
   )
