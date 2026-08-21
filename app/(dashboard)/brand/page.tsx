@@ -374,7 +374,11 @@ export default function BrandPage() {
   // brand and how it monetizes" settings sit on one page.
   const [geniuslinkKey, setGeniuslinkKey] = useState('')
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
-  const [wrapBlogGeniuslink, setWrapBlogGeniuslink] = useState(false)
+  // How the blog link is shortened when a post is shared to social:
+  // 'direct' (plain URL, free), 'geniuslink' (branded, tracked, costs per
+  // click), or 'bitly' (free short link, needs the creator's Bitly token).
+  const [blogSocialLinkMode, setBlogSocialLinkMode] = useState<'direct' | 'geniuslink' | 'bitly'>('direct')
+  const [bitlyToken, setBitlyToken] = useState('')
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
   // Google Search Console — read-only SEO connection, lives in this card now.
   const [gscConnected, setGscConnected] = useState(false)
@@ -525,7 +529,7 @@ export default function BrandPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase
       .from('integrations')
-      .select('geniuslink_api_key, geniuslink_api_secret, wrap_blog_geniuslink, amazon_associates_tag, gsc_oauth_access_token, tier')
+      .select('geniuslink_api_key, geniuslink_api_secret, wrap_blog_geniuslink, blog_social_link_mode, bitly_access_token, amazon_associates_tag, gsc_oauth_access_token, tier')
       .eq('user_id', user.id)
       .maybeSingle()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -533,7 +537,13 @@ export default function BrandPage() {
         if (intRow) {
           setGeniuslinkKey(intRow.geniuslink_api_key ?? '')
           setGeniuslinkSecret(intRow.geniuslink_api_secret ?? '')
-          setWrapBlogGeniuslink(intRow.wrap_blog_geniuslink === true)
+          // Prefer the new mode; fall back to the legacy wrap toggle for a row
+          // that predates migration 274.
+          const mode = intRow.blog_social_link_mode
+          setBlogSocialLinkMode(mode === 'geniuslink' || mode === 'bitly' || mode === 'direct'
+            ? mode
+            : (intRow.wrap_blog_geniuslink === true ? 'geniuslink' : 'direct'))
+          setBitlyToken(intRow.bitly_access_token ?? '')
           setAmazonAssociatesTag(intRow.amazon_associates_tag ?? '')
           setGscConnected(!!intRow.gsc_oauth_access_token)
           if (typeof intRow.tier === 'string') setUserTier(intRow.tier)
@@ -676,7 +686,10 @@ export default function BrandPage() {
             user_id: user.id,
             geniuslink_api_key: geniuslinkKey.trim() || null,
             geniuslink_api_secret: geniuslinkSecret.trim() || null,
-            wrap_blog_geniuslink: wrapBlogGeniuslink,
+            blog_social_link_mode: blogSocialLinkMode,
+            bitly_access_token: bitlyToken.trim() || null,
+            // Keep the legacy flag in sync so any older reader still behaves.
+            wrap_blog_geniuslink: blogSocialLinkMode === 'geniuslink',
             amazon_associates_tag: amazonAssociatesTag.trim() || null,
           },
           { onConflict: 'user_id' },
@@ -1080,20 +1093,52 @@ export default function BrandPage() {
                 </div>
               </div>
 
-              {/* Opt-in: wrap the BLOG post URL in a short geni.us link when
-                  sharing to social (branded + short, instead of the raw WP URL). */}
-              <label className="mt-3 flex items-start gap-2.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={wrapBlogGeniuslink}
-                  onChange={e => setWrapBlogGeniuslink(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded accent-[#7C3AED]"
-                />
-                <span>
-                  <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Use a short geni.us link when sharing posts to social</span>
-                  <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93]">Wraps each post&rsquo;s blog link in a branded geni.us short link on Facebook, LinkedIn, X, Threads, Bluesky and Telegram. Needs your Geniuslink key + secret above. Applies to posts generated after you turn it on.</span>
-                </span>
-              </label>
+              {/* How the BLOG link is shortened when a post is shared to social.
+                  Blog→Amazon links always use Geniuslink; this is only the link
+                  back to the blog post itself, which earns no commission — so a
+                  free option matters as click costs add up. */}
+              <div className="mt-3">
+                <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Blog link shared on social</span>
+                <div className="flex flex-col gap-2">
+                  {([
+                    { key: 'direct', label: 'Direct link (free)', desc: 'Share the plain blog URL. No shortener, no click cost.' },
+                    { key: 'geniuslink', label: 'Geniuslink', desc: 'Branded geni.us short link, tracked. Uses your Geniuslink key above and costs a click each time.' },
+                    { key: 'bitly', label: 'Bitly (free)', desc: 'Free short link with click stats from your own Bitly account.' },
+                  ] as const).map(opt => {
+                    const on = blogSocialLinkMode === opt.key
+                    return (
+                      <label key={opt.key} className="flex items-start gap-2.5 cursor-pointer select-none rounded-lg border px-3 py-2"
+                        style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgba(124,58,237,0.06)' : 'transparent' }}>
+                        <input
+                          type="radio"
+                          name="blog-social-link-mode"
+                          checked={on}
+                          onChange={() => setBlogSocialLinkMode(opt.key)}
+                          className="mt-0.5 w-4 h-4 accent-[#7C3AED]"
+                        />
+                        <span>
+                          <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{opt.label}</span>
+                          <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93]">{opt.desc}</span>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+                {blogSocialLinkMode === 'bitly' && (
+                  <div className="mt-2">
+                    <input
+                      name="bitly-token"
+                      type="password"
+                      value={bitlyToken}
+                      onChange={e => setBitlyToken(e.target.value)}
+                      placeholder="Bitly access token"
+                      className="input-field text-xs font-mono"
+                    />
+                    <p className="mt-1 text-[10px] text-[#86868b] dark:text-[#8e8e93]">Bitly → Settings → API → Generate token. Paste the generic access token here.</p>
+                  </div>
+                )}
+                <p className="mt-2 text-[11px] text-[#86868b] dark:text-[#8e8e93]">Applies to posts generated after you change it. Your blog&rsquo;s Amazon links always use Geniuslink with your group settings — this only affects the link back to your blog post on Facebook, LinkedIn, X, Threads, Bluesky and Telegram.</p>
+              </div>
 
               {/* Live "does it actually work?" test — the real gate. Turns a
                   wrong key/secret into an immediate ✗ instead of a silent 401

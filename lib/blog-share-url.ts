@@ -7,6 +7,9 @@
 // must hit the real WordPress URL.
 
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { shortenBitly } from '@/lib/bitly'
+
+export type BlogSocialLinkMode = 'direct' | 'geniuslink' | 'bitly'
 
 /** Sync pick: cached short link → raw WP URL → null. Never throws. */
 export function blogShareUrl(post: { geniuslink_blog_url?: string | null; wordpress_url?: string | null }): string | null {
@@ -50,24 +53,45 @@ export async function ensureAffiliateGeniuslink(
 }
 
 /**
- * At generation time: if the creator enabled geni.us wrapping AND has geni.us
- * creds, create a short link for the post's blog URL and cache it on the row.
- * Best-effort — returns the short link, or null on any failure (caller keeps the
- * plain WordPress URL). Only creates when there isn't one already.
+ * At generation time: shorten the post's blog URL for social sharing according
+ * to the creator's chosen link mode, and cache it on the row (in
+ * blog_posts.geniuslink_blog_url, which blogShareUrl reads — the column holds
+ * "the cached social short link", whatever provider made it).
+ *
+ *   'direct'      → no short link; social shares the plain WordPress URL
+ *   'geniuslink'  → branded geni.us link (tracked, costs per click)
+ *   'bitly'       → free Bitly short link (needs the creator's Bitly token)
+ *
+ * Best-effort — returns the short link, or null on any failure / 'direct'
+ * (caller keeps the plain WordPress URL). A share never breaks over this.
  */
-export async function maybeCreateBlogGeniuslink(
+export async function maybeCreateBlogShortlink(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
-  opts: { postId: string; blogUrl: string | null | undefined; title: string; enabled: boolean; apiKey: string | null; apiSecret: string | null },
+  opts: {
+    postId: string
+    blogUrl: string | null | undefined
+    title: string
+    mode: BlogSocialLinkMode
+    geniuslinkKey?: string | null
+    geniuslinkSecret?: string | null
+    bitlyToken?: string | null
+  },
 ): Promise<string | null> {
-  if (!opts.enabled || !opts.blogUrl || !opts.apiKey || !opts.apiSecret) return null
+  const { postId, blogUrl, title, mode } = opts
+  if (!blogUrl || mode === 'direct') return null
+  let short: string | null = null
   try {
-    const genius = createGeniuslinkService(opts.apiKey, opts.apiSecret)
-    const url = await genius.createLink(opts.blogUrl, (opts.title || 'Blog post').slice(0, 120))
-    if (url) {
-      await supabase.from('blog_posts').update({ geniuslink_blog_url: url }).eq('id', opts.postId)
-      return url
+    if (mode === 'geniuslink' && opts.geniuslinkKey && opts.geniuslinkSecret) {
+      const genius = createGeniuslinkService(opts.geniuslinkKey, opts.geniuslinkSecret)
+      short = await genius.createLink(blogUrl, (title || 'Blog post').slice(0, 120))
+    } else if (mode === 'bitly' && opts.bitlyToken) {
+      short = await shortenBitly(opts.bitlyToken, blogUrl)
     }
   } catch { /* keep the plain WordPress URL */ }
+  if (short) {
+    try { await supabase.from('blog_posts').update({ geniuslink_blog_url: short }).eq('id', postId) } catch { /* non-fatal */ }
+    return short
+  }
   return null
 }
