@@ -17,6 +17,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/prerender-pins",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/process-scheduled",
       "schedule": "* * * * *"
     },
