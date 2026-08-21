@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Megaphone, Sparkles, X, ArrowRight, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 
-type Variant = 'news' | 'feature'
+type Variant = 'news' | 'feature' | 'modal'
 
 interface Announcement {
   id: string
@@ -157,7 +157,7 @@ export default function AdminAnnouncementPage() {
 
           <div>
             <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Style</label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => setVariant('news')}
@@ -173,6 +173,14 @@ export default function AdminAnnouncementPage() {
               >
                 <span className="flex items-center gap-1.5 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]"><Sparkles size={13} className="text-[#bc1888]" /> Feature (colorful)</span>
                 <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">New features, with a &ldquo;NEW&rdquo; badge.</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setVariant('modal')}
+                className={`text-left p-3 rounded-lg border transition-colors ${variant === 'modal' ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
+              >
+                <span className="flex items-center gap-1.5 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]"><Megaphone size={13} className="text-[#7C3AED]" /> Popup (modal)</span>
+                <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">Center-screen popup. Use for action-needed.</span>
               </button>
             </div>
           </div>

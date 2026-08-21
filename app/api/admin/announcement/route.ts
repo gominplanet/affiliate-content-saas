@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     if ((ctaLabel && !ctaHref) || (!ctaLabel && ctaHref)) {
       return NextResponse.json({ error: 'Provide both a button label and link, or neither.' }, { status: 400 })
     }
-    const variant = body.variant === 'feature' ? 'feature' : 'news'
+    const variant = body.variant === 'feature' ? 'feature' : body.variant === 'modal' ? 'modal' : 'news'
 
     // Deactivate the current banner, then publish the new one.
     await admin.from('announcements').update({ active: false, updated_at: now }).eq('active', true)

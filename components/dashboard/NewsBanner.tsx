@@ -44,6 +44,9 @@ export default function NewsBanner() {
         if (!alive) return
         const a = (d?.announcement as Announcement | null) ?? null
         if (!a) return
+        // 'modal' announcements are handled by AnnouncementModal (a popup);
+        // don't also render them as a banner.
+        if (a.variant === 'modal') return
         setNews(a)
         try {
           setDismissed(localStorage.getItem(STORAGE_KEY) === a.id)
