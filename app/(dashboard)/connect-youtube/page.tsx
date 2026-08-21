@@ -93,7 +93,7 @@ export default function ConnectYouTubePage() {
   return (
     <>
       <PageHero
-        title="Connect YouTube"
+        title="YouTube"
         subtitle="The heart of MVP — connect once and we can pull your videos and drafts to turn any of them into a blog post. One click, sign in with Google, done. We figure out your channel automatically."
       />
 
