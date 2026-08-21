@@ -52,8 +52,14 @@ export async function POST(request: Request) {
   // Destination link: an explicit page (the blog post) wins; otherwise fall back
   // to the creator's own blog homepage. NEVER an affiliate redirect (Pinterest +
   // Amazon ToS) — both of these are the creator's own site, which is compliant.
-  const link = (body.link || '').trim() || (ig?.wordpress_url || '').trim()
-  if (!/^https?:\/\//i.test(link)) return NextResponse.json({ error: 'Set your blog/site URL (or pass a link) — Pinterest pins must link to a real page, not an affiliate redirect.' }, { status: 400 })
+  // OPTIONAL: a creator without a blog (e.g. a Clip Factory / video-first user)
+  // still gets a valid video pin with no link, rather than being blocked. Only a
+  // MALFORMED link is rejected; an absent one just means a linkless pin.
+  const rawLink = (body.link || '').trim() || (ig?.wordpress_url || '').trim()
+  if (rawLink && !/^https?:\/\//i.test(rawLink)) {
+    return NextResponse.json({ error: 'That link isn’t a valid URL. Leave it blank to pin the video with no link, or use your blog/site URL — never an affiliate redirect.' }, { status: 400 })
+  }
+  const link = rawLink || undefined
   const tier = (ig?.tier as Tier) ?? 'trial'
   if (!tierAllowsSocial(tier, 'pinterest')) {
     return NextResponse.json({ error: 'Pinterest is a Studio plan feature.' }, { status: 403 })

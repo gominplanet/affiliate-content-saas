@@ -161,7 +161,9 @@ export class PinterestService {
     boardId: string
     title: string
     description: string
-    link: string
+    /** Optional destination. Pinterest allows a pin with no link — a creator
+     *  without a blog (e.g. a Clip Factory user) still gets a valid video pin. */
+    link?: string
     videoBytes: Uint8Array
     contentType?: string
     coverImageUrl: string
@@ -214,7 +216,9 @@ export class PinterestService {
         board_id: opts.boardId,
         title: opts.title,
         description: opts.description,
-        link: opts.link,
+        // Only send a link when we actually have one — Pinterest rejects an
+        // empty string but is happy with the field omitted.
+        ...(opts.link ? { link: opts.link } : {}),
         media_source: {
           source_type: 'video_id',
           media_id: media.media_id,
