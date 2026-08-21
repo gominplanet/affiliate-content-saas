@@ -1033,6 +1033,7 @@ export default function ClipFactoryPage() {
           burnedVideoUrl={publishUrl}
           initialCaption={publishCaption}
           tier={tier}
+          sourceYoutubeVideoId={selectedVideo?.youtubeVideoId ?? ytVideoId ?? undefined}
           onClose={() => setTtOpen(false)}
           onPosted={() => { setPosted(p => ({ ...p, tiktok: true })); setTtOpen(false); toast.success('Posted to TikTok') }}
         />

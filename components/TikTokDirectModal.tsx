@@ -59,6 +59,7 @@ export function TikTokDirectModal({
   burnedVideoUrl,
   initialCaption,
   tier,
+  sourceYoutubeVideoId,
   onClose,
   onPosted,
 }: {
@@ -70,6 +71,10 @@ export function TikTokDirectModal({
   initialCaption?: string
   /** Viewer tier — drives the admin-only gate on the YouTube cross-post option. */
   tier?: string | null
+  /** 11-char id of the YouTube video this clip came from. Used as the Pinterest
+   *  pin's destination so it links to the actual video, not the blog homepage.
+   *  (The non-burned path resolves this from video-meta instead.) */
+  sourceYoutubeVideoId?: string | null
   onClose: () => void
   /** Fires once when the publish status flips to "published". The Vertical
    *  Videos row uses this to update its TikTok pill state. */
@@ -345,11 +350,18 @@ export function TikTokDirectModal({
         if (vUrl) {
           setPinResult('posting'); setPinErr(null)
           try {
+            // Destination: link the pin to the ACTUAL YouTube video this clip
+            // came from (not the blog homepage). The route still resolves a blog
+            // post for that video when one exists, else uses this watch URL, else
+            // the blog homepage. NEVER an affiliate redirect (Pinterest ToS).
+            const ytForLink = youtubeId || sourceYoutubeVideoId || null
             const pr = await fetch('/api/pinterest/video-pin', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 videoUrl: vUrl,
                 coverImageUrl: youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg` : undefined,
+                youtubeVideoId: ytForLink || undefined,
+                link: ytForLink ? `https://www.youtube.com/watch?v=${ytForLink}` : undefined,
                 title: (caption || '').split('\n')[0].slice(0, 100),
                 description: caption,
               }),
@@ -762,7 +774,7 @@ export function TikTokDirectModal({
             </label>
             <label className="mt-1.5 flex items-center gap-2.5 cursor-pointer select-none">
               <input type="checkbox" checked={alsoPin} onChange={e => setAlsoPin(e.target.checked)} className="h-4 w-4 accent-[#E60023]" />
-              <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Also pin to Pinterest as a video <span className="text-[#86868b]">(links to your blog if you have one)</span></span>
+              <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Also pin to Pinterest as a video <span className="text-[#86868b]">(links to the blog post or YouTube video)</span></span>
             </label>
             {ytEnabled && (
               <label className="mt-1.5 flex items-center gap-2.5 cursor-pointer select-none">
