@@ -22,6 +22,7 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { acceptCampaignViaScout } from '@/lib/accept-campaign'
 import StorefrontCharts from '@/components/amazon/StorefrontCharts'
 import StorefrontCatalog from '@/components/amazon/StorefrontCatalog'
+import StorefrontOpportunities from '@/components/amazon/StorefrontOpportunities'
 
 const ACCENT = '#C2410C'
 const GREEN = '#15803d'
@@ -603,6 +604,11 @@ export default function AmazonBrainstorm() {
               Headline totals are your full Amazon report (all products). The cards below are your top {data.productCount ?? products.length} earners — the ones worth posting more of.
             </p>
           )}
+
+          {/* Video-but-not-earning — the highest-value insight, up top. Products
+              the creator already made a video for that aren't turning into
+              sales. Self-fetches the catalog; renders nothing until it exists. */}
+          <StorefrontOpportunities />
 
           {/* Charts & visuals — collapsible so the table stays the default view */}
           <StorefrontCharts period={period} series={data.series ?? []} products={products} />
