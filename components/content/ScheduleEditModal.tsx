@@ -113,9 +113,13 @@ export default function ScheduleEditModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="card w-full max-w-md p-5 bg-white dark:bg-[#18181b]" onClick={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-3">
+    // Outer overlay scrolls too, as a fallback on very short screens. The card
+    // is height-capped with a scrollable middle so the Save button is always
+    // reachable — it used to grow past the viewport (all 7 platforms open) and
+    // strand Save off-screen with no way to scroll inside the modal.
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 bg-black/50 overflow-y-auto" onClick={onClose}>
+      <div className="card w-full max-w-md bg-white dark:bg-[#18181b] max-h-[90vh] flex flex-col overflow-hidden my-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 pt-5 pb-3 flex-shrink-0">
           <div className="flex items-center gap-2">
             <CalendarClock size={18} className="text-[#7C3AED]" />
             <div>
@@ -126,7 +130,7 @@ export default function ScheduleEditModal({
           <button onClick={onClose} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white p-1" title="Close"><X size={18} /></button>
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 px-5 overflow-y-auto overscroll-contain flex-1 min-h-0">
           <div>
             <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Publish date &amp; time</label>
             <input
@@ -179,13 +183,14 @@ export default function ScheduleEditModal({
             </div>
             <p className="text-[10px] text-[#86868b] mt-1.5">Edit each channel&rsquo;s caption above. Only connected channels on your plan will queue; the rest are skipped.</p>
           </div>
+        </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-[var(--border-2,#e5e5e7)] pt-3">
-            <button onClick={onClose} className="px-3 py-2 rounded-lg text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] hover:bg-[var(--surface-hover,#f5f5f7)]">Cancel</button>
-            <button onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60">
-              {saving ? <Loader2 size={13} className="animate-spin" /> : null} Save changes
-            </button>
-          </div>
+        {/* Footer pinned below the scroll area — always reachable. */}
+        <div className="flex items-center justify-end gap-2 border-t border-[var(--border-2,#e5e5e7)] px-5 py-3 flex-shrink-0">
+          <button onClick={onClose} className="px-3 py-2 rounded-lg text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] hover:bg-[var(--surface-hover,#f5f5f7)]">Cancel</button>
+          <button onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60">
+            {saving ? <Loader2 size={13} className="animate-spin" /> : null} Save changes
+          </button>
         </div>
       </div>
     </div>
