@@ -100,6 +100,29 @@ async function urlIsImage(url: string): Promise<boolean> {
   } catch { return false }
 }
 
+/**
+ * A JPG poster frame for ANY remote video URL, via Cloudinary remote fetch.
+ * Pinterest video pins REQUIRE a cover image; a clip rendered off-Cloudinary
+ * (the ingest engine returns an external .mp4) has no native Cloudinary frame to
+ * derive, which used to make the pin fail. Cloudinary can fetch a remote video
+ * and hand back a frame, so this covers any host. Returns null when Cloudinary
+ * isn't configured or can't produce a valid image.
+ */
+export async function remoteVideoPosterUrl(videoUrl: string): Promise<string | null> {
+  if (!ensureConfig()) return null
+  if (!/^https:\/\//i.test(videoUrl)) return null
+  try {
+    const url = cloudinary.url(videoUrl, {
+      resource_type: 'video',
+      type: 'fetch',
+      format: 'jpg',
+      secure: true,
+      transformation: [{ start_offset: '0', width: 720, crop: 'fill' }],
+    })
+    return (await urlIsImage(url)) ? url : null
+  } catch { return null }
+}
+
 export async function renderStoryImage(
   productImageUrl: string,
   opts: { headline?: string; handle?: string; logoUrl?: string } = {},

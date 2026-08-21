@@ -14,6 +14,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { PinterestService } from '@/services/pinterest'
+import { remoteVideoPosterUrl } from '@/services/cloudinary'
 import { scrubBanned } from '@/lib/scrub'
 import { recordUsage } from '@/lib/ai-usage'
 import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
@@ -42,6 +43,12 @@ export async function POST(request: Request) {
   let coverImageUrl = (body.coverImageUrl || '').trim()
   if (!coverImageUrl && /res\.cloudinary\.com\/.+\/video\/upload\//i.test(videoUrl)) {
     coverImageUrl = videoUrl.replace('/video/upload/', '/video/upload/so_0,w_720,c_fill/').replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg')
+  }
+  // Clips rendered OFF Cloudinary (the Shorts "ingest" engine returns an
+  // external .mp4) have no native frame to derive — grab a poster frame from
+  // any video host via Cloudinary remote fetch so the pin still gets a cover.
+  if (!/^https:\/\//i.test(coverImageUrl)) {
+    coverImageUrl = (await remoteVideoPosterUrl(videoUrl)) || ''
   }
   if (!/^https:\/\//i.test(coverImageUrl)) return NextResponse.json({ error: 'Pinterest video pins need a cover image (pass coverImageUrl, or use a Cloudinary-hosted video so MVP can derive one).' }, { status: 400 })
 
@@ -93,6 +100,8 @@ export async function POST(request: Request) {
     recordUsage({ userId: user.id, tier, feature: 'pinterest_video_pin', model: 'pinterest-api', images: 1 })
     return NextResponse.json({ ok: true, pinId: id })
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'Pinterest video pin failed.' }, { status: 502 })
+    const msg = e instanceof Error ? e.message : 'Pinterest video pin failed.'
+    console.warn('[pinterest/video-pin] failed for', user.id, '—', msg, '| cover:', coverImageUrl.slice(0, 80), '| video:', videoUrl.slice(0, 80))
+    return NextResponse.json({ error: msg }, { status: 502 })
   }
 }
