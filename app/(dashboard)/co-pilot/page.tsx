@@ -566,6 +566,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [productDiscoverySource, setProductDiscoverySource] = useState<'caller' | 'title' | 'search' | 'none' | null>(null)
   const [proSettings, setProSettings] = useState<ProPublishSettings>(defaultProSettings)
   const [geniuslinkError, setGeniuslinkError] = useState<string | null>(null)
+  // False only when the affiliate link is somehow missing from the assembled
+  // description (server double-checks this). Defaults true (nothing to flag).
+  const [geniuslinkVerified, setGeniuslinkVerified] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
   // True when the last generate failed the ASIN-mismatch tripwire → show "Generate anyway".
   const [asinMismatch, setAsinMismatch] = useState(false)
@@ -1017,6 +1020,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       setGeniuslinkUsed((data.geniuslinkUsed ?? false) as boolean)
       setProductDiscoverySource((data.productDiscoverySource ?? null) as typeof productDiscoverySource)
       setGeniuslinkError((data.geniuslinkError ?? null) as string | null)
+      setGeniuslinkVerified((data.geniuslinkVerified ?? true) as boolean)
 
       // ── Thumbnail no longer auto-fires after metadata generation ─────────
       // The thumbnail flow now opens a modal asking the user about the
@@ -2188,6 +2192,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               {/timeout|aborted|transient|temporar|\b5\d\d\b/i.test(geniuslinkError)
                 ? <>This is usually a temporary Geniuslink hiccup — your Amazon tag was used as a fallback, and a <strong>Regenerate</strong> normally goes through with Geniuslink.</>
                 : <>Go to <strong>Brand Profile → Affiliate Link Routing</strong> to add or update your credentials.</>}
+            </div>
+          )}
+
+          {/* Link-in-description check. Should never fire in normal use — the
+              server puts the affiliate link at the top CTA and re-checks it's
+              there. If it does, the creator should NOT publish until it's fixed. */}
+          {affiliateUrl && geniuslinkVerified === false && (
+            <div className="mx-5 mb-3 px-3 py-2 rounded-lg bg-[#ff3b30]/10 border border-[#ff3b30]/20 text-xs text-[#ff3b30]">
+              ⚠️ Your affiliate link didn&rsquo;t land in the description. Hit <strong>Regenerate</strong> before publishing — don&rsquo;t post this one as-is.
             </div>
           )}
 

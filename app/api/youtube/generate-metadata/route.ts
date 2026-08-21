@@ -547,7 +547,7 @@ export async function POST(request: Request) {
     const [brandResult, intResult, videoRowResult] = await Promise.all([
       supabase
         .from('brand_profiles')
-        .select('name,author_name,niches,tone,website_url,contact_email,contact_preference,gear_sections')
+        .select('name,author_name,niches,tone,website_url,contact_email,contact_preference,gear_sections,youtube_description_block')
         .eq('user_id', ownerId)
         .single(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -638,6 +638,13 @@ export async function POST(request: Request) {
     const contactPreference: 'website' | 'email' =
       (brand?.contact_preference as string) === 'email' ? 'email' : 'website'
     const gearSections = ((brand?.gear_sections as GearSection[]) || []).filter(s => s.title && s.items.length > 0)
+    // Creator-managed custom block: appended verbatim to EVERY description
+    // (their socials, discount codes, standard sign-off, etc.). Their exact
+    // spacing/blank lines/emojis are preserved — it goes in as a single string
+    // element so descParts.join('\n') never touches its internal formatting.
+    // Trim only the outer edges so a stray leading/trailing blank line doesn't
+    // add a lone separator gap.
+    const customBlock = ((brand?.youtube_description_block as string) || '').replace(/^\n+/, '').replace(/\s+$/, '')
 
     // ── Resolve what to promote when the caller didn't pass an ASIN ───────────
     // Priority (mirrors the blog pipeline; HARD RULE = never blindly Amazon-
@@ -1089,8 +1096,35 @@ export async function POST(request: Request) {
       descParts.push(`----------`, `Product ASIN: ${trimmedAsin}`, `----------`, `Product Description:`, contentResult.productDescription)
     }
     if (gearBlock) descParts.push(`----------`, gearBlock)
+    // Creator's own custom block — last, as a single element so their exact
+    // line breaks / paragraph spacing / emojis survive the join untouched.
+    if (customBlock) descParts.push(`----------`, customBlock)
+
+    // ── Geniuslink safety net ─────────────────────────────────────────────────
+    // The affiliate link (a geni.us short link when Geniuslink is configured,
+    // else the Associates-tagged Amazon URL) is the whole point of the
+    // description — it MUST be present, at the top CTA. The normal path pushes it
+    // first (line ~1054). This is the belt-and-suspenders: if assembly ever
+    // dropped it (empty part, a future refactor, a mode we didn't foresee),
+    // put the CTA back at the very top so a creator never publishes a
+    // description missing the link.
+    if (affiliateUrl && !descParts.some(p => typeof p === 'string' && p.includes(affiliateUrl))) {
+      const shopLabel = isProduct ? 'AMAZON' : 'the product'
+      descParts.unshift(
+        `Check Today's Price and Availability on ${shopLabel} here: ${affiliateUrl}`,
+        `(affiliate link)`,
+        `----------`,
+      )
+    }
 
     const description = descParts.join('\n')
+    // Confirm the link actually landed in the final text (true when there's no
+    // link to place). Surfaced to the client so Co-Pilot can flag a missing link
+    // instead of the creator discovering it after publishing.
+    const geniuslinkVerified = !affiliateUrl || description.includes(affiliateUrl)
+    if (!geniuslinkVerified) {
+      console.error('[generate-metadata] affiliate link missing from description after assembly — video', youtubeVideoId, 'url', affiliateUrl)
+    }
 
     // ── Persist generated metadata for the voice-anchor loop ─────────────────
     // Best-effort write — telemetry-style, never fails the request.
@@ -1178,6 +1212,7 @@ export async function POST(request: Request) {
       affiliateUrl,
       geniuslinkUsed,
       geniuslinkError,
+      geniuslinkVerified,
       agentInsights: {
         targetBuyer: productAnalysis.targetBuyer,
         topBenefits: productAnalysis.topBenefits,

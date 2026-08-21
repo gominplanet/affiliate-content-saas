@@ -308,7 +308,7 @@ export async function requestMessageBrand(detailsUrl: string, message: string): 
   return { ok: !!resp.ok, error: resp.error, reason: resp.reason }
 }
 
-export interface IdeaScanResult { ok: boolean; count?: number; upserted?: number; error?: string }
+export interface IdeaScanResult { ok: boolean; count?: number; upserted?: number; error?: string; partial?: boolean }
 
 /**
  * Read a single Amazon idea list in a BACKGROUND SCOUT tab and push its products
@@ -356,9 +356,11 @@ export async function requestStorefrontCatalogScan(url: string): Promise<IdeaSca
  */
 export async function requestCreatorHubVideosScan(): Promise<IdeaScanResult> {
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_CREATORHUB_VIDEOS' }, 180000)
+  // Longer wait than the storefront crawl: a creator can have thousands of
+  // videos, so the in-page reader pages for up to ~4 min. Keep this above that.
+  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_CREATORHUB_VIDEOS' }, 300000)
   if (!resp) return { ok: false, error: 'timeout' }
-  return { ok: !!resp.ok, count: resp.count, error: resp.error }
+  return { ok: !!resp.ok, count: resp.count, partial: resp.partial, error: resp.error }
 }
 
 /**

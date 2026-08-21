@@ -202,6 +202,11 @@ interface BrandData {
   // Writing Style / About You / Target Reader / Words to Avoid now
   // live on the LEARN page (single editing surface for voice).
   gear_sections: GearSection[]
+  /** Free-text block the creator writes once and Co-Pilot appends verbatim to
+   *  EVERY YouTube description it generates (their socials, discount codes,
+   *  standard sign-off, emojis — anything). Their exact spacing / blank lines
+   *  are preserved. Distinct from gear_sections (structured name→link rows). */
+  youtube_description_block: string
   /** Facebook Groups the user admins — saved for one-click manual sharing
    *  (Meta's API can't post to Groups, only Pages). */
   facebook_groups: FacebookGroup[]
@@ -297,6 +302,7 @@ const DEFAULT: BrandData = {
   header_bg_color: '',
   footer_bg_color: '',
   gear_sections: [],
+  youtube_description_block: '',
   facebook_groups: [],
   logo_url: '',
   header_banner_url: '',
@@ -583,6 +589,8 @@ export default function BrandPage() {
         // gear_sections + facebook_groups are JSONB; we always write the
         // typed shape but the schema returns Json. Narrow at the read.
         gear_sections: (row.gear_sections ?? []) as unknown as GearSection[],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        youtube_description_block: ((row as any).youtube_description_block as string | null) ?? '',
         facebook_groups: (row.facebook_groups ?? []) as unknown as FacebookGroup[],
         logo_url: row.logo_url ?? '',
         header_banner_url: row.header_banner_url ?? '',
@@ -1552,6 +1560,25 @@ export default function BrandPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Custom YouTube description block — free text the creator manages
+              themselves; Co-Pilot appends it verbatim to every description. */}
+          <div className="card p-6">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your custom description block</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+              Write anything you want on <strong>every</strong> YouTube description — your socials, a discount code, a standard sign-off, emojis. Co-Pilot adds it to the bottom of each description exactly as you type it. Your spacing and line breaks are kept.
+            </p>
+            <textarea
+              value={data.youtube_description_block}
+              onChange={(e) => set('youtube_description_block', e.target.value)}
+              placeholder={'📸 Follow me:\nInstagram: https://instagram.com/yourname\nTikTok: https://tiktok.com/@yourname\n\n💸 Save 10% with code SAVE10'}
+              rows={8}
+              className="input-field text-sm font-mono resize-y whitespace-pre-wrap"
+            />
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">
+              Leave empty to skip it. Links here are added as-is (they aren&rsquo;t turned into affiliate links).
+            </p>
           </div>
         </div>
 
