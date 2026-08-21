@@ -1465,10 +1465,17 @@ export default function BrandPage() {
             </div>
           </div>
 
-          {/* YouTube gear sections */}
+          {/* YouTube — everything MVP adds to the bottom of every description
+              it writes: structured link sections + a free-text custom block. */}
           <div className="card p-6">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">YouTube</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-6">
+              Everything Co-Pilot adds to the bottom of every YouTube description it writes for you.
+            </p>
+
+            {/* Sub-section: structured link sections (gear, setup, recurring links) */}
             <div className="flex items-center justify-between mb-1">
-              <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">YouTube Description Sections</h2>
+              <h3 className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Description sections</h3>
               <button
                 type="button"
                 onClick={() => set('gear_sections', [...data.gear_sections, { title: '', items: [{ name: '', url: '' }] }])}
@@ -1478,7 +1485,7 @@ export default function BrandPage() {
               </button>
             </div>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              These sections appear at the bottom of every YouTube description — great for your gear, editing setup, or any recurring affiliate links.
+              Titled blocks of name → link rows — great for your gear, editing setup, or any recurring affiliate links.
             </p>
             {data.gear_sections.length === 0 && (
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93] italic">No sections yet. Click "Add section" to create one.</p>
@@ -1560,14 +1567,14 @@ export default function BrandPage() {
                 </div>
               ))}
             </div>
-          </div>
 
-          {/* Custom YouTube description block — free text the creator manages
-              themselves; Co-Pilot appends it verbatim to every description. */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your custom description block</h2>
+            {/* Divider between the two sub-sections. */}
+            <div className="border-t border-gray-200 dark:border-white/10 my-6" />
+
+            {/* Sub-section: free-text custom block — Co-Pilot appends it verbatim. */}
+            <h3 className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Custom block</h3>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-              Write anything you want on <strong>every</strong> YouTube description — your socials, a discount code, a standard sign-off, emojis. Co-Pilot adds it to the bottom of each description exactly as you type it. Your spacing and line breaks are kept.
+              Write anything you want on <strong>every</strong> description — your socials, a discount code, a standard sign-off, emojis. Co-Pilot adds it exactly as you type it. Your spacing and line breaks are kept.
             </p>
             <textarea
               value={data.youtube_description_block}
