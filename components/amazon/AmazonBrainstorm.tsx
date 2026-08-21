@@ -52,6 +52,8 @@ interface Analytics {
   latest: { start: string; end: string | null } | null
   previous: { start: string } | null
   totals: Totals | null; totalsPrev: Totals | null; products: Product[]
+  trendBasis?: 'period' | 'snapshot' | null
+  trendSince?: string | null
   totalsSource?: 'summary' | 'products'
   productCount?: number
   series?: SeriesPoint[]
@@ -79,6 +81,17 @@ function fmtPeriod(period: Period, start?: string | null, end?: string | null): 
   const s = `${MONTHS[(ms || 1) - 1]} ${ds}`
   if (end) { const [, me, de] = end.split('-').map(Number); return `${s} – ${MONTHS[(me || 1) - 1]} ${de}` }
   return s
+}
+function fmtDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!y || !m || !d) return iso
+  return `${MONTHS[(m || 1) - 1]} ${d}`
+}
+function median(nums: number[]): number | null {
+  const a = nums.filter(n => Number.isFinite(n)).sort((x, y) => x - y)
+  if (!a.length) return null
+  const mid = Math.floor(a.length / 2)
+  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2
 }
 function pctChange(cur: number, prev: number | null | undefined): number | null {
   if (prev == null || prev === 0) return null
@@ -416,13 +429,27 @@ export default function AmazonBrainstorm() {
   const sorted = [...products].sort((a, b) => (b[sortKey] as number) - (a[sortKey] as number))
   const periodLabel = fmtPeriod(period, data?.latest?.start, data?.latest?.end)
 
-  const KPIS: { key: SortKey | 'products'; label: string; icon: React.ReactNode; value: string; pct: number | null }[] = t ? [
+  // Movers: biggest per-product earnings changes vs the prior period. Needs 2+
+  // periods of the SAME type synced, so it stays empty for a YTD-only creator
+  // (period-over-period per product isn't defined then) and lights up once
+  // weekly/monthly history exists.
+  const moved = products.filter(p => p.earningsDelta != null && p.earningsDelta !== 0)
+  const risers = moved.filter(p => (p.earningsDelta as number) > 0).sort((a, b) => (b.earningsDelta as number) - (a.earningsDelta as number)).slice(0, 3)
+  const fallers = moved.filter(p => (p.earningsDelta as number) < 0).sort((a, b) => (a.earningsDelta as number) - (b.earningsDelta as number)).slice(0, 3)
+
+  // Benchmark: the median product's conversion / EPC (products with clicks), so
+  // the headline rate has context — "9.8% overall, your typical product is 4.2%".
+  const clicked = products.filter(p => p.clicks > 0)
+  const medConv = clicked.length ? median(clicked.map(p => p.conversion)) : null
+  const medEpc = clicked.length ? median(clicked.map(p => p.epc)) : null
+
+  const KPIS: { key: SortKey | 'products'; label: string; icon: React.ReactNode; value: string; pct: number | null; sub?: string | null }[] = t ? [
     { key: 'earnings', label: 'Earnings', icon: <DollarSign size={14} />, value: usd(t.earnings), pct: pctChange(t.earnings, tp?.earnings) },
     { key: 'revenue', label: 'Revenue', icon: <TrendingUp size={14} />, value: usd(t.revenue), pct: pctChange(t.revenue, tp?.revenue) },
     { key: 'units', label: 'Units shipped', icon: <Package size={14} />, value: int(t.units), pct: pctChange(t.units, tp?.units) },
     { key: 'clicks', label: 'Clicks', icon: <MousePointerClick size={14} />, value: int(t.clicks), pct: pctChange(t.clicks, tp?.clicks) },
-    { key: 'conversion', label: 'Conversion', icon: <Percent size={14} />, value: `${t.conversion}%`, pct: pctChange(t.conversion, tp?.conversion) },
-    { key: 'epc', label: 'Earnings / click', icon: <DollarSign size={14} />, value: usd(t.epc), pct: pctChange(t.epc, tp?.epc) },
+    { key: 'conversion', label: 'Conversion', icon: <Percent size={14} />, value: `${t.conversion}%`, pct: pctChange(t.conversion, tp?.conversion), sub: medConv != null ? `typical product ${medConv}%` : null },
+    { key: 'epc', label: 'Earnings / click', icon: <DollarSign size={14} />, value: usd(t.epc), pct: pctChange(t.epc, tp?.epc), sub: medEpc != null ? `typical product ${usd(medEpc)}` : null },
   ] : []
 
   return (
@@ -455,7 +482,11 @@ export default function AmazonBrainstorm() {
         {periodLabel && (
           <span className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
             Showing <span className="font-semibold" style={{ color: 'var(--text)' }}>{periodLabel}</span>
-            {data?.previous ? ' vs the period before' : ''}
+            {data?.trendBasis === 'period'
+              ? ' vs the period before'
+              : data?.trendBasis === 'snapshot' && data?.trendSince
+                ? ` · change since ${fmtDate(data.trendSince)}`
+                : ''}
           </span>
         )}
       </div>
@@ -595,6 +626,7 @@ export default function AmazonBrainstorm() {
                 </div>
                 <p className="text-[20px] font-bold leading-none mb-1.5" style={{ color: 'var(--text)' }}>{k.value}</p>
                 <Delta pct={k.pct} />
+                {k.sub && <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-faint)' }}>{k.sub}</p>}
               </div>
             ))}
           </div>
@@ -609,6 +641,43 @@ export default function AmazonBrainstorm() {
               the creator already made a video for that aren't turning into
               sales. Self-fetches the catalog; renders nothing until it exists. */}
           <StorefrontOpportunities />
+
+          {/* Movers — biggest per-product earnings swings vs the prior period.
+              Only shows once 2+ periods of this type are synced. */}
+          {(risers.length > 0 || fallers.length > 0) && (
+            <div className="grid sm:grid-cols-2 gap-3 mb-6">
+              {[
+                { title: 'Rising', color: GREEN, rows: risers },
+                { title: 'Falling', color: RED, rows: fallers },
+              ].filter(g => g.rows.length > 0).map((g) => (
+                <div key={g.title} className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                  <div className="flex items-center gap-1.5 mb-3">
+                    {g.title === 'Rising' ? <ArrowUpRight size={15} style={{ color: g.color }} /> : <ArrowDownRight size={15} style={{ color: g.color }} />}
+                    <p className="font-bold text-[13px]" style={{ color: 'var(--text)' }}>{g.title} this period</p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {g.rows.map((p) => {
+                      const d = p.earningsDelta as number
+                      return (
+                        <div key={p.asin} className="flex items-center gap-2">
+                          {p.image
+                            ? <img src={p.image} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                            : <div className="w-8 h-8 rounded flex-shrink-0" style={{ background: 'var(--border)' }} />}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] truncate" style={{ color: 'var(--text)' }}>{p.title}</p>
+                            <p className="text-[10.5px]" style={{ color: 'var(--text-faint)' }}>{usd(p.earnings)} now{p.earningsPrev != null ? ` · was ${usd(p.earningsPrev)}` : ''}</p>
+                          </div>
+                          <span className="text-[12px] font-semibold flex-shrink-0" style={{ color: g.color }}>
+                            {d > 0 ? '+' : '−'}{usd(Math.abs(d))}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Charts & visuals — collapsible so the table stays the default view */}
           <StorefrontCharts period={period} series={data.series ?? []} products={products} />
