@@ -762,7 +762,7 @@ export function TikTokDirectModal({
             </label>
             <label className="mt-1.5 flex items-center gap-2.5 cursor-pointer select-none">
               <input type="checkbox" checked={alsoPin} onChange={e => setAlsoPin(e.target.checked)} className="h-4 w-4 accent-[#E60023]" />
-              <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Also pin to Pinterest as a video <span className="text-[#86868b]">(links to your blog)</span></span>
+              <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Also pin to Pinterest as a video <span className="text-[#86868b]">(links to your blog if you have one)</span></span>
             </label>
             {ytEnabled && (
               <label className="mt-1.5 flex items-center gap-2.5 cursor-pointer select-none">
