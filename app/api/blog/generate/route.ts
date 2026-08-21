@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
-import { maybeCreateBlogGeniuslink } from '@/lib/blog-share-url'
+import { maybeCreateBlogShortlink, type BlogSocialLinkMode } from '@/lib/blog-share-url'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
@@ -1825,20 +1825,24 @@ async function handleGenerate(request: Request) {
     savedPost = data
   }
 
-  // ── Geni.us-wrap the blog link for social (opt-in) ────────────────────────
-  // When the creator enabled wrap_blog_geniuslink, create + cache a short
-  // branded link to this post's blog URL; social routes then share the short
-  // link instead of the raw WordPress URL. Best-effort with a plain-URL
-  // fallback, so it never blocks or breaks the publish.
+  // ── Shorten the blog link for social, per the creator's chosen mode ───────
+  // direct = plain WordPress URL (free); geniuslink = branded geni.us (tracked,
+  // costs per click); bitly = free Bitly short link. Social routes then share
+  // whatever we cache here. Best-effort with a plain-URL fallback — never blocks
+  // or breaks the publish. Falls back to the legacy wrap_blog_geniuslink flag
+  // for anyone whose mode column predates migration 274.
   if (savedPost?.id) {
     const wpAny = wp as Record<string, unknown> | null
-    await maybeCreateBlogGeniuslink(supabase, {
+    const mode = ((wpAny?.blog_social_link_mode as string)
+      || (wpAny?.wrap_blog_geniuslink === true ? 'geniuslink' : 'direct')) as BlogSocialLinkMode
+    await maybeCreateBlogShortlink(supabase, {
       postId: savedPost.id as string,
       blogUrl: wpPost.link,
       title: generated.title,
-      enabled: wpAny?.wrap_blog_geniuslink === true,
-      apiKey: (wpAny?.geniuslink_api_key as string) || null,
-      apiSecret: (wpAny?.geniuslink_api_secret as string) || null,
+      mode,
+      geniuslinkKey: (wpAny?.geniuslink_api_key as string) || null,
+      geniuslinkSecret: (wpAny?.geniuslink_api_secret as string) || null,
+      bitlyToken: (wpAny?.bitly_access_token as string) || null,
     })
   }
 
