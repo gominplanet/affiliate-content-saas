@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { videoUrl?: string; coverImageUrl?: string; link?: string; title?: string; description?: string; boardName?: string }
+  let body: { videoUrl?: string; coverImageUrl?: string; link?: string; title?: string; description?: string; boardName?: string; youtubeVideoId?: string }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const videoUrl = (body.videoUrl || '').trim()
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A video URL is required.' }, { status: 400 })
@@ -56,13 +56,29 @@ export async function POST(request: Request) {
   const { data: intRaw } = await supabase.from('integrations').select('*').eq('user_id', user.id).single()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ig = decryptIntegrationRow(intRaw as any)
-  // Destination link: an explicit page (the blog post) wins; otherwise fall back
-  // to the creator's own blog homepage. NEVER an affiliate redirect (Pinterest +
-  // Amazon ToS) — both of these are the creator's own site, which is compliant.
-  // OPTIONAL: a creator without a blog (e.g. a Clip Factory / video-first user)
-  // still gets a valid video pin with no link, rather than being blocked. Only a
-  // MALFORMED link is rejected; an absent one just means a linkless pin.
-  const rawLink = (body.link || '').trim() || (ig?.wordpress_url || '').trim()
+  // Destination link, best → fallback (NEVER an affiliate redirect — Pinterest +
+  // Amazon ToS; every option here is the creator's own page):
+  //   1. a published blog POST for this clip's source video (best for affiliate)
+  //   2. the link the caller passed (the YouTube video the clip came from)
+  //   3. the creator's blog homepage
+  //   4. no link at all (a video-first creator still gets a valid pin)
+  // Only a MALFORMED link is rejected.
+  let preferred = (body.link || '').trim()
+  const ytId = (body.youtubeVideoId || '').trim()
+  if (ytId) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sb = supabase as any
+      const { data: yv } = await sb.from('youtube_videos').select('id').eq('user_id', user.id).eq('youtube_video_id', ytId).maybeSingle()
+      if (yv?.id) {
+        const { data: bp } = await sb.from('blog_posts')
+          .select('wordpress_url').eq('user_id', user.id).eq('video_id', yv.id)
+          .not('wordpress_url', 'is', null).order('created_at', { ascending: false }).limit(1).maybeSingle()
+        if (bp?.wordpress_url) preferred = String(bp.wordpress_url).trim()
+      }
+    } catch { /* no post / lookup failed — use the caller link or homepage */ }
+  }
+  const rawLink = preferred || (ig?.wordpress_url || '').trim()
   if (rawLink && !/^https?:\/\//i.test(rawLink)) {
     return NextResponse.json({ error: 'That link isn’t a valid URL. Leave it blank to pin the video with no link, or use your blog/site URL — never an affiliate redirect.' }, { status: 400 })
   }
