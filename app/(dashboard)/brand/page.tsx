@@ -379,6 +379,9 @@ export default function BrandPage() {
   // click), or 'bitly' (free short link, needs the creator's Bitly token).
   const [blogSocialLinkMode, setBlogSocialLinkMode] = useState<'direct' | 'geniuslink' | 'bitly'>('direct')
   const [bitlyToken, setBitlyToken] = useState('')
+  // Where a Clip Factory Pinterest pin links: auto (blog post → video →
+  // homepage), the blog post, the source YouTube video, or the blog homepage.
+  const [pinterestLinkPref, setPinterestLinkPref] = useState<'auto' | 'blog_post' | 'youtube' | 'homepage'>('auto')
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
   // Google Search Console — read-only SEO connection, lives in this card now.
   const [gscConnected, setGscConnected] = useState(false)
@@ -529,7 +532,7 @@ export default function BrandPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase
       .from('integrations')
-      .select('geniuslink_api_key, geniuslink_api_secret, wrap_blog_geniuslink, blog_social_link_mode, bitly_access_token, amazon_associates_tag, gsc_oauth_access_token, tier')
+      .select('geniuslink_api_key, geniuslink_api_secret, wrap_blog_geniuslink, blog_social_link_mode, bitly_access_token, pinterest_link_pref, amazon_associates_tag, gsc_oauth_access_token, tier')
       .eq('user_id', user.id)
       .maybeSingle()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -544,6 +547,10 @@ export default function BrandPage() {
             ? mode
             : (intRow.wrap_blog_geniuslink === true ? 'geniuslink' : 'direct'))
           setBitlyToken(intRow.bitly_access_token ?? '')
+          {
+            const pref = intRow.pinterest_link_pref
+            setPinterestLinkPref(pref === 'blog_post' || pref === 'youtube' || pref === 'homepage' ? pref : 'auto')
+          }
           setAmazonAssociatesTag(intRow.amazon_associates_tag ?? '')
           setGscConnected(!!intRow.gsc_oauth_access_token)
           if (typeof intRow.tier === 'string') setUserTier(intRow.tier)
@@ -688,6 +695,7 @@ export default function BrandPage() {
             geniuslink_api_secret: geniuslinkSecret.trim() || null,
             blog_social_link_mode: blogSocialLinkMode,
             bitly_access_token: bitlyToken.trim() || null,
+            pinterest_link_pref: pinterestLinkPref,
             // Keep the legacy flag in sync so any older reader still behaves.
             wrap_blog_geniuslink: blogSocialLinkMode === 'geniuslink',
             amazon_associates_tag: amazonAssociatesTag.trim() || null,
@@ -1138,6 +1146,25 @@ export default function BrandPage() {
                   </div>
                 )}
                 <p className="mt-2 text-[11px] text-[#86868b] dark:text-[#8e8e93]">Applies to posts generated after you change it. Your blog&rsquo;s Amazon links always use Geniuslink with your group settings — this only affects the link back to your blog post on Facebook, LinkedIn, X, Threads, Bluesky and Telegram.</p>
+              </div>
+
+              {/* Where a Clip Factory Pinterest video pin links. Separate from the
+                  blog-link mode above — this is the destination on the pin itself. */}
+              <div className="mt-4">
+                <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Pinterest pins link to</span>
+                <select
+                  value={pinterestLinkPref}
+                  onChange={e => setPinterestLinkPref(e.target.value as typeof pinterestLinkPref)}
+                  className="input-field text-xs"
+                >
+                  <option value="auto">Smart (blog post if there is one, else the YouTube video)</option>
+                  <option value="blog_post">The blog post for the video</option>
+                  <option value="youtube">The YouTube video the clip came from</option>
+                  <option value="homepage">My blog homepage</option>
+                </select>
+                <p className="mt-1 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                  When you pin a Clip Factory short to Pinterest, this is where the pin sends people. Falls back to your blog homepage if the chosen target isn&rsquo;t available. Never an affiliate redirect (Pinterest doesn&rsquo;t allow it).
+                </p>
               </div>
 
               {/* Live "does it actually work?" test — the real gate. Turns a

@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { videoUrl?: string; coverImageUrl?: string; link?: string; title?: string; description?: string; boardName?: string; youtubeVideoId?: string }
+  let body: { videoUrl?: string; coverImageUrl?: string; link?: string; title?: string; description?: string; boardName?: string; youtubeVideoId?: string; linkTarget?: string }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const videoUrl = (body.videoUrl || '').trim()
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A video URL is required.' }, { status: 400 })
@@ -56,16 +56,26 @@ export async function POST(request: Request) {
   const { data: intRaw } = await supabase.from('integrations').select('*').eq('user_id', user.id).single()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ig = decryptIntegrationRow(intRaw as any)
-  // Destination link, best → fallback (NEVER an affiliate redirect — Pinterest +
-  // Amazon ToS; every option here is the creator's own page):
-  //   1. a published blog POST for this clip's source video (best for affiliate)
-  //   2. the link the caller passed (the YouTube video the clip came from)
-  //   3. the creator's blog homepage
-  //   4. no link at all (a video-first creator still gets a valid pin)
-  // Only a MALFORMED link is rejected.
-  let preferred = (body.link || '').trim()
+  // Destination link (NEVER an affiliate redirect — Pinterest + Amazon ToS;
+  // every option here is the creator's own page). The TARGET is the creator's
+  // saved preference (integrations.pinterest_link_pref), overridable per-request:
+  //   'auto'      blog post for this clip's video → the video → homepage
+  //   'blog_post' the blog post (else homepage)
+  //   'youtube'   the video the clip came from (else homepage)
+  //   'homepage'  always the blog homepage
+  // Only a MALFORMED link is rejected; an absent one just means a linkless pin.
+  const ALLOWED_TARGETS = new Set(['auto', 'blog_post', 'youtube', 'homepage'])
+  const reqTarget = (body.linkTarget || '').trim()
+  const savedTarget = (ig?.pinterest_link_pref as string) || 'auto'
+  const target = ALLOWED_TARGETS.has(reqTarget) ? reqTarget : (ALLOWED_TARGETS.has(savedTarget) ? savedTarget : 'auto')
+
+  const callerLink = (body.link || '').trim()  // the YouTube watch URL the modal passes
+  const homepage = (ig?.wordpress_url || '').trim()
   const ytId = (body.youtubeVideoId || '').trim()
-  if (ytId) {
+
+  // Resolve a published blog post for the clip's source video (for auto/blog_post).
+  let blogPostLink = ''
+  if ((target === 'auto' || target === 'blog_post') && ytId) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sb = supabase as any
@@ -74,11 +84,17 @@ export async function POST(request: Request) {
         const { data: bp } = await sb.from('blog_posts')
           .select('wordpress_url').eq('user_id', user.id).eq('video_id', yv.id)
           .not('wordpress_url', 'is', null).order('created_at', { ascending: false }).limit(1).maybeSingle()
-        if (bp?.wordpress_url) preferred = String(bp.wordpress_url).trim()
+        if (bp?.wordpress_url) blogPostLink = String(bp.wordpress_url).trim()
       }
-    } catch { /* no post / lookup failed — use the caller link or homepage */ }
+    } catch { /* no post / lookup failed */ }
   }
-  const rawLink = preferred || (ig?.wordpress_url || '').trim()
+
+  const rawLink = (
+    target === 'homepage' ? homepage
+    : target === 'youtube' ? (callerLink || homepage)
+    : target === 'blog_post' ? (blogPostLink || homepage)
+    : /* auto */ (blogPostLink || callerLink || homepage)
+  )
   if (rawLink && !/^https?:\/\//i.test(rawLink)) {
     return NextResponse.json({ error: 'That link isn’t a valid URL. Leave it blank to pin the video with no link, or use your blog/site URL — never an affiliate redirect.' }, { status: 400 })
   }
