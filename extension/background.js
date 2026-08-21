@@ -2142,9 +2142,36 @@ async function harvestCreatorHubVideosInPage() {
     let t = (row && (row.querySelector('a,h2,h3,[class*=title]') || {}).textContent) || ''
     return (t || '').replace(/\s+/g, ' ').trim().slice(0, 200) || null
   }
-  function sig() { return [...document.querySelectorAll('[data-asin]')].slice(0, 6).map((e) => e.getAttribute('data-asin')).join(',') + '|' + document.querySelectorAll('[data-asin]').length + '|' + document.body.innerHTML.length }
+  // A fingerprint of what's on screen NOW — the first few ASINs plus the row
+  // count. Used to tell when a "Next" click actually loaded a different page
+  // (vs. re-rendering the same one). Deliberately does NOT include
+  // innerHTML.length: ads/timers change that constantly and would make every
+  // page look "changed".
+  function sig() {
+    const els = [...document.querySelectorAll('[data-asin]')]
+    return els.slice(0, 8).map((e) => e.getAttribute('data-asin')).join(',') + '|' + els.length
+  }
+  // Bump a "results per page" dropdown to its max so a 5,000-video account
+  // needs far fewer Next clicks (one reload vs. hundreds of page turns).
+  function setMaxPageSize() {
+    for (const sel of document.querySelectorAll('select')) {
+      if (!vis(sel)) continue
+      const opts = [...sel.options]
+      const nums = opts.map((o) => parseInt(String(o.value || o.textContent || '').replace(/[^0-9]/g, ''), 10)).filter((n) => isFinite(n) && n > 0)
+      if (nums.length >= 2 && Math.max(...nums) >= 25 && Math.max(...nums) <= 1000) {
+        const max = Math.max(...nums)
+        const idx = opts.findIndex((o) => parseInt(String(o.value || o.textContent || '').replace(/[^0-9]/g, ''), 10) === max)
+        if (idx >= 0 && sel.selectedIndex !== idx) {
+          sel.selectedIndex = idx; sel.value = opts[idx].value
+          sel.dispatchEvent(new Event('change', { bubbles: true }))
+          return true
+        }
+      }
+    }
+    return false
+  }
   function findNext() {
-    for (const el of document.querySelectorAll('button,a,[role="button"],[aria-label]')) {
+    for (const el of document.querySelectorAll('button,a,[role="button"],li[role="button"],[aria-label]')) {
       if (!vis(el)) continue
       if (el.hasAttribute && el.hasAttribute('disabled')) continue
       if (el.getAttribute && el.getAttribute('aria-disabled') === 'true') continue
@@ -2152,31 +2179,54 @@ async function harvestCreatorHubVideosInPage() {
       if (/disabled/.test(cls)) continue
       const label = (((el.getAttribute && el.getAttribute('aria-label')) || '') + ' ' + (el.textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase()
       if (/prev/.test(label)) continue
-      if ((/\bnext\b/.test(label) && label.length <= 16) || label === '›' || label === '→' || label === '»' || label === '>') return el
+      if (/\b(next|load more|show more|see more)\b/.test(label) && label.length <= 20) return el
+      if (label === '›' || label === '→' || label === '»' || label === '>') return el
     }
     return null
   }
+  async function waitForChange(before, ms) {
+    const start = Date.now()
+    while (Date.now() - start < ms) {
+      await sleep(350)
+      if (sig() !== before) { await sleep(400); return true } // settle after the turnover
+    }
+    return false
+  }
   const map = new Map()
-  // Let the table render, then scroll to load lazy rows.
+  // Let the table render, then scroll to load any lazy rows on this page.
   await sleep(1200)
-  for (let i = 0; i < 8; i++) { try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {} await sleep(600) }
+  for (let i = 0; i < 8; i++) { try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {} await sleep(500) }
   try { window.scrollTo(0, 0) } catch (e) {}
+  // Max out the page size before the first read (fewer round-trips).
+  try { if (setMaxPageSize()) { const s = sig(); await waitForChange(s, 6000) } } catch (e) {}
   collect(map)
-  let last = map.size
-  for (let page = 0; page < 200; page++) {
+
+  // Page through EVERY page. The old code stopped the moment a page added no
+  // NEW asin — fatal for a creator who re-features products across thousands of
+  // videos (the very first repeat page killed the crawl at ~86). Now we advance
+  // as long as the page genuinely turns over (sig changes) and a Next control
+  // exists; a repeated-product page no longer ends it. Bounded by a wall-clock
+  // (so we always return before the message timeout) and a page cap.
+  const startedAt = Date.now()
+  const MAX_MS = 240000 // ~4 min in-page; the message timeout sits above this
+  let partial = false
+  for (let page = 0; page < 600; page++) {
+    if (Date.now() - startedAt > MAX_MS) { partial = true; break }
     const next = findNext(); if (!next) break
     const before = sig()
     rClick(next)
-    // wait for the table to turn over
-    let changed = false
-    for (let w = 0; w < 20; w++) { await sleep(400); if (sig() !== before) { changed = true; break } }
-    if (!changed) break
-    await sleep(500)
+    const changed = await waitForChange(before, 8000)
+    if (!changed) break // Next did nothing → last page
+    // Some video grids lazy-load rows within a page; scroll to pull them in.
+    for (let i = 0; i < 3; i++) { try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {} await sleep(350) }
     collect(map)
-    if (map.size === last) break
-    last = map.size
   }
-  return { ok: true, asins: [...map.entries()].map(([asin, title]) => ({ asin, title })), signedOut: /\/ap\/signin/.test(location.href) }
+  return {
+    ok: true,
+    partial,
+    asins: [...map.entries()].map(([asin, title]) => ({ asin, title })),
+    signedOut: /\/ap\/signin/.test(location.href),
+  }
 }
 
 async function scanCreatorHubVideosBackground() {
@@ -2194,7 +2244,7 @@ async function scanCreatorHubVideosBackground() {
     const asins = (r.asins || []).filter((x) => x && /^[A-Z0-9]{10}$/.test(x.asin))
     if (!asins.length) return { ok: false, error: 'no-videos' }
     const push = await pushVideosToMvp(asins)
-    return { ok: !!(push && push.ok), count: asins.length, error: (push && push.ok) ? undefined : (push && push.error) }
+    return { ok: !!(push && push.ok), count: asins.length, partial: !!r.partial, error: (push && push.ok) ? undefined : (push && push.error) }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'scan-failed' }
   } finally {

@@ -84,7 +84,14 @@ export default function StorefrontCatalog() {
       const r = await requestCreatorHubVideosScan()
       if (r.ok) {
         await load()
-        setMsg({ ok: true, text: r.count ? `Found ${r.count} product${r.count === 1 ? '' : 's'} you have a video for.` : 'Checked Creator Hub — no videos found.' })
+        setMsg({
+          ok: true,
+          text: r.count
+            ? (r.partial
+                ? `Found ${r.count} products so far — Creator Hub had more than we could read in one pass. Run "Sync my videos" again to pick up the rest.`
+                : `Found ${r.count} product${r.count === 1 ? '' : 's'} you have a video for.`)
+            : 'Checked Creator Hub — no videos found.',
+        })
       } else if (r.error === 'not-installed') {
         setMsg({ ok: false, text: 'Install SCOUT first — it reads your Creator Hub. Then Sync videos again.' })
       } else if (r.error === 'no-videos') {
