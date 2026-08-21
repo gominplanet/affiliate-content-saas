@@ -76,10 +76,10 @@ export async function GET() {
 
     const { data: cat } = await sb
       .from('storefront_catalog')
-      .select('asin,title,image_url,list_title')
+      .select('asin,title,image_url,list_title,has_video')
       .eq('user_id', user.id)
       .limit(5000)
-    const catalog = (cat ?? []) as Array<{ asin: string; title: string | null; image_url: string | null; list_title: string | null }>
+    const catalog = (cat ?? []) as Array<{ asin: string; title: string | null; image_url: string | null; list_title: string | null; has_video?: boolean }>
     if (!catalog.length) return NextResponse.json({ ok: true, hasData: false, products: [], total: 0 })
 
     // Overlay the creator's REAL earnings (ytd, all sources summed per ASIN).
@@ -116,12 +116,14 @@ export async function GET() {
         conversion: clicks > 0 ? Math.round((units / clicks) * 1000) / 10 : 0,
         epc: clicks > 0 ? Math.round((earnings / clicks) * 100) / 100 : 0,
         hasEarnings: !!e,
+        hasVideo: !!c.has_video,
         amazonUrl: `https://www.amazon.com/dp/${c.asin}`,
       }
     }).sort((a, b) => b.earnings - a.earnings || (a.title || '').localeCompare(b.title || ''))
 
     const withEarnings = products.filter((p) => p.hasEarnings).length
-    return NextResponse.json({ ok: true, hasData: true, total: products.length, withEarnings, products })
+    const withVideo = products.filter((p) => p.hasVideo).length
+    return NextResponse.json({ ok: true, hasData: true, total: products.length, withEarnings, withVideo, products })
   } catch (e) {
     console.warn('[storefront/catalog] GET error:', e instanceof Error ? e.message : String(e))
     return NextResponse.json({ ok: true, hasData: false, products: [], total: 0 })
