@@ -137,6 +137,53 @@ export async function GET(request: NextRequest) {
       }
     } catch { /* totals table absent (migration 269 not run) — product-sum stands */ }
 
+    // ── Snapshot-based trend (migration 273) ──────────────────────────────────
+    // When there's no prior PERIOD (the norm for YTD — only ever one period_start
+    // this year), fall back to a dated snapshot of the headline totals so the
+    // KPI deltas aren't permanently dead. Compare the newest snapshot vs earlier
+    // one; the delta reads "since <that date>". Only kicks in when period-based
+    // totalsPrev is absent, so weekly/monthly keep true period-over-period.
+    let headlinePrev = totalsPrev
+    let trendBasis: 'period' | 'snapshot' | null = totalsPrev ? 'period' : null
+    let trendSince: string | null = null
+    if (!headlinePrev) {
+      try {
+        const { data: snaps } = await sb
+          .from('storefront_snapshots')
+          .select('taken_on,earnings_cents,revenue_cents,units,clicks')
+          .eq('user_id', user.id)
+          .eq('period_type', wanted)
+          .order('taken_on', { ascending: false })
+          .limit(60)
+        const sr = (snaps ?? []) as Array<{ taken_on: string; earnings_cents: number | null; revenue_cents: number | null; units: number | null; clicks: number | null }>
+        // Newest snapshot ≈ current; use the most recent OLDER one as the prior
+        // point. Skip a same-value older snapshot only if earnings are identical
+        // (nothing changed — showing a 0% "since" is noise).
+        if (sr.length >= 2) {
+          const newest = sr[0]
+          const prior = sr.find(s => s.taken_on < newest.taken_on && money(s.earnings_cents) !== money(newest.earnings_cents))
+            ?? sr.find(s => s.taken_on < newest.taken_on)
+          if (prior) {
+            const pEarn = money(prior.earnings_cents)
+            const pRev = money(prior.revenue_cents)
+            const pUnits = prior.units ?? 0
+            const pClicks = prior.clicks ?? 0
+            headlinePrev = {
+              earnings: Math.round(pEarn * 100) / 100,
+              revenue: Math.round(pRev * 100) / 100,
+              units: pUnits,
+              clicks: pClicks,
+              products: 0,
+              conversion: Math.round(ratio(pUnits, pClicks) * 1000) / 10,
+              epc: Math.round(ratio(pEarn, pClicks) * 100) / 100,
+            }
+            trendBasis = 'snapshot'
+            trendSince = prior.taken_on
+          }
+        }
+      } catch { /* snapshots table absent (migration 273 not run) — no trend */ }
+    }
+
     // Prior-period per-ASIN earnings, for per-product trend.
     const prevByAsin = new Map<string, number>()
     for (const r of prevRows) prevByAsin.set(r.asin, money(r.commission_cents))
@@ -300,7 +347,9 @@ export async function GET(request: NextRequest) {
       latest: { start: latestStart, end },
       previous: prevStart ? { start: prevStart } : null,
       totals,
-      totalsPrev,
+      totalsPrev: headlinePrev,
+      trendBasis,
+      trendSince,
       totalsSource,
       productCount: products.length,
       series,

@@ -144,6 +144,33 @@ export async function POST(request: Request) {
           .upsert(trows, { onConflict: 'user_id,period_type,period_start,source' })
         if (tErr) console.warn('[storefront/ingest] totals upsert failed:', tErr.message)
         else totalsSaved = trows.length
+
+        // Daily snapshot of the headline totals per period type (summed across
+        // sources) so the analytics page can show a real trend even for YTD,
+        // which has no prior period. One row per (user, period_type, day); a
+        // same-day re-sync overwrites it. Best-effort — never blocks the sync.
+        try {
+          const byType = new Map<string, { earnings_cents: number; revenue_cents: number; units: number; clicks: number }>()
+          for (const r of trows) {
+            const cur = byType.get(r.period_type) || { earnings_cents: 0, revenue_cents: 0, units: 0, clicks: 0 }
+            cur.earnings_cents += r.earnings_cents ?? 0
+            cur.revenue_cents += r.revenue_cents ?? 0
+            cur.units += r.units ?? 0
+            cur.clicks += r.clicks ?? 0
+            byType.set(r.period_type, cur)
+          }
+          const takenOn = new Date().toISOString().slice(0, 10)
+          const snaps = [...byType.entries()].map(([period_type, v]) => ({
+            user_id: user.id, period_type, taken_on: takenOn,
+            earnings_cents: v.earnings_cents, revenue_cents: v.revenue_cents,
+            units: v.units, clicks: v.clicks,
+          }))
+          if (snaps.length) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (admin0 as any).from('storefront_snapshots')
+              .upsert(snaps, { onConflict: 'user_id,period_type,taken_on' })
+          }
+        } catch { /* snapshots table absent (migration 273 not run) — skip */ }
       }
     }
 
