@@ -9,7 +9,7 @@
 // data into specific posts to make. Weekly/monthly toggle; both are SCOUT-synced.
 'use client'
 
-import { useCallback, useEffect, useState, Fragment } from 'react'
+import { useCallback, useEffect, useRef, useState, Fragment } from 'react'
 import Link from 'next/link'
 import { requestEarningsScan } from '@/lib/extension-frame'
 import {
@@ -286,7 +286,14 @@ export default function AmazonBrainstorm() {
   useEffect(() => {
     try { const s = localStorage.getItem(PERIOD_KEY) as Period | null; if (s === 'weekly' || s === 'monthly' || s === 'ytd') setPeriodState(s) } catch { /* private mode */ }
   }, [])
+  // True once the creator has clicked a period tab themselves. While false, an
+  // empty period may auto-fall to the richest one that has data (a good default
+  // on first load). After an explicit click we NEVER auto-jump — clicking
+  // "Weekly" and being bounced back to Year-to-date is maddening; we show a
+  // "nothing synced for this period yet" state instead.
+  const userPickedRef = useRef(false)
   const setPeriod = useCallback((p: Period) => {
+    userPickedRef.current = true
     setPeriodState(p)
     try { localStorage.setItem(PERIOD_KEY, p) } catch { /* ignore */ }
   }, [])
@@ -339,12 +346,14 @@ export default function AmazonBrainstorm() {
       if (!res.ok) { setError(json?.error || 'Could not load your storefront data.'); setData(null); return }
       const a = json as Analytics
       setData(a)
-      // If the chosen view has no data but another does, fall to the richest one
-      // that does (ytd > monthly > weekly) so we never show an empty tab when
-      // real data is one click away.
-      if (!a.hasData && a.available) {
+      // FIRST LOAD ONLY: if the chosen view has no data but another does, fall
+      // to the richest one that does (ytd > monthly > weekly) so we never open
+      // on an empty tab when real data is one click away. Never do this after
+      // the creator has clicked a tab themselves — an explicit "Weekly" click
+      // stays on Weekly (and shows the per-period empty state below).
+      if (!a.hasData && a.available && !userPickedRef.current) {
         const best = (['ytd', 'monthly', 'weekly'] as Period[]).find(pp => pp !== p && (a.available?.[pp] ?? 0) > 0)
-        if (best) setPeriod(best)
+        if (best) { setPeriodState(best); try { localStorage.setItem(PERIOD_KEY, best) } catch { /* ignore */ } }
       }
     } catch {
       setError('Network error — try again.')
@@ -526,8 +535,41 @@ export default function AmazonBrainstorm() {
         </div>
       )}
 
-      {/* Empty state — no earnings synced yet */}
-      {!loading && !error && data && !data.hasData && (
+      {/* Empty state A — this PERIOD has nothing, but another one does. Happens
+          when the creator synced their year (ytd) then clicks Weekly/Monthly.
+          Explain it and offer to (a) jump to a period that has data, or (b) sync
+          this one — instead of silently bouncing them back. */}
+      {!loading && !error && data && !data.hasData && (() => {
+        const withData = (['ytd', 'monthly', 'weekly'] as Period[]).filter(pp => (data.available?.[pp] ?? 0) > 0)
+        if (!withData.length) return null
+        const rangeHint = period === 'weekly' ? 'This Week' : period === 'monthly' ? 'This Month' : 'This Year'
+        const label = (pp: Period) => pp === 'ytd' ? 'Year to date' : pp === 'monthly' ? 'Monthly' : 'Weekly'
+        return (
+          <div className="rounded-2xl border p-8 text-center" style={{ borderColor: 'rgba(234,88,12,0.3)', background: 'linear-gradient(180deg, rgba(234,88,12,0.05), transparent)' }}>
+            <span className="w-11 h-11 rounded-2xl grid place-items-center text-white mx-auto mb-3" style={{ backgroundColor: ACCENT }}><PackageSearch size={20} /></span>
+            <p className="font-bold text-[16px] mb-1" style={{ color: 'var(--text)' }}>Nothing synced for {label(period)} yet</p>
+            <p className="text-[13px] max-w-md mx-auto mb-4" style={{ color: 'var(--text-soft)' }}>
+              You&rsquo;ve got {withData.map(label).join(' and ')} data. To fill in {label(period)}, open your Amazon report with the range set to <span className="font-semibold" style={{ color: 'var(--text)' }}>{rangeHint}</span>, leave the tab open, then Sync.
+            </p>
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              {withData.map(pp => (
+                <button key={pp} onClick={() => setPeriod(pp)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white" style={{ backgroundColor: ACCENT }}>
+                  Show {label(pp)} <ArrowRight size={14} />
+                </button>
+              ))}
+              <button onClick={() => void syncFromAmazon()} disabled={syncing}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold border disabled:opacity-60" style={{ borderColor: ACCENT, color: ACCENT }}>
+                {syncing ? <><Loader2 size={13} className="animate-spin" /> Syncing…</> : <>Sync {label(period)}</>}
+              </button>
+            </div>
+            {syncMsg && <p className="text-[12px] mt-3" style={{ color: syncMsg.ok ? '#16a34a' : '#c0392b' }}>{syncMsg.text}</p>}
+          </div>
+        )
+      })()}
+
+      {/* Empty state B — nothing synced anywhere yet */}
+      {!loading && !error && data && !data.hasData && !(['ytd', 'monthly', 'weekly'] as Period[]).some(pp => (data.available?.[pp] ?? 0) > 0) && (
         <div className="rounded-2xl border p-8 text-center" style={{ borderColor: 'rgba(234,88,12,0.3)', background: 'linear-gradient(180deg, rgba(234,88,12,0.05), transparent)' }}>
           <span className="w-11 h-11 rounded-2xl grid place-items-center text-white mx-auto mb-3" style={{ backgroundColor: ACCENT }}><PackageSearch size={20} /></span>
           <p className="font-bold text-[16px] mb-1" style={{ color: 'var(--text)' }}>No storefront earnings synced yet</p>
