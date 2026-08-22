@@ -141,9 +141,9 @@ export async function GET() {
         countFeatures(['amazon_fb']),
       ])
       push('thumbnails', 'Thumbnails', preview(thumb, 128), refPlan.thumbnailsPerMonth)
-      push('pins', 'Pins', preview(pin, 271), refPlan.pinsPerMonth)
-      push('instagram', 'Instagram', preview(igCount, 84), refPlan.igPostsPerMonth)
-      push('facebook', 'Facebook', preview(fb, 12), refPlan.facebookPostsPerMonth)
+      push('pins', 'Pins', preview(pin, 110), refPlan.pinsPerMonth)
+      push('instagram', 'Instagram', preview(igCount, 74), refPlan.igPostsPerMonth)
+      push('facebook', 'Facebook', preview(fb, 28), refPlan.facebookPostsPerMonth)
     } else {
       // Generations = NEW content pieces only (blog_posts rows in the window),
       // matching the gate (RPC 131). Thumbnails + metadata are intentionally NOT
@@ -193,10 +193,10 @@ export async function GET() {
     // dealsPerMonth cap — for everyone else a deal is a content piece counted in
     // Generations above, so a separate "Deals" cap would misrepresent the gate.
     if (TIERS[tier]?.postsPerMonth === 0 || isAdminPreview) {
-      push('deals', 'Deals', preview(deals, 63), refPlan.dealsPerMonth)
+      push('deals', 'Deals', preview(deals, 45), refPlan.dealsPerMonth)
     }
-    push('collabs', 'Collabs', preview(collabs, 41), refPlan.collabsPerMonth)
-    push('assistant', 'Ask Me', preview(asst, 372), refPlan.assistantMessagesPerMonth)
+    push('collabs', 'Collabs', preview(collabs, 30), refPlan.collabsPerMonth)
+    push('assistant', 'Ask Me', preview(asst, 288), refPlan.assistantMessagesPerMonth)
     push('photobooth', 'Photobooth', preview(photo, 4), refPlan.photoboothPerMonth)
     // Metadata has its own enforced cap (was previously hidden inside the
     // Generations sum, which both over-reported generations AND hid this cap).
