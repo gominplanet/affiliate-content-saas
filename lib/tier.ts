@@ -220,38 +220,40 @@ export const TIERS = {
     /** Measured cost (2026-08-13, real OpenAI bill): the hero thumbnail runs on
      *  gpt-image-2 (~$0.14 real, logged $0.19); the bulk social formats
      *  (pin/IG/FB) render on gpt-image-1 medium (~$0.06) — see the Path B model
-     *  swap in generate-thumbnail. Fully maxed — 200 thumbs + 495 social — is
-     *  ~$72 of real AI. The average user spends ~$12. Set to 60 (2026-08-13):
-     *  even a user who maxes the tier still leaves ~$19 of gross margin on the
-     *  $79 plan, while $60 covers ~83% of the advertised caps before the breaker
-     *  trips, so ordinary use never comes near it. It stays a runaway
+     *  swap in generate-thumbnail. CAP-FIT POLICY (2026-08-22): the per-format
+     *  caps below are sized so a user who maxes EVERY one of them still lands at
+     *  ~$43 of logged AI — 72% of this ceiling — so the ceiling can never cut a
+     *  user off before they reach an advertised number. It stays a runaway
      *  circuit-breaker, not the real cap (the per-format caps are). */
     monthlyAiSpendCeilingUsd: 60 as number | null,
     /** No blog. Thumbnails have their own cap below; this stays 0. */
     postsPerMonth: 0,
     lifetimeMax: null as number | null,
     /** Creator Connections collabs — storefront creators land brand deals. */
-    collabsPerMonth: 50 as number | null,
+    collabsPerMonth: 40 as number | null,
     /** The headline feature: 200 Art Director thumbnails / mo (medium quality). */
     thumbnailsPerMonth: 200 as number | null,
     /** Social Influencer design caps. Each is its own format-correct render
      *  (a pin is not a cropped FB post), but a batch that pushes one product to
      *  several networks shares the art-director brief, so secondary formats cost
-     *  ~$0.06 not $0.08. Publishing + captions on top are free. */
-    pinsPerMonth: 300 as number | null,
-    igPostsPerMonth: 150 as number | null,
-    facebookPostsPerMonth: 45 as number | null,
+     *  ~$0.06 not $0.08. Publishing + captions on top are free. Trimmed
+     *  2026-08-22 (pins 300→150, IG 150→100, FB 45→40) so the full set of caps
+     *  fits under the $60 ceiling — see cap-fit note above. */
+    pinsPerMonth: 150 as number | null,
+    igPostsPerMonth: 100 as number | null,
+    facebookPostsPerMonth: 40 as number | null,
     /** No YouTube metadata pipeline. */
     metadataGensPerMonth: 0 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
-    /** Deal / product social posts (their core publishing action). */
-    dealsPerMonth: 100 as number | null,
+    /** Deal / product social posts (their core publishing action). Trimmed
+     *  100→60 (2026-08-22) for cap-fit. */
+    dealsPerMonth: 60 as number | null,
     /** Max 6 professional Photobooth shots. */
     photoboothPerMonth: 6 as number | null,
     /** One face model, up to 20 selfies (the source_images cap is 20). */
     maxFaces: 1 as number | null,
     blogImagesPerPost: 0,
-    assistantMessagesPerMonth: 500 as number | null,
+    assistantMessagesPerMonth: 400 as number | null,
     newsletterSubscribers: 0 as number | null,
     newsletterBroadcastsPerMonth: 0 as number | null,
     newsletterScheduling: false,
@@ -298,32 +300,34 @@ export const TIERS = {
     postsPerMonth: 45,
     lifetimeMax: null as number | null,
     collabsPerMonth: 15 as number | null,
-    // Bumped 45 → 250 (2026-08) so the ladder stays monotonic ABOVE the Amazon
-    // section's 200 medium thumbnails (Studio + Pro both surface the same Art
-    // Director, so a Studio user must never get fewer renders than a cheaper
-    // Amazon plan). Medium is ~$0.08, so 250 ≈ $20 — cheap headroom under the
-    // $90 ceiling. (Was 150, which sat below Amazon's 200 despite the intent.)
-    thumbnailsPerMonth: 250 as number | null,
+    // Cut 250 → 90 (2026-08-22, cap-fit). These are YouTube CTR heroes
+    // (yt_thumb_graphic on gpt-image-2) which LOG at $0.19 each regardless of
+    // the medium render quality, so 250 was $47/mo of ledger cost — over half the
+    // ceiling on its own, and never deliverable alongside the rest of the plan.
+    // 90 heroes ≈ $17 and leaves room for the full plan under $90. (The Amazon
+    // Art Director's own designed graphics on Studio go through the pin/IG/FB
+    // caps below, not this counter, so this is purely the YT/blog hero budget.)
+    thumbnailsPerMonth: 90 as number | null,
     // Metadata (Co-Pilot re-titling/description) is its OWN cap, sized well above
     // posts/thumbnails: it's ~$0.05 a gen (35× cheaper than a post), and creators
     // clearing an old back-catalog want to run a lot of them early on.
     metadataGensPerMonth: 100 as number | null,
-    /** IG AI thumbnails open to Studio at 30/mo (was Pro-only). */
-    instagramAiThumbnailsPerMonth: 30 as number | null,
+    /** IG AI thumbnails open to Studio (30→25, 2026-08-22 cap-fit). */
+    instagramAiThumbnailsPerMonth: 25 as number | null,
     /** Deals draw from Studio's shared content pool (postsPerMonth: 45), not a
      *  separate cap — a deal is one content piece. null so we don't advertise a
      *  standalone deal limit that isn't enforced. */
     dealsPerMonth: null as number | null,
-    // Amazon-style designed social graphics, now finite + metered so the usage
-    // bar shows them (was null = uncapped, no bar). Render on gpt-image-1 medium
-    // (~$0.06 each), so the caps stay well within the tier's spend ceiling.
-    pinsPerMonth: 200 as number | null,
-    igPostsPerMonth: 120 as number | null,
-    facebookPostsPerMonth: 100 as number | null,
-    photoboothPerMonth: 15 as number | null,
+    // Amazon-style designed social graphics, finite + metered (usage bars).
+    // Render on gpt-image-1 medium (~$0.06 each). Trimmed 2026-08-22 (pins
+    // 200→90, IG 120→70, FB 100→45) so the whole plan maxed still fits $90.
+    pinsPerMonth: 90 as number | null,
+    igPostsPerMonth: 70 as number | null,
+    facebookPostsPerMonth: 45 as number | null,
+    photoboothPerMonth: 12 as number | null,
     maxFaces: 2 as number | null,
     blogImagesPerPost: 3,
-    assistantMessagesPerMonth: 1000 as number | null,
+    assistantMessagesPerMonth: 400 as number | null,
     /** Weekly newsletter cadence: 5k subs, 4 sends/mo. */
     newsletterSubscribers: 5000 as number | null,
     newsletterBroadcastsPerMonth: 4 as number | null,
@@ -332,7 +336,7 @@ export const TIERS = {
     newsletterABTesting: false,
     newsletterSegmentedSends: false,
     scriptsPerMonth: 30 as number | null,
-    articlesPerMonth: 10 as number | null,
+    articlesPerMonth: 8 as number | null,
     /** Studio gates. */
     comparisonPosts: false,
     buyingGuides: false,
@@ -376,27 +380,30 @@ export const TIERS = {
     postsPerMonth: 100,
     lifetimeMax: null as number | null,
     collabsPerMonth: 100 as number | null,
-    // Bumped 100 → 300 (2026-08) to stay above the Amazon section's 200 medium
-    // thumbnails, and Pro renders them at HIGH quality (~$0.19 each).
-    thumbnailsPerMonth: 300 as number | null,
+    // Cut 300 → 120 (2026-08-22, cap-fit). Pro renders heroes at HIGH quality,
+    // logged $0.19 each, so 300 was $57/mo of ledger cost — a third of the ceiling
+    // on thumbnails alone. 120 ≈ $23 and leaves room for the full 100-post plan
+    // under $185. (Amazon-style designed graphics use the pin/IG/FB caps below.)
+    thumbnailsPerMonth: 120 as number | null,
     // Metadata is its OWN cap, sized well above posts/thumbnails (see Studio note):
-    // ~$0.05/gen, and back-catalog cleanup is a first-few-months behaviour. At
-    // full use that's ~$12/mo of AI against a $200 spend ceiling — comfortably safe.
-    metadataGensPerMonth: 250 as number | null,
-    instagramAiThumbnailsPerMonth: 100 as number | null,
+    // ~$0.013/gen, back-catalog cleanup is a first-few-months behaviour. 250→200
+    // (2026-08-22) — still ~$2.60/mo, trivial against the ceiling.
+    metadataGensPerMonth: 200 as number | null,
+    instagramAiThumbnailsPerMonth: 40 as number | null,
     /** Deals draw from Pro's shared content pool (postsPerMonth: 100), not a
      *  separate cap — a deal is one content piece. null so we don't advertise a
      *  standalone deal limit that isn't enforced. */
     dealsPerMonth: null as number | null,
-    // Amazon-style designed social graphics, finite + metered (was null = no
-    // bar). Render on gpt-image-1 medium (~$0.06 each).
-    pinsPerMonth: 400 as number | null,
-    igPostsPerMonth: 250 as number | null,
-    facebookPostsPerMonth: 200 as number | null,
+    // Amazon-style designed social graphics, finite + metered. Render on
+    // gpt-image-1 medium (~$0.06 each). Trimmed 2026-08-22 (pins 400→150, IG
+    // 250→110, FB 200→80) so the whole plan maxed still fits $185.
+    pinsPerMonth: 150 as number | null,
+    igPostsPerMonth: 110 as number | null,
+    facebookPostsPerMonth: 80 as number | null,
     photoboothPerMonth: 20 as number | null,
     maxFaces: 3 as number | null,
     blogImagesPerPost: 4,
-    assistantMessagesPerMonth: 2500 as number | null,
+    assistantMessagesPerMonth: 800 as number | null,
     /** Weekly cadence: 10k subs, 4 sends/mo. Lowered 8 → 4 (2026-06-14): at
      *  10k subs, 8 sends = 80k Resend emails/mo (~$30) — a real cash cost that
      *  sits OUTSIDE the AI-spend ceiling. 4 sends (weekly) is still generous
@@ -408,7 +415,7 @@ export const TIERS = {
     newsletterScheduling: true,
     newsletterABTesting: true,
     newsletterSegmentedSends: true,
-    scriptsPerMonth: 150 as number | null,
+    scriptsPerMonth: 120 as number | null,
     articlesPerMonth: 15 as number | null,
     /** Pro content-type gates. */
     comparisonPosts: true,
