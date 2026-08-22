@@ -314,9 +314,12 @@ export const TIERS = {
      *  separate cap — a deal is one content piece. null so we don't advertise a
      *  standalone deal limit that isn't enforced. */
     dealsPerMonth: null as number | null,
-    pinsPerMonth: null as number | null,
-    igPostsPerMonth: null as number | null,
-    facebookPostsPerMonth: null as number | null,
+    // Amazon-style designed social graphics, now finite + metered so the usage
+    // bar shows them (was null = uncapped, no bar). Render on gpt-image-1 medium
+    // (~$0.06 each), so the caps stay well within the tier's spend ceiling.
+    pinsPerMonth: 200 as number | null,
+    igPostsPerMonth: 120 as number | null,
+    facebookPostsPerMonth: 100 as number | null,
     photoboothPerMonth: 15 as number | null,
     maxFaces: 2 as number | null,
     blogImagesPerPost: 3,
@@ -385,9 +388,11 @@ export const TIERS = {
      *  separate cap — a deal is one content piece. null so we don't advertise a
      *  standalone deal limit that isn't enforced. */
     dealsPerMonth: null as number | null,
-    pinsPerMonth: null as number | null,
-    igPostsPerMonth: null as number | null,
-    facebookPostsPerMonth: null as number | null,
+    // Amazon-style designed social graphics, finite + metered (was null = no
+    // bar). Render on gpt-image-1 medium (~$0.06 each).
+    pinsPerMonth: 400 as number | null,
+    igPostsPerMonth: 250 as number | null,
+    facebookPostsPerMonth: 200 as number | null,
     photoboothPerMonth: 20 as number | null,
     maxFaces: 3 as number | null,
     blogImagesPerPost: 4,

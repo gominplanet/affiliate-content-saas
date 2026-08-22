@@ -1107,18 +1107,17 @@ export async function POST(request: Request) {
     // against its own monthly cap (below) rather than lumped as "thumbnail".
     const gfxFeature = isPin ? 'amazon_pin' : (isIg || isStory) ? 'amazon_ig' : isFb ? 'amazon_fb' : 'yt_thumb_graphic'
 
-    // ── Amazon-tier bulk-social model swap (2026-08-13, "Path B") ───────────
-    // gpt-image-2 really costs ~$0.14/render (measured against the OpenAI bill),
-    // which makes the Amazon tier's high-volume pin/IG/FB caps unaffordable at
-    // $79. Those social formats render on gpt-image-1 medium instead (~$0.06,
-    // and no visible drop at social sizes). The hero YouTube thumbnail
-    // (yt_thumb_graphic, the CTR money-shot) stays on gpt-image-2. Amazon tier
-    // ONLY for now — Studio/Pro keep the env default; we revisit every tier
-    // later. Passed as the per-call `model`; undefined => the service's env
-    // default (gpt-image-2) is used, so non-Amazon behaviour is unchanged.
+    // ── Bulk-social model swap (2026-08-13 "Path B", extended to all tiers) ──
+    // gpt-image-2 really costs ~$0.19/render, which made the high-volume
+    // pin/IG/FB caps unaffordable (300 pins × $0.19 > a whole tier's ceiling).
+    // Those SOCIAL formats render on gpt-image-1 medium instead (~$0.06, no
+    // visible drop at social sizes) on EVERY tier — Studio/Pro now use the same
+    // Amazon-style pin/IG/FB actions, so they get the same cheap render. The
+    // hero YouTube thumbnail (yt_thumb_graphic, the CTR money-shot) still stays
+    // on gpt-image-2. undefined => the service's env default (gpt-image-2).
     const isSocialFormat = isPin || isIg || isFb || isStory
     const gfxModelOverride: string | undefined =
-      tier === 'amazon' && isSocialFormat ? 'gpt-image-1' : undefined
+      isSocialFormat ? 'gpt-image-1' : undefined
     // What we LOG for the render: the priced medium variant when overridden
     // (gpt-image-1-medium = $0.06 in PRICING), else the bare env model.
     const gfxRecordOverride: string | undefined =
