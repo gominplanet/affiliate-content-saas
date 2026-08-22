@@ -163,6 +163,15 @@ export async function GET() {
         push('shorts', 'Shorts', shorts, SHORTS_MONTHLY_CAP)
         push('x', 'X posts', x, X_MONTHLY_CAP)
       }
+      // Amazon-style designed social graphics — now finite + metered on Studio
+      // and Pro too, so show their bars (Amazon renders these in the branch
+      // above). push() skips any tier where the cap is 0/null.
+      const [pin, igCount, fb] = await Promise.all([
+        countFeatures(['amazon_pin']), countFeatures(['amazon_ig']), countFeatures(['amazon_fb']),
+      ])
+      push('pins', 'Pins', pin, plan.pinsPerMonth)
+      push('instagram', 'Instagram', igCount, plan.igPostsPerMonth)
+      push('facebook', 'Facebook', fb, plan.facebookPostsPerMonth)
     }
 
     // ── Shared extra caps (shown on any tier where the cap is finite) ──
