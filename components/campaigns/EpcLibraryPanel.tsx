@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Radar, Loader2, Search, ExternalLink, Star, Trash2, RefreshCw, Send, FileText, ArrowRight, Check } from 'lucide-react'
+import { Radar, Loader2, Search, ExternalLink, Star, Trash2, RefreshCw, Send, FileText, ArrowRight, Check, Image as ImageIcon } from 'lucide-react'
 import { scoutCreatorConnections, type ScoutError } from '@/lib/extension-frame'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
@@ -68,6 +68,8 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   const [q, setQ] = useState('')
   const [sort, setSort] = useState('recent')
   const [debug, setDebug] = useState<string | null>(null)
+  const [filling, setFilling] = useState(false)
+  const [fillMsg, setFillMsg] = useState<string | null>(null)
 
   const load = useCallback(async (query: string, sortKey: string) => {
     setLoading(true)
@@ -139,6 +141,41 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
     }
   }
 
+  // Backfill images (+ sales rank / monthly sold) for the library on demand,
+  // instead of waiting on the paced background cron. Self-driving: the endpoint
+  // does a bounded batch and reports how many rows still need filling, so we loop
+  // until done, refreshing the grid as we go so images pop in live.
+  async function fillImages() {
+    if (filling) return
+    setFilling(true); setFillMsg('Starting…')
+    let totalFilled = 0
+    try {
+      for (let guard = 0; guard < 400; guard++) {
+        const res = await fetch('/api/epc/enrich', { method: 'POST' })
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok) { toast.error(d.error || 'Could not fill images.'); break }
+        totalFilled += Number(d.filled ?? 0)
+        if (d.stopped === 'low_tokens') {
+          setFillMsg(null)
+          toast.warning(`Filled ${totalFilled.toLocaleString()} so far. Keepa is low on tokens right now — the rest fills automatically over the next while, or click again later.`, { duration: 10_000 })
+          break
+        }
+        const remaining = Number(d.remaining ?? 0)
+        setFillMsg(`Filled ${totalFilled.toLocaleString()}${remaining ? ` · ${remaining.toLocaleString()} to go` : ''}…`)
+        await load(q, sort) // refresh so images appear as they land
+        if (d.done || remaining === 0) {
+          setFillMsg(null)
+          toast.success(totalFilled ? `Filled ${totalFilled.toLocaleString()} product image${totalFilled === 1 ? '' : 's'}.` : 'Everything is already up to date.')
+          break
+        }
+      }
+    } catch {
+      toast.error('Filling images failed. Try again.')
+    } finally {
+      setFilling(false); setFillMsg(null)
+    }
+  }
+
   async function remove(asin: string) {
     setProducts((prev) => prev.filter((p) => p.asin !== asin))
     setTotal((t) => Math.max(0, t - 1))
@@ -192,6 +229,15 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         <select value={sort} onChange={(e) => setSort(e.target.value)} className="input-field text-sm w-auto">
           {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
+        {total > 0 && (
+          <button onClick={fillImages} disabled={filling}
+            title="Fetch the product image, sales rank and monthly sales for any card still missing them (uses Keepa; skips ones already filled)."
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-medium border disabled:opacity-60"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+            {filling ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
+            {filling ? (fillMsg || 'Filling…') : 'Fill in images'}
+          </button>
+        )}
         <span className="text-[12px] ml-auto" style={{ color: 'var(--text-faint)' }}>
           {total} in library{q.trim() ? ' (filtered)' : ''}
         </span>
