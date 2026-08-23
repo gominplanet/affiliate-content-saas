@@ -57,6 +57,7 @@ export default function EpcLibraryPanel() {
   const [scanning, setScanning] = useState(false)
   const [q, setQ] = useState('')
   const [sort, setSort] = useState('recent')
+  const [debug, setDebug] = useState<string | null>(null)
 
   const load = useCallback(async (query: string, sortKey: string) => {
     setLoading(true)
@@ -88,12 +89,22 @@ export default function EpcLibraryPanel() {
     setScanning(true)
     try {
       const res = await scoutCreatorConnections()
-      if (!res.ok) { toast.error(SCAN_ERROR[res.error] || 'Scan failed. Try again.'); return }
+      if (!res.ok) { toast.error(SCAN_ERROR[res.error] || 'Scan failed. Try again.'); setDebug(null); return }
       // Only Sponsored Products / EPC rows carry an epcValue — Affiliate+ campaign
       // rows don't. Keeping only EPC rows means an accidental scan on the wrong CC
       // tab saves nothing to the library instead of polluting it.
       const all = res.campaigns ?? []
       const rows = all.filter((r) => r.epcValue != null)
+      // Diagnostic line — what SCOUT actually saw, so a 0 result explains itself
+      // (SCOUT is invisible on Amazon now; this replaces the old on-page debug).
+      const d = res.diag
+      if (d) {
+        setDebug(d.sponsored === false
+          ? `SCOUT wasn’t on the Sponsored Products grid. It was on: ${d.url || 'unknown'}. Accept your campaigns and open the Accepted tab, then scan again.`
+          : `SCOUT saw ${d.asinNodes ?? '?'} product ASINs on the page and read ${d.parsed ?? all.length} cards; ${rows.length} had an EPC value.`)
+      } else {
+        setDebug(null)
+      }
       if (!rows.length) {
         toast.error(all.length
           ? 'That tab isn’t the Sponsored Products view (no EPC found). Switch to your Sponsored Products for Creators tab, then scan again.'
@@ -149,6 +160,14 @@ export default function EpcLibraryPanel() {
           </div>
         </div>
       </div>
+
+      {/* Scan diagnostic — what SCOUT actually saw on the last scan. */}
+      {debug && (
+        <div className="mb-4 rounded-lg px-3 py-2 text-[11px] flex items-start gap-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-soft)' }}>
+          <span className="font-semibold flex-shrink-0" style={{ color: 'var(--text)' }}>Scan check:</span>
+          <span>{debug}</span>
+        </div>
+      )}
 
       {/* Search + sort */}
       <div className="flex flex-wrap items-center gap-2 mb-4">

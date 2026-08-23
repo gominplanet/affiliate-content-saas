@@ -397,10 +397,22 @@ if (!window.__ccScoutListener) {
         if (detectCcTab() !== 'sponsored') {
           // Not on the EPC grid — return empty + a flag so the app can tell the
           // user to open their Sponsored Products opportunities.
+          // eslint-disable-next-line no-console
+          console.log('[MVP SCOUT] EPC scan — NOT on the Sponsored Products grid. url:', location.href)
           sendResponse({ campaigns: [], diag: { ...collectDiag(), sponsored: false } })
           return
         }
+        // Count the raw ASIN nodes the sponsored reader keys on, so a 0-parse is
+        // explainable (page has cards vs selectors missed them). Logged to the
+        // scanned tab's console AND returned in diag for the MVP panel to show.
+        let asinNodes = 0
+        try {
+          const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null)
+          let n; while ((n = w.nextNode())) { const v = n.nodeValue || ''; if (v.length < 80 && /\bB0[A-Z0-9]{8}\b/.test(v)) asinNodes++ }
+        } catch (e) {}
         const rows = await parseSponsoredCards({ maxCards: 300 })
+        // eslint-disable-next-line no-console
+        console.log('[MVP SCOUT] EPC scan — ASIN nodes:', asinNodes, '· parsed cards:', rows.length, '· sample:', rows.slice(0, 3), '· url:', location.href)
         const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : null
         const campaigns = rows.map((r) => ({
           asin: r.asin,
@@ -415,7 +427,7 @@ if (!window.__ccScoutListener) {
           image: r.image || null,
           endsAt: null,
         }))
-        sendResponse({ campaigns, diag: { ...collectDiag(), sponsored: true } })
+        sendResponse({ campaigns, diag: { ...collectDiag(), sponsored: true, asinNodes, parsed: rows.length } })
       })().catch(e => sendResponse({ error: e?.message || 'parse failed', campaigns: [], diag: collectDiag() }))
       return true // async response
     }
