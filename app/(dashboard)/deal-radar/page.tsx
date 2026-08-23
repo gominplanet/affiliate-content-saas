@@ -16,11 +16,12 @@ import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
-  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Flame, Plus, Layers, Video, ChevronDown, Bookmark,
+  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Flame, Plus, Layers, Video, ChevronDown, Bookmark, CalendarClock,
 } from 'lucide-react'
 import ProductSignalCard from '@/components/product/ProductSignalCard'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
+import BulkScheduleDealsModal from '@/components/deal/BulkScheduleDealsModal'
 import WalmartOffers from '@/components/walmart/WalmartOffers'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -281,6 +282,7 @@ export default function DealRadarPage() {
   // On-demand roundup: multi-select deals → one curated post.
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [roundupBusy, setRoundupBusy] = useState(false)
+  const [showBulkSchedule, setShowBulkSchedule] = useState(false)
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([])
   const toggleSelect = (asin: string) => setSelected((s) => { const n = new Set(s); n.has(asin) ? n.delete(asin) : n.add(asin); return n })
   const createRoundup = async () => {
@@ -574,6 +576,14 @@ export default function DealRadarPage() {
 
       {quickPostDeal && <QuickPostModal deal={quickPostDeal} onClose={() => setQuickPostDeal(null)} />}
 
+      {showBulkSchedule && (
+        <BulkScheduleDealsModal
+          deals={deals.filter((d) => selected.has(d.asin)).map((d) => ({ asin: d.asin, title: d.title, imageUrl: d.imageUrl }))}
+          onClose={() => setShowBulkSchedule(false)}
+          onScheduled={() => setSelected(new Set())}
+        />
+      )}
+
       {/* Floating roundup bar — appears once a deal is selected. Paid only. */}
       {isPaid && selected.size >= 1 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border bg-white dark:bg-[#16161a] shadow-2xl px-4 py-2.5">
@@ -582,6 +592,11 @@ export default function DealRadarPage() {
             title={selected.size < 2 ? 'Pick at least 2 deals' : 'Publish a curated roundup post of these deals'}
             className="text-sm font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white px-4 py-1.5 disabled:opacity-60 inline-flex items-center gap-1.5">
             {roundupBusy ? <><Loader2 size={14} className="animate-spin" /> Building…</> : 'Create roundup post'}
+          </button>
+          <button onClick={() => setShowBulkSchedule(true)}
+            title="Queue each selected deal to socials, spaced apart"
+            className="text-sm font-semibold rounded-full border border-red-600 text-red-600 hover:bg-red-600 hover:text-white px-4 py-1.5 inline-flex items-center gap-1.5">
+            <CalendarClock size={14} /> Schedule all
           </button>
           <button onClick={() => setSelected(new Set())} className="text-xs text-muted-foreground hover:text-foreground">Clear</button>
         </div>
