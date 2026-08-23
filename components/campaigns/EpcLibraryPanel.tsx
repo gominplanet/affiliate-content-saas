@@ -25,6 +25,9 @@ interface EpcProduct {
   epc_display: string | null
   budget: string | null
   rating: number | null
+  monthly_sold: number | null
+  sales_rank: number | null
+  sales_rank_category: string | null
   ends_at: string | null
   details_url: string | null
   scanned_at: string
@@ -265,7 +268,13 @@ function EpcCard({ p, canBlog, onQuickPost, onRemove }: {
           <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
             {p.price_cents != null ? `$${(p.price_cents / 100).toFixed(2)}` : ''}
             {p.rating != null ? <> · <Star size={9} className="inline -mt-0.5" style={{ color: '#ff9500' }} /> {p.rating}</> : null}
+            {p.monthly_sold != null ? <> · {p.monthly_sold >= 1000 ? `${Math.round(p.monthly_sold / 1000)}k` : p.monthly_sold}+ sold/mo</> : null}
           </p>
+          {(p.sales_rank != null || p.sales_rank_category) && (
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
+              {p.sales_rank != null ? `#${p.sales_rank.toLocaleString()}` : ''}{p.sales_rank_category ? ` in ${p.sales_rank_category}` : ''}
+            </p>
+          )}
         </div>
       </div>
       <div className="px-3 pb-2 flex items-center gap-2 flex-wrap">

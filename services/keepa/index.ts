@@ -433,6 +433,57 @@ export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMA
   }
 }
 
+/** Lightweight per-ASIN basics for enriching the EPC library: image, sales rank
+ *  and monthly-sold. One /product call covers up to 100 ASINs. */
+export interface KeepaBasic {
+  asin: string
+  imageUrl: string | null
+  salesRank: number | null
+  salesRankCategory: string | null
+  monthlySold: number | null
+}
+
+/**
+ * Batch-fetch basics for many ASINs (image + sales rank + monthly sold), keyed by
+ * ASIN. Keepa's /product accepts up to 100 ASINs per call, so a whole EPC scan is
+ * usually one request. Never throws — a failed batch just yields no entries for
+ * those ASINs, so the caller keeps whatever it already had.
+ */
+export async function fetchKeepaBasics(asins: string[], domainId = KEEPA_DOMAIN_US): Promise<Map<string, KeepaBasic>> {
+  const out = new Map<string, KeepaBasic>()
+  const key = process.env.KEEPA_API_KEY
+  const valid = [...new Set(asins.map((a) => String(a || '').trim().toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))]
+  if (!key || !valid.length) return out
+  for (let i = 0; i < valid.length; i += 100) {
+    const batch = valid.slice(i, i + 100)
+    const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${batch.join(',')}&stats=180&history=0`
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(45_000) })
+      if (!res.ok) continue
+      const data = await res.json() as { products?: unknown[] }
+      for (const raw of (Array.isArray(data.products) ? data.products : [])) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const product = raw as any
+        const asin = String(product?.asin || '').toUpperCase()
+        if (!/^[A-Z0-9]{10}$/.test(asin)) continue
+        const csv = typeof product.imagesCSV === 'string' ? product.imagesCSV
+          : (typeof product.image === 'string' ? product.image : null)
+        const imageUrl = csv ? keepaImageUrl(csv.split(',')[0]) : null
+        const ms = Number(product.monthlySold)
+        const extras = parseKeepaExtras(product)
+        out.set(asin, {
+          asin,
+          imageUrl,
+          salesRank: extras.salesRank,
+          salesRankCategory: extras.salesRankCategory,
+          monthlySold: Number.isFinite(ms) && ms > 0 ? ms : null,
+        })
+      }
+    } catch { /* skip this batch */ }
+  }
+  return out
+}
+
 /**
  * Keepa's `videos` array holds BOTH image-carousel videos and community/customer
  * videos from the listing's "Videos" section. We only want the carousel ones —
