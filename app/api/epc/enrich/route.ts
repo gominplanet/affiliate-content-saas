@@ -4,10 +4,11 @@
  * The scan can save thousands of rows in one pass, and the paced background cron
  * (enrich-epc-products) fills their images/sales-rank/monthly-sold over hours.
  * This is the "fill it now" path: the EPC panel calls it in a loop and it walks
- * the caller's own rows still missing an image (or never enriched) a bounded
- * batch at a time, returning { done, remaining } so the client can keep going and
- * show progress. Session-authed + per-user (RLS), so it only ever touches the
- * caller's library.
+ * the caller's own NEVER-enriched rows (enriched_at IS NULL) a bounded batch at a
+ * time, returning { done, remaining } so the client can keep going and show
+ * progress. A row leaves the set once enriched (even if Keepa had no image), so
+ * the loop terminates. Session-authed + per-user (RLS), so it only ever touches
+ * the caller's library. Migration 281 nulls enriched_at once for pre-fix blanks.
  *
  * Respects the shared Keepa token floor so it can't starve Deal Radar / AMZ
  * Research on the same operator key — it stops early and reports stopped:'low_tokens'.
@@ -45,7 +46,7 @@ export async function POST() {
     }
     if (!keepaConfigured()) return NextResponse.json({ ok: true, done: true, filled: 0, remaining: 0, note: 'keepa_unconfigured' })
 
-    // How many of the caller's rows still need an image (or were never enriched)?
+    // How many of the caller's rows are still never-enriched (the backlog)?
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const remainingCount = async (): Promise<number> => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -53,7 +54,7 @@ export async function POST() {
         .from('epc_products')
         .select('asin', { count: 'exact', head: true })
         .eq('user_id', user.id)
-        .or('enriched_at.is.null,image_url.is.null')
+        .is('enriched_at', null)
       return count ?? 0
     }
 
@@ -64,13 +65,16 @@ export async function POST() {
       return NextResponse.json({ ok: true, done: false, stopped: 'low_tokens', filled: 0, remaining: await remainingCount(), tokensLeft: tok.tokensLeft })
     }
 
-    // This batch: oldest-scanned rows still missing an image or unenriched.
+    // This batch: oldest-scanned never-enriched rows.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: rows, error } = await (supabase as any)
       .from('epc_products')
       .select('asin, image_url')
       .eq('user_id', user.id)
-      .or('enriched_at.is.null,image_url.is.null')
+      // Only never-enriched rows so the loop TERMINATES — a product Keepa has no
+      // image for keeps enriched_at set and drops out, instead of being re-picked
+      // forever (which would spin the client loop on the same oldest rows).
+      .is('enriched_at', null)
       .order('scanned_at', { ascending: true })
       .limit(BATCH)
     if (error) {
