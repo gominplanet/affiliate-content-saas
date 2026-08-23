@@ -485,6 +485,15 @@ function ccOpportunitiesUrl() {
   return `${CC_BASE}?${q}status=opportunity&type=affiliate-plus`
 }
 
+// The "Sponsored Products for Creators" opportunities grid — the EPC view. Same
+// base as Affiliate+, but type=spcc (Sponsored Products Creator Connections;
+// matches lib/cc-urls ccRequestUrl). This is what the EPC library scan needs;
+// the Affiliate+ URL above never shows the EPC product cards.
+function ccSponsoredUrl() {
+  const q = _ccCreatorId ? `creatorId=${encodeURIComponent(_ccCreatorId)}&` : ''
+  return `${CC_BASE}?${q}status=opportunity&type=spcc`
+}
+
 // Deep-link straight to ONE campaign's page by its id — the reliable path that
 // skips the whole grid search. Mirrors a real campaign link:
 //   /p/connect/request?creatorId=…&campaignId=amzn1.campaign.…&type=…&status=…
@@ -1458,15 +1467,24 @@ async function scanCreatorConnections(callerTabId) {
   let tab = open.find((t) => t.active) || open[0] || null
   let opened = false
   try {
+    // The EPC library scan reads the "Sponsored Products for Creators" grid only
+    // (type=spcc), NOT the Affiliate+ opportunities. Make sure the tab is on that
+    // view — that's why an earlier scan "did nothing": it landed on Affiliate+.
     if (!tab || tab.id == null) {
-      // None open — open the opportunities view ourselves, FOREGROUND so the
+      // None open — open the SPONSORED PRODUCTS (EPC) grid, FOREGROUND so the
       // React/virtualized grid renders reliably (background tabs throttle).
-      tab = await chrome.tabs.create({ url: ccOpportunitiesUrl(), active: true })
+      tab = await chrome.tabs.create({ url: ccSponsoredUrl(), active: true })
       opened = true
       await waitForTabLoad(tab.id, 25000)
       await _sleep(3500) // let the SPA + grid paint before scrolling/harvesting
+    } else if (!/[?&]type=spcc\b/i.test(tab.url || '')) {
+      // A CC tab is open but not on the EPC grid — navigate it there, then wait
+      // for the sponsored grid to paint.
+      await chrome.tabs.update(tab.id, { url: ccSponsoredUrl(), active: true })
+      await waitForTabLoad(tab.id, 25000)
+      await _sleep(3500)
     } else {
-      // Already open — focus it so its (possibly throttled) timers run live.
+      // Already on the EPC grid — focus it so its (throttled) timers run live.
       try { await chrome.tabs.update(tab.id, { active: true }) } catch (e) {}
     }
     return await scanTab(tab.id)

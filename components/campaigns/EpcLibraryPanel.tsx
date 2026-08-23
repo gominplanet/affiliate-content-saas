@@ -96,8 +96,8 @@ export default function EpcLibraryPanel() {
       const rows = all.filter((r) => r.epcValue != null)
       if (!rows.length) {
         toast.error(all.length
-          ? 'That tab isn’t the Sponsored Products view (no EPC found). Switch your Creator Connections tab to “Sponsored Products”, then scan again.'
-          : 'The scan found no opportunities. Open your Sponsored Products opportunities tab on Amazon, then scan again.')
+          ? 'That tab isn’t the Sponsored Products view (no EPC found). Switch to your Sponsored Products for Creators tab, then scan again.'
+          : 'No opportunities found. On Amazon, accept your Sponsored Products campaigns (“Accept all”), open the Accepted tab so the products show, then scan again.')
         return
       }
       const save = await fetch('/api/epc/ingest', {
@@ -132,8 +132,14 @@ export default function EpcLibraryPanel() {
             <div className="flex-1 min-w-[240px]">
               <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>EPC library <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· Sponsored Products opportunities</span></p>
               <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                Amazon shows your Sponsored Products EPC opportunities on the Creator Connections Check page but gives no export. Open that tab on the <b>Sponsored Products</b> view, then scan — MVP reads each opportunity (estimated EPC, budget score, price, rating) into a searchable library you build up over time.
+                Amazon shows your Sponsored Products EPC opportunities on the Creator Connections page but gives no export, so MVP reads them for you into a searchable library (estimated EPC, budget score, price, rating) that you build up over time.
               </p>
+              <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(255,204,0,0.10)', border: '1px solid rgba(255,204,0,0.35)' }}>
+                <p className="text-[12px] font-semibold" style={{ color: '#8a6d00' }}>Do this first: Accept your campaigns</p>
+                <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                  Amazon only lists products you&apos;ve opted into. On your <b>Sponsored Products for Creators</b> tab, use Amazon&apos;s <b>&ldquo;Accept all&rdquo;</b> (the &ldquo;Discover More Campaigns, Faster&rdquo; banner) to opt into your recommendations, then open the <b>Accepted</b> tab so the products are on screen. Only then can SCOUT read them. Come back here and hit Scan.
+                </p>
+              </div>
             </div>
             <button onClick={scan} disabled={scanning}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70 self-start" style={{ background: '#7C3AED' }}>
@@ -165,7 +171,7 @@ export default function EpcLibraryPanel() {
         <div className="text-center py-16 px-6">
           <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>{q.trim() ? 'No matches in your library.' : 'Your EPC library is empty.'}</p>
           <p className="text-[13px] mt-1" style={{ color: 'var(--text-soft)' }}>
-            {q.trim() ? 'Try a different search.' : 'Open your Sponsored Products opportunities tab on Amazon, then hit “Scan my EPC opportunities” to build it up.'}
+            {q.trim() ? 'Try a different search.' : 'On Amazon, accept your Sponsored Products campaigns (“Accept all”), open the Accepted tab, then hit “Scan my EPC opportunities” to build it up.'}
           </p>
         </div>
       ) : (
