@@ -132,7 +132,11 @@ export async function POST(request: Request) {
         const { data: needRows } = await (supabase as any)
           .from('epc_products')
           .select('asin, image_url')
-          .eq('user_id', user.id).in('asin', asins).is('enriched_at', null).limit(100)
+          // Never-enriched rows, OR rows enriched before but still missing an image
+          // (backfills the ones an earlier image-field bug left blank). Once a row
+          // has an image it drops out of this set, so we don't re-spend on it.
+          .eq('user_id', user.id).in('asin', asins)
+          .or('enriched_at.is.null,image_url.is.null').limit(100)
         const need = Array.isArray(needRows) ? needRows as { asin: string; image_url: string | null }[] : []
         if (need.length) {
           const basics = await fetchKeepaBasics(need.map((n) => n.asin))
