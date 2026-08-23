@@ -684,26 +684,22 @@ export default function BrandPage() {
     // tied to auth state, but they belong with brand identity in the UI.
     // Fire and forget — a failure here doesn't block the brand-profile
     // save; we surface it in wpPushNote so the user sees it.
+    // Written through a server route (service-role, column-tolerant) rather than
+    // a client upsert: `integrations` has tight RLS and newer columns that a
+    // client bundle-upsert would fail on, silently dropping the API keys. The
+    // route saves the core keys first, then each newer column best-effort.
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: intError } = await (supabase as any)
-        .from('integrations')
-        .upsert(
-          {
-            user_id: user.id,
-            geniuslink_api_key: geniuslinkKey.trim() || null,
-            geniuslink_api_secret: geniuslinkSecret.trim() || null,
-            blog_social_link_mode: blogSocialLinkMode,
-            bitly_access_token: bitlyToken.trim() || null,
-            pinterest_link_pref: pinterestLinkPref,
-            // Keep the legacy flag in sync so any older reader still behaves.
-            wrap_blog_geniuslink: blogSocialLinkMode === 'geniuslink',
-            amazon_associates_tag: amazonAssociatesTag.trim() || null,
-          },
-          { onConflict: 'user_id' },
-        )
-      if (intError) {
-        setWpPushNote(`Brand saved, but affiliate routing keys failed: ${intError.message}`)
+      const res = await fetch('/api/affiliate-links/save', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          geniuslinkKey, geniuslinkSecret,
+          blogSocialLinkMode, bitlyToken,
+          pinterestLinkPref, amazonTag: amazonAssociatesTag,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
+        setWpPushNote(`Brand saved, but affiliate routing keys failed: ${data.error || res.statusText}`)
       }
     } catch (e) {
       setWpPushNote(`Brand saved, but affiliate routing keys failed: ${e instanceof Error ? e.message : 'unknown error'}`)
@@ -1065,6 +1061,20 @@ export default function BrandPage() {
                   </a>
                 </div>
               )}
+              {/* Free alternative — Amazon's own geo-routing. Shown to creators
+                  who haven't connected Geniuslink, since it's the no-cost path to
+                  the same international routing. */}
+              {!(geniuslinkKey && geniuslinkSecret) && (
+                <div className="mb-3 rounded-lg px-3 py-2.5" style={{ background: 'rgba(52,199,89,0.06)', border: '1px solid rgba(52,199,89,0.28)' }}>
+                  <p className="text-[12px] font-semibold" style={{ color: '#1f7a4d' }}>Prefer a free option? Amazon OneLink</p>
+                  <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
+                    OneLink is Amazon&apos;s own free geo-routing: switch it on and international shoppers are sent to their local Amazon store with your matching tag. It works on your normal Amazon links, so no Geniuslink is needed. Set it up in <a href="https://affiliate-program.amazon.com/" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: '#1f7a4d' }}>Amazon Associates → Tools → OneLink</a>, then leave your links unwrapped (the <strong>Direct</strong> link style) so OneLink can route them.
+                  </p>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1 leading-relaxed">
+                    It&apos;s most reliable on Amazon&apos;s own short links; on plain links posted to social it can vary, so give it a couple of weeks and watch your Associates report for international earnings.
+                  </p>
+                </div>
+              )}
               <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
                 In Geniuslink, open <a href="https://my.geni.us/tools" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Tools → &ldquo;Integrate with our API&rdquo;</a>, click <strong>Add an API key</strong>, then copy the API Key and API Secret here. (API access requires a paid Geniuslink plan.)
               </p>
@@ -1109,7 +1119,7 @@ export default function BrandPage() {
                 <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Blog link shared on social</span>
                 <div className="flex flex-col gap-2">
                   {([
-                    { key: 'direct', label: 'Direct link (free)', desc: 'Share the plain blog URL. No shortener, no click cost.' },
+                    { key: 'direct', label: 'Direct link (free)', desc: 'Share the plain URL, no shortener or click cost. Pairs with Amazon OneLink for free international routing.' },
                     { key: 'geniuslink', label: 'Geniuslink', desc: 'Branded geni.us short link, tracked. Uses your Geniuslink key above and costs a click each time.' },
                     { key: 'bitly', label: 'Bitly (free)', desc: 'Free short link with click stats from your own Bitly account.' },
                   ] as const).map(opt => {
