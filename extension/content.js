@@ -1439,22 +1439,16 @@ async function parseSponsoredCards(opts) {
       })
     } catch (e) { return [] }
   }
-  const clickLoadMore = () => {
-    try {
-      const b = [...document.querySelectorAll('button,a,[role="button"],input[type="button"],input[type="submit"]')]
-        .find((e) => /load more|show more|see more|more opportunities|^\s*load\s*$/i.test(((e.textContent || e.value || '') + '').trim()))
-      if (b) { b.click(); return true }
-    } catch (e) {}
-    return false
-  }
+  // NOTE: we deliberately do NOT click any "Load" button. A bare "Load" on this
+  // page is Amazon's "Campaign Count: Load", and clicking it clears the grid —
+  // which zeroed out the whole scan. Scrolling only.
   await sleep(1000) // let the product grid render after the search before harvesting
   harvest()
   let last = -1, stalls = 0
   for (let i = 0; i < 500 && byKey.size < maxCards; i++) {
     window.scrollTo(0, scroller.scrollHeight)
     for (const el of innerScrollers()) { try { el.scrollTop = el.scrollHeight } catch (e) {} }
-    const clicked = clickLoadMore()
-    await sleep(clicked ? 1200 : 650)
+    await sleep(650)
     harvest()
     // Progress = total scrollable height across window + inner containers + how
     // many cards we've found. Keep going while ANY of those grows.
