@@ -10,8 +10,9 @@
 // same shape as enrich-cc-catalog.
 //
 // PACED + SHARED-KEY-SAFE:
-//   - Only rows still MISSING an image or never enriched (backlog shrinks to
-//     nothing once every product Keepa has data for is filled).
+//   - Only NEVER-enriched rows (enriched_at IS NULL); a row leaves the backlog for
+//     good once enriched, even if Keepa had no image for it, so the pass always
+//     terminates. Migration 281 nulls enriched_at once for the pre-fix blanks.
 //   - Oldest scans first, so a big fresh scan's rows fill in order.
 //   - One /product call covers up to 100 ASINs (fetchKeepaBasics), and an ASIN
 //     shared across users is fetched once, then written to every owner's row.
@@ -63,7 +64,11 @@ export async function GET(req: Request) {
   const { data: rows, error } = await (admin as any)
     .from('epc_products')
     .select('user_id, asin, image_url')
-    .or('enriched_at.is.null,image_url.is.null')
+    // Only NEVER-enriched rows. Gating on image_url IS NULL too would re-select
+    // (forever) any product Keepa has no image for — enriched_at would be set but
+    // image_url stays null, so it never leaves the set. A one-time migration (281)
+    // nulls enriched_at for the pre-images-fix rows so they get one pass here.
+    .is('enriched_at', null)
     .order('scanned_at', { ascending: true })
     .limit(cap * 6)
   if (error) {
