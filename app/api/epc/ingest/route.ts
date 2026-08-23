@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, tierAllowsCampaigns } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
+import { fetchKeepaBasics, keepaConfigured } from '@/services/keepa'
 
 export const dynamic = 'force-dynamic'
 
@@ -118,6 +119,41 @@ export async function POST(request: Request) {
           ? 'EPC storage isn’t set up on the server yet — run database migration 278 (epc_products), then scan again.'
           : `Could not save the scan: ${error.message}`,
       }, { status: 500 })
+    }
+
+    // ── Enrich with Keepa (image fallback + monthly sold + sales rank) ────────
+    // Best-effort. Only ASINs that aren't enriched yet, so re-scanning the same
+    // products doesn't re-spend Keepa tokens. If migration 279 isn't run, the
+    // enriched_at filter query fails, `need` is empty, and we spend nothing.
+    try {
+      if (keepaConfigured()) {
+        const asins = rows.map((r) => r.asin)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: needRows } = await (supabase as any)
+          .from('epc_products')
+          .select('asin, image_url')
+          .eq('user_id', user.id).in('asin', asins).is('enriched_at', null).limit(100)
+        const need = Array.isArray(needRows) ? needRows as { asin: string; image_url: string | null }[] : []
+        if (need.length) {
+          const basics = await fetchKeepaBasics(need.map((n) => n.asin))
+          const at = new Date().toISOString()
+          await Promise.all(need.map(async (n) => {
+            const b = basics.get(n.asin.toUpperCase())
+            const patch: Record<string, unknown> = { enriched_at: at }
+            if (b) {
+              if (b.monthlySold != null) patch.monthly_sold = b.monthlySold
+              if (b.salesRank != null) patch.sales_rank = b.salesRank
+              if (b.salesRankCategory) patch.sales_rank_category = b.salesRankCategory
+              // Only fill the image if the scrape didn't get one.
+              if (!n.image_url && b.imageUrl) patch.image_url = b.imageUrl
+            }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase as any).from('epc_products').update(patch).eq('user_id', user.id).eq('asin', n.asin)
+          }))
+        }
+      }
+    } catch (e) {
+      console.warn('[epc/ingest] keepa enrich skipped:', e instanceof Error ? e.message : e)
     }
 
     return NextResponse.json({ ok: true, saved: rows.length })

@@ -39,7 +39,9 @@ export async function GET(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query = (supabase as any)
       .from('epc_products')
-      .select('asin,title,brand,image_url,price_cents,epc_value,epc_display,budget,rating,ends_at,details_url,scanned_at,first_seen_at', { count: 'exact' })
+      // select('*') so a DB missing the Keepa-enrich columns (migration 279)
+      // can't fail the whole read — it returns whatever columns exist.
+      .select('*', { count: 'exact' })
       .eq('user_id', user.id)
     if (q) query = query.or(`title.ilike.%${q}%,brand.ilike.%${q}%`)
     query = query
