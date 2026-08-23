@@ -968,6 +968,10 @@ export interface ScoutDiag {
   ariaLabelCount: number
   asinCellCount: number
   signedOut: boolean
+  /** EPC scan extras (Sponsored Products path). */
+  sponsored?: boolean
+  asinNodes?: number
+  parsed?: number
 }
 
 export type ScoutResult =
@@ -990,12 +994,12 @@ export type ScoutError =
  */
 export async function scoutCreatorConnections(): Promise<ScoutResult> {
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; campaigns?: ScoutedCampaign[]; error?: string }>(
+  const resp = await sendToExtension<{ ok?: boolean; campaigns?: ScoutedCampaign[]; error?: string; diag?: ScoutDiag | null }>(
     { type: 'MVP_CC_SCAN' },
     120000, // grid scroll + enrichment pass can be slow on a large list
   )
   if (!resp) return { ok: false, error: 'timeout' }
-  if (resp.ok && Array.isArray(resp.campaigns)) return { ok: true, campaigns: resp.campaigns }
+  if (resp.ok && Array.isArray(resp.campaigns)) return { ok: true, campaigns: resp.campaigns, diag: resp.diag ?? null }
   const e = (resp.error || 'scan-failed') as ScoutError
   return { ok: false, error: e }
 }
