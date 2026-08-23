@@ -18,6 +18,7 @@ const TOOLS: Array<{ href: string; label: string; desc: string; highlight?: stri
   { href: 'https://geni.us/GCad5Q', label: 'Levanta', desc: 'Exclusive brand deals on Amazon, Shopify & Walmart' },
   { href: 'https://geni.us/Z0q3hY', label: 'PartnerBoost', desc: 'Top brands across retail, travel, D2C & subscriptions' },
   { href: 'https://geni.us/khuHTe', label: 'Archer Affiliate', desc: 'Partner with Amazon sellers — up to 60% commissions' },
+  { href: 'https://geni.us/9qSLP', label: 'Cha-Ching Automate', desc: 'Auto-sync your videos to YouTube + 13 global Amazon storefronts' },
 ]
 
 export default function RecommendedToolsCard() {

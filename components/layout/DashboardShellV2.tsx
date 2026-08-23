@@ -574,6 +574,7 @@ export default function DashboardShellV2({
         { href: 'https://geni.us/GCad5Q', icon: <ExternalLink size={13} />, label: 'Levanta', external: true },
         { href: 'https://geni.us/Z0q3hY', icon: <ExternalLink size={13} />, label: 'PartnerBoost', external: true },
         { href: 'https://geni.us/khuHTe', icon: <ExternalLink size={13} />, label: 'Archer Affiliate', external: true },
+        { href: 'https://geni.us/9qSLP', icon: <ExternalLink size={13} />, label: 'Cha-Ching Automate', external: true },
       ],
     },
     // LABS — experimental tools, Pro-only (gate: isPro), NOT promoted on
