@@ -1074,10 +1074,22 @@ export default function BrandPage() {
                 <div className="mb-3 rounded-lg px-3 py-2.5" style={{ background: 'rgba(52,199,89,0.06)', border: '1px solid rgba(52,199,89,0.28)' }}>
                   <p className="text-[12px] font-semibold" style={{ color: '#1f7a4d' }}>Prefer a free option? Amazon OneLink</p>
                   <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
-                    OneLink is Amazon&apos;s own free geo-routing: switch it on and international shoppers are sent to their local Amazon store with your matching tag. It works on your normal Amazon links, so no Geniuslink is needed. Set it up in <a href="https://affiliate-program.amazon.com/" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: '#1f7a4d' }}>Amazon Associates → Tools → OneLink</a>, then leave your links unwrapped (the <strong>Direct</strong> link style) so OneLink can route them.
+                    OneLink is Amazon&apos;s own free version of the same country-routing. A shopper in the UK, Canada or the EU clicking your link is sent to <em>their</em> local Amazon store with your matching tag, so you earn on international clicks instead of losing them. It works on your normal Amazon links, so you don&apos;t need Geniuslink. You set it up once inside your Amazon account, not in MVP.
                   </p>
-                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1 leading-relaxed">
-                    It&apos;s most reliable on Amazon&apos;s own short links; on plain links posted to social it can vary, so give it a couple of weeks and watch your Associates report for international earnings.
+                  <details className="mt-2 group">
+                    <summary className="text-[11px] font-semibold cursor-pointer list-none inline-flex items-center gap-1 hover:underline" style={{ color: '#1f7a4d' }}>
+                      How to set up OneLink (free) →
+                    </summary>
+                    <ol className="mt-2 pl-4 list-decimal space-y-1.5 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+                      <li>Log in to <a href="https://affiliate-program.amazon.com/" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: '#1f7a4d' }}>Amazon Associates</a> (your US account) and open <strong>Tools → OneLink</strong>.</li>
+                      <li>Follow Amazon&apos;s prompts to <strong>link your international stores</strong> (UK, Canada, and the EU stores you want). Amazon connects each marketplace and maps your tag for it. If you don&apos;t have an Associates account in a country yet, Amazon lets you create it during this step.</li>
+                      <li>Click <strong>Activate</strong> to turn OneLink on. That&apos;s the whole Amazon side.</li>
+                      <li>Back here in MVP, leave your link style on <strong>Direct</strong> (or just don&apos;t connect Geniuslink), so your links stay unwrapped and OneLink can route them.</li>
+                      <li>Post as normal, then check your <strong>Amazon Associates earnings report</strong> after a week or two. International commissions starting to appear means it&apos;s working.</li>
+                    </ol>
+                  </details>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
+                    Heads up: OneLink is most reliable on Amazon&apos;s own short links and on your website. On a plain link posted straight to social it can be hit or miss depending on the shopper, so treat this as a free test and judge it by your international earnings. If you want guaranteed routing on every post, that&apos;s what Geniuslink above does (paid).
                   </p>
                 </div>
               )}
