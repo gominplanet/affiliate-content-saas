@@ -87,6 +87,20 @@ export async function GET(request: Request) {
       const newCents = cents(cur[1])
       const buyBoxCurrentCents = cents(cur[18])
       const buyBoxPriceField = cents(stats.buyBoxPrice)
+      // Image diagnostics: which field carries the image on THIS response shape.
+      // The EPC library cards were blank while rank/sold filled, so we surface the
+      // raw fields to see whether imagesCSV / images[] come back at all here.
+      const imagesArrFirst = Array.isArray(p?.images) && p.images[0] ? p.images[0] : null
+      const imageProbe = {
+        imagesCSV: typeof p?.imagesCSV === 'string' ? p.imagesCSV.slice(0, 160) : null,
+        imagesArrayLen: Array.isArray(p?.images) ? p.images.length : null,
+        imagesArrayFirst: imagesArrFirst,
+        imageField: typeof p?.image === 'string' ? p.image.slice(0, 160) : null,
+        resolvedFromCsv: (typeof p?.imagesCSV === 'string' && p.imagesCSV.trim())
+          ? `https://m.media-amazon.com/images/I/${p.imagesCSV.split(',')[0]}` : null,
+        resolvedFromArray: (imagesArrFirst && (imagesArrFirst.l || imagesArrFirst.m))
+          ? `https://m.media-amazon.com/images/I/${imagesArrFirst.l || imagesArrFirst.m}` : null,
+      }
       // Same preference as statPriceBuyBox: Buy Box field → Buy Box current →
       // Amazon → New. This is the corrected "what you pay" price.
       const correctedCents = buyBoxPriceField ?? buyBoxCurrentCents ?? amazonCents ?? newCents
@@ -107,6 +121,7 @@ export async function GET(request: Request) {
         ...base,
         fixedToCents,
         keepa: { amazonCents, newCents, buyBoxCurrentCents, buyBoxPriceField, avg90BuyBoxCents: Array.isArray(stats.avg90) ? cents(stats.avg90[18]) : null },
+        image: imageProbe,
       }
     } catch (e) {
       return { ...base, error: e instanceof Error ? e.message.slice(0, 120) : 'exception' }
