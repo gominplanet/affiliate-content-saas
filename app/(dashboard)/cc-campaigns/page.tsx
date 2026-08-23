@@ -25,6 +25,7 @@ import { type Tier } from '@/lib/tier'
 import { campaignRules } from '@/lib/cc-smart-rules'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
+import EpcLibraryPanel from '@/components/campaigns/EpcLibraryPanel'
 
 interface Trust { score: number; tier: 'reliable' | 'mixed' | 'risky' | 'unknown'; spendRatio: number | null; reasons: string[] }
 interface Campaign {
@@ -299,7 +300,7 @@ export default function CcCampaignsPage() {
   const [verifying, setVerifying] = useState(false)
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null)
   // Browse (intelligence catalog) vs Smart-Scan (live SCOUT sweep of your grid).
-  const [mode, setMode] = useState<'browse' | 'scan'>('browse')
+  const [mode, setMode] = useState<'browse' | 'scan' | 'epc'>('browse')
   // Your campaigns inbox → per-ASIN status (accepted / messaged / posted) so the
   // cards show what you've already acted on. Also the covered-ASIN skip list.
   const [statusByAsin, setStatusByAsin] = useState<Record<string, CampaignStatus>>({})
@@ -634,7 +635,7 @@ export default function CcCampaignsPage() {
 
       {/* Browse (intelligence catalog) vs Smart-Scan (live SCOUT sweep). */}
       <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden w-fit mb-5">
-        {([['browse', 'Browse all', Grid3x3], ['scan', 'Smart-Scan (live)', Radar]] as const).map(([m, label, Ic]) => (
+        {([['browse', 'Browse all', Grid3x3], ['scan', 'Smart-Scan (live)', Radar], ['epc', 'EPC library', TrendingUp]] as const).map(([m, label, Ic]) => (
           <button key={m} onClick={() => setMode(m)}
             className={`px-4 py-2 text-xs font-medium inline-flex items-center gap-1.5 transition-colors ${mode === m ? 'bg-[#7C3AED] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}>
             <Ic size={13} /> {label}
@@ -644,6 +645,8 @@ export default function CcCampaignsPage() {
 
       {mode === 'scan' ? (
         <SmartScanPanel coveredAsins={coveredAsins} onMessageBrand={setMsgModal} onSavedChange={loadStatus} />
+      ) : mode === 'epc' ? (
+        <EpcLibraryPanel />
       ) : (<>
 
       {/* Filters */}
