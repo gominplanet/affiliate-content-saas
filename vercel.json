@@ -91,6 +91,10 @@
     {
       "path": "/api/cron/enrich-cc-catalog",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/enrich-epc-products",
+      "schedule": "*/30 * * * *"
     }
   ]
 }
