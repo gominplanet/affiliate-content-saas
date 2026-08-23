@@ -410,7 +410,11 @@ if (!window.__ccScoutListener) {
           const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null)
           let n; while ((n = w.nextNode())) { const v = n.nodeValue || ''; if (v.length < 80 && /\bB0[A-Z0-9]{8}\b/.test(v)) asinNodes++ }
         } catch (e) {}
-        const rows = await parseSponsoredCards({ maxCards: 300 })
+        // Deep harvest: Sponsored Products has no export, and a creator can have
+        // 20k+ accepted, so grab as large a slice as fits under the message
+        // timeout (~95s of scrolling) instead of the old 300 cap. Re-scanning
+        // upserts, so what we read is added to the growing library.
+        const rows = await parseSponsoredCards({ maxCards: 8000, maxMs: 95000 })
         // eslint-disable-next-line no-console
         console.log('[MVP SCOUT] EPC scan — ASIN nodes:', asinNodes, '· parsed cards:', rows.length, '· sample:', rows.slice(0, 3), '· url:', location.href)
         const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : null
@@ -1396,6 +1400,13 @@ function extractSponsoredCard(cont) {
 // with no text) and walks up to the card container.
 async function parseSponsoredCards(opts) {
   const maxCards = (opts && opts.maxCards) || 300
+  // Wall-clock budget. The Sponsored grid is React-virtualized, so cards are the
+  // only way in (no export) and we harvest them as they scroll into view. On a
+  // huge list (20k+) we can't fit them all under the message timeout, so we grab
+  // as deep a slice as `maxMs` allows and return it — the upsert de-dupes, so
+  // the library keeps whatever it already had. Default well under the 120s bridge.
+  const maxMs = (opts && opts.maxMs) || 30000
+  const startedAt = Date.now()
   const onProgress = (opts && opts.onProgress) || function () {}
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const byKey = new Map()
@@ -1445,15 +1456,18 @@ async function parseSponsoredCards(opts) {
   await sleep(1000) // let the product grid render after the search before harvesting
   harvest()
   let last = -1, stalls = 0
-  for (let i = 0; i < 500 && byKey.size < maxCards; i++) {
+  for (let i = 0; i < 4000 && byKey.size < maxCards; i++) {
+    if (Date.now() - startedAt > maxMs) break // out of time — return what we have
     window.scrollTo(0, scroller.scrollHeight)
     for (const el of innerScrollers()) { try { el.scrollTop = el.scrollHeight } catch (e) {} }
     await sleep(650)
     harvest()
     // Progress = total scrollable height across window + inner containers + how
-    // many cards we've found. Keep going while ANY of those grows.
+    // many cards we've found. Keep going while ANY of those grows. A virtualized
+    // grid recycles nodes, so height can plateau while new ASINs still stream in —
+    // give it a generous stall tolerance before deciding we've hit the bottom.
     const h = scroller.scrollHeight + innerScrollers().reduce((a, e) => a + e.scrollHeight, 0) + byKey.size * 1000
-    if (h > last) { last = h; stalls = 0 } else if (++stalls >= 4) break
+    if (h > last) { last = h; stalls = 0 } else if (++stalls >= 8) break
   }
   window.scrollTo(0, 0)
   return [...byKey.values()]

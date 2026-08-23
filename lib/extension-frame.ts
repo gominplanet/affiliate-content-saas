@@ -996,7 +996,7 @@ export async function scoutCreatorConnections(): Promise<ScoutResult> {
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   const resp = await sendToExtension<{ ok?: boolean; campaigns?: ScoutedCampaign[]; error?: string; diag?: ScoutDiag | null }>(
     { type: 'MVP_CC_SCAN' },
-    120000, // grid scroll + enrichment pass can be slow on a large list
+    150000, // deep grid-scroll harvest on a huge list; in-page scroll self-limits to ~95s
   )
   if (!resp) return { ok: false, error: 'timeout' }
   if (resp.ok && Array.isArray(resp.campaigns)) return { ok: true, campaigns: resp.campaigns, diag: resp.diag ?? null }

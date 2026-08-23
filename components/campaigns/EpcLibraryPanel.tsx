@@ -153,7 +153,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
             <div className="flex-1 min-w-[240px]">
               <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>EPC library <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· Sponsored Products opportunities</span></p>
               <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                Amazon shows your Sponsored Products EPC opportunities on the Creator Connections page but gives no export, so MVP reads them for you into a searchable library (estimated EPC, budget score, price, rating) that you build up over time.
+                <b>Browse all</b> loads brand campaigns from Amazon&rsquo;s weekly ZIP export, so it fills with thousands at once. Sponsored Products EPC opportunities are different: Amazon gives <b>no export</b> for them, so there&rsquo;s nothing to upload. SCOUT reads them straight off your on-screen grid into a searchable library (estimated EPC, budget score, price, rating). One scan scrolls for up to ~90 seconds and grabs a large batch. If your Accepted list is huge (20,000+), a single scan won&rsquo;t reach the very bottom, so run it a few times over your sessions and the library keeps everything it has already seen.
               </p>
               <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(255,204,0,0.10)', border: '1px solid rgba(255,204,0,0.35)' }}>
                 <p className="text-[12px] font-semibold" style={{ color: '#8a6d00' }}>Do this first: Accept your campaigns</p>
