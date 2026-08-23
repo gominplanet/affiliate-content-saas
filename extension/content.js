@@ -1428,15 +1428,38 @@ async function parseSponsoredCards(opts) {
     if (byKey.size !== reported) { reported = byKey.size; try { onProgress(byKey.size) } catch (e) {} }
   }
   const scroller = document.scrollingElement || document.documentElement
+  // The sponsored grid can scroll INSIDE a virtualized container, not the window,
+  // and/or reveal more behind a "Load more" button — so window-scroll alone stops
+  // at the first ~30 cards. Also drive inner scrollers + click any load button.
+  const innerScrollers = () => {
+    try {
+      return [...document.querySelectorAll('div,main,section,ul')].filter((e) => {
+        const s = getComputedStyle(e)
+        return (s.overflowY === 'auto' || s.overflowY === 'scroll') && e.scrollHeight > e.clientHeight + 200
+      })
+    } catch (e) { return [] }
+  }
+  const clickLoadMore = () => {
+    try {
+      const b = [...document.querySelectorAll('button,a,[role="button"],input[type="button"],input[type="submit"]')]
+        .find((e) => /load more|show more|see more|more opportunities|^\s*load\s*$/i.test(((e.textContent || e.value || '') + '').trim()))
+      if (b) { b.click(); return true }
+    } catch (e) {}
+    return false
+  }
   await sleep(1000) // let the product grid render after the search before harvesting
   harvest()
   let last = -1, stalls = 0
-  for (let i = 0; i < 400 && byKey.size < maxCards; i++) {
+  for (let i = 0; i < 500 && byKey.size < maxCards; i++) {
     window.scrollTo(0, scroller.scrollHeight)
-    await sleep(650)
+    for (const el of innerScrollers()) { try { el.scrollTop = el.scrollHeight } catch (e) {} }
+    const clicked = clickLoadMore()
+    await sleep(clicked ? 1200 : 650)
     harvest()
-    const h = scroller.scrollHeight
-    if (h > last) { last = h; stalls = 0 } else if (++stalls >= 3) break
+    // Progress = total scrollable height across window + inner containers + how
+    // many cards we've found. Keep going while ANY of those grows.
+    const h = scroller.scrollHeight + innerScrollers().reduce((a, e) => a + e.scrollHeight, 0) + byKey.size * 1000
+    if (h > last) { last = h; stalls = 0 } else if (++stalls >= 4) break
   }
   window.scrollTo(0, 0)
   return [...byKey.values()]
