@@ -1311,6 +1311,9 @@ export default function BrandPage() {
                   placeholder="e.g. yourbrand-20"
                   className="input-field text-xs font-mono"
                 />
+                <p className="text-[10.5px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
+                  This tag belongs to your <b>active site</b>. Running more than one brand? Switch sites in the top bar first, then set that site&apos;s tag here. Each site&apos;s links use its own tag; a site with none set falls back to this one.
+                </p>
               </div>
             </div>
 

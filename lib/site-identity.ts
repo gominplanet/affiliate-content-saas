@@ -63,7 +63,7 @@ export async function snapshotActiveBlogIdentity(supabase: Client, userId: strin
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await (supabase as any)
       .from('integrations')
-      .select('blog_customizations')
+      .select('blog_customizations, amazon_associates_tag')
       .eq('user_id', userId)
       .maybeSingle()
     const blogCustomizations = intRow?.blog_customizations ?? null
@@ -72,12 +72,22 @@ export async function snapshotActiveBlogIdentity(supabase: Client, userId: strin
     const patch: Record<string, unknown> = {}
     if (Object.keys(brandSnapshot).length > 0) patch.brand_snapshot = brandSnapshot
     if (blogCustomizations != null) patch.blog_customizations = blogCustomizations
-    if (Object.keys(patch).length === 0) return
+    if (Object.keys(patch).length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from('wordpress_sites')
+        .update(patch as never)
+        .eq('user_id', userId)
+        .eq('id', site.id)
+    }
 
+    // Per-site Amazon Associates tag (migration 280) — a SEPARATE best-effort
+    // write so a DB that hasn't run 280 yet (missing column) can't fail the whole
+    // snapshot. Written even when null, so clearing a site's tag persists.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any)
       .from('wordpress_sites')
-      .update(patch as never)
+      .update({ amazon_associates_tag: intRow?.amazon_associates_tag ?? null } as never)
       .eq('user_id', userId)
       .eq('id', site.id)
   } catch { /* best-effort snapshot */ }
@@ -117,5 +127,28 @@ export async function restoreBlogIdentity(supabase: Client, userId: string, site
         .update({ blog_customizations: bc as never })
         .eq('user_id', userId)
     }
+
+    // Per-site Amazon Associates tag (migration 280) — SEPARATE best-effort query
+    // so a missing column (pre-280) can't break brand/customization restore above.
+    // Only restore when the site has a stored tag; otherwise leave the live tag as
+    // it is so a never-configured site inherits the current one (same "inherit
+    // until you diverge" rule brand_snapshot uses).
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: tagRow } = await (supabase as any)
+        .from('wordpress_sites')
+        .select('amazon_associates_tag')
+        .eq('user_id', userId)
+        .eq('id', siteId)
+        .maybeSingle()
+      const tag = tagRow?.amazon_associates_tag
+      if (tag != null && String(tag).trim()) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('integrations')
+          .update({ amazon_associates_tag: String(tag).trim() } as never)
+          .eq('user_id', userId)
+      }
+    } catch { /* column may not exist yet — inherit the current tag */ }
   } catch { /* best-effort restore */ }
 }
