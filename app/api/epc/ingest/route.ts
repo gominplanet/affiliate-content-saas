@@ -109,7 +109,15 @@ export async function POST(request: Request) {
       .upsert(rows, { onConflict: 'user_id,asin' })
     if (error) {
       console.error('[epc/ingest]', error.message)
-      return NextResponse.json({ error: toUserMessage(error, 'Could not save the scan. Please try again.') }, { status: 500 })
+      // The most common cause on a fresh deploy: migration 278 (the epc_products
+      // table) hasn't been run. Name it so it's fixable at a glance instead of a
+      // generic "try again".
+      const missingTable = /does not exist|could not find the table|schema cache|relation .* does not exist/i.test(error.message || '')
+      return NextResponse.json({
+        error: missingTable
+          ? 'EPC storage isn’t set up on the server yet — run database migration 278 (epc_products), then scan again.'
+          : `Could not save the scan: ${error.message}`,
+      }, { status: 500 })
     }
 
     return NextResponse.json({ ok: true, saved: rows.length })
