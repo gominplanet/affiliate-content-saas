@@ -1386,12 +1386,14 @@ function buildDealTitle(opts: {
   // En-dash scrub here too — Amazon listings carry them constantly and the
   // ban applies in the WP post title (which shows on archive pages, in
   // search results, in social shares, everywhere).
+  // NEVER put the year in the title (hard rule): "(2026)" suffixes date the post
+  // and read as spam. The year still lives in the slug for URL uniqueness.
   const base = scrubEmDashes(opts.product.title || `Deal on ASIN ${opts.product.asin}`)
   const trimmed = base.length > 60 ? base.slice(0, 57).replace(/\s+\S*$/, '') + '...' : base
   if (opts.occasionSlug !== 'none') {
-    return `${opts.occasion} Deal: ${trimmed} (${opts.year})`
+    return `${opts.occasion} Deal: ${trimmed}`
   }
-  return `Deal Alert: ${trimmed} (${opts.year})`
+  return `Deal Alert: ${trimmed}`
 }
 
 function buildDealSlug(productTitle: string, asin: string, occasionSlug: DealOccasionSlug, year: number): string {

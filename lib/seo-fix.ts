@@ -118,7 +118,7 @@ Requirements:
 - Between 30 and 65 characters.
 - Keep the real product name from the current title.
 ${kw ? `- Naturally include the phrase "${kw}" (or a very close variant).` : ''}
-- You may add the year (${year}) or a short, honest angle/benefit, but do NOT invent specs, prices, ratings, or any claim that isn't supported by the article below.
+- NEVER add a calendar year or date (no "${year}", no "in ${year}", no "${year} Edition") — keep the title evergreen. You may add a short, specific angle/benefit, but do NOT invent specs, prices, ratings, or any claim that isn't supported by the article below.
 - No surrounding quotes, no markdown, no emojis.
 Return ONLY the new title.
 

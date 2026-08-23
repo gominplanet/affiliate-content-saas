@@ -674,7 +674,7 @@ ${i + 1}. ${p.review.title}  (Label: "${p.label}")
    Excerpt: ${(p.review.excerpt || '').slice(0, 320)}
 `).join('\n')
 
-  const writerPrompt = `You are writing a "Best ${topic} for ${year}" buying guide for ${brandName}. The guide is built from the ${picks.length} picks below. Every fact must come from those picks; never invent products, specs, or use cases. NEVER use the word "honest" or any variant.
+  const writerPrompt = `You are writing a "Best ${topic}" buying guide for ${brandName}. The guide is built from the ${picks.length} picks below. Every fact must come from those picks; never invent products, specs, or use cases. NEVER use the word "honest" or any variant. NEVER put a calendar year or date in the title, the meta description, or any heading (no "${year}", no "in ${year}", no "${year} Edition"). A dated title ages badly, keep it evergreen.
 
 ═══════════════════════════════════════
 PICKS (#1 is "Best Overall"; keep ordering as given)
@@ -749,7 +749,9 @@ VOICE / STYLE RULES:
   // Sonnet writer pass. The upload only needs the picks (already resolved)
   // and the WP service; the writer is independent. Saves 1-2s wall-time.
   const titleCase = topic.replace(/\b\w/g, c => c.toUpperCase())
-  const wpTitle = `Best ${titleCase} for ${year}: ${picks.length} Picks We Actually Tested`
+  // No year in the title (hard rule) — it ages the post. Year stays in the slug
+  // for URL uniqueness only.
+  const wpTitle = `Best ${titleCase}: ${picks.length} Picks We Actually Tested`
   const slug = `best-${topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${year}`
   const wpService = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
 
