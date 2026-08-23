@@ -21,6 +21,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { toUserMessage } from '@/lib/friendly-error'
+import { snapshotActiveBlogIdentity } from '@/lib/site-identity'
 
 export const dynamic = 'force-dynamic'
 
@@ -117,6 +118,11 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: bitlyErr } = await (admin as any).from('integrations').update({ bitly_access_token: bitly }).eq('user_id', user.id)
     if (bitlyErr) { skipped.push('bitly_access_token'); console.warn(`[affiliate-links/save] bitly skipped: ${bitlyErr.message}`) }
+
+    // Capture the Amazon tag (and current brand) onto the ACTIVE site's row, so
+    // this tag belongs to the site the user is on right now — per-site Associates
+    // tags (migration 280). Best-effort: single-site users are a no-op.
+    await snapshotActiveBlogIdentity(supabase, user.id)
 
     return NextResponse.json({ ok: true, skipped })
   } catch (err) {
