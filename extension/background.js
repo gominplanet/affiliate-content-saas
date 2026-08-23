@@ -1477,15 +1477,14 @@ async function scanCreatorConnections(callerTabId) {
       opened = true
       await waitForTabLoad(tab.id, 25000)
       await _sleep(3500) // let the SPA + grid paint before scrolling/harvesting
-    } else if (!/[?&]type=spcc\b/i.test(tab.url || '')) {
-      // A CC tab is open but not on the EPC grid — navigate it there, then wait
-      // for the sponsored grid to paint.
-      await chrome.tabs.update(tab.id, { url: ccSponsoredUrl(), active: true })
-      await waitForTabLoad(tab.id, 25000)
-      await _sleep(3500)
     } else {
-      // Already on the EPC grid — focus it so its (throttled) timers run live.
+      // A CC tab is open — scan whatever the user has on screen. They're told to
+      // be on Sponsored Products → Accepted. Do NOT navigate the tab: forcing it
+      // to the "New Opportunities" spcc URL threw away their Accepted products and
+      // read 0. The content script detects the sponsored grid (by heading + ASIN
+      // cards, not just the URL) and guides them if they're on the wrong view.
       try { await chrome.tabs.update(tab.id, { active: true }) } catch (e) {}
+      await _sleep(800)
     }
     return await scanTab(tab.id)
   } catch (e) {
