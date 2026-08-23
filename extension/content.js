@@ -384,39 +384,38 @@ if (!window.__ccScoutListener) {
   window.__ccScoutListener = true
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'CC_SCAN') {
+      // CC_SCAN powers the EPC library scan ONLY (Affiliate+ uses CC_SMART/CC_FIND).
+      // So this reads the "Sponsored Products for Creators" grid: the product, its
+      // price, Estimated EPC and Budget score are ON the card, a DIFFERENT model
+      // from Affiliate+ campaign cards. The background navigates the tab to the
+      // spcc view; if we still aren't on it, try clicking that program tab once.
       ;(async () => {
-        // Sponsored Products / EPC tab is a DIFFERENT card model — the product,
-        // its price, Estimated EPC and Budget score are ON the card. The Affiliate+
-        // parser (parseCampaigns) finds nothing here, so read it with the dedicated
-        // sponsored scraper and map to the campaign shape MVP expects. This is what
-        // powers the EPC library scan.
-        if (detectCcTab() === 'sponsored') {
-          const rows = await parseSponsoredCards({ maxCards: 300 })
-          const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : null
-          const campaigns = rows.map((r) => ({
-            asin: r.asin,
-            campaignName: r.campaignName || r.asin,
-            brand: null,
-            epc: r.epc != null ? `Up to $${r.epc.toFixed(2)}` : null,
-            epcValue: r.epc != null ? r.epc : null,
-            price: r.price != null ? `$${r.price.toFixed(2)}` : null,
-            priceValue: r.price != null ? r.price : null,
-            rating: r.rating || null,
-            budget: cap(r.budgetScore),
-            image: r.image || null,
-            endsAt: null,
-          }))
-          sendResponse({ campaigns, diag: { ...collectDiag(), sponsored: true } })
+        if (detectCcTab() !== 'sponsored') {
+          try { await clickCcTab(/sponsored products( for creators)?/i) } catch (e) {}
+          await sleep(1800)
+        }
+        if (detectCcTab() !== 'sponsored') {
+          // Not on the EPC grid — return empty + a flag so the app can tell the
+          // user to open their Sponsored Products opportunities.
+          sendResponse({ campaigns: [], diag: { ...collectDiag(), sponsored: false } })
           return
         }
-        // When a keyword is supplied, drive Amazon's own search box first so we
-        // scan the FULL catalogue's matches, not just the rendered page.
-        let search = { searched: false }
-        if (msg.keyword) {
-          try { search = await applyAmazonSearch(msg.keyword) } catch (e) { search = { searched: false, reason: e?.message || 'search-failed' } }
-        }
-        const campaigns = await parseCampaigns()
-        sendResponse({ campaigns, diag: { ...collectDiag(), search } })
+        const rows = await parseSponsoredCards({ maxCards: 300 })
+        const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : null
+        const campaigns = rows.map((r) => ({
+          asin: r.asin,
+          campaignName: r.campaignName || r.asin,
+          brand: null,
+          epc: r.epc != null ? `Up to $${r.epc.toFixed(2)}` : null,
+          epcValue: r.epc != null ? r.epc : null,
+          price: r.price != null ? `$${r.price.toFixed(2)}` : null,
+          priceValue: r.price != null ? r.price : null,
+          rating: r.rating || null,
+          budget: cap(r.budgetScore),
+          image: r.image || null,
+          endsAt: null,
+        }))
+        sendResponse({ campaigns, diag: { ...collectDiag(), sponsored: true } })
       })().catch(e => sendResponse({ error: e?.message || 'parse failed', campaigns: [], diag: collectDiag() }))
       return true // async response
     }
@@ -1302,10 +1301,15 @@ async function scoutDraftMessage() {
 // console so the anchors can be tightened.
 function detectCcTab() {
   try {
+    // Most reliable signal: the Sponsored Products program URL (type=spcc).
+    if (/[?&]type=spcc\b/i.test(location.href)) return 'sponsored'
     const t = (document.body ? document.body.innerText : '') || ''
     // The Sponsored tab's cards carry "Estimated EPC" + a visible "ASIN: B0…"
     // (the price can glue to the label — "$104.00ASIN:" — so no leading \b).
     if (/estimated epc/i.test(t) && /ASIN:?\s*B0[A-Z0-9]{8}/i.test(t)) return 'sponsored'
+    // The Sponsored Products program heading + product ASIN cards — covers the
+    // Accepted tab, where a card may not print "Estimated EPC" on its face.
+    if (/sponsored products for creators/i.test(t) && /ASIN:?\s*B0[A-Z0-9]{8}/i.test(t)) return 'sponsored'
     return 'affiliate'
   } catch (e) { return 'affiliate' }
 }
