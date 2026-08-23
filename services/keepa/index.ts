@@ -466,9 +466,15 @@ export async function fetchKeepaBasics(asins: string[], domainId = KEEPA_DOMAIN_
         const product = raw as any
         const asin = String(product?.asin || '').toUpperCase()
         if (!/^[A-Z0-9]{10}$/.test(asin)) continue
-        const csv = typeof product.imagesCSV === 'string' ? product.imagesCSV
+        // Image: prefer the structured `images` array (the SAME field the proven
+        // AMZ-finder card path reads — fetchKeepaProductCard → keepaProductImageUrl),
+        // then fall back to imagesCSV / image. Reading only imagesCSV left EPC card
+        // images blank because these product responses carry `images`, not always a
+        // populated imagesCSV.
+        const csv = typeof product.imagesCSV === 'string' && product.imagesCSV.trim() ? product.imagesCSV
           : (typeof product.image === 'string' ? product.image : null)
-        const imageUrl = csv ? keepaImageUrl(csv.split(',')[0]) : null
+        const imageUrl = keepaProductImageUrl(product.images)
+          ?? (csv ? keepaImageUrl(csv.split(',')[0]) : null)
         const ms = Number(product.monthlySold)
         const extras = parseKeepaExtras(product)
         out.set(asin, {
