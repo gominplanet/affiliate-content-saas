@@ -4943,10 +4943,11 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     return true // async response — keep the channel open
   }
   if (msg.type === 'MVP_CC_SCAN') {
-    // Scraping the virtualized grid (open/focus + scroll + enrichment pass) can
-    // take a while on a large opportunities list, so allow up to 2 minutes.
+    // Scraping the virtualized grid (open/focus + deep scroll harvest) can take a
+    // while on a huge opportunities list (20k+ with no export), so allow ~2.5 min
+    // — the in-page scroll self-limits to ~95s, this sits above it with margin.
     const callerTabId = sender && sender.tab ? sender.tab.id : null
-    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 150000)
     scanCreatorConnections(callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
