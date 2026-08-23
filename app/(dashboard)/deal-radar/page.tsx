@@ -717,7 +717,10 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, lock
   const { gen, postUrl, makePost } = useMakePost(d)
   const model = {
     asin: d.asin, parentAsin: d.parentAsin,
-    imageUrl: d.imageUrl, imageHref: d.amazonUrl,
+    // Image is a preview only (no link) — the explicit "View on Amazon" link
+    // below is the single browse affordance, so we don't have two things opening
+    // the same page.
+    imageUrl: d.imageUrl, imageHref: null,
     brand: d.brand, title: d.title,
     priceNow: d.priceNow, priceWas: d.priceWas, discountPct: d.discountPct,
     rating: d.rating, reviewCount: d.reviewCount, monthlySold: d.monthlySold,

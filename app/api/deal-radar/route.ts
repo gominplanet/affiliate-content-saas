@@ -132,7 +132,6 @@ export async function GET(request: Request) {
       }, { status: 403 })
     }
 
-    const amazonTag = ((intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag || '').trim()
 
     const url = new URL(request.url)
     const q = (url.searchParams.get('q') || '').trim().slice(0, 120)
@@ -201,7 +200,7 @@ export async function GET(request: Request) {
         if (hasCampaign) fb = fb.not('campaign_commission_pct', 'is', null)
         if (videoOnly) fb = fb.eq('has_video', true)
         const { data: fbData } = await applySort(fb, sort).range(from, from + PAGE_SIZE - 1)
-        return NextResponse.json({ ok: true, deals: (fbData ?? []).map((r: DealRow) => toClient(r, amazonTag)), ticker: [] })
+        return NextResponse.json({ ok: true, deals: (fbData ?? []).map((r: DealRow) => toClient(r)), ticker: [] })
       }
       console.error('[deal-radar GET]', error.message)
       return NextResponse.json({ error: toUserMessage(error, 'Could not load deals just now. Please try again in a moment.') }, { status: 500 })
@@ -225,8 +224,8 @@ export async function GET(request: Request) {
     const asins = [...new Set([...rows, ...tickerRows].map((r) => r.asin))]
     const postedByAsin = await fetchPostedByAsin(sb, user.id, asins)
 
-    const deals = rows.map((r) => toClient(r, amazonTag, postedByAsin.get(r.asin) || null))
-    const ticker = tickerRows.map((r) => toClient(r, amazonTag, postedByAsin.get(r.asin) || null))
+    const deals = rows.map((r) => toClient(r, postedByAsin.get(r.asin) || null))
+    const ticker = tickerRows.map((r) => toClient(r, postedByAsin.get(r.asin) || null))
 
     return NextResponse.json({ ok: true, page, deals, ticker })
   } catch (err) {
@@ -300,9 +299,12 @@ function applySort(query: any, sort: SortKey) {
   }
 }
 
-function toClient(r: DealRow, amazonTag: string, postedUrl: string | null = null) {
-  const base = `https://www.amazon.com/dp/${r.asin}`
-  const amazonUrl = amazonTag ? `${base}?tag=${encodeURIComponent(amazonTag)}` : base
+function toClient(r: DealRow, postedUrl: string | null = null) {
+  // Direct, UNTAGGED product link. This powers the "View on Amazon" browse
+  // affordance only — tagging a creator's own browse clicks is self-referral
+  // (against Amazon's operating agreement). Monetized links for a blog/social
+  // post are built server-side at post time from the ASIN + the creator's tag.
+  const amazonUrl = `https://www.amazon.com/dp/${r.asin}`
 
   // Estimated commission per sale. A Creator Connections bounty (when present) is
   // the real rate; otherwise a rough Amazon category rate. Labelled "est" client-
