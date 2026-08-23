@@ -16,6 +16,7 @@ import { normalizeTier, type Tier } from '@/lib/tier'
 import { canBrowseDealRadar } from '@/lib/feature-access'
 import { toUserMessage } from '@/lib/friendly-error'
 import { campaignFullness, daysUntil } from '@/lib/cc-intelligence'
+import { ccRequestUrl } from '@/lib/cc-urls'
 
 export const runtime = 'nodejs'
 
@@ -356,7 +357,10 @@ function toClient(r: DealRow, amazonTag: string, postedUrl: string | null = null
       return {
         commissionPct: Number(r.campaign_commission_pct),
         brand: r.campaign_brand,
-        detailsUrl: r.campaign_details_url,
+        // Build the WORKING Creator Connections request URL from the campaign id
+        // (lib/cc-urls). The stored campaign_details_url is the legacy
+        // /creatorconnections/campaign/<id> path Amazon 404s on — never surface it.
+        detailsUrl: r.campaign_id ? ccRequestUrl(r.campaign_id) : null,
         spotsLeft: f.spotsLeft,
         totalSlots: f.totalSlots,
         pctFilled: f.pctFilled,
