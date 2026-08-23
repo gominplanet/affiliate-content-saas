@@ -1360,8 +1360,17 @@ function extractSponsoredCard(cont) {
   let budgetScore = null
   const bm = all.match(/budget availability score:?\s*(low|medium|high)/i)
   if (bm) budgetScore = bm[1].toLowerCase()
-  const img = cont.querySelector('img[src]')
-  const image = img ? (img.getAttribute('src') || null) : null
+  // Product image. Amazon lazy-loads, so a card <img> may hold a 1x1 spacer in
+  // src with the real image in data-src / srcset. Prefer a genuine Amazon media
+  // URL; skip spacers, sprites and icons.
+  let image = null
+  for (const im of cont.querySelectorAll('img')) {
+    const cand = im.getAttribute('src') || im.getAttribute('data-src') ||
+      (im.getAttribute('srcset') || '').split(/\s+/)[0] || ''
+    if (/(?:media-amazon|images-amazon|ssl-images-amazon)\.com/i.test(cand) &&
+        !/sprite|grey-pixel|transparent|1x1|\/G\//i.test(cand)) { image = cand; break }
+  }
+  if (!image) { const f = cont.querySelector('img[src]'); image = f ? (f.getAttribute('src') || null) : null }
   // Title: the longest LEAF text line that isn't a metadata line (price / ASIN /
   // EPC / budget / rating). The product name is the strongest such line.
   let campaignName = null, best = ''

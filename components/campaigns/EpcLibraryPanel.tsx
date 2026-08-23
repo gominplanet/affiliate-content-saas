@@ -10,8 +10,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Radar, Loader2, Search, ExternalLink, Star, Trash2, RefreshCw } from 'lucide-react'
+import { Radar, Loader2, Search, ExternalLink, Star, Trash2, RefreshCw, Send, FileText, ArrowRight, Check } from 'lucide-react'
 import { scoutCreatorConnections, type ScoutError } from '@/lib/extension-frame'
+import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
 
 interface EpcProduct {
   asin: string
@@ -50,7 +52,12 @@ function budgetStyle(b: string | null): { bg: string; color: string } {
   return { bg: 'var(--surface-2)', color: 'var(--text-faint)' }
 }
 
-export default function EpcLibraryPanel() {
+export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
+  // Pinterest gets its own designed pin (amazon/studio/pro). Amazon Influencer
+  // has no blog/WordPress, so the blog action is hidden for it.
+  const pinterestEnabled = tier ? tierAllowsSocial(tier, 'pinterest') : false
+  const canBlog = tier !== 'amazon'
+  const [quickPost, setQuickPost] = useState<QuickPostDeal | null>(null)
   const [products, setProducts] = useState<EpcProduct[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -195,48 +202,112 @@ export default function EpcLibraryPanel() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {products.map((p) => {
-            const bs = budgetStyle(p.budget)
-            return (
-              <div key={p.asin} className="rounded-xl border overflow-hidden flex flex-col" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
-                <div className="flex gap-3 p-3">
-                  {p.image_url
-                    ? <img loading="lazy" decoding="async" src={p.image_url} alt="" className="w-16 h-16 rounded-lg object-contain flex-shrink-0 bg-white" />
-                    : <div className="w-16 h-16 rounded-lg flex-shrink-0" style={{ background: 'rgba(124,58,237,0.08)' }} />}
-                  <div className="flex-1 min-w-0">
-                    {p.brand && <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: '#7C3AED' }}>{p.brand}</div>}
-                    <p className="text-[12.5px] font-medium leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>{p.title || p.asin}</p>
-                    <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                      {p.price_cents != null ? `$${(p.price_cents / 100).toFixed(2)}` : ''}
-                      {p.rating != null ? <> · <Star size={9} className="inline -mt-0.5" style={{ color: '#ff9500' }} /> {p.rating}</> : null}
-                    </p>
-                  </div>
-                </div>
-                <div className="px-3 pb-2 flex items-center gap-2 flex-wrap">
-                  <span className="inline-flex items-baseline gap-1 px-2 py-1 rounded-md text-[12px] font-bold" style={{ background: 'rgba(52,199,89,0.12)', color: '#1f7a4d' }}>
-                    {p.epc_display || (p.epc_value != null ? `Up to $${p.epc_value.toFixed(2)}` : 'EPC n/a')}
-                  </span>
-                  {p.budget && (
-                    <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: bs.bg, color: bs.color }} title="Budget availability score">
-                      {p.budget} budget
-                    </span>
-                  )}
-                </div>
-                <div className="mt-auto px-3 py-2 border-t flex items-center justify-between gap-2" style={{ borderColor: 'var(--border)' }}>
-                  <a href={`https://www.amazon.com/dp/${p.asin}`} target="_blank" rel="noopener noreferrer"
-                     className="inline-flex items-center gap-1 text-[11px] font-medium" style={{ color: 'var(--text-soft)' }} title="View on Amazon (direct)">
-                    View on Amazon <ExternalLink size={11} />
-                  </a>
-                  <button onClick={() => remove(p.asin)} title="Remove from library"
-                    className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-faint)] hover:text-[#b3261e]">
-                    <Trash2 size={11} />
-                  </button>
-                </div>
-              </div>
-            )
-          })}
+          {products.map((p) => (
+            <EpcCard
+              key={p.asin} p={p} canBlog={canBlog}
+              onQuickPost={() => setQuickPost({ asin: p.asin, title: p.title || p.asin, imageUrl: p.image_url })}
+              onRemove={() => remove(p.asin)}
+            />
+          ))}
         </div>
       )}
+
+      {quickPost && (
+        <QuickPostModal deal={quickPost} pinterestEnabled={pinterestEnabled} onClose={() => setQuickPost(null)} />
+      )}
+    </div>
+  )
+}
+
+// One EPC opportunity card, with its own blog-generation state. "Make blog post"
+// runs the same deal-article engine as Deal Radar (POST /api/deals); "Post"
+// opens the shared social modal. An EPC product IS an Amazon product, so both
+// reuse the existing ASIN-driven flows.
+function EpcCard({ p, canBlog, onQuickPost, onRemove }: {
+  p: EpcProduct
+  canBlog: boolean
+  onQuickPost: () => void
+  onRemove: () => void
+}) {
+  const bs = budgetStyle(p.budget)
+  const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
+  const [postUrl, setPostUrl] = useState<string | null>(null)
+
+  async function makePost() {
+    if (gen === 'working') return
+    setGen('working')
+    const submit = (confirmDuplicate: boolean) => fetch('/api/deals', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asin: p.asin, occasion: 'auto', ...(confirmDuplicate ? { confirmDuplicate: true } : {}) }),
+    }).then(async (res) => ({ res, data: await res.json().catch(() => ({})) }))
+    try {
+      let { res, data } = await submit(false)
+      if (data?.duplicate) {
+        const ok = window.confirm(`You've already posted this product${data.existingTitle ? ` (“${String(data.existingTitle).slice(0, 60)}”)` : ''}. Publish another article anyway?`)
+        if (!ok) { setGen('idle'); return }
+        ;({ res, data } = await submit(true))
+      }
+      if (!res.ok) { toast.error(data.error || 'Could not create the post.'); setGen('idle'); return }
+      setPostUrl(data.url || null); setGen('done')
+      toast.success('Blog post published.')
+    } catch { toast.error('Could not create the post.'); setGen('idle') }
+  }
+
+  return (
+    <div className="rounded-xl border overflow-hidden flex flex-col" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+      <div className="flex gap-3 p-3">
+        {p.image_url
+          ? <img loading="lazy" decoding="async" src={p.image_url} alt="" className="w-16 h-16 rounded-lg object-contain flex-shrink-0 bg-white" />
+          : <div className="w-16 h-16 rounded-lg flex-shrink-0" style={{ background: 'rgba(124,58,237,0.08)' }} />}
+        <div className="flex-1 min-w-0">
+          {p.brand && <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: '#7C3AED' }}>{p.brand}</div>}
+          <p className="text-[12.5px] font-medium leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>{p.title || p.asin}</p>
+          <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+            {p.price_cents != null ? `$${(p.price_cents / 100).toFixed(2)}` : ''}
+            {p.rating != null ? <> · <Star size={9} className="inline -mt-0.5" style={{ color: '#ff9500' }} /> {p.rating}</> : null}
+          </p>
+        </div>
+      </div>
+      <div className="px-3 pb-2 flex items-center gap-2 flex-wrap">
+        <span className="inline-flex items-baseline gap-1 px-2 py-1 rounded-md text-[12px] font-bold" style={{ background: 'rgba(52,199,89,0.12)', color: '#1f7a4d' }}>
+          {p.epc_display || (p.epc_value != null ? `Up to $${p.epc_value.toFixed(2)}` : 'EPC n/a')}
+        </span>
+        {p.budget && (
+          <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: bs.bg, color: bs.color }} title="Budget availability score">
+            {p.budget} budget
+          </span>
+        )}
+      </div>
+      {/* Actions: turn the opportunity into content. */}
+      <div className="px-3 pb-2 flex items-center gap-1.5">
+        {canBlog && (
+          gen === 'done' && postUrl ? (
+            <a href={postUrl} target="_blank" rel="noopener noreferrer"
+               className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-lg py-1.5 text-white" style={{ background: '#34c759' }}>
+              <Check size={12} /> View post
+            </a>
+          ) : (
+            <button onClick={makePost} disabled={gen === 'working'}
+              className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-lg py-1.5 text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+              {gen === 'working' ? <><Loader2 size={12} className="animate-spin" /> Writing…</> : <><FileText size={12} /> Blog post <ArrowRight size={11} /></>}
+            </button>
+          )
+        )}
+        <button onClick={onQuickPost}
+          className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-lg py-1.5 text-white" style={{ background: '#f97316' }}>
+          <Send size={12} /> Post to socials
+        </button>
+      </div>
+      <div className="mt-auto px-3 py-2 border-t flex items-center justify-between gap-2" style={{ borderColor: 'var(--border)' }}>
+        <a href={`https://www.amazon.com/dp/${p.asin}`} target="_blank" rel="noopener noreferrer"
+           className="inline-flex items-center gap-1 text-[11px] font-medium" style={{ color: 'var(--text-soft)' }} title="View on Amazon (direct)">
+          View on Amazon <ExternalLink size={11} />
+        </a>
+        <button onClick={onRemove} title="Remove from library"
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-faint)] hover:text-[#b3261e]">
+          <Trash2 size={11} />
+        </button>
+      </div>
     </div>
   )
 }
