@@ -25,7 +25,7 @@ import BulkScheduleDealsModal from '@/components/deal/BulkScheduleDealsModal'
 import WalmartOffers from '@/components/walmart/WalmartOffers'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { type Tier } from '@/lib/tier'
+import { type Tier, tierAllowsSocial } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { canUseDealRadar, canBrowseDealRadar } from '@/lib/feature-access'
 
@@ -307,6 +307,9 @@ export default function DealRadarPage() {
   // Director in Social Influencer, so on a deal they Save (→ Social) rather than
   // blog-post or quick-post.
   const isAmazonSocial = tier === 'amazon'
+  // Pinterest deal pins are offered only where the plan includes Pinterest
+  // (amazon / studio / pro / admin). Creator sees the caption-link platforms only.
+  const pinterestEnabled = tier ? tierAllowsSocial(tier, 'pinterest') : false
 
   const PAGE_SIZE = 48 // matches the API
 
@@ -574,11 +577,12 @@ export default function DealRadarPage() {
         </>
       )}
 
-      {quickPostDeal && <QuickPostModal deal={quickPostDeal} onClose={() => setQuickPostDeal(null)} />}
+      {quickPostDeal && <QuickPostModal deal={quickPostDeal} onClose={() => setQuickPostDeal(null)} pinterestEnabled={pinterestEnabled} />}
 
       {showBulkSchedule && (
         <BulkScheduleDealsModal
           deals={deals.filter((d) => selected.has(d.asin)).map((d) => ({ asin: d.asin, title: d.title, imageUrl: d.imageUrl }))}
+          pinterestEnabled={pinterestEnabled}
           onClose={() => setShowBulkSchedule(false)}
           onScheduled={() => setSelected(new Set())}
         />

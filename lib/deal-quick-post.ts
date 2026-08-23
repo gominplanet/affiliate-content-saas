@@ -24,12 +24,20 @@ export interface DealQuickPostInput {
   userId: string
   tier: Tier
   intRow: {
+    user_id?: string | null
     amazon_associates_tag?: string | null
     geniuslink_api_key?: string | null
     geniuslink_api_secret?: string | null
+    // Pinterest publish (only needed when `pinterest` is set).
+    pinterest_access_token?: string | null
+    pinterest_board_id?: string | null
+    pinterest_pin_target?: string | null
   } | null
   asin: string
   platforms: QuickPostPlatform[]
+  /** Pinterest is a separate pipeline (designed pin → affiliate link), not one of
+   *  the caption-link QuickPostPlatforms. When true, also publish a deal pin. */
+  pinterest?: boolean
   story: boolean
   caption?: string        // user override; blank ⇒ we auto-write a price-safe caption
   title?: string | null   // fallback title when the ASIN has rotated out of the live cache
@@ -147,6 +155,25 @@ Return ONLY the caption text.` }],
       link, links: built.links, baseCaption: cap, disclaimer, platforms,
     })
     results.push(...textResults)
+  }
+
+  // ── Pinterest (designed pin → geni.us affiliate link) ──
+  // Separate pipeline from the caption-link platforms above: reuses the
+  // Amazon-Influencer pin path (design the pin, point it at the affiliate link,
+  // FTC disclosure + board handled). A tag is what makes the pin earn, so require
+  // one, matching the text-platform behaviour.
+  if (input.pinterest) {
+    const tag = (intRow?.amazon_associates_tag || '').trim()
+    if (!tag && !results.length && !wantStory) {
+      return { results: [], caption: baseCaption, geniuslinkNote, missingTag: true }
+    }
+    const { publishDealPin } = await import('@/lib/deal-pin')
+    const pinRes = await publishDealPin({
+      userId, tier, intRow: intRow ?? null,
+      asin, title: deal.title as string, productImageUrl: dealImage,
+    })
+    results.push({ platform: 'pinterest', ok: pinRes.ok, url: pinRes.url, error: pinRes.error })
+    if (pinRes.note && !geniuslinkNote) geniuslinkNote = pinRes.note
   }
 
   // ── Instagram Story (baked-in "LINK IN BIO" CTA) ──

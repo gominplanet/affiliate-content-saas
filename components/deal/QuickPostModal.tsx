@@ -40,9 +40,13 @@ export const QUICK_PLATFORMS: { key: string; label: string }[] = [
 ]
 
 export default function QuickPostModal({
-  deal, onClose, initialCaption = '',
-}: { deal: QuickPostDeal; onClose: () => void; initialCaption?: string }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set(QUICK_PLATFORMS.map((p) => p.key)))
+  deal, onClose, initialCaption = '', pinterestEnabled = false,
+}: { deal: QuickPostDeal; onClose: () => void; initialCaption?: string; pinterestEnabled?: boolean }) {
+  // Pinterest is a separate pipeline (a designed pin linking to the affiliate
+  // link), shown only when the plan allows Pinterest. It flows through the same
+  // `platforms` array; the API routes it to the pin path.
+  const platformOptions = pinterestEnabled ? [...QUICK_PLATFORMS, { key: 'pinterest', label: 'Pinterest' }] : QUICK_PLATFORMS
+  const [selected, setSelected] = useState<Set<string>>(new Set(platformOptions.map((p) => p.key)))
   const [story, setStory] = useState(false)
   const [caption, setCaption] = useState(initialCaption)
   const [posting, setPosting] = useState(false)
@@ -135,13 +139,16 @@ export default function QuickPostModal({
           <div>
             <div className="text-xs font-semibold text-muted-foreground mb-1.5">Post to</div>
             <div className="flex flex-wrap gap-2">
-              {QUICK_PLATFORMS.map((p) => (
+              {platformOptions.map((p) => (
                 <button key={p.key} onClick={() => toggle(p.key)}
                   className={`text-sm rounded-lg border px-3 py-1.5 ${selected.has(p.key) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background'}`}>
                   {p.label}
                 </button>
               ))}
             </div>
+            {pinterestEnabled && selected.has('pinterest') && (
+              <p className="text-[11px] text-muted-foreground mt-1.5">Pinterest gets its own designed pin linking to your affiliate link (blog post not required).</p>
+            )}
           </div>
 
           {/* Instagram Story — a separate path: a 9:16 image with a baked-in
