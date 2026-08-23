@@ -40,13 +40,18 @@ function fmt(ms: number): string {
 }
 
 export default function BulkScheduleDealsModal({
-  deals, onClose, onScheduled,
+  deals, onClose, onScheduled, pinterestEnabled = false,
 }: {
   deals: QuickPostDeal[]
   onClose: () => void
   onScheduled: () => void
+  pinterestEnabled?: boolean
 }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set(QUICK_PLATFORMS.map((p) => p.key)))
+  // Pinterest (a designed pin → affiliate link) is shown only where the plan
+  // allows it. It rides the same `platforms` array; the API routes it to the pin
+  // pipeline at fire time.
+  const platformOptions = pinterestEnabled ? [...QUICK_PLATFORMS, { key: 'pinterest', label: 'Pinterest' }] : QUICK_PLATFORMS
+  const [selected, setSelected] = useState<Set<string>>(new Set(platformOptions.map((p) => p.key)))
   const [firstAt, setFirstAt] = useState<string>(defaultStart())
   const [intervalMins, setIntervalMins] = useState<number>(30)
   const [saving, setSaving] = useState(false)
@@ -97,13 +102,16 @@ export default function BulkScheduleDealsModal({
           <div>
             <div className="text-xs font-semibold text-muted-foreground mb-1.5">Post each to</div>
             <div className="flex flex-wrap gap-2">
-              {QUICK_PLATFORMS.map((p) => (
+              {platformOptions.map((p) => (
                 <button key={p.key} onClick={() => toggle(p.key)}
                   className={`text-sm rounded-lg border px-3 py-1.5 ${selected.has(p.key) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background'}`}>
                   {selected.has(p.key) && <Check size={12} className="inline mr-1" />}{p.label}
                 </button>
               ))}
             </div>
+            {pinterestEnabled && selected.has('pinterest') && (
+              <p className="text-[11px] text-muted-foreground mt-1.5">Pinterest gets its own designed pin per deal, linking to your affiliate link.</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

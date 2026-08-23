@@ -38,9 +38,10 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: intRow } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: intRow } = await (supabase as any)
       .from('integrations')
-      .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
+      .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret,pinterest_access_token,pinterest_board_id,pinterest_pin_target')
       .eq('user_id', user.id).maybeSingle()
     const tier = normalizeTier(intRow?.tier) as Tier
     if (!canUseDealRadar(tier)) {
@@ -50,12 +51,15 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({})) as { asin?: string; platforms?: unknown; caption?: string; title?: string; imageUrl?: string; story?: boolean; scheduledFor?: string }
     const asin = (body.asin || '').trim().toUpperCase()
     if (!/^[A-Z0-9]{10}$/.test(asin)) return NextResponse.json({ error: 'A valid ASIN is required.' }, { status: 400 })
-    const platforms = (Array.isArray(body.platforms) ? body.platforms : [])
-      .map((p) => String(p)).filter((p): p is QuickPostPlatform => QUICK_POST_PLATFORMS.includes(p as QuickPostPlatform))
+    const rawPlatforms = (Array.isArray(body.platforms) ? body.platforms : []).map((p) => String(p))
+    const platforms = rawPlatforms.filter((p): p is QuickPostPlatform => QUICK_POST_PLATFORMS.includes(p as QuickPostPlatform))
+    // Pinterest is a separate pipeline (designed pin → affiliate link), not a
+    // caption-link platform.
+    const wantPinterest = rawPlatforms.includes('pinterest')
     // Instagram Story is a separate path (image + baked "link in bio" CTA — a
     // Story published via the API can't carry a caption or a tappable link).
     const wantStory = body.story === true
-    if (!platforms.length && !wantStory) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
+    if (!platforms.length && !wantStory && !wantPinterest) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
 
     // ── Schedule for later ──────────────────────────────────────────────────
     // A future scheduledFor means: don't post now, queue it. The
@@ -67,8 +71,9 @@ export async function POST(request: Request) {
       // Reject clearly-past times (allow a minute of clock skew).
       if (when.getTime() < Date.now() - 60_000) return NextResponse.json({ error: 'Pick a time in the future.' }, { status: 400 })
       // A tag is required to schedule too — fail fast rather than surprise them
-      // when the post fires with nothing to earn.
-      if (platforms.length && !((intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag || '').trim()) {
+      // when the post fires with nothing to earn. Pinterest pins earn off the tag
+      // too, so require it whenever any link/pin platform is chosen.
+      if ((platforms.length || wantPinterest) && !((intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag || '').trim()) {
         return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
       }
       // Daily cap: count what's already queued for that calendar day (UTC) and
@@ -94,7 +99,9 @@ export async function POST(request: Request) {
         asin,
         title: (body.title || '').trim() || null,
         image_url: body.imageUrl || null,
-        platforms,
+        // Store 'pinterest' alongside the caption-link platforms; the cron splits
+        // it back out and routes it through the pin pipeline at fire time.
+        platforms: wantPinterest ? [...platforms, 'pinterest'] : platforms,
         story: wantStory,
         caption: (body.caption || '').trim() || null,
         scheduled_at: when.toISOString(),
@@ -113,7 +120,7 @@ export async function POST(request: Request) {
 
     const out = await executeDealQuickPost({
       db: supabase, userId: user.id, tier, intRow: intRow ?? null,
-      asin, platforms, story: wantStory,
+      asin, platforms, pinterest: wantPinterest, story: wantStory,
       caption: body.caption, title: body.title, imageUrl: body.imageUrl,
     })
     if (out.missingTag) return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })

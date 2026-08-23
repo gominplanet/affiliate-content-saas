@@ -79,10 +79,13 @@ export async function POST(request: Request) {
     }
 
     // ── Validate platforms + timing ──────────────────────────────────────────
-    const platforms = (Array.isArray(body.platforms) ? body.platforms : [])
-      .map((p) => String(p)).filter((p): p is QuickPostPlatform => QUICK_POST_PLATFORMS.includes(p as QuickPostPlatform))
+    const rawPlatforms = (Array.isArray(body.platforms) ? body.platforms : []).map((p) => String(p))
+    const platforms = rawPlatforms.filter((p): p is QuickPostPlatform => QUICK_POST_PLATFORMS.includes(p as QuickPostPlatform))
+    // Pinterest is a separate pipeline (designed pin → affiliate link); the cron
+    // splits it out of the stored platforms array and routes it at fire time.
+    const wantPinterest = rawPlatforms.includes('pinterest')
     const wantStory = body.story === true
-    if (!platforms.length && !wantStory) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
+    if (!platforms.length && !wantStory && !wantPinterest) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
 
     const firstMs = new Date(body.firstAt || '').getTime()
     if (isNaN(firstMs)) return NextResponse.json({ error: 'That start time isn’t valid.' }, { status: 400 })
@@ -91,19 +94,20 @@ export async function POST(request: Request) {
     const intervalMins = Number(body.intervalMins)
     if (!ALLOWED_INTERVALS.has(intervalMins)) return NextResponse.json({ error: 'Pick a valid interval between posts.' }, { status: 400 })
 
-    // A tag is required to schedule link posts — fail fast rather than fire posts
-    // that can never earn.
-    if (platforms.length && !((intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag || '').trim()) {
+    // A tag is required to schedule link posts (and pins) — fail fast rather than
+    // fire posts that can never earn.
+    if ((platforms.length || wantPinterest) && !((intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag || '').trim()) {
       return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
     }
 
     // ── Build the staggered rows ─────────────────────────────────────────────
+    const storedPlatforms = wantPinterest ? [...platforms, 'pinterest'] : platforms
     const rows = uniqueDeals.map((d, i) => ({
       user_id: user.id,
       asin: d.asin,
       title: d.title || null,
       image_url: d.imageUrl || null,
-      platforms,
+      platforms: storedPlatforms,
       story: wantStory,
       caption: null as string | null, // written at fire time
       scheduled_at: new Date(firstMs + i * intervalMins * 60_000).toISOString(),

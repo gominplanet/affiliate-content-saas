@@ -171,7 +171,12 @@ export async function publishAmazonPin(opts: {
   userId: string
   tier: Tier
   intRow: PinIntegration
-  imageUrl: string
+  /** A hosted image URL. Provide this OR imageBase64. */
+  imageUrl?: string
+  /** Base64 image bytes (no data: prefix) + its media type. Lets a caller publish
+   *  a freshly-generated pin without hosting it first (e.g. the deal-pin path). */
+  imageBase64?: string
+  imageMediaType?: string
   asin?: string
   productUrl?: string
   productTitle?: string
@@ -181,6 +186,7 @@ export async function publishAmazonPin(opts: {
 }): Promise<PublishPinResult> {
   const { intRow } = opts
   if (!intRow.pinterest_access_token) throw new Error('Pinterest is not connected.')
+  if (!opts.imageUrl && !opts.imageBase64) throw new Error('No image to pin.')
 
   // Resolve ASIN + geni.us affiliate link, routed to the MVP-PINTEREST group.
   const { linkUrl, asin, note: geniuslinkNote } = await resolveAffiliateLink({
@@ -210,7 +216,9 @@ export async function publishAmazonPin(opts: {
   // Resilient: the stored pinterest_board_id can be a stale sandbox board (frozen
   // at connect time during Pinterest trial access). On the sandbox error this
   // retries once on a fresh real board and heals the stored id.
-  const pin = await pinterest.createPinResilient({ boardId, title, description, imageUrl: opts.imageUrl, link: linkUrl })
+  const pin = opts.imageBase64
+    ? await pinterest.createPinWithBase64Resilient({ boardId, title, description, imageBase64: opts.imageBase64, mediaType: opts.imageMediaType || 'image/jpeg', link: linkUrl })
+    : await pinterest.createPinResilient({ boardId, title, description, imageUrl: opts.imageUrl!, link: linkUrl })
   const healUserId = intRow.user_id || opts.userId
   if (pin.recovered && healUserId) {
     try {

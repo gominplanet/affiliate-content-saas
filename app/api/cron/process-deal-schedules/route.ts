@@ -92,23 +92,28 @@ export async function GET(request: Request) {
   const results = await Promise.allSettled(rows.map(async (row) => {
     try {
       // The user's tag + geniuslink creds + tier — decrypt like every cron path.
-      const { data: intRaw } = await admin
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: intRaw } = await (admin as any)
         .from('integrations')
-        .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
+        .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret,pinterest_access_token,pinterest_board_id,pinterest_pin_target')
         .eq('user_id', row.user_id).maybeSingle()
       const intRow = decryptIntegrationRow(intRaw) as {
         tier?: string | null; amazon_associates_tag?: string | null
         geniuslink_api_key?: string | null; geniuslink_api_secret?: string | null
+        pinterest_access_token?: string | null; pinterest_board_id?: string | null; pinterest_pin_target?: string | null
       } | null
       const tier = normalizeTier(intRow?.tier) as Tier
 
       const requested = (Array.isArray(row.platforms) ? row.platforms : [])
         .filter((p): p is QuickPostPlatform => QUICK_POST_PLATFORMS.includes(p as QuickPostPlatform))
       const platforms = requested.filter(p => !isDead(row.user_id, p))
+      // Pinterest is stored in the same platforms array but runs its own pipeline.
+      const wantPinterest = (Array.isArray(row.platforms) ? row.platforms : []).includes('pinterest')
+      const pinterestAlive = wantPinterest && !isDead(row.user_id, 'pinterest')
       // Every requested channel is currently dead → skip the row entirely rather
       // than fire a guaranteed-failing post. Tagged so it never counts toward the
       // dead-channel streak (which would keep the channel dead forever).
-      if (requested.length > 0 && platforms.length === 0) {
+      if ((requested.length + (wantPinterest ? 1 : 0)) > 0 && (platforms.length + (pinterestAlive ? 1 : 0)) === 0) {
         await (admin as any).from("deal_scheduled_posts").update({
           status: 'skipped',
           error_message: '[auto-skipped] Connected channel(s) need reconnecting — not sent.',
@@ -119,7 +124,7 @@ export async function GET(request: Request) {
 
       const out = await executeDealQuickPost({
         db: admin, userId: row.user_id, tier, intRow,
-        asin: row.asin, platforms, story: row.story === true,
+        asin: row.asin, platforms, pinterest: pinterestAlive, story: row.story === true,
         caption: row.caption ?? undefined, title: row.title, imageUrl: row.image_url,
         requireLiveDeal: true,
       })
