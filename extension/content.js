@@ -385,6 +385,30 @@ if (!window.__ccScoutListener) {
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'CC_SCAN') {
       ;(async () => {
+        // Sponsored Products / EPC tab is a DIFFERENT card model — the product,
+        // its price, Estimated EPC and Budget score are ON the card. The Affiliate+
+        // parser (parseCampaigns) finds nothing here, so read it with the dedicated
+        // sponsored scraper and map to the campaign shape MVP expects. This is what
+        // powers the EPC library scan.
+        if (detectCcTab() === 'sponsored') {
+          const rows = await parseSponsoredCards({ maxCards: 300 })
+          const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : null
+          const campaigns = rows.map((r) => ({
+            asin: r.asin,
+            campaignName: r.campaignName || r.asin,
+            brand: null,
+            epc: r.epc != null ? `Up to $${r.epc.toFixed(2)}` : null,
+            epcValue: r.epc != null ? r.epc : null,
+            price: r.price != null ? `$${r.price.toFixed(2)}` : null,
+            priceValue: r.price != null ? r.price : null,
+            rating: r.rating || null,
+            budget: cap(r.budgetScore),
+            image: r.image || null,
+            endsAt: null,
+          }))
+          sendResponse({ campaigns, diag: { ...collectDiag(), sponsored: true } })
+          return
+        }
         // When a keyword is supplied, drive Amazon's own search box first so we
         // scan the FULL catalogue's matches, not just the rendered page.
         let search = { searched: false }

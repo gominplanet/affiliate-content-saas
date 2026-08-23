@@ -89,9 +89,15 @@ export default function EpcLibraryPanel() {
     try {
       const res = await scoutCreatorConnections()
       if (!res.ok) { toast.error(SCAN_ERROR[res.error] || 'Scan failed. Try again.'); return }
-      const rows = res.campaigns ?? []
+      // Only Sponsored Products / EPC rows carry an epcValue — Affiliate+ campaign
+      // rows don't. Keeping only EPC rows means an accidental scan on the wrong CC
+      // tab saves nothing to the library instead of polluting it.
+      const all = res.campaigns ?? []
+      const rows = all.filter((r) => r.epcValue != null)
       if (!rows.length) {
-        toast.error('The scan found no opportunities on that tab. Make sure you’re on the Sponsored Products view.')
+        toast.error(all.length
+          ? 'That tab isn’t the Sponsored Products view (no EPC found). Switch your Creator Connections tab to “Sponsored Products”, then scan again.'
+          : 'The scan found no opportunities. Open your Sponsored Products opportunities tab on Amazon, then scan again.')
         return
       }
       const save = await fetch('/api/epc/ingest', {
