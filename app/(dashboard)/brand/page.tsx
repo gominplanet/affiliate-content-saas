@@ -529,29 +529,35 @@ export default function BrandPage() {
     // Load Geniuslink + Amazon-tag from `integrations` in parallel with the
     // brand_profiles row — they sit on different tables but render together
     // in the "Affiliate link routing" card below.
+    // The affiliate link settings (keys, mode, tokens) load through a server
+    // route that reads with the service-role client + select('*'), so a DB
+    // missing a newer column can't make the whole read fail and blank every
+    // field. The client select below only fetches two always-present columns
+    // (tier, GSC) for the rest of the page.
+    fetch('/api/affiliate-links/save')
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d || d.ok === false) return
+        setGeniuslinkKey(d.geniuslinkKey ?? '')
+        setGeniuslinkSecret(d.geniuslinkSecret ?? '')
+        const mode = d.blogSocialLinkMode
+        setBlogSocialLinkMode(mode === 'geniuslink' || mode === 'bitly' || mode === 'direct' ? mode : 'direct')
+        setBitlyToken(d.bitlyToken ?? '')
+        const pref = d.pinterestLinkPref
+        setPinterestLinkPref(pref === 'blog_post' || pref === 'youtube' || pref === 'homepage' ? pref : 'auto')
+        setAmazonAssociatesTag(d.amazonTag ?? '')
+      })
+      .catch(() => {})
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase
       .from('integrations')
-      .select('geniuslink_api_key, geniuslink_api_secret, wrap_blog_geniuslink, blog_social_link_mode, bitly_access_token, pinterest_link_pref, amazon_associates_tag, gsc_oauth_access_token, tier')
+      .select('gsc_oauth_access_token, tier')
       .eq('user_id', user.id)
       .maybeSingle()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .then(({ data: intRow }: { data: any }) => {
         if (intRow) {
-          setGeniuslinkKey(intRow.geniuslink_api_key ?? '')
-          setGeniuslinkSecret(intRow.geniuslink_api_secret ?? '')
-          // Prefer the new mode; fall back to the legacy wrap toggle for a row
-          // that predates migration 274.
-          const mode = intRow.blog_social_link_mode
-          setBlogSocialLinkMode(mode === 'geniuslink' || mode === 'bitly' || mode === 'direct'
-            ? mode
-            : (intRow.wrap_blog_geniuslink === true ? 'geniuslink' : 'direct'))
-          setBitlyToken(intRow.bitly_access_token ?? '')
-          {
-            const pref = intRow.pinterest_link_pref
-            setPinterestLinkPref(pref === 'blog_post' || pref === 'youtube' || pref === 'homepage' ? pref : 'auto')
-          }
-          setAmazonAssociatesTag(intRow.amazon_associates_tag ?? '')
           setGscConnected(!!intRow.gsc_oauth_access_token)
           if (typeof intRow.tier === 'string') setUserTier(intRow.tier)
         }

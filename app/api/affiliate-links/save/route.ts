@@ -27,6 +27,46 @@ export const dynamic = 'force-dynamic'
 const LINK_MODES = new Set(['direct', 'geniuslink', 'bitly'])
 const PIN_PREFS = new Set(['auto', 'blog_post', 'youtube', 'homepage'])
 
+/**
+ * GET /api/affiliate-links/save — read the current affiliate link settings.
+ *
+ * Reads via the service-role client with select('*'), which returns whatever
+ * columns exist and never errors on a missing one. The old client-side load
+ * selected the newer columns by name in one query, so a single un-migrated
+ * column made the whole read fail and every field rendered blank — which looked
+ * exactly like "nothing saved" even when it had saved. This never has that
+ * failure mode.
+ */
+export async function GET() {
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const admin = createAdminClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (admin as any).from('integrations').select('*').eq('user_id', user.id).maybeSingle()
+    const row = (data || {}) as Record<string, unknown>
+
+    const modeRaw = String(row.blog_social_link_mode ?? '')
+    const mode = LINK_MODES.has(modeRaw) ? modeRaw : (row.wrap_blog_geniuslink === true ? 'geniuslink' : 'direct')
+    const pinRaw = String(row.pinterest_link_pref ?? '')
+
+    return NextResponse.json({
+      ok: true,
+      geniuslinkKey: (row.geniuslink_api_key as string) ?? '',
+      geniuslinkSecret: (row.geniuslink_api_secret as string) ?? '',
+      blogSocialLinkMode: mode,
+      bitlyToken: (row.bitly_access_token as string) ?? '',
+      pinterestLinkPref: PIN_PREFS.has(pinRaw) ? pinRaw : 'auto',
+      amazonTag: (row.amazon_associates_tag as string) ?? '',
+    })
+  } catch (err) {
+    console.error('[affiliate-links GET]', err instanceof Error ? err.message : err)
+    return NextResponse.json({ ok: false })
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
