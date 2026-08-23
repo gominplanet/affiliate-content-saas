@@ -111,7 +111,11 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
       if (d) {
         setDebug(d.sponsored === false
           ? `SCOUT wasn’t on the Sponsored Products grid. It was on: ${d.url || 'unknown'}. Accept your campaigns and open the Accepted tab, then scan again.`
-          : `SCOUT saw ${d.asinNodes ?? '?'} product ASINs on the page and read ${d.parsed ?? all.length} cards; ${rows.length} had an EPC value.`)
+          // Report the accumulated harvest, not the per-window DOM snapshot: the
+          // grid is virtualized, so only ~30 cards exist in the page at any instant
+          // while the scroll harvests thousands. Showing the snapshot read as
+          // "saw 30 but read 3180", which looked broken.
+          : `SCOUT read ${(d.parsed ?? all.length).toLocaleString()} cards; ${rows.length.toLocaleString()} had an EPC value.`)
       } else {
         setDebug(null)
       }
