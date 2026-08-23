@@ -646,7 +646,7 @@ export default function CcCampaignsPage() {
       {mode === 'scan' ? (
         <SmartScanPanel coveredAsins={coveredAsins} onMessageBrand={setMsgModal} onSavedChange={loadStatus} />
       ) : mode === 'epc' ? (
-        <EpcLibraryPanel />
+        <EpcLibraryPanel tier={tier} />
       ) : (<>
 
       {/* Filters */}
