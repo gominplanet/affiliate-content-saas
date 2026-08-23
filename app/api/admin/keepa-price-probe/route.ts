@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
+import { fetchKeepaBasics } from '@/services/keepa'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -117,11 +118,19 @@ export async function GET(request: Request) {
           fixedToCents = correctedCents
         } catch { /* leave as diagnostic-only if the write fails */ }
       }
+      // Exercise the EXACT batch function the EPC enrichment uses, so we can see
+      // whether the multi-ASIN /product path resolves the image (vs the rows just
+      // being stale from before the images[] fix).
+      let basicsImageUrl: string | null = null
+      try {
+        const basics = await fetchKeepaBasics([asin])
+        basicsImageUrl = basics.get(asin)?.imageUrl ?? null
+      } catch { /* diagnostic only */ }
       return {
         ...base,
         fixedToCents,
         keepa: { amazonCents, newCents, buyBoxCurrentCents, buyBoxPriceField, avg90BuyBoxCents: Array.isArray(stats.avg90) ? cents(stats.avg90[18]) : null },
-        image: imageProbe,
+        image: { ...imageProbe, fetchKeepaBasicsImageUrl: basicsImageUrl },
       }
     } catch (e) {
       return { ...base, error: e instanceof Error ? e.message.slice(0, 120) : 'exception' }
