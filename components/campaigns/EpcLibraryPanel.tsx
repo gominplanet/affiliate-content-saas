@@ -320,9 +320,12 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
                 </>
               )}
               {!isAdmin && (
-                <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-                  These are Amazon Sponsored Products EPC opportunities: products Amazon pays you a per-click bounty on for offsite traffic (YouTube, socials, your blog). The list is kept updated for you, so just <b>search or filter</b> for a fit, then use <b>Get link</b> or make a post.
-                </p>
+                <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,204,0,0.10)', border: '1px solid rgba(255,204,0,0.35)' }}>
+                  <p className="text-[12px] font-semibold" style={{ color: '#8a6d00' }}>Do this first: Accept your campaigns</p>
+                  <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                    You only earn EPC on products you&rsquo;ve accepted in your own Amazon account. Open <b>Amazon Creator Connections</b>, sign in with the Associates account that holds your store ID, and use <b>&ldquo;Accept all&rdquo;</b> on the <b>Sponsored Products for Creators</b> tab. Then come back and promote any product below.
+                  </p>
+                </div>
               )}
               <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.30)' }}>
                 <p className="text-[12px] font-semibold" style={{ color: '#7C3AED' }}>Worth it for Gold &amp; Platinum creators</p>
