@@ -4,6 +4,10 @@ import { isPathBlockedForVa } from '@/lib/agency-routes'
 
 const publicPaths = [
   '/login', '/signup', '/reset-password',
+  // Passport Links geo-redirect — public by definition (anyone clicking a link).
+  // The short domain (mvpl.ink) rewrites /<code> → /go/<code> in middleware below;
+  // this also keeps the app-domain fallback (mvpaffiliate.io/go/<code>) public.
+  '/go',
   '/api/auth', '/api/proxy-image', '/api/cron', '/api/wp-version', '/api/campaigns/ingest',
   // Plugin/theme zip downloads — served as octet-stream so Safari doesn't
   // auto-unzip them (which leaves users with the inner .php). The underlying
@@ -94,6 +98,27 @@ export async function middleware(request: NextRequest) {
   // the API without cookies.
   if (request.nextUrl.pathname.startsWith('/api/') && request.headers.has('x-mvp-service')) {
     return NextResponse.next()
+  }
+
+  // ── Passport Links short domain (mvpl.ink) ──────────────────────────────
+  // On the branded short domain, a bare /<code> IS a geo-redirect link. Rewrite
+  // it to the public /go/<code> route BEFORE the auth check below (which would
+  // otherwise bounce the logged-out clicker to /login). Done here rather than in
+  // next.config so it's guaranteed to run before the session gate. No DB/session
+  // work for these hits.
+  {
+    const host = (request.headers.get('host') || '').toLowerCase().split(':')[0]
+    const passportHost = (process.env.PASSPORT_LINK_HOST || 'mvpl.ink').toLowerCase()
+    if (host === passportHost || host === `www.${passportHost}`) {
+      const seg = request.nextUrl.pathname.replace(/^\/+/, '').split('/')[0]
+      if (seg && seg !== 'go' && /^[A-Za-z0-9]{1,32}$/.test(seg)) {
+        const url = request.nextUrl.clone()
+        url.pathname = `/go/${seg}`
+        return NextResponse.rewrite(url)
+      }
+      // Bare domain or a non-code path → send to the main site.
+      return NextResponse.redirect('https://www.mvpaffiliate.io')
+    }
   }
 
   const { supabase, response } = createMiddlewareClient(request)
