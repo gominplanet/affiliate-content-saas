@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Globe, MousePointerClick, MapPin, Package, TrendingUp } from 'lucide-react'
+import PassportLinksCard from '@/components/brand/PassportLinksCard'
 
 const COUNTRY: Record<string, { name: string; flag: string }> = {
   US: { name: 'United States', flag: '🇺🇸' }, GB: { name: 'United Kingdom', flag: '🇬🇧' },
@@ -57,6 +58,11 @@ export default function PassportPage() {
     <>
       <PageHero title="Passport Links" subtitle="Where your clicks come from, which products drive them, and how your geo-routing links are performing across every country." />
 
+      {/* Setup — turn it on + enter per-country tags (lives here, self-contained). */}
+      <div className="mb-6">
+        <PassportLinksCard />
+      </div>
+
       {/* Range */}
       <div className="flex items-center gap-2 mb-5">
         {[7, 30, 90].map((d) => (
@@ -74,7 +80,7 @@ export default function PassportPage() {
           <Globe size={28} className="mx-auto mb-3 text-[#7C3AED]" />
           <p className="text-sm font-semibold text-[var(--text)]">No clicks yet</p>
           <p className="text-[13px] mt-1 max-w-md mx-auto text-[var(--text-3)]">
-            Turn on Passport Links in Brand Profile, then drop your links in posts, YouTube descriptions, or your bio. Every click that comes back shows up here, grouped by country and product.
+            Turn Passport Links on above, then drop your links in posts, YouTube descriptions, or your bio. Every click that comes back shows up here, grouped by country and product.
           </p>
         </div>
       ) : (
