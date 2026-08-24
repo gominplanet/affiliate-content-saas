@@ -54,6 +54,7 @@ import ScoutTopbarButton from './ScoutTopbarButton'
 import SocialHealthTopbarButton from './SocialHealthTopbarButton'
 import UsageBar from './UsageBar'
 import UsageNudge from './UsageNudge'
+import ReconnectNoticeBanner from './ReconnectNoticeBanner'
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 import AmazonUpgradeGate from '@/components/upgrade/AmazonUpgradeGate'
@@ -1231,6 +1232,9 @@ export default function DashboardShellV2({
         {/* Proactive nudge when a limit is 80%+ this period. Dismissible per
             period; self-hides otherwise. */}
         <UsageNudge />
+        {/* One-time precaution after the recent social-posting fixes: nudge
+            creators to reconnect their socials. Dismissible; self-hides. */}
+        <ReconnectNoticeBanner isAdmin={isAdmin} />
 
         {/* Page content. Generous max-width so the new chrome doesn't
             crush wide content (e.g. the comparison table on /comparison
