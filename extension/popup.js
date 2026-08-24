@@ -54,6 +54,82 @@ async function refreshIntl() {
   } catch { renderIntl(false) }
 }
 
+// ── Passport quick-create ─────────────────────────────────────────────────
+// Turn the current tab into a Passport Link. Posts the tab URL to the signed-in
+// MVP app (host permission for mvpaffiliate.io lets the popup call it with the
+// user's session cookie, no CORS). The app resolves an Amazon link to its ASIN
+// (geo-routed) or shortens any other link, and returns the mvpl.ink URL.
+const APP_ORIGIN = 'https://www.mvpaffiliate.io'
+
+function ppShowError(msg) {
+  const el = $('ppErr')
+  el.textContent = msg
+  el.classList.add('show')
+  $('ppRes').classList.remove('show')
+}
+function ppShowResult(url) {
+  $('ppErr').classList.remove('show')
+  const a = $('ppUrl')
+  a.textContent = url
+  a.href = url
+  $('ppRes').classList.add('show')
+  const copy = $('ppCopy')
+  copy.textContent = 'Copy'
+  copy.classList.remove('ok')
+}
+
+async function ppCreate() {
+  const btn = $('ppCreate')
+  $('ppErr').classList.remove('show')
+  $('ppRes').classList.remove('show')
+
+  let tab
+  try { [tab] = await chrome.tabs.query({ active: true, currentWindow: true }) } catch { /* none */ }
+  const url = (tab && tab.url) || ''
+  if (!/^https?:\/\//i.test(url)) {
+    ppShowError('Open a product page (or any web page) first, then try again.')
+    return
+  }
+
+  btn.disabled = true
+  const label = tab.title ? String(tab.title).slice(0, 300) : null
+  try {
+    const res = await fetch(`${APP_ORIGIN}/api/passport/link`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, title: label }),
+    })
+    let j = {}
+    try { j = await res.json() } catch { /* non-JSON */ }
+    if (res.status === 401) { ppShowError('Sign in to MVP Affiliate first, then try again.'); return }
+    if (res.status === 403) { ppShowError(j.error || 'Passport Links is available on the Studio and Pro plans.'); return }
+    if (!res.ok || !j.ok || !j.url) { ppShowError(j.error || 'Could not create the link. Please try again.'); return }
+
+    ppShowResult(j.url)
+    // Auto-copy so the link is ready to paste immediately.
+    try {
+      await navigator.clipboard.writeText(j.url)
+      const copy = $('ppCopy'); copy.textContent = 'Copied'; copy.classList.add('ok')
+    } catch { /* clipboard blocked — the Copy button still works */ }
+  } catch {
+    ppShowError('Network error reaching MVP. Check your connection and try again.')
+  } finally {
+    btn.disabled = false
+  }
+}
+
+$('ppCreate').addEventListener('click', ppCreate)
+$('ppCopy').addEventListener('click', async () => {
+  const url = $('ppUrl').textContent || ''
+  if (!url) return
+  try {
+    await navigator.clipboard.writeText(url)
+    const copy = $('ppCopy'); copy.textContent = 'Copied'; copy.classList.add('ok')
+    setTimeout(() => { copy.textContent = 'Copy'; copy.classList.remove('ok') }, 1600)
+  } catch { /* clipboard blocked */ }
+})
+
 // ── boot ────────────────────────────────────────────────────────────────
 refreshRetail()
 refreshIntl()
