@@ -354,6 +354,20 @@ async function fetchRefImage(
     return { data, filename: `ref_${idx}.${isPng ? 'png' : 'jpg'}`, mime: isPng ? 'image/png' : 'image/jpeg' }
   } catch { return null }
 }
+/** Classify a gpt-image failure so the logs say WHY it fell back to fal (the
+ *  difference between a config problem and a content refusal). Greppable:
+ *  `[gpt-image-compose] render failed [moderation]` etc. */
+export function classifyImageError(e: unknown): string {
+  const m = (e instanceof Error ? e.message : String(e)).toLowerCase()
+  if (/verif|must be verified|organization/.test(m)) return 'org_not_verified'
+  if (/moderation|content policy|safety|rejected|not allowed|violat/.test(m)) return 'moderation'
+  if (/rate limit|429|too many requests/.test(m)) return 'rate_limit'
+  if (/timeout|timed out|econnreset|socket hang|network/.test(m)) return 'timeout'
+  if (/invalid image|mode|unsupported|decode/.test(m)) return 'bad_reference'
+  if (/billing|quota|insufficient|payment/.test(m)) return 'billing'
+  return 'other'
+}
+
 export async function composeWithGptImage(opts: {
   prompt: string
   referenceImageUrls: string[]
@@ -396,12 +410,12 @@ export async function composeWithGptImage(opts: {
         const url = await fal.storage.upload(new Blob([new Uint8Array(bytes)], { type: 'image/png' }))
         if (url) out.push(url)
       } catch (e) {
-        console.warn('[gpt-image-compose] render failed:', e instanceof Error ? e.message : String(e))
+        console.warn(`[gpt-image-compose] render failed [${classifyImageError(e)}]:`, e instanceof Error ? e.message : String(e))
       }
     }
     return out
   } catch (err) {
-    console.warn('[gpt-image-compose] compose failed:', err instanceof Error ? err.message : String(err))
+    console.warn(`[gpt-image-compose] compose failed [${classifyImageError(err)}]:`, err instanceof Error ? err.message : String(err))
     return []
   }
 }
