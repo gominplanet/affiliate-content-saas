@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Globe, MousePointerClick, MapPin, Package, TrendingUp, Store, Smartphone, Monitor, Tablet } from 'lucide-react'
 import PassportLinksCard from '@/components/brand/PassportLinksCard'
+import ExternalNetworksCards from '@/components/integrations/ExternalNetworksCards'
 
 const COUNTRY: Record<string, { name: string; flag: string }> = {
   US: { name: 'United States', flag: '🇺🇸' }, GB: { name: 'United Kingdom', flag: '🇬🇧' },
@@ -70,6 +71,20 @@ export default function PassportPage() {
       {/* Setup — turn it on + enter per-country tags (lives here, self-contained). */}
       <div className="mb-6">
         <PassportLinksCard />
+      </div>
+
+      {/* Affiliate networks — connect the same external networks here too, so all
+          your link setup lives on one page. These pay on top of / alongside your
+          Amazon tag; Passport keeps geo-routing your Amazon links either way. */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Store size={15} style={{ color: '#0E7490' }} />
+          <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Affiliate networks</h2>
+        </div>
+        <p className="text-[12.5px] mb-3" style={{ color: 'var(--text-3)' }}>
+          Connect your own keys for Levanta, PartnerBoost, and Wayward to unlock their MVP tools. Optional, and separate from Passport&apos;s geo-routing.
+        </p>
+        <ExternalNetworksCards />
       </div>
 
       {/* Range */}
