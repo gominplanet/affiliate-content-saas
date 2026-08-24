@@ -71,7 +71,7 @@ export async function POST(request: Request) {
     const deals: DigestDeal[] = await Promise.all(
       dealRows.map(async (r) => ({
         ...r,
-        affiliateUrl: await resolveAffiliateUrl(r.asin, r.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null),
+        affiliateUrl: await resolveAffiliateUrl(r.asin, r.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null, user.id),
       })),
     )
 

@@ -7,6 +7,8 @@
 // logic is testable and the cron stays thin.
 
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { passportLinkForUser } from '@/lib/passport-links'
 import { scrubBanned } from '@/lib/scrub'
 
 export interface DigestDealRow {
@@ -76,7 +78,16 @@ export async function pickDigestDeals(
 export async function resolveAffiliateUrl(
   asin: string, title: string,
   amazonTag: string | null, gKey: string | null, gSecret: string | null,
+  userId?: string | null,
 ): Promise<string> {
+  // Passport Links (geo-routing) wins WHEN ON — pass a userId to opt a surface in.
+  // Off → null and we fall through to the Geniuslink / tag chain unchanged.
+  if (userId) {
+    try {
+      const p = await passportLinkForUser(createAdminClient(), userId, asin, { source: 'blog', title })
+      if (p) return p
+    } catch { /* fall through */ }
+  }
   const tagged = amazonTag
     ? `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(amazonTag)}`
     : `https://www.amazon.com/dp/${asin}`

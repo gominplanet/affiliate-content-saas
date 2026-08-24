@@ -67,6 +67,46 @@ export function normalizeCountry(raw: string | null | undefined): string {
   return /^[A-Z]{2}$/.test(c) ? c : 'US'
 }
 
+/**
+ * Best-effort device / browser / OS from a User-Agent string, for the dashboard
+ * breakdowns (the same slices Geniuslink shows). Deliberately lightweight: a few
+ * ordered regex checks, no dependency. Returns null fields for an empty/unknown
+ * UA so the analytics side can bucket them as "Unknown".
+ */
+export function parseUserAgent(ua: string | null | undefined): { device: string | null; browser: string | null; os: string | null } {
+  const s = (ua || '').trim()
+  if (!s) return { device: null, browser: null, os: null }
+
+  // OS first (also informs the device guess).
+  let os: string | null = null
+  if (/iPhone|iPad|iPod/i.test(s)) os = 'iOS'
+  else if (/Android/i.test(s)) os = 'Android'
+  else if (/Windows NT/i.test(s)) os = 'Windows'
+  else if (/Mac OS X|Macintosh/i.test(s)) os = 'macOS'
+  else if (/CrOS/i.test(s)) os = 'ChromeOS'
+  else if (/Linux/i.test(s)) os = 'Linux'
+
+  // Device class. A tablet is an iPad, or an Android without the "Mobile" token.
+  let device: string
+  if (/iPad|Tablet|PlayBook|Silk/i.test(s) || (/Android/i.test(s) && !/Mobile/i.test(s))) device = 'Tablet'
+  else if (/Mobi|iPhone|iPod|Android.*Mobile|Windows Phone/i.test(s)) device = 'Mobile'
+  else device = 'Desktop'
+
+  // Browser — order matters (Edge/Brave/Opera masquerade as Chrome; Chrome UAs
+  // also carry "Safari", so Chrome must be checked before Safari).
+  let browser: string | null = null
+  if (/Edg[eA]?\//i.test(s)) browser = 'Edge'
+  else if (/OPR\/|Opera/i.test(s)) browser = 'Opera'
+  else if (/SamsungBrowser/i.test(s)) browser = 'Samsung Internet'
+  else if (/Firefox\/|FxiOS/i.test(s)) browser = 'Firefox'
+  else if (/CriOS/i.test(s)) browser = 'Chrome'
+  else if (/Chrome\//i.test(s)) browser = 'Chrome'
+  else if (/Safari\//i.test(s)) browser = 'Safari'
+  else if (/bot|crawler|spider|facebookexternalhit|WhatsApp|Slackbot|Discordbot|TelegramBot/i.test(s)) browser = 'Bot'
+
+  return { device, browser, os }
+}
+
 export interface PassportDestination {
   url: string
   marketplace: string // amazon host we chose

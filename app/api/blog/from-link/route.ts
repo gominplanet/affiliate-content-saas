@@ -34,6 +34,7 @@ import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { passportLinkForUser } from '@/lib/passport-links'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { spendGate } from '@/lib/ai-spend'
 import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
@@ -215,8 +216,10 @@ export async function POST(req: Request) {
       bullets = p.bullets || []
       productImageUrl = p.imageUrl || p.images?.[0] || null
     } catch { /* fall back to research / provided name */ }
-    // Recloak via Geniuslink when configured, else append the Amazon tag.
-    if (genius) {
+    // Passport Links (geo-routing) wins WHEN ON; else Geniuslink, else tag.
+    const passport = await passportLinkForUser(supabase, ownerId, asin, { source: 'blog', title: productName || 'product' })
+    if (passport) affiliateUrl = passport
+    if (!affiliateUrl && genius) {
       try { affiliateUrl = (await genius.createAsinLinkWithCode(asin, productName || 'product')).url } catch { /* ignore */ }
     }
     if (!affiliateUrl) {

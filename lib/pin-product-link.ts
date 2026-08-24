@@ -10,6 +10,7 @@
 // Returns null when there's no product to link to (the modal then disables the
 // Product option and the pin stays on the blog link).
 import { asinFromAmazonUrl, firstProductUrl } from '@/lib/product-link'
+import { passportLinkForUser } from '@/lib/passport-links'
 import { extractAsin } from '@/services/amazon'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
@@ -48,6 +49,15 @@ export async function resolvePinProductLink(
 
   const asin = (productUrl ? asinFromAmazonUrl(productUrl) : null)
     || extractAsin(`${productUrl || ''} ${title}`)
+
+  // Passport Links (geo-routing) wins WHEN ON. Off → null and we fall through to
+  // the Geniuslink / tagged-direct link below unchanged.
+  if (asin) {
+    try {
+      const p = await passportLinkForUser(supabase, userId, asin, { source: 'pinterest', title })
+      if (p) return p
+    } catch { /* fall through */ }
+  }
   const tag = ((ig?.amazon_associates_tag as string) || '').trim()
 
   // Tagged direct Amazon destination when we know the ASIN; else a non-Amazon

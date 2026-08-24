@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, Globe, MousePointerClick, MapPin, Package, TrendingUp } from 'lucide-react'
+import { Loader2, Globe, MousePointerClick, MapPin, Package, TrendingUp, Store, Smartphone, Monitor, Tablet } from 'lucide-react'
 import PassportLinksCard from '@/components/brand/PassportLinksCard'
 
 const COUNTRY: Record<string, { name: string; flag: string }> = {
@@ -28,10 +28,18 @@ const cn = (c: string) => COUNTRY[c] || { name: c, flag: '🌐' }
 
 interface Analytics {
   total: number; days: number
+  uniqueProducts?: number; uniqueCountries?: number
   byCountry: { country: string; count: number }[]
+  byMarketplace?: { store: string; count: number }[]
+  byDevice?: { device: string; count: number }[]
+  byBrowser?: { browser: string; count: number }[]
   bySource: { source: string; count: number }[]
   topProducts: { code: string; count: number; asin: string | null; label: string | null }[]
   byDay: { date: string; count: number }[]
+}
+
+const DEVICE_ICON: Record<string, React.ReactNode> = {
+  Mobile: <Smartphone size={13} />, Tablet: <Tablet size={13} />, Desktop: <Monitor size={13} />,
 }
 
 export default function PassportPage() {
@@ -138,6 +146,56 @@ export default function PassportPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* Sent-to store + devices */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5">
+            {/* Which Amazon store the click was routed to (the geo-routing at work). */}
+            <div className="card p-4">
+              <div className="flex items-center gap-2 mb-3" style={{ color: '#0a84ff' }}>
+                <Store size={14} /><span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Sent to Amazon store</span>
+              </div>
+              {(data!.byMarketplace && data!.byMarketplace.length > 0) ? (
+                <div className="space-y-2">
+                  {data!.byMarketplace.slice(0, 10).map((m) => (
+                    <div key={m.store} className="flex items-center gap-2">
+                      <span className="text-[13px] w-40 flex-shrink-0 truncate" style={{ color: 'var(--text)' }}>{cn(m.store).flag} Amazon {cn(m.store).name}</span>
+                      <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${(m.count / total) * 100}%`, background: '#0a84ff' }} />
+                      </div>
+                      <span className="text-[12px] font-semibold w-12 text-right tabular-nums" style={{ color: 'var(--text-soft)' }}>{m.count.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>No store data yet.</p>}
+            </div>
+
+            {/* Devices + browsers (from the visitor's user-agent). */}
+            <div className="card p-4">
+              <div className="flex items-center gap-2 mb-3" style={{ color: '#34c759' }}>
+                <Smartphone size={14} /><span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Devices &amp; browsers</span>
+              </div>
+              {(data!.byDevice && data!.byDevice.length > 0) ? (
+                <>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {data!.byDevice.map((d) => (
+                      <span key={d.device} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px]" style={{ background: 'var(--surface-2)', color: 'var(--text-soft)' }}>
+                        {DEVICE_ICON[d.device] || <Globe size={13} />} {d.device} <b style={{ color: 'var(--text)' }}>{d.count.toLocaleString()}</b>
+                      </span>
+                    ))}
+                  </div>
+                  {data!.byBrowser && data!.byBrowser.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {data!.byBrowser.map((b) => (
+                        <span key={b.browser} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px]" style={{ background: 'var(--surface-2)', color: 'var(--text-soft)' }}>
+                          {b.browser} <b style={{ color: 'var(--text)' }}>{b.count.toLocaleString()}</b>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : <p className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>Device data starts logging on new clicks.</p>}
             </div>
           </div>
 

@@ -14,6 +14,8 @@ import { extractAsin, isValidAsin } from '@/services/amazon'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { appendAmazonSubtag } from '@/lib/geniuslink-group'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { passportLinkForUser } from '@/lib/passport-links'
 
 const GENIUSLINK = /(?:geni\.us|\bgnz\.)/i
 const SHORTENERS = /(?:amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i
@@ -161,8 +163,13 @@ export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<A
       ? appendAmazonSubtag(`https://www.amazon.com/dp/${asin}?tag=${amazonTag}`, videoId)
       : subtaggedDestination
 
+  // Passport Links (geo-routing) wins WHEN ON. Off → null and we fall through to
+  // the Geniuslink / tag chain below unchanged.
   let affiliateUrl: string
-  if (geniuslinkApiKey && geniuslinkApiSecret) {
+  const passport = asin ? await passportLinkForUser(createAdminClient(), userId, asin, { source: videoId || 'video', title }) : null
+  if (passport) {
+    affiliateUrl = passport
+  } else if (geniuslinkApiKey && geniuslinkApiSecret) {
     try {
       const genius = createGeniuslinkService(geniuslinkApiKey, geniuslinkApiSecret)
       const wrapped = await genius.createLink(subtaggedDestination, title, {

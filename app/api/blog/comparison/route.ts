@@ -30,6 +30,7 @@ import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithNanoBananaPro, rehostToFal, NANO_BANANA_PRO_COST_MODEL } from '@/lib/thumbnail-generators'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { passportLinkForUser } from '@/lib/passport-links'
 import { preflightWpPublish } from '@/lib/wp-preflight'
 import { listYouTubeChannels } from '@/lib/youtube-channels'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -467,7 +468,10 @@ export async function POST(request: Request) {
             }
           } catch { /* skip unreadable product */ }
           if (matched) {
-            if (genius) {
+            // Passport Links (geo-routing) wins WHEN ON; else Geniuslink, else tag.
+            const passport = await passportLinkForUser(supabase, ownerId, asin!, { source: 'blog', title: productName })
+            if (passport) affiliateUrl = passport
+            if (!affiliateUrl && genius) {
               try { affiliateUrl = (await genius.createAsinLinkWithCode(asin!, productName)).url } catch { /* ignore */ }
             }
             if (!affiliateUrl) {
@@ -504,7 +508,9 @@ export async function POST(request: Request) {
       // USER's Geniuslink. If nothing resolved but the video TITLE carries an
       // ASIN, cloak that (a real product).
       if (!affiliateUrl && titleAsin) {
-        if (genius) {
+        const passport = await passportLinkForUser(supabase, ownerId, titleAsin, { source: 'blog', title: productName })
+        if (passport) affiliateUrl = passport
+        if (!affiliateUrl && genius) {
           try { affiliateUrl = (await genius.createAsinLinkWithCode(titleAsin, productName)).url } catch { /* fall through */ }
         }
         if (!affiliateUrl) {

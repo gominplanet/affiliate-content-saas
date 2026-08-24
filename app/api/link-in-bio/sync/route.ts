@@ -12,6 +12,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { canUseDealRadar } from '@/lib/feature-access'
 import { resolveAffiliateUrl } from '@/lib/weekly-digest'
+import { passportLinkForUser } from '@/lib/passport-links'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 
 export const runtime = 'nodejs'
@@ -171,7 +172,11 @@ export async function POST() {
       if (!/^[A-Z0-9]{10}$/.test(asinU) || have.has(asinU)) continue
       const title = (r.title || `Amazon product ${asinU}`).slice(0, 120)
       let url: string
-      if (gKey && gSecret && Date.now() - started < 45_000) {
+      // Passport Links (geo-routing) wins WHEN ON; else Geniuslink, else tag.
+      const passport = await passportLinkForUser(sb, user.id, asinU, { source: 'linkbio', title })
+      if (passport) {
+        url = passport
+      } else if (gKey && gSecret && Date.now() - started < 45_000) {
         url = await resolveAffiliateUrl(asinU, title, tag, gKey, gSecret)
       } else {
         url = tag ? `https://www.amazon.com/dp/${asinU}?tag=${encodeURIComponent(tag)}` : `https://www.amazon.com/dp/${asinU}`
