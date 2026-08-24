@@ -37,20 +37,22 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
     // The creator's tags: per-site country map + default (US) tag. Fall back to the
     // account-wide integrations tag when the link isn't tied to a specific site.
     let defaultTag: string | null = null
-    let countryTags: Record<string, string> = {}
+    let siteTags: Record<string, string> = {}
     if (link.site_id) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: site } = await (admin as any)
         .from('wordpress_sites').select('amazon_associates_tag, amazon_country_tags').eq('id', link.site_id).maybeSingle()
       defaultTag = (site?.amazon_associates_tag as string | null) ?? null
-      countryTags = (site?.amazon_country_tags as Record<string, string> | null) ?? {}
+      siteTags = (site?.amazon_country_tags as Record<string, string> | null) ?? {}
     }
-    if (!defaultTag) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: ig } = await (admin as any)
-        .from('integrations').select('amazon_associates_tag').eq('user_id', link.user_id).maybeSingle()
-      defaultTag = (ig?.amazon_associates_tag as string | null) ?? null
-    }
+    // Account-level default tag + country tags (the fallback for single-site
+    // creators, and where the US tag comes from when the link has no site).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: ig } = await (admin as any)
+      .from('integrations').select('amazon_associates_tag, amazon_country_tags').eq('user_id', link.user_id).maybeSingle()
+    if (!defaultTag) defaultTag = (ig?.amazon_associates_tag as string | null) ?? null
+    // Per-site country tags win; account-level fills any the site doesn't set.
+    const countryTags: Record<string, string> = { ...((ig?.amazon_country_tags as Record<string, string> | null) ?? {}), ...siteTags }
 
     const country = req.headers.get('x-vercel-ip-country') || req.headers.get('cf-ipcountry') || 'US'
     const dest = buildPassportDestination(String(link.asin), country, countryTags, defaultTag)

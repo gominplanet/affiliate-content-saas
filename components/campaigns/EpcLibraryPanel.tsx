@@ -70,13 +70,17 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   const [debug, setDebug] = useState<string | null>(null)
   const [filling, setFilling] = useState(false)
   const [fillMsg, setFillMsg] = useState<string | null>(null)
-  // The ACTIVE site's Amazon Associates tag (per-site, migration 280). EPC earns on
-  // qualified clicks from a standard, properly-formatted associate link, so the
-  // card's "Get link" hands the creator exactly that to drop offsite.
+  // The active site's US Associates tag + whether Passport Links (geo-routing) is
+  // on. "Get link" hands out a Passport Link when enabled (sends each visitor to
+  // their own country's Amazon), else the standard tagged link.
   const [amazonTag, setAmazonTag] = useState<string>('')
+  const [passportEnabled, setPassportEnabled] = useState(false)
   useEffect(() => {
-    fetch('/api/affiliate-links/save').then((r) => r.json()).then((d) => {
-      if (d?.ok && typeof d.amazonTag === 'string') setAmazonTag(d.amazonTag.trim())
+    fetch('/api/passport').then((r) => r.json()).then((d) => {
+      if (d?.ok) {
+        if (typeof d.usTag === 'string') setAmazonTag(d.usTag.trim())
+        setPassportEnabled(!!d.enabled)
+      }
     }).catch(() => {})
   }, [])
 
@@ -272,7 +276,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {products.map((p) => (
             <EpcCard
-              key={p.asin} p={p} canBlog={canBlog} amazonTag={amazonTag}
+              key={p.asin} p={p} canBlog={canBlog} amazonTag={amazonTag} passportEnabled={passportEnabled}
               onQuickPost={() => setQuickPost({ asin: p.asin, title: p.title || p.asin, imageUrl: p.image_url })}
               onRemove={() => remove(p.asin)}
             />
@@ -291,28 +295,46 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
 // runs the same deal-article engine as Deal Radar (POST /api/deals); "Post"
 // opens the shared social modal. An EPC product IS an Amazon product, so both
 // reuse the existing ASIN-driven flows.
-function EpcCard({ p, canBlog, amazonTag, onQuickPost, onRemove }: {
+function EpcCard({ p, canBlog, amazonTag, passportEnabled, onQuickPost, onRemove }: {
   p: EpcProduct
   canBlog: boolean
   amazonTag: string
+  passportEnabled: boolean
   onQuickPost: () => void
   onRemove: () => void
 }) {
   const bs = budgetStyle(p.budget)
   const [copied, setCopied] = useState(false)
+  const [linking, setLinking] = useState(false)
 
-  // A standard, properly-formatted Amazon Associate link (the active site's tag).
-  // Per Amazon, this earns EPC on qualified offsite clicks automatically — no
-  // special Creator Connections link needed. Copy it to drop in a YouTube
-  // description, social bio, story, wherever the creator sends traffic.
-  function copyLink() {
+  // Copy the affiliate link for offsite traffic (where EPC clicks come from). With
+  // Passport Links on, hand out the geo-routing link (each visitor → their own
+  // country's Amazon). Otherwise the standard tagged link, which earns EPC too.
+  async function copyLink() {
+    if (linking) return
+    const flash = () => { setCopied(true); setTimeout(() => setCopied(false), 1800) }
+    const write = (url: string, ok: string, warn?: string) =>
+      navigator.clipboard?.writeText(url).then(() => { flash(); if (warn) toast.warning(warn); else toast.success(ok) })
+        .catch(() => toast.error('Could not copy the link.'))
+    if (passportEnabled) {
+      setLinking(true)
+      try {
+        const res = await fetch('/api/passport/link', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ asin: p.asin, title: p.title || p.asin }),
+        })
+        const d = await res.json().catch(() => ({}))
+        if (res.ok && d.url) { await write(d.url, 'Passport Link copied — it geo-routes each visitor.'); return }
+        toast.error(d.error || 'Could not create the link.')
+      } finally { setLinking(false) }
+      return
+    }
     const tag = (amazonTag || '').trim()
-    const url = `https://www.amazon.com/dp/${p.asin}${tag ? `?tag=${encodeURIComponent(tag)}` : ''}`
-    navigator.clipboard?.writeText(url).then(() => {
-      setCopied(true); setTimeout(() => setCopied(false), 1800)
-      if (tag) toast.success('Affiliate link copied.')
-      else toast.warning('Link copied, but set your Amazon Associates tag in Brand Profile so it earns.')
-    }).catch(() => toast.error('Could not copy the link.'))
+    await write(
+      `https://www.amazon.com/dp/${p.asin}${tag ? `?tag=${encodeURIComponent(tag)}` : ''}`,
+      'Affiliate link copied.',
+      tag ? undefined : 'Link copied, but set your Amazon Associates tag in Brand Profile so it earns.',
+    )
   }
   const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
   const [postUrl, setPostUrl] = useState<string | null>(null)
@@ -370,11 +392,15 @@ function EpcCard({ p, canBlog, amazonTag, onQuickPost, onRemove }: {
       </div>
       {/* Get link — the standard associate link that earns EPC on offsite clicks. */}
       <div className="px-3 pb-2">
-        <button onClick={copyLink}
-          className="w-full inline-flex items-center justify-center gap-1.5 text-[11.5px] font-semibold rounded-lg py-1.5 border"
+        <button onClick={copyLink} disabled={linking}
+          className="w-full inline-flex items-center justify-center gap-1.5 text-[11.5px] font-semibold rounded-lg py-1.5 border disabled:opacity-60"
           style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED', background: 'rgba(124,58,237,0.06)' }}
-          title="Copy your affiliate link to drop offsite (YouTube, socials, blog) — EPC pays on those clicks">
-          {copied ? <><Check size={13} /> Link copied</> : <><LinkIcon size={13} /> Get affiliate link</>}
+          title={passportEnabled
+            ? 'Copy your Passport Link — sends each visitor to their own country’s Amazon and tracks clicks'
+            : 'Copy your affiliate link to drop offsite (YouTube, socials, blog) — EPC pays on those clicks'}>
+          {linking ? <><Loader2 size={13} className="animate-spin" /> Building…</>
+            : copied ? <><Check size={13} /> Link copied</>
+            : <><LinkIcon size={13} /> {passportEnabled ? 'Get Passport Link' : 'Get affiliate link'}</>}
         </button>
       </div>
       {/* Actions: turn the opportunity into content. */}
