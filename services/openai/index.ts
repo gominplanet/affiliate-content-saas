@@ -126,6 +126,28 @@ export class OpenAIService {
     }
   }
 
+  /** Diagnostic: attempt a tiny reference-based EDIT — the exact path the
+   *  thumbnail/blog composers use (and the one that gets refused on face /
+   *  product prompts). A benign solid-colour reference isolates model/param
+   *  access from content-policy refusals: if this OK's but production still
+   *  falls back, the failures are prompt/content refusals, not access. ~$0.02. */
+  async testImageEdit(): Promise<{ ok: boolean; model: string; error?: string }> {
+    const model = OpenAIService.imageModel()
+    try {
+      const png = await sharp({ create: { width: 256, height: 256, channels: 3, background: { r: 200, g: 60, b: 60 } } }).png().toBuffer()
+      const file = await toFile(png, 'test.png', { type: 'image/png' })
+      await this.client.images.edit({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        model: model as any, image: [file], prompt: 'add a small white star in the centre',
+        size: '1024x1024', quality: 'low' as any, n: 1,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+      return { ok: true, model }
+    } catch (err) {
+      return { ok: false, model, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
   async generateImageSet(prompts: {
     hero: string
     lifestyle: string
