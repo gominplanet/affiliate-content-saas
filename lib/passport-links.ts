@@ -186,8 +186,13 @@ const CODE_ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789' // no look-alikes (0/o/
 function randomCode(len = 7): string {
   let s = ''
   for (let i = 0; i < len; i++) {
-    // crypto for uniform, collision-resistant codes.
-    const n = Math.floor((globalThis.crypto?.getRandomValues(new Uint32Array(1))[0] ?? 0) / 0x100000000 * CODE_ALPHABET.length)
+    // crypto for uniform, collision-resistant codes. Fall back to Math.random if
+    // crypto is somehow absent — a fixed 0 would make every code "aaaaaaa" and
+    // collide on the unique index forever (mint would 500 on every new link).
+    const r = globalThis.crypto?.getRandomValues
+      ? globalThis.crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000
+      : Math.random()
+    const n = Math.floor(r * CODE_ALPHABET.length)
     s += CODE_ALPHABET[n] || CODE_ALPHABET[0]
   }
   return s
