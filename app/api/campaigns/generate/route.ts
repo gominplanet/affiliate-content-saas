@@ -19,6 +19,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { passportLinkForUser } from '@/lib/passport-links'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
@@ -363,10 +364,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── 3. Affiliate URL — Geniuslink (CC boost rides this), else Amazon tag ─
+    // ── 3. Affiliate URL — Passport Links (geo) if ON, else Geniuslink, else tag ─
     let affiliateUrl = `https://www.amazon.com/dp/${asin}`
     let geniuslinkCode: string | null = null
-    if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    const passportCc = await passportLinkForUser(supabase, user.id, asin, { source: 'blog', title: product?.title || asin })
+    if (passportCc) {
+      affiliateUrl = passportCc
+    } else if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
       try {
         const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
         const { url, code } = await genius.createAsinLinkWithCode(asin, product?.title || asin)

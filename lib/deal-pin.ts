@@ -36,6 +36,9 @@ export async function publishDealPin(opts: {
   title: string
   /** The deal's product photo — reference for the design and the fallback pin. */
   productImageUrl: string | null
+  /** When set (Passport Links on), pin THIS link instead of resolving a tag/geni.us
+   *  one — the geo-routing link. Null → normal resolution. */
+  linkOverride?: string | null
 }): Promise<DealPinResult> {
   const intRow = opts.intRow
   if (!intRow?.pinterest_access_token) {
@@ -65,6 +68,7 @@ export async function publishDealPin(opts: {
       ...(designed
         ? { imageBase64: designed.data, imageMediaType: designed.mediaType }
         : { imageUrl: opts.productImageUrl }),
+      linkOverride: opts.linkOverride,
     })
     return { ok: true, url: pin.pinUrl, note: pin.geniuslinkNote }
   } catch (err) {
