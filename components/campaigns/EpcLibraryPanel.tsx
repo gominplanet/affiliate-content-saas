@@ -307,7 +307,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
               <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.30)' }}>
                 <p className="text-[12px] font-semibold" style={{ color: '#7C3AED' }}>Worth it for Gold &amp; Platinum creators</p>
                 <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                  EPC pays on <b>qualified clicks</b> from offsite traffic (YouTube, socials, your blog), and Amazon only pays it to <b>Gold and Platinum</b> Creator Star tier creators. Below Gold, these clicks don&apos;t earn, so promoting EPC products isn&apos;t worth it yet. No special links needed: a standard associate link earns automatically, so use <b>Get link</b> on any card to drop one offsite, or make a blog / social post. Track it in Amazon&apos;s <b>Creator Connections → Sponsored Products for Creators</b> reporting tab.
+                  EPC pays on <b>qualified clicks</b> from offsite traffic (YouTube, socials, your blog), and Amazon only pays it to <b>Gold and Platinum</b> Creator Star tier creators. Below Gold, these clicks don&apos;t earn, so promoting EPC products isn&apos;t worth it yet. Use <b>Get link</b> on any card to drop one offsite, or make a blog / social post: with Passport Links on it hands you a geo-routing link that sends each visitor to their own country&apos;s Amazon, and either way the link earns EPC. Track it in Amazon&apos;s <b>Creator Connections → Sponsored Products for Creators</b> reporting tab.
                 </p>
               </div>
             </div>
