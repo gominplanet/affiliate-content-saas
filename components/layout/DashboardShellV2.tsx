@@ -523,6 +523,7 @@ export default function DashboardShellV2({
         { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Research' },
         { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(effectiveTier) },
         { href: '/cc-campaigns', icon: <BadgePercent size={15} />, label: 'CC Campaigns', gate: canBrowseDealRadar(effectiveTier) },
+        { href: '/epc-library', icon: <TrendingUp size={15} />, label: 'EPC Library', gate: canBrowseDealRadar(effectiveTier) },
         { href: '/saved-campaigns', icon: <Bookmark size={15} />, label: 'Saved Campaigns', gate: canBrowseDealRadar(effectiveTier) },
         { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta' },
         { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost' },
