@@ -31,7 +31,7 @@ const COUNTRY: Record<string, { name: string; flag: string }> = {
 const cn = (c: string) => COUNTRY[c] || { name: c, flag: '🌐' }
 
 interface Analytics {
-  total: number; days: number
+  total: number; botClicks?: number; days: number
   uniqueProducts?: number; uniqueCountries?: number
   byCountry: { country: string; count: number }[]
   byMarketplace?: { store: string; count: number }[]
@@ -154,12 +154,17 @@ export default function PassportPage() {
           <p className="text-[13px] mt-1 max-w-md mx-auto text-[var(--text-3)]">
             Turn Passport Links on above, then drop your links in posts, YouTube descriptions, or your bio. Every click that comes back shows up here, grouped by country and product.
           </p>
+          {!!data?.botClicks && (
+            <p className="text-[12px] mt-3 text-[var(--text-faint)]">
+              ({data.botClicks.toLocaleString()} bot {data.botClicks === 1 ? 'hit' : 'hits'} seen and excluded. Link-preview crawlers from socials fetch your link but aren&rsquo;t real visitors.)
+            </p>
+          )}
         </div>
       ) : (
         <>
           {/* Stat tiles */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-            <Stat icon={<MousePointerClick size={16} />} label="Total clicks" value={total.toLocaleString()} accent="#7C3AED" />
+            <Stat icon={<MousePointerClick size={16} />} label="Real clicks" value={total.toLocaleString()} sub={data!.botClicks ? `${data!.botClicks.toLocaleString()} bot ${data!.botClicks === 1 ? 'hit' : 'hits'} excluded` : 'bots excluded'} accent="#7C3AED" />
             <Stat icon={<MapPin size={16} />} label="Countries reached" value={String(countriesReached)} accent="#0a84ff" />
             <Stat icon={<Globe size={16} />} label="Top country" value={topCountry ? `${cn(topCountry.country).flag} ${cn(topCountry.country).name}` : '—'} sub={topCountry ? `${topCountry.count.toLocaleString()} clicks` : ''} accent="#34c759" />
             <Stat icon={<Package size={16} />} label="Top product" value={topProduct ? (topProduct.label || topProduct.asin || '—') : '—'} sub={topProduct ? `${topProduct.count.toLocaleString()} clicks` : ''} accent="#ff9500" truncate />
