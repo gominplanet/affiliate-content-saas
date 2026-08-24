@@ -1020,11 +1020,11 @@ export default function BrandPage() {
             <div className="flex items-center gap-1.5 mb-1">
               <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Important Connections</h2>
               <InfoTip>
-                The accounts that make your affiliate links earn and your SEO measurable: Geniuslink routes Amazon links to each shopper&apos;s local store (your Amazon tag is the fallback), and Search Console reports how your posts rank.
+                The accounts that make your affiliate links earn and your SEO measurable. When Passport Links is on it routes every Amazon link to the shopper&apos;s local store for you; Geniuslink below is an optional alternative router, and your Amazon tag is the fallback. Search Console reports how your posts rank.
               </InfoTip>
             </div>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              The key accounts behind monetization and SEO. Geniuslink is the smart link router (Amazon tag is the fallback), and Google Search Console powers your indexing + ranking data.
+              The key accounts behind monetization and SEO. Passport Links (when on) routes your Amazon links automatically; Geniuslink below is an optional alternative router, your Amazon tag is the fallback, and Google Search Console powers your indexing and ranking data.
             </p>
 
             {/* Geniuslink */}
@@ -1130,9 +1130,10 @@ export default function BrandPage() {
               </div>
 
               {/* How the BLOG link is shortened when a post is shared to social.
-                  Blog→Amazon links always use Geniuslink; this is only the link
-                  back to the blog post itself, which earns no commission — so a
-                  free option matters as click costs add up. */}
+                  This is only the link back to the blog post itself, which earns
+                  no commission, so a free option matters as click costs add up.
+                  (The blog's Amazon links are resolved separately: Passport Links
+                  when on, else Geniuslink if connected, else the plain tag.) */}
               <div className="mt-3">
                 <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Blog link shared on social</span>
                 <div className="flex flex-col gap-2">
@@ -1173,7 +1174,7 @@ export default function BrandPage() {
                     <p className="mt-1 text-[10px] text-[#86868b] dark:text-[#8e8e93]">Bitly → Settings → API → Generate token. Paste the generic access token here.</p>
                   </div>
                 )}
-                <p className="mt-2 text-[11px] text-[#86868b] dark:text-[#8e8e93]">Applies to posts generated after you change it. Your blog&rsquo;s Amazon links always use Geniuslink with your group settings — this only affects the link back to your blog post on Facebook, LinkedIn, X, Threads, Bluesky and Telegram.</p>
+                <p className="mt-2 text-[11px] text-[#86868b] dark:text-[#8e8e93]">Applies to posts generated after you change it. This only affects the link back to your blog post on Facebook, LinkedIn, X, Threads, Bluesky and Telegram. Your blog&rsquo;s <b>Amazon</b> links are handled separately: when Passport Links is on they geo-route each visitor to their own country&rsquo;s Amazon, otherwise they use Geniuslink (if connected above) or your plain Associates tag.</p>
               </div>
 
               {/* Where a Clip Factory Pinterest video pin links. Separate from the
