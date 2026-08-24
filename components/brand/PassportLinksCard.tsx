@@ -13,15 +13,20 @@ import { Loader2, Globe, Check } from 'lucide-react'
 
 // The countries we route to, most common first. US is the main Associates tag,
 // so it isn't listed here.
+// The full set of Amazon markets OneLink covers (US is the main tag, set above).
 const COUNTRIES: { code: string; label: string; flag: string; example: string }[] = [
-  { code: 'GB', label: 'United Kingdom', flag: '🇬🇧', example: 'brand-21' },
-  { code: 'CA', label: 'Canada', flag: '🇨🇦', example: 'brand-20' },
-  { code: 'DE', label: 'Germany', flag: '🇩🇪', example: 'brand-21' },
-  { code: 'FR', label: 'France', flag: '🇫🇷', example: 'brand-21' },
-  { code: 'IT', label: 'Italy', flag: '🇮🇹', example: 'brand-21' },
-  { code: 'ES', label: 'Spain', flag: '🇪🇸', example: 'brand-21' },
   { code: 'AU', label: 'Australia', flag: '🇦🇺', example: 'brand-22' },
-  { code: 'JP', label: 'Japan', flag: '🇯🇵', example: 'brand-22' },
+  { code: 'CA', label: 'Canada', flag: '🇨🇦', example: 'brand-20' },
+  { code: 'FR', label: 'France', flag: '🇫🇷', example: 'brand-21' },
+  { code: 'DE', label: 'Germany', flag: '🇩🇪', example: 'brand-21' },
+  { code: 'IN', label: 'India', flag: '🇮🇳', example: 'brand-21' },
+  { code: 'IE', label: 'Ireland', flag: '🇮🇪', example: 'brand-21' },
+  { code: 'IT', label: 'Italy', flag: '🇮🇹', example: 'brand-21' },
+  { code: 'NL', label: 'Netherlands', flag: '🇳🇱', example: 'brand-21' },
+  { code: 'SG', label: 'Singapore', flag: '🇸🇬', example: 'brand-22' },
+  { code: 'ES', label: 'Spain', flag: '🇪🇸', example: 'brand-21' },
+  { code: 'SE', label: 'Sweden', flag: '🇸🇪', example: 'brand-21' },
+  { code: 'GB', label: 'United Kingdom', flag: '🇬🇧', example: 'brand-21' },
 ]
 
 export default function PassportLinksCard() {

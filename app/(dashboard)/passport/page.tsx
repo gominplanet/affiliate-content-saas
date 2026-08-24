@@ -16,6 +16,7 @@ const COUNTRY: Record<string, { name: string; flag: string }> = {
   CA: { name: 'Canada', flag: '🇨🇦' }, DE: { name: 'Germany', flag: '🇩🇪' },
   FR: { name: 'France', flag: '🇫🇷' }, IT: { name: 'Italy', flag: '🇮🇹' },
   ES: { name: 'Spain', flag: '🇪🇸' }, NL: { name: 'Netherlands', flag: '🇳🇱' },
+  IE: { name: 'Ireland', flag: '🇮🇪' },
   SE: { name: 'Sweden', flag: '🇸🇪' }, PL: { name: 'Poland', flag: '🇵🇱' },
   BE: { name: 'Belgium', flag: '🇧🇪' }, JP: { name: 'Japan', flag: '🇯🇵' },
   AU: { name: 'Australia', flag: '🇦🇺' }, IN: { name: 'India', flag: '🇮🇳' },
