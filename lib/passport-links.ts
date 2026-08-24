@@ -107,6 +107,35 @@ export function buildPassportDestination(
   }
 }
 
+/**
+ * The one gate every content surface uses: return the creator's Passport Link URL
+ * for a product WHEN Passport Links is ON, else null. A null means "not enabled" —
+ * the caller then falls through to its existing behavior (Geniuslink, plain tag,
+ * whatever is configured). So turning Passport Links off changes nothing anywhere.
+ *
+ * `source` becomes ?s=<source> on the link — logged for analytics and passed to
+ * Amazon as ascsubtag (per-video / per-surface attribution). `db` can be the
+ * user's session client or the admin client.
+ */
+export async function passportLinkForUser(
+  db: Db, userId: string, asin: string, opts?: { source?: string | null; title?: string | null },
+): Promise<string | null> {
+  const a = (asin || '').trim().toUpperCase()
+  if (!/^[A-Z0-9]{10}$/.test(a)) return null
+  try {
+    const { data: ig } = await db.from('integrations').select('passport_links_enabled').eq('user_id', userId).maybeSingle()
+    if (!ig?.passport_links_enabled) return null
+    const { data: site } = await db.from('wordpress_sites').select('id').eq('user_id', userId).eq('is_default', true).maybeSingle()
+    const siteId = (site?.id as string | undefined) ?? null
+    const code = await getOrCreatePassportLink(db, userId, siteId, a, opts?.title ?? null)
+    if (!code) return null
+    const src = (opts?.source || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40)
+    return `${passportLinkUrl(code)}${src ? `?s=${src}` : ''}`
+  } catch {
+    return null
+  }
+}
+
 const CODE_ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789' // no look-alikes (0/o/1/l)
 function randomCode(len = 7): string {
   let s = ''

@@ -45,6 +45,7 @@ import { extractAsin, fetchAmazonProduct, isValidAsin, type AmazonProduct } from
 import { fetchKeepaProductStats, buildPriceContext, buildPriceSnapshotHtml } from '@/services/keepa'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { passportLinkForUser } from '@/lib/passport-links'
 import { composeWithGptImage, composeWithNanoBanana, composeWithNanoBananaPro, rehostToFal, GPT_IMAGE_COMPOSE_LOW_COST_MODEL } from '@/lib/thumbnail-generators'
 import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
@@ -624,12 +625,15 @@ export async function POST(req: Request) {
   // it through Geniuslink when connected) itself. The engine used to emit a bare
   // /dp/ link and assume a WordPress plugin would wrap it; on sites without one
   // (or without geniuslink), those clicks earned nothing.
-  const dealAffiliateUrl = await resolveDealAffiliateUrl(
-    product.asin, product.title || '',
-    dealIntg?.amazon_associates_tag ?? null,
-    dealIntg?.geniuslink_api_key ?? null,
-    dealIntg?.geniuslink_api_secret ?? null,
-  )
+  // Passport Links (geo-routing) wins WHEN ON; otherwise fall through to the
+  // existing tag/Geniuslink resolver — so turning it off changes nothing here.
+  const dealAffiliateUrl = (await passportLinkForUser(supabase, user.id, product.asin, { source: 'blog', title: product.title }))
+    || await resolveDealAffiliateUrl(
+      product.asin, product.title || '',
+      dealIntg?.amazon_associates_tag ?? null,
+      dealIntg?.geniuslink_api_key ?? null,
+      dealIntg?.geniuslink_api_secret ?? null,
+    )
 
   const writerPrompt = buildDealWriterPrompt({
     product,

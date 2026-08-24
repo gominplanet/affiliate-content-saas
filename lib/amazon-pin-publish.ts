@@ -183,15 +183,22 @@ export async function publishAmazonPin(opts: {
   boardId?: string
   title?: string
   description?: string
+  /** When set (Passport Links on), pin THIS link directly, skipping tag/geni.us
+   *  resolution — the geo-routing link. */
+  linkOverride?: string | null
 }): Promise<PublishPinResult> {
   const { intRow } = opts
   if (!intRow.pinterest_access_token) throw new Error('Pinterest is not connected.')
   if (!opts.imageUrl && !opts.imageBase64) throw new Error('No image to pin.')
 
-  // Resolve ASIN + geni.us affiliate link, routed to the MVP-PINTEREST group.
-  const { linkUrl, asin, note: geniuslinkNote } = await resolveAffiliateLink({
-    userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle, channel: 'pinterest',
-  })
+  // Resolve ASIN + affiliate link. A linkOverride (Passport Links) wins directly;
+  // otherwise resolve the geni.us / tagged link, routed to the MVP-PINTEREST group.
+  const resolved = (opts.linkOverride && /^https?:\/\//i.test(opts.linkOverride))
+    ? { linkUrl: opts.linkOverride, asin: (opts.asin || '').trim().toUpperCase(), note: null }
+    : await resolveAffiliateLink({
+        userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle, channel: 'pinterest',
+      })
+  const { linkUrl, asin, note: geniuslinkNote } = resolved
   if (!linkUrl) throw new Error('No product link to pin to. Paste an Amazon link or ASIN.')
 
   // Copy — use what the caller passed, else auto-write.

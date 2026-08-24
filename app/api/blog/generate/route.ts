@@ -20,6 +20,7 @@ import { selfCheckBlogPost, selfCritiqueBlogPost } from '@/lib/blog-self-check'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl, isAmazonNonProductUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { passportLinkForUser } from '@/lib/passport-links'
 import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { deriveProductName } from '@/lib/product-name'
@@ -674,7 +675,13 @@ async function handleGenerate(request: Request) {
       ? appendAmazonSubtag(`https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`, linkVideoId)
       : destinationWithSubtag
 
-    if (alreadyGeniuslink) {
+    // Passport Links (geo-routing) wins WHEN ON; else null and we fall through to
+    // the existing already-geni / Geniuslink / tag chain unchanged.
+    const blogAsin = destination.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
+    const passportBlog = blogAsin ? await passportLinkForUser(supabase, ownerId, blogAsin, { source: 'blog', title: rawTitle }) : null
+    if (passportBlog) {
+      affiliateUrlOverride = passportBlog
+    } else if (alreadyGeniuslink) {
       affiliateUrlOverride = destination
     } else if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
       // Resolve the per-site group (creates it on first use, caches the

@@ -15,6 +15,7 @@ import { publishDealToSocials, QUICK_POST_PLATFORMS, type QuickPostPlatform, typ
 import { publishDealStory } from '@/lib/deal-story-publish'
 import { buildDealCardImage } from '@/lib/deal-card'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { passportLinkForUser } from '@/lib/passport-links'
 import { CHANNEL_GROUP_NAMES, channelKey } from '@/lib/geniuslink-group'
 import type { Tier } from '@/lib/tier'
 
@@ -88,19 +89,25 @@ export async function executeDealQuickPost(input: DealQuickPostInput): Promise<D
   let baseCaption: string | null = null
   let geniuslinkNote: string | null = null
 
+  // Passport Links (geo-routing) wins WHEN ON; else null and we fall through to
+  // the existing tag/Geniuslink behavior. Resolved once, reused for text + pin.
+  const passportLink = await passportLinkForUser(db, userId, asin, { source: 'social', title: (deal.title as string) || null })
+
   // ── Link-friendly text platforms ──
   if (platforms.length) {
     const tag = (intRow?.amazon_associates_tag || '').trim()
-    if (!tag) return { results: [], caption: null, geniuslinkNote: null, missingTag: true }
-    const link = `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(tag)}`
+    if (!tag && !passportLink) return { results: [], caption: null, geniuslinkNote: null, missingTag: true }
+    const link = passportLink || `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(tag)}`
 
     const gKey = (intRow?.geniuslink_api_key || '').trim()
     const gSecret = (intRow?.geniuslink_api_secret || '').trim()
     let built: { links: Partial<Record<QuickPostPlatform, string>>; note: string | null } = { links: {}, note: null }
-    try {
-      built = await buildPlatformGeniuslinks(gKey, gSecret, link, deal.title as string, platforms)
-    } catch (glErr) {
-      console.warn('[deal-quick-post] geniuslink step failed — using bare tagged links:', glErr instanceof Error ? glErr.message : glErr)
+    if (!passportLink) {
+      try {
+        built = await buildPlatformGeniuslinks(gKey, gSecret, link, deal.title as string, platforms)
+      } catch (glErr) {
+        console.warn('[deal-quick-post] geniuslink step failed — using bare tagged links:', glErr instanceof Error ? glErr.message : glErr)
+      }
     }
     geniuslinkNote = built.note
 
@@ -171,6 +178,7 @@ Return ONLY the caption text.` }],
     const pinRes = await publishDealPin({
       userId, tier, intRow: intRow ?? null,
       asin, title: deal.title as string, productImageUrl: dealImage,
+      linkOverride: passportLink,
     })
     results.push({ platform: 'pinterest', ok: pinRes.ok, url: pinRes.url, error: pinRes.error })
     if (pinRes.note && !geniuslinkNote) geniuslinkNote = pinRes.note
