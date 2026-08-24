@@ -169,6 +169,19 @@ export async function POST(request: Request) {
       console.warn('[epc/ingest] keepa enrich skipped:', e instanceof Error ? e.message : e)
     }
 
+    // Feed the shared cross-user catalog (migration 289) so every scan builds a
+    // discovery pool all creators can browse. Product-level only (no per-user
+    // data); the EPC here is a reference value. Best-effort, service-role.
+    try {
+      const catalogRows = rows.map((r) => ({
+        asin: r.asin, title: r.title, brand: r.brand, image_url: r.image_url,
+        price_cents: r.price_cents, rating: r.rating,
+        epc_value_ref: r.epc_value, budget_ref: r.budget, last_seen_at: scannedAt,
+      }))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (createAdminClient() as any).from('epc_catalog').upsert(catalogRows, { onConflict: 'asin' })
+    } catch (e) { console.warn('[epc/ingest] catalog upsert skipped:', e instanceof Error ? e.message : e) }
+
     return NextResponse.json({ ok: true, saved: rows.length, added: addedCount })
   } catch (err) {
     console.error('[epc/ingest]', err instanceof Error ? err.message : err)
