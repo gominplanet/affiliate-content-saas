@@ -7,6 +7,9 @@ import { resolveProductLink } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { resolveGeniuslinkYouTubeGroupId, appendAmazonSubtag, YOUTUBE_COPILOT_GROUP_NAME } from '@/lib/geniuslink-group'
 import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getDefaultSite } from '@/lib/wordpress-sites'
+import { getOrCreatePassportLink, passportLinkUrl } from '@/lib/passport-links'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { YoutubeTranscript } from 'youtube-transcript'
@@ -550,10 +553,11 @@ export async function POST(request: Request) {
         .select('name,author_name,niches,tone,website_url,contact_email,contact_preference,gear_sections,youtube_description_block')
         .eq('user_id', ownerId)
         .single(),
+      // passport_links_enabled ships in migration 283, not yet in generated types.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      supabase
+      (supabase as any)
         .from('integrations')
-        .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag,tier,subscription_period_start,subscription_period_end')
+        .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag,passport_links_enabled,tier,subscription_period_start,subscription_period_end')
         .eq('user_id', ownerId)
         .single(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -688,6 +692,7 @@ export async function POST(request: Request) {
     let affiliateUrl = ''
     let geniuslinkUsed = false
     let geniuslinkError: string | null = null
+    let passportUsed = false
 
     if (isProduct) {
       if (productOverride && productOverride.title && productOverride.title.trim()) {
@@ -795,7 +800,23 @@ export async function POST(request: Request) {
       const subtaggedDest = appendAmazonSubtag(`https://www.amazon.com/dp/${trimmedAsin}`, youtubeVideoId)
       affiliateUrl = subtaggedDest
 
-      if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+      // Passport Links (geo-routing) takes priority when on: one link that sends
+      // each viewer to their own country's Amazon. The ?s=<videoId> both tags our
+      // click analytics with the source and rides through to Amazon as the
+      // per-video ascsubtag, so per-video earnings attribution is preserved.
+      if (intRow?.passport_links_enabled) {
+        try {
+          const site = await getDefaultSite(supabase, ownerId)
+          const siteId = site && site.id !== 'legacy' ? site.id : null
+          const code = await getOrCreatePassportLink(createAdminClient(), ownerId, siteId, trimmedAsin, product.title || videoTitle)
+          if (code) {
+            affiliateUrl = `${passportLinkUrl(code)}${youtubeVideoId ? `?s=${encodeURIComponent(youtubeVideoId)}` : ''}`
+            passportUsed = true
+          }
+        } catch (e) { console.warn('[generate-metadata] passport link skipped:', e instanceof Error ? e.message : e) }
+      }
+
+      if (!passportUsed && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
         const groupId = await resolveGeniuslinkYouTubeGroupId({
           supabase,
           userId: ownerId,
@@ -823,7 +844,7 @@ export async function POST(request: Request) {
           console.error('[generate-metadata] Geniuslink failed:', geniuslinkError)
         }
       }
-      if (!geniuslinkUsed && intRow?.amazon_associates_tag) {
+      if (!passportUsed && !geniuslinkUsed && intRow?.amazon_associates_tag) {
         affiliateUrl = appendAmazonSubtag(
           `https://www.amazon.com/dp/${trimmedAsin}?tag=${intRow.amazon_associates_tag}`,
           youtubeVideoId,

@@ -60,11 +60,20 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
     // Log the click (awaited — small insert, keeps the dashboard reliable). Source:
     // an explicit ?s= we add when building links, else the referring host.
     const url = new URL(req.url)
-    let source = (url.searchParams.get('s') || '').slice(0, 40) || null
+    const sParam = (url.searchParams.get('s') || '').slice(0, 40)
+    let source = sParam || null
     if (!source) {
       const ref = req.headers.get('referer') || ''
       try { source = ref ? new URL(ref).host.slice(0, 80) : null } catch { source = null }
     }
+
+    // Carry the explicit source through to Amazon as ascsubtag so per-source (e.g.
+    // per-video) earnings attribution survives the geo-redirect. Amazon caps it at
+    // 16 chars and wants it URL-safe; skip a referer-host source (not ours to tag).
+    let finalUrl = dest.url
+    const asc = sParam.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 16)
+    if (asc) finalUrl += `${finalUrl.includes('?') ? '&' : '?'}ascsubtag=${asc}`
+
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (admin as any).from('passport_link_clicks').insert({
@@ -72,7 +81,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
       })
     } catch { /* never let logging block the redirect */ }
 
-    return NextResponse.redirect(dest.url, 302)
+    return NextResponse.redirect(finalUrl, 302)
   } catch {
     return NextResponse.redirect(AMAZON_HOME, 302)
   }
