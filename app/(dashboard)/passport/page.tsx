@@ -12,6 +12,7 @@ import { Loader2, Globe, MousePointerClick, MapPin, Package, TrendingUp, Store, 
 import PassportLinksCard from '@/components/brand/PassportLinksCard'
 import PassportQuickLink from '@/components/passport/PassportQuickLink'
 import PassportPowerToggle from '@/components/passport/PassportPowerToggle'
+import PassportGroups from '@/components/passport/PassportGroups'
 import ExternalNetworksCards from '@/components/integrations/ExternalNetworksCards'
 import { ChevronDown, Settings2 } from 'lucide-react'
 
@@ -32,6 +33,7 @@ const cn = (c: string) => COUNTRY[c] || { name: c, flag: '🌐' }
 
 interface Analytics {
   total: number; botClicks?: number; days: number
+  byGroup?: { id: string | null; name: string; count: number }[]
   uniqueProducts?: number; uniqueCountries?: number
   byCountry: { country: string; count: number }[]
   byMarketplace?: { store: string; count: number }[]
@@ -50,6 +52,7 @@ export default function PassportPage() {
   const [data, setData] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [days, setDays] = useState(30)
+  const [group, setGroup] = useState('') // '' all · 'none' ungrouped · else group id
   const [setupOpen, setSetupOpen] = useState(false)
   const [canUse, setCanUse] = useState<boolean | null>(null)
 
@@ -57,15 +60,15 @@ export default function PassportPage() {
     fetch('/api/passport').then((r) => r.json()).then((d) => setCanUse(d?.ok ? !!d.canUse : false)).catch(() => setCanUse(false))
   }, [])
 
-  const load = useCallback(async (d: number) => {
+  const load = useCallback(async (d: number, g: string) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/passport/analytics?days=${d}`)
+      const res = await fetch(`/api/passport/analytics?days=${d}${g ? `&group=${encodeURIComponent(g)}` : ''}`)
       const j = await res.json()
       setData(j?.ok ? j : null)
     } catch { setData(null) } finally { setLoading(false) }
   }, [])
-  useEffect(() => { if (canUse) void load(days) }, [days, load, canUse])
+  useEffect(() => { if (canUse) void load(days, group) }, [days, group, load, canUse])
 
   const total = data?.total ?? 0
   const countriesReached = data?.byCountry.length ?? 0
@@ -97,7 +100,7 @@ export default function PassportPage() {
 
       {/* Quick create — paste ANY link, get a Passport Link back now. */}
       <div className="mb-5">
-        <PassportQuickLink onCreated={() => load(days)} />
+        <PassportQuickLink onCreated={() => load(days, group)} />
       </div>
 
       {/* Set up (collapsed by default) — networks first, then per-country tags. */}
@@ -145,14 +148,19 @@ export default function PassportPage() {
         ))}
       </div>
 
+      {/* Groups filter + manager (Geniuslink-style). Scopes everything below. */}
+      <PassportGroups active={group} onSelect={setGroup} byGroup={data?.byGroup} />
+
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[var(--text-3)] py-16"><Loader2 size={18} className="animate-spin" /> Loading your clicks…</div>
       ) : total === 0 ? (
         <div className="card p-8 text-center">
           <Globe size={28} className="mx-auto mb-3 text-[#7C3AED]" />
-          <p className="text-sm font-semibold text-[var(--text)]">No clicks yet</p>
+          <p className="text-sm font-semibold text-[var(--text)]">{group ? 'No clicks in this group yet' : 'No clicks yet'}</p>
           <p className="text-[13px] mt-1 max-w-md mx-auto text-[var(--text-3)]">
-            Turn Passport Links on above, then drop your links in posts, YouTube descriptions, or your bio. Every click that comes back shows up here, grouped by country and product.
+            {group
+              ? 'Nothing in this group for this range. Pick “All groups” above to see everything, or widen the date range.'
+              : 'Turn Passport Links on above, then drop your links in posts, YouTube descriptions, or your bio. Every click that comes back shows up here, grouped by country and product.'}
           </p>
           {!!data?.botClicks && (
             <p className="text-[12px] mt-3 text-[var(--text-faint)]">
