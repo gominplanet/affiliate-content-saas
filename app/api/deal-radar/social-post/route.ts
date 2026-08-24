@@ -22,6 +22,7 @@ import { QUICK_POST_PLATFORMS, type QuickPostPlatform } from '@/lib/deal-social-
 import { executeDealQuickPost } from '@/lib/deal-quick-post'
 import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -39,10 +40,17 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: rawIntRow } = await (supabase as any)
       .from('integrations')
       .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret,pinterest_access_token,pinterest_board_id,pinterest_pin_target')
       .eq('user_id', user.id).maybeSingle()
+    // Secret columns (pinterest_access_token, geniuslink_api_key/secret) are
+    // stored encrypted at rest. This path fed them to the Pinterest / Geniuslink
+    // APIs raw, so Pinterest rejected the ciphertext with 401 "Authentication
+    // failed" even right after a reconnect. Decrypt before use, like the blog +
+    // Amazon pin routes already do.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const intRow = decryptIntegrationRow(rawIntRow as any)
     const tier = normalizeTier(intRow?.tier) as Tier
     if (!canUseDealRadar(tier)) {
       return NextResponse.json({ error: 'Amazon Deal Radar is available on paid plans.', currentTier: tier }, { status: 403 })
