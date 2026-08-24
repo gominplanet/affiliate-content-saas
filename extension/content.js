@@ -402,6 +402,16 @@ if (!window.__ccScoutListener) {
           sendResponse({ campaigns: [], diag: { ...collectDiag(), sponsored: false } })
           return
         }
+        // Switch to the "Accepted" sub-tab ourselves. When SCOUT opens the page
+        // (no CC tab was open) it lands on "New Opportunities", which is EMPTY once
+        // you've accepted all — the accepted products live under the Accepted tab.
+        // Always click it (idempotent if already there; a no-op if the tab doesn't
+        // exist) and let its virtualized grid mount, so the scan works whether or
+        // not the user already had that tab open.
+        try {
+          const clicked = await clickCcTab(/^\s*accepted\b/i)
+          if (clicked) await sleep(2200)
+        } catch (e) {}
         // Count the raw ASIN nodes the sponsored reader keys on, so a 0-parse is
         // explainable (page has cards vs selectors missed them). Logged to the
         // scanned tab's console AND returned in diag for the MVP panel to show.
