@@ -424,9 +424,18 @@ if (!window.__ccScoutListener) {
         // 20k+ accepted, so grab as large a slice as fits under the message
         // timeout (~95s of scrolling) instead of the old 300 cap. Re-scanning
         // upserts, so what we read is added to the growing library.
-        const rows = await parseSponsoredCards({ maxCards: 8000, maxMs: 95000 })
+        // Resume from where the last scan left off so each scan reaches NEW
+        // products instead of re-reading the same top ~2,700. Depth persists in
+        // extension storage; wraps back to the top once the whole list is covered.
+        const prevDepth = await new Promise((res) => {
+          try { chrome.storage.local.get('mvp_epc_scan_depth', (o) => res(Number(o && o.mvp_epc_scan_depth) || 0)) } catch (e) { res(0) }
+        })
+        const rows = await parseSponsoredCards({ maxCards: 8000, maxMs: 95000, skipToDepth: prevDepth })
+        // Persist the new depth for the next scan (wrap to the top when we hit the end).
+        const nextDepth = rows.endReached ? 0 : (Number(rows.depth) || 0)
+        try { chrome.storage.local.set({ mvp_epc_scan_depth: nextDepth }) } catch (e) {}
         // eslint-disable-next-line no-console
-        console.log('[MVP SCOUT] EPC scan — ASIN nodes:', asinNodes, '· parsed cards:', rows.length, '· sample:', rows.slice(0, 3), '· url:', location.href)
+        console.log('[MVP SCOUT] EPC scan — ASIN nodes:', asinNodes, '· parsed cards:', rows.length, '· resumedFrom:', prevDepth, '· depth:', rows.depth, '· end:', rows.endReached, '· url:', location.href)
         const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : null
         const campaigns = rows.map((r) => ({
           asin: r.asin,
@@ -1416,10 +1425,18 @@ async function parseSponsoredCards(opts) {
   // as deep a slice as `maxMs` allows and return it — the upsert de-dupes, so
   // the library keeps whatever it already had. Default well under the 120s bridge.
   const maxMs = (opts && opts.maxMs) || 30000
+  // RESUME: skip past the depth a previous scan already covered, so each scan
+  // reaches NEW territory instead of re-reading the same top products. The grid
+  // is virtualized infinite-scroll (you can't jump — you must scroll through to
+  // load), so "skip" means fast-scroll WITHOUT the full harvest, then slow-harvest
+  // onward. 0 = start from the top (first scan, or after we wrapped past the end).
+  const skipToDepth = Math.max(0, (opts && opts.skipToDepth) || 0)
   const startedAt = Date.now()
   const onProgress = (opts && opts.onProgress) || function () {}
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const byKey = new Map()
+  const seenAsins = new Set() // EVERY asin streamed past (skip + harvest) → depth reached
+  let endReached = false
   let reported = 0
   const harvest = () => {
     // Amazon splits the "ASIN:" label and the code into separate elements, so a
@@ -1444,7 +1461,7 @@ async function parseSponsoredCards(opts) {
       }
       if (!card) continue
       const c = extractSponsoredCard(card)
-      if (c && c.asin && !byKey.has(c.asin)) byKey.set(c.asin, c)
+      if (c && c.asin) { seenAsins.add(c.asin); if (!byKey.has(c.asin)) byKey.set(c.asin, c) }
     }
     if (byKey.size !== reported) { reported = byKey.size; try { onProgress(byKey.size) } catch (e) {} }
   }
@@ -1464,6 +1481,30 @@ async function parseSponsoredCards(opts) {
   // page is Amazon's "Campaign Count: Load", and clicking it clears the grid —
   // which zeroed out the whole scan. Scrolling only.
   await sleep(1000) // let the product grid render after the search before harvesting
+  // SKIP PHASE — fast-scroll past the previously-covered depth without the full
+  // (expensive) harvest, just counting distinct ASINs streaming past to gauge how
+  // deep we are. Capped at 60% of the time budget so we always leave time to
+  // actually harvest new cards. If the list ends before we reach skipToDepth, the
+  // saved depth was past the end → mark endReached so the caller wraps to the top.
+  if (skipToDepth > 0) {
+    const countSeen = () => {
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null)
+      let n
+      while ((n = w.nextNode())) { const v = n.nodeValue || ''; if (v.length < 80) { const m = v.match(/\bB0[A-Z0-9]{8}\b/); if (m) seenAsins.add(m[0]) } }
+    }
+    countSeen()
+    let skipStalls = 0
+    for (let i = 0; i < 4000 && seenAsins.size < skipToDepth; i++) {
+      if (Date.now() - startedAt > maxMs * 0.6) break
+      window.scrollTo(0, scroller.scrollHeight)
+      for (const el of innerScrollers()) { try { el.scrollTop = el.scrollHeight } catch (e) {} }
+      await sleep(400)
+      const before = seenAsins.size
+      countSeen()
+      if (seenAsins.size > before) skipStalls = 0
+      else if (++skipStalls >= 8) { endReached = true; break }
+    }
+  }
   harvest()
   let last = -1, stalls = 0
   for (let i = 0; i < 4000 && byKey.size < maxCards; i++) {
@@ -1477,10 +1518,15 @@ async function parseSponsoredCards(opts) {
     // grid recycles nodes, so height can plateau while new ASINs still stream in —
     // give it a generous stall tolerance before deciding we've hit the bottom.
     const h = scroller.scrollHeight + innerScrollers().reduce((a, e) => a + e.scrollHeight, 0) + byKey.size * 1000
-    if (h > last) { last = h; stalls = 0 } else if (++stalls >= 8) break
+    if (h > last) { last = h; stalls = 0 } else if (++stalls >= 8) { endReached = true; break }
   }
   window.scrollTo(0, 0)
-  return [...byKey.values()]
+  // Return the harvested cards (array, as before) with the depth reached + whether
+  // we hit the end attached, so the caller can resume the NEXT scan deeper (or wrap
+  // back to the top once the whole list has been covered).
+  const out = [...byKey.values()]
+  try { out.depth = seenAsins.size; out.endReached = endReached } catch (e) {}
+  return out
 }
 
 async function scoutRunSearch(f, onProgress) {
