@@ -50,6 +50,20 @@ const nextConfig: NextConfig = {
       { source: '/studio', destination: '/co-pilot', permanent: true },
     ]
   },
+  // Passport Links short domain: on the branded host (mvpl.ink), a bare
+  // /<code> serves the geo-redirect at /go/<code>, so links read cleanly as
+  // mvpl.ink/x7k instead of mvpl.ink/go/x7k. The app's own domain is untouched.
+  // Host is env-overridable so a different short domain is a one-line change.
+  async rewrites() {
+    const passportHost = (process.env.PASSPORT_LINK_HOST || 'mvpl.ink').trim()
+    return [
+      {
+        source: '/:code',
+        has: [{ type: 'host', value: passportHost }],
+        destination: '/go/:code',
+      },
+    ]
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'img.youtube.com' },
