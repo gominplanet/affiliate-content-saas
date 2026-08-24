@@ -60,7 +60,7 @@ export async function GET(request: Request) {
     }
     if (error) {
       // Table missing (migration 282 not run) → empty dashboard, not an error.
-      return NextResponse.json({ ok: true, total: 0, botClicks: 0, byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
+      return NextResponse.json({ ok: true, total: 0, botClicks: 0, byGroup: [], byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
     }
     const allRows = (rows ?? []) as { code: string; country: string | null; marketplace: string | null; source: string | null; device?: string | null; browser?: string | null; os?: string | null; created_at: string }[]
     // Bots (crawlers + social link-preview fetchers like facebookexternalhit /
@@ -69,9 +69,41 @@ export async function GET(request: Request) {
     // OUT of all human metrics and report the tally separately so it's honest but
     // clearly not counted as a click. parseUserAgent tags these as browser 'Bot'.
     const botClicks = allRows.filter((c) => c.browser === 'Bot').length
-    const clicks = allRows.filter((c) => c.browser !== 'Bot')
+    const allHuman = allRows.filter((c) => c.browser !== 'Bot')
 
     const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) || 0) + 1)
+
+    // ── Groups (migration 292): map each click's code → its group, for the
+    // by-group breakdown and the optional ?group= filter. Degrades cleanly if the
+    // groups schema isn't present yet (everything reads as ungrouped). ──
+    const groupParam = (url.searchParams.get('group') || '').trim() // '' all · 'none' ungrouped · else group id
+    const distinctCodes = [...new Set(allHuman.map((c) => c.code))]
+    const codeToGroup = new Map<string, string | null>()
+    if (distinctCodes.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: linkRows } = await (supabase as any)
+        .from('passport_links').select('code, group_id').in('code', distinctCodes)
+      for (const l of ((linkRows ?? []) as { code: string; group_id: string | null }[])) codeToGroup.set(l.code, l.group_id ?? null)
+    }
+    const groupName = new Map<string, string>()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: groupRows } = await (supabase as any).from('passport_groups').select('id, name').eq('user_id', user.id)
+    for (const g of ((groupRows ?? []) as { id: string; name: string }[])) groupName.set(g.id, g.name)
+
+    // by-group tally over ALL human clicks, so the legend is stable regardless of
+    // which group is being filtered to.
+    const UNGROUPED = '__none__'
+    const groupM = new Map<string, number>()
+    for (const c of allHuman) bump(groupM, codeToGroup.get(c.code) || UNGROUPED)
+
+    // Working set: everything, or just the selected group.
+    const clicks = groupParam
+      ? allHuman.filter((c) => {
+        const gid = codeToGroup.get(c.code) || null
+        return groupParam === 'none' ? !gid : gid === groupParam
+      })
+      : allHuman
+
     const countryM = new Map<string, number>()
     const marketM = new Map<string, number>()
     const deviceM = new Map<string, number>()
@@ -112,11 +144,17 @@ export async function GET(request: Request) {
 
     const entries = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1])
 
+    const byGroup = [...groupM.entries()]
+      .map(([id, count]) => ({ id: id === UNGROUPED ? null : id, name: id === UNGROUPED ? 'Ungrouped' : (groupName.get(id) || 'Group'), count }))
+      .sort((a, b) => b.count - a.count)
+
     return NextResponse.json({
       ok: true,
       total: clicks.length,
       botClicks,
       days,
+      byGroup,
+      group: groupParam || null,
       uniqueProducts: codeM.size,
       uniqueCountries: countryM.size,
       byCountry: entries(countryM).map(([country, count]) => ({ country, count })),
@@ -128,6 +166,6 @@ export async function GET(request: Request) {
       byDay,
     })
   } catch {
-    return NextResponse.json({ ok: true, total: 0, botClicks: 0, byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
+    return NextResponse.json({ ok: true, total: 0, botClicks: 0, byGroup: [], byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
   }
 }

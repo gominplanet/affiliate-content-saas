@@ -235,6 +235,58 @@ export function normalizeSource(source: string | null | undefined): string | nul
   return s || null
 }
 
+/**
+ * Map a link's attribution source to a default channel group name, so every new
+ * Passport Link lands in a sensible group automatically (mirrors how MVP routes
+ * Geniuslink into per-channel groups). Creators can rename / delete / reassign
+ * afterwards; this only picks the starting bucket. Kept in sync with the SQL
+ * backfill in migration 292 and covered by scripts/test-passport-groups.ts.
+ */
+export function channelForSource(source: string | null | undefined): string {
+  const s = normalizeSource(source)
+  if (!s) return 'General'
+  const l = s.toLowerCase()
+  if (l === 'blog') return 'Blog'
+  if (l === 'pinterest') return 'Pinterest'
+  if (['social', 'facebook', 'twitter', 'x', 'threads', 'linkedin', 'telegram', 'bluesky', 'instagram'].includes(l)) return 'Social'
+  if (l === 'epc') return 'EPC'
+  if (l === 'scout') return 'SCOUT'
+  // 'video' / 'youtube', or a bare 11-char YouTube video id used as the source.
+  if (l === 'video' || l === 'youtube' || /^[A-Za-z0-9_-]{11}$/.test(s)) return 'YouTube'
+  return 'General'
+}
+
+/** Clean a user-supplied group name: trimmed, single-spaced, capped at 60. */
+export function cleanGroupName(name: string | null | undefined): string {
+  return (name || '').replace(/\s+/g, ' ').trim().slice(0, 60)
+}
+
+/**
+ * Get the id of this creator's group by (case-insensitive) name, creating it if
+ * missing. Small per-creator set, so we read them all and match in JS rather than
+ * risk ilike wildcard surprises on user text. Returns null on empty name / failure.
+ */
+export async function getOrCreateGroup(db: Db, userId: string, name: string): Promise<string | null> {
+  const n = cleanGroupName(name)
+  if (!n) return null
+  const findByName = async (): Promise<string | null> => {
+    const { data } = await db.from('passport_groups').select('id, name').eq('user_id', userId)
+    const rows = (data ?? []) as { id: string; name: string }[]
+    const hit = rows.find((r) => (r.name || '').toLowerCase() === n.toLowerCase())
+    return hit?.id ?? null
+  }
+  try {
+    const existing = await findByName()
+    if (existing) return existing
+    const { data } = await db.from('passport_groups').insert({ user_id: userId, name: n }).select('id').maybeSingle()
+    if (data?.id) return data.id as string
+    // Lost a create race (unique index) → re-read.
+    return await findByName()
+  } catch {
+    return null
+  }
+}
+
 export interface PassportTarget {
   asin?: string | null            // Amazon product → geo-routed
   destinationUrl?: string | null  // any other link → cloaked + tracked redirect
@@ -278,13 +330,19 @@ export async function getOrCreatePassportLink(
     const existing = await findExisting()
     if (existing) return existing
 
+    // Auto-assign the link to a channel group derived from its source (YouTube /
+    // Blog / Social / …), so the groups analytics segment with no manual setup.
+    // Best-effort: a grouping failure never blocks minting the link.
+    let groupId: string | null = null
+    try { groupId = await getOrCreateGroup(admin, userId, channelForSource(src)) } catch { groupId = null }
+
     // Mint a new code, retrying on the small chance of a code collision or a
     // concurrent create (the unique index catches the latter).
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = randomCode()
       const { data } = await admin.from('passport_links').insert({
         code, user_id: userId, site_id: siteId, asin: a, destination_url: d, source: src,
-        label: (target.label || '').slice(0, 300) || null,
+        label: (target.label || '').slice(0, 300) || null, group_id: groupId,
       }).select('code').maybeSingle()
       if (data?.code) return data.code as string
       const race = await findExisting()
