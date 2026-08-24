@@ -15,6 +15,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
+import { canUsePassport } from '@/lib/feature-access'
 import { spendGate } from '@/lib/ai-spend'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
@@ -805,7 +806,10 @@ export async function POST(request: Request) {
       // short code as the source, so the link stays clean (no ?s= tail) while our
       // click analytics still tag the source and it rides through to Amazon as the
       // per-video ascsubtag, preserving per-video earnings attribution.
-      if (intRow?.passport_links_enabled) {
+      // Gate on tier too, not just the enabled flag: a user who turned Passport
+      // on while eligible and later downgraded keeps the flag, but Passport is
+      // Studio + Pro only.
+      if (intRow?.passport_links_enabled && canUsePassport(tier)) {
         try {
           const site = await getDefaultSite(supabase, ownerId)
           const siteId = site && site.id !== 'legacy' ? site.id : null
