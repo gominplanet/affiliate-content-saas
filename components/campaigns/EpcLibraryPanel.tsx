@@ -40,7 +40,7 @@ interface EpcProduct {
 }
 
 const SORTS: { key: string; label: string }[] = [
-  { key: 'recent', label: 'Recently scanned' },
+  { key: 'recent', label: 'Recently added' },
   { key: 'epc', label: 'Highest EPC' },
   { key: 'discount', label: 'Biggest deal' },
   { key: 'sold', label: 'Most bought' },
@@ -49,6 +49,10 @@ const SORTS: { key: string; label: string }[] = [
   { key: 'price_low', label: 'Lowest price' },
   { key: 'price_high', label: 'Highest price' },
 ]
+// The shared catalog (what regular users browse) only has product-level columns
+// to sort on — sold / rank / discount need per-scan enrichment that lives on the
+// operator's own rows — so its sort menu is a subset.
+const CATALOG_SORT_KEYS = new Set(['recent', 'epc', 'rating', 'price_low', 'price_high'])
 
 interface EpcFilters {
   onSale: boolean
@@ -94,6 +98,11 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   // user gets an upgrade prompt instead of sitting through a ~90s SCOUT harvest
   // that the ingest endpoint then rejects with a 403.
   const paidTier = tier ? tierAllowsCampaigns(tier) : false
+  // Only the operator (admin) scans Amazon to build the library; everyone else
+  // browses the shared catalog it produces. effectiveTier already collapses to
+  // the viewed-as tier, so "View as Creator" previews the browse-only experience.
+  const isAdmin = tier === 'admin'
+  const sortOptions = isAdmin ? SORTS : SORTS.filter((s) => CATALOG_SORT_KEYS.has(s.key))
   const [quickPost, setQuickPost] = useState<QuickPostDeal | null>(null)
   const [products, setProducts] = useState<EpcProduct[]>([])
   const [total, setTotal] = useState(0)
@@ -127,13 +136,18 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
     try {
       const params = new URLSearchParams()
       if (query.trim()) params.set('q', query.trim())
-      params.set('sort', sortKey)
-      if (f.onSale) params.set('onSale', '1')
-      if (f.minSold >= 1) params.set('minSold', String(f.minSold))
+      // The shared catalog only understands a subset of sorts/filters; the
+      // operator's own library understands them all.
+      params.set('sort', isAdmin || CATALOG_SORT_KEYS.has(sortKey) ? sortKey : 'recent')
       if (f.minRating > 0) params.set('minRating', String(f.minRating))
       if (f.maxPrice.trim() && Number(f.maxPrice) > 0) params.set('maxPrice', f.maxPrice.trim())
-      if (f.budget) params.set('budget', f.budget)
-      const res = await fetch(`/api/epc/list?${params.toString()}`)
+      if (isAdmin) {
+        if (f.onSale) params.set('onSale', '1')
+        if (f.minSold >= 1) params.set('minSold', String(f.minSold))
+        if (f.budget) params.set('budget', f.budget)
+      }
+      const endpoint = isAdmin ? 'list' : 'catalog'
+      const res = await fetch(`/api/epc/${endpoint}?${params.toString()}`)
       const data = await res.json()
       setProducts(Array.isArray(data.products) ? data.products : [])
       setTotal(data.total ?? 0)
@@ -142,7 +156,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isAdmin])
 
   // Initial + sort/filter change: load immediately. Search: debounce.
   useEffect(() => { void load(q, sort, filters) }, [sort, filters, load]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -260,50 +274,56 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
             <div className="flex-1 min-w-[220px]">
               <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>EPC library <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· Sponsored Products opportunities</span></p>
               <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                Open your Sponsored Products on Amazon, accept your campaigns, then scan them into this searchable library.
+                {isAdmin
+                  ? 'Open your Sponsored Products on Amazon, accept your campaigns, then scan them into this searchable library.'
+                  : 'A searchable library of Amazon Sponsored Products EPC opportunities, kept updated for you. Search or filter, then grab a link or turn any one into a blog or social post.'}
               </p>
             </div>
-            {/* Two actions, top-right. 1) Jump to Amazon; 2) scan into the library. */}
-            <div className="flex flex-col gap-2 self-start">
-              <a href="https://affiliate-program.amazon.com/p/connect/requests" target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border"
-                style={{ borderColor: 'rgba(124,58,237,0.45)', color: '#7C3AED', background: 'var(--surface)' }}
-                title="Opens Creator Connections on Amazon. Sign in with the Amazon Associates account that holds your store ID, then accept your campaigns and open the Accepted tab.">
-                <ShoppingCart size={14} /> Open my EPC on Amazon <ExternalLink size={12} />
-              </a>
-              {paidTier ? (
+            {/* Scan controls are operator-only: the library is built centrally and
+                served to everyone, so regular users never see "accept + scan". */}
+            {isAdmin && (
+              <div className="flex flex-col gap-2 self-start">
+                <a href="https://affiliate-program.amazon.com/p/connect/requests" target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border"
+                  style={{ borderColor: 'rgba(124,58,237,0.45)', color: '#7C3AED', background: 'var(--surface)' }}
+                  title="Opens Creator Connections on Amazon. Sign in with the Amazon Associates account that holds your store ID, then accept your campaigns and open the Accepted tab.">
+                  <ShoppingCart size={14} /> Open my EPC on Amazon <ExternalLink size={12} />
+                </a>
                 <button onClick={scan} disabled={scanning}
                   className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70" style={{ background: '#7C3AED' }}>
                   {scanning ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                   {scanning ? 'Scanning…' : 'Scan my EPC opportunities'}
                 </button>
-              ) : (
-                <a href="/pricing"
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: '#7C3AED' }}
-                  title="The EPC library is available on paid plans">
-                  <RefreshCw size={14} /> Upgrade to scan
-                </a>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Collapsible how-to — keeps the page clean; the detail is one click away. */}
           <button onClick={() => setHelpOpen((v) => !v)}
             className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium" style={{ color: 'var(--text-soft)' }}>
             <ChevronDown size={13} className="transition-transform" style={{ transform: helpOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
-            How EPC works &amp; how to set it up
+            {isAdmin ? 'How EPC works & how to set it up' : 'How EPC works'}
           </button>
           {helpOpen && (
             <div className="mt-2">
-              <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-                Amazon gives <b>no export</b> for Sponsored Products EPC opportunities, so SCOUT reads them straight off your on-screen grid into this searchable library (estimated EPC, budget score, price, rating, plus price history). One scan scrolls for up to ~90 seconds and grabs a large batch. If your Accepted list is huge (20,000+), a single scan won&rsquo;t reach the bottom, so just <b>run it again</b> a few times: each scan picks up where the last one left off and reaches deeper, then loops back to the top once it has covered the whole list.
-              </p>
-              <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(255,204,0,0.10)', border: '1px solid rgba(255,204,0,0.35)' }}>
-                <p className="text-[12px] font-semibold" style={{ color: '#8a6d00' }}>Do this first: Accept your campaigns</p>
-                <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                  Open it on Amazon and sign in with the Associates account that holds your store ID (the one your Creator Connections are under). Use Amazon&apos;s <b>&ldquo;Accept all&rdquo;</b> on the <b>Sponsored Products for Creators</b> tab, then open the <b>Accepted</b> tab so the products are on screen. Only then can SCOUT read them. Come back here and hit Scan.
+              {isAdmin && (
+                <>
+                  <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+                    Amazon gives <b>no export</b> for Sponsored Products EPC opportunities, so SCOUT reads them straight off your on-screen grid into this searchable library (estimated EPC, budget score, price, rating, plus price history). One scan scrolls for up to ~90 seconds and grabs a large batch. If your Accepted list is huge (20,000+), a single scan won&rsquo;t reach the bottom, so just <b>run it again</b> a few times: each scan picks up where the last one left off and reaches deeper, then loops back to the top once it has covered the whole list.
+                  </p>
+                  <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(255,204,0,0.10)', border: '1px solid rgba(255,204,0,0.35)' }}>
+                    <p className="text-[12px] font-semibold" style={{ color: '#8a6d00' }}>Do this first: Accept your campaigns</p>
+                    <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                      Open it on Amazon and sign in with the Associates account that holds your store ID (the one your Creator Connections are under). Use Amazon&apos;s <b>&ldquo;Accept all&rdquo;</b> on the <b>Sponsored Products for Creators</b> tab, then open the <b>Accepted</b> tab so the products are on screen. Only then can SCOUT read them. Come back here and hit Scan.
+                    </p>
+                  </div>
+                </>
+              )}
+              {!isAdmin && (
+                <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+                  These are Amazon Sponsored Products EPC opportunities: products Amazon pays you a per-click bounty on for offsite traffic (YouTube, socials, your blog). The list is kept updated for you, so just <b>search or filter</b> for a fit, then use <b>Get link</b> or make a post.
                 </p>
-              </div>
+              )}
               <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.30)' }}>
                 <p className="text-[12px] font-semibold" style={{ color: '#7C3AED' }}>Worth it for Gold &amp; Platinum creators</p>
                 <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
@@ -330,9 +350,9 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search product or brand…" className="input-field w-full pl-9 text-sm" />
         </div>
         <select value={sort} onChange={(e) => setSort(e.target.value)} className="input-field text-sm w-auto">
-          {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+          {sortOptions.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
-        {total > 0 && (
+        {isAdmin && total > 0 && (
           <button onClick={fillImages} disabled={filling}
             title="Fetch the image, sales rank, monthly sales and price history for any card still missing them (skips ones already filled)."
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-medium border disabled:opacity-60"
@@ -342,36 +362,43 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           </button>
         )}
         <span className="text-[12px] ml-auto" style={{ color: 'var(--text-faint)' }}>
-          {total.toLocaleString()} in library{(q.trim() || activeFilterCount > 0) ? ' (filtered)' : ''}
+          {total.toLocaleString()} {isAdmin ? 'in library' : 'opportunities'}{(q.trim() || activeFilterCount > 0) ? ' (filtered)' : ''}
         </span>
       </div>
 
-      {/* Filters */}
+      {/* Filters. The on-sale / sales-volume / budget filters need the operator's
+          per-scan enrichment, so they only show on the admin's own library. */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <button onClick={() => setFilters((f) => ({ ...f, onSale: !f.onSale }))}
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors"
-          style={filters.onSale
-            ? { borderColor: '#34c759', color: '#1f7a4d', background: 'rgba(52,199,89,0.12)' }
-            : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
-          On sale now
-        </button>
-        <select value={filters.minSold} onChange={(e) => setFilters((f) => ({ ...f, minSold: Number(e.target.value) }))} className="input-field text-[12px] w-auto py-1.5">
-          <option value={0}>Any sales volume</option>
-          <option value={100}>100+ bought/mo</option>
-          <option value={500}>500+ bought/mo</option>
-          <option value={1000}>1,000+ bought/mo</option>
-        </select>
+        {isAdmin && (
+          <button onClick={() => setFilters((f) => ({ ...f, onSale: !f.onSale }))}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors"
+            style={filters.onSale
+              ? { borderColor: '#34c759', color: '#1f7a4d', background: 'rgba(52,199,89,0.12)' }
+              : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+            On sale now
+          </button>
+        )}
+        {isAdmin && (
+          <select value={filters.minSold} onChange={(e) => setFilters((f) => ({ ...f, minSold: Number(e.target.value) }))} className="input-field text-[12px] w-auto py-1.5">
+            <option value={0}>Any sales volume</option>
+            <option value={100}>100+ bought/mo</option>
+            <option value={500}>500+ bought/mo</option>
+            <option value={1000}>1,000+ bought/mo</option>
+          </select>
+        )}
         <select value={filters.minRating} onChange={(e) => setFilters((f) => ({ ...f, minRating: Number(e.target.value) }))} className="input-field text-[12px] w-auto py-1.5">
           <option value={0}>Any rating</option>
           <option value={4}>4.0★ and up</option>
           <option value={4.5}>4.5★ and up</option>
         </select>
-        <select value={filters.budget} onChange={(e) => setFilters((f) => ({ ...f, budget: e.target.value }))} className="input-field text-[12px] w-auto py-1.5">
-          <option value="">Any budget</option>
-          <option value="High">High budget</option>
-          <option value="Medium">Medium budget</option>
-          <option value="Low">Low budget</option>
-        </select>
+        {isAdmin && (
+          <select value={filters.budget} onChange={(e) => setFilters((f) => ({ ...f, budget: e.target.value }))} className="input-field text-[12px] w-auto py-1.5">
+            <option value="">Any budget</option>
+            <option value="High">High budget</option>
+            <option value="Medium">Medium budget</option>
+            <option value="Low">Low budget</option>
+          </select>
+        )}
         <div className="inline-flex items-center gap-1">
           <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>Max $</span>
           <input value={filters.maxPrice} onChange={(e) => setFilters((f) => ({ ...f, maxPrice: e.target.value.replace(/[^0-9.]/g, '') }))}
@@ -385,16 +412,27 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
       </div>
 
       {/* Grid */}
-      {loading ? (
+      {!isAdmin && !paidTier ? (
+        <div className="text-center py-16 px-6">
+          <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>The EPC library is a paid feature.</p>
+          <p className="text-[13px] mt-1 mb-4" style={{ color: 'var(--text-soft)' }}>
+            Upgrade to browse curated Sponsored Products opportunities and turn any one into a link, blog, or social post.
+          </p>
+          <a href="/pricing" className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: '#7C3AED' }}>
+            See plans
+          </a>
+        </div>
+      ) : loading ? (
         <div className="flex items-center justify-center py-16 text-[var(--text-faint)]"><Loader2 size={20} className="animate-spin" /></div>
       ) : products.length === 0 ? (
         <div className="text-center py-16 px-6">
           <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>
-            {q.trim() ? 'No matches.' : 'Your EPC library is empty.'}
+            {q.trim() ? 'No matches.' : isAdmin ? 'Your EPC library is empty.' : 'The EPC library is still filling up.'}
           </p>
           <p className="text-[13px] mt-1" style={{ color: 'var(--text-soft)' }}>
             {q.trim() ? 'Try a different search.'
-              : 'On Amazon, accept your Sponsored Products campaigns (“Accept all”), open the Accepted tab, then hit “Scan my EPC opportunities” to build it up.'}
+              : isAdmin ? 'On Amazon, accept your Sponsored Products campaigns (“Accept all”), open the Accepted tab, then hit “Scan my EPC opportunities” to build it up.'
+              : 'New Sponsored Products opportunities are added regularly. Check back soon.'}
           </p>
         </div>
       ) : (
@@ -402,6 +440,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           {products.map((p) => (
             <EpcCard
               key={p.asin} p={p} canBlog={canBlog} amazonTag={amazonTag} passportEnabled={passportEnabled}
+              canRemove={isAdmin}
               onQuickPost={() => setQuickPost({ asin: p.asin, title: p.title || p.asin, imageUrl: p.image_url })}
               onRemove={() => remove(p.asin)}
             />
@@ -420,11 +459,13 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
 // runs the same deal-article engine as Deal Radar (POST /api/deals); "Post"
 // opens the shared social modal. An EPC product IS an Amazon product, so both
 // reuse the existing ASIN-driven flows.
-function EpcCard({ p, canBlog, amazonTag, passportEnabled, onQuickPost, onRemove }: {
+function EpcCard({ p, canBlog, amazonTag, passportEnabled, canRemove, onQuickPost, onRemove }: {
   p: EpcProduct
   canBlog: boolean
   amazonTag: string
   passportEnabled: boolean
+  /** Only the operator can delete rows from the shared library. */
+  canRemove?: boolean
   onQuickPost: () => void
   onRemove: () => void
 }) {
@@ -573,10 +614,12 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, onQuickPost, onRemove
           className="inline-flex items-center gap-1 text-[10px] font-mono font-medium" style={{ color: 'var(--text-faint)' }}>
           {p.asin} <Copy size={10} />
         </button>
-        <button onClick={onRemove} title="Remove from library"
-          className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-faint)] hover:text-[#b3261e]">
-          <Trash2 size={11} />
-        </button>
+        {canRemove && (
+          <button onClick={onRemove} title="Remove from library"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-faint)] hover:text-[#b3261e]">
+            <Trash2 size={11} />
+          </button>
+        )}
       </div>
     </div>
   )
