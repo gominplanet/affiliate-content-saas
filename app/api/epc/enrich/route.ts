@@ -16,7 +16,9 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, tierAllowsCampaigns } from '@/lib/tier'
-import { fetchKeepaBasics, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
+import { fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
+import { fetchKeepaBasicsCached } from '@/lib/keepa-cache'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { buildEpcPatch } from '@/lib/epc-enrich'
 
 export const runtime = 'nodejs'
@@ -90,7 +92,9 @@ export async function POST() {
     if (!batch.length) return NextResponse.json({ ok: true, done: true, filled: 0, remaining: 0 })
 
     const distinct = [...new Set(batch.map((r) => (r.asin || '').toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))]
-    const basics = await fetchKeepaBasics(distinct)
+    // Cache-first (shared across all users) so a product another creator already
+    // fetched doesn't re-spend Keepa tokens. Uses the admin client for the shared cache.
+    const basics = await fetchKeepaBasicsCached(createAdminClient(), distinct)
     const at = new Date().toISOString()
     // Batch the writes (was one awaited UPDATE per row — up to 150 serial round
     // trips per call). Chunked Promise.all keeps the DB round trips to a small

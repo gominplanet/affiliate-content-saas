@@ -22,7 +22,8 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { fetchKeepaBasics, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
+import { fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
+import { fetchKeepaBasicsCached } from '@/lib/keepa-cache'
 import { buildEpcPatch } from '@/lib/epc-enrich'
 
 export const runtime = 'nodejs'
@@ -94,7 +95,10 @@ export async function GET(req: Request) {
   const wanted = new Set(distinct)
   const toWrite = candidates.filter((r) => wanted.has((r.asin || '').toUpperCase()))
 
-  const basics = await fetchKeepaBasics(distinct)
+  // Cache-first: only ASINs no creator has fetched recently hit Keepa; the rest
+  // come from the shared cache (migration 288), and new fetches are cached for
+  // the next creator. This is where cross-user Keepa savings happen.
+  const basics = await fetchKeepaBasicsCached(admin, distinct)
   const at = new Date().toISOString()
   let enriched = 0
   // Batch the writes (was one awaited UPDATE per row — up to ~1200 serial round
