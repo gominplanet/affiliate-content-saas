@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Radar, Loader2, Search, ExternalLink, Star, Trash2, RefreshCw, Send, FileText, ArrowRight, Check, Image as ImageIcon, Link2 as LinkIcon, Copy } from 'lucide-react'
+import { Radar, Loader2, Search, ExternalLink, Star, Trash2, RefreshCw, Send, FileText, ArrowRight, Check, Image as ImageIcon, Link2 as LinkIcon, Copy, ChevronDown, ShoppingCart } from 'lucide-react'
 import { scoutCreatorConnections, type ScoutError } from '@/lib/extension-frame'
 import { tierAllowsSocial, tierAllowsCampaigns, type Tier } from '@/lib/tier'
 import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
@@ -105,6 +105,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   const activeFilterCount = (filters.onSale ? 1 : 0) + (filters.minSold ? 1 : 0) + (filters.minRating ? 1 : 0)
     + (filters.maxPrice.trim() && Number(filters.maxPrice) > 0 ? 1 : 0) + (filters.budget ? 1 : 0)
   const [debug, setDebug] = useState<string | null>(null)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [filling, setFilling] = useState(false)
   const [fillMsg, setFillMsg] = useState<string | null>(null)
   // The active site's US Associates tag + whether Passport Links (geo-routing) is
@@ -212,7 +213,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         totalFilled += Number(d.filled ?? 0)
         if (d.stopped === 'low_tokens') {
           setFillMsg(null)
-          toast.warning(`Filled ${totalFilled.toLocaleString()} so far. Keepa is low on tokens right now — the rest fills automatically over the next while, or click again later.`, { duration: 10_000 })
+          toast.warning(`Filled ${totalFilled.toLocaleString()} so far. The rest is still syncing and finishes automatically over the next while, or click again later.`, { duration: 10_000 })
           break
         }
         const remaining = Number(d.remaining ?? 0)
@@ -239,22 +240,58 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
 
   return (
     <div>
-      {/* Header / scan */}
+      {/* Header — two actions + a collapsible how-to. */}
       <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.45)', boxShadow: '0 14px 36px -16px rgba(124,58,237,0.45)' }}>
         <div className="px-4 py-3" style={{ background: 'linear-gradient(180deg, rgba(124,58,237,0.10), transparent 85%)' }}>
           <div className="flex items-start gap-3 flex-wrap">
             <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0 mt-0.5" style={{ background: 'rgba(124,58,237,0.12)' }}>
               <Radar size={14} className="text-[#7C3AED]" />
             </span>
-            <div className="flex-1 min-w-[240px]">
+            <div className="flex-1 min-w-[220px]">
               <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>EPC library <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· Sponsored Products opportunities</span></p>
               <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                <b>Browse all</b> loads brand campaigns from Amazon&rsquo;s weekly ZIP export, so it fills with thousands at once. Sponsored Products EPC opportunities are different: Amazon gives <b>no export</b> for them, so there&rsquo;s nothing to upload. SCOUT reads them straight off your on-screen grid into a searchable library (estimated EPC, budget score, price, rating). One scan scrolls for up to ~90 seconds and grabs a large batch. If your Accepted list is huge (20,000+), a single scan won&rsquo;t reach the very bottom, so run it a few times over your sessions and the library keeps everything it has already seen.
+                Open your Sponsored Products on Amazon, accept your campaigns, then scan them into this searchable library.
+              </p>
+            </div>
+            {/* Two actions, top-right. 1) Jump to Amazon; 2) scan into the library. */}
+            <div className="flex flex-col gap-2 self-start">
+              <a href="https://www.amazon.com/creatorconnections" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border"
+                style={{ borderColor: 'rgba(124,58,237,0.45)', color: '#7C3AED', background: 'var(--surface)' }}
+                title="Opens Creator Connections on Amazon. Sign in with the Amazon Associates account that holds your store ID, then accept your campaigns and open the Accepted tab.">
+                <ShoppingCart size={14} /> Open my EPC on Amazon <ExternalLink size={12} />
+              </a>
+              {paidTier ? (
+                <button onClick={scan} disabled={scanning}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70" style={{ background: '#7C3AED' }}>
+                  {scanning ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  {scanning ? 'Scanning…' : 'Scan my EPC opportunities'}
+                </button>
+              ) : (
+                <a href="/pricing"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: '#7C3AED' }}
+                  title="The EPC library is available on paid plans">
+                  <RefreshCw size={14} /> Upgrade to scan
+                </a>
+              )}
+            </div>
+          </div>
+
+          {/* Collapsible how-to — keeps the page clean; the detail is one click away. */}
+          <button onClick={() => setHelpOpen((v) => !v)}
+            className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium" style={{ color: 'var(--text-soft)' }}>
+            <ChevronDown size={13} className="transition-transform" style={{ transform: helpOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
+            How EPC works &amp; how to set it up
+          </button>
+          {helpOpen && (
+            <div className="mt-2">
+              <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+                Amazon gives <b>no export</b> for Sponsored Products EPC opportunities, so SCOUT reads them straight off your on-screen grid into this searchable library (estimated EPC, budget score, price, rating, plus price history). One scan scrolls for up to ~90 seconds and grabs a large batch. If your Accepted list is huge (20,000+), a single scan won&rsquo;t reach the very bottom, so run it a few times and the library keeps everything it has already seen.
               </p>
               <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(255,204,0,0.10)', border: '1px solid rgba(255,204,0,0.35)' }}>
                 <p className="text-[12px] font-semibold" style={{ color: '#8a6d00' }}>Do this first: Accept your campaigns</p>
                 <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                  Amazon only lists products you&apos;ve opted into. On your <b>Sponsored Products for Creators</b> tab, use Amazon&apos;s <b>&ldquo;Accept all&rdquo;</b> (the &ldquo;Discover More Campaigns, Faster&rdquo; banner) to opt into your recommendations, then open the <b>Accepted</b> tab so the products are on screen. Only then can SCOUT read them. Come back here and hit Scan.
+                  Open it on Amazon and sign in with the Associates account that holds your store ID (the one your Creator Connections are under). Use Amazon&apos;s <b>&ldquo;Accept all&rdquo;</b> on the <b>Sponsored Products for Creators</b> tab, then open the <b>Accepted</b> tab so the products are on screen. Only then can SCOUT read them. Come back here and hit Scan.
                 </p>
               </div>
               <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.30)' }}>
@@ -264,20 +301,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
                 </p>
               </div>
             </div>
-            {paidTier ? (
-              <button onClick={scan} disabled={scanning}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70 self-start" style={{ background: '#7C3AED' }}>
-                {scanning ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                {scanning ? 'Scanning…' : 'Scan my EPC opportunities'}
-              </button>
-            ) : (
-              <a href="/pricing"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white self-start" style={{ background: '#7C3AED' }}
-                title="The EPC library is available on paid plans">
-                <RefreshCw size={14} /> Upgrade to scan
-              </a>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
@@ -300,7 +324,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         </select>
         {total > 0 && (
           <button onClick={fillImages} disabled={filling}
-            title="Fetch the image, sales rank, monthly sales and price history for any card still missing them (uses Keepa; skips ones already filled)."
+            title="Fetch the image, sales rank, monthly sales and price history for any card still missing them (skips ones already filled)."
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-medium border disabled:opacity-60"
             style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
             {filling ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
@@ -484,7 +508,7 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, onQuickPost, onRemove
           {p.epc_display || (p.epc_value != null ? `Up to $${p.epc_value.toFixed(2)}` : 'EPC n/a')}
         </span>
         {(() => { const d = dealBadge(p.deal_quality, p.discount_pct); return d
-          ? <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: d.bg, color: d.color }} title="Price vs its 90-day average (Keepa)">{d.text}</span>
+          ? <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: d.bg, color: d.color }} title="Price vs its 90-day average">{d.text}</span>
           : null })()}
         {p.budget && (
           <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: bs.bg, color: bs.color }} title="Budget availability score">

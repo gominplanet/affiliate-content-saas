@@ -204,7 +204,7 @@ function FreeResearchSection() {
           <span aria-hidden>·</span>
           <span className="line-through">Helium 10 $79</span>
           <span aria-hidden>·</span>
-          <span className="line-through">Keepa $19</span>
+          <span className="line-through">Price tracking $19</span>
           <span className="font-semibold" style={{ color: 'var(--text)' }}>= ~$147/mo.</span>
           <span className="font-bold" style={{ color: '#34c759' }}>Here it&apos;s free.</span>
         </div>
@@ -1418,7 +1418,7 @@ const SITE_COST_STACK: ReadonlyArray<readonly [string, string]> = [
 const BUNDLE_STUDIO: Array<[string, number]> = [
   ['Cuppa Solo (AI blog writer)', 99],
   ['Jungle Scout (product research)', 49],
-  ['Keepa (price history & deal tracking)', 19],
+  ['Price history & deal tracking', 19],
   ['thumbnailcreator.com (Creator)', 41],
   ['OpusClip Pro (vertical clips)', 29],
   ['Beehiiv Grow (newsletter)', 43],
@@ -1426,7 +1426,7 @@ const BUNDLE_STUDIO: Array<[string, number]> = [
 const BUNDLE_PRO: Array<[string, number]> = [
   ['Cuppa Studio (multi-niche AI writer)', 199],
   ['Jungle Scout + Helium 10 (research)', 128],
-  ['Keepa (price history & deals)', 19],
+  ['Price history & deals', 19],
   ['Frase (SEO briefs)', 97],
   ['thumbnailcreator.com (Creator)', 41],
   ['OpusClip Pro (vertical clips)', 29],

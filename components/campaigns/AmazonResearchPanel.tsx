@@ -288,7 +288,7 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
           {debug && (
             <div className="mt-3 text-[11px] font-mono break-all max-w-2xl mx-auto" style={{ color: 'var(--text-faint)' }}>
               <div>diagnostic · status {debug.status} · tokens {debug.tokensLeft ?? '—'} · total {debug.totalResults ?? '—'} · matched {debug.matched}</div>
-              {debug.error ? <div className="mt-1" style={{ color: '#e11d48' }}>keepa: {String(debug.error)}</div> : null}
+              {debug.error ? <div className="mt-1" style={{ color: '#e11d48' }}>error: {String(debug.error)}</div> : null}
             </div>
           )}
         </div>
