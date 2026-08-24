@@ -188,7 +188,17 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
       })
       const saved = await save.json()
       if (!save.ok || !saved.ok) { toast.error(saved.error || 'Could not save the scan.'); return }
-      toast.success(`Saved ${saved.saved} EPC opportunit${saved.saved === 1 ? 'y' : 'ies'} to your library.`)
+      // Report NEW vs already-saved. Each scan re-reads the same top products, so
+      // most are usually dupes — showing the new count (and why the rest didn't
+      // add) explains why the library total moves slowly.
+      const added = Number(saved.added ?? saved.saved) || 0
+      const scanned = Number(saved.saved) || 0
+      const dupes = Math.max(0, scanned - added)
+      if (added > 0) {
+        toast.success(`Added ${added.toLocaleString()} new ${added === 1 ? 'opportunity' : 'opportunities'}${dupes ? ` · ${dupes.toLocaleString()} already in your library` : ''}.`)
+      } else {
+        toast.info(`No new opportunities — all ${scanned.toLocaleString()} were already in your library. Accept more campaigns on Amazon (or scroll deeper into your Accepted list) to surface new ones, then scan again.`, { duration: 8_000 })
+      }
       await load(q, sort, filters)
     } catch {
       toast.error('Scan failed unexpectedly. Reload and try again.')

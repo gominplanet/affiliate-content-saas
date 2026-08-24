@@ -105,6 +105,19 @@ export async function POST(request: Request) {
 
     if (!rows.length) return NextResponse.json({ error: 'No valid products in the scan.' }, { status: 400 })
 
+    // How many of these are NEW to the library vs already saved. Each scan re-reads
+    // the same top products, so almost all are usually dupes — reporting "saved N"
+    // (all scanned) made the growing total look stuck. Compute the real new count
+    // against the user's existing ASINs (one bounded column read).
+    let addedCount = rows.length
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: existingRows } = await (supabase as any)
+        .from('epc_products').select('asin').eq('user_id', user.id)
+      const existingSet = new Set(((existingRows ?? []) as { asin: string }[]).map((e) => (e.asin || '').toUpperCase()))
+      addedCount = rows.filter((r) => !existingSet.has(r.asin)).length
+    } catch { /* fall back to rows.length */ }
+
     // Upsert on (user_id, asin). first_seen_at is omitted so it keeps its
     // original value on update and defaults on insert.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -156,7 +169,7 @@ export async function POST(request: Request) {
       console.warn('[epc/ingest] keepa enrich skipped:', e instanceof Error ? e.message : e)
     }
 
-    return NextResponse.json({ ok: true, saved: rows.length })
+    return NextResponse.json({ ok: true, saved: rows.length, added: addedCount })
   } catch (err) {
     console.error('[epc/ingest]', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, "Couldn't save the scan just now. Please try again.") }, { status: 500 })
