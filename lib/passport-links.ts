@@ -19,6 +19,7 @@ export const AMAZON_MARKETPLACES: Record<string, { host: string; code: string }>
   US: { host: 'www.amazon.com', code: 'US' },
   CA: { host: 'www.amazon.ca', code: 'CA' },
   GB: { host: 'www.amazon.co.uk', code: 'GB' },
+  IE: { host: 'www.amazon.ie', code: 'IE' },
   DE: { host: 'www.amazon.de', code: 'DE' },
   FR: { host: 'www.amazon.fr', code: 'FR' },
   IT: { host: 'www.amazon.it', code: 'IT' },
