@@ -14,7 +14,7 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { buildPassportDestination, parseUserAgent } from '@/lib/passport-links'
+import { buildPassportDestination, parseUserAgent, normalizeCountry } from '@/lib/passport-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,35 +31,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
     const admin = createAdminClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: link } = await (admin as any)
-      .from('passport_links').select('asin, user_id, site_id, source').eq('code', code).maybeSingle()
-    if (!link?.asin) return NextResponse.redirect(AMAZON_HOME, 302)
+      .from('passport_links').select('asin, destination_url, user_id, site_id, source').eq('code', code).maybeSingle()
+    if (!link || (!link.asin && !link.destination_url)) return NextResponse.redirect(AMAZON_HOME, 302)
 
-    // The creator's tags: per-site country map + default (US) tag. Fall back to the
-    // account-wide integrations tag when the link isn't tied to a specific site.
-    let defaultTag: string | null = null
-    let siteTags: Record<string, string> = {}
-    if (link.site_id) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: site } = await (admin as any)
-        .from('wordpress_sites').select('amazon_associates_tag, amazon_country_tags').eq('id', link.site_id).maybeSingle()
-      defaultTag = (site?.amazon_associates_tag as string | null) ?? null
-      siteTags = (site?.amazon_country_tags as Record<string, string> | null) ?? {}
-    }
-    // Account-level default tag + country tags (the fallback for single-site
-    // creators, and where the US tag comes from when the link has no site).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: ig } = await (admin as any)
-      .from('integrations').select('amazon_associates_tag, amazon_country_tags').eq('user_id', link.user_id).maybeSingle()
-    if (!defaultTag) defaultTag = (ig?.amazon_associates_tag as string | null) ?? null
-    // Per-site country tags win; account-level fills any the site doesn't set.
-    const countryTags: Record<string, string> = { ...((ig?.amazon_country_tags as Record<string, string> | null) ?? {}), ...siteTags }
-
-    const country = req.headers.get('x-vercel-ip-country') || req.headers.get('cf-ipcountry') || 'US'
-    const dest = buildPassportDestination(String(link.asin), country, countryTags, defaultTag)
-
-    // Log the click (awaited — small insert, keeps the dashboard reliable). Source:
-    // the one baked into the link (new clean codes carry it on the row), else a
-    // legacy ?s= param, else the referring host.
+    // Source: the one baked into the link (new clean codes carry it on the row),
+    // else a legacy ?s= param, else the referring host.
     const url = new URL(req.url)
     const storedSource = (link.source as string | null) || null
     const sParam = storedSource || (url.searchParams.get('s') || '').slice(0, 40)
@@ -69,20 +45,55 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
       try { source = ref ? new URL(ref).host.slice(0, 80) : null } catch { source = null }
     }
 
-    // Carry the explicit source through to Amazon as ascsubtag so per-source (e.g.
-    // per-video) earnings attribution survives the geo-redirect. Amazon caps it at
-    // 16 chars and wants it URL-safe; skip a referer-host source (not ours to tag).
-    let finalUrl = dest.url
-    const asc = sParam.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 16)
-    if (asc) finalUrl += `${finalUrl.includes('?') ? '&' : '?'}ascsubtag=${asc}`
-
+    const visitorCountry = req.headers.get('x-vercel-ip-country') || req.headers.get('cf-ipcountry') || 'US'
     // Device / browser / OS from the UA, for the dashboard breakdowns.
     const ua = parseUserAgent(req.headers.get('user-agent'))
+
+    // Two kinds of link. An Amazon ASIN is geo-routed to the visitor's local store
+    // + the creator's tag there; any other link is forwarded to its destination
+    // as-is (a branded short link). Both log a click.
+    let finalUrl: string
+    let logCountry: string
+    let marketplace: string | null
+
+    if (link.asin) {
+      // The creator's tags: per-site country map + default (US) tag. Fall back to
+      // the account-wide integrations tag when the link isn't tied to a site.
+      let defaultTag: string | null = null
+      let siteTags: Record<string, string> = {}
+      if (link.site_id) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: site } = await (admin as any)
+          .from('wordpress_sites').select('amazon_associates_tag, amazon_country_tags').eq('id', link.site_id).maybeSingle()
+        defaultTag = (site?.amazon_associates_tag as string | null) ?? null
+        siteTags = (site?.amazon_country_tags as Record<string, string> | null) ?? {}
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: ig } = await (admin as any)
+        .from('integrations').select('amazon_associates_tag, amazon_country_tags').eq('user_id', link.user_id).maybeSingle()
+      if (!defaultTag) defaultTag = (ig?.amazon_associates_tag as string | null) ?? null
+      const countryTags: Record<string, string> = { ...((ig?.amazon_country_tags as Record<string, string> | null) ?? {}), ...siteTags }
+
+      const dest = buildPassportDestination(String(link.asin), visitorCountry, countryTags, defaultTag)
+      finalUrl = dest.url
+      logCountry = dest.country
+      marketplace = dest.marketplace
+      // Carry the explicit source to Amazon as ascsubtag so per-source (e.g. per
+      // video) earnings attribution survives the geo-redirect. Amazon caps it at
+      // 16 URL-safe chars; a referer-host source isn't ours to tag, so it's blank.
+      const asc = sParam.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 16)
+      if (asc) finalUrl += `${finalUrl.includes('?') ? '&' : '?'}ascsubtag=${asc}`
+    } else {
+      // Plain destination link (any non-Amazon URL) — forward as pasted.
+      finalUrl = String(link.destination_url)
+      logCountry = normalizeCountry(visitorCountry)
+      marketplace = null
+    }
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (admin as any).from('passport_link_clicks').insert({
-        code, user_id: link.user_id, country: dest.country, marketplace: dest.marketplace, source,
+        code, user_id: link.user_id, country: logCountry, marketplace, source,
         device: ua.device, browser: ua.browser, os: ua.os,
       })
     } catch { /* never let logging block the redirect */ }

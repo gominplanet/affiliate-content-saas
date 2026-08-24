@@ -9,6 +9,8 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { AMAZON_MARKETPLACES as MARKETPLACES } from '@/lib/passport-links'
+import { canUsePassport } from '@/lib/feature-access'
+import { normalizeTier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +20,12 @@ export async function GET(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: tierRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  if (!canUsePassport(normalizeTier(tierRow?.tier))) {
+    return NextResponse.json({ error: 'Passport Links is available on the Studio and Pro plans.' }, { status: 403 })
+  }
 
   const url = new URL(request.url)
   const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days')) || 30))

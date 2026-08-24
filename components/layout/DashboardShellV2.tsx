@@ -30,7 +30,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
 import { tierBadge } from '@/lib/tier-badge'
 import { canUpgradeTier, TIERS } from '@/lib/tier'
-import { canSeeNav, canBrowseDealRadar } from '@/lib/feature-access'
+import { canSeeNav, canBrowseDealRadar, canUsePassport } from '@/lib/feature-access'
 import type { Tier } from '@/lib/tier'
 import {
   Home, Youtube, Library, Mail, Palette, Brush, TrendingUp,
@@ -587,7 +587,7 @@ export default function DashboardShellV2({
         // Passport Links — MVP-native geo-routing (each visitor → their own
         // country's Amazon) + click analytics. In LABS while we test it end to end;
         // graduates out once the blog/social auto-wiring + short domain are set.
-        { href: '/passport', icon: <Globe size={15} />, label: 'Passport Links', gate: isPro },
+        { href: '/passport', icon: <Globe size={15} />, label: 'Passport Links', gate: canUsePassport(effectiveTier) },
         // AMZ Storefront — SCOUT-synced Amazon earnings + full-catalog analytics.
         // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
         // finished; graduates back to "Grow" (gate: isPaid) when it's ready.
