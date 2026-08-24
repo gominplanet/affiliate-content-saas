@@ -8,7 +8,6 @@ import { Save, Check, Plus, Trash2, Upload, X, RefreshCw, Loader2, AlertCircle }
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
 import GeniuslinkGroupsPanel from '@/components/brand/GeniuslinkGroupsPanel'
-import PassportLinksCard from '@/components/brand/PassportLinksCard'
 import { GENIUSLINK_SIGNUP_URL, GENIUSLINK_PITCH } from '@/lib/geniuslink-signup'
 
 async function uploadBrandImage(
@@ -1316,10 +1315,6 @@ export default function BrandPage() {
                   This tag belongs to your <b>active site</b>. Running more than one brand? Switch sites in the top bar first, then set that site&apos;s tag here. Each site&apos;s links use its own tag; a site with none set falls back to this one.
                 </p>
               </div>
-
-              {/* Passport Links — MVP-native geo-routing (each visitor → their own
-                  country's Amazon). Sits with the Amazon tag since it extends it. */}
-              <PassportLinksCard />
             </div>
 
             {/* Google Search Console — read-only SEO data. Moved here from
