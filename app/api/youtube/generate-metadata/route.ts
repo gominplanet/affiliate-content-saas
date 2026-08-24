@@ -801,16 +801,17 @@ export async function POST(request: Request) {
       affiliateUrl = subtaggedDest
 
       // Passport Links (geo-routing) takes priority when on: one link that sends
-      // each viewer to their own country's Amazon. The ?s=<videoId> both tags our
-      // click analytics with the source and rides through to Amazon as the
-      // per-video ascsubtag, so per-video earnings attribution is preserved.
+      // each viewer to their own country's Amazon. The video id is baked into the
+      // short code as the source, so the link stays clean (no ?s= tail) while our
+      // click analytics still tag the source and it rides through to Amazon as the
+      // per-video ascsubtag, preserving per-video earnings attribution.
       if (intRow?.passport_links_enabled) {
         try {
           const site = await getDefaultSite(supabase, ownerId)
           const siteId = site && site.id !== 'legacy' ? site.id : null
-          const code = await getOrCreatePassportLink(createAdminClient(), ownerId, siteId, trimmedAsin, product.title || videoTitle)
+          const code = await getOrCreatePassportLink(createAdminClient(), ownerId, siteId, trimmedAsin, product.title || videoTitle, youtubeVideoId || null)
           if (code) {
-            affiliateUrl = `${passportLinkUrl(code)}${youtubeVideoId ? `?s=${encodeURIComponent(youtubeVideoId)}` : ''}`
+            affiliateUrl = passportLinkUrl(code)
             passportUsed = true
           }
         } catch (e) { console.warn('[generate-metadata] passport link skipped:', e instanceof Error ? e.message : e) }

@@ -31,7 +31,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
     const admin = createAdminClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: link } = await (admin as any)
-      .from('passport_links').select('asin, user_id, site_id').eq('code', code).maybeSingle()
+      .from('passport_links').select('asin, user_id, site_id, source').eq('code', code).maybeSingle()
     if (!link?.asin) return NextResponse.redirect(AMAZON_HOME, 302)
 
     // The creator's tags: per-site country map + default (US) tag. Fall back to the
@@ -58,9 +58,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
     const dest = buildPassportDestination(String(link.asin), country, countryTags, defaultTag)
 
     // Log the click (awaited — small insert, keeps the dashboard reliable). Source:
-    // an explicit ?s= we add when building links, else the referring host.
+    // the one baked into the link (new clean codes carry it on the row), else a
+    // legacy ?s= param, else the referring host.
     const url = new URL(req.url)
-    const sParam = (url.searchParams.get('s') || '').slice(0, 40)
+    const storedSource = (link.source as string | null) || null
+    const sParam = storedSource || (url.searchParams.get('s') || '').slice(0, 40)
     let source = sParam || null
     if (!source) {
       const ref = req.headers.get('referer') || ''

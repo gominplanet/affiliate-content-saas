@@ -153,9 +153,10 @@ export function buildPassportDestination(
  * the caller then falls through to its existing behavior (Geniuslink, plain tag,
  * whatever is configured). So turning Passport Links off changes nothing anywhere.
  *
- * `source` becomes ?s=<source> on the link — logged for analytics and passed to
- * Amazon as ascsubtag (per-video / per-surface attribution). `db` can be the
- * user's session client or the admin client.
+ * `source` is baked into the short code (its own clean link per surface), stored
+ * on the row, and read back at redirect time for analytics + the Amazon ascsubtag
+ * (per-video / per-surface attribution). `db` can be the user's session client or
+ * the admin client.
  */
 export async function passportLinkForUser(
   db: Db, userId: string, asin: string, opts?: { source?: string | null; title?: string | null },
@@ -167,10 +168,10 @@ export async function passportLinkForUser(
     if (!ig?.passport_links_enabled) return null
     const { data: site } = await db.from('wordpress_sites').select('id').eq('user_id', userId).eq('is_default', true).maybeSingle()
     const siteId = (site?.id as string | undefined) ?? null
-    const code = await getOrCreatePassportLink(db, userId, siteId, a, opts?.title ?? null)
+    // The source is baked into its own code, so the URL stays clean (no ?s= tail).
+    const code = await getOrCreatePassportLink(db, userId, siteId, a, opts?.title ?? null, opts?.source ?? null)
     if (!code) return null
-    const src = (opts?.source || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40)
-    return `${passportLinkUrl(code)}${src ? `?s=${src}` : ''}`
+    return passportLinkUrl(code)
   } catch {
     return null
   }
@@ -193,17 +194,27 @@ function randomCode(len = 7): string {
  * asin) unique key means one stable link per product per site. Returns the code,
  * or null on failure (the caller then just uses a plain Amazon link).
  */
+/** Sanitize a source token: URL-safe, short, or null for "no source". */
+export function normalizeSource(source: string | null | undefined): string | null {
+  const s = (source || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40)
+  return s || null
+}
+
 export async function getOrCreatePassportLink(
-  admin: Db, userId: string, siteId: string | null, asin: string, label?: string | null,
+  admin: Db, userId: string, siteId: string | null, asin: string, label?: string | null, source?: string | null,
 ): Promise<string | null> {
   const a = (asin || '').trim().toUpperCase()
   if (!/^[A-Z0-9]{10}$/.test(a)) return null
+  // Each (product, source) gets its own clean code, so the URL never needs a ?s=
+  // tail. A null source is the "plain" link (the manual Get-link button).
+  const src = normalizeSource(source)
 
-  // Find this creator's existing link for the product (Supabase needs .is for a
-  // null site_id and .eq otherwise).
+  // Find this creator's existing link for the product + source (Supabase needs
+  // .is for a null site_id / null source and .eq otherwise).
   const findExisting = async (): Promise<string | null> => {
     let q = admin.from('passport_links').select('code').eq('user_id', userId).eq('asin', a)
     q = siteId === null ? q.is('site_id', null) : q.eq('site_id', siteId)
+    q = src === null ? q.is('source', null) : q.eq('source', src)
     const { data } = await q.maybeSingle()
     return (data?.code as string | undefined) || null
   }
@@ -213,11 +224,11 @@ export async function getOrCreatePassportLink(
     if (existing) return existing
 
     // Mint a new code, retrying on the small chance of a code collision or a
-    // concurrent create (the (user, site, asin) unique key catches the latter).
+    // concurrent create (the (user, site, asin, source) unique index catches the latter).
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = randomCode()
       const { data } = await admin.from('passport_links').insert({
-        code, user_id: userId, site_id: siteId, asin: a, label: (label || '').slice(0, 300) || null,
+        code, user_id: userId, site_id: siteId, asin: a, source: src, label: (label || '').slice(0, 300) || null,
       }).select('code').maybeSingle()
       if (data?.code) return data.code as string
       const race = await findExisting()
