@@ -255,7 +255,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
             </div>
             {/* Two actions, top-right. 1) Jump to Amazon; 2) scan into the library. */}
             <div className="flex flex-col gap-2 self-start">
-              <a href="https://www.amazon.com/creatorconnections" target="_blank" rel="noopener noreferrer"
+              <a href="https://affiliate-program.amazon.com/p/connect/requests" target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border"
                 style={{ borderColor: 'rgba(124,58,237,0.45)', color: '#7C3AED', background: 'var(--surface)' }}
                 title="Opens Creator Connections on Amazon. Sign in with the Amazon Associates account that holds your store ID, then accept your campaigns and open the Accepted tab.">

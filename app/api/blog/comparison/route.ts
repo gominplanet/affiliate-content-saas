@@ -28,7 +28,7 @@ import { learnProfileToPrompt } from '@/lib/learn'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
-import { composeWithGptImage, composeWithNanoBananaPro, rehostToFal, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_PRO_COST_MODEL } from '@/lib/thumbnail-generators'
+import { composeWithGptImage, composeWithNanoBanana, rehostToFal, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { preflightWpPublish } from '@/lib/wp-preflight'
@@ -801,8 +801,8 @@ CRITICAL RULES:
             let composed = await composeWithGptImage({ prompt: vsPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
             let heroModel = GPT_IMAGE_COMPOSE_COST_MODEL
             if (!composed[0]) {
-              composed = await composeWithNanoBananaPro({ prompt: vsPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
-              heroModel = NANO_BANANA_PRO_COST_MODEL
+              composed = await composeWithNanoBanana({ prompt: vsPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
+              heroModel = NANO_BANANA_COST_MODEL
             }
             heroSrc = composed[0] || null
             if (heroSrc) recordUsage({ userId: user.id, tier, feature: 'comparison_hero_image', model: heroModel, images: 1 })
