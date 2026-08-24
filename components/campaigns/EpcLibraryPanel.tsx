@@ -197,7 +197,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
       if (added > 0) {
         toast.success(`Added ${added.toLocaleString()} new ${added === 1 ? 'opportunity' : 'opportunities'}${dupes ? ` · ${dupes.toLocaleString()} already in your library` : ''}.`)
       } else {
-        toast.info(`No new opportunities — all ${scanned.toLocaleString()} were already in your library. Accept more campaigns on Amazon (or scroll deeper into your Accepted list) to surface new ones, then scan again.`, { duration: 8_000 })
+        toast.info(`No new opportunities in this stretch — all ${scanned.toLocaleString()} were already saved. Scan again: SCOUT picks up deeper each time (and loops back to the top once it has covered your whole Accepted list). Accepting more campaigns on Amazon adds new ones too.`, { duration: 8_000 })
       }
       await load(q, sort, filters)
     } catch {
@@ -296,7 +296,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           {helpOpen && (
             <div className="mt-2">
               <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-                Amazon gives <b>no export</b> for Sponsored Products EPC opportunities, so SCOUT reads them straight off your on-screen grid into this searchable library (estimated EPC, budget score, price, rating, plus price history). One scan scrolls for up to ~90 seconds and grabs a large batch. If your Accepted list is huge (20,000+), a single scan won&rsquo;t reach the very bottom, so run it a few times and the library keeps everything it has already seen.
+                Amazon gives <b>no export</b> for Sponsored Products EPC opportunities, so SCOUT reads them straight off your on-screen grid into this searchable library (estimated EPC, budget score, price, rating, plus price history). One scan scrolls for up to ~90 seconds and grabs a large batch. If your Accepted list is huge (20,000+), a single scan won&rsquo;t reach the bottom, so just <b>run it again</b> a few times: each scan picks up where the last one left off and reaches deeper, then loops back to the top once it has covered the whole list.
               </p>
               <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(255,204,0,0.10)', border: '1px solid rgba(255,204,0,0.35)' }}>
                 <p className="text-[12px] font-semibold" style={{ color: '#8a6d00' }}>Do this first: Accept your campaigns</p>
