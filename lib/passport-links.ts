@@ -198,6 +198,37 @@ function randomCode(len = 7): string {
   return s
 }
 
+/**
+ * Guardrail for a non-Amazon "branded short link" destination. A Passport link
+ * 302s the visitor to this URL under our own domain, so we refuse to point it at
+ * anything but a normal public web page: http/https only, a real external host,
+ * never a private/loopback/link-local address, our own domains (no self-referential
+ * loops or auth-path abuse), or a userinfo-in-URL phishing trick. This keeps the
+ * feature (any retailer or brand page) while stopping mvpl.ink from being turned
+ * into an open redirector to internal hosts or credential-harvest pages.
+ */
+export function isSafePassportDestination(raw: string): boolean {
+  let u: URL
+  try { u = new URL((raw || '').trim()) } catch { return false }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
+  if (u.username || u.password) return false // https://amazon.com@evil.tld/ trick
+  const host = u.hostname.toLowerCase()
+  if (!host || !host.includes('.')) return false // no bare hosts / "localhost"
+  // Our own domains — never redirect back to the app (auth pages, redirect loops).
+  if (/(^|\.)(mvpaffiliate\.io|mvpl\.ink)$/.test(host)) return false
+  // Raw IPs: block loopback / private / link-local / reserved ranges.
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    const [a, b] = host.split('.').map(Number)
+    if (a === 10 || a === 127 || a === 0 || a === 169 && b === 254) return false
+    if (a === 192 && b === 168) return false
+    if (a === 172 && b >= 16 && b <= 31) return false
+    if (a >= 224) return false // multicast / reserved
+  }
+  if (host === '[::1]' || host.startsWith('[fc') || host.startsWith('[fd') || host.startsWith('[fe80')) return false
+  if (/\.(local|internal|localhost|lan|corp|home)$/.test(host)) return false
+  return true
+}
+
 /** Sanitize a source token: URL-safe, short, or null for "no source". */
 export function normalizeSource(source: string | null | undefined): string | null {
   const s = (source || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40)

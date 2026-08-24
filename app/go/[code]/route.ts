@@ -74,7 +74,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
       let defaultTag: string | null = (site?.amazon_associates_tag as string | null) ?? null
       const siteTags: Record<string, string> = (site?.amazon_country_tags as Record<string, string> | null) ?? {}
       if (!defaultTag) defaultTag = (ig?.amazon_associates_tag as string | null) ?? null
-      const countryTags: Record<string, string> = { ...((ig?.amazon_country_tags as Record<string, string> | null) ?? {}), ...siteTags }
+      // REPLACE, not merge: if the link's site has its own country tags, use ONLY
+      // those (each brand is fully separate). Otherwise fall back to the account
+      // map. This matches exactly what the settings screen shows, so a creator can
+      // never earn on an account-level tag the UI is hiding. (2026-08 audit)
+      const accountTags = (ig?.amazon_country_tags as Record<string, string> | null) ?? {}
+      const countryTags: Record<string, string> = Object.keys(siteTags).length ? siteTags : accountTags
 
       const dest = buildPassportDestination(String(link.asin), visitorCountry, countryTags, defaultTag)
       finalUrl = dest.url
