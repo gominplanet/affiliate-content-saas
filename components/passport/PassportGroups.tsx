@@ -17,11 +17,13 @@ interface Group { id: string; name: string; links: number }
 interface ByGroup { id: string | null; name: string; count: number }
 
 export default function PassportGroups({
-  active, onSelect, byGroup,
+  active, onSelect, byGroup, reloadKey = 0,
 }: {
   active: string // '' all · 'none' ungrouped · else group id
   onSelect: (v: string) => void
   byGroup?: ByGroup[]
+  /** bump to refetch group + link counts after a reassignment elsewhere. */
+  reloadKey?: number
 }) {
   const [groups, setGroups] = useState<Group[]>([])
   const [ungrouped, setUngrouped] = useState(0)
@@ -45,7 +47,7 @@ export default function PassportGroups({
       if (d?.ok) { setGroups(d.groups || []); setUngrouped(d.ungrouped || 0) }
     } catch { /* keep prior */ } finally { setLoading(false) }
   }, [])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load() }, [load, reloadKey])
 
   async function create() {
     const name = newName.trim()
