@@ -28,7 +28,7 @@ import { learnProfileToPrompt } from '@/lib/learn'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
-import { composeWithNanoBananaPro, rehostToFal, NANO_BANANA_PRO_COST_MODEL } from '@/lib/thumbnail-generators'
+import { composeWithGptImage, composeWithNanoBananaPro, rehostToFal, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_PRO_COST_MODEL } from '@/lib/thumbnail-generators'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { preflightWpPublish } from '@/lib/wp-preflight'
@@ -795,9 +795,17 @@ CRITICAL RULES:
 - Reproduce each product EXACTLY as in its reference image. Do NOT swap, merge, redesign or invent products, and do NOT add any brand names, logos, labels, buttons or made-up text onto the products.
 - The ONLY text allowed anywhere in the whole image is the single word "VS". Nothing else.
 - Absolutely NO years, NO dates, NO numbers, NO percentages, NO captions, NO titles, NO watermarks, NO price tags, NO badges.`
-            const composed = await composeWithNanoBananaPro({ prompt: vsPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
+            // PRIMARY: gpt-image ($0.06). Nano Banana Pro ($0.13) stays as the
+            // fallback only, matching the deals / articles / thumbnail paths — so
+            // the common case costs ~half without losing the multi-reference hero.
+            let composed = await composeWithGptImage({ prompt: vsPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
+            let heroModel = GPT_IMAGE_COMPOSE_COST_MODEL
+            if (!composed[0]) {
+              composed = await composeWithNanoBananaPro({ prompt: vsPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
+              heroModel = NANO_BANANA_PRO_COST_MODEL
+            }
             heroSrc = composed[0] || null
-            if (heroSrc) recordUsage({ userId: user.id, tier, feature: 'comparison_hero_image', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
+            if (heroSrc) recordUsage({ userId: user.id, tier, feature: 'comparison_hero_image', model: heroModel, images: 1 })
           }
         }
       }
