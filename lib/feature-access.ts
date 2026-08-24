@@ -95,12 +95,28 @@ export const NAV_ACCESS = {
     // `tiers` here (e.g. to PRO or STUDIO_UP) — every gate reads this list.
     extraLocks: 'Deal → blog post counts against postsPerMonth like any post',
   },
+  passport: {
+    label: 'Passport Links',
+    tiers: STUDIO_UP,
+    // Every Passport route (settings, link-mint, analytics) + the shared
+    // passportLinkForUser() gate call canUsePassport(). This matters because the
+    // free SCOUT extension can hit POST /api/passport/link — without the server
+    // gate, a free user could mint links. Studio + Pro only.
+    enforcedBy: 'GET/POST /api/passport, POST /api/passport/link, GET /api/passport/analytics, passportLinkForUser()',
+  },
 } as const satisfies Record<string, NavAccessRule>
 
 /** Can this tier ACT on Deal Radar — quick-post, roundup, make a deal blog post,
  *  weekly digest? Paid only. Single source of truth; the action routes call this. */
 export function canUseDealRadar(tier: Tier | null | undefined): boolean {
   return canSeeNav('dealRadar', tier)
+}
+
+/** Can this tier use Passport Links (geo-routing links, the paste box, the
+ *  dashboard, and auto-wiring into content)? Studio + Pro only. The free SCOUT
+ *  extension can call the link-mint route, so this must be enforced server-side. */
+export function canUsePassport(tier: Tier | null | undefined): boolean {
+  return canSeeNav('passport', tier)
 }
 
 /** Can this tier BROWSE the Deal Radar feed? Every signed-in plan, including the

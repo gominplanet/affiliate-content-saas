@@ -15,6 +15,8 @@ import { getDefaultSite } from '@/lib/wordpress-sites'
 import { getOrCreatePassportLink, passportLinkUrl } from '@/lib/passport-links'
 import { asinFromAmazonUrl, resolveFinalUrl } from '@/lib/product-link'
 import { extractAsin } from '@/services/amazon'
+import { canUsePassport } from '@/lib/feature-access'
+import { normalizeTier } from '@/lib/tier'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -43,28 +45,38 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await request.json().catch(() => ({})) as { asin?: string; url?: string; title?: string }
-
-  // Resolve to an ASIN: an explicit one wins, else pull it from the pasted link.
-  let asin = (body.asin || '').trim().toUpperCase()
-  if (!/^[A-Z0-9]{10}$/.test(asin)) {
-    if (body.url && body.url.trim()) {
-      const resolved = await asinFromPastedUrl(body.url)
-      if (!resolved) {
-        return NextResponse.json({ error: "Couldn't find an Amazon product in that link. Paste an Amazon product URL (or an amzn.to / geni.us link)." }, { status: 400 })
-      }
-      asin = resolved
-    } else {
-      return NextResponse.json({ error: 'Paste an Amazon product link (or provide an ASIN).' }, { status: 400 })
-    }
+  // Studio + Pro only. The free SCOUT extension can reach this route, so the gate
+  // is enforced here, not just in the UI.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: tierRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  if (!canUsePassport(normalizeTier(tierRow?.tier))) {
+    return NextResponse.json({ error: 'Passport Links is available on the Studio and Pro plans.' }, { status: 403 })
   }
+
+  const body = await request.json().catch(() => ({})) as { asin?: string; url?: string; title?: string }
+  const title = (body.title || '').trim() || null
 
   const site = await getDefaultSite(supabase, user.id)
   const siteId = site && site.id !== 'legacy' ? site.id : null
-
   const admin = createAdminClient()
-  const code = await getOrCreatePassportLink(admin, user.id, siteId, asin, (body.title || '').trim() || null)
+
+  // Target: an explicit ASIN, else the pasted link. If the link resolves to an
+  // Amazon product we geo-route it; ANY other link becomes a plain branded short
+  // link (cloak + click tracking) pointing at the URL as pasted.
+  let target: { asin?: string | null; destinationUrl?: string | null; label?: string | null }
+  const explicitAsin = (body.asin || '').trim().toUpperCase()
+  if (/^[A-Z0-9]{10}$/.test(explicitAsin)) {
+    target = { asin: explicitAsin, label: title }
+  } else {
+    const raw = (body.url || '').trim()
+    if (!raw) return NextResponse.json({ error: 'Paste a link (or provide an ASIN).' }, { status: 400 })
+    if (!/^https?:\/\/\S+$/i.test(raw)) return NextResponse.json({ error: "That doesn't look like a link. Paste a full URL starting with http." }, { status: 400 })
+    const asin = await asinFromPastedUrl(raw)
+    target = asin ? { asin, label: title } : { destinationUrl: raw, label: title }
+  }
+
+  const code = await getOrCreatePassportLink(admin, user.id, siteId, target)
   if (!code) return NextResponse.json({ error: 'Could not create the link. Make sure Passport Links storage is set up (migration 282).' }, { status: 500 })
 
-  return NextResponse.json({ ok: true, url: passportLinkUrl(code), code, asin })
+  return NextResponse.json({ ok: true, url: passportLinkUrl(code), code, asin: target.asin ?? null, geo: !!target.asin })
 }

@@ -13,6 +13,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getDefaultSite } from '@/lib/wordpress-sites'
 import { passportLinkBase, AMAZON_MARKETPLACES } from '@/lib/passport-links'
+import { canUsePassport } from '@/lib/feature-access'
+import { normalizeTier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,7 +38,9 @@ export async function GET() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ig } = await (supabase as any)
-    .from('integrations').select('amazon_associates_tag, passport_links_enabled, amazon_country_tags').eq('user_id', user.id).maybeSingle()
+    .from('integrations').select('amazon_associates_tag, passport_links_enabled, amazon_country_tags, tier').eq('user_id', user.id).maybeSingle()
+
+  const canUse = canUsePassport(normalizeTier(ig?.tier))
 
   const site = await getDefaultSite(supabase, user.id)
   let countryTags: Record<string, string> = (ig?.amazon_country_tags as Record<string, string> | null) ?? {}
@@ -49,7 +53,8 @@ export async function GET() {
 
   return NextResponse.json({
     ok: true,
-    enabled: !!ig?.passport_links_enabled,
+    canUse,
+    enabled: !!ig?.passport_links_enabled && canUse,
     usTag: (ig?.amazon_associates_tag as string | null) ?? '',
     countryTags,
     linkBase: passportLinkBase(),
@@ -60,6 +65,12 @@ export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: tierRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  if (!canUsePassport(normalizeTier(tierRow?.tier))) {
+    return NextResponse.json({ error: 'Passport Links is available on the Studio and Pro plans.' }, { status: 403 })
+  }
 
   const body = await request.json().catch(() => ({})) as { enabled?: boolean; countryTags?: unknown }
 

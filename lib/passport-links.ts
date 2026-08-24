@@ -8,6 +8,9 @@
 // get-or-create for a link's short code. The redirect route (app/go/[code]) and
 // the link-builders (blog / social) use it.
 
+import { canUsePassport } from '@/lib/feature-access'
+import { normalizeTier } from '@/lib/tier'
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
 
@@ -164,12 +167,14 @@ export async function passportLinkForUser(
   const a = (asin || '').trim().toUpperCase()
   if (!/^[A-Z0-9]{10}$/.test(a)) return null
   try {
-    const { data: ig } = await db.from('integrations').select('passport_links_enabled').eq('user_id', userId).maybeSingle()
+    const { data: ig } = await db.from('integrations').select('passport_links_enabled, tier').eq('user_id', userId).maybeSingle()
     if (!ig?.passport_links_enabled) return null
+    // Studio + Pro only — even if the flag is set, a lower tier gets no link.
+    if (!canUsePassport(normalizeTier(ig?.tier))) return null
     const { data: site } = await db.from('wordpress_sites').select('id').eq('user_id', userId).eq('is_default', true).maybeSingle()
     const siteId = (site?.id as string | undefined) ?? null
     // The source is baked into its own code, so the URL stays clean (no ?s= tail).
-    const code = await getOrCreatePassportLink(db, userId, siteId, a, opts?.title ?? null, opts?.source ?? null)
+    const code = await getOrCreatePassportLink(db, userId, siteId, { asin: a, label: opts?.title ?? null, source: opts?.source ?? null })
     if (!code) return null
     return passportLinkUrl(code)
   } catch {
@@ -188,31 +193,45 @@ function randomCode(len = 7): string {
   return s
 }
 
-/**
- * Get the existing Passport Link code for (user, site, asin), or mint a new one.
- * Uses the admin client so it works from server routes; the (user_id, site_id,
- * asin) unique key means one stable link per product per site. Returns the code,
- * or null on failure (the caller then just uses a plain Amazon link).
- */
 /** Sanitize a source token: URL-safe, short, or null for "no source". */
 export function normalizeSource(source: string | null | undefined): string | null {
   const s = (source || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40)
   return s || null
 }
 
-export async function getOrCreatePassportLink(
-  admin: Db, userId: string, siteId: string | null, asin: string, label?: string | null, source?: string | null,
-): Promise<string | null> {
-  const a = (asin || '').trim().toUpperCase()
-  if (!/^[A-Z0-9]{10}$/.test(a)) return null
-  // Each (product, source) gets its own clean code, so the URL never needs a ?s=
-  // tail. A null source is the "plain" link (the manual Get-link button).
-  const src = normalizeSource(source)
+export interface PassportTarget {
+  asin?: string | null            // Amazon product → geo-routed
+  destinationUrl?: string | null  // any other link → cloaked + tracked redirect
+  label?: string | null           // display label (dashboard)
+  source?: string | null          // baked into the code for per-surface attribution
+}
 
-  // Find this creator's existing link for the product + source (Supabase needs
-  // .is for a null site_id / null source and .eq otherwise).
+/**
+ * Get the existing Passport Link code for (user, site, target, source), or mint a
+ * new one. `target` is either an Amazon ASIN (geo-routed) OR a destination URL
+ * (any other link, forwarded as-is). Uses the admin client so it works from
+ * server routes; the unique index keeps one stable link per (user, site, target,
+ * source). Returns the code, or null on invalid input / failure.
+ */
+export async function getOrCreatePassportLink(
+  admin: Db, userId: string, siteId: string | null, target: PassportTarget,
+): Promise<string | null> {
+  const asin = (target.asin || '').trim().toUpperCase()
+  const hasAsin = /^[A-Z0-9]{10}$/.test(asin)
+  const dest = (target.destinationUrl || '').trim()
+  const hasDest = /^https?:\/\/\S+$/i.test(dest)
+  // Exactly one target kind. Amazon ASIN wins if somehow both were passed.
+  if (!hasAsin && !hasDest) return null
+  const a: string | null = hasAsin ? asin : null
+  const d: string | null = hasAsin ? null : dest.slice(0, 2048)
+  const src = normalizeSource(target.source)
+
+  // Find this creator's existing link for the same target + source (Supabase
+  // needs .is for null columns and .eq otherwise).
   const findExisting = async (): Promise<string | null> => {
-    let q = admin.from('passport_links').select('code').eq('user_id', userId).eq('asin', a)
+    let q = admin.from('passport_links').select('code').eq('user_id', userId)
+    q = a === null ? q.is('asin', null) : q.eq('asin', a)
+    q = d === null ? q.is('destination_url', null) : q.eq('destination_url', d)
     q = siteId === null ? q.is('site_id', null) : q.eq('site_id', siteId)
     q = src === null ? q.is('source', null) : q.eq('source', src)
     const { data } = await q.maybeSingle()
@@ -224,11 +243,12 @@ export async function getOrCreatePassportLink(
     if (existing) return existing
 
     // Mint a new code, retrying on the small chance of a code collision or a
-    // concurrent create (the (user, site, asin, source) unique index catches the latter).
+    // concurrent create (the unique index catches the latter).
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = randomCode()
       const { data } = await admin.from('passport_links').insert({
-        code, user_id: userId, site_id: siteId, asin: a, source: src, label: (label || '').slice(0, 300) || null,
+        code, user_id: userId, site_id: siteId, asin: a, destination_url: d, source: src,
+        label: (target.label || '').slice(0, 300) || null,
       }).select('code').maybeSingle()
       if (data?.code) return data.code as string
       const race = await findExisting()

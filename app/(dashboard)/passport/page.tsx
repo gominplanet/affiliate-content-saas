@@ -11,7 +11,9 @@ import PageHero from '@/components/layout/PageHero'
 import { Loader2, Globe, MousePointerClick, MapPin, Package, TrendingUp, Store, Smartphone, Monitor, Tablet } from 'lucide-react'
 import PassportLinksCard from '@/components/brand/PassportLinksCard'
 import PassportQuickLink from '@/components/passport/PassportQuickLink'
+import PassportPowerToggle from '@/components/passport/PassportPowerToggle'
 import ExternalNetworksCards from '@/components/integrations/ExternalNetworksCards'
+import { ChevronDown, Settings2 } from 'lucide-react'
 
 const COUNTRY: Record<string, { name: string; flag: string }> = {
   US: { name: 'United States', flag: '🇺🇸' }, GB: { name: 'United Kingdom', flag: '🇬🇧' },
@@ -48,6 +50,12 @@ export default function PassportPage() {
   const [data, setData] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [days, setDays] = useState(30)
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [canUse, setCanUse] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    fetch('/api/passport').then((r) => r.json()).then((d) => setCanUse(d?.ok ? !!d.canUse : false)).catch(() => setCanUse(false))
+  }, [])
 
   const load = useCallback(async (d: number) => {
     setLoading(true)
@@ -57,7 +65,7 @@ export default function PassportPage() {
       setData(j?.ok ? j : null)
     } catch { setData(null) } finally { setLoading(false) }
   }, [])
-  useEffect(() => { void load(days) }, [days, load])
+  useEffect(() => { if (canUse) void load(days) }, [days, load, canUse])
 
   const total = data?.total ?? 0
   const countriesReached = data?.byCountry.length ?? 0
@@ -69,28 +77,62 @@ export default function PassportPage() {
     <>
       <PageHero title="Passport Links" subtitle="Where your clicks come from, which products drive them, and how your geo-routing links are performing across every country." />
 
-      {/* Setup — turn it on + enter per-country tags (lives here, self-contained). */}
-      <div className="mb-6">
-        <PassportLinksCard />
+      {canUse === false ? (
+        <div className="card p-8 text-center">
+          <Globe size={28} className="mx-auto mb-3 text-[#7C3AED]" />
+          <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Passport Links is a Studio &amp; Pro feature</p>
+          <p className="text-[13px] mt-1 max-w-md mx-auto" style={{ color: 'var(--text-3)' }}>
+            Geo-routing links, the click dashboard, and one-paste link creation are available on the Studio and Pro plans. Upgrade to turn every link into a worldwide-earning Passport Link.
+          </p>
+          <a href="/pricing" className="inline-flex items-center gap-1.5 mt-4 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: '#7C3AED' }}>
+            See plans
+          </a>
+        </div>
+      ) : (
+      <>
+      {/* Big, obvious ON/OFF switch — the primary control. */}
+      <div className="mb-5">
+        <PassportPowerToggle />
       </div>
 
-      {/* Quick create — paste any product link, get a Passport Link back now. */}
-      <div className="mb-6">
+      {/* Quick create — paste ANY link, get a Passport Link back now. */}
+      <div className="mb-5">
         <PassportQuickLink onCreated={() => load(days)} />
       </div>
 
-      {/* Affiliate networks — connect the same external networks here too, so all
-          your link setup lives on one page. These pay on top of / alongside your
-          Amazon tag; Passport keeps geo-routing your Amazon links either way. */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1">
-          <Store size={15} style={{ color: '#0E7490' }} />
-          <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Affiliate networks</h2>
-        </div>
-        <p className="text-[12.5px] mb-3" style={{ color: 'var(--text-3)' }}>
-          Connect your own keys for Levanta, PartnerBoost, and Wayward to unlock their MVP tools. Optional, and separate from Passport&apos;s geo-routing.
-        </p>
-        <ExternalNetworksCards />
+      {/* Set up (collapsed by default) — networks first, then per-country tags. */}
+      <div className="mb-6 card overflow-hidden p-0">
+        <button
+          onClick={() => setSetupOpen((v) => !v)}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left"
+          aria-expanded={setupOpen}
+        >
+          <Settings2 size={16} style={{ color: '#7C3AED' }} />
+          <span className="flex-1 min-w-0">
+            <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Set up your links</span>
+            <span className="block text-[12px]" style={{ color: 'var(--text-3)' }}>Affiliate networks and your Amazon tag for each country</span>
+          </span>
+          <ChevronDown size={18} style={{ color: 'var(--text-3)', transform: setupOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+        </button>
+
+        {setupOpen && (
+          <div className="px-4 pb-4 pt-1 flex flex-col gap-5" style={{ borderTop: '1px solid var(--border)' }}>
+            {/* Affiliate networks — at the top of the setup section. */}
+            <div>
+              <div className="flex items-center gap-2 mb-1 mt-3">
+                <Store size={15} style={{ color: '#0E7490' }} />
+                <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Affiliate networks</h3>
+              </div>
+              <p className="text-[12px] mb-3" style={{ color: 'var(--text-3)' }}>
+                Connect your own keys for Levanta, PartnerBoost, and Wayward to unlock their MVP tools. Optional, and separate from Passport&apos;s geo-routing.
+              </p>
+              <ExternalNetworksCards />
+            </div>
+
+            {/* Per-country Amazon tags. */}
+            <PassportLinksCard />
+          </div>
+        )}
       </div>
 
       {/* Range */}
@@ -234,6 +276,8 @@ export default function PassportPage() {
             </div>
           )}
         </>
+      )}
+      </>
       )}
     </>
   )

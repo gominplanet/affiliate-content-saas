@@ -45,7 +45,7 @@ export default function PassportQuickLink({ onCreated }: { onCreated?: () => voi
         <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Create a Passport Link</h2>
       </div>
       <p className="text-[12.5px] mb-3" style={{ color: 'var(--text-3)' }}>
-        Paste any Amazon product link (or an amzn.to / geni.us short link) and get a geo-routing link back. It sends every visitor to their own country&apos;s Amazon with your tag there.
+        Paste any link and get a Passport Link back. Amazon products are geo-routed to each visitor&apos;s own country store with your tag there; any other link becomes a clean branded short link with click tracking.
       </p>
 
       <div className="flex flex-col sm:flex-row items-stretch gap-2">
@@ -54,7 +54,7 @@ export default function PassportQuickLink({ onCreated }: { onCreated?: () => voi
           value={input}
           onChange={(e) => { setInput(e.target.value); setError(null) }}
           onKeyDown={(e) => { if (e.key === 'Enter') create() }}
-          placeholder="https://www.amazon.com/dp/B0..."
+          placeholder="Paste any link (Amazon, Walmart, a brand page…)"
           className="flex-1 rounded-lg border bg-transparent px-3 py-2 text-[13px] focus:outline-none"
           style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
         />

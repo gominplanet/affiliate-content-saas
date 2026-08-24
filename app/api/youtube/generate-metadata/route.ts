@@ -809,7 +809,7 @@ export async function POST(request: Request) {
         try {
           const site = await getDefaultSite(supabase, ownerId)
           const siteId = site && site.id !== 'legacy' ? site.id : null
-          const code = await getOrCreatePassportLink(createAdminClient(), ownerId, siteId, trimmedAsin, product.title || videoTitle, youtubeVideoId || null)
+          const code = await getOrCreatePassportLink(createAdminClient(), ownerId, siteId, { asin: trimmedAsin, label: product.title || videoTitle, source: youtubeVideoId || null })
           if (code) {
             affiliateUrl = passportLinkUrl(code)
             passportUsed = true
