@@ -108,7 +108,7 @@ export default function PassportLinksCard() {
           {enabled && (
             <p className="text-[10.5px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
               Don&rsquo;t have an account in a country? Leave it blank. You only earn abroad in programs you&rsquo;ve actually joined at Amazon Associates, so sign up there first, then add the tag here.
-              {linkBase ? <> Your links will look like <code className="bg-[#f5f5f7] dark:bg-[#1c1c1e] px-1 py-0.5 rounded text-[10px]">{linkBase.replace(/^https?:\/\//, '')}/go/…</code>.</> : null}
+              {linkBase ? <> Your links will look like <code className="bg-[#f5f5f7] dark:bg-[#1c1c1e] px-1 py-0.5 rounded text-[10px]">{linkBase.replace(/^https?:\/\//, '')}/x7k</code>.</> : null}
             </p>
           )}
 

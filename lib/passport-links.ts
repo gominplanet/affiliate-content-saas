@@ -49,9 +49,14 @@ export function passportLinkBase(): string {
   return app
 }
 
-/** Full public URL for a link code. */
+/** Full public URL for a link code. On the branded short domain the redirect is
+ *  served at the root via a host rewrite (mvpl.ink/x7k), so no /go segment; on the
+ *  app's own domain (the pre-domain fallback) the route lives at /go/x7k. */
 export function passportLinkUrl(code: string): string {
-  return `${passportLinkBase()}/go/${code}`
+  const explicit = (process.env.PASSPORT_LINK_BASE || '').trim().replace(/\/+$/, '')
+  if (explicit) return `${explicit}/${code}`
+  const app = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://www.mvpaffiliate.io').trim().replace(/\/+$/, '')
+  return `${app}/go/${code}`
 }
 
 /** Normalize a visitor country header to an alpha-2 key we map on. UK → GB. */
