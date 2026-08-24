@@ -469,7 +469,6 @@ export default function DashboardShellV2({
         // Link in Bio — a shoppable affiliate "Shop Grid" page at /s/<handle>,
         // auto-filled from posted products. All paid tiers (same gate as Deal Radar).
         { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', effectiveTier) },
-        { href: '/passport', icon: <Globe size={15} />, label: 'Passport Links', gate: canSeeNav('dealRadar', effectiveTier) },
         // Socials connection moved to SET UP > "Connect Socials" (it's setup,
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
@@ -585,6 +584,10 @@ export default function DashboardShellV2({
     {
       label: 'Labs',
       items: [
+        // Passport Links — MVP-native geo-routing (each visitor → their own
+        // country's Amazon) + click analytics. In LABS while we test it end to end;
+        // graduates out once the blog/social auto-wiring + short domain are set.
+        { href: '/passport', icon: <Globe size={15} />, label: 'Passport Links', gate: isPro },
         // AMZ Storefront — SCOUT-synced Amazon earnings + full-catalog analytics.
         // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
         // finished; graduates back to "Grow" (gate: isPaid) when it's ready.
