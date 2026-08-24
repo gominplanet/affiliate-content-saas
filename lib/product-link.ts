@@ -105,31 +105,47 @@ export function allProductUrls(description: string, ownSite?: string | null, max
 const RESOLVER_UA = 'MVPAffiliateResolverBot/1.0 (+https://www.mvpaffiliate.io/bot; link verification, not a visitor)'
 
 /** Follow a short link / redirect to its FINAL destination. Hard 5s timeouts
- *  so a slow host can't stall a generation request. Returns the original URL
+ *  so a slow host can't stall a generation request. Returns the best-known URL
  *  on failure. Uses a bot UA so click-tracking redirectors don't count these
  *  internal resolution hits as real clicks. */
 export async function resolveFinalUrl(url: string): Promise<string> {
   // SSRF guard: this URL comes from a video description / brand-recap product
-  // field — user-influenced. Refuse to open a socket to a private/reserved
-  // host or a non-http scheme. We keep the never-throw contract: a blocked
-  // URL is simply returned un-resolved (callers then fail to extract an ASIN
-  // and fall back to discovery), never fetched.
-  try {
-    await assertPublicHttpUrlResolved(url)
-  } catch {
-    return url
-  }
-  try {
-    const res = await fetch(url, { method: 'HEAD', redirect: 'follow', headers: { 'User-Agent': RESOLVER_UA }, signal: AbortSignal.timeout(5000) })
-    return res.url || url
-  } catch {
+  // field or a pasted link — user-influenced. Refuse to open a socket to a
+  // private/reserved host or a non-http scheme. Redirects are followed MANUALLY
+  // so EVERY hop is re-validated: an attacker-controlled shortener that 302s to
+  // http://169.254.169.254/ or an internal host is blocked at the hop, not just
+  // the first URL. We keep the never-throw contract: a blocked/failed URL is
+  // returned un-resolved (callers then fail to extract an ASIN and fall back to
+  // discovery), never fetched onward.
+  const MAX_HOPS = 5
+  let current = url
+  for (let hop = 0; hop <= MAX_HOPS; hop++) {
     try {
-      const res = await fetch(url, { method: 'GET', redirect: 'follow', headers: { 'User-Agent': RESOLVER_UA, Range: 'bytes=0-0' }, signal: AbortSignal.timeout(5000) })
-      return res.url || url
+      await assertPublicHttpUrlResolved(current)
     } catch {
-      return url
+      return hop === 0 ? url : current
     }
+    let res: Response
+    try {
+      res = await fetch(current, {
+        method: 'GET', redirect: 'manual',
+        headers: { 'User-Agent': RESOLVER_UA, Range: 'bytes=0-0' },
+        signal: AbortSignal.timeout(5000),
+      })
+    } catch {
+      return current
+    }
+    // A redirect → re-validate the next hop before following it.
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location')
+      if (!loc) return current
+      try { current = new URL(loc, current).toString() } catch { return current }
+      continue
+    }
+    // Not a redirect → this is the final destination.
+    return current
   }
+  return current
 }
 
 const SHORTENERS = /(?:amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i

@@ -42,7 +42,11 @@ export async function GET(request: Request) {
       .limit(MAX_ROWS)
     // Older DBs (migration 284 not run yet) don't have device/browser/os — retry
     // without them so the dashboard still renders the country/marketplace slices.
-    if (error) {
+    // Only on a missing-column error (Postgres 42703 / "column ... does not exist"):
+    // a transient error shouldn't silently drop the device/browser data when the
+    // columns are actually present.
+    const isMissingColumn = !!error && (error.code === '42703' || /column .* does not exist/i.test(error.message || ''))
+    if (isMissingColumn) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const retry = await (supabase as any)
         .from('passport_link_clicks')

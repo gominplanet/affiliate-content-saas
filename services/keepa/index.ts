@@ -433,14 +433,28 @@ export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMA
   }
 }
 
-/** Lightweight per-ASIN basics for enriching the EPC library: image, sales rank
- *  and monthly-sold. One /product call covers up to 100 ASINs. */
+/** Lightweight per-ASIN basics for enriching the EPC library: image, sales rank,
+ *  monthly-sold, and the price/deal read that already rides on the same stats=180
+ *  response (so it costs no extra Keepa tokens). One /product call covers up to
+ *  100 ASINs. */
 export interface KeepaBasic {
   asin: string
   imageUrl: string | null
   salesRank: number | null
+  /** 90-day average sales rank, for a demand-trend read (now vs usual). */
+  salesRankAvg90: number | null
   salesRankCategory: string | null
   monthlySold: number | null
+  /** Current price, cents. */
+  priceNowCents: number | null
+  /** 90-day average price, cents — the "usual" reference for a discount. */
+  priceAvg90Cents: number | null
+  /** All-time-low price, cents. */
+  priceLowestCents: number | null
+  /** Percent below the 90-day average (0–99), null when not below. */
+  discountPct: number | null
+  /** Deal read: excellent | genuine | fair | weak, null when no price data. */
+  dealQuality: DealQuality | null
 }
 
 /**
@@ -477,12 +491,21 @@ export async function fetchKeepaBasics(asins: string[], domainId = KEEPA_DOMAIN_
           ?? (csv ? keepaImageUrl(csv.split(',')[0]) : null)
         const ms = Number(product.monthlySold)
         const extras = parseKeepaExtras(product)
+        // Price + deal read from the stats block we ALREADY fetched (stats=180),
+        // so this adds price history at zero extra token cost.
+        const deal = product?.stats ? assessFromStats(product.stats) : null
         out.set(asin, {
           asin,
           imageUrl,
           salesRank: extras.salesRank,
+          salesRankAvg90: extras.salesRankAvg90,
           salesRankCategory: extras.salesRankCategory,
           monthlySold: Number.isFinite(ms) && ms > 0 ? ms : null,
+          priceNowCents: deal?.currentCents ?? null,
+          priceAvg90Cents: deal?.avg90Cents ?? null,
+          priceLowestCents: deal?.allTimeLowCents ?? null,
+          discountPct: deal?.pctBelowAvg90 ?? null,
+          dealQuality: deal?.quality ?? null,
         })
       }
     } catch { /* skip this batch */ }

@@ -19,6 +19,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, tierAllowsCampaigns } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
 import { fetchKeepaBasics, keepaConfigured } from '@/services/keepa'
+import { buildEpcPatch } from '@/lib/epc-enrich'
 
 export const dynamic = 'force-dynamic'
 
@@ -137,21 +138,13 @@ export async function POST(request: Request) {
           // still null), re-spending tokens every scan. Migration 281 nulls
           // enriched_at once for the pre-fix blanks so they get a single retry.
           .eq('user_id', user.id).in('asin', asins)
-          .is('enriched_at', null).limit(100)
+          .is('deal_enriched_at', null).limit(100)
         const need = Array.isArray(needRows) ? needRows as { asin: string; image_url: string | null }[] : []
         if (need.length) {
           const basics = await fetchKeepaBasics(need.map((n) => n.asin))
           const at = new Date().toISOString()
           await Promise.all(need.map(async (n) => {
-            const b = basics.get(n.asin.toUpperCase())
-            const patch: Record<string, unknown> = { enriched_at: at }
-            if (b) {
-              if (b.monthlySold != null) patch.monthly_sold = b.monthlySold
-              if (b.salesRank != null) patch.sales_rank = b.salesRank
-              if (b.salesRankCategory) patch.sales_rank_category = b.salesRankCategory
-              // Only fill the image if the scrape didn't get one.
-              if (!n.image_url && b.imageUrl) patch.image_url = b.imageUrl
-            }
+            const patch = buildEpcPatch(basics.get(n.asin.toUpperCase()), n.image_url, at)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await (supabase as any).from('epc_products').update(patch).eq('user_id', user.id).eq('asin', n.asin)
           }))

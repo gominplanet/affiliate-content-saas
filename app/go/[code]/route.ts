@@ -12,7 +12,7 @@
 // to this route; until it's registered the links live on the app origin /go/…, and
 // the same codes keep working when the domain is swapped in (PASSPORT_LINK_BASE).
 
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildPassportDestination, parseUserAgent, normalizeCountry } from '@/lib/passport-links'
 
@@ -59,18 +59,20 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
     if (link.asin) {
       // The creator's tags: per-site country map + default (US) tag. Fall back to
       // the account-wide integrations tag when the link isn't tied to a site.
-      let defaultTag: string | null = null
-      let siteTags: Record<string, string> = {}
-      if (link.site_id) {
+      // The site and account reads are independent — run them together so a
+      // site-tied click pays one round trip for both, not two.
+      const [siteRes, igRes] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: site } = await (admin as any)
-          .from('wordpress_sites').select('amazon_associates_tag, amazon_country_tags').eq('id', link.site_id).maybeSingle()
-        defaultTag = (site?.amazon_associates_tag as string | null) ?? null
-        siteTags = (site?.amazon_country_tags as Record<string, string> | null) ?? {}
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: ig } = await (admin as any)
-        .from('integrations').select('amazon_associates_tag, amazon_country_tags').eq('user_id', link.user_id).maybeSingle()
+        link.site_id
+          ? (admin as any).from('wordpress_sites').select('amazon_associates_tag, amazon_country_tags').eq('id', link.site_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (admin as any).from('integrations').select('amazon_associates_tag, amazon_country_tags').eq('user_id', link.user_id).maybeSingle(),
+      ])
+      const site = siteRes?.data
+      const ig = igRes?.data
+      let defaultTag: string | null = (site?.amazon_associates_tag as string | null) ?? null
+      const siteTags: Record<string, string> = (site?.amazon_country_tags as Record<string, string> | null) ?? {}
       if (!defaultTag) defaultTag = (ig?.amazon_associates_tag as string | null) ?? null
       const countryTags: Record<string, string> = { ...((ig?.amazon_country_tags as Record<string, string> | null) ?? {}), ...siteTags }
 
@@ -90,13 +92,19 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
       marketplace = null
     }
 
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (admin as any).from('passport_link_clicks').insert({
-        code, user_id: link.user_id, country: logCountry, marketplace, source,
-        device: ua.device, browser: ua.browser, os: ua.os,
-      })
-    } catch { /* never let logging block the redirect */ }
+    // Log the click AFTER the response is sent (after()/waitUntil), so the visitor
+    // is redirected without waiting on the insert's round trip. Best-effort — a
+    // logging failure never affects the redirect.
+    const userId = link.user_id as string
+    after(async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (admin as any).from('passport_link_clicks').insert({
+          code, user_id: userId, country: logCountry, marketplace, source,
+          device: ua.device, browser: ua.browser, os: ua.os,
+        })
+      } catch { /* never let logging block anything */ }
+    })
 
     return NextResponse.redirect(finalUrl, 302)
   } catch {

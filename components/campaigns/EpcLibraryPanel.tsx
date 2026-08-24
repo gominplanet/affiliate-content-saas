@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Radar, Loader2, Search, ExternalLink, Star, Trash2, RefreshCw, Send, FileText, ArrowRight, Check, Image as ImageIcon, Link2 as LinkIcon, Copy } from 'lucide-react'
 import { scoutCreatorConnections, type ScoutError } from '@/lib/extension-frame'
-import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { tierAllowsSocial, tierAllowsCampaigns, type Tier } from '@/lib/tier'
 import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
 
 interface EpcProduct {
@@ -27,7 +27,13 @@ interface EpcProduct {
   rating: number | null
   monthly_sold: number | null
   sales_rank: number | null
+  sales_rank_avg90: number | null
   sales_rank_category: string | null
+  price_now_cents: number | null
+  price_avg_cents: number | null
+  price_lowest_cents: number | null
+  discount_pct: number | null
+  deal_quality: string | null
   ends_at: string | null
   details_url: string | null
   scanned_at: string
@@ -36,9 +42,32 @@ interface EpcProduct {
 const SORTS: { key: string; label: string }[] = [
   { key: 'recent', label: 'Recently scanned' },
   { key: 'epc', label: 'Highest EPC' },
+  { key: 'discount', label: 'Biggest deal' },
+  { key: 'sold', label: 'Most bought' },
+  { key: 'rank', label: 'Best-selling' },
   { key: 'rating', label: 'Highest rated' },
   { key: 'price_low', label: 'Lowest price' },
+  { key: 'price_high', label: 'Highest price' },
 ]
+
+interface EpcFilters {
+  onSale: boolean
+  minSold: number
+  minRating: number
+  maxPrice: string
+  budget: string
+}
+const EMPTY_FILTERS: EpcFilters = { onSale: false, minSold: 0, minRating: 0, maxPrice: '', budget: '' }
+
+// Deal-quality → a short badge. Mirrors Keepa's read (excellent/genuine/fair/weak);
+// only the two that signal a real deal get a colored badge, so the grid isn't noisy.
+function dealBadge(q: string | null, pct: number | null): { text: string; bg: string; color: string } | null {
+  if (q === 'excellent') return { text: 'All-time low', bg: 'rgba(52,199,89,0.16)', color: '#1f7a4d' }
+  if (q === 'genuine') return { text: pct ? `${pct}% off usual` : 'Below usual', bg: 'rgba(52,199,89,0.12)', color: '#1f7a4d' }
+  if (q === 'fair' && (pct ?? 0) >= 5) return { text: `${pct}% off usual`, bg: 'rgba(255,204,0,0.16)', color: '#8a6d00' }
+  return null
+}
+const money = (c: number | null | undefined) => (c != null ? `$${(c / 100).toFixed(2)}` : '')
 
 const SCAN_ERROR: Record<ScoutError, string> = {
   'not-installed': 'SCOUT isn’t connected. Install the extension, then open your Creator Connections → Sponsored Products tab and scan again.',
@@ -60,6 +89,11 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   // has no blog/WordPress, so the blog action is hidden for it.
   const pinterestEnabled = tier ? tierAllowsSocial(tier, 'pinterest') : false
   const canBlog = tier !== 'amazon'
+  // EPC is a paid feature. The nav is visible to every tier (canBrowseDealRadar),
+  // but scanning + acting are paid — gate the Scan button client-side so a trial
+  // user gets an upgrade prompt instead of sitting through a ~90s SCOUT harvest
+  // that the ingest endpoint then rejects with a 403.
+  const paidTier = tier ? tierAllowsCampaigns(tier) : false
   const [quickPost, setQuickPost] = useState<QuickPostDeal | null>(null)
   const [products, setProducts] = useState<EpcProduct[]>([])
   const [total, setTotal] = useState(0)
@@ -67,6 +101,9 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   const [scanning, setScanning] = useState(false)
   const [q, setQ] = useState('')
   const [sort, setSort] = useState('recent')
+  const [filters, setFilters] = useState<EpcFilters>(EMPTY_FILTERS)
+  const activeFilterCount = (filters.onSale ? 1 : 0) + (filters.minSold ? 1 : 0) + (filters.minRating ? 1 : 0)
+    + (filters.maxPrice.trim() && Number(filters.maxPrice) > 0 ? 1 : 0) + (filters.budget ? 1 : 0)
   const [debug, setDebug] = useState<string | null>(null)
   const [filling, setFilling] = useState(false)
   const [fillMsg, setFillMsg] = useState<string | null>(null)
@@ -84,12 +121,17 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
     }).catch(() => {})
   }, [])
 
-  const load = useCallback(async (query: string, sortKey: string) => {
+  const load = useCallback(async (query: string, sortKey: string, f: EpcFilters) => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
       if (query.trim()) params.set('q', query.trim())
       params.set('sort', sortKey)
+      if (f.onSale) params.set('onSale', '1')
+      if (f.minSold >= 1) params.set('minSold', String(f.minSold))
+      if (f.minRating > 0) params.set('minRating', String(f.minRating))
+      if (f.maxPrice.trim() && Number(f.maxPrice) > 0) params.set('maxPrice', f.maxPrice.trim())
+      if (f.budget) params.set('budget', f.budget)
       const res = await fetch(`/api/epc/list?${params.toString()}`)
       const data = await res.json()
       setProducts(Array.isArray(data.products) ? data.products : [])
@@ -101,12 +143,12 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
     }
   }, [])
 
-  // Initial + sort change: load immediately. Search: debounce.
-  useEffect(() => { void load(q, sort) }, [sort, load]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Initial + sort/filter change: load immediately. Search: debounce.
+  useEffect(() => { void load(q, sort, filters) }, [sort, filters, load]) // eslint-disable-line react-hooks/exhaustive-deps
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current)
-    debounce.current = setTimeout(() => void load(q, sort), 300)
+    debounce.current = setTimeout(() => void load(q, sort, filters), 300)
     return () => { if (debounce.current) clearTimeout(debounce.current) }
   }, [q]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -146,7 +188,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
       const saved = await save.json()
       if (!save.ok || !saved.ok) { toast.error(saved.error || 'Could not save the scan.'); return }
       toast.success(`Saved ${saved.saved} EPC opportunit${saved.saved === 1 ? 'y' : 'ies'} to your library.`)
-      await load(q, sort)
+      await load(q, sort, filters)
     } catch {
       toast.error('Scan failed unexpectedly. Reload and try again.')
     } finally {
@@ -175,7 +217,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         }
         const remaining = Number(d.remaining ?? 0)
         setFillMsg(`Filled ${totalFilled.toLocaleString()}${remaining ? ` · ${remaining.toLocaleString()} to go` : ''}…`)
-        await load(q, sort) // refresh so images appear as they land
+        await load(q, sort, filters) // refresh so images appear as they land
         if (d.done || remaining === 0) {
           setFillMsg(null)
           toast.success(totalFilled ? `Filled ${totalFilled.toLocaleString()} product image${totalFilled === 1 ? '' : 's'}.` : 'Everything is already up to date.')
@@ -222,11 +264,19 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
                 </p>
               </div>
             </div>
-            <button onClick={scan} disabled={scanning}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70 self-start" style={{ background: '#7C3AED' }}>
-              {scanning ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              {scanning ? 'Scanning…' : 'Scan my EPC opportunities'}
-            </button>
+            {paidTier ? (
+              <button onClick={scan} disabled={scanning}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70 self-start" style={{ background: '#7C3AED' }}>
+                {scanning ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                {scanning ? 'Scanning…' : 'Scan my EPC opportunities'}
+              </button>
+            ) : (
+              <a href="/pricing"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white self-start" style={{ background: '#7C3AED' }}
+                title="The EPC library is available on paid plans">
+                <RefreshCw size={14} /> Upgrade to scan
+              </a>
+            )}
           </div>
         </div>
       </div>
@@ -250,16 +300,54 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         </select>
         {total > 0 && (
           <button onClick={fillImages} disabled={filling}
-            title="Fetch the product image, sales rank and monthly sales for any card still missing them (uses Keepa; skips ones already filled)."
+            title="Fetch the image, sales rank, monthly sales and price history for any card still missing them (uses Keepa; skips ones already filled)."
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-medium border disabled:opacity-60"
             style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
             {filling ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
-            {filling ? (fillMsg || 'Filling…') : 'Fill in images'}
+            {filling ? (fillMsg || 'Filling…') : 'Fill in details'}
           </button>
         )}
         <span className="text-[12px] ml-auto" style={{ color: 'var(--text-faint)' }}>
-          {total} in library{q.trim() ? ' (filtered)' : ''}
+          {total} in library{(q.trim() || activeFilterCount > 0) ? ' (filtered)' : ''}
         </span>
+      </div>
+
+      {/* Deal filters — narrow the library to real opportunities. */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <button onClick={() => setFilters((f) => ({ ...f, onSale: !f.onSale }))}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors"
+          style={filters.onSale
+            ? { borderColor: '#34c759', color: '#1f7a4d', background: 'rgba(52,199,89,0.12)' }
+            : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+          On sale now
+        </button>
+        <select value={filters.minSold} onChange={(e) => setFilters((f) => ({ ...f, minSold: Number(e.target.value) }))} className="input-field text-[12px] w-auto py-1.5">
+          <option value={0}>Any sales volume</option>
+          <option value={100}>100+ bought/mo</option>
+          <option value={500}>500+ bought/mo</option>
+          <option value={1000}>1,000+ bought/mo</option>
+        </select>
+        <select value={filters.minRating} onChange={(e) => setFilters((f) => ({ ...f, minRating: Number(e.target.value) }))} className="input-field text-[12px] w-auto py-1.5">
+          <option value={0}>Any rating</option>
+          <option value={4}>4.0★ and up</option>
+          <option value={4.5}>4.5★ and up</option>
+        </select>
+        <select value={filters.budget} onChange={(e) => setFilters((f) => ({ ...f, budget: e.target.value }))} className="input-field text-[12px] w-auto py-1.5">
+          <option value="">Any budget</option>
+          <option value="High">High budget</option>
+          <option value="Medium">Medium budget</option>
+          <option value="Low">Low budget</option>
+        </select>
+        <div className="inline-flex items-center gap-1">
+          <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>Max $</span>
+          <input value={filters.maxPrice} onChange={(e) => setFilters((f) => ({ ...f, maxPrice: e.target.value.replace(/[^0-9.]/g, '') }))}
+            inputMode="decimal" placeholder="price" className="input-field text-[12px] w-20 py-1.5" />
+        </div>
+        {activeFilterCount > 0 && (
+          <button onClick={() => setFilters(EMPTY_FILTERS)} className="text-[12px] font-medium" style={{ color: '#7C3AED' }}>
+            Clear filters
+          </button>
+        )}
       </div>
 
       {/* Grid */}
@@ -380,10 +468,24 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, onQuickPost, onRemove
           )}
         </div>
       </div>
+      {/* Price history (Keepa): current vs its usual 90-day average + all-time low,
+          so a real deal is obvious at a glance. Only shown once enriched. */}
+      {(p.price_now_cents != null || p.price_lowest_cents != null) && (
+        <div className="px-3 pb-1.5 text-[11px] flex flex-wrap items-baseline gap-x-2 gap-y-0.5" style={{ color: 'var(--text-soft)' }}>
+          {p.price_now_cents != null && <span className="font-semibold" style={{ color: 'var(--text)' }}>{money(p.price_now_cents)}</span>}
+          {p.price_avg_cents != null && p.discount_pct != null && p.discount_pct >= 1 && (
+            <span><span style={{ textDecoration: 'line-through' }}>{money(p.price_avg_cents)}</span> usual</span>
+          )}
+          {p.price_lowest_cents != null && <span style={{ color: 'var(--text-faint)' }}>· low {money(p.price_lowest_cents)}</span>}
+        </div>
+      )}
       <div className="px-3 pb-2 flex items-center gap-2 flex-wrap">
         <span className="inline-flex items-baseline gap-1 px-2 py-1 rounded-md text-[12px] font-bold" style={{ background: 'rgba(52,199,89,0.12)', color: '#1f7a4d' }}>
           {p.epc_display || (p.epc_value != null ? `Up to $${p.epc_value.toFixed(2)}` : 'EPC n/a')}
         </span>
+        {(() => { const d = dealBadge(p.deal_quality, p.discount_pct); return d
+          ? <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: d.bg, color: d.color }} title="Price vs its 90-day average (Keepa)">{d.text}</span>
+          : null })()}
         {p.budget && (
           <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: bs.bg, color: bs.color }} title="Budget availability score">
             {p.budget} budget

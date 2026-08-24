@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, tierAllowsCampaigns } from '@/lib/tier'
 import { fetchKeepaBasics, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
+import { buildEpcPatch } from '@/lib/epc-enrich'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -46,7 +47,11 @@ export async function POST() {
     }
     if (!keepaConfigured()) return NextResponse.json({ ok: true, done: true, filled: 0, remaining: 0, note: 'keepa_unconfigured' })
 
-    // How many of the caller's rows are still never-enriched (the backlog)?
+    // How many of the caller's rows still need the Keepa deal signals (the
+    // backlog). Gated on deal_enriched_at (migration 287): a brand-new column, so
+    // rows enriched before the deal signals existed get one backfill pass, and a
+    // row leaves the set once stamped (even if Keepa had no price) so this always
+    // terminates.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const remainingCount = async (): Promise<number> => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,7 +59,7 @@ export async function POST() {
         .from('epc_products')
         .select('asin', { count: 'exact', head: true })
         .eq('user_id', user.id)
-        .is('enriched_at', null)
+        .is('deal_enriched_at', null)
       return count ?? 0
     }
 
@@ -65,16 +70,16 @@ export async function POST() {
       return NextResponse.json({ ok: true, done: false, stopped: 'low_tokens', filled: 0, remaining: await remainingCount(), tokensLeft: tok.tokensLeft })
     }
 
-    // This batch: oldest-scanned never-enriched rows.
+    // This batch: oldest-scanned rows still missing the deal signals.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: rows, error } = await (supabase as any)
       .from('epc_products')
       .select('asin, image_url')
       .eq('user_id', user.id)
-      // Only never-enriched rows so the loop TERMINATES — a product Keepa has no
-      // image for keeps enriched_at set and drops out, instead of being re-picked
-      // forever (which would spin the client loop on the same oldest rows).
-      .is('enriched_at', null)
+      // Gate on deal_enriched_at so the loop TERMINATES — every processed row is
+      // stamped below (even when Keepa returns nothing), so it drops out instead
+      // of being re-picked forever.
+      .is('deal_enriched_at', null)
       .order('scanned_at', { ascending: true })
       .limit(BATCH)
     if (error) {
@@ -87,21 +92,22 @@ export async function POST() {
     const distinct = [...new Set(batch.map((r) => (r.asin || '').toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))]
     const basics = await fetchKeepaBasics(distinct)
     const at = new Date().toISOString()
+    // Batch the writes (was one awaited UPDATE per row — up to 150 serial round
+    // trips per call). Chunked Promise.all keeps the DB round trips to a small
+    // constant while the per-row patches stay distinct.
     let filled = 0
-    for (const r of batch) {
-      const asin = (r.asin || '').toUpperCase()
-      const b = basics.get(asin)
-      const patch: Record<string, unknown> = { enriched_at: at }
-      if (b) {
-        if (b.monthlySold != null) patch.monthly_sold = b.monthlySold
-        if (b.salesRank != null) patch.sales_rank = b.salesRank
-        if (b.salesRankCategory) patch.sales_rank_category = b.salesRankCategory
-        if (!r.image_url && b.imageUrl) patch.image_url = b.imageUrl
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: upErr } = await (supabase as any)
-        .from('epc_products').update(patch).eq('user_id', user.id).eq('asin', asin)
-      if (!upErr && patch.image_url) filled++
+    const CHUNK = 25
+    for (let i = 0; i < batch.length; i += CHUNK) {
+      const slice = batch.slice(i, i + CHUNK)
+      await Promise.all(slice.map(async (r) => {
+        const asin = (r.asin || '').toUpperCase()
+        const b = basics.get(asin)
+        const patch = buildEpcPatch(b, r.image_url, at)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: upErr } = await (supabase as any)
+          .from('epc_products').update(patch).eq('user_id', user.id).eq('asin', asin)
+        if (!upErr && patch.image_url) filled++
+      }))
     }
 
     const remaining = await remainingCount()
