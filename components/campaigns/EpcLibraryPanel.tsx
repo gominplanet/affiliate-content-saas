@@ -49,6 +49,9 @@ const SORTS: { key: string; label: string }[] = [
   { key: 'price_low', label: 'Lowest price' },
   { key: 'price_high', label: 'Highest price' },
 ]
+// The shared catalog only sorts on product-level columns (sold / rank / discount
+// need per-user or joined data), so its sort menu is a subset.
+const CATALOG_SORT_KEYS = new Set(['recent', 'epc', 'rating', 'price_low', 'price_high'])
 
 interface EpcFilters {
   onSale: boolean
@@ -101,6 +104,9 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   const [scanning, setScanning] = useState(false)
   const [q, setQ] = useState('')
   const [sort, setSort] = useState('recent')
+  // 'mine' = the creator's own accepted EPC library. 'all' = the shared cross-user
+  // discovery catalog (seeded by every scan), where EPC is a reference value.
+  const [mode, setMode] = useState<'mine' | 'all'>('mine')
   const [filters, setFilters] = useState<EpcFilters>(EMPTY_FILTERS)
   const activeFilterCount = (filters.onSale ? 1 : 0) + (filters.minSold ? 1 : 0) + (filters.minRating ? 1 : 0)
     + (filters.maxPrice.trim() && Number(filters.maxPrice) > 0 ? 1 : 0) + (filters.budget ? 1 : 0)
@@ -122,18 +128,23 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
     }).catch(() => {})
   }, [])
 
-  const load = useCallback(async (query: string, sortKey: string, f: EpcFilters) => {
+  const load = useCallback(async (query: string, sortKey: string, f: EpcFilters, m: 'mine' | 'all') => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
       if (query.trim()) params.set('q', query.trim())
       params.set('sort', sortKey)
-      if (f.onSale) params.set('onSale', '1')
-      if (f.minSold >= 1) params.set('minSold', String(f.minSold))
+      // Both endpoints share q / sort / minRating / maxPrice. The sold / on-sale /
+      // budget filters are only on the personal library (they need per-user data).
       if (f.minRating > 0) params.set('minRating', String(f.minRating))
       if (f.maxPrice.trim() && Number(f.maxPrice) > 0) params.set('maxPrice', f.maxPrice.trim())
-      if (f.budget) params.set('budget', f.budget)
-      const res = await fetch(`/api/epc/list?${params.toString()}`)
+      if (m === 'mine') {
+        if (f.onSale) params.set('onSale', '1')
+        if (f.minSold >= 1) params.set('minSold', String(f.minSold))
+        if (f.budget) params.set('budget', f.budget)
+      }
+      const endpoint = m === 'all' ? '/api/epc/catalog' : '/api/epc/list'
+      const res = await fetch(`${endpoint}?${params.toString()}`)
       const data = await res.json()
       setProducts(Array.isArray(data.products) ? data.products : [])
       setTotal(data.total ?? 0)
@@ -144,12 +155,12 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
     }
   }, [])
 
-  // Initial + sort/filter change: load immediately. Search: debounce.
-  useEffect(() => { void load(q, sort, filters) }, [sort, filters, load]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Initial + sort/filter/mode change: load immediately. Search: debounce.
+  useEffect(() => { void load(q, sort, filters, mode) }, [sort, filters, mode, load]) // eslint-disable-line react-hooks/exhaustive-deps
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current)
-    debounce.current = setTimeout(() => void load(q, sort, filters), 300)
+    debounce.current = setTimeout(() => void load(q, sort, filters, mode), 300)
     return () => { if (debounce.current) clearTimeout(debounce.current) }
   }, [q]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -199,7 +210,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
       } else {
         toast.info(`No new opportunities in this stretch — all ${scanned.toLocaleString()} were already saved. Scan again: SCOUT picks up deeper each time (and loops back to the top once it has covered your whole Accepted list). Accepting more campaigns on Amazon adds new ones too.`, { duration: 8_000 })
       }
-      await load(q, sort, filters)
+      await load(q, sort, filters, mode)
     } catch {
       toast.error('Scan failed unexpectedly. Reload and try again.')
     } finally {
@@ -228,7 +239,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         }
         const remaining = Number(d.remaining ?? 0)
         setFillMsg(`Filled ${totalFilled.toLocaleString()}${remaining ? ` · ${remaining.toLocaleString()} to go` : ''}…`)
-        await load(q, sort, filters) // refresh so images appear as they land
+        await load(q, sort, filters, mode) // refresh so images appear as they land
         if (d.done || remaining === 0) {
           setFillMsg(null)
           toast.success(totalFilled ? `Filled ${totalFilled.toLocaleString()} product image${totalFilled === 1 ? '' : 's'}.` : 'Everything is already up to date.')
@@ -323,16 +334,31 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         </div>
       )}
 
+      {/* Mine vs the shared catalog. */}
+      <div className="flex items-center gap-1 mb-3 p-1 rounded-lg w-fit" style={{ background: 'var(--surface-2)' }}>
+        {([['mine', 'My accepted'], ['all', 'All EPC products']] as const).map(([m, label]) => (
+          <button key={m}
+            onClick={() => {
+              setMode(m)
+              if (m === 'all') { if (!CATALOG_SORT_KEYS.has(sort)) setSort('recent'); setFilters((f) => ({ ...f, onSale: false, minSold: 0, budget: '' })) }
+            }}
+            className="px-3 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors"
+            style={mode === m ? { background: '#7C3AED', color: '#fff' } : { color: 'var(--text-3)' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Search + sort */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)]" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search product or brand…" className="input-field w-full pl-9 text-sm" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={mode === 'all' ? 'Search all EPC products…' : 'Search product or brand…'} className="input-field w-full pl-9 text-sm" />
         </div>
         <select value={sort} onChange={(e) => setSort(e.target.value)} className="input-field text-sm w-auto">
-          {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+          {(mode === 'all' ? SORTS.filter((s) => CATALOG_SORT_KEYS.has(s.key)) : SORTS).map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
-        {total > 0 && (
+        {mode === 'mine' && total > 0 && (
           <button onClick={fillImages} disabled={filling}
             title="Fetch the image, sales rank, monthly sales and price history for any card still missing them (skips ones already filled)."
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-medium border disabled:opacity-60"
@@ -342,36 +368,49 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           </button>
         )}
         <span className="text-[12px] ml-auto" style={{ color: 'var(--text-faint)' }}>
-          {total} in library{(q.trim() || activeFilterCount > 0) ? ' (filtered)' : ''}
+          {total.toLocaleString()} {mode === 'all' ? 'in the shared catalog' : 'in library'}{(q.trim() || (mode === 'mine' && activeFilterCount > 0) || (mode === 'all' && (filters.minRating > 0 || (filters.maxPrice.trim() && Number(filters.maxPrice) > 0)))) ? ' (filtered)' : ''}
         </span>
       </div>
 
-      {/* Deal filters — narrow the library to real opportunities. */}
+      {mode === 'all' && (
+        <p className="text-[12px] mb-3 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.25)', color: 'var(--text-soft)' }}>
+          Every creator&rsquo;s scans build this shared pool. The EPC shown is a <b>reference</b> (marked &ldquo;ref&rdquo;), not your exact Amazon number, and you still accept the campaign on Amazon to earn.
+        </p>
+      )}
+
+      {/* Filters. The on-sale / sales-volume / budget filters need per-user data,
+          so they only show on the personal library, not the shared catalog. */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <button onClick={() => setFilters((f) => ({ ...f, onSale: !f.onSale }))}
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors"
-          style={filters.onSale
-            ? { borderColor: '#34c759', color: '#1f7a4d', background: 'rgba(52,199,89,0.12)' }
-            : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
-          On sale now
-        </button>
-        <select value={filters.minSold} onChange={(e) => setFilters((f) => ({ ...f, minSold: Number(e.target.value) }))} className="input-field text-[12px] w-auto py-1.5">
-          <option value={0}>Any sales volume</option>
-          <option value={100}>100+ bought/mo</option>
-          <option value={500}>500+ bought/mo</option>
-          <option value={1000}>1,000+ bought/mo</option>
-        </select>
+        {mode === 'mine' && (
+          <button onClick={() => setFilters((f) => ({ ...f, onSale: !f.onSale }))}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors"
+            style={filters.onSale
+              ? { borderColor: '#34c759', color: '#1f7a4d', background: 'rgba(52,199,89,0.12)' }
+              : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+            On sale now
+          </button>
+        )}
+        {mode === 'mine' && (
+          <select value={filters.minSold} onChange={(e) => setFilters((f) => ({ ...f, minSold: Number(e.target.value) }))} className="input-field text-[12px] w-auto py-1.5">
+            <option value={0}>Any sales volume</option>
+            <option value={100}>100+ bought/mo</option>
+            <option value={500}>500+ bought/mo</option>
+            <option value={1000}>1,000+ bought/mo</option>
+          </select>
+        )}
         <select value={filters.minRating} onChange={(e) => setFilters((f) => ({ ...f, minRating: Number(e.target.value) }))} className="input-field text-[12px] w-auto py-1.5">
           <option value={0}>Any rating</option>
           <option value={4}>4.0★ and up</option>
           <option value={4.5}>4.5★ and up</option>
         </select>
-        <select value={filters.budget} onChange={(e) => setFilters((f) => ({ ...f, budget: e.target.value }))} className="input-field text-[12px] w-auto py-1.5">
-          <option value="">Any budget</option>
-          <option value="High">High budget</option>
-          <option value="Medium">Medium budget</option>
-          <option value="Low">Low budget</option>
-        </select>
+        {mode === 'mine' && (
+          <select value={filters.budget} onChange={(e) => setFilters((f) => ({ ...f, budget: e.target.value }))} className="input-field text-[12px] w-auto py-1.5">
+            <option value="">Any budget</option>
+            <option value="High">High budget</option>
+            <option value="Medium">Medium budget</option>
+            <option value="Low">Low budget</option>
+          </select>
+        )}
         <div className="inline-flex items-center gap-1">
           <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>Max $</span>
           <input value={filters.maxPrice} onChange={(e) => setFilters((f) => ({ ...f, maxPrice: e.target.value.replace(/[^0-9.]/g, '') }))}
@@ -389,9 +428,13 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         <div className="flex items-center justify-center py-16 text-[var(--text-faint)]"><Loader2 size={20} className="animate-spin" /></div>
       ) : products.length === 0 ? (
         <div className="text-center py-16 px-6">
-          <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>{q.trim() ? 'No matches in your library.' : 'Your EPC library is empty.'}</p>
+          <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>
+            {q.trim() ? 'No matches.' : mode === 'all' ? 'The shared catalog is still filling up.' : 'Your EPC library is empty.'}
+          </p>
           <p className="text-[13px] mt-1" style={{ color: 'var(--text-soft)' }}>
-            {q.trim() ? 'Try a different search.' : 'On Amazon, accept your Sponsored Products campaigns (“Accept all”), open the Accepted tab, then hit “Scan my EPC opportunities” to build it up.'}
+            {q.trim() ? 'Try a different search.'
+              : mode === 'all' ? 'As creators scan their Sponsored Products, they build this shared pool. Check back soon, or scan your own from “My accepted”.'
+              : 'On Amazon, accept your Sponsored Products campaigns (“Accept all”), open the Accepted tab, then hit “Scan my EPC opportunities” to build it up.'}
           </p>
         </div>
       ) : (
@@ -399,6 +442,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           {products.map((p) => (
             <EpcCard
               key={p.asin} p={p} canBlog={canBlog} amazonTag={amazonTag} passportEnabled={passportEnabled}
+              catalog={mode === 'all'}
               onQuickPost={() => setQuickPost({ asin: p.asin, title: p.title || p.asin, imageUrl: p.image_url })}
               onRemove={() => remove(p.asin)}
             />
@@ -417,11 +461,14 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
 // runs the same deal-article engine as Deal Radar (POST /api/deals); "Post"
 // opens the shared social modal. An EPC product IS an Amazon product, so both
 // reuse the existing ASIN-driven flows.
-function EpcCard({ p, canBlog, amazonTag, passportEnabled, onQuickPost, onRemove }: {
+function EpcCard({ p, canBlog, amazonTag, passportEnabled, catalog, onQuickPost, onRemove }: {
   p: EpcProduct
   canBlog: boolean
   amazonTag: string
   passportEnabled: boolean
+  /** true = shown from the shared catalog (not the user's own row), so the
+   *  remove-from-library action is hidden. */
+  catalog?: boolean
   onQuickPost: () => void
   onRemove: () => void
 }) {
@@ -570,10 +617,12 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, onQuickPost, onRemove
           className="inline-flex items-center gap-1 text-[10px] font-mono font-medium" style={{ color: 'var(--text-faint)' }}>
           {p.asin} <Copy size={10} />
         </button>
-        <button onClick={onRemove} title="Remove from library"
-          className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-faint)] hover:text-[#b3261e]">
-          <Trash2 size={11} />
-        </button>
+        {!catalog && (
+          <button onClick={onRemove} title="Remove from library"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-faint)] hover:text-[#b3261e]">
+            <Trash2 size={11} />
+          </button>
+        )}
       </div>
     </div>
   )
