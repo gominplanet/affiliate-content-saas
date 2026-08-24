@@ -60,9 +60,16 @@ export async function GET(request: Request) {
     }
     if (error) {
       // Table missing (migration 282 not run) → empty dashboard, not an error.
-      return NextResponse.json({ ok: true, total: 0, byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
+      return NextResponse.json({ ok: true, total: 0, botClicks: 0, byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
     }
-    const clicks = (rows ?? []) as { code: string; country: string | null; marketplace: string | null; source: string | null; device?: string | null; browser?: string | null; os?: string | null; created_at: string }[]
+    const allRows = (rows ?? []) as { code: string; country: string | null; marketplace: string | null; source: string | null; device?: string | null; browser?: string | null; os?: string | null; created_at: string }[]
+    // Bots (crawlers + social link-preview fetchers like facebookexternalhit /
+    // WhatsApp / Slackbot) aren't real visitors — posting a link to socials alone
+    // triggers a burst of them, which otherwise inflates every count. Keep them
+    // OUT of all human metrics and report the tally separately so it's honest but
+    // clearly not counted as a click. parseUserAgent tags these as browser 'Bot'.
+    const botClicks = allRows.filter((c) => c.browser === 'Bot').length
+    const clicks = allRows.filter((c) => c.browser !== 'Bot')
 
     const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) || 0) + 1)
     const countryM = new Map<string, number>()
@@ -108,6 +115,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       ok: true,
       total: clicks.length,
+      botClicks,
       days,
       uniqueProducts: codeM.size,
       uniqueCountries: countryM.size,
@@ -120,6 +128,6 @@ export async function GET(request: Request) {
       byDay,
     })
   } catch {
-    return NextResponse.json({ ok: true, total: 0, byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
+    return NextResponse.json({ ok: true, total: 0, botClicks: 0, byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
   }
 }
