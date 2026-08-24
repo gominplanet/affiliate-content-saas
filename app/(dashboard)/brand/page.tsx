@@ -8,6 +8,7 @@ import { Save, Check, Plus, Trash2, Upload, X, RefreshCw, Loader2, AlertCircle }
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
 import GeniuslinkGroupsPanel from '@/components/brand/GeniuslinkGroupsPanel'
+import PassportConnectionCard from '@/components/brand/PassportConnectionCard'
 import { GENIUSLINK_SIGNUP_URL, GENIUSLINK_PITCH } from '@/lib/geniuslink-signup'
 
 async function uploadBrandImage(
@@ -1026,6 +1027,11 @@ export default function BrandPage() {
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
               The key accounts behind monetization and SEO. Passport Links (when on) routes your Amazon links automatically; Geniuslink below is an optional alternative router, your Amazon tag is the fallback, and Google Search Console powers your indexing and ranking data.
             </p>
+
+            {/* Passport Links — the built-in Amazon-link router. Switch lives here
+                too since the copy names it as the primary router; full setup +
+                per-country tags + analytics stay on /passport. */}
+            <PassportConnectionCard />
 
             {/* Geniuslink */}
             <div className="rounded-xl border border-gray-200 dark:border-white/10 p-4 mb-3">
