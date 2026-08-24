@@ -13,6 +13,7 @@ import PassportLinksCard from '@/components/brand/PassportLinksCard'
 import PassportQuickLink from '@/components/passport/PassportQuickLink'
 import PassportPowerToggle from '@/components/passport/PassportPowerToggle'
 import PassportGroups from '@/components/passport/PassportGroups'
+import PassportLinksList from '@/components/passport/PassportLinksList'
 import ExternalNetworksCards from '@/components/integrations/ExternalNetworksCards'
 import { ChevronDown, Settings2 } from 'lucide-react'
 
@@ -53,6 +54,7 @@ export default function PassportPage() {
   const [loading, setLoading] = useState(true)
   const [days, setDays] = useState(30)
   const [group, setGroup] = useState('') // '' all · 'none' ungrouped · else group id
+  const [reloadKey, setReloadKey] = useState(0) // bump to refresh group counts
   const [setupOpen, setSetupOpen] = useState(false)
   const [canUse, setCanUse] = useState<boolean | null>(null)
 
@@ -149,7 +151,10 @@ export default function PassportPage() {
       </div>
 
       {/* Groups filter + manager (Geniuslink-style). Scopes everything below. */}
-      <PassportGroups active={group} onSelect={setGroup} byGroup={data?.byGroup} />
+      <PassportGroups active={group} onSelect={setGroup} byGroup={data?.byGroup} reloadKey={reloadKey} />
+
+      {/* Per-link group assignment. */}
+      <PassportLinksList onChanged={() => { setReloadKey((k) => k + 1); void load(days, group) }} />
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[var(--text-3)] py-16"><Loader2 size={18} className="animate-spin" /> Loading your clicks…</div>
