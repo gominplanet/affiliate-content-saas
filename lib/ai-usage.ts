@@ -99,6 +99,12 @@ export const PRICING: Record<string, Pricing> = {
   'youtube-ingest': { in: 0, out: 0, imageCost: 0.06 },
   'ffmpeg-ass':     { in: 0, out: 0, imageCost: 0.01 },
   'cloudinary':     { in: 0, out: 0, imageCost: 0.02 },
+
+  // ── X (Twitter) — the only social with a real per-post cost ($0.20 on X's
+  //    Pay Per Use plan). recordXPost logs one `x_post` row (model 'twitter-api',
+  //    images:1) per successful post. Without this it fell to the $0.04 image
+  //    fallback and the admin cost dashboard under-counted X spend ~5x.
+  'twitter-api':    { in: 0, out: 0, imageCost: 0.20 },
 }
 export const WEB_SEARCH_COST = 0.01 // $ per search (Anthropic server tool)
 /** Fallback per-image cost when an image model isn't in PRICING. */

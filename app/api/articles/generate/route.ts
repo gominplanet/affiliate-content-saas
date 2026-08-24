@@ -37,7 +37,7 @@ import { writeContentSchema } from '@/lib/content-schema'
 import { pickRelatedPosts, type LinkCandidate } from '@/lib/internal-links'
 import { fal } from '@fal-ai/client'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
-import { composeWithGptImage, composeWithNanoBananaPro, rehostToFal, rehostFacePhotos, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_PRO_COST_MODEL } from '@/lib/thumbnail-generators'
+import { composeWithGptImage, composeWithNanoBanana, rehostToFal, rehostFacePhotos, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
 import { pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -599,7 +599,8 @@ VOICE / STYLE RULES:
           const prompt = `A bright, aspirational EDITORIAL MAGAZINE hero photo (16:9) for an article about ${topic}. Feature the SAME real person shown in the reference photos — reproduce their EXACT face and identity (bone structure, features, skin tone, hair, apparent age), photorealistic and naturally flattering, never generic or altered. Dress them in a fresh, natural casual outfit that suits the scene (do NOT copy clothing from the reference photos). Place them naturally in a real setting that fits the topic, relaxed and engaged, premium editorial lighting. ${NO_BRAND_IMAGE_CLAUSE} Render ABSOLUTELY NO text, letters, words, numbers or logos anywhere.`
           let composed = await composeWithGptImage({ prompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
           heroModel = GPT_IMAGE_COMPOSE_COST_MODEL
-          if (!composed[0]) { composed = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }); heroModel = NANO_BANANA_PRO_COST_MODEL }
+          // Fallback: regular Nano Banana ($0.039), not the $0.13 Pro tier (dropped 2026-08).
+          if (!composed[0]) { composed = await composeWithNanoBanana({ prompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }); heroModel = NANO_BANANA_COST_MODEL }
           heroUrl = composed[0] || null
         }
         // No usable face model → fall through to the generic Flux hero below.

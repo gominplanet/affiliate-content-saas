@@ -15,7 +15,7 @@ import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbn
 import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE, stripDesignBrands } from '@/lib/image-guard'
 import { getOrCreateBriefs } from '@/lib/art-director-cache'
-import { composeWithGptImage, composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, rehostStyleRefs, applyMoodyGrade, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
+import { composeWithGptImage, composeWithNanoBanana, generateWithIdeogram, rehostToFal, rehostFacePhotos, rehostStyleRefs, applyMoodyGrade, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 // renderDesignerOverlay (Satori-based, template-driven) was the previous
 // clean-path renderer. Now superseded by bakeSimpleHeadline which uses
 // Resvg directly with raw SVG + paint-order: stroke fill for razor-sharp
@@ -2364,17 +2364,10 @@ Ultra-sharp, professional, photorealistic.`
           )
           let nbUrls = nbBatches.flat().filter(Boolean).slice(0, variantCount)
 
-          // Fallback 1: Nano Banana Pro if gpt-image returned nothing.
-          if (nbUrls.length === 0) {
-            const fbPro = await Promise.all(
-              Array.from({ length: variantCount }, (_, i) =>
-                composeWithNanoBananaPro({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
-              ),
-            )
-            nbUrls = fbPro.flat().filter(Boolean).slice(0, variantCount)
-            if (nbUrls.length > 0) { nbModelKey = NANO_BANANA_PRO_COST_MODEL; nbModelUsed = wantClean ? 'nano-banana-pro' : 'nano-banana-pro-baked' }
-          }
-          // Fallback 2: regular Nano Banana so we still produce a thumbnail.
+          // Fallback: regular Nano Banana ($0.039) so we still produce a thumbnail.
+          // (The $0.13 Nano Banana Pro tier was removed 2026-08 — it only ran as a
+          // fallback after gpt-image, and paying 3.3x for a fallback image wasn't
+          // worth it; regular Nano Banana covers the same job.)
           if (nbUrls.length === 0) {
             const fb = await Promise.all(
               Array.from({ length: variantCount }, (_, i) =>

@@ -16,7 +16,7 @@ import sharp from 'sharp'
 import { createServerClient } from '@/lib/supabase/server'
 import { spendGate } from '@/lib/ai-spend'
 import { recordUsage } from '@/lib/ai-usage'
-import { composeWithNanoBananaPro, generateWithIdeogram, rehostAll, uploadDataUrlToFal, expandBannerToWidth, generateWideBanner } from '@/lib/thumbnail-generators'
+import { composeWithNanoBanana, generateWithIdeogram, rehostAll, uploadDataUrlToFal, expandBannerToWidth, generateWideBanner } from '@/lib/thumbnail-generators'
 import { createOpenAIService } from '@/services/openai'
 import { LAUNCH_PLATFORMS, type LaunchPlatform } from '@/lib/social-launch-kit'
 import { buildCoverPrompt, buildAvatarPrompt, buildWideBannerPrompt } from '@/lib/social-launch-kit-prompt'
@@ -191,7 +191,7 @@ export async function POST(request: Request) {
 
   let sourceB64 = ''
   let sourceUrl = ''
-  let usedModel: 'gpt-image-1' | 'fal-nano-banana-pro' | 'fal-ideogram-v3' = 'gpt-image-1'
+  let usedModel: 'gpt-image-1' | 'fal-nano-banana' | 'fal-ideogram-v3' = 'gpt-image-1'
 
   // ── HAND-COMPOSITED WIDE PATH ─────────────────────────────────────────────
   // Extreme-wide banners (X/Bluesky 3:1, LinkedIn 4:1): no model renders both an
@@ -235,9 +235,10 @@ export async function POST(request: Request) {
     const falRefs = [customRef ? await uploadDataUrlToFal(customRef) : null, ...(logoUrl ? await rehostAll([logoUrl]) : [])]
       .filter((u): u is string => !!u)
     if (falRefs.length) {
-      const out = await composeWithNanoBananaPro({ prompt, referenceImageUrls: falRefs, aspectRatio: kind === 'banner' ? '16:9' : '1:1', numImages: 1 })
+      // Fallback: regular Nano Banana ($0.039), not the $0.13 Pro tier (dropped 2026-08).
+      const out = await composeWithNanoBanana({ prompt, referenceImageUrls: falRefs, aspectRatio: kind === 'banner' ? '16:9' : '1:1', numImages: 1 })
       sourceUrl = out?.[0] || ''
-      usedModel = 'fal-nano-banana-pro'
+      usedModel = 'fal-nano-banana'
     } else if (kind === 'avatar') {
       const out = await generateWithIdeogram({
         prompt: `A minimalist circular brand emblem / app icon for ${brandName}, a ${niches} brand. A bold geometric mark on a solid ${primary} background with a ${secondary} accent. Flat vector. ABSOLUTELY NO text, words or letters. Clean, centered.`,
