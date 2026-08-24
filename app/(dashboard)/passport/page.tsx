@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Globe, MousePointerClick, MapPin, Package, TrendingUp, Store, Smartphone, Monitor, Tablet } from 'lucide-react'
 import PassportLinksCard from '@/components/brand/PassportLinksCard'
+import PassportQuickLink from '@/components/passport/PassportQuickLink'
 import ExternalNetworksCards from '@/components/integrations/ExternalNetworksCards'
 
 const COUNTRY: Record<string, { name: string; flag: string }> = {
@@ -71,6 +72,11 @@ export default function PassportPage() {
       {/* Setup — turn it on + enter per-country tags (lives here, self-contained). */}
       <div className="mb-6">
         <PassportLinksCard />
+      </div>
+
+      {/* Quick create — paste any product link, get a Passport Link back now. */}
+      <div className="mb-6">
+        <PassportQuickLink onCreated={() => load(days)} />
       </div>
 
       {/* Affiliate networks — connect the same external networks here too, so all
