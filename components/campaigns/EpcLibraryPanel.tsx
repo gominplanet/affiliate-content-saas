@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Radar, Loader2, Search, ExternalLink, Star, Trash2, RefreshCw, Send, FileText, ArrowRight, Check, Image as ImageIcon } from 'lucide-react'
+import { Radar, Loader2, Search, ExternalLink, Star, Trash2, RefreshCw, Send, FileText, ArrowRight, Check, Image as ImageIcon, Link2 as LinkIcon, Copy } from 'lucide-react'
 import { scoutCreatorConnections, type ScoutError } from '@/lib/extension-frame'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
@@ -70,6 +70,15 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   const [debug, setDebug] = useState<string | null>(null)
   const [filling, setFilling] = useState(false)
   const [fillMsg, setFillMsg] = useState<string | null>(null)
+  // The ACTIVE site's Amazon Associates tag (per-site, migration 280). EPC earns on
+  // qualified clicks from a standard, properly-formatted associate link, so the
+  // card's "Get link" hands the creator exactly that to drop offsite.
+  const [amazonTag, setAmazonTag] = useState<string>('')
+  useEffect(() => {
+    fetch('/api/affiliate-links/save').then((r) => r.json()).then((d) => {
+      if (d?.ok && typeof d.amazonTag === 'string') setAmazonTag(d.amazonTag.trim())
+    }).catch(() => {})
+  }, [])
 
   const load = useCallback(async (query: string, sortKey: string) => {
     setLoading(true)
@@ -202,6 +211,12 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
                   Amazon only lists products you&apos;ve opted into. On your <b>Sponsored Products for Creators</b> tab, use Amazon&apos;s <b>&ldquo;Accept all&rdquo;</b> (the &ldquo;Discover More Campaigns, Faster&rdquo; banner) to opt into your recommendations, then open the <b>Accepted</b> tab so the products are on screen. Only then can SCOUT read them. Come back here and hit Scan.
                 </p>
               </div>
+              <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.30)' }}>
+                <p className="text-[12px] font-semibold" style={{ color: '#7C3AED' }}>Worth it for Gold &amp; Platinum creators</p>
+                <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                  EPC pays on <b>qualified clicks</b> from offsite traffic (YouTube, socials, your blog), and Amazon only pays it to <b>Gold and Platinum</b> Creator Star tier creators. Below Gold, these clicks don&apos;t earn, so promoting EPC products isn&apos;t worth it yet. No special links needed: a standard associate link earns automatically, so use <b>Get link</b> on any card to drop one offsite, or make a blog / social post. Track it in Amazon&apos;s <b>Creator Connections → Sponsored Products for Creators</b> reporting tab.
+                </p>
+              </div>
             </div>
             <button onClick={scan} disabled={scanning}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70 self-start" style={{ background: '#7C3AED' }}>
@@ -257,7 +272,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {products.map((p) => (
             <EpcCard
-              key={p.asin} p={p} canBlog={canBlog}
+              key={p.asin} p={p} canBlog={canBlog} amazonTag={amazonTag}
               onQuickPost={() => setQuickPost({ asin: p.asin, title: p.title || p.asin, imageUrl: p.image_url })}
               onRemove={() => remove(p.asin)}
             />
@@ -276,13 +291,29 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
 // runs the same deal-article engine as Deal Radar (POST /api/deals); "Post"
 // opens the shared social modal. An EPC product IS an Amazon product, so both
 // reuse the existing ASIN-driven flows.
-function EpcCard({ p, canBlog, onQuickPost, onRemove }: {
+function EpcCard({ p, canBlog, amazonTag, onQuickPost, onRemove }: {
   p: EpcProduct
   canBlog: boolean
+  amazonTag: string
   onQuickPost: () => void
   onRemove: () => void
 }) {
   const bs = budgetStyle(p.budget)
+  const [copied, setCopied] = useState(false)
+
+  // A standard, properly-formatted Amazon Associate link (the active site's tag).
+  // Per Amazon, this earns EPC on qualified offsite clicks automatically — no
+  // special Creator Connections link needed. Copy it to drop in a YouTube
+  // description, social bio, story, wherever the creator sends traffic.
+  function copyLink() {
+    const tag = (amazonTag || '').trim()
+    const url = `https://www.amazon.com/dp/${p.asin}${tag ? `?tag=${encodeURIComponent(tag)}` : ''}`
+    navigator.clipboard?.writeText(url).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 1800)
+      if (tag) toast.success('Affiliate link copied.')
+      else toast.warning('Link copied, but set your Amazon Associates tag in Brand Profile so it earns.')
+    }).catch(() => toast.error('Could not copy the link.'))
+  }
   const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
   const [postUrl, setPostUrl] = useState<string | null>(null)
 
@@ -337,6 +368,15 @@ function EpcCard({ p, canBlog, onQuickPost, onRemove }: {
           </span>
         )}
       </div>
+      {/* Get link — the standard associate link that earns EPC on offsite clicks. */}
+      <div className="px-3 pb-2">
+        <button onClick={copyLink}
+          className="w-full inline-flex items-center justify-center gap-1.5 text-[11.5px] font-semibold rounded-lg py-1.5 border"
+          style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED', background: 'rgba(124,58,237,0.06)' }}
+          title="Copy your affiliate link to drop offsite (YouTube, socials, blog) — EPC pays on those clicks">
+          {copied ? <><Check size={13} /> Link copied</> : <><LinkIcon size={13} /> Get affiliate link</>}
+        </button>
+      </div>
       {/* Actions: turn the opportunity into content. */}
       <div className="px-3 pb-2 flex items-center gap-1.5">
         {canBlog && (
@@ -362,6 +402,12 @@ function EpcCard({ p, canBlog, onQuickPost, onRemove }: {
            className="inline-flex items-center gap-1 text-[11px] font-medium" style={{ color: 'var(--text-soft)' }} title="View on Amazon (direct)">
           View on Amazon <ExternalLink size={11} />
         </a>
+        <button
+          onClick={() => { navigator.clipboard?.writeText(p.asin).then(() => toast.success('ASIN copied.')).catch(() => {}) }}
+          title="Copy ASIN"
+          className="inline-flex items-center gap-1 text-[10px] font-mono font-medium" style={{ color: 'var(--text-faint)' }}>
+          {p.asin} <Copy size={10} />
+        </button>
         <button onClick={onRemove} title="Remove from library"
           className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-faint)] hover:text-[#b3261e]">
           <Trash2 size={11} />
