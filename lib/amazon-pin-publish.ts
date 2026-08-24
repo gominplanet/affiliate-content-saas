@@ -10,6 +10,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
 import { resolveGeniuslinkChannelGroupId } from '@/lib/geniuslink-group'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { passportLinkForUser } from '@/lib/passport-links'
 import { asinFromAmazonUrl, resolveFinalUrl } from '@/lib/product-link'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -77,6 +78,14 @@ export async function resolveAffiliateLink(opts: {
     try { asin = asinFromAmazonUrl(await resolveFinalUrl(opts.productUrl)) || '' } catch { /* leave blank */ }
   }
   const tag = intRow.amazon_associates_tag || undefined
+  // Passport Links (geo-routing) wins WHEN ON — resolved by userId, so no caller
+  // needs to change. Off → null and we fall through to Geniuslink / tag as before.
+  if (asin) {
+    try {
+      const p = await passportLinkForUser(createAdminClient(), opts.userId, asin, { source: opts.channel || 'social', title: opts.productTitle || null })
+      if (p) return { linkUrl: p, asin, note: null }
+    } catch { /* fall through to normal resolution */ }
+  }
   const destination = asin
     ? `https://www.amazon.com/dp/${asin}${tag ? `?tag=${tag}` : ''}`
     : (opts.productUrl || '')

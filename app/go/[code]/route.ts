@@ -14,7 +14,7 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { buildPassportDestination } from '@/lib/passport-links'
+import { buildPassportDestination, parseUserAgent } from '@/lib/passport-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -74,10 +74,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
     const asc = sParam.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 16)
     if (asc) finalUrl += `${finalUrl.includes('?') ? '&' : '?'}ascsubtag=${asc}`
 
+    // Device / browser / OS from the UA, for the dashboard breakdowns.
+    const ua = parseUserAgent(req.headers.get('user-agent'))
+
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (admin as any).from('passport_link_clicks').insert({
         code, user_id: link.user_id, country: dest.country, marketplace: dest.marketplace, source,
+        device: ua.device, browser: ua.browser, os: ua.os,
       })
     } catch { /* never let logging block the redirect */ }
 

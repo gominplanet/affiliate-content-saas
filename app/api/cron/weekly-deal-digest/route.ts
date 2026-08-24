@@ -100,7 +100,7 @@ export async function GET(req: Request) {
       const deals: DigestDeal[] = await Promise.all(
         rows.map(async (r) => ({
           ...r,
-          affiliateUrl: await resolveAffiliateUrl(r.asin, r.title, tag, u.geniuslink_api_key, u.geniuslink_api_secret),
+          affiliateUrl: await resolveAffiliateUrl(r.asin, r.title, tag, u.geniuslink_api_key, u.geniuslink_api_secret, u.user_id),
         })),
       )
 

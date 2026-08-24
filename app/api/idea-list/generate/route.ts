@@ -163,7 +163,7 @@ HARD BAN — generic filler that could describe ANY product. Never write "punche
 
     // 5. Assemble the post: intro, a card per pick, outro, full-list CTA + disclosure.
     const tag = (intRow?.amazon_associates_tag as string) || null
-    const links = await pool(picks, 5, async (p) => ({ asin: p.asin, url: await resolveAffiliateUrl(p.asin, p.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null) }))
+    const links = await pool(picks, 5, async (p) => ({ asin: p.asin, url: await resolveAffiliateUrl(p.asin, p.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null, user.id) }))
     const linkByAsin = new Map(links.map(l => [l.asin, l.url]))
 
     const postTitle = (parsed.title || cleanListName(listTitle) || 'My Top Picks').slice(0, 120)

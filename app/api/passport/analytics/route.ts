@@ -8,6 +8,7 @@
 // the dashboard consumes stays the same.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { AMAZON_MARKETPLACES as MARKETPLACES } from '@/lib/passport-links'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,26 +25,50 @@ export async function GET(request: Request) {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: rows, error } = await (supabase as any)
+    let { data: rows, error } = await (supabase as any)
       .from('passport_link_clicks')
-      .select('code, country, marketplace, source, created_at')
+      .select('code, country, marketplace, source, device, browser, os, created_at')
       .eq('user_id', user.id)
       .gte('created_at', since)
       .order('created_at', { ascending: false })
       .limit(MAX_ROWS)
+    // Older DBs (migration 284 not run yet) don't have device/browser/os — retry
+    // without them so the dashboard still renders the country/marketplace slices.
+    if (error) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const retry = await (supabase as any)
+        .from('passport_link_clicks')
+        .select('code, country, marketplace, source, created_at')
+        .eq('user_id', user.id)
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(MAX_ROWS)
+      rows = retry.data
+      error = retry.error
+    }
     if (error) {
       // Table missing (migration 282 not run) → empty dashboard, not an error.
-      return NextResponse.json({ ok: true, total: 0, byCountry: [], byDay: [], topProducts: [], bySource: [], days })
+      return NextResponse.json({ ok: true, total: 0, byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
     }
-    const clicks = (rows ?? []) as { code: string; country: string | null; source: string | null; created_at: string }[]
+    const clicks = (rows ?? []) as { code: string; country: string | null; marketplace: string | null; source: string | null; device?: string | null; browser?: string | null; os?: string | null; created_at: string }[]
 
     const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) || 0) + 1)
     const countryM = new Map<string, number>()
+    const marketM = new Map<string, number>()
+    const deviceM = new Map<string, number>()
+    const browserM = new Map<string, number>()
     const sourceM = new Map<string, number>()
     const codeM = new Map<string, number>()
     const dayM = new Map<string, number>()
+    // amazon host → the alpha-2 store code, for a friendly "sent to" label.
+    const hostToCode: Record<string, string> = Object.fromEntries(
+      Object.entries(MARKETPLACES).map(([code, m]) => [m.host, code]),
+    )
     for (const c of clicks) {
       bump(countryM, (c.country || 'US').toUpperCase())
+      if (c.marketplace) bump(marketM, hostToCode[c.marketplace] || c.marketplace)
+      bump(deviceM, c.device || 'Unknown')
+      bump(browserM, c.browser || 'Unknown')
       bump(sourceM, c.source || 'direct')
       bump(codeM, c.code)
       bump(dayM, c.created_at.slice(0, 10))
@@ -66,16 +91,23 @@ export async function GET(request: Request) {
       byDay.push({ date: d, count: dayM.get(d) || 0 })
     }
 
+    const entries = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1])
+
     return NextResponse.json({
       ok: true,
       total: clicks.length,
       days,
-      byCountry: [...countryM.entries()].map(([country, count]) => ({ country, count })).sort((a, b) => b.count - a.count),
-      bySource: [...sourceM.entries()].map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count).slice(0, 10),
+      uniqueProducts: codeM.size,
+      uniqueCountries: countryM.size,
+      byCountry: entries(countryM).map(([country, count]) => ({ country, count })),
+      byMarketplace: entries(marketM).map(([store, count]) => ({ store, count })),
+      byDevice: entries(deviceM).map(([device, count]) => ({ device, count })),
+      byBrowser: entries(browserM).map(([browser, count]) => ({ browser, count })).slice(0, 8),
+      bySource: entries(sourceM).map(([source, count]) => ({ source, count })).slice(0, 10),
       topProducts: topCodes.map(([code, count]) => ({ code, count, asin: labels[code]?.asin || null, label: labels[code]?.label || null })),
       byDay,
     })
   } catch {
-    return NextResponse.json({ ok: true, total: 0, byCountry: [], byDay: [], topProducts: [], bySource: [], days })
+    return NextResponse.json({ ok: true, total: 0, byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
   }
 }
