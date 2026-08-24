@@ -18,7 +18,9 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, tierAllowsCampaigns } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
-import { fetchKeepaBasics, keepaConfigured } from '@/services/keepa'
+import { keepaConfigured } from '@/services/keepa'
+import { fetchKeepaBasicsCached } from '@/lib/keepa-cache'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { buildEpcPatch } from '@/lib/epc-enrich'
 
 export const dynamic = 'force-dynamic'
@@ -141,7 +143,7 @@ export async function POST(request: Request) {
           .is('deal_enriched_at', null).limit(100)
         const need = Array.isArray(needRows) ? needRows as { asin: string; image_url: string | null }[] : []
         if (need.length) {
-          const basics = await fetchKeepaBasics(need.map((n) => n.asin))
+          const basics = await fetchKeepaBasicsCached(createAdminClient(), need.map((n) => n.asin))
           const at = new Date().toISOString()
           await Promise.all(need.map(async (n) => {
             const patch = buildEpcPatch(basics.get(n.asin.toUpperCase()), n.image_url, at)
