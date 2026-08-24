@@ -24,6 +24,26 @@
   .status .st .t { font-size: 12.5px; font-weight: 700; color: #4ade80; }
   .status .st .s { font-size: 10.5px; color: #86868b; margin-top: 1px; line-height: 1.35; }
 
+  /* Passport quick-create */
+  .pp { margin-top: 12px; }
+  .pp-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 11px 13px; border: 0; border-radius: 12px; cursor: pointer;
+            font-size: 13px; font-weight: 800; letter-spacing: -0.01em; color: #fff;
+            background: linear-gradient(90deg,#7C3AED,#2563eb); transition: filter .15s, opacity .15s; }
+  .pp-btn:hover { filter: brightness(1.08); }
+  .pp-btn:disabled { opacity: .6; cursor: default; }
+  .pp-sub { font-size: 10px; color: #6b6b76; text-align: center; margin: 6px 0 0; line-height: 1.4; }
+  .pp-res { display: none; align-items: center; gap: 8px; margin-top: 9px; padding: 9px 11px; border-radius: 11px;
+            background: rgba(124,58,237,.09); border: 1px solid rgba(124,58,237,.3); }
+  .pp-res.show { display: flex; }
+  .pp-res a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+              font-size: 12px; font-weight: 700; color: #a78bfa; text-decoration: none; }
+  .pp-copy { flex: none; padding: 5px 9px; border: 0; border-radius: 8px; cursor: pointer;
+             font-size: 11px; font-weight: 700; color: #d6d6db; background: #26262e; }
+  .pp-copy.ok { color: #4ade80; background: rgba(34,197,94,.14); }
+  .pp-err { display: none; font-size: 10.5px; color: #f87171; margin-top: 7px; line-height: 1.4; }
+  .pp-err.show { display: block; }
+
   /* "What SCOUT does" card */
   .card { margin-top: 12px; padding: 12px 13px; border-radius: 12px;
           background: #16161c; border: 1px solid rgba(255,255,255,.07); }
@@ -68,6 +88,17 @@
       <span class="t">Active</span>
       <span class="s">Works automatically while you're signed in to MVP. Nothing to connect.</span>
     </span>
+  </div>
+
+  <!-- Passport quick-create: turn the current tab into a Passport Link. -->
+  <div class="pp">
+    <button id="ppCreate" class="pp-btn">🔗 Create Passport Link from this page</button>
+    <p class="pp-sub">Amazon products geo-route to each visitor's country. Any other page becomes a tracked branded link.</p>
+    <div id="ppRes" class="pp-res">
+      <a id="ppUrl" href="#" target="_blank" rel="noopener"></a>
+      <button id="ppCopy" class="pp-copy">Copy</button>
+    </div>
+    <p id="ppErr" class="pp-err"></p>
   </div>
 
   <!-- What SCOUT does — so the popup reads as useful, not empty. -->

@@ -76,7 +76,7 @@ export async function POST(request: Request) {
   }
 
   const code = await getOrCreatePassportLink(admin, user.id, siteId, target)
-  if (!code) return NextResponse.json({ error: 'Could not create the link. Make sure Passport Links storage is set up (migration 282).' }, { status: 500 })
+  if (!code) return NextResponse.json({ error: 'Could not create the link. Passport Links storage may not be fully set up yet (run migrations 282 through 286).' }, { status: 500 })
 
   return NextResponse.json({ ok: true, url: passportLinkUrl(code), code, asin: target.asin ?? null, geo: !!target.asin })
 }
