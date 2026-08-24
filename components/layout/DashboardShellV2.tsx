@@ -41,7 +41,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History,
+  Inbox, PackageSearch, Rocket, Database, History, Globe,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -469,6 +469,7 @@ export default function DashboardShellV2({
         // Link in Bio — a shoppable affiliate "Shop Grid" page at /s/<handle>,
         // auto-filled from posted products. All paid tiers (same gate as Deal Radar).
         { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', effectiveTier) },
+        { href: '/passport', icon: <Globe size={15} />, label: 'Passport Links', gate: canSeeNav('dealRadar', effectiveTier) },
         // Socials connection moved to SET UP > "Connect Socials" (it's setup,
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
