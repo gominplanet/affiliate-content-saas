@@ -29,6 +29,29 @@ function defaultSchedule(): { date: string; time: string } {
 export interface QuickPostDeal { asin: string; title: string; imageUrl: string | null }
 interface PostResult { platform: string; ok: boolean; url?: string; error?: string }
 
+// Turn a raw platform API error into something a creator can act on. The socials
+// hand back long JSON blobs (Meta) or terse strings ("Authentication failed")
+// that read as an MVP bug when they're really an account-side reconnect or a
+// Meta identity check. Returns friendly text plus, when relevant, where to fix it.
+function friendlyPostError(platform: string, raw?: string): { text: string; fixHref?: string; fixLabel?: string } {
+  const r = (raw || '').toLowerCase()
+  const label = platform === 'instagram_story' ? 'Instagram'
+    : (QUICK_PLATFORMS.find((p) => p.key === platform)?.label || platform)
+  // Meta identity confirmation (error 368) — must be cleared in the Facebook app.
+  if (/\b368\b/.test(r) || r.includes('confirm your identity') || r.includes('publish as this page')) {
+    return { text: `${label} needs you to confirm your identity before it will let MVP post as your Page. Open the Facebook app on your phone, follow its confirmation prompt, then try again.` }
+  }
+  // Expired / revoked connection — reconnect the account.
+  if (r.includes('authentication failed') || r.includes('access token') || r.includes('oauthexception')
+    || r.includes('token has expired') || r.includes('session has expired') || r.includes('invalid token')
+    || r.includes('401') || r.includes('reconnect') || r.includes('re-authenticate')) {
+    return { text: `Your ${label} connection expired. Reconnect it, then try again.`, fixHref: '/connect-socials', fixLabel: `Reconnect ${label}` }
+  }
+  // Fallback: keep the raw text but trim the JSON noise so it stays readable.
+  const trimmed = (raw || 'Post failed.').replace(/\s+/g, ' ').trim().slice(0, 220)
+  return { text: trimmed }
+}
+
 // Link-friendly platforms for a direct post.
 export const QUICK_PLATFORMS: { key: string; label: string }[] = [
   { key: 'twitter', label: 'X' },
@@ -200,15 +223,25 @@ export default function QuickPostModal({
 
           {results && (
             <div className="space-y-1.5">
-              {results.map((r) => (
-                <div key={r.platform} className="flex items-center gap-2 text-sm">
-                  {r.ok ? <Check size={15} className="text-emerald-600" /> : <AlertCircle size={15} className="text-red-600" />}
-                  <span className="capitalize font-medium">{r.platform === 'instagram_story' ? 'Instagram Story' : (QUICK_PLATFORMS.find((p) => p.key === r.platform)?.label || r.platform)}</span>
-                  {r.ok
-                    ? (r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">view</a> : <span className="text-xs text-muted-foreground">posted</span>)
-                    : <span className="text-xs text-red-600">{r.error}</span>}
-                </div>
-              ))}
+              {results.map((r) => {
+                const fe = r.ok ? null : friendlyPostError(r.platform, r.error)
+                return (
+                  <div key={r.platform} className="flex items-start gap-2 text-sm">
+                    {r.ok ? <Check size={15} className="text-emerald-600 mt-0.5" /> : <AlertCircle size={15} className="text-red-600 mt-0.5 shrink-0" />}
+                    <span className="capitalize font-medium shrink-0">{r.platform === 'instagram_story' ? 'Instagram Story' : (QUICK_PLATFORMS.find((p) => p.key === r.platform)?.label || r.platform)}</span>
+                    {r.ok
+                      ? (r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs mt-0.5">view</a> : <span className="text-xs text-muted-foreground mt-0.5">posted</span>)
+                      : (
+                        <span className="text-xs text-red-600 min-w-0">
+                          {fe!.text}
+                          {fe!.fixHref && (
+                            <> <a href={fe!.fixHref} className="underline font-medium whitespace-nowrap">{fe!.fixLabel} →</a></>
+                          )}
+                        </span>
+                      )}
+                  </div>
+                )
+              })}
             </div>
           )}
 
