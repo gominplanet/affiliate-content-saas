@@ -25,7 +25,7 @@ const TOOLS = [
     href: '/deal-radar',
     icon: Radar,
     title: 'Deal Radar',
-    desc: 'Live Amazon deals with price history and deal scores, powered by Keepa. Catch a real markdown before it sells out.',
+    desc: 'Live Amazon deals with price history and deal scores. Catch a real markdown before it sells out.',
   },
   {
     href: '/cc-campaigns',

@@ -266,7 +266,7 @@ function RevenueByCategory({ products }: { products: Product[] }) {
     byCat.set(cat, (byCat.get(cat) ?? 0) + p.revenue)
   }
   const enriched = [...byCat.entries()].filter(([c]) => c !== 'Uncategorized').length
-  if (enriched === 0) return <Empty msg="Category data is still syncing from Keepa — this fills in over the next few loads as your products get categorized." />
+  if (enriched === 0) return <Empty msg="Category data is still syncing — this fills in over the next few loads as your products get categorized." />
   const rows = [...byCat.entries()].map(([label, val]) => ({ label, val })).sort((a, b) => b.val - a.val)
   const top = rows.filter(r => r.label !== 'Uncategorized').slice(0, 6)
   const rest = rows.filter(r => r.label !== 'Uncategorized').slice(6).reduce((s, r) => s + r.val, 0)

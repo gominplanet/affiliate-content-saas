@@ -390,7 +390,7 @@ export default function PricingPage() {
               {[
                 ['Cuppa Solo (AI blog writer)',           99],
                 ['Jungle Scout (product research)',        49],
-                ['Keepa (price history & deal tracking)',  19],
+                ['Price history & deal tracking',  19],
                 ['thumbnailcreator.com (Creator)',         41],
                 ['OpusClip Pro (vertical clips)',          29],
                 ['Beehiiv Grow (newsletter)',              43],
@@ -430,7 +430,7 @@ export default function PricingPage() {
                 ['Cuppa Studio (multi-niche AI writer)',  199],
                 ['Jungle Scout (product research)',        49],
                 ['Helium 10 (product + keyword research)', 79],
-                ['Keepa (price history & deal tracking)',  19],
+                ['Price history & deal tracking',  19],
                 ['Frase (SEO research + content briefs)',  97],
                 ['thumbnailcreator.com (Creator)',         41],
                 ['OpusClip Pro (vertical clips)',          29],

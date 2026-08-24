@@ -12,7 +12,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultSite } from '@/lib/wordpress-sites'
-import { getOrCreatePassportLink, passportLinkUrl } from '@/lib/passport-links'
+import { getOrCreatePassportLink, passportLinkUrl, isSafePassportDestination } from '@/lib/passport-links'
 import { asinFromAmazonUrl, resolveFinalUrl } from '@/lib/product-link'
 import { extractAsin } from '@/services/amazon'
 import { canUsePassport } from '@/lib/feature-access'
@@ -72,6 +72,14 @@ export async function POST(request: Request) {
     if (!raw) return NextResponse.json({ error: 'Paste a link (or provide an ASIN).' }, { status: 400 })
     if (!/^https?:\/\/\S+$/i.test(raw)) return NextResponse.json({ error: "That doesn't look like a link. Paste a full URL starting with http." }, { status: 400 })
     const asin = await asinFromPastedUrl(raw)
+    if (!asin) {
+      // Non-Amazon → a branded short link that 302s to this URL. Guardrail: only
+      // point our domain at a real public web page (never internal hosts, our own
+      // domains, or a userinfo phishing trick).
+      if (!isSafePassportDestination(raw)) {
+        return NextResponse.json({ error: 'That link can’t be used as a destination. Use a normal public product or store page (https).' }, { status: 400 })
+      }
+    }
     target = asin ? { asin, label: title } : { destinationUrl: raw, label: title }
   }
 
