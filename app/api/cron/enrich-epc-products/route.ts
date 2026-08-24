@@ -23,6 +23,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchKeepaBasics, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
+import { buildEpcPatch } from '@/lib/epc-enrich'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -64,11 +65,11 @@ export async function GET(req: Request) {
   const { data: rows, error } = await (admin as any)
     .from('epc_products')
     .select('user_id, asin, image_url')
-    // Only NEVER-enriched rows. Gating on image_url IS NULL too would re-select
-    // (forever) any product Keepa has no image for — enriched_at would be set but
-    // image_url stays null, so it never leaves the set. A one-time migration (281)
-    // nulls enriched_at for the pre-images-fix rows so they get one pass here.
-    .is('enriched_at', null)
+    // Gate on deal_enriched_at (migration 287): rows still missing the Keepa
+    // signals (image / rank / price / deal). Every processed row is stamped
+    // below even when Keepa returns nothing, so a row leaves the backlog after
+    // one pass and this always terminates. Served by the partial backlog index.
+    .is('deal_enriched_at', null)
     .order('scanned_at', { ascending: true })
     .limit(cap * 6)
   if (error) {
@@ -96,22 +97,21 @@ export async function GET(req: Request) {
   const basics = await fetchKeepaBasics(distinct)
   const at = new Date().toISOString()
   let enriched = 0
-  for (const r of toWrite) {
+  // Batch the writes (was one awaited UPDATE per row — up to ~1200 serial round
+  // trips per run, which ate the wall-clock deadline). Chunked Promise.all keeps
+  // round trips to a small constant; the deadline still bounds the whole pass.
+  const CHUNK = 25
+  for (let i = 0; i < toWrite.length; i += CHUNK) {
     if (Date.now() > deadline) break
-    const asin = (r.asin || '').toUpperCase()
-    const b = basics.get(asin)
-    const patch: Record<string, unknown> = { enriched_at: at }
-    if (b) {
-      if (b.monthlySold != null) patch.monthly_sold = b.monthlySold
-      if (b.salesRank != null) patch.sales_rank = b.salesRank
-      if (b.salesRankCategory) patch.sales_rank_category = b.salesRankCategory
-      // Only fill the image if the scrape didn't already get one for this row.
-      if (!r.image_url && b.imageUrl) patch.image_url = b.imageUrl
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: upErr } = await (admin as any)
-      .from('epc_products').update(patch).eq('user_id', r.user_id).eq('asin', asin)
-    if (!upErr) enriched++
+    const slice = toWrite.slice(i, i + CHUNK)
+    await Promise.all(slice.map(async (r) => {
+      const asin = (r.asin || '').toUpperCase()
+      const patch = buildEpcPatch(basics.get(asin), r.image_url, at)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: upErr } = await (admin as any)
+        .from('epc_products').update(patch).eq('user_id', r.user_id).eq('asin', asin)
+      if (!upErr) enriched++
+    }))
   }
 
   return NextResponse.json({ ok: true, enriched, distinctAsins: distinct.length, rows: toWrite.length, tokensLeft: tok.tokensLeft })

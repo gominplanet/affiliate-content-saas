@@ -1,9 +1,16 @@
 /**
  * GET /api/epc/list — the signed-in creator's EPC / Sponsored-Products library.
- *   ?q=       search over product title + brand
- *   ?sort=    recent (default) | epc | rating | price_low
- *   ?limit=   default 60, max 200
- *   ?offset=  pagination
+ *   ?q=          search over product title + brand
+ *   ?sort=       recent (default) | epc | rating | price_low | price_high |
+ *                sold (most bought) | rank (best-selling) | discount (biggest deal)
+ *   ?onSale=     1 → only products currently below their usual price
+ *   ?minDiscount= only products at least N% below their 90-day average
+ *   ?minSold=    only products with at least N/month bought
+ *   ?maxPrice=   only products at/under this price (dollars)
+ *   ?minRating=  only products at/above this star rating
+ *   ?budget=     High | Medium | Low  (Amazon's budget-availability score)
+ *   ?limit=      default 60, max 200
+ *   ?offset=     pagination
  * Returns: { ok, products, total }.
  *
  * DELETE /api/epc/list?asin=XXXXXXXXXX — remove one product from the library.
@@ -21,6 +28,10 @@ const SORTS: Record<string, { col: string; asc: boolean }> = {
   epc: { col: 'epc_value', asc: false },
   rating: { col: 'rating', asc: false },
   price_low: { col: 'price_cents', asc: true },
+  price_high: { col: 'price_cents', asc: false },
+  sold: { col: 'monthly_sold', asc: false },       // most bought / month
+  rank: { col: 'sales_rank', asc: true },           // best-selling (lower rank = better)
+  discount: { col: 'discount_pct', asc: false },    // biggest price drop vs usual
 }
 
 export async function GET(request: Request) {
@@ -29,21 +40,36 @@ export async function GET(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const url = new URL(request.url)
-  const q = (url.searchParams.get('q') || '').trim().replace(/[,%]/g, ' ').slice(0, 80)
-  const sortKey = url.searchParams.get('sort') || 'recent'
+  const p = url.searchParams
+  const q = (p.get('q') || '').trim().replace(/[,%]/g, ' ').slice(0, 80)
+  const sortKey = p.get('sort') || 'recent'
   const sort = SORTS[sortKey] || SORTS.recent
-  const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 60))
-  const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0)
+  const limit = Math.min(200, Math.max(1, Number(p.get('limit')) || 60))
+  const offset = Math.max(0, Number(p.get('offset')) || 0)
+  // Filters (all optional; ignored when absent/blank).
+  const onSale = p.get('onSale') === '1'
+  const minDiscount = Math.max(0, Math.min(99, Number(p.get('minDiscount')) || 0))
+  const minSold = Math.max(0, Number(p.get('minSold')) || 0)
+  const maxPriceCents = p.get('maxPrice') ? Math.round(Math.max(0, Number(p.get('maxPrice')) || 0) * 100) : 0
+  const minRating = Math.max(0, Math.min(5, Number(p.get('minRating')) || 0))
+  const budget = (p.get('budget') || '').trim()
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query = (supabase as any)
       .from('epc_products')
-      // select('*') so a DB missing the Keepa-enrich columns (migration 279)
+      // select('*') so a DB missing the Keepa-enrich columns (migration 279/287)
       // can't fail the whole read — it returns whatever columns exist.
       .select('*', { count: 'exact' })
       .eq('user_id', user.id)
     if (q) query = query.or(`title.ilike.%${q}%,brand.ilike.%${q}%`)
+    // A discount filter (onSale or minDiscount) needs a real, positive discount.
+    if (onSale && minDiscount < 1) query = query.gte('discount_pct', 1)
+    if (minDiscount >= 1) query = query.gte('discount_pct', minDiscount)
+    if (minSold >= 1) query = query.gte('monthly_sold', minSold)
+    if (maxPriceCents >= 1) query = query.lte('price_cents', maxPriceCents)
+    if (minRating > 0) query = query.gte('rating', minRating)
+    if (budget === 'High' || budget === 'Medium' || budget === 'Low') query = query.eq('budget', budget)
     query = query
       .order(sort.col, { ascending: sort.asc, nullsFirst: false })
       .order('scanned_at', { ascending: false })
