@@ -23,30 +23,35 @@ function check(name: string, cond: boolean, detail?: string) {
   }
 }
 
-console.log('channelForSource — source → channel group')
+console.log('channelForSource — source → MVP-<CHANNEL> group (per platform, like Geniuslink)')
 {
-  check('null → General', channelForSource(null) === 'General')
-  check('empty → General', channelForSource('') === 'General')
-  check('blog → Blog', channelForSource('blog') === 'Blog')
-  check('BLOG (case) → Blog', channelForSource('BLOG') === 'Blog')
-  check('pinterest → Pinterest', channelForSource('pinterest') === 'Pinterest')
-  check('social → Social', channelForSource('social') === 'Social')
-  check('facebook → Social', channelForSource('facebook') === 'Social')
-  check('twitter → Social', channelForSource('twitter') === 'Social')
-  check('threads → Social', channelForSource('threads') === 'Social')
-  check('linkedin → Social', channelForSource('linkedin') === 'Social')
-  check('telegram → Social', channelForSource('telegram') === 'Social')
-  check('bluesky → Social', channelForSource('bluesky') === 'Social')
-  check('epc → EPC', channelForSource('epc') === 'EPC')
-  check('scout → SCOUT', channelForSource('scout') === 'SCOUT')
-  check('video → YouTube', channelForSource('video') === 'YouTube')
-  check('youtube → YouTube', channelForSource('youtube') === 'YouTube')
-  check('11-char video id → YouTube', channelForSource('dQw4w9WgXcQ') === 'YouTube')
-  check('id with - and _ → YouTube', channelForSource('a1_b2-c3D4E') === 'YouTube')
-  check('unknown short token → General', channelForSource('promo') === 'General')
+  check('null → MVP-GENERAL', channelForSource(null) === 'MVP-GENERAL')
+  check('empty → MVP-GENERAL', channelForSource('') === 'MVP-GENERAL')
+  check('blog → MVP-BLOG', channelForSource('blog') === 'MVP-BLOG')
+  check('BLOG (case) → MVP-BLOG', channelForSource('BLOG') === 'MVP-BLOG')
+  check('pinterest → MVP-PINTEREST', channelForSource('pinterest') === 'MVP-PINTEREST')
+  // Each social platform now gets its OWN group (not a lumped "Social").
+  check('facebook → MVP-FACEBOOK', channelForSource('facebook') === 'MVP-FACEBOOK')
+  check('twitter → MVP-TWITTER', channelForSource('twitter') === 'MVP-TWITTER')
+  check('x → MVP-TWITTER', channelForSource('x') === 'MVP-TWITTER')
+  check('threads → MVP-THREADS', channelForSource('threads') === 'MVP-THREADS')
+  check('linkedin → MVP-LINKEDIN', channelForSource('linkedin') === 'MVP-LINKEDIN')
+  check('telegram → MVP-TELEGRAM', channelForSource('telegram') === 'MVP-TELEGRAM')
+  check('bluesky → MVP-BLUESKY', channelForSource('bluesky') === 'MVP-BLUESKY')
+  check('instagram → MVP-INSTAGRAM', channelForSource('instagram') === 'MVP-INSTAGRAM')
+  check('tiktok → MVP-TIKTOK', channelForSource('tiktok') === 'MVP-TIKTOK')
+  // Legacy blanket 'social' source (links minted before the per-channel split).
+  check('social (legacy) → MVP-SOCIAL', channelForSource('social') === 'MVP-SOCIAL')
+  check('epc → MVP-EPC', channelForSource('epc') === 'MVP-EPC')
+  check('scout → MVP-SCOUT', channelForSource('scout') === 'MVP-SCOUT')
+  check('video → MVP-YOUTUBE', channelForSource('video') === 'MVP-YOUTUBE')
+  check('youtube → MVP-YOUTUBE', channelForSource('youtube') === 'MVP-YOUTUBE')
+  check('11-char video id → MVP-YOUTUBE', channelForSource('dQw4w9WgXcQ') === 'MVP-YOUTUBE')
+  check('id with - and _ → MVP-YOUTUBE', channelForSource('a1_b2-c3D4E') === 'MVP-YOUTUBE')
+  check('unknown short token → MVP-GENERAL', channelForSource('promo') === 'MVP-GENERAL')
   // A source with punctuation Amazon's ascsubtag can carry; normalizeSource strips
   // spaces so this collapses and must not crash.
-  check('weird source → General', channelForSource('some random thing!') === 'General')
+  check('weird source → MVP-GENERAL', channelForSource('some random thing!') === 'MVP-GENERAL')
 }
 
 console.log('\ncleanGroupName — trim, collapse, cap')
