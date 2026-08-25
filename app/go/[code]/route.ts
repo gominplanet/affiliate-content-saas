@@ -15,11 +15,13 @@
 import { NextResponse, after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildPassportDestination, parseUserAgent, normalizeCountry } from '@/lib/passport-links'
+import { localAsinAvailable } from '@/lib/passport-marketplace'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const AMAZON_HOME = 'https://www.amazon.com'
+const AMAZON_HOME_HOST = 'www.amazon.com'
 
 export async function GET(req: Request, ctx: { params: Promise<{ code: string }> }) {
   const { code: raw } = await ctx.params
@@ -85,6 +87,19 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
       finalUrl = dest.url
       logCountry = dest.country
       marketplace = dest.marketplace
+      // Cross-marketplace guard: an Amazon ASIN often isn't listed in the
+      // visitor's local store (a US product 404s on amazon.ca). If we routed to a
+      // non-US store, verify the product is actually there; if not, fall back to
+      // the US store where the source ASIN lives — a working product page beats a
+      // dead local one. Cached, so only the first click per (asin, market) checks.
+      if (!dest.usedFallback && dest.marketplace !== AMAZON_HOME_HOST) {
+        const listed = await localAsinAvailable(admin, String(link.asin), dest.marketplace)
+        if (!listed) {
+          const usTag = (defaultTag || '').trim()
+          finalUrl = `${AMAZON_HOME}/dp/${String(link.asin)}${usTag ? `?tag=${encodeURIComponent(usTag)}` : ''}`
+          marketplace = AMAZON_HOME_HOST
+        }
+      }
       // Carry the explicit source to Amazon as ascsubtag so per-source (e.g. per
       // video) earnings attribution survives the geo-redirect. Amazon caps it at
       // 16 URL-safe chars; a referer-host source isn't ours to tag, so it's blank.
