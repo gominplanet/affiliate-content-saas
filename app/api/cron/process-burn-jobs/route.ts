@@ -48,21 +48,37 @@ export async function GET(request: Request) {
 
   // Atomic claim of one due job.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // NB: sticker_url (migration 139) and sticker_duration_sec (174) are NOT
+  // selected in the claim. They're fetched per-job below, so a database that
+  // hasn't applied those migrations degrades to "no sticker overlay" instead of
+  // 400-ing this claim on EVERY tick and halting all burn jobs (the same
+  // resilience pattern process-scheduled uses for its post-base columns).
   const { data: claimed, error: claimErr } = await admin
     .from('ig_burn_jobs')
     .update({ status: 'processing', claimed_at: nowIso })
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
-    .select('id,user_id,source_video_url,caption_text,style,position,sticker_url,product,sticker_duration_sec')
+    .select('id,user_id,source_video_url,caption_text,style,position,product')
     .order('scheduled_at', { ascending: true })
     .limit(1)
   if (claimErr) return NextResponse.json({ error: `Claim failed: ${claimErr.message}` }, { status: 500 })
 
-  // sticker_url isn't in the generated types until codegen reruns post-139 —
-  // cast through it (same pattern used elsewhere for fresh columns).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const job: BurnJob | undefined = ((claimed ?? []) as any[])[0] as BurnJob | undefined
   if (!job) return NextResponse.json({ ok: true, processed: 0 })
+
+  // Sticker fields (migrations 139/174), fetched separately so a missing
+  // migration can't take down the claim. Absent columns → no sticker, job still runs.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: sticker } = await (admin as any).from('ig_burn_jobs').select('sticker_url,sticker_duration_sec').eq('id', job.id).maybeSingle()
+    if (sticker) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(job as any).sticker_url = sticker.sticker_url ?? null
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(job as any).sticker_duration_sec = sticker.sticker_duration_sec ?? null
+    }
+  } catch { /* columns absent → no sticker overlay */ }
 
   try {
     // 0. Check the destination FIRST. This read used to sit after the burn and
