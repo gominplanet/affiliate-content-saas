@@ -35,9 +35,6 @@ import type { Tier } from '@/lib/tier'
 const PAID = ['creator', 'amazon', 'studio', 'pro', 'admin'] as const
 const PRO = ['pro', 'admin'] as const
 const STUDIO_UP = ['studio', 'pro', 'admin'] as const
-// Passport Links is offered to the Amazon-Influencer plan too (its whole pitch is
-// earning more from Amazon links), on top of Studio + Pro.
-const PASSPORT_TIERS = ['amazon', 'studio', 'pro', 'admin'] as const
 
 export interface NavAccessRule {
   /** Sidebar label, so this table reads like the menu it controls. */
@@ -100,7 +97,10 @@ export const NAV_ACCESS = {
   },
   passport: {
     label: 'Passport Links',
-    tiers: PASSPORT_TIERS,
+    // Amazon-Influencer plan too (its pitch is earning more from Amazon links),
+    // on top of Studio + Pro. Inlined (not a const) so scripts/test-feature-access
+    // can statically read the tiers.
+    tiers: ['amazon', 'studio', 'pro', 'admin'],
     // Every Passport route (settings, link-mint, analytics) + the shared
     // passportLinkForUser() gate call canUsePassport(). This matters because the
     // free SCOUT extension can hit POST /api/passport/link — without the server
