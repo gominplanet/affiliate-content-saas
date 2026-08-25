@@ -85,9 +85,9 @@ export default function PassportPage() {
       {canUse === false ? (
         <div className="card p-8 text-center">
           <Globe size={28} className="mx-auto mb-3 text-[#7C3AED]" />
-          <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Passport Links is a Studio &amp; Pro feature</p>
+          <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Passport Links is a paid feature</p>
           <p className="text-[13px] mt-1 max-w-md mx-auto" style={{ color: 'var(--text-3)' }}>
-            Geo-routing links, the click dashboard, and one-paste link creation are available on the Studio and Pro plans. Upgrade to turn every link into a worldwide-earning Passport Link.
+            Geo-routing links, the click dashboard, and one-paste link creation are available on the Amazon, Studio, and Pro plans. Upgrade to turn every link into a worldwide-earning Passport Link.
           </p>
           <a href="/pricing" className="inline-flex items-center gap-1.5 mt-4 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: '#7C3AED' }}>
             See plans

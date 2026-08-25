@@ -60,7 +60,7 @@ export default function PassportConnectionCard() {
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Passport Links</p>
             <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
               style={on ? { background: 'rgba(52,199,89,0.18)', color: '#1f7a4d' } : { background: 'var(--surface-2, #f5f5f7)', color: '#86868b' }}>
-              {loading ? '…' : !canUse ? 'Studio & Pro' : enabled ? 'On' : 'Off'}
+              {loading ? '…' : !canUse ? 'Paid plans' : enabled ? 'On' : 'Off'}
             </span>
           </div>
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">Geo-route every Amazon link to the shopper&rsquo;s own country</p>
@@ -86,7 +86,7 @@ export default function PassportConnectionCard() {
       <div className="mt-2.5 flex items-center justify-between gap-2 flex-wrap">
         <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed flex-1 min-w-[180px]">
           {!canUse
-            ? 'Available on the Studio and Pro plans. When on, it routes every Amazon link by country automatically, so Geniuslink below is optional.'
+            ? 'Available on the Amazon, Studio, and Pro plans. When on, it routes every Amazon link by country automatically, so Geniuslink below is optional.'
             : enabled
               ? 'On, so every Amazon link MVP makes geo-routes by country and takes priority over Geniuslink below.'
               : 'Off, so MVP uses Geniuslink below (if connected) or your plain Associates tag.'}
