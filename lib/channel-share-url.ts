@@ -17,6 +17,19 @@
 
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { resolveGeniuslinkChannelGroupId, channelKey } from '@/lib/geniuslink-group'
+import { canUsePassport } from '@/lib/feature-access'
+import { normalizeTier } from '@/lib/tier'
+
+/** True when the creator has Passport Links ON (and is on a tier that can use it).
+ *  Passport is the "free, no per-click cost" router, so when it's on we stop
+ *  Geniuslink-wrapping share links — the creator opted out of Geniuslink. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function passportOn(supabase: any, userId: string): Promise<boolean> {
+  try {
+    const { data: ig } = await supabase.from('integrations').select('passport_links_enabled, tier').eq('user_id', userId).maybeSingle()
+    return !!ig?.passport_links_enabled && canUsePassport(normalizeTier(ig?.tier))
+  } catch { return false }
+}
 
 interface SharePost {
   id: string
@@ -48,6 +61,8 @@ export async function channelShareUrl(opts: ChannelShareOpts): Promise<string | 
   const key = channelKey(opts.channel)
   // No destination, no creds, or a channel we don't group → best plain URL.
   if (!base || !apiKey || !apiSecret || !key) return fallback
+  // Passport on → share the plain blog URL, no geni.us (and no Geniuslink click cost).
+  if (await passportOn(supabase, userId)) return base
 
   // Cached per-channel short link on the post.
   const cache = (post.geniuslink_channel_urls && typeof post.geniuslink_channel_urls === 'object')
@@ -95,6 +110,8 @@ export async function channelWrapLink(opts: ChannelWrapOpts): Promise<string> {
   if (/geni\.us/i.test(destination)) return destination
   const key = channelKey(opts.channel)
   if (!apiKey || !apiSecret || !key) return destination
+  // Passport on → don't Geniuslink-wrap; return the destination as-is.
+  if (await passportOn(supabase, userId)) return destination
   try {
     const groupId = await resolveGeniuslinkChannelGroupId({ supabase, userId, channel: key, apiKey, apiSecret })
     if (!groupId) return destination
