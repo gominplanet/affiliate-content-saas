@@ -17,6 +17,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { toUserMessage } from '@/lib/friendly-error'
 import { LAUNCH_PLATFORMS, type LaunchPlatform, type SocialKit } from '@/lib/social-launch-kit'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
+import { getDefaultSite } from '@/lib/wordpress-sites'
 
 export const maxDuration = 120
 
@@ -36,13 +37,21 @@ export async function POST(request: Request) {
   if (!tierAllowsFinders(tier)) {
     return NextResponse.json({ error: 'The Social Launch Kit is available on any paid plan — upgrade to unlock it.' }, { status: 403 })
   }
-  // ONE generation per platform for everyone except admins. Once a kit is saved,
-  // regenerating is admin-only — the saved kit stays on the page to use anytime.
+  // Per-site (per-profile): a multi-site creator gets a separate kit for each
+  // site. The kit already personalizes from the ACTIVE site's identity, so we key
+  // storage + the one-shot lock on the active site too. Legacy (no sites) → null.
+  const site = await getDefaultSite(supabase, user.id)
+  const siteId = site && site.id !== 'legacy' ? (site.id as string) : null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scope = (q: any) => (siteId ? q.eq('site_id', siteId) : q.is('site_id', null))
+
+  // ONE generation per platform PER SITE for everyone except admins. Once a kit is
+  // saved, regenerating is admin-only — the saved kit stays on the page to use anytime.
   const isAdmin = tier === 'admin'
   if (!isAdmin) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingKit } = await (supabase as any).from('social_launch_kits')
-      .select('kit').eq('user_id', user.id).eq('platform', platform).maybeSingle()
+    const { data: existingKit } = await scope((supabase as any).from('social_launch_kits')
+      .select('kit').eq('user_id', user.id).eq('platform', platform)).maybeSingle()
     if (existingKit?.kit) {
       return NextResponse.json({
         error: 'You\'ve already generated this kit. It\'s saved on the page to use anytime — regenerating is available to admins only.',
@@ -144,12 +153,20 @@ Everything must be specific to THIS brand and niche.`
       .slice(0, spec.boards)
   }
 
-  // Save this platform's copy so it persists (one saved slot per user+platform).
-  // Only touches `kit` — leaves any saved banner/avatar URLs intact. Best-effort.
+  // Save this platform's copy for the ACTIVE site so it persists. Manual upsert
+  // (uniqueness now spans site_id via a coalesce index that onConflict can't
+  // target). Only touches `kit` — leaves any saved banner/avatar URLs intact.
   try {
+    const now = new Date().toISOString()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('social_launch_kits')
-      .upsert({ user_id: user.id, platform, kit, updated_at: new Date().toISOString() }, { onConflict: 'user_id,platform' })
+    const { data: existing } = await scope((supabase as any).from('social_launch_kits').select('user_id').eq('user_id', user.id).eq('platform', platform)).maybeSingle()
+    if (existing) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await scope((supabase as any).from('social_launch_kits').update({ kit, updated_at: now }).eq('user_id', user.id).eq('platform', platform))
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('social_launch_kits').insert({ user_id: user.id, site_id: siteId, platform, kit, updated_at: now })
+    }
   } catch { /* saving is best-effort — never block the response */ }
 
   return NextResponse.json({ ok: true, platform, kit })
