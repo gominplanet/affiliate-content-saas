@@ -10,6 +10,8 @@ import { createWordPressService } from '@/services/wordpress'
 import { scrubBanned } from '@/lib/scrub'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { channelWrapLink } from '@/lib/channel-share-url'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 
 const GENERIC = /^(blog|uncategorized|general|news|misc|other|posts?)$/i
 
@@ -62,16 +64,24 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
     throw new PinPublishError('This post has no blog URL to link the pin to.', 400)
   }
   let destLink = useOverride ? override : blogLink
-  // Per-channel Geniuslink: route the pin's link into MVP-PINTEREST so pin
-  // clicks attribute to Pinterest. Best-effort — no creds / already a geni.us
-  // link / API hiccup leaves the link untouched. (A product-override link that's
-  // already a geni.us keeps its existing group; the blog link is the common case.)
+  // Cloak the pin's link per the creator's ONE chosen Link style. Geniuslink →
+  // route into MVP-PINTEREST so pin clicks attribute to Pinterest. Bitly → shorten
+  // the blog link (an override is already the creator's resolved product link).
+  // Passport / Direct → leave the link plain: Pinterest prefers unmasked
+  // destinations and a passport forwarder adds nothing to a blog URL. Best-effort:
+  // any hiccup leaves the link untouched.
   try {
-    destLink = await channelWrapLink({
-      supabase: createAdminClient(), destination: destLink, channel: 'pinterest',
-      userId: p.user_id, apiKey: ig?.geniuslink_api_key, apiSecret: ig?.geniuslink_api_secret,
-      label: (p.title as string) || 'Pin',
-    })
+    const cfg = await getLinkStyle(createAdminClient(), p.user_id)
+    if (cfg.style === 'geniuslink') {
+      destLink = await channelWrapLink({
+        supabase: createAdminClient(), destination: destLink, channel: 'pinterest',
+        userId: p.user_id, apiKey: ig?.geniuslink_api_key, apiSecret: ig?.geniuslink_api_secret,
+        label: (p.title as string) || 'Pin',
+      })
+    } else if (cfg.style === 'bitly' && cfg.bitlyToken && !useOverride) {
+      const short = await shortenBitly(cfg.bitlyToken, destLink)
+      if (short) destLink = short
+    }
   } catch { /* keep destLink */ }
 
   // Never fall back to a raw (unscrubbed) value — that would leak the

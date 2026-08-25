@@ -46,6 +46,8 @@ import { fetchKeepaProductStats, buildPriceContext, buildPriceSnapshotHtml } fro
 import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportLinkForUser } from '@/lib/passport-links'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { composeWithGptImage, composeWithNanoBanana, rehostToFal, GPT_IMAGE_COMPOSE_LOW_COST_MODEL } from '@/lib/thumbnail-generators'
 import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
@@ -625,15 +627,28 @@ export async function POST(req: Request) {
   // it through Geniuslink when connected) itself. The engine used to emit a bare
   // /dp/ link and assume a WordPress plugin would wrap it; on sites without one
   // (or without geniuslink), those clicks earned nothing.
-  // Passport Links (geo-routing) wins WHEN ON; otherwise fall through to the
-  // existing tag/Geniuslink resolver — so turning it off changes nothing here.
-  const dealAffiliateUrl = (await passportLinkForUser(supabase, user.id, product.asin, { source: 'blog', title: product.title }))
-    || await resolveDealAffiliateUrl(
+  // Apply the creator's ONE chosen Link style (Passport / Bitly / Geniuslink /
+  // Direct), so a deal post's link matches every other surface. getLinkStyle is
+  // the single source of truth; the tagged link is the fallback that always earns.
+  const dealTagged = dealIntg?.amazon_associates_tag
+    ? `https://www.amazon.com/dp/${product.asin}?tag=${encodeURIComponent(dealIntg.amazon_associates_tag)}`
+    : `https://www.amazon.com/dp/${product.asin}`
+  const dealStyle = await getLinkStyle(supabase, user.id)
+  let dealAffiliateUrl = dealTagged
+  if (dealStyle.style === 'passport') {
+    const p = await passportLinkForUser(supabase, user.id, product.asin, { source: 'blog', title: product.title })
+    if (p) dealAffiliateUrl = p
+  } else if (dealStyle.style === 'bitly' && dealStyle.bitlyToken) {
+    const short = await shortenBitly(dealStyle.bitlyToken, dealTagged)
+    if (short) dealAffiliateUrl = short
+  } else if (dealStyle.style === 'geniuslink') {
+    dealAffiliateUrl = await resolveDealAffiliateUrl(
       product.asin, product.title || '',
       dealIntg?.amazon_associates_tag ?? null,
       dealIntg?.geniuslink_api_key ?? null,
       dealIntg?.geniuslink_api_secret ?? null,
     )
+  }
 
   const writerPrompt = buildDealWriterPrompt({
     product,

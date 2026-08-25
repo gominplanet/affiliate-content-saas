@@ -23,7 +23,7 @@ import { publishMedia, refreshLongLivedToken, getMediaCount } from '@/services/i
 import { recordReachSample } from '@/lib/reach-pulse'
 import { checkInstagramPace, logSocialPublish } from '@/lib/social-pace'
 import { cloudinaryConfigured, overlayCaptionOnVideo } from '@/services/cloudinary'
-import { createGeniuslinkService } from '@/services/geniuslink'
+import { resolveCloakedLink } from '@/lib/link-cloak'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -175,16 +175,13 @@ export async function POST(request: NextRequest) {
     const asinMatch = ytTitle ? ytTitle.match(ASIN_RE) : null
     if (asinMatch) {
       const asin = asinMatch[1]
-      if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
-        try {
-          const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
-          affiliateUrl = await genius.createAsinLink(asin, post.title || asin)
-        } catch {
-          affiliateUrl = `https://www.amazon.com/dp/${asin}${intRow?.amazon_associates_tag ? `?tag=${intRow.amazon_associates_tag}` : ''}`
-        }
-      } else {
-        affiliateUrl = `https://www.amazon.com/dp/${asin}${intRow?.amazon_associates_tag ? `?tag=${intRow.amazon_associates_tag}` : ''}`
-      }
+      // The creator's ONE chosen Link style, minted into the Instagram channel
+      // group when Geniuslink (Passport geo-routes; Bitly/Direct as chosen).
+      const igTagged = `https://www.amazon.com/dp/${asin}${intRow?.amazon_associates_tag ? `?tag=${intRow.amazon_associates_tag}` : ''}`
+      affiliateUrl = await resolveCloakedLink({
+        supabase, userId: user.id, destination: igTagged, asin,
+        channel: 'instagram', source: 'instagram', label: post.title || asin,
+      })
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

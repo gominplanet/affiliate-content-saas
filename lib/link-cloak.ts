@@ -62,16 +62,22 @@ export async function getLinkStyle(supabase: Db, userId: string): Promise<LinkSt
   try {
     const { data: ig } = await supabase
       .from('integrations')
-      .select('passport_links_enabled, tier, blog_social_link_mode, bitly_access_token, geniuslink_api_key, geniuslink_api_secret')
+      .select('passport_links_enabled, tier, blog_social_link_mode, wrap_blog_geniuslink, bitly_access_token, geniuslink_api_key, geniuslink_api_secret')
       .eq('user_id', userId).maybeSingle()
     if (!ig) return empty
     const tier = (ig.tier as string | null) ?? null
     const bitlyToken = (ig.bitly_access_token as string | null)?.trim() || null
     const geniuslinkKey = (ig.geniuslink_api_key as string | null)?.trim() || null
     const geniuslinkSecret = (ig.geniuslink_api_secret as string | null)?.trim() || null
+    // Legacy rows predate blog_social_link_mode: honor the old boolean the same
+    // way /api/affiliate-links/save GET does, so a creator who turned on
+    // Geniuslink before the chooser existed still resolves to 'geniuslink' (and
+    // the chooser UI + the resolvers agree on their style).
+    const rawMode = (ig.blog_social_link_mode as string | null) || ''
+    const mode = rawMode || (ig.wrap_blog_geniuslink === true ? 'geniuslink' : 'direct')
     const style = pickLinkStyle({
       passportEligible: !!ig.passport_links_enabled && canUsePassport(normalizeTier(tier)),
-      mode: ig.blog_social_link_mode as string | null,
+      mode,
       hasBitly: !!bitlyToken,
       hasGeniuslink: !!(geniuslinkKey && geniuslinkSecret),
     })

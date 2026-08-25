@@ -4,11 +4,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { BrandProfileGuide } from '@/components/guide/tool-guides'
-import { Save, Check, Plus, Trash2, Upload, X, RefreshCw, Loader2, AlertCircle } from 'lucide-react'
+import { Save, Check, Plus, Trash2, Upload, X, RefreshCw, Loader2, AlertCircle, Globe, ArrowRight } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
 import GeniuslinkGroupsPanel from '@/components/brand/GeniuslinkGroupsPanel'
-import PassportConnectionCard from '@/components/brand/PassportConnectionCard'
+import LinkStyleTiles from '@/components/brand/LinkStyleTiles'
 import { GENIUSLINK_SIGNUP_URL, GENIUSLINK_PITCH } from '@/lib/geniuslink-signup'
 
 async function uploadBrandImage(
@@ -380,12 +380,47 @@ export default function BrandPage() {
   // click), or 'bitly' (free short link, needs the creator's Bitly token).
   const [blogSocialLinkMode, setBlogSocialLinkMode] = useState<'direct' | 'geniuslink' | 'bitly'>('direct')
   const [bitlyToken, setBitlyToken] = useState('')
-  // Passport ON overrides the link-style choice (it becomes the universal cloaker),
-  // so the Link style radios are shown paused when it's on. Read once for the copy.
+  // Passport ON is one of the four link styles and, when picked, becomes the
+  // universal cloaker (it overrides the stored mode below). Its on/off flag saves
+  // instantly to /api/passport (it has no fields to fill), while geniuslink/bitly/
+  // direct persist their mode + creds through the main Save button like before.
   const [passportEnabled, setPassportEnabled] = useState(false)
+  const [passportCanUse, setPassportCanUse] = useState(false)
+  const [passportSaving, setPassportSaving] = useState(false)
   useEffect(() => {
-    fetch('/api/passport').then(r => r.json()).then(d => { if (d?.ok) setPassportEnabled(!!d.enabled) }).catch(() => {})
+    fetch('/api/passport').then(r => r.json()).then(d => { if (d?.ok) { setPassportEnabled(!!d.enabled); setPassportCanUse(!!d.canUse) } }).catch(() => {})
   }, [])
+  // The single "which cloaker does MVP use" value the chooser reflects: Passport
+  // when it's on (it wins), otherwise the stored blog/social link mode.
+  const selectedLinkStyle: 'passport' | 'geniuslink' | 'bitly' | 'direct' = passportEnabled ? 'passport' : blogSocialLinkMode
+  // Pick a link style from the four tiles. Passport toggles instantly (server flag,
+  // tier-gated); the other three flip the local mode and turn Passport off, and
+  // persist when the user hits Save. Only one can be active at a time.
+  async function selectLinkStyle(style: 'passport' | 'geniuslink' | 'bitly' | 'direct') {
+    if (passportSaving) return
+    if (style === 'passport') {
+      if (!passportCanUse) { toast.info('Passport Links is on the Amazon, Studio, and Pro plans.'); return }
+      if (passportEnabled) return
+      setPassportEnabled(true); setPassportSaving(true) // optimistic
+      try {
+        const res = await fetch('/api/passport', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true }) })
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok || !d.ok) throw new Error(d.error || 'save failed')
+        toast.success('Passport Links is now your link style. It is used everywhere MVP builds a link.')
+      } catch { setPassportEnabled(false); toast.error('Could not switch to Passport Links. Try again.') }
+      finally { setPassportSaving(false) }
+      return
+    }
+    // A non-Passport style: turn Passport off (instant) if it was on, then set the mode.
+    if (passportEnabled) {
+      setPassportEnabled(false); setPassportSaving(true)
+      try {
+        await fetch('/api/passport', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: false }) })
+      } catch { /* the mode still changes locally; Save persists it */ }
+      finally { setPassportSaving(false) }
+    }
+    setBlogSocialLinkMode(style)
+  }
   // Where a Clip Factory Pinterest pin links: auto (blog post → video →
   // homepage), the blog post, the source YouTube video, or the blog homepage.
   const [pinterestLinkPref, setPinterestLinkPref] = useState<'auto' | 'blog_post' | 'youtube' | 'homepage'>('auto')
@@ -1025,276 +1060,308 @@ export default function BrandPage() {
               (/brand#affiliate) jumps to; scroll-mt offsets the sticky header. */}
           <div id="affiliate" className="card p-6 scroll-mt-24">
             <div className="flex items-center gap-1.5 mb-1">
-              <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Important Connections</h2>
+              <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Link style &amp; connections</h2>
               <InfoTip>
-                The accounts that make your affiliate links earn and your SEO measurable. When Passport Links is on it routes every Amazon link to the shopper&apos;s local store for you; Geniuslink below is an optional alternative router, and your Amazon tag is the fallback. Search Console reports how your posts rank.
+                Pick one link style and MVP uses it to build every affiliate link, everywhere: blog articles, YouTube descriptions, and social posts. Your Amazon tag is the earning ID behind them, and Search Console reports how your posts rank.
               </InfoTip>
             </div>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              The key accounts behind monetization and SEO. Passport Links (when on) routes your Amazon links automatically; Geniuslink below is an optional alternative router, your Amazon tag is the fallback, and Google Search Console powers your indexing and ranking data.
+              Choose how MVP builds your links, add your Amazon Associates tag so they earn, and connect Google Search Console for indexing and ranking data.
             </p>
 
-            {/* Passport Links — the built-in Amazon-link router. Switch lives here
-                too since the copy names it as the primary router; full setup +
-                per-country tags + analytics stay on /passport. */}
-            <PassportConnectionCard />
+            {/* THE chooser. One link style at a time; the pick decides the cloaker
+                MVP uses for EVERY link it makes for this creator. Passport toggles
+                instantly (server flag); the others set the mode and save with the
+                page's Save button. Setup for the selected style renders right below. */}
+            <div className="mb-2">
+              <span className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your link style</span>
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-2.5">
+                Pick one. MVP uses it to build every link across your blog, YouTube descriptions, and social posts.
+              </p>
+              <LinkStyleTiles
+                selected={selectedLinkStyle}
+                passportCanUse={passportCanUse}
+                busy={passportSaving}
+                onSelect={selectLinkStyle}
+              />
+              <p className="mt-2 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                <b>Geo-routing</b> (sending an international shopper to their own country&rsquo;s Amazon) only comes with <b>Passport</b> (free) or <b>Genius Links</b> (paid). Bitly and Direct send everyone to the same store. A change applies to content generated afterward.
+              </p>
+            </div>
 
-            {/* Geniuslink */}
+            {/* Setup for the selected style. Only the chosen one shows its fields. */}
             <div className="rounded-xl border border-gray-200 dark:border-white/10 p-4 mb-3">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#7C3AED]/10 flex-shrink-0">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</p>
-                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Geo-targeted short links from any ASIN</p>
-                </div>
-                {/* Badge reflects the LIVE test, not just "fields non-empty". */}
-                {geniuslinkKey && geniuslinkSecret && (
-                  glTest.status === 'ok' ? (
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-[#34c759] flex-shrink-0">
-                      <Check size={12} /> Connected
-                    </span>
-                  ) : glTest.status === 'fail' ? (
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-[#ff3b30] flex-shrink-0">
-                      <X size={12} /> Rejected
-                    </span>
-                  ) : glTest.status === 'testing' ? (
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-[#86868b] flex-shrink-0">
-                      <Loader2 size={12} className="animate-spin" /> Testing…
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-[#ff9500] flex-shrink-0">
-                      Not verified
-                    </span>
-                  )
-                )}
-              </div>
-              {!(geniuslinkKey && geniuslinkSecret) && (
-                <div className="mb-3 rounded-lg px-3 py-2.5" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.25)' }}>
-                  <p className="text-[12px] font-semibold text-[#7C3AED]">Don&apos;t have Geniuslink yet?</p>
-                  <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">{GENIUSLINK_PITCH}</p>
-                  <a href={GENIUSLINK_SIGNUP_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 text-[11px] font-semibold px-3 py-1.5 rounded-md bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
-                    Get Geniuslink →
+              {selectedLinkStyle === 'passport' && (
+                <div>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg,#7C3AED,#34c759)', color: '#fff' }}>
+                      <Globe size={15} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Passport Links is on</p>
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Every Amazon link MVP builds geo-routes to the shopper&rsquo;s country. Free, no per-click cost.</p>
+                    </div>
+                    {passportSaving ? <Loader2 size={14} className="animate-spin text-[#7C3AED] flex-shrink-0" /> : <Check size={16} className="text-[#34c759] flex-shrink-0" />}
+                  </div>
+                  <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-2">
+                    Your US Associates tag (below) earns on US clicks. To earn on other countries too, add a per-country Associates tag for each store on the Passport page. Without a country&rsquo;s tag, shoppers still reach their local Amazon, just under your US tag.
+                  </p>
+                  <a href="/passport" className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: '#7C3AED' }}>
+                    Manage Passport Links &amp; country tags <ArrowRight size={11} />
                   </a>
                 </div>
               )}
-              {/* Free alternative — Amazon's own geo-routing. Shown to creators
-                  who haven't connected Geniuslink, since it's the no-cost path to
-                  the same international routing. */}
-              {!(geniuslinkKey && geniuslinkSecret) && (
-                <div className="mb-3 rounded-lg px-3 py-2.5" style={{ background: 'rgba(52,199,89,0.06)', border: '1px solid rgba(52,199,89,0.28)' }}>
-                  <p className="text-[12px] font-semibold" style={{ color: '#1f7a4d' }}>Prefer a free option? Amazon OneLink</p>
-                  <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
-                    OneLink is Amazon&apos;s own free version of the same country-routing. A shopper in the UK, Canada or the EU clicking your link is sent to <em>their</em> local Amazon store with your matching tag, so you earn on international clicks instead of losing them. It works on your normal Amazon links, so you don&apos;t need Geniuslink. You set it up once inside your Amazon account, not in MVP.
-                  </p>
-                  <details className="mt-2 group">
-                    <summary className="text-[11px] font-semibold cursor-pointer list-none inline-flex items-center gap-1 hover:underline" style={{ color: '#1f7a4d' }}>
-                      How to set up OneLink (free) →
-                    </summary>
-                    <ol className="mt-2 pl-4 list-decimal space-y-1.5 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-                      <li>Log in to <a href="https://affiliate-program.amazon.com/" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: '#1f7a4d' }}>Amazon Associates</a> (your US account) and open <strong>Tools → OneLink</strong>.</li>
-                      <li>Follow Amazon&apos;s prompts to <strong>link your international stores</strong> (UK, Canada, and the EU stores you want). Amazon connects each marketplace and maps your tag for it. If you don&apos;t have an Associates account in a country yet, Amazon lets you create it during this step.</li>
-                      <li>Click <strong>Activate</strong> to turn OneLink on. That&apos;s the whole Amazon side.</li>
-                      <li>Back here in MVP, leave your link style on <strong>Direct</strong> (or just don&apos;t connect Geniuslink), so your links stay unwrapped and OneLink can route them.</li>
-                      <li>Post as normal, then check your <strong>Amazon Associates earnings report</strong> after a week or two. International commissions starting to appear means it&apos;s working.</li>
-                    </ol>
-                  </details>
-                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
-                    Heads up: OneLink is most reliable on Amazon&apos;s own short links and on your website. On a plain link posted straight to social it can be hit or miss depending on the shopper, so treat this as a free test and judge it by your international earnings. If you want guaranteed routing on every post, that&apos;s what Geniuslink above does (paid).
-                  </p>
-                </div>
-              )}
-              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
-                In Geniuslink, open <a href="https://my.geni.us/tools" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Tools → &ldquo;Integrate with our API&rdquo;</a>, click <strong>Add an API key</strong>, then copy the API Key and API Secret here. (API access requires a paid Geniuslink plan.)
-              </p>
-              <div className="flex flex-col gap-2">
+
+              {selectedLinkStyle === 'geniuslink' && (
                 <div>
-                  <label htmlFor="brand-geniuslink-key" className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Key</label>
-                  <input
-                    id="brand-geniuslink-key"
-                    name="geniuslink-key"
-                    type="text"
-                    value={geniuslinkKey}
-                    onChange={e => { setGeniuslinkKey(e.target.value); setGlTest({ status: 'idle' }) }}
-                    placeholder="e.g. e353413c5f52..."
-                    className="input-field text-xs font-mono"
-                  />
-                  {geniuslinkCredLooksWrong(geniuslinkKey) && glTest.status !== 'ok' && (
-                    <p className="mt-1 text-[10px] text-[#ff9500]">That doesn&apos;t look like a Geniuslink API key — it should be a long hex string like <code>e353413c5f52…</code>, not an email or store name.</p>
-                  )}
-                </div>
-                <div>
-                  <label htmlFor="brand-geniuslink-secret" className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Secret</label>
-                  <input
-                    id="brand-geniuslink-secret"
-                    name="geniuslink-secret"
-                    type="password"
-                    value={geniuslinkSecret}
-                    onChange={e => { setGeniuslinkSecret(e.target.value); setGlTest({ status: 'idle' }) }}
-                    placeholder="Your Geniuslink API secret"
-                    className="input-field text-xs font-mono"
-                  />
-                  {geniuslinkCredLooksWrong(geniuslinkSecret) && glTest.status !== 'ok' && (
-                    <p className="mt-1 text-[10px] text-[#ff9500]">That doesn&apos;t look like a Geniuslink API secret — copy the exact Secret from Geniuslink → Tools → &ldquo;Integrate with our API&rdquo;.</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Universal link style. When Passport is OFF, this is the cloaker
-                  MVP uses for EVERY link it makes (blog, YouTube, social). When
-                  Passport is ON, it overrides this (shown disabled below). */}
-              <div className="mt-3">
-                <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Link style</span>
-                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-2">
-                  How MVP cloaks <b>every</b> link it makes for you, across your blog articles, YouTube descriptions, and social posts. {passportEnabled ? 'Passport Links is ON, so it is used everywhere and this choice is paused.' : 'Pick one and it is used everywhere.'}
-                </p>
-                <div className="flex flex-col gap-2" style={passportEnabled ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
-                  {([
-                    { key: 'direct', label: 'Direct (free)', desc: 'Plain tagged links, no shortener or click cost. No geo-routing — everyone lands on the same Amazon store.' },
-                    { key: 'geniuslink', label: 'Geniuslink', desc: 'Branded geni.us links that geo-route each shopper to their country. Uses your Geniuslink key above and costs a click each time.' },
-                    { key: 'bitly', label: 'Bitly (free)', desc: 'Free short links with click stats from your own Bitly account. No geo-routing.' },
-                  ] as const).map(opt => {
-                    const on = blogSocialLinkMode === opt.key
-                    return (
-                      <label key={opt.key} className="flex items-start gap-2.5 cursor-pointer select-none rounded-lg border px-3 py-2"
-                        style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgba(124,58,237,0.06)' : 'transparent' }}>
-                        <input
-                          type="radio"
-                          name="blog-social-link-mode"
-                          checked={on}
-                          onChange={() => setBlogSocialLinkMode(opt.key)}
-                          className="mt-0.5 w-4 h-4 accent-[#7C3AED]"
-                        />
-                        <span>
-                          <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{opt.label}</span>
-                          <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93]">{opt.desc}</span>
-                        </span>
-                      </label>
-                    )
-                  })}
-                </div>
-                {!passportEnabled && blogSocialLinkMode === 'bitly' && (
-                  <div className="mt-2">
-                    <input
-                      name="bitly-token"
-                      type="password"
-                      value={bitlyToken}
-                      onChange={e => setBitlyToken(e.target.value)}
-                      placeholder="Bitly access token"
-                      className="input-field text-xs font-mono"
-                    />
-                    <p className="mt-1 text-[10px] text-[#86868b] dark:text-[#8e8e93]">Bitly → Settings → API → Generate token. Paste the generic access token here.</p>
-                  </div>
-                )}
-                <p className="mt-2 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
-                  <b>Geo-routing</b> (sending an international shopper to their own country&rsquo;s Amazon) only comes with <b>Passport</b> (free) or <b>Geniuslink</b> (paid). Direct and Bitly send everyone to the same store. Applies to content generated after you change it.
-                </p>
-              </div>
-
-              {/* Where a Clip Factory Pinterest video pin links. Separate from the
-                  blog-link mode above — this is the destination on the pin itself. */}
-              <div className="mt-4">
-                <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Pinterest pins link to</span>
-                <select
-                  value={pinterestLinkPref}
-                  onChange={e => setPinterestLinkPref(e.target.value as typeof pinterestLinkPref)}
-                  className="input-field text-xs"
-                >
-                  <option value="auto">Smart (blog post if there is one, else the YouTube video)</option>
-                  <option value="blog_post">The blog post for the video</option>
-                  <option value="youtube">The YouTube video the clip came from</option>
-                  <option value="homepage">My blog homepage</option>
-                </select>
-                <p className="mt-1 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
-                  When you pin a Clip Factory short to Pinterest, this is where the pin sends people. Falls back to your blog homepage if the chosen target isn&rsquo;t available. Never an affiliate redirect (Pinterest doesn&rsquo;t allow it).
-                </p>
-              </div>
-
-              {/* Live "does it actually work?" test — the real gate. Turns a
-                  wrong key/secret into an immediate ✗ instead of a silent 401
-                  the user only hits later when generating posts. */}
-              {geniuslinkKey && geniuslinkSecret && (
-                <div className="mt-2 flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={testGeniuslink}
-                    disabled={glTest.status === 'testing'}
-                    className="text-[11px] font-medium px-3 py-1.5 rounded-md border border-gray-200 dark:border-white/20 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED] hover:bg-[#7C3AED]/5 disabled:opacity-60 flex items-center gap-1.5"
-                  >
-                    {glTest.status === 'testing' ? <><Loader2 size={12} className="animate-spin" /> Testing…</> : 'Test connection'}
-                  </button>
-                  {glTest.status === 'ok' && (
-                    <span className="text-[11px] font-medium text-[#34c759] flex items-center gap-1">
-                      <Check size={12} /> Working{typeof glTest.groupCount === 'number' ? ` — ${glTest.groupCount} group${glTest.groupCount === 1 ? '' : 's'} on your account` : ''}
-                    </span>
-                  )}
-                  {glTest.status === 'fail' && (
-                    <span className="text-[11px] text-[#ff3b30] flex items-start gap-1 min-w-0">
-                      <X size={12} className="flex-shrink-0 mt-0.5" /> <span>{glTest.message}</span>
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Group setup — verify the tracking groups MVP routes to. */}
-              {geniuslinkKey && geniuslinkSecret && (
-                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-white/10">
-                  <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#7C3AED]/10 flex-shrink-0">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Link tracking groups</p>
-                      <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-                        MVP routes YouTube descriptions to <code className="bg-[#f5f5f7] dark:bg-[#1c1c1e] px-1 rounded text-[10px]">MVP-YOUTUBE</code> and each blog post to a group named after the site&apos;s domain so you can see clicks by source. Verify they exist (or auto-create them).
+                      <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Connect Genius Links</p>
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Geo-targeted short links from any ASIN</p>
+                    </div>
+                    {/* Badge reflects the LIVE test, not just "fields non-empty". */}
+                    {geniuslinkKey && geniuslinkSecret && (
+                      glTest.status === 'ok' ? (
+                        <span className="flex items-center gap-1 text-[11px] font-medium text-[#34c759] flex-shrink-0">
+                          <Check size={12} /> Connected
+                        </span>
+                      ) : glTest.status === 'fail' ? (
+                        <span className="flex items-center gap-1 text-[11px] font-medium text-[#ff3b30] flex-shrink-0">
+                          <X size={12} /> Rejected
+                        </span>
+                      ) : glTest.status === 'testing' ? (
+                        <span className="flex items-center gap-1 text-[11px] font-medium text-[#86868b] flex-shrink-0">
+                          <Loader2 size={12} className="animate-spin" /> Testing…
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[11px] font-medium text-[#ff9500] flex-shrink-0">
+                          Not verified
+                        </span>
+                      )
+                    )}
+                  </div>
+                  {!(geniuslinkKey && geniuslinkSecret) && (
+                    <div className="mb-3 rounded-lg px-3 py-2.5" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.25)' }}>
+                      <p className="text-[12px] font-semibold text-[#7C3AED]">Don&apos;t have Geniuslink yet?</p>
+                      <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">{GENIUSLINK_PITCH}</p>
+                      <a href={GENIUSLINK_SIGNUP_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 text-[11px] font-semibold px-3 py-1.5 rounded-md bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
+                        Get Geniuslink →
+                      </a>
+                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
+                        Want geo-routing without paying per click? Switch to <b>Passport Links</b> above (free).
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={runGeniuslinkSetup}
-                      disabled={geniusSetupBusy}
-                      className="text-[11px] font-medium px-3 py-1.5 rounded-md bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60 flex-shrink-0"
-                    >
-                      {geniusSetupBusy ? 'Checking…' : (geniusSetup ? 'Re-check' : 'Verify groups')}
-                    </button>
-                  </div>
-                  {geniusSetup && (
-                    <div className="space-y-1.5">
-                      {geniusSetup.targets.length === 0 && (
-                        <p className="text-[11px] text-[#86868b]">
-                          {geniusSetup.hasCredentials
-                            ? 'Add a WordPress site to enable per-blog grouping.'
-                            : 'Add API key + secret above, then click "Verify groups".'}
-                        </p>
+                  )}
+                  <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
+                    In Geniuslink, open <a href="https://my.geni.us/tools" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Tools → &ldquo;Integrate with our API&rdquo;</a>, click <strong>Add an API key</strong>, then copy the API Key and API Secret here. (API access requires a paid Geniuslink plan.)
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    <div>
+                      <label htmlFor="brand-geniuslink-key" className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Key</label>
+                      <input
+                        id="brand-geniuslink-key"
+                        name="geniuslink-key"
+                        type="text"
+                        value={geniuslinkKey}
+                        onChange={e => { setGeniuslinkKey(e.target.value); setGlTest({ status: 'idle' }) }}
+                        placeholder="e.g. e353413c5f52..."
+                        className="input-field text-xs font-mono"
+                      />
+                      {geniuslinkCredLooksWrong(geniuslinkKey) && glTest.status !== 'ok' && (
+                        <p className="mt-1 text-[10px] text-[#ff9500]">That doesn&apos;t look like a Geniuslink API key — it should be a long hex string like <code>e353413c5f52…</code>, not an email or store name.</p>
                       )}
-                      {geniusSetup.targets.map(t => {
-                        const ok = t.status === 'cached' || t.status === 'matched-existing' || t.status === 'auto-created'
-                        return (
-                          <div key={`${t.kind}-${t.siteId ?? 'yt'}`} className="flex items-start gap-2 text-[11px]">
-                            <span className="mt-0.5 flex-shrink-0">{ok ? '✅' : '⚠️'}</span>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                                {t.label} <span className="text-[#86868b] font-normal">→ <code className="bg-[#f5f5f7] dark:bg-[#1c1c1e] px-1 rounded">{t.groupName}</code></span>
-                              </p>
-                              <p className="text-[#6e6e73] dark:text-[#ebebf0]">{t.detail}</p>
-                              {t.status === 'needs-manual-create' && (
-                                <a
-                                  href={geniusSetup.manualCreateUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-block mt-1 text-[#7C3AED] hover:underline font-medium"
-                                >
-                                  Open Geniuslink → create group named &quot;{t.groupName}&quot;
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
+                    </div>
+                    <div>
+                      <label htmlFor="brand-geniuslink-secret" className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Secret</label>
+                      <input
+                        id="brand-geniuslink-secret"
+                        name="geniuslink-secret"
+                        type="password"
+                        value={geniuslinkSecret}
+                        onChange={e => { setGeniuslinkSecret(e.target.value); setGlTest({ status: 'idle' }) }}
+                        placeholder="Your Geniuslink API secret"
+                        className="input-field text-xs font-mono"
+                      />
+                      {geniuslinkCredLooksWrong(geniuslinkSecret) && glTest.status !== 'ok' && (
+                        <p className="mt-1 text-[10px] text-[#ff9500]">That doesn&apos;t look like a Geniuslink API secret — copy the exact Secret from Geniuslink → Tools → &ldquo;Integrate with our API&rdquo;.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Live "does it actually work?" test — the real gate. Turns a
+                      wrong key/secret into an immediate ✗ instead of a silent 401. */}
+                  {geniuslinkKey && geniuslinkSecret && (
+                    <div className="mt-3 flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={testGeniuslink}
+                        disabled={glTest.status === 'testing'}
+                        className="text-[11px] font-medium px-3 py-1.5 rounded-md border border-gray-200 dark:border-white/20 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED] hover:bg-[#7C3AED]/5 disabled:opacity-60 flex items-center gap-1.5"
+                      >
+                        {glTest.status === 'testing' ? <><Loader2 size={12} className="animate-spin" /> Testing…</> : 'Test connection'}
+                      </button>
+                      {glTest.status === 'ok' && (
+                        <span className="text-[11px] font-medium text-[#34c759] flex items-center gap-1">
+                          <Check size={12} /> Working{typeof glTest.groupCount === 'number' ? ` — ${glTest.groupCount} group${glTest.groupCount === 1 ? '' : 's'} on your account` : ''}
+                        </span>
+                      )}
+                      {glTest.status === 'fail' && (
+                        <span className="text-[11px] text-[#ff3b30] flex items-start gap-1 min-w-0">
+                          <X size={12} className="flex-shrink-0 mt-0.5" /> <span>{glTest.message}</span>
+                        </span>
+                      )}
                     </div>
                   )}
+
+                  {/* Group setup — verify the tracking groups MVP routes to. */}
+                  {geniuslinkKey && geniuslinkSecret && (
+                    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-white/10">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Link tracking groups</p>
+                          <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+                            MVP routes YouTube descriptions to <code className="bg-[#f5f5f7] dark:bg-[#1c1c1e] px-1 rounded text-[10px]">MVP-YOUTUBE</code> and each blog post to a group named after the site&apos;s domain so you can see clicks by source. Verify they exist (or auto-create them).
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={runGeniuslinkSetup}
+                          disabled={geniusSetupBusy}
+                          className="text-[11px] font-medium px-3 py-1.5 rounded-md bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60 flex-shrink-0"
+                        >
+                          {geniusSetupBusy ? 'Checking…' : (geniusSetup ? 'Re-check' : 'Verify groups')}
+                        </button>
+                      </div>
+                      {geniusSetup && (
+                        <div className="space-y-1.5">
+                          {geniusSetup.targets.length === 0 && (
+                            <p className="text-[11px] text-[#86868b]">
+                              {geniusSetup.hasCredentials
+                                ? 'Add a WordPress site to enable per-blog grouping.'
+                                : 'Add API key + secret above, then click "Verify groups".'}
+                            </p>
+                          )}
+                          {geniusSetup.targets.map(t => {
+                            const ok = t.status === 'cached' || t.status === 'matched-existing' || t.status === 'auto-created'
+                            return (
+                              <div key={`${t.kind}-${t.siteId ?? 'yt'}`} className="flex items-start gap-2 text-[11px]">
+                                <span className="mt-0.5 flex-shrink-0">{ok ? '✅' : '⚠️'}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                                    {t.label} <span className="text-[#86868b] font-normal">→ <code className="bg-[#f5f5f7] dark:bg-[#1c1c1e] px-1 rounded">{t.groupName}</code></span>
+                                  </p>
+                                  <p className="text-[#6e6e73] dark:text-[#ebebf0]">{t.detail}</p>
+                                  {t.status === 'needs-manual-create' && (
+                                    <a
+                                      href={geniusSetup.manualCreateUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-block mt-1 text-[#7C3AED] hover:underline font-medium"
+                                    >
+                                      Open Geniuslink → create group named &quot;{t.groupName}&quot;
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {geniuslinkKey && geniuslinkSecret && <GeniuslinkGroupsPanel />}
                 </div>
               )}
 
-              {geniuslinkKey && geniuslinkSecret && <GeniuslinkGroupsPanel />}
+              {selectedLinkStyle === 'bitly' && (
+                <div>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#7C3AED]/10 flex-shrink-0">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88"/><path d="M14.47 14.48 20 20"/><path d="M8.12 8.12 12 12"/></svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Connect Bitly</p>
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Free short links with click stats. No geo-routing.</p>
+                    </div>
+                    {bitlyToken && <Check size={16} className="text-[#34c759] flex-shrink-0" />}
+                  </div>
+                  <label htmlFor="brand-bitly-token" className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Bitly access token</label>
+                  <input
+                    id="brand-bitly-token"
+                    name="bitly-token"
+                    type="password"
+                    value={bitlyToken}
+                    onChange={e => setBitlyToken(e.target.value)}
+                    placeholder="Bitly access token"
+                    className="input-field text-xs font-mono"
+                  />
+                  <p className="mt-1 text-[10px] text-[#86868b] dark:text-[#8e8e93]">Bitly → Settings → API → Generate token. Paste the generic access token here, then Save.</p>
+                </div>
+              )}
+
+              {selectedLinkStyle === 'direct' && (
+                <div>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#7C3AED]/10 flex-shrink-0">
+                      <ArrowRight size={15} className="text-[#7C3AED]" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Direct links</p>
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Plain tagged Amazon links, nothing in between.</p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
+                    Nothing to connect. MVP builds a plain Amazon link with your Associates tag (below). Everyone lands on the same store, so there&rsquo;s no per-click cost and no geo-routing.
+                  </p>
+                  {/* Amazon's own free geo-routing — the no-cost path to international
+                      routing while staying on Direct links. */}
+                  <div className="rounded-lg px-3 py-2.5" style={{ background: 'rgba(52,199,89,0.06)', border: '1px solid rgba(52,199,89,0.28)' }}>
+                    <p className="text-[12px] font-semibold" style={{ color: '#1f7a4d' }}>Want free geo-routing on Direct links? Amazon OneLink</p>
+                    <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
+                      OneLink is Amazon&apos;s own free country-routing. A shopper in the UK, Canada or the EU is sent to <em>their</em> local Amazon store with your matching tag, so you earn on international clicks instead of losing them. You set it up once inside your Amazon account, not in MVP. (For guaranteed routing on every post, switch to <b>Passport Links</b> above, also free.)
+                    </p>
+                    <details className="mt-2 group">
+                      <summary className="text-[11px] font-semibold cursor-pointer list-none inline-flex items-center gap-1 hover:underline" style={{ color: '#1f7a4d' }}>
+                        How to set up OneLink (free) →
+                      </summary>
+                      <ol className="mt-2 pl-4 list-decimal space-y-1.5 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+                        <li>Log in to <a href="https://affiliate-program.amazon.com/" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: '#1f7a4d' }}>Amazon Associates</a> (your US account) and open <strong>Tools → OneLink</strong>.</li>
+                        <li>Follow Amazon&apos;s prompts to <strong>link your international stores</strong> (UK, Canada, and the EU stores you want). Amazon connects each marketplace and maps your tag for it. If you don&apos;t have an Associates account in a country yet, Amazon lets you create it during this step.</li>
+                        <li>Click <strong>Activate</strong> to turn OneLink on. That&apos;s the whole Amazon side.</li>
+                        <li>Back here in MVP, keep your link style on <strong>Direct</strong> so your links stay unwrapped and OneLink can route them.</li>
+                        <li>Post as normal, then check your <strong>Amazon Associates earnings report</strong> after a week or two. International commissions starting to appear means it&apos;s working.</li>
+                      </ol>
+                    </details>
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
+                      Heads up: OneLink is most reliable on Amazon&apos;s own short links and on your website. On a plain link posted straight to social it can be hit or miss depending on the shopper, so treat this as a free test and judge it by your international earnings.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Where a Clip Factory Pinterest video pin links. Separate from the
+                link style above — this is the destination on the pin itself, and
+                is never an affiliate redirect (Pinterest doesn't allow it). */}
+            <div className="rounded-xl border border-gray-200 dark:border-white/10 p-4 mb-3">
+              <span className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Pinterest pins link to</span>
+              <select
+                value={pinterestLinkPref}
+                onChange={e => setPinterestLinkPref(e.target.value as typeof pinterestLinkPref)}
+                className="input-field text-xs"
+              >
+                <option value="auto">Smart (blog post if there is one, else the YouTube video)</option>
+                <option value="blog_post">The blog post for the video</option>
+                <option value="youtube">The YouTube video the clip came from</option>
+                <option value="homepage">My blog homepage</option>
+              </select>
+              <p className="mt-1 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                When you pin a Clip Factory short to Pinterest, this is where the pin sends people. Falls back to your blog homepage if the chosen target isn&rsquo;t available. Never an affiliate redirect (Pinterest doesn&rsquo;t allow it).
+              </p>
             </div>
 
             {/* Amazon Associates fallback */}
@@ -1305,7 +1372,7 @@ export default function BrandPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Amazon Associates tag</p>
-                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Fallback when Geniuslink isn&apos;t set</p>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">The earning ID behind every link, whatever style you pick</p>
                 </div>
                 {amazonAssociatesTag && (
                   <span className="flex items-center gap-1 text-[11px] font-medium text-[#34c759] flex-shrink-0">

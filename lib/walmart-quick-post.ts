@@ -13,6 +13,8 @@ import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { publishDealToSocials, QUICK_POST_PLATFORMS, type QuickPostPlatform } from '@/lib/deal-social-publish'
 import { buildDealCardImage } from '@/lib/deal-card'
 import { buildPlatformGeniuslinks } from '@/lib/deal-quick-post'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { getWalmartProductLinks } from '@/services/partnerboost'
 import type { Tier } from '@/lib/tier'
 
@@ -55,14 +57,26 @@ export async function executeWalmartQuickPost(input: WalmartQuickPostInput): Pro
   if (!link) link = (input.fallbackUrl || '').trim()
   if (!link) return { results: [], caption: null, geniuslinkNote: null, missingLink: true }
 
-  // Per-platform Geniuslink wrap (best-effort; keeps the minted link otherwise).
-  const gKey = (intRow?.geniuslink_api_key || '').trim()
-  const gSecret = (intRow?.geniuslink_api_secret || '').trim()
+  // Cloak the minted Walmart link per the creator's ONE chosen Link style.
+  // Geniuslink → per-platform groups; Bitly → shorten once; Direct → leave the
+  // minted link. Passport doesn't apply (not an Amazon ASIN). Best-effort.
+  const cfg = await getLinkStyle(db, userId)
   let built: { links: Partial<Record<QuickPostPlatform, string>>; note: string | null } = { links: {}, note: null }
-  try {
-    built = await buildPlatformGeniuslinks(gKey, gSecret, link, name, platforms)
-  } catch (err) {
-    console.warn('[walmart-quick-post] geniuslink step failed — using the minted link:', err instanceof Error ? err.message : err)
+  if (cfg.style === 'geniuslink') {
+    const gKey = (intRow?.geniuslink_api_key || '').trim()
+    const gSecret = (intRow?.geniuslink_api_secret || '').trim()
+    try {
+      built = await buildPlatformGeniuslinks(gKey, gSecret, link, name, platforms)
+    } catch (err) {
+      console.warn('[walmart-quick-post] geniuslink step failed — using the minted link:', err instanceof Error ? err.message : err)
+    }
+  } else if (cfg.style === 'bitly' && cfg.bitlyToken) {
+    try {
+      const short = await shortenBitly(cfg.bitlyToken, link)
+      if (short) link = short
+    } catch (err) {
+      console.warn('[walmart-quick-post] bitly step failed — using the minted link:', err instanceof Error ? err.message : err)
+    }
   }
 
   const { data: brand } = await db.from('brand_profiles').select('affiliate_disclaimer,name,logo_url').eq('user_id', userId).maybeSingle()

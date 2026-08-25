@@ -11,6 +11,8 @@ import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
 import { resolveGeniuslinkChannelGroupId } from '@/lib/geniuslink-group'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { passportLinkForUser } from '@/lib/passport-links'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { asinFromAmazonUrl, resolveFinalUrl } from '@/lib/product-link'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -90,9 +92,15 @@ export async function resolveAffiliateLink(opts: {
     ? `https://www.amazon.com/dp/${asin}${tag ? `?tag=${tag}` : ''}`
     : (opts.productUrl || '')
 
+  // The creator's ONE chosen Link style decides how `destination` is cloaked.
+  // Passport was handled above; Bitly shortens; Geniuslink only when picked.
+  const cfg = await getLinkStyle(createAdminClient(), opts.userId)
   let linkUrl = destination
   let note: string | null = null
-  if (intRow.geniuslink_api_key && intRow.geniuslink_api_secret && destination) {
+  if (cfg.style === 'bitly' && cfg.bitlyToken && destination) {
+    const short = await shortenBitly(cfg.bitlyToken, destination)
+    if (short) linkUrl = short
+  } else if (cfg.style === 'geniuslink' && intRow.geniuslink_api_key && intRow.geniuslink_api_secret && destination) {
     try {
       const svc = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
       // Per-channel attribution: when a channel is given, mint a fresh link in

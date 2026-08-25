@@ -21,6 +21,8 @@ import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl, isAmazonNonProductUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportLinkForUser } from '@/lib/passport-links'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { deriveProductName } from '@/lib/product-name'
@@ -675,15 +677,23 @@ async function handleGenerate(request: Request) {
       ? appendAmazonSubtag(`https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`, linkVideoId)
       : destinationWithSubtag
 
-    // Passport Links (geo-routing) wins WHEN ON; else null and we fall through to
-    // the existing already-geni / Geniuslink / tag chain unchanged.
+    // Apply the creator's ONE chosen Link style (Passport / Bitly / Geniuslink /
+    // Direct) so blog-body links match every other surface. getLinkStyle is the
+    // single source of truth; a style with missing creds falls back to Direct.
+    // We keep this route's richer Geniuslink handling (per-site group, note,
+    // subtag, and the destination-verification guard) inside the geniuslink case.
     const blogAsin = destination.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
-    const passportBlog = blogAsin ? await passportLinkForUser(supabase, ownerId, blogAsin, { source: 'blog', title: rawTitle }) : null
-    if (passportBlog) {
-      affiliateUrlOverride = passportBlog
+    const blogLinkStyle = await getLinkStyle(supabase, ownerId)
+    if (blogLinkStyle.style === 'passport') {
+      const passportBlog = blogAsin ? await passportLinkForUser(supabase, ownerId, blogAsin, { source: 'blog', title: rawTitle }) : null
+      affiliateUrlOverride = passportBlog || (alreadyGeniuslink ? destination : tagFallback)
     } else if (alreadyGeniuslink) {
+      // Source material already carries a geni.us link — never break it.
       affiliateUrlOverride = destination
-    } else if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
+    } else if (blogLinkStyle.style === 'bitly') {
+      const short = blogLinkStyle.bitlyToken ? await shortenBitly(blogLinkStyle.bitlyToken, tagFallback) : null
+      affiliateUrlOverride = short || tagFallback
+    } else if (blogLinkStyle.style === 'geniuslink' && wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
       // Resolve the per-site group (creates it on first use, caches the
       // ID on the row).
       //
@@ -1832,16 +1842,19 @@ async function handleGenerate(request: Request) {
     savedPost = data
   }
 
-  // ── Shorten the blog link for social, per the creator's chosen mode ───────
+  // ── Shorten the blog link for social, per the creator's ONE Link style ────
   // direct = plain WordPress URL (free); geniuslink = branded geni.us (tracked,
-  // costs per click); bitly = free Bitly short link. Social routes then share
-  // whatever we cache here. Best-effort with a plain-URL fallback — never blocks
-  // or breaks the publish. Falls back to the legacy wrap_blog_geniuslink flag
-  // for anyone whose mode column predates migration 274.
+  // costs per click); bitly = free Bitly short link. Passport maps to 'direct'
+  // here: it geo-routes Amazon product links, but a blog URL has no ASIN to
+  // route, so it stays the plain URL. getLinkStyle is the single source of truth
+  // (it already honors the legacy wrap_blog_geniuslink flag). Best-effort with a
+  // plain-URL fallback — never blocks or breaks the publish.
   if (savedPost?.id) {
     const wpAny = wp as Record<string, unknown> | null
-    const mode = ((wpAny?.blog_social_link_mode as string)
-      || (wpAny?.wrap_blog_geniuslink === true ? 'geniuslink' : 'direct')) as BlogSocialLinkMode
+    const shareStyle = await getLinkStyle(supabase, ownerId)
+    const mode: BlogSocialLinkMode = shareStyle.style === 'geniuslink' ? 'geniuslink'
+      : shareStyle.style === 'bitly' ? 'bitly'
+      : 'direct'
     await maybeCreateBlogShortlink(supabase, {
       postId: savedPost.id as string,
       blogUrl: wpPost.link,

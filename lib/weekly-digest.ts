@@ -9,6 +9,8 @@
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { passportLinkForUser } from '@/lib/passport-links'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { scrubBanned } from '@/lib/scrub'
 
 export interface DigestDealRow {
@@ -80,29 +82,52 @@ export async function resolveAffiliateUrl(
   amazonTag: string | null, gKey: string | null, gSecret: string | null,
   userId?: string | null,
 ): Promise<string> {
-  // Passport Links (geo-routing) wins WHEN ON — pass a userId to opt a surface in.
-  // Off → null and we fall through to the Geniuslink / tag chain unchanged.
-  if (userId) {
-    try {
-      const p = await passportLinkForUser(createAdminClient(), userId, asin, { source: 'blog', title })
-      if (p) return p
-    } catch { /* fall through */ }
-  }
   const tagged = amazonTag
     ? `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(amazonTag)}`
     : `https://www.amazon.com/dp/${asin}`
-  if (!gKey || !gSecret) return tagged
-  const genius = createGeniuslinkService(gKey, gSecret)
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const wrapped = await genius.createLink(tagged, title.slice(0, 120) || `Deal ${asin}`)
-      if (wrapped && /^https?:\/\//i.test(wrapped)) return wrapped
-    } catch (err) {
-      console.warn(`[weekly-digest] geniuslink wrap failed for ${asin} (attempt ${attempt}):`, err instanceof Error ? err.message : err)
+
+  // Wrap `tagged` in the creator's Geniuslink (default group, retry once), or
+  // return `tagged` when there are no keys. Kept as a helper so the style switch
+  // below and the no-user legacy path share exactly one implementation.
+  const geniusOrTagged = async (key: string | null, secret: string | null): Promise<string> => {
+    if (!key || !secret) return tagged
+    const genius = createGeniuslinkService(key, secret)
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const wrapped = await genius.createLink(tagged, title.slice(0, 120) || `Deal ${asin}`)
+        if (wrapped && /^https?:\/\//i.test(wrapped)) return wrapped
+      } catch (err) {
+        console.warn(`[weekly-digest] geniuslink wrap failed for ${asin} (attempt ${attempt}):`, err instanceof Error ? err.message : err)
+      }
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 1200))
     }
-    if (attempt < 2) await new Promise((r) => setTimeout(r, 1200))
+    return tagged
   }
-  return tagged
+
+  // No user context (rare) → legacy behavior: Geniuslink if keys, else tagged.
+  if (!userId) return geniusOrTagged(gKey, gSecret)
+
+  // With a user, honor their ONE chosen link style so digest/roundup links match
+  // the rest of MVP: Passport (geo-route) / Bitly / Geniuslink / Direct.
+  const cfg = await getLinkStyle(createAdminClient(), userId)
+  switch (cfg.style) {
+    case 'passport': {
+      try {
+        const p = await passportLinkForUser(createAdminClient(), userId, asin, { source: 'blog', title })
+        if (p) return p
+      } catch { /* fall through to tagged */ }
+      return tagged
+    }
+    case 'bitly': {
+      if (!cfg.bitlyToken) return tagged
+      const short = await shortenBitly(cfg.bitlyToken, tagged)
+      return short || tagged
+    }
+    case 'geniuslink':
+      return geniusOrTagged(gKey || cfg.geniuslinkKey, gSecret || cfg.geniuslinkSecret)
+    default:
+      return tagged
+  }
 }
 
 interface DigestModelOut { title?: string; theme?: string; intro: string; blurbs: Record<string, string>; outro: string }
