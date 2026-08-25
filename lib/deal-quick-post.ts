@@ -89,20 +89,35 @@ export async function executeDealQuickPost(input: DealQuickPostInput): Promise<D
   let baseCaption: string | null = null
   let geniuslinkNote: string | null = null
 
-  // Passport Links (geo-routing) wins WHEN ON; else null and we fall through to
-  // the existing tag/Geniuslink behavior. Resolved once, reused for text + pin.
-  const passportLink = await passportLinkForUser(db, userId, asin, { source: 'social', title: (deal.title as string) || null })
+  const dealTitle = (deal.title as string) || null
+  // Passport Links (geo-routing) wins WHEN ON. One link PER channel (source = the
+  // platform) so each channel's clicks land in its own MVP-<CHANNEL> group, exactly
+  // like Geniuslink's per-channel groups. The Pinterest pin gets its own
+  // MVP-PINTEREST link below.
+  const passportLinks: Partial<Record<QuickPostPlatform, string>> = {}
+  if (platforms.length) {
+    await Promise.all(platforms.map(async (p) => {
+      const u = await passportLinkForUser(db, userId, asin, { source: p, title: dealTitle })
+      if (u) passportLinks[p] = u
+    }))
+  }
+  const passportOn = Object.keys(passportLinks).length > 0
+  const passportAny = passportOn ? (Object.values(passportLinks)[0] as string) : null
+  // Pinterest is a separate pipeline — its own geo link, grouped under MVP-PINTEREST.
+  const passportPin = input.pinterest
+    ? await passportLinkForUser(db, userId, asin, { source: 'pinterest', title: dealTitle })
+    : null
 
   // ── Link-friendly text platforms ──
   if (platforms.length) {
     const tag = (intRow?.amazon_associates_tag || '').trim()
-    if (!tag && !passportLink) return { results: [], caption: null, geniuslinkNote: null, missingTag: true }
-    const link = passportLink || `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(tag)}`
+    if (!tag && !passportAny) return { results: [], caption: null, geniuslinkNote: null, missingTag: true }
+    const link = passportAny || `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(tag)}`
 
     const gKey = (intRow?.geniuslink_api_key || '').trim()
     const gSecret = (intRow?.geniuslink_api_secret || '').trim()
     let built: { links: Partial<Record<QuickPostPlatform, string>>; note: string | null } = { links: {}, note: null }
-    if (!passportLink) {
+    if (!passportOn) {
       try {
         built = await buildPlatformGeniuslinks(gKey, gSecret, link, deal.title as string, platforms)
       } catch (glErr) {
@@ -159,7 +174,9 @@ Return ONLY the caption text.` }],
     const textResults: PlatformResult[] = await publishDealToSocials({
       supabase: db, userId,
       deal: { asin, title: deal.title as string, imageUrl: postImage },
-      link, links: built.links, baseCaption: cap, disclaimer, platforms,
+      // Passport on → each platform's own MVP-<CHANNEL> geo link; off → the
+      // per-platform Geniuslink map (or the shared tagged fallback via `link`).
+      link, links: passportOn ? passportLinks : built.links, baseCaption: cap, disclaimer, platforms,
     })
     results.push(...textResults)
   }
@@ -178,7 +195,7 @@ Return ONLY the caption text.` }],
     const pinRes = await publishDealPin({
       userId, tier, intRow: intRow ?? null,
       asin, title: deal.title as string, productImageUrl: dealImage,
-      linkOverride: passportLink,
+      linkOverride: passportPin,
     })
     results.push({ platform: 'pinterest', ok: pinRes.ok, url: pinRes.url, error: pinRes.error })
     if (pinRes.note && !geniuslinkNote) geniuslinkNote = pinRes.note

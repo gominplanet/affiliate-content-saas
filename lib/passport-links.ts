@@ -237,23 +237,38 @@ export function normalizeSource(source: string | null | undefined): string | nul
 
 /**
  * Map a link's attribution source to a default channel group name, so every new
- * Passport Link lands in a sensible group automatically (mirrors how MVP routes
- * Geniuslink into per-channel groups). Creators can rename / delete / reassign
- * afterwards; this only picks the starting bucket. Kept in sync with the SQL
- * backfill in migration 292 and covered by scripts/test-passport-groups.ts.
+ * Passport Link lands in a per-channel group automatically — the same MVP-<CHANNEL>
+ * scheme MVP uses for Geniuslink groups (lib/geniuslink-group CHANNEL_GROUP_NAMES),
+ * so a creator's Passport groups read just like their Geniuslink ones. Each social
+ * platform gets its OWN group (MVP-FACEBOOK, MVP-PINTEREST, …) rather than a single
+ * lumped "Social". Creators can rename / delete / reassign afterwards; this only
+ * picks the starting bucket. Kept in sync with the SQL backfill (migrations 292/293)
+ * and covered by scripts/test-passport-groups.ts.
  */
 export function channelForSource(source: string | null | undefined): string {
   const s = normalizeSource(source)
-  if (!s) return 'General'
+  if (!s) return 'MVP-GENERAL'
   const l = s.toLowerCase()
-  if (l === 'blog') return 'Blog'
-  if (l === 'pinterest') return 'Pinterest'
-  if (['social', 'facebook', 'twitter', 'x', 'threads', 'linkedin', 'telegram', 'bluesky', 'instagram'].includes(l)) return 'Social'
-  if (l === 'epc') return 'EPC'
-  if (l === 'scout') return 'SCOUT'
+  const perPlatform: Record<string, string> = {
+    facebook: 'MVP-FACEBOOK',
+    pinterest: 'MVP-PINTEREST',
+    twitter: 'MVP-TWITTER',
+    x: 'MVP-TWITTER',
+    threads: 'MVP-THREADS',
+    linkedin: 'MVP-LINKEDIN',
+    bluesky: 'MVP-BLUESKY',
+    telegram: 'MVP-TELEGRAM',
+    tiktok: 'MVP-TIKTOK',
+    instagram: 'MVP-INSTAGRAM',
+    blog: 'MVP-BLOG',
+    epc: 'MVP-EPC',
+    scout: 'MVP-SCOUT',
+    social: 'MVP-SOCIAL', // legacy blanket source (links minted before per-channel split)
+  }
+  if (perPlatform[l]) return perPlatform[l]
   // 'video' / 'youtube', or a bare 11-char YouTube video id used as the source.
-  if (l === 'video' || l === 'youtube' || /^[A-Za-z0-9_-]{11}$/.test(s)) return 'YouTube'
-  return 'General'
+  if (l === 'video' || l === 'youtube' || /^[A-Za-z0-9_-]{11}$/.test(s)) return 'MVP-YOUTUBE'
+  return 'MVP-GENERAL'
 }
 
 /** Clean a user-supplied group name: trimmed, single-spaced, capped at 60. */
