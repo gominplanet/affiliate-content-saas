@@ -25,7 +25,7 @@ export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Studio and Pro plans.' }, { status: 403 })
+  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Amazon, Studio, and Pro plans.' }, { status: 403 })
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Studio and Pro plans.' }, { status: 403 })
+  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Amazon, Studio, and Pro plans.' }, { status: 403 })
 
   const body = await request.json().catch(() => ({})) as { name?: string }
   const name = cleanGroupName(body.name)
@@ -79,7 +79,7 @@ export async function PATCH(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Studio and Pro plans.' }, { status: 403 })
+  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Amazon, Studio, and Pro plans.' }, { status: 403 })
 
   const body = await request.json().catch(() => ({})) as { id?: string; name?: string }
   const id = (body.id || '').trim()
@@ -105,7 +105,7 @@ export async function DELETE(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Studio and Pro plans.' }, { status: 403 })
+  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Amazon, Studio, and Pro plans.' }, { status: 403 })
 
   const id = (new URL(request.url).searchParams.get('id') || '').trim()
   if (!id) return NextResponse.json({ error: 'Which group?' }, { status: 400 })

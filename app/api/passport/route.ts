@@ -69,7 +69,7 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: tierRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePassport(normalizeTier(tierRow?.tier))) {
-    return NextResponse.json({ error: 'Passport Links is available on the Studio and Pro plans.' }, { status: 403 })
+    return NextResponse.json({ error: 'Passport Links is available on the Amazon, Studio, and Pro plans.' }, { status: 403 })
   }
 
   const body = await request.json().catch(() => ({})) as { enabled?: boolean; countryTags?: unknown }

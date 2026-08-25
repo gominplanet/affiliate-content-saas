@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Studio and Pro plans.' }, { status: 403 })
+  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Amazon, Studio, and Pro plans.' }, { status: 403 })
 
   const p = new URL(request.url).searchParams
   const q = (p.get('q') || '').trim().replace(/[,%]/g, ' ').slice(0, 80)
@@ -65,7 +65,7 @@ export async function PATCH(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Studio and Pro plans.' }, { status: 403 })
+  if (!(await gate(supabase, user.id))) return NextResponse.json({ error: 'Passport Links is available on the Amazon, Studio, and Pro plans.' }, { status: 403 })
 
   const body = await request.json().catch(() => ({})) as { code?: string; groupId?: string | null }
   const code = (body.code || '').trim()
