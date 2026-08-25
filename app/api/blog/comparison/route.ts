@@ -31,6 +31,8 @@ import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithGptImage, composeWithNanoBanana, rehostToFal, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { preflightWpPublish } from '@/lib/wp-preflight'
 import { listYouTubeChannels } from '@/lib/youtube-channels'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -324,9 +326,21 @@ export async function POST(request: Request) {
   // wp may be null if the integrations row exists but doesn't have geniuslink
   // creds — the WP credential check is now on `site` (see above), so we
   // optional-chain wp here for the per-user Geniuslink fields.
-  const genius = (wp?.geniuslink_api_key && wp?.geniuslink_api_secret)
+  // The creator's ONE chosen Link style. Geniuslink is used ONLY when they
+  // picked it (not merely because keys exist), so a Bitly/Direct creator is
+  // never silently geni.us-wrapped. Passport calls below are self-gating
+  // (passportLinkForUser returns null unless Passport is on + eligible, which is
+  // exactly when the style resolves to 'passport').
+  const cmpStyle = await getLinkStyle(supabase, ownerId)
+  const genius = (cmpStyle.style === 'geniuslink' && wp?.geniuslink_api_key && wp?.geniuslink_api_secret)
     ? createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
     : null
+  // Wrap an Amazon-tagged fallback in Bitly when that's the creator's style.
+  const cmpBitly = async (url: string): Promise<string> => {
+    if (cmpStyle.style !== 'bitly' || !cmpStyle.bitlyToken) return url
+    const short = await shortenBitly(cmpStyle.bitlyToken, url)
+    return short || url
+  }
 
   // ── Duplicate guard ─────────────────────────────────────────────────────────
   // Never publish the same line-up of videos twice — as a guide OR a comparison
@@ -475,9 +489,9 @@ export async function POST(request: Request) {
               try { affiliateUrl = (await genius.createAsinLinkWithCode(asin!, productName)).url } catch { /* ignore */ }
             }
             if (!affiliateUrl) {
-              affiliateUrl = wp?.amazon_associates_tag
+              affiliateUrl = await cmpBitly(wp?.amazon_associates_tag
                 ? `https://www.amazon.com/dp/${asin}?tag=${wp.amazon_associates_tag}`
-                : `https://www.amazon.com/dp/${asin}`
+                : `https://www.amazon.com/dp/${asin}`)
             }
             break
           }
@@ -515,9 +529,9 @@ export async function POST(request: Request) {
         }
         if (!affiliateUrl) {
           const tag = wp?.amazon_associates_tag
-          affiliateUrl = tag
+          affiliateUrl = await cmpBitly(tag
             ? `https://www.amazon.com/dp/${titleAsin}?tag=${tag}`
-            : `https://www.amazon.com/dp/${titleAsin}`
+            : `https://www.amazon.com/dp/${titleAsin}`)
         }
       }
 
@@ -533,7 +547,7 @@ export async function POST(request: Request) {
           try { affiliateUrl = await genius.createLink(searchUrl, productName) } catch { /* fall through */ }
         }
         if (!affiliateUrl && wp?.amazon_associates_tag) {
-          affiliateUrl = `${searchUrl}&tag=${wp.amazon_associates_tag}`
+          affiliateUrl = await cmpBitly(`${searchUrl}&tag=${wp.amazon_associates_tag}`)
         }
       }
 

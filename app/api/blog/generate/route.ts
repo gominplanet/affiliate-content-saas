@@ -21,6 +21,8 @@ import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl, isAmazonNonProductUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportLinkForUser } from '@/lib/passport-links'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { deriveProductName } from '@/lib/product-name'
@@ -675,15 +677,23 @@ async function handleGenerate(request: Request) {
       ? appendAmazonSubtag(`https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`, linkVideoId)
       : destinationWithSubtag
 
-    // Passport Links (geo-routing) wins WHEN ON; else null and we fall through to
-    // the existing already-geni / Geniuslink / tag chain unchanged.
+    // Apply the creator's ONE chosen Link style (Passport / Bitly / Geniuslink /
+    // Direct) so blog-body links match every other surface. getLinkStyle is the
+    // single source of truth; a style with missing creds falls back to Direct.
+    // We keep this route's richer Geniuslink handling (per-site group, note,
+    // subtag, and the destination-verification guard) inside the geniuslink case.
     const blogAsin = destination.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
-    const passportBlog = blogAsin ? await passportLinkForUser(supabase, ownerId, blogAsin, { source: 'blog', title: rawTitle }) : null
-    if (passportBlog) {
-      affiliateUrlOverride = passportBlog
+    const blogLinkStyle = await getLinkStyle(supabase, ownerId)
+    if (blogLinkStyle.style === 'passport') {
+      const passportBlog = blogAsin ? await passportLinkForUser(supabase, ownerId, blogAsin, { source: 'blog', title: rawTitle }) : null
+      affiliateUrlOverride = passportBlog || (alreadyGeniuslink ? destination : tagFallback)
     } else if (alreadyGeniuslink) {
+      // Source material already carries a geni.us link — never break it.
       affiliateUrlOverride = destination
-    } else if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
+    } else if (blogLinkStyle.style === 'bitly') {
+      const short = blogLinkStyle.bitlyToken ? await shortenBitly(blogLinkStyle.bitlyToken, tagFallback) : null
+      affiliateUrlOverride = short || tagFallback
+    } else if (blogLinkStyle.style === 'geniuslink' && wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
       // Resolve the per-site group (creates it on first use, caches the
       // ID on the row).
       //

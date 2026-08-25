@@ -35,6 +35,8 @@ import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { spendGate } from '@/lib/ai-spend'
 import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
@@ -189,9 +191,18 @@ export async function POST(req: Request) {
   const wantFaq       = b.include_faq !== false
 
   const ctx = { userId: user.id, tier }
-  const genius = (wp?.geniuslink_api_key && wp?.geniuslink_api_secret)
+  // The creator's ONE chosen Link style. Geniuslink only when they picked it;
+  // Bitly wraps the tagged fallback when that's their style; Passport calls
+  // below self-gate (passportLinkForUser returns null unless it's their style).
+  const flStyle = await getLinkStyle(supabase, ownerId)
+  const genius = (flStyle.style === 'geniuslink' && wp?.geniuslink_api_key && wp?.geniuslink_api_secret)
     ? createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
     : null
+  const flBitly = async (url: string): Promise<string> => {
+    if (flStyle.style !== 'bitly' || !flStyle.bitlyToken) return url
+    const short = await shortenBitly(flStyle.bitlyToken, url)
+    return short || url
+  }
 
   // ── 1. Resolve the source: ASIN (Amazon) or any store/affiliate link ────────
   let finalUrl = link
@@ -223,9 +234,9 @@ export async function POST(req: Request) {
       try { affiliateUrl = (await genius.createAsinLinkWithCode(asin, productName || 'product')).url } catch { /* ignore */ }
     }
     if (!affiliateUrl) {
-      affiliateUrl = wp?.amazon_associates_tag
+      affiliateUrl = await flBitly(wp?.amazon_associates_tag
         ? `https://www.amazon.com/dp/${asin}?tag=${wp.amazon_associates_tag}`
-        : `https://www.amazon.com/dp/${asin}`
+        : `https://www.amazon.com/dp/${asin}`)
     }
   } else if (link) {
     // Non-Amazon store/affiliate link — recloak it through Geniuslink when

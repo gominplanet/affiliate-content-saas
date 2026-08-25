@@ -20,6 +20,8 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { passportLinkForUser } from '@/lib/passport-links'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
@@ -364,23 +366,28 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── 3. Affiliate URL — Passport Links (geo) if ON, else Geniuslink, else tag ─
-    let affiliateUrl = `https://www.amazon.com/dp/${asin}`
+    // ── 3. Affiliate URL — the creator's ONE chosen Link style (Passport /
+    //       Bitly / Geniuslink / Direct). getLinkStyle is the single source of
+    //       truth; a style with missing creds falls back to the tagged link. ──
+    const ccTagged = `https://www.amazon.com/dp/${asin}${intRow?.amazon_associates_tag ? `?tag=${intRow.amazon_associates_tag}` : ''}`
+    let affiliateUrl = ccTagged
     let geniuslinkCode: string | null = null
-    const passportCc = await passportLinkForUser(supabase, user.id, asin, { source: 'blog', title: product?.title || asin })
-    if (passportCc) {
-      affiliateUrl = passportCc
-    } else if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    const ccStyle = await getLinkStyle(supabase, user.id)
+    if (ccStyle.style === 'passport') {
+      const passportCc = await passportLinkForUser(supabase, user.id, asin, { source: 'blog', title: product?.title || asin })
+      if (passportCc) affiliateUrl = passportCc
+    } else if (ccStyle.style === 'bitly' && ccStyle.bitlyToken) {
+      const short = await shortenBitly(ccStyle.bitlyToken, ccTagged)
+      if (short) affiliateUrl = short
+    } else if (ccStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
       try {
         const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
         const { url, code } = await genius.createAsinLinkWithCode(asin, product?.title || asin)
         affiliateUrl = url
         geniuslinkCode = code
       } catch {
-        affiliateUrl = `https://www.amazon.com/dp/${asin}${intRow?.amazon_associates_tag ? `?tag=${intRow.amazon_associates_tag}` : ''}`
+        affiliateUrl = ccTagged
       }
-    } else if (intRow?.amazon_associates_tag) {
-      affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=${intRow.amazon_associates_tag}`
     }
 
     // ── 4. Generate the post — OR re-publish a saved draft with NO AI spend ──
