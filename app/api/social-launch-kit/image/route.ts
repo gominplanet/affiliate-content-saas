@@ -22,6 +22,7 @@ import { LAUNCH_PLATFORMS, type LaunchPlatform } from '@/lib/social-launch-kit'
 import { buildCoverPrompt, buildAvatarPrompt, buildWideBannerPrompt } from '@/lib/social-launch-kit-prompt'
 import { composeWideBanner } from '@/lib/social-launch-kit-banner'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
+import { getDefaultSite } from '@/lib/wordpress-sites'
 
 export const maxDuration = 180
 
@@ -74,11 +75,18 @@ export async function POST(request: Request) {
   // slot is saved, regenerating is admin-only — keeps image costs predictable and
   // the user's saved asset stable. A failed first attempt saves no URL, so retry
   // still works.
+  // Per-site (per-profile): the banner/avatar slots and lock are scoped to the
+  // ACTIVE site, matching the copy kit. Legacy (no sites) → null.
+  const site = await getDefaultSite(supabase, user.id)
+  const siteId = site && site.id !== 'legacy' ? (site.id as string) : null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scope = (q: any) => (siteId ? q.eq('site_id', siteId) : q.is('site_id', null))
+
   const isAdmin = tier === 'admin'
   if (!isAdmin) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingKit } = await (supabase as any).from('social_launch_kits')
-      .select('banner_url, avatar_url').eq('user_id', user.id).eq('platform', platform).maybeSingle()
+    const { data: existingKit } = await scope((supabase as any).from('social_launch_kits')
+      .select('banner_url, avatar_url').eq('user_id', user.id).eq('platform', platform)).maybeSingle()
     const already = kind === 'banner' ? existingKit?.banner_url : existingKit?.avatar_url
     if (already) {
       return NextResponse.json({
@@ -324,9 +332,18 @@ export async function POST(request: Request) {
       savedUrl = await uploadDataUrlToFal(dataUrl)
       if (savedUrl) {
         const col = kind === 'banner' ? 'banner_url' : 'avatar_url'
+        // Manual upsert scoped to the active site (uniqueness spans site_id via a
+        // coalesce index onConflict can't target).
+        const now = new Date().toISOString()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('social_launch_kits')
-          .upsert({ user_id: user.id, platform, [col]: savedUrl, updated_at: new Date().toISOString() }, { onConflict: 'user_id,platform' })
+        const { data: existingRow } = await scope((supabase as any).from('social_launch_kits').select('user_id').eq('user_id', user.id).eq('platform', platform)).maybeSingle()
+        if (existingRow) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await scope((supabase as any).from('social_launch_kits').update({ [col]: savedUrl, updated_at: now }).eq('user_id', user.id).eq('platform', platform))
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any).from('social_launch_kits').insert({ user_id: user.id, site_id: siteId, platform, [col]: savedUrl, updated_at: now })
+        }
       }
     } catch { /* persistence is best-effort */ }
     return NextResponse.json({ ok: true, platform, kind, width: target.w, height: target.h, image: dataUrl, imageUrl: savedUrl || undefined })

@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getDefaultSite } from '@/lib/wordpress-sites'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -18,11 +19,18 @@ export async function GET() {
   const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const isAdmin = intRow?.tier === 'admin'
 
+  // Kits are per-site (per-profile) — only load the ACTIVE site's kits so the page
+  // reflects the profile the creator is currently on. Legacy (no sites) → null.
+  const site = await getDefaultSite(supabase, user.id)
+  const siteId = site && site.id !== 'legacy' ? (site.id as string) : null
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
+  let query = (supabase as any)
     .from('social_launch_kits')
     .select('platform,kit,banner_url,avatar_url')
     .eq('user_id', user.id)
+  query = siteId ? query.eq('site_id', siteId) : query.is('site_id', null)
+  const { data } = await query
 
   const saved: Record<string, { kit?: unknown; bannerUrl?: string; avatarUrl?: string }> = {}
   for (const r of (data ?? []) as { platform: string; kit: unknown; banner_url: string | null; avatar_url: string | null }[]) {
