@@ -16,6 +16,8 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { appendAmazonSubtag } from '@/lib/geniuslink-group'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { passportLinkForUser } from '@/lib/passport-links'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 
 const GENIUSLINK = /(?:geni\.us|\bgnz\.)/i
 const SHORTENERS = /(?:amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i
@@ -157,19 +159,31 @@ export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<A
   // redirect; safe no-op for non-Amazon destinations.
   const subtaggedDestination = appendAmazonSubtag(destination, videoId)
 
-  // ── Step 2 — turn the destination into the user's affiliate URL ──────────
+  // ── Step 2 — turn the destination into the user's affiliate URL, per the ONE
+  // link style they chose (Passport / Geniuslink / Bitly / Direct). getLinkStyle
+  // is the single source of truth: Passport ON wins, else their saved mode, and a
+  // style whose creds are missing falls back to Direct. This is what makes a
+  // creator's pick apply UNIVERSALLY — the same rule every generator uses. ──────
   const tagFallback = (): string =>
     asin && amazonTag
       ? appendAmazonSubtag(`https://www.amazon.com/dp/${asin}?tag=${amazonTag}`, videoId)
       : subtaggedDestination
 
-  // Passport Links (geo-routing) wins WHEN ON. Off → null and we fall through to
-  // the Geniuslink / tag chain below unchanged.
+  const cfg = await getLinkStyle(createAdminClient(), userId)
+
   let affiliateUrl: string
-  const passport = asin ? await passportLinkForUser(createAdminClient(), userId, asin, { source: videoId || 'video', title }) : null
-  if (passport) {
-    affiliateUrl = passport
-  } else if (geniuslinkApiKey && geniuslinkApiSecret) {
+  if (cfg.style === 'passport' && asin) {
+    // Geo-routing link; if minting fails, fall back to the plain tagged link
+    // (never Geniuslink — the creator didn't pick it).
+    const passport = await passportLinkForUser(createAdminClient(), userId, asin, { source: videoId || 'video', title })
+    affiliateUrl = passport || tagFallback()
+  } else if (cfg.style === 'bitly') {
+    const base = tagFallback()
+    const short = cfg.bitlyToken ? await shortenBitly(cfg.bitlyToken, base) : null
+    affiliateUrl = short || base
+  } else if (cfg.style === 'geniuslink' && geniuslinkApiKey && geniuslinkApiSecret) {
+    // Keep the blog path's richer Geniuslink handling: per-site group, note, and
+    // the "does the wrapped link actually reach the intended product?" check.
     try {
       const genius = createGeniuslinkService(geniuslinkApiKey, geniuslinkApiSecret)
       const wrapped = await genius.createLink(subtaggedDestination, title, {
@@ -181,10 +195,9 @@ export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<A
     } catch {
       affiliateUrl = tagFallback()
     }
-  } else if (asin && amazonTag) {
-    affiliateUrl = appendAmazonSubtag(`https://www.amazon.com/dp/${asin}?tag=${amazonTag}`, videoId)
   } else {
-    affiliateUrl = subtaggedDestination
+    // Direct (or any style whose creds are missing) → the plain tagged link.
+    affiliateUrl = tagFallback()
   }
 
   return { affiliateUrl, asin, destination }
