@@ -171,7 +171,13 @@ export async function GET(request: Request) {
     .update({ status: 'processing', claimed_at: nowIso, last_attempt_at: nowIso })
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
-    .select('id,user_id,blog_post_id,platform,body_text,social_account_id,retry_count,image_data,image_media_type')
+    // NB: image_data/image_media_type (migration 276) are deliberately NOT
+    // selected here. They're fetched per-row in the Pinterest branch instead, so
+    // a database that hasn't applied 276 yet degrades to "no pre-render fast path"
+    // rather than 500-ing this claim query on EVERY tick and halting ALL scheduled
+    // posting for everyone (exactly the outage this pattern exists to prevent —
+    // same reason `kind`, `options`, `video_id` aren't selected here either).
+    .select('id,user_id,blog_post_id,platform,body_text,social_account_id,retry_count')
     .limit(MAX_PER_TICK)
 
   if (claimErr) {
@@ -837,15 +843,27 @@ async function publishOne(
       // FAST PATH: the prerender-pins cron already built the designed pin and
       // stored it on this row. Post that finished image directly — no fire-time
       // build, no 30s race, always the polished pin (the auto-pilot fix).
-      if (row.image_data) {
+      // image_data/image_media_type (migration 276) are fetched HERE, not in the
+      // main claim query, so a DB that hasn't applied 276 skips this fast path
+      // instead of 500-ing the whole cron and halting all scheduled posting.
+      let preImageData: string | null = null
+      let preMediaType: string | null = null
+      try {
+        const { data: pre } = await admin.from('scheduled_posts').select('image_data,image_media_type').eq('id', row.id).maybeSingle()
+        if (pre?.image_data) {
+          preImageData = pre.image_data as string
+          preMediaType = pre.image_media_type === 'rendering' ? null : (pre.image_media_type as string | null)
+        }
+      } catch { /* migration 276 not applied — no pre-render, live build below */ }
+      if (preImageData) {
         const { pinId } = await publishPinForPost({
           p: post,
           ig: integration,
           site: null,
           title: post.title || '',
           description: row.body_text || post.title || '',
-          imageBase64: row.image_data,
-          mediaType: row.image_media_type ?? 'image/jpeg',
+          imageBase64: preImageData,
+          mediaType: preMediaType ?? 'image/jpeg',
         })
         await admin.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', row.blog_post_id)
         await recordSocialPermalink(admin, row.blog_post_id, 'pinterest', socialPermalink.pinterest(pinId))
