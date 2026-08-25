@@ -41,7 +41,8 @@ export async function GET() {
       if (l.group_id) counts.set(l.group_id, (counts.get(l.group_id) || 0) + 1)
       else ungrouped++
     }
-    const out = ((groups ?? []) as { id: string; name: string }[]).map((g) => ({ id: g.id, name: g.name, links: counts.get(g.id) || 0 }))
+    const out = ((groups ?? []) as { id: string; name: string; created_at: string }[])
+      .map((g) => ({ id: g.id, name: g.name, links: counts.get(g.id) || 0, createdAt: g.created_at }))
     return NextResponse.json({ ok: true, groups: out, ungrouped })
   } catch {
     return NextResponse.json({ ok: true, groups: [], ungrouped: 0 })
