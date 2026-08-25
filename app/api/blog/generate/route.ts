@@ -1378,6 +1378,7 @@ async function handleGenerate(request: Request) {
   //         just one. No-op for single-product videos (nothing extra extracted).
   //         Best-effort: any failure leaves the single-product post untouched.
   try {
+    const mpStyle = await getLinkStyle(supabase, ownerId)
     const mp = await enrichMultiProductLinks({
       content,
       transcript,
@@ -1387,6 +1388,8 @@ async function handleGenerate(request: Request) {
       amazonTag: wp?.amazon_associates_tag ?? null,
       geniuslinkKey: wp?.geniuslink_api_key ?? null,
       geniuslinkSecret: wp?.geniuslink_api_secret ?? null,
+      linkStyle: mpStyle.style,
+      bitlyToken: mpStyle.bitlyToken,
       userId: user.id,
       tier,
     })

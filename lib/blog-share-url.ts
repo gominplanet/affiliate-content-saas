@@ -8,6 +8,8 @@
 
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { shortenBitly } from '@/lib/bitly'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 
 export type BlogSocialLinkMode = 'direct' | 'geniuslink' | 'bitly'
 
@@ -17,38 +19,57 @@ export function blogShareUrl(post: { geniuslink_blog_url?: string | null; wordpr
 }
 
 /**
- * "If a user has a Geniuslink, MVP always uses it."
+ * Cloak the post's affiliate PRODUCT link (the "buy it now" CTA) at SHARE time,
+ * per the creator's ONE chosen Link style — the same style every other surface
+ * uses:
+ *   geniuslink → build a geni.us link (correct per-site group), persist the code
+ *                on the post so later shares reuse it, and return the geni.us URL.
+ *   bitly      → shorten the link with the creator's Bitly token.
+ *   direct/passport → return the link unchanged (a passport product link is
+ *                already minted upstream; a raw tagged link still earns).
  *
- * A post generated during a brief Geniuslink hiccup ships with NO geniuslink_code,
- * so its stored affiliate link is the raw Amazon URL (…/dp/ASIN?tag=…). When that
- * link is about to be SHARED and the creator has Geniuslink connected, build a
- * Geniuslink for it right now, persist the code back on the post so every later
- * share reuses it, and return the geni.us URL.
- *
- * Best-effort: returns the ORIGINAL link on any failure (a post never fails to go
- * out just because Geniuslink is briefly down — the raw tagged link still earns).
- * No-op when the link is already a geni.us link, isn't an Amazon link, or the
- * creator has no Geniuslink creds.
+ * Reads the style itself via getLinkStyle(userId), so a creator who has Geniuslink
+ * keys but picked another style is never surprise-wrapped. Best-effort: returns
+ * the ORIGINAL link on any failure — a post never fails to go out over this. No-op
+ * when the link is already a geni.us link.
  */
-export async function ensureAffiliateGeniuslink(
+export async function ensureAffiliateShareLink(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
-  opts: { postId: string; link: string | null; title: string; apiKey: string | null; apiSecret: string | null; groupId?: number | null },
+  opts: {
+    postId: string
+    link: string | null
+    title: string
+    userId: string
+    apiKey: string | null
+    apiSecret: string | null
+    siteId?: string | null
+    siteUrl?: string | null
+  },
 ): Promise<string | null> {
-  const { postId, link, title, apiKey, apiSecret, groupId } = opts
-  if (!link || !apiKey || !apiSecret) return link
-  if (/geni\.us/i.test(link)) return link                 // already a Geniuslink
-  if (!/amazon\.[a-z.]+/i.test(link)) return link          // not Amazon — leave it
-  try {
-    const genius = createGeniuslinkService(apiKey, apiSecret)
-    const { url: gl, code } = await genius.createLinkWithCode(link, (title || 'Product').slice(0, 120), groupId != null ? { groupId } : undefined)
-    if (gl && /geni\.us/i.test(gl)) {
-      if (code) {
-        try { await supabase.from('blog_posts').update({ geniuslink_code: code }).eq('id', postId) } catch { /* non-fatal */ }
+  const { postId, link, title, userId, apiKey, apiSecret, siteId, siteUrl } = opts
+  if (!link) return link
+  if (/geni\.us/i.test(link)) return link                  // already a Geniuslink
+
+  const cfg = await getLinkStyle(supabase, userId)
+  if (cfg.style === 'geniuslink' && apiKey && apiSecret && /amazon\.[a-z.]+/i.test(link)) {
+    try {
+      const groupId = await resolveGeniuslinkGroupId({ supabase, siteId, siteUrl, apiKey, apiSecret }).catch(() => null)
+      const genius = createGeniuslinkService(apiKey, apiSecret)
+      const { url: gl, code } = await genius.createLinkWithCode(link, (title || 'Product').slice(0, 120), groupId != null ? { groupId } : undefined)
+      if (gl && /geni\.us/i.test(gl)) {
+        if (code) {
+          try { await supabase.from('blog_posts').update({ geniuslink_code: code }).eq('id', postId) } catch { /* non-fatal */ }
+        }
+        return gl
       }
-      return gl
-    }
-  } catch { /* fall back to the raw tagged link */ }
+    } catch { /* fall back to the raw tagged link */ }
+  } else if (cfg.style === 'bitly' && cfg.bitlyToken) {
+    try {
+      const short = await shortenBitly(cfg.bitlyToken, link)
+      if (short) return short
+    } catch { /* fall back to the raw tagged link */ }
+  }
   return link
 }
 

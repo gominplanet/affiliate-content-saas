@@ -11,8 +11,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
-import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
-import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
+import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { parseLinkPrefs, linkPrefFor, primaryCardUrl, youtubeWatchUrl } from '@/lib/social-link-mode'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { spendGate } from '@/lib/ai-spend'
@@ -105,15 +104,12 @@ export async function POST(request: NextRequest) {
     // PRIMARY link there — the affiliate product when the affiliate is on, else
     // the chosen content link (review video or blog).
     let affiliateLink = resolvePostAffiliateLink(post)
-    // "If a user has a Geniuslink, MVP always uses it." (best-effort upgrade)
-    if (affiliateLink && integration?.geniuslink_api_key && integration?.geniuslink_api_secret) {
-      const glGroupId = await resolveGeniuslinkGroupId({
-        supabase, siteId: (post as any).wordpress_site_id ?? null, siteUrl: (post as any).wordpress_url ?? null,
-        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret,
-      }).catch(() => null)
-      affiliateLink = await ensureAffiliateGeniuslink(supabase, {
-        postId: (post as any).id, link: affiliateLink, title: (post as any).title ?? '',
-        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret, groupId: glGroupId,
+    // Cloak the product CTA link per the creator's chosen Link style (best-effort).
+    if (affiliateLink) {
+      affiliateLink = await ensureAffiliateShareLink(supabase, {
+        postId: (post as any).id, link: affiliateLink, title: (post as any).title ?? '', userId: user.id,
+        apiKey: integration?.geniuslink_api_key ?? null, apiSecret: integration?.geniuslink_api_secret ?? null,
+        siteId: (post as any).wordpress_site_id ?? null, siteUrl: (post as any).wordpress_url ?? null,
       })
     }
     const pref = linkPrefFor(parseLinkPrefs(integration?.social_link_modes), 'bluesky')

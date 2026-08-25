@@ -17,6 +17,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { scrubBanned } from '@/lib/scrub'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { shortenBitly } from '@/lib/bitly'
 
 const REL = 'nofollow sponsored noopener'
 
@@ -31,6 +32,11 @@ export interface MultiProductOpts {
   amazonTag?: string | null
   geniuslinkKey?: string | null
   geniuslinkSecret?: string | null
+  /** The creator's ONE chosen Link style (from getLinkStyle). Geniuslink is used
+   *  only when this is 'geniuslink'; 'bitly' shortens; otherwise the tagged
+   *  Amazon search. Omitted → treated as 'direct'. */
+  linkStyle?: 'passport' | 'geniuslink' | 'bitly' | 'direct'
+  bitlyToken?: string | null
   userId?: string | null
   tier?: string | null
 }
@@ -118,16 +124,24 @@ async function resolveLink(
   name: string,
   amazonTag: string | null | undefined,
   genius: ReturnType<typeof createGeniuslinkService> | null,
+  bitlyToken: string | null,
 ): Promise<string | null> {
   const searchUrl = `https://www.amazon.com/s?k=${encodeURIComponent(name)}`
-  // Tagged search first — instant + robust + monetised (the common case).
-  if (amazonTag) return `${searchUrl}&tag=${amazonTag}`
-  // No Amazon tag but Geniuslink is set up → cloak the search so it still
-  // carries the creator's attribution.
+  const tagged = amazonTag ? `${searchUrl}&tag=${amazonTag}` : null
+  // Geniuslink style → cloak the tagged search (or the bare search if no tag) so
+  // it carries the creator's branded, tracked attribution.
   if (genius) {
-    try { return await genius.createLink(searchUrl, name) } catch { /* fall through */ }
+    try { return await genius.createLink(tagged || searchUrl, name) } catch { return tagged }
   }
-  return null
+  // Bitly style → shorten the tagged search (a search with no tag earns nothing,
+  // so there's nothing worth shortening — fall through to null).
+  if (bitlyToken && tagged) {
+    const short = await shortenBitly(bitlyToken, tagged)
+    return short || tagged
+  }
+  // Direct / Passport → the tagged search (Passport can't geo-route a search with
+  // no ASIN). Null when there's no tag and nothing else to monetise it.
+  return tagged
 }
 
 /** "Shop everything in this video" recap — every product as a tidy row with its
@@ -156,9 +170,12 @@ export async function enrichMultiProductLinks(opts: MultiProductOpts): Promise<{
   // don't stack a second one.
   if (content.includes('Shop everything in this video')) return { content, productsLinked: 0 }
 
-  const genius = (opts.geniuslinkKey && opts.geniuslinkSecret)
+  // Cloak per the creator's ONE chosen Link style: Geniuslink only when picked,
+  // Bitly when picked; otherwise the tagged Amazon search.
+  const genius = (opts.linkStyle === 'geniuslink' && opts.geniuslinkKey && opts.geniuslinkSecret)
     ? createGeniuslinkService(opts.geniuslinkKey, opts.geniuslinkSecret)
     : null
+  const bitlyToken = opts.linkStyle === 'bitly' ? (opts.bitlyToken || null) : null
   // Can't monetise without a tag or Geniuslink → leave the post as-is.
   if (!amazonTag && !genius) return { content, productsLinked: 0 }
 
@@ -176,7 +193,7 @@ export async function enrichMultiProductLinks(opts: MultiProductOpts): Promise<{
 
   // Resolve all links in parallel (each falls back to tagged search instantly).
   const resolved = (await Promise.all(extras.map(async (p): Promise<LinkedProduct | null> => {
-    const url = await resolveLink(p.name, amazonTag, genius)
+    const url = await resolveLink(p.name, amazonTag, genius, bitlyToken)
     return url ? { ...p, url } : null
   }))).filter((p): p is LinkedProduct => p !== null)
   if (resolved.length === 0) return { content, productsLinked: 0 }

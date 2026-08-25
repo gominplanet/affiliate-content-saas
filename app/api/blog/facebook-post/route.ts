@@ -16,8 +16,7 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
-import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
-import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
+import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
 import { blogShareUrl } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
@@ -177,17 +176,14 @@ Return ONLY the post text, nothing else.`,
     // disclaimer repeats at the very end. Never falls back to the blog URL, so it
     // only appears when the post has a real product link.
     let affiliateLink = resolvePostAffiliateLink(post)
-    // "If a user has a Geniuslink, MVP always uses it." Upgrade a raw Amazon
-    // link to a Geniuslink at post time (correct per-site group) and persist the
-    // code so future shares reuse it. Best-effort; falls back to the tagged link.
-    if (affiliateLink && integration?.geniuslink_api_key && integration?.geniuslink_api_secret) {
-      const glGroupId = await resolveGeniuslinkGroupId({
-        supabase, siteId: post.wordpress_site_id ?? null, siteUrl: post.wordpress_url ?? null,
-        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret,
-      }).catch(() => null)
-      affiliateLink = await ensureAffiliateGeniuslink(supabase, {
-        postId: post.id, link: affiliateLink, title: post.title ?? '',
-        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret, groupId: glGroupId,
+    // Cloak the product CTA link at post time per the creator's chosen Link style
+    // (Geniuslink → correct per-site group + persisted code; Bitly → shorten;
+    // Direct/Passport → unchanged). Best-effort; falls back to the tagged link.
+    if (affiliateLink) {
+      affiliateLink = await ensureAffiliateShareLink(supabase, {
+        postId: post.id, link: affiliateLink, title: post.title ?? '', userId: user.id,
+        apiKey: integration?.geniuslink_api_key ?? null, apiSecret: integration?.geniuslink_api_secret ?? null,
+        siteId: post.wordpress_site_id ?? null, siteUrl: post.wordpress_url ?? null,
       })
     }
     // Per-platform link pref: affiliate on/off × content (blog / video / none).

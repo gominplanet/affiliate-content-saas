@@ -11,6 +11,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getExternalKey } from '@/lib/external-keys'
 import { createWaywardLink } from '@/services/wayward'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,17 +37,25 @@ export async function POST(request: NextRequest) {
     let url = minted.link
     let cloaked = false
 
-    // Optional Geniuslink cloak (same pattern as the Levanta tool), if connected.
+    // Cloak per the creator's ONE chosen Link style (Geniuslink wraps, Bitly
+    // shortens, Direct keeps the Wayward link). Passport is skipped: it would drop
+    // Wayward's own maas attribution. `cloak:false` opts out entirely.
     const { data: intRow } = await supabase
       .from('integrations')
       .select('geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
       .maybeSingle()
-    if (body.cloak !== false && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    const wwStyle = await getLinkStyle(supabase, user.id)
+    if (body.cloak !== false && wwStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
       try {
         const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
         const { url: g } = await genius.createLinkWithCode(url, (body.title || asin).slice(0, 80))
         if (g) { url = g; cloaked = true }
+      } catch { /* non-fatal — return the raw Wayward link */ }
+    } else if (body.cloak !== false && wwStyle.style === 'bitly' && wwStyle.bitlyToken) {
+      try {
+        const short = await shortenBitly(wwStyle.bitlyToken, url)
+        if (short) { url = short; cloaked = true }
       } catch { /* non-fatal — return the raw Wayward link */ }
     }
 
