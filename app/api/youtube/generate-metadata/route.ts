@@ -10,6 +10,8 @@ import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultSite } from '@/lib/wordpress-sites'
 import { getOrCreatePassportLink, passportLinkUrl } from '@/lib/passport-links'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { YoutubeTranscript } from 'youtube-transcript'
@@ -694,6 +696,11 @@ export async function POST(request: Request) {
     let geniuslinkUsed = false
     let geniuslinkError: string | null = null
     let passportUsed = false
+    let bitlyUsed = false
+    // The creator's ONE chosen Link style, so YT descriptions match every other
+    // surface. The passport branch below already gates on the same enabled+tier
+    // condition getLinkStyle uses; this drives the Geniuslink/Bitly/Direct split.
+    const ytStyle = await getLinkStyle(supabase, ownerId)
 
     if (isProduct) {
       if (productOverride && productOverride.title && productOverride.title.trim()) {
@@ -821,7 +828,7 @@ export async function POST(request: Request) {
         } catch (e) { console.warn('[generate-metadata] passport link skipped:', e instanceof Error ? e.message : e) }
       }
 
-      if (!passportUsed && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+      if (!passportUsed && ytStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
         const groupId = await resolveGeniuslinkYouTubeGroupId({
           supabase,
           userId: ownerId,
@@ -849,7 +856,17 @@ export async function POST(request: Request) {
           console.error('[generate-metadata] Geniuslink failed:', geniuslinkError)
         }
       }
-      if (!passportUsed && !geniuslinkUsed && intRow?.amazon_associates_tag) {
+      // Bitly style → shorten the tagged link (no geo-routing, but the creator's
+      // chosen shortener + click stats). Runs only when Passport/Geniuslink didn't.
+      if (!passportUsed && !geniuslinkUsed && ytStyle.style === 'bitly' && ytStyle.bitlyToken) {
+        const base = intRow?.amazon_associates_tag
+          ? appendAmazonSubtag(`https://www.amazon.com/dp/${trimmedAsin}?tag=${intRow.amazon_associates_tag}`, youtubeVideoId)
+          : subtaggedDest
+        const short = await shortenBitly(ytStyle.bitlyToken, base)
+        affiliateUrl = short || base
+        bitlyUsed = true
+      }
+      if (!passportUsed && !geniuslinkUsed && !bitlyUsed && intRow?.amazon_associates_tag) {
         affiliateUrl = appendAmazonSubtag(
           `https://www.amazon.com/dp/${trimmedAsin}?tag=${intRow.amazon_associates_tag}`,
           youtubeVideoId,
@@ -872,7 +889,7 @@ export async function POST(request: Request) {
       if (storeAlreadyGenius) {
         affiliateUrl = storeUrl
         geniuslinkUsed = true
-      } else if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+      } else if (ytStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
         // YT Co-Pilot path → MVP-YOUTUBE group (see Amazon branch above).
         const linkNote = youtubeVideoId
           ? `${youtubeVideoId} | ${YOUTUBE_COPILOT_GROUP_NAME}`
@@ -895,6 +912,9 @@ export async function POST(request: Request) {
           console.error('[generate-metadata] Geniuslink (store link) failed:', geniuslinkError)
           affiliateUrl = storeUrl // still promote the real product link
         }
+      } else if (ytStyle.style === 'bitly' && ytStyle.bitlyToken) {
+        const short = await shortenBitly(ytStyle.bitlyToken, storeUrl)
+        affiliateUrl = short || storeUrl
       } else {
         affiliateUrl = storeUrl
       }

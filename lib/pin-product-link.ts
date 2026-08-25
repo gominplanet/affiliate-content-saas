@@ -11,6 +11,8 @@
 // Product option and the pin stays on the blog link).
 import { asinFromAmazonUrl, firstProductUrl } from '@/lib/product-link'
 import { passportLinkForUser } from '@/lib/passport-links'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { extractAsin } from '@/services/amazon'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
@@ -72,11 +74,19 @@ export async function resolvePinProductLink(
   }
   if (!dest) return null
 
-  // Prefer the user's Geniuslink when configured (Amazon ASIN only). Best-effort:
-  // Geniuslink's create endpoint is flaky, so fall back to the tagged direct URL.
+  // Apply the creator's ONE chosen Link style. Geniuslink only when they picked
+  // it (Amazon ASIN only); Bitly shortens the direct link; otherwise the tagged
+  // direct URL. Passport was already handled above (it wins when it's the style).
+  const cfg = await getLinkStyle(supabase, userId)
+  if (cfg.style === 'bitly' && cfg.bitlyToken) {
+    const short = await shortenBitly(cfg.bitlyToken, dest)
+    return short || dest
+  }
   const gKey = ((ig?.geniuslink_api_key as string) || '').trim()
   const gSecret = ((ig?.geniuslink_api_secret as string) || '').trim()
-  if (asin && gKey && gSecret) {
+  if (cfg.style === 'geniuslink' && asin && gKey && gSecret) {
+    // Best-effort: Geniuslink's create endpoint is flaky, so fall back to the
+    // tagged direct URL.
     try {
       const svc = createGeniuslinkService(gKey, gSecret)
       const { url } = await getOrCreateAmazonGeniuslink({ userId, asin, destination: dest, service: svc })
