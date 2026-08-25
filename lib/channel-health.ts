@@ -68,6 +68,15 @@ function classify(platform: string, err: string): { reason: DeadReason; message:
       message: `${name} isn't connected, but it's still part of your publishing schedule. Connect it — or remove it from your schedule — so your posts stop failing.`,
     }
   }
+  // Meta's Threads account gate (incl. the threads.net → threads.com move): the
+  // token is rejected until the user logs into threads.com and clears Meta's
+  // prompt, so "just reconnect" isn't enough — name the real first step.
+  if (/log ?in to .*threads\.com|cannot access the app/.test(e)) {
+    return {
+      reason: 'expired',
+      message: `${name} needs you to log in at threads.com and follow the prompt Meta shows there, then reconnect ${name} in MVP so your posts publish again.`,
+    }
+  }
   if (/token|expired|invalid_request|invalid_grant|refresh|unauthorized|revoked|401|403/.test(e)) {
     return {
       reason: 'expired',
