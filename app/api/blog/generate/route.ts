@@ -1842,16 +1842,19 @@ async function handleGenerate(request: Request) {
     savedPost = data
   }
 
-  // ── Shorten the blog link for social, per the creator's chosen mode ───────
+  // ── Shorten the blog link for social, per the creator's ONE Link style ────
   // direct = plain WordPress URL (free); geniuslink = branded geni.us (tracked,
-  // costs per click); bitly = free Bitly short link. Social routes then share
-  // whatever we cache here. Best-effort with a plain-URL fallback — never blocks
-  // or breaks the publish. Falls back to the legacy wrap_blog_geniuslink flag
-  // for anyone whose mode column predates migration 274.
+  // costs per click); bitly = free Bitly short link. Passport maps to 'direct'
+  // here: it geo-routes Amazon product links, but a blog URL has no ASIN to
+  // route, so it stays the plain URL. getLinkStyle is the single source of truth
+  // (it already honors the legacy wrap_blog_geniuslink flag). Best-effort with a
+  // plain-URL fallback — never blocks or breaks the publish.
   if (savedPost?.id) {
     const wpAny = wp as Record<string, unknown> | null
-    const mode = ((wpAny?.blog_social_link_mode as string)
-      || (wpAny?.wrap_blog_geniuslink === true ? 'geniuslink' : 'direct')) as BlogSocialLinkMode
+    const shareStyle = await getLinkStyle(supabase, ownerId)
+    const mode: BlogSocialLinkMode = shareStyle.style === 'geniuslink' ? 'geniuslink'
+      : shareStyle.style === 'bitly' ? 'bitly'
+      : 'direct'
     await maybeCreateBlogShortlink(supabase, {
       postId: savedPost.id as string,
       blogUrl: wpPost.link,
