@@ -306,26 +306,19 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           </button>
           {helpOpen && (
             <div className="mt-2">
+              {/* Do this first — same for everyone: accept all on Amazon, then
+                  search the library. Users don't scan anything; the catalogue is
+                  already here for them to search. */}
+              <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,204,0,0.10)', border: '1px solid rgba(255,204,0,0.35)' }}>
+                <p className="text-[12px] font-semibold" style={{ color: '#8a6d00' }}>Do this first: Accept your campaigns</p>
+                <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                  You only earn EPC on products you&rsquo;ve accepted in your own Amazon account. Open <b>Amazon Creator Connections</b>, sign in with the Associates account that holds your store ID, and use <b>&ldquo;Accept all&rdquo;</b> on the <b>Sponsored Products for Creators</b> tab. Then come back and <b>search this EPC Library</b> for products to promote.
+                </p>
+              </div>
               {isAdmin && (
-                <>
-                  <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-                    Amazon gives <b>no export</b> for Sponsored Products EPC opportunities, so SCOUT reads them straight off your on-screen grid into this searchable library (estimated EPC, budget score, price, rating, plus price history). One scan scrolls for up to ~90 seconds and grabs a large batch. If your Accepted list is huge (20,000+), a single scan won&rsquo;t reach the bottom, so just <b>run it again</b> a few times: each scan picks up where the last one left off and reaches deeper, then loops back to the top once it has covered the whole list.
-                  </p>
-                  <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(255,204,0,0.10)', border: '1px solid rgba(255,204,0,0.35)' }}>
-                    <p className="text-[12px] font-semibold" style={{ color: '#8a6d00' }}>Do this first: Accept your campaigns</p>
-                    <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                      Open it on Amazon and sign in with the Associates account that holds your store ID (the one your Creator Connections are under). Use Amazon&apos;s <b>&ldquo;Accept all&rdquo;</b> on the <b>Sponsored Products for Creators</b> tab, then open the <b>Accepted</b> tab so the products are on screen. Only then can SCOUT read them. Come back here and hit Scan.
-                    </p>
-                  </div>
-                </>
-              )}
-              {!isAdmin && (
-                <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,204,0,0.10)', border: '1px solid rgba(255,204,0,0.35)' }}>
-                  <p className="text-[12px] font-semibold" style={{ color: '#8a6d00' }}>Do this first: Accept your campaigns</p>
-                  <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                    You only earn EPC on products you&rsquo;ve accepted in your own Amazon account. Open <b>Amazon Creator Connections</b>, sign in with the Associates account that holds your store ID, and use <b>&ldquo;Accept all&rdquo;</b> on the <b>Sponsored Products for Creators</b> tab. Then come back and promote any product below.
-                  </p>
-                </div>
+                <p className="text-[11px] leading-relaxed mt-2" style={{ color: 'var(--text-faint)' }}>
+                  Operator note: the library is built centrally, so creators don&rsquo;t scan anything, they just accept and search. The Scan control above tops it up from your own Accepted grid when you want to.
+                </p>
               )}
               <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.30)' }}>
                 <p className="text-[12px] font-semibold" style={{ color: '#7C3AED' }}>Worth it for Gold &amp; Platinum creators</p>
