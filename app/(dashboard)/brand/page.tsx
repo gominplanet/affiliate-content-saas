@@ -380,6 +380,12 @@ export default function BrandPage() {
   // click), or 'bitly' (free short link, needs the creator's Bitly token).
   const [blogSocialLinkMode, setBlogSocialLinkMode] = useState<'direct' | 'geniuslink' | 'bitly'>('direct')
   const [bitlyToken, setBitlyToken] = useState('')
+  // Passport ON overrides the link-style choice (it becomes the universal cloaker),
+  // so the Link style radios are shown paused when it's on. Read once for the copy.
+  const [passportEnabled, setPassportEnabled] = useState(false)
+  useEffect(() => {
+    fetch('/api/passport').then(r => r.json()).then(d => { if (d?.ok) setPassportEnabled(!!d.enabled) }).catch(() => {})
+  }, [])
   // Where a Clip Factory Pinterest pin links: auto (blog post → video →
   // homepage), the blog post, the source YouTube video, or the blog homepage.
   const [pinterestLinkPref, setPinterestLinkPref] = useState<'auto' | 'blog_post' | 'youtube' | 'homepage'>('auto')
@@ -1135,18 +1141,19 @@ export default function BrandPage() {
                 </div>
               </div>
 
-              {/* How the BLOG link is shortened when a post is shared to social.
-                  This is only the link back to the blog post itself, which earns
-                  no commission, so a free option matters as click costs add up.
-                  (The blog's Amazon links are resolved separately: Passport Links
-                  when on, else Geniuslink if connected, else the plain tag.) */}
+              {/* Universal link style. When Passport is OFF, this is the cloaker
+                  MVP uses for EVERY link it makes (blog, YouTube, social). When
+                  Passport is ON, it overrides this (shown disabled below). */}
               <div className="mt-3">
-                <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Blog link shared on social</span>
-                <div className="flex flex-col gap-2">
+                <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Link style</span>
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-2">
+                  How MVP cloaks <b>every</b> link it makes for you, across your blog articles, YouTube descriptions, and social posts. {passportEnabled ? 'Passport Links is ON, so it is used everywhere and this choice is paused.' : 'Pick one and it is used everywhere.'}
+                </p>
+                <div className="flex flex-col gap-2" style={passportEnabled ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
                   {([
-                    { key: 'direct', label: 'Direct link (free)', desc: 'Share the plain URL, no shortener or click cost. Pairs with Amazon OneLink for free international routing.' },
-                    { key: 'geniuslink', label: 'Geniuslink', desc: 'Branded geni.us short link, tracked. Uses your Geniuslink key above and costs a click each time.' },
-                    { key: 'bitly', label: 'Bitly (free)', desc: 'Free short link with click stats from your own Bitly account.' },
+                    { key: 'direct', label: 'Direct (free)', desc: 'Plain tagged links, no shortener or click cost. No geo-routing — everyone lands on the same Amazon store.' },
+                    { key: 'geniuslink', label: 'Geniuslink', desc: 'Branded geni.us links that geo-route each shopper to their country. Uses your Geniuslink key above and costs a click each time.' },
+                    { key: 'bitly', label: 'Bitly (free)', desc: 'Free short links with click stats from your own Bitly account. No geo-routing.' },
                   ] as const).map(opt => {
                     const on = blogSocialLinkMode === opt.key
                     return (
@@ -1167,7 +1174,7 @@ export default function BrandPage() {
                     )
                   })}
                 </div>
-                {blogSocialLinkMode === 'bitly' && (
+                {!passportEnabled && blogSocialLinkMode === 'bitly' && (
                   <div className="mt-2">
                     <input
                       name="bitly-token"
@@ -1180,7 +1187,9 @@ export default function BrandPage() {
                     <p className="mt-1 text-[10px] text-[#86868b] dark:text-[#8e8e93]">Bitly → Settings → API → Generate token. Paste the generic access token here.</p>
                   </div>
                 )}
-                <p className="mt-2 text-[11px] text-[#86868b] dark:text-[#8e8e93]">Applies to posts generated after you change it. This only affects the link back to your blog post on Facebook, LinkedIn, X, Threads, Bluesky and Telegram. Your blog&rsquo;s <b>Amazon</b> links are handled separately: when Passport Links is on they geo-route each visitor to their own country&rsquo;s Amazon, otherwise they use Geniuslink (if connected above) or your plain Associates tag.</p>
+                <p className="mt-2 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                  <b>Geo-routing</b> (sending an international shopper to their own country&rsquo;s Amazon) only comes with <b>Passport</b> (free) or <b>Geniuslink</b> (paid). Direct and Bitly send everyone to the same store. Applies to content generated after you change it.
+                </p>
               </div>
 
               {/* Where a Clip Factory Pinterest video pin links. Separate from the
