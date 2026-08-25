@@ -154,7 +154,7 @@ export async function POST() {
       const asinU = (e.asin || '').toUpperCase()
       if (!/^[A-Z0-9]{10}$/.test(asinU)) continue
       if (!e.url || isGeni(e.url) || !isTaggedAmazon(e.url)) continue
-      const wrapped = await resolveAffiliateUrl(asinU, e.title || asinU, tag, gKey, gSecret)
+      const wrapped = await resolveAffiliateUrl(asinU, e.title || asinU, tag, gKey, gSecret, user.id)
       if (wrapped && isGeni(wrapped) && wrapped !== e.url) {
         await sb.from('link_page_items').update({ url: wrapped }).eq('id', e.id)
         relinked++
@@ -172,12 +172,15 @@ export async function POST() {
       if (!/^[A-Z0-9]{10}$/.test(asinU) || have.has(asinU)) continue
       const title = (r.title || `Amazon product ${asinU}`).slice(0, 120)
       let url: string
-      // Passport Links (geo-routing) wins WHEN ON; else Geniuslink, else tag.
+      // The creator's ONE chosen Link style (resolveAffiliateUrl reads it via
+      // user.id): Passport geo-routes, Bitly shortens, Geniuslink wraps, Direct
+      // is the tagged link. The time budget keeps a slow Geniuslink batch from
+      // running past the request window (Direct/Bitly return fast).
       const passport = await passportLinkForUser(sb, user.id, asinU, { source: 'linkbio', title })
       if (passport) {
         url = passport
-      } else if (gKey && gSecret && Date.now() - started < 45_000) {
-        url = await resolveAffiliateUrl(asinU, title, tag, gKey, gSecret)
+      } else if (Date.now() - started < 45_000) {
+        url = await resolveAffiliateUrl(asinU, title, tag, gKey, gSecret, user.id)
       } else {
         url = tag ? `https://www.amazon.com/dp/${asinU}?tag=${encodeURIComponent(tag)}` : `https://www.amazon.com/dp/${asinU}`
       }

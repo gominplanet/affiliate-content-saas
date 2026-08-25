@@ -13,6 +13,8 @@ import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { publishDealToSocials, QUICK_POST_PLATFORMS, type QuickPostPlatform } from '@/lib/deal-social-publish'
 import { buildDealCardImage } from '@/lib/deal-card'
 import { buildPlatformGeniuslinks } from '@/lib/deal-quick-post'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { createWaywardLink } from '@/services/wayward'
 import type { Tier } from '@/lib/tier'
 
@@ -51,14 +53,27 @@ export async function executeWaywardQuickPost(input: WaywardQuickPostInput): Pro
   } catch { /* no fallback — Wayward attribution is the whole point */ }
   if (!link) return { results: [], caption: null, geniuslinkNote: null, missingLink: true }
 
-  // Per-platform Geniuslink wrap (best-effort; keeps the Wayward link otherwise).
-  const gKey = (intRow?.geniuslink_api_key || '').trim()
-  const gSecret = (intRow?.geniuslink_api_secret || '').trim()
+  // Cloak the Wayward link per the creator's ONE chosen Link style. Geniuslink →
+  // per-platform groups; Bitly → shorten once; Direct → leave it. Passport is
+  // deliberately skipped: a Passport geo-link would drop Wayward's own maas
+  // attribution that is the whole point here. Best-effort.
+  const cfg = await getLinkStyle(db, userId)
   let built: { links: Partial<Record<QuickPostPlatform, string>>; note: string | null } = { links: {}, note: null }
-  try {
-    built = await buildPlatformGeniuslinks(gKey, gSecret, link, name, platforms)
-  } catch (err) {
-    console.warn('[wayward-quick-post] geniuslink step failed — using the Wayward link:', err instanceof Error ? err.message : err)
+  if (cfg.style === 'geniuslink') {
+    const gKey = (intRow?.geniuslink_api_key || '').trim()
+    const gSecret = (intRow?.geniuslink_api_secret || '').trim()
+    try {
+      built = await buildPlatformGeniuslinks(gKey, gSecret, link, name, platforms)
+    } catch (err) {
+      console.warn('[wayward-quick-post] geniuslink step failed — using the Wayward link:', err instanceof Error ? err.message : err)
+    }
+  } else if (cfg.style === 'bitly' && cfg.bitlyToken) {
+    try {
+      const short = await shortenBitly(cfg.bitlyToken, link)
+      if (short) link = short
+    } catch (err) {
+      console.warn('[wayward-quick-post] bitly step failed — using the Wayward link:', err instanceof Error ? err.message : err)
+    }
   }
 
   const { data: brand } = await db.from('brand_profiles').select('affiliate_disclaimer,name,logo_url').eq('user_id', userId).maybeSingle()

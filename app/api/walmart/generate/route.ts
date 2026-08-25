@@ -20,6 +20,8 @@ import { fetchWpProxySecret } from '@/lib/wp-proxy'
 import { createWordPressService } from '@/services/wordpress'
 import { createClaudeService, type BrandProfile } from '@/services/claude'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { buildPartnerBoostDeepLink, getWalmartProductLinks } from '@/services/partnerboost'
 import { getExternalKey } from '@/lib/external-keys'
 import { fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
@@ -140,13 +142,22 @@ export async function POST(request: NextRequest) {
     } else {
       affiliateUrl = p.url; linkSource = 'bare_url'
     }
+    // Cloak per the creator's ONE chosen Link style. Geniuslink → wrap; Bitly →
+    // shorten; Direct → keep the PartnerBoost link. Passport doesn't apply (not an
+    // Amazon ASIN, and it would drop Walmart's attribution).
+    const wmStyle = await getLinkStyle(supabase, user.id)
     let cloaked = false
-    if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    if (wmStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
       try {
         const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
         const { url } = await genius.createLinkWithCode(affiliateUrl, p.name.slice(0, 80))
         if (url) { affiliateUrl = url; cloaked = true }
       } catch { /* non-fatal — fall back to the PartnerBoost link */ }
+    } else if (wmStyle.style === 'bitly' && wmStyle.bitlyToken) {
+      try {
+        const short = await shortenBitly(wmStyle.bitlyToken, affiliateUrl)
+        if (short) { affiliateUrl = short; cloaked = true }
+      } catch { /* non-fatal — keep the PartnerBoost link */ }
     }
 
     const priceDisplay = p.price ? `$${p.price}` : null

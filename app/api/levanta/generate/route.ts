@@ -18,6 +18,8 @@ import { fetchWpProxySecret } from '@/lib/wp-proxy'
 import { createWordPressService } from '@/services/wordpress'
 import { createClaudeService, type BrandProfile } from '@/services/claude'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { createLevantaLink } from '@/services/levanta'
 import { getExternalKey } from '@/lib/external-keys'
 import { fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
@@ -137,13 +139,22 @@ export async function POST(request: NextRequest) {
       if (url) { affiliateUrl = url; linkSource = 'levanta' }
     } catch { /* fall back to the bare Amazon URL below (un-monetized — flagged) */ }
     if (!affiliateUrl) affiliateUrl = `https://www.${marketplace}/dp/${asin}`
+    // Cloak per the creator's ONE chosen Link style. Geniuslink → wrap; Bitly →
+    // shorten; Direct → keep the Levanta link. Passport is skipped: it would drop
+    // Levanta's own attribution that is the point of this link.
+    const lvStyle = await getLinkStyle(supabase, user.id)
     let cloaked = false
-    if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    if (lvStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
       try {
         const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
         const { url } = await genius.createLinkWithCode(affiliateUrl, effTitle.slice(0, 80))
         if (url) { affiliateUrl = url; cloaked = true }
       } catch { /* non-fatal — fall back to the Levanta link */ }
+    } else if (lvStyle.style === 'bitly' && lvStyle.bitlyToken) {
+      try {
+        const short = await shortenBitly(lvStyle.bitlyToken, affiliateUrl)
+        if (short) { affiliateUrl = short; cloaked = true }
+      } catch { /* non-fatal — keep the Levanta link */ }
     }
 
     // ── Research brief: light 2-search pass, scrape-only fallback ────────────
