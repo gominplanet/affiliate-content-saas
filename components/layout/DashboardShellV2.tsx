@@ -60,6 +60,7 @@ import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 import AmazonUpgradeGate from '@/components/upgrade/AmazonUpgradeGate'
 import PermalinkAutoHeal from '@/components/PermalinkAutoHeal'
 import AnnouncementModal from '@/components/dashboard/AnnouncementModal'
+import PassportLaunchModal from '@/components/passport/PassportLaunchModal'
 
 // Wrapper to handle context safely
 function HelpDeskButtonWrapper() {
@@ -537,6 +538,10 @@ export default function DashboardShellV2({
     {
       label: 'Grow',
       items: [
+        // Passport Links — MVP-native geo-routing (each visitor → their own
+        // country's Amazon) + click analytics + Geniuslink-style groups. Graduated
+        // out of Labs 2026-08; Studio + Pro only (gate: canUsePassport).
+        { href: '/passport', icon: <Globe size={15} />, label: 'Passport Links', gate: canUsePassport(effectiveTier) },
         { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
         // Storefront moved into LABS 2026-08 (gate: isPro) while the SCOUT
         // full-year + full-catalog sync is finished — released publicly once
@@ -586,10 +591,6 @@ export default function DashboardShellV2({
     {
       label: 'Labs',
       items: [
-        // Passport Links — MVP-native geo-routing (each visitor → their own
-        // country's Amazon) + click analytics. In LABS while we test it end to end;
-        // graduates out once the blog/social auto-wiring + short domain are set.
-        { href: '/passport', icon: <Globe size={15} />, label: 'Passport Links', gate: canUsePassport(effectiveTier) },
         // AMZ Storefront — SCOUT-synced Amazon earnings + full-catalog analytics.
         // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
         // finished; graduates back to "Grow" (gate: isPaid) when it's ready.
@@ -1244,6 +1245,9 @@ export default function DashboardShellV2({
           <PermalinkAutoHeal />
           {/* Action-needed announcement popup (admin-managed, variant 'modal'). */}
           <AnnouncementModal />
+          {/* One-time Passport Links launch modal — Studio/Pro get "go use it",
+              lower tiers get an upgrade tease. Uses the real tier, skips admin. */}
+          <PassportLaunchModal tier={tier} />
           <div className="max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 pb-12">
             {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} redirect={amazonLocked.redirect} /> : children}
           </div>
