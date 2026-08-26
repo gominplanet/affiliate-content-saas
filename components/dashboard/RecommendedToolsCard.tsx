@@ -19,6 +19,7 @@ const TOOLS: Array<{ href: string; label: string; desc: string; highlight?: stri
   { href: 'https://geni.us/Z0q3hY', label: 'PartnerBoost', desc: 'Top brands across retail, travel, D2C & subscriptions' },
   { href: 'https://geni.us/khuHTe', label: 'Archer Affiliate', desc: 'Partner with Amazon sellers — up to 60% commissions' },
   { href: 'https://geni.us/9qSLP', label: 'Cha-Ching Automate', desc: 'Auto-sync your videos to YouTube + 13 global Amazon storefronts' },
+  { href: 'https://jointrybe.com/r/HTLEJE47', label: 'TRYBE', desc: 'Land brand collabs & gifted products as a creator' },
 ]
 
 export default function RecommendedToolsCard() {

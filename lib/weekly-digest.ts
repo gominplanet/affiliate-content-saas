@@ -9,7 +9,7 @@
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { passportLinkForUser } from '@/lib/passport-links'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { getLinkStyle, type LinkStyleConfig } from '@/lib/link-cloak'
 import { shortenBitly } from '@/lib/bitly'
 import { scrubBanned } from '@/lib/scrub'
 
@@ -81,6 +81,10 @@ export async function resolveAffiliateUrl(
   asin: string, title: string,
   amazonTag: string | null, gKey: string | null, gSecret: string | null,
   userId?: string | null,
+  // Pre-resolved style, so a caller looping over many items for the SAME user
+  // reads getLinkStyle once and passes it in (avoids an integrations read per
+  // item). Omit for a one-off call and it's read from userId.
+  config?: LinkStyleConfig,
 ): Promise<string> {
   const tagged = amazonTag
     ? `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(amazonTag)}`
@@ -109,7 +113,7 @@ export async function resolveAffiliateUrl(
 
   // With a user, honor their ONE chosen link style so digest/roundup links match
   // the rest of MVP: Passport (geo-route) / Bitly / Geniuslink / Direct.
-  const cfg = await getLinkStyle(createAdminClient(), userId)
+  const cfg = config ?? (await getLinkStyle(createAdminClient(), userId))
   switch (cfg.style) {
     case 'passport': {
       try {

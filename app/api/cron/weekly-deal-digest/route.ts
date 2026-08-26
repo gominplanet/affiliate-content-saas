@@ -22,6 +22,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { applyPostFixes } from '@/lib/seo-fix'
 import { checkSpendCeiling } from '@/lib/ai-spend'
 import { pickDigestDeals, resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal } from '@/lib/weekly-digest'
+import { getLinkStyle } from '@/lib/link-cloak'
 import { writeContentSchema } from '@/lib/content-schema'
 
 export const runtime = 'nodejs'
@@ -95,12 +96,14 @@ export async function GET(req: Request) {
       await stamp()
 
       const tag = (u.amazon_associates_tag || '').trim() || null
+      // Resolve this user's link style ONCE per digest, then reuse for each deal.
+      const linkCfg = await getLinkStyle(admin, u.user_id)
       // Resolve the (few) affiliate URLs concurrently — they're independent
       // Geniuslink calls; a serial loop stacked their latency. Order preserved.
       const deals: DigestDeal[] = await Promise.all(
         rows.map(async (r) => ({
           ...r,
-          affiliateUrl: await resolveAffiliateUrl(r.asin, r.title, tag, u.geniuslink_api_key, u.geniuslink_api_secret, u.user_id),
+          affiliateUrl: await resolveAffiliateUrl(r.asin, r.title, tag, u.geniuslink_api_key, u.geniuslink_api_secret, u.user_id, linkCfg),
         })),
       )
 
