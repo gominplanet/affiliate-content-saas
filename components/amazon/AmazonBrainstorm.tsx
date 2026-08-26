@@ -22,6 +22,7 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { acceptCampaignViaScout } from '@/lib/accept-campaign'
 import StorefrontCharts from '@/components/amazon/StorefrontCharts'
 import StorefrontCatalog from '@/components/amazon/StorefrontCatalog'
+import StorefrontBrands from '@/components/amazon/StorefrontBrands'
 import StorefrontOpportunities from '@/components/amazon/StorefrontOpportunities'
 
 const ACCENT = '#C2410C'
@@ -688,6 +689,11 @@ export default function AmazonBrainstorm() {
           {/* Full storefront catalog — every product you feature (past the top
               100), with real earnings overlaid. SCOUT reads the public store. */}
           <StorefrontCatalog />
+
+          {/* Brands you've featured — deduped from the same synced catalog. */}
+          <div className="mt-3">
+            <StorefrontBrands />
+          </div>
 
           {/* Per-product table */}
           <div className="rounded-2xl border overflow-hidden mb-8" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
