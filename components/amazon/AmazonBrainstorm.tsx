@@ -15,7 +15,7 @@ import { requestEarningsScan } from '@/lib/extension-frame'
 import {
   Loader2, Sparkles, Wand2, Share2, Handshake, PackageSearch, ArrowRight, ArrowUpRight, ArrowDownRight,
   AlertCircle, DollarSign, MousePointerClick, Package, Percent, TrendingUp, ExternalLink,
-  FileText, ChevronDown, Star, Check, Layers, X, CheckCircle2, HeartPulse,
+  FileText, ChevronDown, Star, Check, Layers, X, CheckCircle2, HeartPulse, RefreshCw,
 } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
@@ -101,7 +101,10 @@ function pctChange(cur: number, prev: number | null | undefined): number | null 
 
 // ── Delta chip (period-over-period % on a KPI) ───────────────────────────────
 function Delta({ pct }: { pct: number | null }) {
-  if (pct == null) return <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>no prior period</span>
+  // No comparison period → render nothing rather than repeating "no prior period"
+  // under every card. The absence of a chip IS the signal, and it keeps the
+  // numbers scannable at a glance.
+  if (pct == null) return null
   if (pct === 0) return <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>flat</span>
   const up = pct > 0
   const Icon = up ? ArrowUpRight : ArrowDownRight
@@ -458,7 +461,17 @@ export default function AmazonBrainstorm() {
       <PageHero
         accent={ACCENT}
         title="Your storefront, by the numbers"
-        subtitle="What SCOUT synced from your Amazon report: your proven sellers, ranked by what they actually earn, with the trend since last period and a one-click way to post more of what works."
+        subtitle="Your proven Amazon sellers, ranked by what they actually earn."
+        actions={
+          <button
+            onClick={() => void syncFromAmazon()}
+            disabled={syncing}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white disabled:opacity-60"
+            style={{ backgroundColor: ACCENT }}
+          >
+            {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : <><RefreshCw size={14} /> Sync from Amazon</>}
+          </button>
+        }
       />
 
       {/* Period toggle */}
@@ -523,36 +536,28 @@ export default function AmazonBrainstorm() {
         </div>
       )}
 
-      {/* See your full year — the reliable path. Amazon caps the CSV download at
-          31 days, but the on-screen report honors the range you pick. Set "This
-          Year" + group by Linked Product, then Sync: SCOUT reads the whole-year
-          per-product table you have open and lands it in the Year-to-date view. */}
+      {/* Sync status + how-to, kept SLIM so the numbers lead. The primary "Sync
+          from Amazon" action lives in the hero; this is just the confirmation
+          line and a collapsed how-to (open on demand). Amazon caps the CSV
+          download at 31 days, but the on-screen report honors the range you pick,
+          so reading it is how we get the full year. */}
       {!loading && !error && (
-        <div className="mb-4 rounded-xl border px-4 py-3.5" style={{ borderColor: 'rgba(234,88,12,0.28)', background: 'linear-gradient(180deg, rgba(234,88,12,0.04), transparent)' }}>
-          <div className="flex items-start gap-2.5">
-            <span className="w-7 h-7 rounded-lg grid place-items-center text-white flex-shrink-0 mt-0.5" style={{ backgroundColor: ACCENT }}><TrendingUp size={14} /></span>
-            <div className="min-w-0 flex-1">
-              <p className="font-bold text-[13.5px]" style={{ color: 'var(--text)' }}>See your full year</p>
-              <ol className="text-[12px] mt-1 leading-relaxed list-decimal pl-4 space-y-0.5" style={{ color: 'var(--text-soft)' }}>
-                <li>Open your <a href="https://affiliate-program.amazon.com/home/reports" target="_blank" rel="noopener noreferrer" className="font-semibold underline" style={{ color: ACCENT }}>Amazon report</a>, set the range to <span className="font-semibold" style={{ color: 'var(--text)' }}>This Year</span> and group by <span className="font-semibold" style={{ color: 'var(--text)' }}>Linked Product</span>.</li>
-                <li>Leave that tab open and click <span className="font-semibold" style={{ color: 'var(--text)' }}>Sync</span> below. SCOUT reads the whole-year table you have on screen (Amazon only lets you <em>download</em> 31 days, so reading it is the way to get the year).</li>
-              </ol>
-              <button
-                onClick={() => void syncFromAmazon()}
-                disabled={syncing}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 mt-2.5 rounded-lg text-[12.5px] font-semibold text-white disabled:opacity-60"
-                style={{ backgroundColor: ACCENT }}
-              >
-                {syncing ? <><Loader2 size={13} className="animate-spin" /> Syncing your year…</> : <>Sync my year <ArrowRight size={13} /></>}
-              </button>
-              {syncMsg && (
-                <p className="text-[12px] mt-2" style={{ color: syncMsg.ok ? '#16a34a' : '#c0392b' }}>{syncMsg.text}</p>
-              )}
-              <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-                For your full income, Sync once on the <span className="font-medium">Commissions</span> tab, then click the <span className="font-medium">Creator Connections</span> summary tab on Amazon and Sync again — MVP adds both together.
-              </p>
-            </div>
-          </div>
+        <div className="mb-4">
+          {syncMsg && (
+            <p className="text-[12.5px] mb-2 px-1" style={{ color: syncMsg.ok ? '#16a34a' : '#c0392b' }}>{syncMsg.text}</p>
+          )}
+          <details className="group rounded-xl border px-4 py-2.5" style={{ borderColor: 'var(--border)' }}>
+            <summary className="flex items-center gap-2 cursor-pointer list-none text-[12.5px] font-medium select-none" style={{ color: 'var(--text-soft)' }}>
+              <RefreshCw size={13} style={{ color: ACCENT }} />
+              How to sync your full year
+              <ChevronDown size={14} className="ml-auto transition-transform group-open:rotate-180" style={{ color: 'var(--text-faint)' }} />
+            </summary>
+            <ol className="text-[12px] mt-2.5 leading-relaxed list-decimal pl-4 space-y-1" style={{ color: 'var(--text-soft)' }}>
+              <li>Open your <a href="https://affiliate-program.amazon.com/home/reports" target="_blank" rel="noopener noreferrer" className="font-semibold underline" style={{ color: ACCENT }}>Amazon report</a>, set the range to <span className="font-semibold" style={{ color: 'var(--text)' }}>This Year</span> and group by <span className="font-semibold" style={{ color: 'var(--text)' }}>Linked Product</span>.</li>
+              <li>Leave that tab open and click <span className="font-semibold" style={{ color: 'var(--text)' }}>Sync from Amazon</span> (top right). SCOUT reads the whole-year table on screen (Amazon only lets you <em>download</em> 31 days, so reading it is the way to get the year).</li>
+              <li>For your full income, Sync once on the <span className="font-medium">Commissions</span> tab, then click the <span className="font-medium">Creator Connections</span> summary tab on Amazon and Sync again — MVP adds both together.</li>
+            </ol>
+          </details>
         </div>
       )}
 
@@ -619,17 +624,28 @@ export default function AmazonBrainstorm() {
       {!loading && !error && data?.hasData && t && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-            {KPIS.map((k) => (
-              <div key={k.label} className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-                <div className="flex items-center gap-1.5 mb-1.5" style={{ color: ACCENT }}>
-                  <span className="w-6 h-6 rounded-lg grid place-items-center flex-shrink-0" style={{ background: 'rgba(234,88,12,0.12)' }}>{k.icon}</span>
-                  <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-soft)' }}>{k.label}</span>
+            {KPIS.map((k) => {
+              // Earnings is the number that matters most — give it an accent tile so
+              // the eye lands there first.
+              const primary = k.key === 'earnings'
+              return (
+                <div
+                  key={k.label}
+                  className="rounded-2xl border p-4"
+                  style={primary
+                    ? { borderColor: 'rgba(234,88,12,0.35)', background: 'linear-gradient(160deg, rgba(234,88,12,0.10), rgba(234,88,12,0.02))' }
+                    : { borderColor: 'var(--border)', background: 'var(--surface)' }}
+                >
+                  <div className="flex items-center gap-1.5 mb-1.5" style={{ color: ACCENT }}>
+                    <span className="w-6 h-6 rounded-lg grid place-items-center flex-shrink-0" style={{ background: 'rgba(234,88,12,0.12)' }}>{k.icon}</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-soft)' }}>{k.label}</span>
+                  </div>
+                  <p className="font-bold leading-none mb-1.5" style={{ color: 'var(--text)', fontSize: primary ? '24px' : '20px' }}>{k.value}</p>
+                  <Delta pct={k.pct} />
+                  {k.sub && <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-faint)' }}>{k.sub}</p>}
                 </div>
-                <p className="text-[20px] font-bold leading-none mb-1.5" style={{ color: 'var(--text)' }}>{k.value}</p>
-                <Delta pct={k.pct} />
-                {k.sub && <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-faint)' }}>{k.sub}</p>}
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           {data?.totalsSource === 'summary' && (
