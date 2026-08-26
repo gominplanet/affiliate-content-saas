@@ -112,10 +112,7 @@ export default function TopbarSearch({ isAdmin = false }: { isAdmin?: boolean })
       </div>
 
       {open && query.trim() && (
-        <div
-          className="absolute left-0 right-0 mt-2 rounded-xl border overflow-hidden shadow-xl z-50 bg-white dark:bg-[#16161a]"
-          style={{ borderColor: 'var(--border)' }}
-        >
+        <div className="mvp-panel absolute left-0 right-0 mt-2 rounded-xl border overflow-hidden shadow-xl z-50">
           {results.length === 0 ? (
             <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--text-faint)' }}>
               No matches for “{query.trim()}”. Try “geniuslink”, “logo”, or “schedule”.

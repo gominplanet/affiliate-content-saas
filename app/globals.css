@@ -19,6 +19,13 @@
   --bg:        #FAFAFA;
   --surface:   #ffffff;
   --surface-2: #f4f4f5;
+  /* ALWAYS-SOLID floating-panel surface. Unlike --surface (which some themes,
+     e.g. the dashboard glass shell + landing/tour, override to a translucent
+     rgba), --panel is never made see-through — so a dropdown / popover / menu
+     built with .mvp-panel can't bleed the page behind it. Use it for every
+     floating overlay. */
+  --panel:        #ffffff;
+  --panel-border: rgba(0,0,0,0.08);
   --border:    rgba(0,0,0,0.06);
   --border-2:  #e7e7e9;
   --text:      #18181B;
@@ -35,6 +42,8 @@
   --bg:        #0A0A0B;
   --surface:   #111113;
   --surface-2: #1A1A1D;
+  --panel:        #16161a;               /* always-solid floating-panel surface */
+  --panel-border: rgba(255,255,255,0.10);
   --border:    rgba(255,255,255,0.06);
   --border-2:  rgba(255,255,255,0.09);
   --text:      #FAFAFA;
@@ -254,4 +263,15 @@ html { scroll-behavior: smooth; }
 .dark .fixed.inset-0 > .card,
 .dark .fixed.inset-0 > * > .card {
   background-color: #18181b !important;
+}
+
+/* The one class for ANY floating overlay — dropdown menu, popover, select menu,
+   command palette, tooltip surface, or a modal panel that doesn't use .card.
+   It paints an always-SOLID, theme-aware surface (--panel) + border, so it can
+   never bleed the page through it the way var(--surface) does under the glass
+   themes. Compose it with your own rounding / shadow / padding:
+     <div class="mvp-panel rounded-xl shadow-xl …"> */
+.mvp-panel {
+  background-color: var(--panel);
+  border-color: var(--panel-border);
 }
