@@ -124,8 +124,8 @@ export default function ScoutUpdatePill() {
         {open && pos && typeof document !== 'undefined' && createPortal(
           <div
             ref={popRef}
-            className="fixed z-[100] w-[330px] max-w-[88vw] rounded-xl border p-4 text-left shadow-xl bg-white dark:bg-[#16161a]"
-            style={{ top: pos.top, left: pos.left, borderColor: 'var(--border, rgba(0,0,0,0.1))' }}
+            className="mvp-panel fixed z-[100] w-[330px] max-w-[88vw] rounded-xl border p-4 text-left shadow-xl"
+            style={{ top: pos.top, left: pos.left }}
             role="dialog"
           >
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text, #1d1d1f)' }}>
