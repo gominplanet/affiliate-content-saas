@@ -23,18 +23,18 @@ export async function GET() {
 
     const { data: cat } = await sb
       .from('storefront_catalog')
-      .select('asin,title,image_url')
+      .select('asin,title,image_url,brand')
       .eq('user_id', user.id)
       .limit(5000)
-    const rows = (cat ?? []) as Array<{ asin: string; title: string | null; image_url: string | null }>
+    const rows = (cat ?? []) as Array<{ asin: string; title: string | null; image_url: string | null; brand: string | null }>
     if (!rows.length) return NextResponse.json({ ok: true, hasData: false, brands: [], totalProducts: 0, uniqueBrands: 0, unknown: 0 })
 
-    // Brand per product (deterministic, from the title). Aggregate: brand → count
-    // + a few sample products + one thumbnail for the card.
+    // Brand per product: prefer the enriched brand column (Keepa), fall back to
+    // deriving it from the title. Aggregate: brand → count + samples + thumbnail.
     const map = new Map<string, { brand: string; count: number; asins: string[]; image: string | null }>()
     let unknown = 0
     for (const r of rows) {
-      const brand = deriveProductName(r.title).brand
+      const brand = (r.brand && r.brand.trim()) || deriveProductName(r.title).brand
       if (!brand) { unknown++; continue }
       const key = brand.toLowerCase()
       const cur = map.get(key) || { brand, count: 0, asins: [], image: null }
