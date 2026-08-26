@@ -1974,12 +1974,15 @@ async function scanAmazonVideoForAsin(asin, callerTabId) {
 // Injected into a single idea-list page. Scrolls to load every product tile,
 // then collects asin/title/image + the list title/declared count. Self-contained
 // (runs in page world — no chrome APIs).
-async function harvestIdeaListInPage() {
+async function harvestIdeaListInPage(maxPasses) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   let last = -1, stable = 0
-  // 20 scroll passes, stop after 2 stable — enough for storefront shelves
-  // without eating the crawl's time budget (40×1s per shelf caused timeouts).
-  for (let i = 0; i < 20 && stable < 2; i++) {
+  // Scroll to lazy-load every tile. A dedicated idea-list PAGE can hold hundreds
+  // of products, so the catalog walk passes a bigger budget (see caller); the
+  // root shelf harvest keeps the smaller default so it doesn't eat the whole
+  // crawl. Stop after 3 stable reads (the grid finished loading).
+  const passes = (typeof maxPasses === 'number' && maxPasses > 0) ? maxPasses : 24
+  for (let i = 0; i < passes && stable < 3; i++) {
     try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
     await sleep(800)
     const n = document.querySelectorAll('[data-asin]').length
@@ -2062,15 +2065,23 @@ async function harvestStorefrontListsInPage() {
   const idFrom = (h) => { const m = String(h || '').match(/\/(?:shop\/[^/]+\/)?list\/([A-Za-z0-9]{6,})/i); return m ? m[1] : null }
   const hm = location.pathname.match(/\/shop\/([^/?#]+)/i); const handle = hm ? hm[1] : null
   const urlFor = (id) => handle ? `https://www.amazon.com/shop/${handle}/list/${id}` : `https://www.amazon.com/list/${id}`
+  // Click the "Idea Lists" (or just "Lists") tab so the full list index renders.
+  // Match a little more loosely than an exact "idea lists" so a layout tweak or
+  // an item-count suffix ("Idea Lists (12)") doesn't hide every list.
   try {
     for (const el of document.querySelectorAll('a,button,[role="tab"],[role="button"],li,span')) {
       const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
-      if (/^idea lists$/i.test(t) && el.offsetParent !== null) { try { el.click() } catch (e) {} break }
+      if (/^idea lists\b/i.test(t) || /^lists\b/i.test(t)) {
+        if (el.offsetParent !== null) { try { el.click() } catch (e) {} break }
+      }
     }
   } catch (e) {}
   await sleep(1500)
+  // Scroll until the list index stops growing. Big storefronts have many lists,
+  // so give this real room (was 15 passes / capped at 20 downstream, which is
+  // exactly how a store with hundreds of products only synced its root shelf).
   let last = -1, stable = 0
-  for (let i = 0; i < 15 && stable < 3; i++) {
+  for (let i = 0; i < 30 && stable < 3; i++) {
     try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
     await sleep(1000)
     const n = document.querySelectorAll('a[href*="/list/"]').length
@@ -2093,7 +2104,7 @@ async function harvestStorefrontListsInPage() {
       coverImage: (src && /\.(jpg|jpeg|png|webp)/i.test(src)) ? src : null,
     })
   })
-  return { ok: true, handle, lists: Array.from(byId.values()).slice(0, 40), signedOut: /\/ap\/signin/.test(location.href) }
+  return { ok: true, handle, lists: Array.from(byId.values()).slice(0, 80), signedOut: /\/ap\/signin/.test(location.href) }
 }
 
 async function scanStorefrontBackground(rawUrl) {
@@ -2301,26 +2312,39 @@ async function scanStorefrontCatalogBackground(rawUrl) {
       if (rr && rr.signedOut) return { ok: false, error: 'signed-out' }
       if (rr && rr.items) addItems(rr.items, 'Storefront')
     } catch (e) {}
-    // 2) Also enumerate idea lists (if the store uses them) and walk each.
+    // 2) Enumerate idea lists (where most products live) and walk each fully.
     const listRes = await chrome.scripting.executeScript({ target: { tabId }, func: harvestStorefrontListsInPage })
     const lr = (listRes && listRes[0] && listRes[0].result) || null
     if (lr && lr.signedOut) return { ok: false, error: 'signed-out' }
-    const lists = ((lr && lr.lists) || []).slice(0, 20) // cap so a huge storefront stays under the message timeout
+    const allLists = (lr && lr.lists) || []
     const cleanListTitle = (t) => (t || '').replace(/\s*[\d,]+\s*items?$/i, '').replace(/\s+/g, ' ').trim() || null
-    for (const list of lists) {
+    // Time-box the walk: a storefront with hundreds of products across many lists
+    // can't always finish inside one message-channel window, so we walk lists
+    // until the budget runs low, then stop and report `partial`. Every product is
+    // upserted, so clicking Import again resumes where the count left off instead
+    // of stalling on the root shelf. (Deadline leaves headroom before the 175s
+    // handler timeout + the push.)
+    const DEADLINE = Date.now() + 150000
+    let walked = 0, partial = false
+    for (const list of allLists) {
       if (!list || !list.url) continue
+      if (Date.now() > DEADLINE) { partial = true; break }
       try {
         await chrome.tabs.update(tabId, { url: list.url })
         await waitForTabLoad(tabId, 30000)
-        await _sleep(1200)
-        const iRes = await chrome.scripting.executeScript({ target: { tabId }, func: harvestIdeaListInPage })
+        await _sleep(1000)
+        // A dedicated list page can hold hundreds of tiles — give the scroller a
+        // bigger budget so a big list loads fully instead of its first screen.
+        const iRes = await chrome.scripting.executeScript({ target: { tabId }, func: harvestIdeaListInPage, args: [40] })
         const ir = (iRes && iRes[0] && iRes[0].result) || null
         if (ir && ir.items) addItems(ir.items, cleanListTitle(list.title))
+        walked++
       } catch (e) { /* skip a list that won't load */ }
     }
+    if (walked < allLists.length) partial = true
     if (!products.length) return { ok: false, error: 'no-products' }
     const push = await pushCatalogToMvp(products)
-    return { ok: !!(push && push.ok), count: products.length, lists: lists.length, error: (push && push.ok) ? undefined : (push && push.error) }
+    return { ok: !!(push && push.ok), count: products.length, lists: walked, partial, error: (push && push.ok) ? undefined : (push && push.error) }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'scan-failed' }
   } finally {

@@ -68,7 +68,14 @@ export default function StorefrontCatalog() {
       const r = await requestStorefrontCatalogScan(clean)
       if (r.ok) {
         await load()
-        setMsg({ ok: true, text: r.count ? `Imported ${r.count} product${r.count === 1 ? '' : 's'} from your storefront.` : 'Checked your storefront — nothing new to add.' })
+        setMsg({
+          ok: true,
+          text: r.count
+            ? (r.partial
+                ? `Imported ${r.count} product${r.count === 1 ? '' : 's'} so far — your storefront has more than one pass can read. Click Import full storefront again to pick up the rest.`
+                : `Imported ${r.count} product${r.count === 1 ? '' : 's'} from your storefront.`)
+            : 'Checked your storefront — nothing new to add.',
+        })
       } else if (r.error === 'not-installed') {
         setMsg({ ok: false, text: 'Install SCOUT first — it reads your public storefront. Then Import again.' })
       } else if (r.error === 'bad-url') {
