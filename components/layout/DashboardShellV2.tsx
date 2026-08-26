@@ -601,6 +601,10 @@ export default function DashboardShellV2({
         // view now, so the Geniuslink-clicks Labs page was dropped to kill the
         // name clash and the empty state for storefront-only creators.
         { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: isPro },
+        // Brand Radar — server-side storefront + TikTok ingestion (Apify /
+        // SocialCrawl) → the brands a creator has worked with. Ships dark until a
+        // provider token is set; Pro/admin-only while it's experimental.
+        { href: '/brand-radar', icon: <Radar size={15} />, label: 'Brand Radar', gate: isPro },
         // MVP x Wayward graduated out of Labs 2026-08 → now under the network
         // finders, right below MVP x PartnerBoost.
         // Clip Factory graduated out of Labs 2026-08 → now lives under Create

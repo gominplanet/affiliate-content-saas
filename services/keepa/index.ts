@@ -513,6 +513,50 @@ export async function fetchKeepaBasics(asins: string[], domainId = KEEPA_DOMAIN_
   return out
 }
 
+export interface KeepaBrandInfo { brand: string | null; title: string | null; imageUrl: string | null }
+
+/**
+ * Brand + clean title + image for a batch of ASINs — the enrichment behind the
+ * storefront catalog (a bare ASIN, or a product whose only "title" is its ASIN,
+ * becomes a real brand + name). Keepa's /product response carries `brand` and
+ * `title` directly, so this is a cheap read (history=0) batched 100/call. Empty
+ * map when Keepa isn't configured, so callers just fall back to what they had.
+ * INTERNAL only — never surface the source to users.
+ */
+export async function fetchKeepaBrandInfo(asins: string[], domainId = KEEPA_DOMAIN_US): Promise<Map<string, KeepaBrandInfo>> {
+  const out = new Map<string, KeepaBrandInfo>()
+  const key = process.env.KEEPA_API_KEY
+  const valid = [...new Set(asins.map((a) => String(a || '').trim().toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))]
+  if (!key || !valid.length) return out
+  const cleanBrand = (b: unknown): string | null => {
+    const s = typeof b === 'string' ? b.trim() : ''
+    // Keepa sometimes returns "Visit the X Store" / "Brand: X" / "-" placeholders.
+    if (!s || s === '-' || /^(null|n\/?a|unknown)$/i.test(s)) return null
+    const m = s.replace(/^brand:\s*/i, '').replace(/^visit the\s+/i, '').replace(/\s+store$/i, '').trim()
+    return m || null
+  }
+  for (let i = 0; i < valid.length; i += 100) {
+    const batch = valid.slice(i, i + 100)
+    const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${batch.join(',')}&stats=0&history=0`
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(45_000) })
+      if (!res.ok) continue
+      const data = await res.json() as { products?: unknown[] }
+      for (const raw of (Array.isArray(data.products) ? data.products : [])) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const product = raw as any
+        const asin = String(product?.asin || '').toUpperCase()
+        if (!/^[A-Z0-9]{10}$/.test(asin)) continue
+        const title = typeof product.title === 'string' && product.title.trim() ? product.title.trim().slice(0, 300) : null
+        const csv = typeof product.imagesCSV === 'string' && product.imagesCSV.trim() ? product.imagesCSV : null
+        const imageUrl = keepaProductImageUrl(product.images) ?? (csv ? keepaImageUrl(csv.split(',')[0]) : null)
+        out.set(asin, { brand: cleanBrand(product.brand), title, imageUrl })
+      }
+    } catch { /* skip this batch */ }
+  }
+  return out
+}
+
 /**
  * Keepa's `videos` array holds BOTH image-carousel videos and community/customer
  * videos from the listing's "Videos" section. We only want the carousel ones —
