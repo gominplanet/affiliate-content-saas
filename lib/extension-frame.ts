@@ -316,10 +316,25 @@ export interface IdeaScanResult { ok: boolean; count?: number; upserted?: number
  * focus steal). Best-effort: resolves with { ok:false, error } when SCOUT isn't
  * installed so the caller can fall back to the old window.open flow.
  */
+/**
+ * Force a page URL to an absolute https:// URL before it's handed to the
+ * extension. A scheme-less value (e.g. "www.amazon.com/shop/name") is resolved by
+ * the extension RELATIVE TO ITS OWN chrome-extension:// origin, producing
+ * "chrome-extension://<id>/www.amazon.com/shop/name" — which it can't open ("Cannot
+ * access contents of url …"). Every scan that takes a URL runs its input through
+ * this so a pasted bare host can never break the crawl.
+ */
+function absoluteUrl(url: string): string {
+  const t = (url || '').trim()
+  if (!t) return t
+  if (/^https?:\/\//i.test(t)) return t
+  return `https://${t.replace(/^\/+/, '')}`
+}
+
 export async function requestIdeaListScan(url: string): Promise<IdeaScanResult> {
   if (!url) return { ok: false, error: 'no-url' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_IDEA_LIST', url }, 120000)
+  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_IDEA_LIST', url: absoluteUrl(url) }, 120000)
   if (!resp) return { ok: false, error: 'timeout' }
   return { ok: !!resp.ok, count: resp.count, upserted: resp.upserted, error: resp.error }
 }
@@ -332,7 +347,7 @@ export async function requestIdeaListScan(url: string): Promise<IdeaScanResult> 
 export async function requestStorefrontScan(url: string): Promise<IdeaScanResult> {
   if (!url) return { ok: false, error: 'no-url' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_STOREFRONT', url }, 120000)
+  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_STOREFRONT', url: absoluteUrl(url) }, 120000)
   if (!resp) return { ok: false, error: 'timeout' }
   return { ok: !!resp.ok, count: resp.count, error: resp.error }
 }
@@ -345,7 +360,7 @@ export async function requestStorefrontScan(url: string): Promise<IdeaScanResult
 export async function requestStorefrontCatalogScan(url: string): Promise<IdeaScanResult> {
   if (!url) return { ok: false, error: 'no-url' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_STOREFRONT_CATALOG', url }, 180000)
+  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_STOREFRONT_CATALOG', url: absoluteUrl(url) }, 180000)
   if (!resp) return { ok: false, error: 'timeout' }
   return { ok: !!resp.ok, count: resp.count, error: resp.error }
 }
