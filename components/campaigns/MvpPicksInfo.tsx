@@ -43,8 +43,8 @@ export default function MvpPicksInfo() {
 
       {open && (
         <div
-          className="absolute left-0 top-full mt-2 z-50 w-[320px] sm:w-[380px] rounded-2xl border p-4 shadow-xl"
-          style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: '0 12px 40px rgba(0,0,0,0.18)' }}
+          className="absolute left-0 top-full mt-2 z-50 w-[320px] sm:w-[380px] rounded-2xl border p-4 shadow-xl bg-white dark:bg-[#16161a]"
+          style={{ borderColor: 'var(--border)', boxShadow: '0 12px 40px rgba(0,0,0,0.18)' }}
         >
           <div className="flex items-start justify-between gap-3 mb-2">
             <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>What “MVP Picks” means</p>
