@@ -52,11 +52,16 @@ export default function StorefrontCatalog() {
   }, [load])
 
   const runImport = useCallback(async () => {
-    const clean = url.trim()
+    let clean = url.trim()
     if (!/amazon\.[a-z.]+\/shop\//i.test(clean)) {
       setMsg({ ok: false, text: 'Paste your storefront link — it looks like amazon.com/shop/yourname' })
       return
     }
+    // Force an absolute https:// URL. Without the scheme the extension resolves it
+    // relative to its own chrome-extension:// origin (chrome-extension://…/www.
+    // amazon.com/shop/…#mvp-sync) and can't open it, which is exactly the "Cannot
+    // access contents of url" failure.
+    if (!/^https?:\/\//i.test(clean)) clean = `https://${clean.replace(/^\/+/, '')}`
     try { localStorage.setItem(HANDLE_KEY, clean) } catch { /* ignore */ }
     setImporting(true); setMsg(null)
     try {
