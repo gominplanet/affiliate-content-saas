@@ -362,7 +362,7 @@ export async function requestStorefrontCatalogScan(url: string): Promise<IdeaSca
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_STOREFRONT_CATALOG', url: absoluteUrl(url) }, 180000)
   if (!resp) return { ok: false, error: 'timeout' }
-  return { ok: !!resp.ok, count: resp.count, error: resp.error }
+  return { ok: !!resp.ok, count: resp.count, partial: resp.partial, error: resp.error }
 }
 
 /**
