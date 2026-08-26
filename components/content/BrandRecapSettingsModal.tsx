@@ -74,20 +74,20 @@ export default function BrandRecapSettingsModal({ onClose }: { onClose: () => vo
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Tone</label>
-                <select value={s.tone} onChange={e => setS(v => ({ ...v, tone: e.target.value as BrandRecapSettings['tone'] }))} className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-sm focus:outline-none focus:border-[#7C3AED]">
+                <select value={s.tone} onChange={e => setS(v => ({ ...v, tone: e.target.value as BrandRecapSettings['tone'] }))} className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-white dark:bg-[#1a1a1d] text-sm focus:outline-none focus:border-[#7C3AED]">
                   {TONES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
                 <p className="text-[10px] text-[#86868b] mt-1">Used by &ldquo;Polish with AI&rdquo;.</p>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your name (sign-off)</label>
-                <input value={s.senderName} onChange={e => setS(v => ({ ...v, senderName: e.target.value }))} placeholder="e.g. Seb & Michelle" className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-sm focus:outline-none focus:border-[#7C3AED]" />
+                <input value={s.senderName} onChange={e => setS(v => ({ ...v, senderName: e.target.value }))} placeholder="e.g. Seb & Michelle" className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-white dark:bg-[#1a1a1d] text-sm focus:outline-none focus:border-[#7C3AED]" />
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Blog URL (sign-off)</label>
-              <input value={s.siteUrl} onChange={e => setS(v => ({ ...v, siteUrl: e.target.value }))} placeholder="https://www.yourblog.com" className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-sm font-mono focus:outline-none focus:border-[#7C3AED]" />
+              <input value={s.siteUrl} onChange={e => setS(v => ({ ...v, siteUrl: e.target.value }))} placeholder="https://www.yourblog.com" className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-white dark:bg-[#1a1a1d] text-sm font-mono focus:outline-none focus:border-[#7C3AED]" />
             </div>
 
             <div>
@@ -99,7 +99,7 @@ export default function BrandRecapSettingsModal({ onClose }: { onClose: () => vo
                 value={s.template}
                 onChange={e => setS(v => ({ ...v, template: e.target.value }))}
                 rows={11}
-                className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-[13px] leading-relaxed resize-none focus:outline-none focus:border-[#7C3AED]"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-white dark:bg-[#1a1a1d] text-[13px] leading-relaxed resize-none focus:outline-none focus:border-[#7C3AED]"
                 spellCheck
               />
               <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">

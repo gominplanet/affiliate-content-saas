@@ -526,7 +526,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                 value={brand}
                 onChange={e => { setBrand(e.target.value); setEdited(false) }}
                 placeholder="e.g. SHEHDS"
-                className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-sm focus:outline-none focus:border-[#7C3AED]"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-white dark:bg-[#1a1a1d] text-sm focus:outline-none focus:border-[#7C3AED]"
               />
             </div>
 
@@ -584,7 +584,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                         value={pasteUrl}
                         onChange={e => setPasteUrl(e.target.value)}
                         placeholder="https://www.amazon.com/vdp/…"
-                        className="flex-1 px-2 py-1.5 rounded-md border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-[11px] font-mono focus:outline-none focus:border-[#7C3AED]"
+                        className="flex-1 px-2 py-1.5 rounded-md border border-[var(--border-2,#e5e5e7)] bg-white dark:bg-[#1a1a1d] text-[11px] font-mono focus:outline-none focus:border-[#7C3AED]"
                       />
                       <button
                         onClick={async () => { if (pasteUrl.trim() && await saveAmazonVideo(pasteUrl.trim())) { setPasteUrl(''); toast.success('Added your Amazon video.') } }}
@@ -613,7 +613,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                 value={message}
                 onChange={e => { setMessage(e.target.value); setEdited(true) }}
                 rows={11}
-                className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-[13px] leading-relaxed resize-none focus:outline-none focus:border-[#7C3AED]"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-white dark:bg-[#1a1a1d] text-[13px] leading-relaxed resize-none focus:outline-none focus:border-[#7C3AED]"
                 spellCheck
               />
             </div>

@@ -137,7 +137,7 @@ export default function ScheduleEditModal({
               type="datetime-local"
               value={when}
               onChange={e => setWhen(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-sm focus:outline-none focus:border-[#7C3AED]"
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-white dark:bg-[#1a1a1d] text-sm focus:outline-none focus:border-[#7C3AED]"
             />
             <p className="text-[10px] text-[#86868b] mt-1">Social posts shift with it, keeping their spacing.</p>
           </div>
