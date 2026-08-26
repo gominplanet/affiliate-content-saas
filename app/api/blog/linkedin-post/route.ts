@@ -18,8 +18,7 @@ import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
-import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
-import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
+import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
 import { spendGate } from '@/lib/ai-spend'
 
@@ -173,15 +172,12 @@ Return ONLY the post text, no extra commentary.`,
     // both). composeCaption places the affiliate + blog links and the FTC
     // disclosure in the right order; the write-up itself carries no links.
     let affiliateLink = resolvePostAffiliateLink(post)
-    // "If a user has a Geniuslink, MVP always uses it." (best-effort upgrade)
-    if (affiliateLink && integration?.geniuslink_api_key && integration?.geniuslink_api_secret) {
-      const glGroupId = await resolveGeniuslinkGroupId({
-        supabase, siteId: (post as any).wordpress_site_id ?? null, siteUrl: (post as any).wordpress_url ?? null,
-        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret,
-      }).catch(() => null)
-      affiliateLink = await ensureAffiliateGeniuslink(supabase, {
-        postId: (post as any).id, link: affiliateLink, title: (post as any).title ?? '',
-        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret, groupId: glGroupId,
+    // Cloak the product CTA link per the creator's chosen Link style (best-effort).
+    if (affiliateLink) {
+      affiliateLink = await ensureAffiliateShareLink(supabase, {
+        postId: (post as any).id, link: affiliateLink, title: (post as any).title ?? '', userId: user.id,
+        apiKey: integration?.geniuslink_api_key ?? null, apiSecret: integration?.geniuslink_api_secret ?? null,
+        siteId: (post as any).wordpress_site_id ?? null, siteUrl: (post as any).wordpress_url ?? null,
       })
     }
     const pref = linkPrefFor(parseLinkPrefs(integration?.social_link_modes), 'linkedin')

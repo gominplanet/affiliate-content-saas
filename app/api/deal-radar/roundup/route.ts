@@ -16,6 +16,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { applyPostFixes } from '@/lib/seo-fix'
 import { resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal, type DigestDealRow } from '@/lib/weekly-digest'
+import { getLinkStyle } from '@/lib/link-cloak'
 import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
 import { writeContentSchema } from '@/lib/content-schema'
@@ -68,10 +69,13 @@ export async function POST(request: Request) {
     // independent Geniuslink calls awaited one-by-one, ~4-10s of dead latency
     // on a user-facing action). Capped at 12 deals, so plain Promise.all is
     // safe; order is preserved by map.
+    // Resolve the creator's link style ONCE, then reuse it for every deal (avoids
+    // an integrations read per item).
+    const linkCfg = await getLinkStyle(supabase, user.id)
     const deals: DigestDeal[] = await Promise.all(
       dealRows.map(async (r) => ({
         ...r,
-        affiliateUrl: await resolveAffiliateUrl(r.asin, r.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null, user.id),
+        affiliateUrl: await resolveAffiliateUrl(r.asin, r.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null, user.id, linkCfg),
       })),
     )
 

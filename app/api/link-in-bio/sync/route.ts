@@ -12,6 +12,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { canUseDealRadar } from '@/lib/feature-access'
 import { resolveAffiliateUrl } from '@/lib/weekly-digest'
+import { getLinkStyle } from '@/lib/link-cloak'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 
@@ -147,6 +148,9 @@ export async function POST() {
   // Geniuslink (pages imported before wrapping existed keep their old links, and
   // the "skip existing" logic never touched them). Only replace when wrapping
   // actually produced a geni.us URL — so a failing wrap never rewrites a good link.
+  // Resolve the creator's link style ONCE for the whole sync (both loops below
+  // reuse it, so we don't read integrations per tile).
+  const linkCfg = await getLinkStyle(sb, user.id)
   let relinked = 0
   if (gKey && gSecret) {
     for (const e of existingRows) {
@@ -154,7 +158,7 @@ export async function POST() {
       const asinU = (e.asin || '').toUpperCase()
       if (!/^[A-Z0-9]{10}$/.test(asinU)) continue
       if (!e.url || isGeni(e.url) || !isTaggedAmazon(e.url)) continue
-      const wrapped = await resolveAffiliateUrl(asinU, e.title || asinU, tag, gKey, gSecret, user.id)
+      const wrapped = await resolveAffiliateUrl(asinU, e.title || asinU, tag, gKey, gSecret, user.id, linkCfg)
       if (wrapped && isGeni(wrapped) && wrapped !== e.url) {
         await sb.from('link_page_items').update({ url: wrapped }).eq('id', e.id)
         relinked++
@@ -180,7 +184,7 @@ export async function POST() {
       if (passport) {
         url = passport
       } else if (Date.now() - started < 45_000) {
-        url = await resolveAffiliateUrl(asinU, title, tag, gKey, gSecret, user.id)
+        url = await resolveAffiliateUrl(asinU, title, tag, gKey, gSecret, user.id, linkCfg)
       } else {
         url = tag ? `https://www.amazon.com/dp/${asinU}?tag=${encodeURIComponent(tag)}` : `https://www.amazon.com/dp/${asinU}`
       }

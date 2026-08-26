@@ -23,6 +23,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { enrichAndRankIdeaList, type RankedProduct } from '@/lib/idea-list-rank'
 import { resolveAffiliateUrl } from '@/lib/weekly-digest'
+import { getLinkStyle } from '@/lib/link-cloak'
 import { fetchIdeaList, normalizeListUrl, cleanListName } from '@/lib/amazon-idea-list'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { generateArtDirectorBlogHero } from '@/lib/art-director-pin'
@@ -163,7 +164,9 @@ HARD BAN — generic filler that could describe ANY product. Never write "punche
 
     // 5. Assemble the post: intro, a card per pick, outro, full-list CTA + disclosure.
     const tag = (intRow?.amazon_associates_tag as string) || null
-    const links = await pool(picks, 5, async (p) => ({ asin: p.asin, url: await resolveAffiliateUrl(p.asin, p.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null, user.id) }))
+    // Resolve the creator's link style ONCE, then reuse it for every pick.
+    const linkCfg = await getLinkStyle(supabase, user.id)
+    const links = await pool(picks, 5, async (p) => ({ asin: p.asin, url: await resolveAffiliateUrl(p.asin, p.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null, user.id, linkCfg) }))
     const linkByAsin = new Map(links.map(l => [l.asin, l.url]))
 
     const postTitle = (parsed.title || cleanListName(listTitle) || 'My Top Picks').slice(0, 120)

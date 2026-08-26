@@ -510,6 +510,13 @@ export async function POST(request: Request) {
                 // (their tracking params stripped) under the USER's Geniuslink,
                 // so the link points to the ACTUAL product but earns the USER.
                 try { affiliateUrl = await genius.createLink(stripTrackingParams(finalUrl), productName) } catch { /* leave unlinked */ }
+              } else {
+                // Non-geniuslink style (Passport/Bitly/Direct): still link the
+                // ACTUAL product with the original creator's tracking stripped,
+                // Bitly-shortened when that's the style. Never leave the product
+                // unlinked — that was the pre-unification behavior for anyone
+                // with Geniuslink keys, and dropping to null loses the click.
+                affiliateUrl = await cmpBitly(stripTrackingParams(finalUrl))
               }
               matched = true
               break

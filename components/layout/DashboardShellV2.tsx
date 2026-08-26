@@ -54,6 +54,7 @@ import ScoutTopbarButton from './ScoutTopbarButton'
 import SocialHealthTopbarButton from './SocialHealthTopbarButton'
 import UsageBar from './UsageBar'
 import UsageNudge from './UsageNudge'
+import AmazonTagNudge from './AmazonTagNudge'
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 import AmazonUpgradeGate from '@/components/upgrade/AmazonUpgradeGate'
@@ -580,6 +581,7 @@ export default function DashboardShellV2({
         { href: 'https://geni.us/Z0q3hY', icon: <ExternalLink size={13} />, label: 'PartnerBoost', external: true },
         { href: 'https://geni.us/khuHTe', icon: <ExternalLink size={13} />, label: 'Archer Affiliate', external: true },
         { href: 'https://geni.us/9qSLP', icon: <ExternalLink size={13} />, label: 'Cha-Ching Automate', external: true },
+        { href: 'https://jointrybe.com/r/HTLEJE47', icon: <ExternalLink size={13} />, label: 'TRYBE', external: true },
       ],
     },
     // LABS — experimental tools, Pro-only (gate: isPro), NOT promoted on
@@ -1231,6 +1233,9 @@ export default function DashboardShellV2({
         {/* Proactive nudge when a limit is 80%+ this period. Dismissible per
             period; self-hides otherwise. */}
         <UsageNudge />
+        {/* Alert when no Amazon Associates tag is set — Amazon affiliate links
+            can't earn without it. Dismissible; self-hides once a tag exists. */}
+        <AmazonTagNudge />
 
         {/* Page content. Generous max-width so the new chrome doesn't
             crush wide content (e.g. the comparison table on /comparison

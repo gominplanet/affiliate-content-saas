@@ -239,16 +239,19 @@ export async function POST(req: Request) {
         : `https://www.amazon.com/dp/${asin}`)
     }
   } else if (link) {
-    // Non-Amazon store/affiliate link — recloak it through Geniuslink when
-    // connected (geo-routing + click analytics), preserving the user's own
-    // link as the destination so any existing tracking is kept. Falls back to
-    // the raw link if Geniuslink isn't configured or minting fails.
+    // Non-Amazon store/affiliate link — cloak it per the creator's style:
+    // Geniuslink wrap (geo-routing + analytics), Bitly shorten, or leave the
+    // user's own link as-is (Direct/Passport). The user's link is the
+    // destination, so existing tracking is preserved; falls back to it on any
+    // hiccup so a link is never lost.
     affiliateUrl = link
     if (genius) {
       try {
         const wrapped = await genius.createLink(link, productName || 'product')
         if (wrapped) affiliateUrl = wrapped
       } catch { /* keep the user's own link */ }
+    } else {
+      affiliateUrl = await flBitly(link)
     }
   }
   // SCOUT read the store page in the user's own browser — the real grounding for

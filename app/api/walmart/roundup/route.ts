@@ -18,6 +18,8 @@ import { applyPostFixes } from '@/lib/seo-fix'
 import { generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal } from '@/lib/weekly-digest'
 import { getWalmartProductLinks } from '@/services/partnerboost'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 import { getExternalKey } from '@/lib/external-keys'
 import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
@@ -74,15 +76,21 @@ export async function POST(request: Request) {
     const itemIds = items.map((it) => String(it.itemId).trim())
     let minted: Record<string, string> = {}
     try { minted = await getWalmartProductLinks(pbToken, itemIds) } catch { /* bare fallback below */ }
+    // Cloak each deal link per the creator's ONE chosen Link style: Geniuslink →
+    // wrap, Bitly → shorten, Direct → the minted Walmart link. Passport doesn't
+    // apply (Walmart, no Amazon ASIN, and it would drop the network attribution).
+    const rStyle = await getLinkStyle(sb, user.id)
     const gKey = (intRow?.geniuslink_api_key || '').trim()
     const gSecret = (intRow?.geniuslink_api_secret || '').trim()
-    const genius = gKey && gSecret ? createGeniuslinkService(gKey, gSecret) : null
+    const genius = rStyle.style === 'geniuslink' && gKey && gSecret ? createGeniuslinkService(gKey, gSecret) : null
 
     const deals: DigestDeal[] = await Promise.all(items.map(async (it): Promise<DigestDeal> => {
       const id = String(it.itemId).trim()
       let affiliateUrl = minted[id] || (it.url || '').trim() || `https://www.walmart.com/ip/${id}`
       if (genius && minted[id]) {
         try { const { url } = await genius.createLinkWithCode(affiliateUrl, (it.name || 'Walmart').slice(0, 80)); if (url) affiliateUrl = url } catch { /* keep minted */ }
+      } else if (rStyle.style === 'bitly' && rStyle.bitlyToken) {
+        try { const short = await shortenBitly(rStyle.bitlyToken, affiliateUrl); if (short) affiliateUrl = short } catch { /* keep minted */ }
       }
       return {
         asin: id,

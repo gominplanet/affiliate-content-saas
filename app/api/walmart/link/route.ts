@@ -17,6 +17,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getWalmartProductLinks } from '@/services/partnerboost'
 import { getExternalKey } from '@/lib/external-keys'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { shortenBitly } from '@/lib/bitly'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,19 +49,27 @@ export async function POST(request: NextRequest) {
       url = fallbackUrl
     }
 
-    // Cloak through Geniuslink when the user has it connected — same treatment as
-    // the generated post's link, so a copied link matches what a post would use.
+    // Cloak per the creator's ONE chosen Link style — same treatment as a
+    // generated post, so a copied link matches what a post would use. Geniuslink
+    // wraps, Bitly shortens, Direct keeps the minted link. Passport doesn't apply
+    // (Walmart, no Amazon ASIN, and it would drop the network attribution).
     let cloaked = false
     const { data: intRow } = await supabase
       .from('integrations')
       .select('geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
       .maybeSingle()
-    if (source === 'minted' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    const wlStyle = await getLinkStyle(supabase, user.id)
+    if (source === 'minted' && wlStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
       try {
         const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
         const { url: cl } = await genius.createLinkWithCode(url, (body.title || 'Walmart').slice(0, 80))
         if (cl) { url = cl; cloaked = true }
+      } catch { /* non-fatal — return the un-cloaked minted link */ }
+    } else if (source === 'minted' && wlStyle.style === 'bitly' && wlStyle.bitlyToken) {
+      try {
+        const short = await shortenBitly(wlStyle.bitlyToken, url)
+        if (short) { url = short; cloaked = true }
       } catch { /* non-fatal — return the un-cloaked minted link */ }
     }
 
