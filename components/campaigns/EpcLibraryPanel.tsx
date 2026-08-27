@@ -10,8 +10,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Radar, Loader2, Search, ExternalLink, Star, Trash2, RefreshCw, Send, FileText, ArrowRight, Check, Image as ImageIcon, Link2 as LinkIcon, Copy, ChevronDown, ShoppingCart } from 'lucide-react'
-import { scoutCreatorConnections, type ScoutError } from '@/lib/extension-frame'
+import { Radar, Loader2, Search, ExternalLink, Star, Trash2, RefreshCw, Send, FileText, ArrowRight, Check, Image as ImageIcon, Link2 as LinkIcon, Copy, ChevronDown, ShoppingCart, Download } from 'lucide-react'
+import { scoutCreatorConnections, loadEpcViaApi, type ScoutError } from '@/lib/extension-frame'
 import { tierAllowsSocial, tierAllowsCampaigns, type Tier } from '@/lib/tier'
 import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
 
@@ -129,6 +129,11 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   const [filling, setFilling] = useState(false)
   const [fillMsg, setFillMsg] = useState<string | null>(null)
   const [cleaning, setCleaning] = useState(false)
+  // ViralVue-style API load: paginate Amazon's own spcc list endpoint with a live
+  // running count, instead of scraping the grid.
+  const [apiLoading, setApiLoading] = useState(false)
+  const [apiCount, setApiCount] = useState<{ loaded: number; total: number | null } | null>(null)
+  const apiCancel = useRef(false)
   const [cleanupOpen, setCleanupOpen] = useState(false)
   const [cleanupData, setCleanupData] = useState<EpcCleanupPreview | null>(null)
   const cleanupRef = useRef<HTMLDivElement>(null)
@@ -245,6 +250,48 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
       toast.error('Scan failed unexpectedly. Reload and try again.')
     } finally {
       setScanning(false)
+    }
+  }
+
+  // Load the whole EPC opportunity list via Amazon's own API (the ViralVue way):
+  // the extension paginates the spcc list endpoint and ingests each batch live, so
+  // the count climbs on its own with no duplicates. Long-running; the grid refreshes
+  // as batches land. Cancelable.
+  async function loadViaApi() {
+    if (apiLoading) return
+    apiCancel.current = false
+    setApiLoading(true)
+    setApiCount({ loaded: 0, total: null })
+    let lastRefresh = 0
+    try {
+      const res = await loadEpcViaApi(
+        (p) => {
+          setApiCount({ loaded: p.loaded, total: p.total })
+          // Refresh the grid + total periodically so the user sees rows landing,
+          // without hammering the list endpoint every poll.
+          const now = Date.now()
+          if (now - lastRefresh > 8000) { lastRefresh = now; void load(q, sort, filters) }
+        },
+        () => apiCancel.current,
+      )
+      await load(q, sort, filters)
+      if (res.canceled) {
+        toast.info(`Stopped. Loaded ${res.loaded.toLocaleString()} so far — they're saved.`)
+      } else if (!res.ok) {
+        const why = res.error === 'not-installed' ? 'SCOUT isn’t installed.'
+          : res.error === 'no-capture' ? 'Couldn’t read Amazon’s list request. Open your Sponsored Products tab on Amazon once, then try again.'
+          : res.error === 'unauthorized' ? 'Amazon rejected the request. Sign in to Creator Connections on Amazon, then retry.'
+          : res.error === 'throttled' ? `Amazon throttled the load at ${res.loaded.toLocaleString()}. What loaded is saved — run it again to continue.`
+          : `Load stopped (${res.error || 'unknown'}). ${res.loaded ? `${res.loaded.toLocaleString()} saved.` : ''}`
+        toast.error(why)
+      } else {
+        toast.success(`Loaded ${res.loaded.toLocaleString()} opportunities from Amazon.${res.total ? ` Amazon reported ${res.total.toLocaleString()}.` : ''}`)
+      }
+    } catch {
+      toast.error('The Amazon load failed unexpectedly. Try again.')
+    } finally {
+      setApiLoading(false)
+      setApiCount(null)
     }
   }
 
@@ -365,10 +412,27 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
                   title="Opens Creator Connections on Amazon. Sign in with the Amazon Associates account that holds your store ID, then accept your campaigns and open the Accepted tab.">
                   <ShoppingCart size={14} /> Open my EPC on Amazon <ExternalLink size={12} />
                 </a>
-                <button onClick={scan} disabled={scanning}
+                <button onClick={loadViaApi} disabled={apiLoading || scanning}
+                  title="Load every EPC opportunity straight from Amazon's own API (paginated, exact count, no duplicates). Runs in the background and fills the library live."
                   className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70" style={{ background: '#7C3AED' }}>
+                  {apiLoading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                  {apiLoading
+                    ? `Loading… ${(apiCount?.loaded ?? 0).toLocaleString()}${apiCount?.total ? ` / ${apiCount.total.toLocaleString()}` : ''}`
+                    : 'Load all from Amazon'}
+                </button>
+                {apiLoading && (
+                  <button onClick={() => { apiCancel.current = true }}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium border"
+                    style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+                    Stop
+                  </button>
+                )}
+                <button onClick={scan} disabled={scanning || apiLoading}
+                  title="Fallback: scrape the on-screen grid (slower and can miss/duplicate). Prefer 'Load all from Amazon'."
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[12.5px] font-medium border disabled:opacity-70"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-soft)', background: 'var(--surface)' }}>
                   {scanning ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                  {scanning ? 'Scanning…' : 'Scan my EPC opportunities'}
+                  {scanning ? 'Scanning…' : 'Scan grid (fallback)'}
                 </button>
               </div>
             )}

@@ -297,6 +297,51 @@ export async function requestMyCcCampaigns(opts?: { keyword?: string; maxPages?:
   return { ok: !!resp.ok, campaigns: Array.isArray(resp.campaigns) ? resp.campaigns : [], total: resp.total, hasMore: resp.hasMore, error: resp.error, reason: resp.reason, diag: resp.diag }
 }
 
+export interface EpcApiLoadProgress { loaded: number; total: number | null; pages: number; addedTotal: number }
+export interface EpcApiLoadResult { ok: boolean; loaded: number; total: number | null; addedTotal: number; error?: string; sample?: string | null; canceled?: boolean }
+
+// A running EPC API load, as reported by the background job.
+interface EpcJobSnapshot { ok?: boolean; running?: boolean; started?: boolean; already?: boolean; loaded?: number; total?: number | null; done?: boolean; error?: string | null; pages?: number; addedTotal?: number; sample?: string | null }
+
+/**
+ * Load the creator's ENTIRE EPC / Sponsored-Products opportunity list straight
+ * from Amazon's own connect API (the ViralVue approach) instead of DOM-scraping
+ * the virtualized grid. The extension opens the spcc grid, learns the page's list
+ * query, and paginates it in the background, ingesting each batch into MVP's EPC
+ * library live. This is a LONG job (tens of thousands at ~30/page, throttle-paced),
+ * so we start it, then poll for the running count and drive `onProgress` until it
+ * finishes. `shouldCancel` lets the caller stop it. Best-effort: resolves, never
+ * throws.
+ */
+export async function loadEpcViaApi(
+  onProgress?: (p: EpcApiLoadProgress) => void,
+  shouldCancel?: () => boolean,
+): Promise<EpcApiLoadResult> {
+  if (!(await isExtensionAvailable())) return { ok: false, loaded: 0, total: null, addedTotal: 0, error: 'not-installed' }
+  const start = await sendToExtension<EpcJobSnapshot>({ type: 'MVP_EPC_LOAD_START' }, 20000)
+  if (!start || !start.ok) return { ok: false, loaded: 0, total: null, addedTotal: 0, error: (start && start.error) || 'start-failed' }
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  let last: EpcJobSnapshot = start
+  // Poll until the job reports done. Each poll re-arms the service worker, so the
+  // long paginate keeps running between polls. Generous guard cap (~2h at 2.5s).
+  for (let i = 0; i < 3000; i++) {
+    if (shouldCancel && shouldCancel()) {
+      await sendToExtension<EpcJobSnapshot>({ type: 'MVP_EPC_LOAD_CANCEL' }, 8000)
+      return { ok: true, canceled: true, loaded: Number(last.loaded) || 0, total: last.total ?? null, addedTotal: Number(last.addedTotal) || 0, sample: last.sample ?? null }
+    }
+    await sleep(2500)
+    const snap = await sendToExtension<EpcJobSnapshot>({ type: 'MVP_EPC_LOAD_POLL' }, 8000)
+    if (!snap) continue // transient — keep polling
+    last = snap
+    if (onProgress) onProgress({ loaded: Number(snap.loaded) || 0, total: snap.total ?? null, pages: Number(snap.pages) || 0, addedTotal: Number(snap.addedTotal) || 0 })
+    if (snap.done) {
+      return { ok: !snap.error, loaded: Number(snap.loaded) || 0, total: snap.total ?? null, addedTotal: Number(snap.addedTotal) || 0, error: snap.error || undefined, sample: snap.sample ?? null }
+    }
+  }
+  return { ok: false, loaded: Number(last.loaded) || 0, total: last.total ?? null, addedTotal: Number(last.addedTotal) || 0, error: 'poll-timeout', sample: last.sample ?? null }
+}
+
 export async function requestMessageBrand(detailsUrl: string, message: string): Promise<MessageBrandResult> {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }

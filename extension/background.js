@@ -152,6 +152,33 @@ async function pushVideosToMvp(asins) {
   return { reached: false, ok: false, error: lastErr }
 }
 
+// POST a batch of EPC opportunities (from the API loader) into MVP's EPC library.
+// Same session-cookie bridge + apex-first origin fallback as the storefront
+// pushes. The ingest endpoint upserts on (user_id, asin), so re-flushing a batch
+// is safe (dupes collapse). Returns { reached, ok, added, saved, error }.
+async function pushEpcToMvp(products) {
+  const rows = Array.isArray(products) ? products : []
+  if (!rows.length) return { reached: true, ok: true, added: 0, saved: 0 }
+  const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
+  let lastErr = 'network error'
+  for (const origin of origins) {
+    try {
+      const res = await fetch(`${origin}/api/epc/ingest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        redirect: 'follow',
+        body: JSON.stringify({ products: rows }),
+      })
+      let body = null
+      try { body = await res.json() } catch (e) {}
+      if (res.ok) return { reached: true, ok: true, added: body && body.added, saved: body && body.saved }
+      return { reached: true, ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}` }
+    } catch (e) { lastErr = (e && e.message) || 'network error' }
+  }
+  return { reached: false, ok: false, error: lastErr }
+}
+
 // Draft an outreach message via MVP, from the WORKER (not the content script):
 // a content-script fetch amazon.com→mvpaffiliate.io is subject to Amazon's page
 // CSP `connect-src` and can be silently blocked. Same worker-first pattern as
@@ -602,6 +629,37 @@ function latestCollabSearch(sinceTs) {
     return { body: rec.body, headers: rec.headers || {} }
   }
   return null
+}
+
+// The most recent SPCC / Sponsored-Products list query the page fired. When SCOUT
+// opens the EPC opportunities grid (type=spcc), the page issues its own list
+// request to Amazon's connect API — body AND anti-CSRF headers. We capture and
+// replay it (paginated) instead of DOM-scraping the virtualized grid, which is
+// how a clean, dedup-free, fully-counted load is possible even though EPC has no
+// export. We DON'T assume the exact endpoint name: we take the most recent
+// /connect/api search POST after this run's page load, preferring one that reads
+// like the sponsored-products view (spcc / budget-availability / EPC), and replay
+// that same URL verbatim. Skips per-ASIN message lookups.
+function latestSpccSearch(sinceTs) {
+  let fallback = null
+  for (let i = _ccNetRing.length - 1; i >= 0; i--) {
+    const rec = _ccNetRing[i]
+    if (!rec || typeof rec.body !== 'string' || !rec.body) continue
+    if (sinceTs && rec.ts && rec.ts < sinceTs) continue
+    const url = String(rec.url || '')
+    // A list/search query on the connect API (not chat/message/collaboration-msg).
+    if (!/\/connect\/api\/[^?]*search/i.test(url)) continue
+    if (/"fieldName"\s*:\s*"asin"/i.test(rec.body)) continue
+    const hay = (url + ' ' + rec.body).toLowerCase()
+    // Strong signal this is the sponsored-products (EPC) query, not affiliate-plus.
+    if (/spcc|budgetavailability|sponsored|"type"\s*:\s*"spcc"|estimatedepc|\bepc\b/.test(hay)) {
+      return { url: rec.url, body: rec.body, headers: rec.headers || {} }
+    }
+    // Otherwise remember the newest search POST as a fallback — we opened the spcc
+    // grid, so its list query is the most likely recent search even without a hint.
+    if (!fallback) fallback = { url: rec.url, body: rec.body, headers: rec.headers || {} }
+  }
+  return fallback
 }
 
 // Replace the STRING value of a top-level-ish JSON key with a placeholder, leaving
@@ -1130,6 +1188,211 @@ function waitForTabLoad(tabId, ms) {
     chrome.tabs.onUpdated.addListener(onUpdated)
     setTimeout(() => { chrome.tabs.onUpdated.removeListener(onUpdated); resolve() }, ms)
   })
+}
+
+// ── EPC API loader ──────────────────────────────────────────────────────────
+// The ViralVue-style path: instead of DOM-scraping the virtualized Sponsored
+// Products grid (partial, dupes, no trustworthy count), replay the page's OWN
+// list query paginated. EPC has no export button, but the grid IS backed by a
+// connect-API search that returns 30 items + a nextToken per page — so paging it
+// yields every opportunity exactly once, with a real running count. Long job
+// (tens of thousands at ~30/page, paced to stay under Amazon's throttle), so it
+// runs in the background, ingests batches into MVP live, and the MVP tab polls
+// for progress.
+
+// Runs IN the page (MAIN world): fetch ONE page of the captured spcc query,
+// swapping only the pagination cursor. Returns the raw items + nextToken + total.
+// Self-contained (executeScript serializes it — no outer refs).
+function epcFetchPageInPage(opts) {
+  return (async () => {
+    try {
+      const DROP = { 'content-length': 1, 'host': 1, 'connection': 1, 'accept-encoding': 1 }
+      const hdr = () => {
+        const o = {}
+        const h = opts.headers || {}
+        for (const k in h) { if (!DROP[String(k).toLowerCase()]) o[k] = h[k] }
+        if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'
+        if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'
+        return o
+      }
+      // Take the captured body and set the pagination cursor. Field names vary, so
+      // set every plausible one; harmless extras are ignored server-side.
+      let body = opts.body
+      try {
+        const o = JSON.parse(opts.body)
+        o.pageNumber = opts.pageNumber
+        o.nextToken = opts.nextToken || null
+        if (o.pageSize == null) o.pageSize = 30
+        if (o.pagination && typeof o.pagination === 'object') {
+          o.pagination.pageNumber = opts.pageNumber
+          o.pagination.nextToken = opts.nextToken || null
+        }
+        body = JSON.stringify(o)
+      } catch (e) { /* non-JSON body — replay verbatim */ }
+
+      const r = await fetch(opts.url, { method: 'POST', headers: hdr(), body, credentials: 'include' })
+      let text = ''
+      try { text = await r.text() } catch (e) {}
+      let j = null
+      try { j = JSON.parse(text) } catch (e) {}
+      if (!r.ok || !j) return { status: r.status, items: [], nextToken: null, total: null, errText: (text || '').slice(0, 200) }
+
+      // Find the item array + total + nextToken across the shapes Amazon uses for
+      // these search endpoints (responses[0].ads is the collaboration shape; spcc
+      // may name it items/results/campaigns or nest it directly).
+      const resp = (j.responses && j.responses[0]) || j
+      const items = (resp && (resp.ads || resp.items || resp.results || resp.campaigns || resp.opportunities || resp.records)) || j.items || j.results || []
+      const total = (resp && (resp.totalResultCount ?? resp.totalCount ?? resp.total ?? (resp.pagination && (resp.pagination.totalCount ?? resp.pagination.total))))
+        ?? (j.totalResultCount ?? j.totalCount ?? j.total) ?? null
+      const nextToken = (resp && (resp.nextToken || (resp.pagination && resp.pagination.nextToken))) || j.nextToken || null
+      return { status: r.status, items: Array.isArray(items) ? items : [], nextToken, total, errText: '' }
+    } catch (e) {
+      return { status: 0, items: [], nextToken: null, total: null, errText: (e && e.message) || 'exception' }
+    }
+  })()
+}
+
+// Defensive map of ONE raw API item → the EPC ingest row shape
+// (matches app/api/epc/ingest IncomingRow). Field names differ across Amazon's
+// item shapes, so try a spread of candidates and deep-search for the ASIN.
+function mapEpcApiItem(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const firstStr = (...xs) => { for (const x of xs) { if (typeof x === 'string' && x.trim()) return x.trim() } return null }
+  const firstNum = (...xs) => { for (const x of xs) { const n = Number(x); if (x != null && x !== '' && isFinite(n)) return n } return null }
+  const deepAsin = (o, depth) => {
+    if (!o || depth > 4) return null
+    if (typeof o === 'string') { const m = o.toUpperCase().match(/\bB0[A-Z0-9]{8}\b/); return m ? m[0] : null }
+    if (Array.isArray(o)) { for (const v of o) { const a = deepAsin(v, depth + 1); if (a) return a } return null }
+    if (typeof o === 'object') { for (const k in o) { const a = deepAsin(o[k], depth + 1); if (a) return a } }
+    return null
+  }
+  let asin = firstStr(raw.asin, raw.ASIN, raw.productAsin, Array.isArray(raw.campaignAsins) && raw.campaignAsins[0], Array.isArray(raw.asinList) && raw.asinList[0])
+  asin = (asin || deepAsin(raw, 0) || '').toUpperCase()
+  if (!/^B0[A-Z0-9]{8}$/.test(asin)) return null
+  const budgetRaw = firstStr(raw.budgetAvailabilityScore, raw.budgetScore, raw.budget, raw.budgetAvailability)
+  const budget = budgetRaw ? (/(^|\W)(high)/i.test(budgetRaw) ? 'High' : /(^|\W)(medium)/i.test(budgetRaw) ? 'Medium' : /(^|\W)(low)/i.test(budgetRaw) ? 'Low' : null) : null
+  const epcValue = firstNum(raw.epc, raw.epcValue, raw.estimatedEpc, raw.estimatedEpcValue, raw.estimatedEarningsPerClick, raw.maxEpc, raw.epcUpTo)
+  const priceValue = firstNum(raw.price, raw.priceValue, raw.priceAmount, raw.buyingPrice, raw.listPrice, raw.priceCents != null ? Number(raw.priceCents) / 100 : null, raw.amount)
+  const rating = firstNum(raw.rating, raw.starRating, raw.averageRating, raw.averageStarRating, raw.reviewRating)
+  const endsAtRaw = firstStr(raw.endDate, raw.endsAt, raw.campaignEndDate, raw.endTime, raw.expiresAt)
+  return {
+    asin,
+    campaignName: firstStr(raw.title, raw.productTitle, raw.campaignName, raw.name, raw.productName, raw.itemName),
+    brand: firstStr(raw.brand, raw.brandName, raw.vendorName, raw.merchantName),
+    epc: epcValue != null ? `Up to $${epcValue.toFixed(2)}` : firstStr(raw.epcDisplay, raw.epcLabel),
+    epcValue,
+    price: priceValue != null ? `$${priceValue.toFixed(2)}` : firstStr(raw.priceDisplay),
+    priceValue,
+    rating,
+    budget,
+    endsAt: endsAtRaw,
+    image: firstStr(raw.imageUrl, raw.image, raw.productImage, raw.mainImageUrl, raw.imageLink, raw.thumbnailUrl, Array.isArray(raw.images) && raw.images[0]),
+  }
+}
+
+// In-memory job state for the EPC API load. Single job at a time; the MVP tab
+// polls MVP_EPC_LOAD_POLL for the running count while the background paginates.
+let _epcJob = null // { id, loaded, total, done, error, canceled, startedAt, finishedAt, pages, sample, addedTotal }
+
+function _epcSnapshot() {
+  if (!_epcJob) return { running: false }
+  return {
+    running: !_epcJob.done, id: _epcJob.id, loaded: _epcJob.loaded, total: _epcJob.total,
+    done: _epcJob.done, error: _epcJob.error || null, pages: _epcJob.pages,
+    addedTotal: _epcJob.addedTotal, sample: _epcJob.sample || null,
+  }
+}
+
+// Background driver: open the spcc grid, learn its list query, paginate it,
+// ingest batches into MVP, and keep _epcJob updated for polling. Paced to stay
+// under Amazon's throttle (ViralVue runs ~one page / 3s; we go a touch faster
+// with backoff on any non-OK). Best-effort; never throws (updates job.error).
+async function loadEpcViaApi() {
+  const job = { id: 'epc_' + Date.now(), loaded: 0, total: null, done: false, error: null, canceled: false, startedAt: Date.now(), finishedAt: null, pages: 0, sample: null, addedTotal: 0 }
+  _epcJob = job
+  const keepAlive = startKeepAlive()
+  let tabId = null
+  const seen = Object.create(null)
+  let pending = []
+  const flush = async () => {
+    if (!pending.length) return
+    const batch = pending; pending = []
+    try { const r = await pushEpcToMvp(batch); if (r && r.ok && typeof r.added === 'number') job.addedTotal += r.added } catch (e) {}
+  }
+  try {
+    const openedAt = Date.now()
+    const tab = await chrome.tabs.create({ url: ccSponsoredUrl(), active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 15000)
+    await _sleep(1500)
+    // Wait for the page to fire (and net-hook to capture) its spcc list query.
+    for (let i = 0; i < 30 && !latestSpccSearch(openedAt) && !job.canceled; i++) await _sleep(500)
+    const cap = latestSpccSearch(openedAt)
+    if (!cap || !cap.url || !cap.body) { job.error = 'no-capture'; job.done = true; job.finishedAt = Date.now(); return }
+
+    let nextToken = null
+    let pace = 1300           // ms between pages (throttle-safe)
+    let errStreak = 0
+    const MAX_PAGES = 4000    // hard backstop (~120k opportunities)
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      if (job.canceled) break
+      let res
+      try {
+        const out = await chrome.scripting.executeScript({
+          target: { tabId }, world: 'MAIN', func: epcFetchPageInPage,
+          args: [{ url: cap.url, headers: cap.headers, body: cap.body, pageNumber: page, nextToken }],
+        })
+        res = (out && out[0] && out[0].result) || null
+      } catch (e) { res = null }
+
+      if (!res || res.status === 0) {
+        if (++errStreak >= 4) { job.error = job.error || 'page-fetch-failed'; break }
+        await _sleep(pace * 2); continue
+      }
+      if (res.status === 429 || res.status >= 500) {
+        // Throttled / server hiccup — back off and retry the SAME page.
+        pace = Math.min(6000, pace + 1200)
+        if (++errStreak >= 6) { job.error = 'throttled'; break }
+        await _sleep(pace); continue
+      }
+      if (res.status === 401 || res.status === 403) { job.error = 'unauthorized'; break }
+      errStreak = 0
+      if (job.total == null && typeof res.total === 'number') job.total = res.total
+
+      const items = Array.isArray(res.items) ? res.items : []
+      if (!job.sample && items.length) { try { job.sample = JSON.stringify(items[0]).slice(0, 1800) } catch (e) {} }
+      let addedThisPage = 0
+      for (const raw of items) {
+        const row = mapEpcApiItem(raw)
+        if (!row || seen[row.asin]) continue
+        seen[row.asin] = 1
+        pending.push(row)
+        job.loaded++
+        addedThisPage++
+      }
+      job.pages = page
+      if (pending.length >= 300) await flush()
+
+      // Stop when the page is empty or there's no cursor for more. Some APIs
+      // page by number with no token — a fully-empty page is the end signal.
+      if (!items.length) break
+      if (!res.nextToken && addedThisPage === 0) break
+      nextToken = res.nextToken || null
+      if (!nextToken && items.length < 30) break // number-paged and short → last page
+      await _sleep(pace)
+    }
+    await flush()
+    job.done = true
+    job.finishedAt = Date.now()
+  } catch (e) {
+    job.error = job.error || ((e && e.message) || 'exception')
+    job.done = true
+    job.finishedAt = Date.now()
+    try { await flush() } catch (er) {}
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    stopKeepAlive(keepAlive)
+  }
 }
 
 // Run CC_SCAN on a tab; inject content.js once + retry if it isn't there yet.
@@ -4912,6 +5175,24 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response
+  }
+  if (msg.type === 'MVP_EPC_LOAD_START') {
+    // Start (or re-attach to) the EPC API loader — the ViralVue-style paginated
+    // load. Long-running, so we DON'T await: kick it off, return the job snapshot
+    // immediately, and let the MVP tab poll MVP_EPC_LOAD_POLL for the live count.
+    if (_epcJob && !_epcJob.done) { sendResponse({ ok: true, already: true, ..._epcSnapshot() }); return false }
+    loadEpcViaApi().catch(() => {}) // fire-and-forget; state lives in _epcJob
+    sendResponse({ ok: true, started: true, ..._epcSnapshot() })
+    return false
+  }
+  if (msg.type === 'MVP_EPC_LOAD_POLL') {
+    sendResponse({ ok: true, ..._epcSnapshot() })
+    return false
+  }
+  if (msg.type === 'MVP_EPC_LOAD_CANCEL') {
+    if (_epcJob && !_epcJob.done) _epcJob.canceled = true
+    sendResponse({ ok: true, ..._epcSnapshot() })
+    return false
   }
   if (msg.type === 'MVP_YT_INJECT_DISCLOSURES') {
     // Inject disclosures into Studio's OWN signed metadata_update (dirty + Save).
