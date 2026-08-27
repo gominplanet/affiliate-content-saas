@@ -297,7 +297,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         toast.info(`Stopped. Loaded ${res.loaded.toLocaleString()} so far — they're saved.`)
       } else if (!res.ok) {
         const why = res.error === 'not-installed' ? 'SCOUT isn’t installed.'
-          : res.error === 'no-accepted-set' ? 'Couldn’t identify your accepted offers (see the details line below). Open your Sponsored Products “Accepted” tab on Amazon once, then try again.'
+          : (res.error === 'no-rows' || res.error === 'no-accepted-set') ? 'Couldn’t read any EPC rows (see the details line below). Open your Sponsored Products tab on Amazon once, then try again.'
           : res.error === 'no-capture' ? 'Couldn’t read Amazon’s list request. Open your Sponsored Products tab on Amazon once, then try again.'
           : res.error === 'unauthorized' ? 'Amazon rejected the request. Sign in to Creator Connections on Amazon, then retry.'
           : res.error === 'throttled' ? `Amazon throttled the load at ${res.loaded.toLocaleString()}. What loaded is saved — run it again to continue.`

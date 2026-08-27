@@ -647,24 +647,10 @@ function latestSpccSearch(sinceTs) {
     if (!rec || typeof rec.body !== 'string' || !rec.body) continue
     if (sinceTs && rec.ts && rec.ts < sinceTs) continue
     const url = String(rec.url || '')
-    if (!/\/connect\/api\//i.test(url)) continue
-    // Skip chat/messaging + per-ASIN lookups — we want the grid's LIST query.
-    if (/\/(chat|message|conversation|thread)\b/i.test(url)) continue
+    // ONLY the Sponsored-Products (EPC) endpoint — never affiliate-plus.
+    if (!/\/connect\/api\/spcc\//i.test(url)) continue
     if (/"fieldName"\s*:\s*"asin"/i.test(rec.body)) continue
-    // A list/browse query: either the URL reads like one, or the body carries the
-    // pagination/filter shape these grids use. Endpoint naming varies (search /
-    // browse / list / campaign / spcc), so match on the query SHAPE, not just name.
-    const looksList = /(search|browse|list|query|campaign|spcc|opportunit)/i.test(url)
-      || /"(pageSize|pageNumber|nextToken|filterOptions|searchOptions|sortOptions)"/i.test(rec.body)
-    if (!looksList) continue
-    const hay = (url + ' ' + rec.body).toLowerCase()
-    // Strong signal this is the sponsored-products (EPC) query, not affiliate-plus.
-    if (/spcc|budgetavailability|sponsored|"type"\s*:\s*"spcc"|estimatedepc|\bepc\b/.test(hay)) {
-      return { url: rec.url, body: rec.body, headers: rec.headers || {} }
-    }
-    // Otherwise remember the newest list-shaped POST as a fallback — we opened the
-    // spcc grid, so its list query is the most likely recent one even without a hint.
-    if (!fallback) fallback = { url: rec.url, body: rec.body, headers: rec.headers || {} }
+    return { url: rec.url, body: rec.body, headers: rec.headers || {} }
   }
   return fallback
 }
@@ -681,12 +667,11 @@ function allSpccSearches(sinceTs) {
     if (!rec || typeof rec.body !== 'string' || !rec.body) continue
     if (sinceTs && rec.ts && rec.ts < sinceTs) continue
     const url = String(rec.url || '')
-    if (!/\/connect\/api\//i.test(url)) continue
-    if (/\/(chat|message|conversation|thread)\b/i.test(url)) continue
+    // ONLY the Sponsored-Products (EPC) endpoint. This deliberately excludes
+    // affiliate-plus /connect/api/collaboration/search (the 136k/780k catalog) —
+    // that's a different program handled separately.
+    if (!/\/connect\/api\/spcc\//i.test(url)) continue
     if (/"fieldName"\s*:\s*"asin"/i.test(rec.body)) continue
-    const looksList = /(search|browse|list|query|campaign|spcc|opportunit)/i.test(url)
-      || /"(pageSize|pageNumber|nextToken|filterOptions|searchOptions|sortOptions)"/i.test(rec.body)
-    if (!looksList) continue
     if (seenBodies[rec.body]) continue
     seenBodies[rec.body] = 1
     // Label by the statuses filter so the diagnostic is readable.
@@ -1457,87 +1442,56 @@ async function loadEpcViaApi() {
       } catch (e) { return null }
     }
 
-    // Test every captured query (and, as a safety net, a few status overrides on
-    // the base) and keep whichever returns the MOST rows — the Accepted set is
-    // orders of magnitude larger than the New-Opportunities handful.
-    const base = caps[0]
-    let best = null // { cap, so, total, item }
+    // Pick a captured spcc query that actually returns rows on page 1. All caps are
+    // now spcc-only (affiliate-plus excluded), so any with items is the grid feed.
+    // The grid is an infinite-scroll cursor feed: totalResults is null/per-batch and
+    // optedIn is null/false, so we DON'T gate on either — we just follow nextToken.
     const probe = []
-    // We want the creator's ACCEPTED set — items carry optedIn:true. The New
-    // Opportunities set (optedIn:false) and the whole-program catalog (statuses:
-    // null → ~780k, optedIn:false) are NOT it. So a candidate only qualifies when
-    // its page-1 items are mostly opted-in; among those we take the largest.
-    const consider = (label, cap, so, r) => {
-      const items = r && Array.isArray(r.items) ? r.items : []
-      const total = r && typeof r.total === 'number' ? r.total : items.length
-      const optedIn = items.filter((it) => it && it.optedIn === true).length
-      const accepted = items.length > 0 && optedIn >= items.length * 0.5
-      probe.push({ try: label, http: r ? r.status : 0, total: r ? r.total : null, items: items.length, optedIn, accepted })
-      if (r && (r.status === 401 || r.status === 403)) job.error = 'unauthorized'
-      if (accepted && total > 0 && (!best || total > best.total)) best = { cap, so, total, item: items[0], label }
-    }
+    let chosenCap = null, firstRes = null
     for (const c of caps) {
       if (job.canceled || job.error) break
-      consider(`cap:${c.label}`, c, { has: false }, await fetchPageFor(c, 1, null, { has: false }))
-      await _sleep(300)
-    }
-    // Fallback: accepted-type status overrides on the base — cheap page-1 probes —
-    // in case the accepted view's own query never got captured. Deliberately NO
-    // null/"all" here: that returns Amazon's entire catalog, not the creator's set.
-    const overrides = [
-      { v: ['OFFER_ACCEPTED'], l: 'OFFER_ACCEPTED' }, { v: ['ACCEPTED'], l: 'ACCEPTED' },
-      { v: ['OPTED_IN'], l: 'OPTED_IN' }, { v: ['OFFER_OPTED_IN'], l: 'OFFER_OPTED_IN' }, { v: ['ENROLLED'], l: 'ENROLLED' },
-    ]
-    for (const o of overrides) {
-      if (job.canceled || job.error || best) break
-      if (caps.some((c) => c.label === o.v.join('+'))) continue
-      consider(o.l, base, { has: true, v: o.v }, await fetchPageFor(base, 1, null, { has: true, v: o.v }))
-      await _sleep(300)
+      const r = await fetchPageFor(c, 1, null, { has: false })
+      const items = r && Array.isArray(r.items) ? r.items : []
+      probe.push({ try: `cap:${c.label}`, http: r ? r.status : 0, total: r ? r.total : null, items: items.length })
+      if (r && (r.status === 401 || r.status === 403)) { job.error = 'unauthorized'; break }
+      if (items.length && !chosenCap) { chosenCap = c; firstRes = r }
+      await _sleep(250)
     }
     job.diag.probe = probe
-    job.diag.chosen = best ? `${best.label}(${best.total})` : null
-    // Don't load a non-accepted set (opportunities / whole catalog). If we couldn't
-    // identify the opted-in set, stop and surface the probe so it's tunable.
-    if (!best) { job.error = job.error || 'no-accepted-set'; job.done = true; job.finishedAt = Date.now(); return }
-    const chosenCap = best.cap, chosenSo = best.so
-    if (job.total == null && typeof best.total === 'number') job.total = best.total
-    if (!job.sample && best.item) { try { job.sample = JSON.stringify(best.item).slice(0, 1800) } catch (e) {} }
+    job.diag.chosen = chosenCap ? chosenCap.label : null
+    if (!chosenCap) { job.error = job.error || 'no-rows'; job.done = true; job.finishedAt = Date.now(); return }
+    if (firstRes && firstRes.items && firstRes.items[0]) { try { job.sample = JSON.stringify(firstRes.items[0]).slice(0, 1800) } catch (e) {} }
+    job.total = null // the feed has no reliable total; show "Loaded N" only
 
+    // Cursor pagination: follow nextToken until it's empty. pageNumber is passed
+    // too (harmless) but nextToken is the real cursor.
     let nextToken = null
     let pace = 1300           // ms between pages (throttle-safe)
     let errStreak = 0
-    let fullPage = 0          // items on a full page (learned from page 1)
-    const MAX_PAGES = 4000    // hard backstop (~120k opportunities)
+    const MAX_PAGES = 8000    // hard backstop
     for (let page = 1; page <= MAX_PAGES; page++) {
       if (job.canceled) break
-      let res = await fetchPageFor(chosenCap, page, nextToken, chosenSo)
+      // Reuse the page-1 result we already fetched during selection.
+      let res = page === 1 && firstRes ? firstRes : await fetchPageFor(chosenCap, page, nextToken, { has: false })
 
       if (!res || res.status === 0) {
         if (++errStreak >= 4) { job.error = job.error || 'page-fetch-failed'; break }
         await _sleep(pace * 2); continue
       }
       if (res.status === 429 || res.status >= 500) {
-        // Throttled / server hiccup — back off and retry the SAME page.
         pace = Math.min(6000, pace + 1200)
         if (++errStreak >= 6) { job.error = 'throttled'; break }
         await _sleep(pace); continue
       }
       if (res.status === 401 || res.status === 403) { job.error = 'unauthorized'; break }
       errStreak = 0
-      if (job.total == null && typeof res.total === 'number') job.total = res.total
 
       const items = Array.isArray(res.items) ? res.items : []
-      // First-page diagnostic: what the replayed request actually returned, so a
-      // 0-load is debuggable (endpoint, response keys, where the item array was
-      // found, a raw snippet) even when item mapping fails.
       if (page === 1 && job.diag) {
-        job.diag.firstStatus = res.status
         job.diag.firstItemCount = items.length
-        job.diag.topKeys = res.topKeys || []
         job.diag.itemsKey = res.itemsKey || null
         if (!items.length) job.diag.raw = res.raw || ''
       }
-      if (!job.sample && items.length) { try { job.sample = JSON.stringify(items[0]).slice(0, 1800) } catch (e) {} }
       let addedThisPage = 0
       for (const raw of items) {
         const row = mapEpcApiItem(raw)
@@ -1550,17 +1504,11 @@ async function loadEpcViaApi() {
       job.pages = page
       if (pending.length >= 300) await flush()
 
-      // Establish the full-page size from page 1 (spcc uses pageSize 500), so a
-      // short page reliably signals the last page for number-based pagination.
-      if (page === 1 && items.length) fullPage = items.length
-
-      // Stop conditions: empty page, no new rows and no cursor (token-paged end or
-      // a re-served page), or a short page with no cursor (number-paged end).
-      if (!items.length) break
-      if (!res.nextToken && addedThisPage === 0) break
+      // End of feed: no cursor to continue, or a page that added nothing new.
       nextToken = res.nextToken || null
-      if (!nextToken && fullPage && items.length < fullPage) break
-      if (job.total != null && job.loaded >= job.total) break
+      if (!nextToken) break
+      if (!items.length) break
+      if (addedThisPage === 0) { /* all dupes but cursor present */ }
       await _sleep(pace)
     }
     await flush()
