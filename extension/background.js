@@ -1298,19 +1298,24 @@ function mapEpcApiItem(raw) {
     if (typeof o === 'object') { for (const k in o) { const a = deepAsin(o[k], depth + 1); if (a) return a } }
     return null
   }
+  // amount out of a { amount, currencyCode } money object (or a bare number).
+  const money = (m) => { if (m == null) return null; if (typeof m === 'number') return isFinite(m) ? m : null; if (typeof m === 'object' && m.amount != null) { const n = Number(m.amount); return isFinite(n) ? n : null } return firstNum(m) }
+  // Field names confirmed from a live spcc/search item (asin, asinBrand,
+  // displayTitle, buyingPrice.amount, expectedRevenuePerClick, numberOfReviewStars,
+  // budgetAvailabilityScore, imageUrl). Fallbacks kept in case the shape drifts.
   let asin = firstStr(raw.asin, raw.ASIN, raw.productAsin, Array.isArray(raw.campaignAsins) && raw.campaignAsins[0], Array.isArray(raw.asinList) && raw.asinList[0])
   asin = (asin || deepAsin(raw, 0) || '').toUpperCase()
   if (!/^B0[A-Z0-9]{8}$/.test(asin)) return null
   const budgetRaw = firstStr(raw.budgetAvailabilityScore, raw.budgetScore, raw.budget, raw.budgetAvailability)
-  const budget = budgetRaw ? (/(^|\W)(high)/i.test(budgetRaw) ? 'High' : /(^|\W)(medium)/i.test(budgetRaw) ? 'Medium' : /(^|\W)(low)/i.test(budgetRaw) ? 'Low' : null) : null
-  const epcValue = firstNum(raw.epc, raw.epcValue, raw.estimatedEpc, raw.estimatedEpcValue, raw.estimatedEarningsPerClick, raw.maxEpc, raw.epcUpTo)
-  const priceValue = firstNum(raw.price, raw.priceValue, raw.priceAmount, raw.buyingPrice, raw.listPrice, raw.priceCents != null ? Number(raw.priceCents) / 100 : null, raw.amount)
-  const rating = firstNum(raw.rating, raw.starRating, raw.averageRating, raw.averageStarRating, raw.reviewRating)
-  const endsAtRaw = firstStr(raw.endDate, raw.endsAt, raw.campaignEndDate, raw.endTime, raw.expiresAt)
+  const budget = budgetRaw ? (/(^|\W)?(high)/i.test(budgetRaw) ? 'High' : /(^|\W)?(medium)/i.test(budgetRaw) ? 'Medium' : /(^|\W)?(low)/i.test(budgetRaw) ? 'Low' : null) : null
+  const epcValue = firstNum(raw.expectedRevenuePerClick, raw.epc, raw.epcValue, raw.estimatedEpc, raw.estimatedEpcValue, raw.estimatedEarningsPerClick, raw.maxEpc, raw.epcUpTo)
+  const priceValue = money(raw.buyingPrice) ?? money(raw.listPrice) ?? firstNum(raw.price, raw.priceValue, raw.priceAmount, raw.priceCents != null ? Number(raw.priceCents) / 100 : null, raw.amount)
+  const rating = firstNum(raw.numberOfReviewStars, raw.rating, raw.starRating, raw.averageRating, raw.averageStarRating, raw.reviewRating)
+  const endsAtRaw = firstStr(raw.dealMetadata && raw.dealMetadata.endDate, raw.endDate, raw.endsAt, raw.campaignEndDate, raw.endTime, raw.expiresAt)
   return {
     asin,
-    campaignName: firstStr(raw.title, raw.productTitle, raw.campaignName, raw.name, raw.productName, raw.itemName),
-    brand: firstStr(raw.brand, raw.brandName, raw.vendorName, raw.merchantName),
+    campaignName: firstStr(raw.displayTitle, raw.dedupeString, raw.title, raw.productTitle, raw.campaignName, raw.name, raw.productName, raw.itemName),
+    brand: firstStr(raw.asinBrand, raw.brand, raw.brandName, raw.vendorName, raw.merchantName),
     epc: epcValue != null ? `Up to $${epcValue.toFixed(2)}` : firstStr(raw.epcDisplay, raw.epcLabel),
     epcValue,
     price: priceValue != null ? `$${priceValue.toFixed(2)}` : firstStr(raw.priceDisplay),
@@ -1367,7 +1372,7 @@ async function loadEpcViaApi() {
     const caps = []
     const addCap = (c, src) => { if (c && c.url && c.body && !caps.some((x) => x.body === c.body)) caps.push({ url: c.url, body: c.body, headers: c.headers || {}, src }) }
     addCap(latestSpccSearch(openedAt), 'opportunity')
-    for (const st of ['accepted', 'active', 'opted-in', 'enrolled']) {
+    for (const st of ['accepted', 'active']) {
       if (job.canceled) break
       const t0 = Date.now()
       const navUrl = `${CC_BASE}?${_ccCreatorId ? `creatorId=${encodeURIComponent(_ccCreatorId)}&` : ''}status=${st}&type=spcc`
@@ -1400,35 +1405,44 @@ async function loadEpcViaApi() {
       } catch (e) { return null }
     }
 
-    // Attempts: each captured query AS-IS (its own status filter), then status
-    // overrides on the base query. Use the first that returns rows.
+    // Pick the query that returns the MOST rows. The "New Opportunities" view is a
+    // small set of not-yet-accepted offers (optedIn:false); the Accepted view is
+    // the big one (tens of thousands). So we evaluate every captured view and take
+    // the largest, rather than the first non-empty.
     const base = caps[0]
-    const attempts = [
-      ...caps.map((c) => ({ cap: c, so: { has: false }, label: `cap:${c.src}` })),
-      { cap: base, so: { has: true, v: null }, label: 'all' },
-      { cap: base, so: { has: true, v: ['OFFER_ACCEPTED'] }, label: 'OFFER_ACCEPTED' },
-      { cap: base, so: { has: true, v: ['ACCEPTED'] }, label: 'ACCEPTED' },
-      { cap: base, so: { has: true, v: ['OPTED_IN'] }, label: 'OPTED_IN' },
-      { cap: base, so: { has: true, v: ['ENROLLED'] }, label: 'ENROLLED' },
-      { cap: base, so: { has: true, v: ['OFFER_AVAILABLE', 'OFFER_ACCEPTED'] }, label: 'AVAIL+ACC' },
-    ]
-    let chosenCap = null, chosenSo = null
+    let best = null // { cap, so, total, item }
     const probe = []
-    for (const a of attempts) {
-      if (job.canceled) break
-      const r = await fetchPageFor(a.cap, 1, null, a.so)
-      probe.push({ try: a.label, http: r ? r.status : 0, total: r ? r.total : null, items: r && r.items ? r.items.length : 0 })
-      if (r && (r.status === 401 || r.status === 403)) { job.error = 'unauthorized'; break }
-      if (r && ((typeof r.total === 'number' && r.total > 0) || (Array.isArray(r.items) && r.items.length > 0))) {
-        chosenCap = a.cap; chosenSo = a.so
-        if (!job.sample && r.items && r.items.length) { try { job.sample = JSON.stringify(r.items[0]).slice(0, 1800) } catch (e) {} }
-        break
+    const consider = (label, cap, so, r) => {
+      const total = r && typeof r.total === 'number' ? r.total : (r && Array.isArray(r.items) ? r.items.length : 0)
+      probe.push({ try: label, http: r ? r.status : 0, total: r ? r.total : null, items: r && r.items ? r.items.length : 0 })
+      if (r && (r.status === 401 || r.status === 403)) job.error = 'unauthorized'
+      if (total > 0 && (!best || total > best.total)) best = { cap, so, total, item: r.items && r.items[0] }
+    }
+    for (const c of caps) {
+      if (job.canceled || job.error) break
+      consider(`cap:${c.src}`, c, { has: false }, await fetchPageFor(c, 1, null, { has: false }))
+      await _sleep(300)
+    }
+    // Fallback only if no captured view returned anything: probe status overrides.
+    if (!best && !job.error && !job.canceled) {
+      const overrides = [
+        { v: null, l: 'all' }, { v: ['OFFER_ACCEPTED'], l: 'OFFER_ACCEPTED' },
+        { v: ['ACCEPTED'], l: 'ACCEPTED' }, { v: ['OPTED_IN'], l: 'OPTED_IN' }, { v: ['ENROLLED'], l: 'ENROLLED' },
+      ]
+      for (const o of overrides) {
+        if (job.canceled || job.error) break
+        const r = await fetchPageFor(base, 1, null, { has: true, v: o.v })
+        consider(o.l, base, { has: true, v: o.v }, r)
+        if (best) break
+        await _sleep(300)
       }
-      await _sleep(400)
     }
     job.diag.probe = probe
-    job.diag.chosen = chosenCap ? `${chosenCap.src}${chosenSo && chosenSo.has ? '+' + (chosenSo.v ? chosenSo.v.join(',') : 'all') : ''}` : null
-    if (!chosenCap) { job.done = true; job.finishedAt = Date.now(); return }
+    job.diag.chosen = best ? `${best.cap.src}${best.so.has ? '+' + (best.so.v ? best.so.v.join(',') : 'all') : ''}(${best.total})` : null
+    if (!best) { job.done = true; job.finishedAt = Date.now(); return }
+    const chosenCap = best.cap, chosenSo = best.so
+    if (job.total == null && typeof best.total === 'number') job.total = best.total
+    if (!job.sample && best.item) { try { job.sample = JSON.stringify(best.item).slice(0, 1800) } catch (e) {} }
 
     let nextToken = null
     let pace = 1300           // ms between pages (throttle-safe)
