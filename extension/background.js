@@ -1278,6 +1278,12 @@ function epcFetchPageInPage(opts) {
           if (!o.filterOptions || typeof o.filterOptions !== 'object') o.filterOptions = {}
           o.filterOptions.statuses = opts.statusesValue == null ? null : opts.statusesValue
         }
+        // Generic filter patch (e.g. budgetAvailabilityScoreList) merged into
+        // filterOptions — used to partition a query past the 2048 deep-paging cap.
+        if (opts.filterPatch && typeof opts.filterPatch === 'object') {
+          if (!o.filterOptions || typeof o.filterOptions !== 'object') o.filterOptions = {}
+          for (const k in opts.filterPatch) o.filterOptions[k] = opts.filterPatch[k]
+        }
         body = JSON.stringify(o)
       } catch (e) { /* non-JSON body — replay verbatim */ }
 
@@ -1435,92 +1441,82 @@ async function loadEpcViaApi() {
     }
     job.diag = { capSources: caps.map((c) => c.label), capBody: String(caps[0].body || '').slice(0, 800) }
 
-    // Run one page of a specific captured query, with an optional statuses override.
-    const fetchPageFor = async (capX, page, nextToken, so) => {
+    // Run one page of a specific captured query, with an optional filter patch.
+    const fetchPageFor = async (capX, page, nextToken, filterPatch) => {
       try {
         const out = await chrome.scripting.executeScript({
           target: { tabId }, world: 'MAIN', func: epcFetchPageInPage,
-          args: [{ url: capX.url, headers: capX.headers, body: capX.body, pageNumber: page, nextToken, hasStatusOverride: !!(so && so.has), statusesValue: so ? so.v : null }],
+          args: [{ url: capX.url, headers: capX.headers, body: capX.body, pageNumber: page, nextToken, filterPatch: filterPatch || null }],
         })
         return (out && out[0] && out[0].result) || null
       } catch (e) { return null }
     }
 
-    // Pick a captured spcc query that actually returns rows on page 1. All caps are
-    // now spcc-only (affiliate-plus excluded), so any with items is the grid feed.
-    // The grid is an infinite-scroll cursor feed: totalResults is null/per-batch and
-    // optedIn is null/false, so we DON'T gate on either — we just follow nextToken.
+    // Probe each captured spcc query (page 1) so we know which have rows. All caps
+    // are spcc-only now, so any with items is a real grid feed.
     const probe = []
-    let chosenCap = null, firstRes = null
+    const liveCaps = []
     for (const c of caps) {
       if (job.canceled || job.error) break
-      const r = await fetchPageFor(c, 1, null, { has: false })
+      const r = await fetchPageFor(c, 1, null, null)
       const items = r && Array.isArray(r.items) ? r.items : []
       probe.push({ try: `cap:${c.label}`, http: r ? r.status : 0, total: r ? r.total : null, items: items.length })
       if (r && (r.status === 401 || r.status === 403)) { job.error = 'unauthorized'; break }
-      if (items.length && !chosenCap) { chosenCap = c; firstRes = r }
+      if (items.length) { liveCaps.push(c); if (!job.sample) { try { job.sample = JSON.stringify(items[0]).slice(0, 1800) } catch (e) {} } }
       await _sleep(250)
     }
     job.diag.probe = probe
-    job.diag.chosen = chosenCap ? chosenCap.label : null
-    if (!chosenCap) { job.error = job.error || 'no-rows'; job.done = true; job.finishedAt = Date.now(); return }
-    if (firstRes && firstRes.items && firstRes.items[0]) { try { job.sample = JSON.stringify(firstRes.items[0]).slice(0, 1800) } catch (e) {} }
-    job.total = null // the feed has no reliable total; show "Loaded N" only
+    if (!liveCaps.length) { job.error = job.error || 'no-rows'; job.done = true; job.finishedAt = Date.now(); return }
+    job.total = null // no reliable total; show "Loaded N" only
 
-    // Cursor pagination: follow nextToken until it's empty. pageNumber is passed
-    // too (harmless) but nextToken is the real cursor.
-    let nextToken = null
-    let pace = 1300           // ms between pages (throttle-safe)
-    let errStreak = 0
-    let emptyStreak = 0
-    const MAX_PAGES = 8000    // hard backstop
-    for (let page = 1; page <= MAX_PAGES; page++) {
-      if (job.canceled) { job.diag.stop = 'canceled'; break }
-      // Reuse the page-1 result we already fetched during selection.
-      let res = page === 1 && firstRes ? firstRes : await fetchPageFor(chosenCap, page, nextToken, { has: false })
+    let pace = 1300
+    const MAX_PAGES = 8000
+    const CAP = 2000 // a query that returns ~this many hit Amazon's deep-paging cap
 
-      if (!res || res.status === 0) {
-        if (++errStreak >= 4) { job.error = job.error || 'page-fetch-failed'; job.diag.stop = 'fetch-failed'; break }
-        await _sleep(pace * 2); continue
+    // Paginate ONE query (cap + optional filter patch) by cursor until the feed
+    // ends, unioning rows into the shared seen/pending. Returns how many NEW rows
+    // it added. Records the stop reason per query.
+    const paginateQuery = async (cap, filterPatch, label) => {
+      let nextToken = null, errStreak = 0, emptyStreak = 0, added = 0, stop = 'cursor-end'
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        if (job.canceled) { stop = 'canceled'; break }
+        const res = await fetchPageFor(cap, page, nextToken, filterPatch)
+        if (!res || res.status === 0) { if (++errStreak >= 4) { stop = 'fetch-failed'; break } await _sleep(pace * 2); continue }
+        if (res.status === 429 || res.status >= 500) { pace = Math.min(6000, pace + 1200); if (++errStreak >= 8) { stop = 'throttled'; break } await _sleep(pace); continue }
+        if (res.status === 401 || res.status === 403) { job.error = 'unauthorized'; stop = 'unauthorized'; break }
+        errStreak = 0
+        const items = Array.isArray(res.items) ? res.items : []
+        for (const raw of items) {
+          const row = mapEpcApiItem(raw)
+          if (!row || seen[row.asin]) continue
+          seen[row.asin] = 1; pending.push(row); job.loaded++; added++
+        }
+        job.pages++
+        if (pending.length >= 300) await flush()
+        nextToken = res.nextToken || null
+        if (!nextToken) { stop = 'cursor-end'; break }
+        if (!items.length) { if (++emptyStreak >= 6) { stop = 'empty-streak'; break } } else emptyStreak = 0
+        await _sleep(pace)
       }
-      if (res.status === 429 || res.status >= 500) {
-        pace = Math.min(6000, pace + 1200)
-        if (++errStreak >= 8) { job.error = 'throttled'; job.diag.stop = 'throttled'; break }
-        await _sleep(pace); continue
-      }
-      if (res.status === 401 || res.status === 403) { job.error = 'unauthorized'; job.diag.stop = 'unauthorized'; break }
-      errStreak = 0
-
-      const items = Array.isArray(res.items) ? res.items : []
-      if (page === 1 && job.diag) {
-        job.diag.firstItemCount = items.length
-        job.diag.itemsKey = res.itemsKey || null
-        if (!items.length) job.diag.raw = res.raw || ''
-      }
-      let addedThisPage = 0
-      for (const raw of items) {
-        const row = mapEpcApiItem(raw)
-        if (!row || seen[row.asin]) continue
-        seen[row.asin] = 1
-        pending.push(row)
-        job.loaded++
-        addedThisPage++
-      }
-      job.pages = page
-      if (pending.length >= 300) await flush()
-
-      // Advance the cursor. The ONLY real end-of-feed signal is a null nextToken.
-      nextToken = res.nextToken || null
-      if (!nextToken) { job.diag.stop = 'cursor-end'; break }
-      // A single empty page mid-feed is a transient hiccup, not the end — keep
-      // following the cursor. Bail only after several empty pages in a row.
-      if (!items.length) {
-        if (++emptyStreak >= 6) { job.diag.stop = 'empty-streak'; break }
-      } else {
-        emptyStreak = 0
-      }
-      await _sleep(pace)
+      job.diag.parts = job.diag.parts || []
+      job.diag.parts.push({ q: label, added, stop })
+      return { added, stop }
     }
+
+    // For each live query: paginate the whole feed. If it stops at the 2048 cap
+    // (cursor-end at ~2000+), it's truncated — re-run it split by budget score
+    // (Low/Medium/High), each with its own cap, to reach past 2048. Union dedupes.
+    for (const c of liveCaps) {
+      if (job.canceled || job.error) break
+      const base = await paginateQuery(c, null, c.label)
+      if (base.stop === 'cursor-end' && base.added >= CAP) {
+        for (const b of ['High', 'Medium', 'Low']) {
+          if (job.canceled || job.error) break
+          await paginateQuery(c, { budgetAvailabilityScoreList: [b] }, `${c.label}/${b}`)
+        }
+      }
+    }
+    job.diag.stop = 'done'
     job.diag.stopLoaded = job.loaded
     await flush()
     job.done = true
