@@ -1234,6 +1234,14 @@ function epcFetchPageInPage(opts) {
           o.pagination.pageNumber = opts.pageNumber
           o.pagination.nextToken = opts.nextToken || null
         }
+        // Status override: the grid's "New Opportunities" query filters to
+        // OFFER_AVAILABLE, which is empty once a creator has accepted everything.
+        // To reach the ACCEPTED set (what we actually want) we retry with other
+        // status filters until one returns rows. null = no status filter (all).
+        if (opts.hasStatusOverride) {
+          if (!o.filterOptions || typeof o.filterOptions !== 'object') o.filterOptions = {}
+          o.filterOptions.statuses = opts.statusesValue == null ? null : opts.statusesValue
+        }
         body = JSON.stringify(o)
       } catch (e) { /* non-JSON body — replay verbatim */ }
 
@@ -1250,7 +1258,7 @@ function epcFetchPageInPage(opts) {
       // known keys hit, fall back to the largest array of objects anywhere in the
       // response so we still page SOMETHING and the diagnostic shows the real shape.
       const resp = (j.responses && j.responses[0]) || j
-      let items = (resp && (resp.ads || resp.items || resp.results || resp.campaigns || resp.opportunities || resp.records)) || j.items || j.results || null
+      let items = (resp && (resp.asinInfoList || resp.ads || resp.items || resp.results || resp.campaigns || resp.opportunities || resp.records)) || j.asinInfoList || j.items || j.results || null
       let itemsKey = items ? 'known' : null
       if (!Array.isArray(items)) {
         // Deep-scan for the biggest array of objects (the product/opportunity list).
@@ -1264,8 +1272,8 @@ function epcFetchPageInPage(opts) {
         items = best || []
         itemsKey = bestKey || 'none'
       }
-      const total = (resp && (resp.totalResultCount ?? resp.totalCount ?? resp.total ?? (resp.pagination && (resp.pagination.totalCount ?? resp.pagination.total))))
-        ?? (j.totalResultCount ?? j.totalCount ?? j.total) ?? null
+      const total = (resp && (resp.totalResults ?? resp.totalResultCount ?? resp.totalCount ?? resp.total ?? (resp.pagination && (resp.pagination.totalCount ?? resp.pagination.total))))
+        ?? (j.totalResults ?? j.totalResultCount ?? j.totalCount ?? j.total) ?? null
       const nextToken = (resp && (resp.nextToken || (resp.pagination && resp.pagination.nextToken))) || j.nextToken || null
       const topKeys = []
       try { for (const k in j) topKeys.push(k); if (resp && resp !== j) { topKeys.push('responses[0]:'); for (const k in resp) topKeys.push(k) } } catch (e) {}
@@ -1369,20 +1377,52 @@ async function loadEpcViaApi() {
     }
     job.diag = { capUrl: cap.url, capBody: String(cap.body || '').slice(0, 800) }
 
-    let nextToken = null
-    let pace = 1300           // ms between pages (throttle-safe)
-    let errStreak = 0
-    const MAX_PAGES = 4000    // hard backstop (~120k opportunities)
-    for (let page = 1; page <= MAX_PAGES; page++) {
-      if (job.canceled) break
-      let res
+    // Fetch one page with an optional statuses override. `so` is { has, v }.
+    const fetchPage = async (page, nextToken, so) => {
       try {
         const out = await chrome.scripting.executeScript({
           target: { tabId }, world: 'MAIN', func: epcFetchPageInPage,
-          args: [{ url: cap.url, headers: cap.headers, body: cap.body, pageNumber: page, nextToken }],
+          args: [{ url: cap.url, headers: cap.headers, body: cap.body, pageNumber: page, nextToken, hasStatusOverride: !!(so && so.has), statusesValue: so ? so.v : null }],
         })
-        res = (out && out[0] && out[0].result) || null
-      } catch (e) { res = null }
+        return (out && out[0] && out[0].result) || null
+      } catch (e) { return null }
+    }
+
+    // The captured query filters to whatever tab we happened to open (usually
+    // OFFER_AVAILABLE = new offers, which is empty once everything's accepted).
+    // Probe status filters until one returns rows, then lock it for every page.
+    // null = no status filter (all offers), first candidate since it's broadest.
+    const STATUS_CANDIDATES = [
+      { label: 'as-captured', has: false, v: null },
+      { label: 'all', has: true, v: null },
+      { label: 'OFFER_ACCEPTED', has: true, v: ['OFFER_ACCEPTED'] },
+      { label: 'ACCEPTED', has: true, v: ['ACCEPTED'] },
+      { label: 'ENROLLED', has: true, v: ['ENROLLED'] },
+      { label: 'AVAILABLE+ACCEPTED', has: true, v: ['OFFER_AVAILABLE', 'OFFER_ACCEPTED'] },
+    ]
+    let chosen = null
+    const probe = []
+    for (const cand of STATUS_CANDIDATES) {
+      if (job.canceled) break
+      const r = await fetchPage(1, null, cand)
+      const n = r && typeof r.total === 'number' ? r.total : (r && Array.isArray(r.items) ? r.items.length : 0)
+      probe.push({ status: cand.label, http: r ? r.status : 0, total: r ? r.total : null, items: r && r.items ? r.items.length : 0 })
+      if (r && (r.status === 401 || r.status === 403)) { job.error = 'unauthorized'; break }
+      if (r && ((typeof r.total === 'number' && r.total > 0) || (Array.isArray(r.items) && r.items.length > 0))) { chosen = cand; if (!job.sample && r.items && r.items.length) { try { job.sample = JSON.stringify(r.items[0]).slice(0, 1800) } catch (e) {} } break }
+      await _sleep(400)
+    }
+    job.diag.probe = probe
+    job.diag.chosenStatus = chosen ? chosen.label : null
+    if (!chosen) { job.done = true; job.finishedAt = Date.now(); return }
+
+    let nextToken = null
+    let pace = 1300           // ms between pages (throttle-safe)
+    let errStreak = 0
+    let fullPage = 0          // items on a full page (learned from page 1)
+    const MAX_PAGES = 4000    // hard backstop (~120k opportunities)
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      if (job.canceled) break
+      let res = await fetchPage(page, nextToken, chosen)
 
       if (!res || res.status === 0) {
         if (++errStreak >= 4) { job.error = job.error || 'page-fetch-failed'; break }
@@ -1422,12 +1462,17 @@ async function loadEpcViaApi() {
       job.pages = page
       if (pending.length >= 300) await flush()
 
-      // Stop when the page is empty or there's no cursor for more. Some APIs
-      // page by number with no token — a fully-empty page is the end signal.
+      // Establish the full-page size from page 1 (spcc uses pageSize 500), so a
+      // short page reliably signals the last page for number-based pagination.
+      if (page === 1 && items.length) fullPage = items.length
+
+      // Stop conditions: empty page, no new rows and no cursor (token-paged end or
+      // a re-served page), or a short page with no cursor (number-paged end).
       if (!items.length) break
       if (!res.nextToken && addedThisPage === 0) break
       nextToken = res.nextToken || null
-      if (!nextToken && items.length < 30) break // number-paged and short → last page
+      if (!nextToken && fullPage && items.length < fullPage) break
+      if (job.total != null && job.loaded >= job.total) break
       await _sleep(pace)
     }
     await flush()
