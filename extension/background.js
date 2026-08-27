@@ -1259,11 +1259,15 @@ function epcFetchPageInPage(opts) {
       let body = opts.body
       try {
         const o = JSON.parse(opts.body)
-        o.pageNumber = opts.pageNumber
+        // Cursor pagination: nextToken fully specifies the position, so pageNumber
+        // must stay at 1 once we're following a cursor. Incrementing pageNumber
+        // AND advancing nextToken together confuses the server and it returns an
+        // empty page early (the 866-then-stop symptom).
+        o.pageNumber = opts.nextToken ? 1 : (opts.pageNumber || 1)
         o.nextToken = opts.nextToken || null
         if (o.pageSize == null) o.pageSize = 30
         if (o.pagination && typeof o.pagination === 'object') {
-          o.pagination.pageNumber = opts.pageNumber
+          o.pagination.pageNumber = o.pageNumber
           o.pagination.nextToken = opts.nextToken || null
         }
         // Status override: the grid's "New Opportunities" query filters to
@@ -1468,22 +1472,23 @@ async function loadEpcViaApi() {
     let nextToken = null
     let pace = 1300           // ms between pages (throttle-safe)
     let errStreak = 0
+    let emptyStreak = 0
     const MAX_PAGES = 8000    // hard backstop
     for (let page = 1; page <= MAX_PAGES; page++) {
-      if (job.canceled) break
+      if (job.canceled) { job.diag.stop = 'canceled'; break }
       // Reuse the page-1 result we already fetched during selection.
       let res = page === 1 && firstRes ? firstRes : await fetchPageFor(chosenCap, page, nextToken, { has: false })
 
       if (!res || res.status === 0) {
-        if (++errStreak >= 4) { job.error = job.error || 'page-fetch-failed'; break }
+        if (++errStreak >= 4) { job.error = job.error || 'page-fetch-failed'; job.diag.stop = 'fetch-failed'; break }
         await _sleep(pace * 2); continue
       }
       if (res.status === 429 || res.status >= 500) {
         pace = Math.min(6000, pace + 1200)
-        if (++errStreak >= 6) { job.error = 'throttled'; break }
+        if (++errStreak >= 8) { job.error = 'throttled'; job.diag.stop = 'throttled'; break }
         await _sleep(pace); continue
       }
-      if (res.status === 401 || res.status === 403) { job.error = 'unauthorized'; break }
+      if (res.status === 401 || res.status === 403) { job.error = 'unauthorized'; job.diag.stop = 'unauthorized'; break }
       errStreak = 0
 
       const items = Array.isArray(res.items) ? res.items : []
@@ -1504,13 +1509,19 @@ async function loadEpcViaApi() {
       job.pages = page
       if (pending.length >= 300) await flush()
 
-      // End of feed: no cursor to continue, or a page that added nothing new.
+      // Advance the cursor. The ONLY real end-of-feed signal is a null nextToken.
       nextToken = res.nextToken || null
-      if (!nextToken) break
-      if (!items.length) break
-      if (addedThisPage === 0) { /* all dupes but cursor present */ }
+      if (!nextToken) { job.diag.stop = 'cursor-end'; break }
+      // A single empty page mid-feed is a transient hiccup, not the end — keep
+      // following the cursor. Bail only after several empty pages in a row.
+      if (!items.length) {
+        if (++emptyStreak >= 6) { job.diag.stop = 'empty-streak'; break }
+      } else {
+        emptyStreak = 0
+      }
       await _sleep(pace)
     }
+    job.diag.stopLoaded = job.loaded
     await flush()
     job.done = true
     job.finishedAt = Date.now()

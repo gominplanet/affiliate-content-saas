@@ -284,6 +284,8 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           if (Array.isArray(res.diag?.seenPosts)) parts.push(`seenPosts: ${res.diag.seenPosts.join(' | ') || '(none fired)'}`)
           if (Array.isArray(res.diag?.probe)) parts.push(`probe: ${res.diag.probe.map((p: { try: string; http: number; total: number | null; items: number; optedIn?: number; accepted?: boolean }) => `${p.try}=${p.total ?? '?'}/${p.items}i/${p.optedIn ?? 0}oi${p.accepted ? '✓' : ''}(${p.http})`).join(', ')}`)
           if (res.diag?.chosen) parts.push(`chosen: ${res.diag.chosen}`)
+          if (res.diag?.stop) parts.push(`stop: ${res.diag.stop}@${res.diag.stopLoaded ?? res.loaded}`)
+          if (res.error) parts.push(`error: ${res.error}`)
           if (res.diag?.firstStatus != null) parts.push(`status: ${res.diag.firstStatus}`)
           if (res.diag?.itemsKey) parts.push(`itemsKey: ${res.diag.itemsKey}`)
           if (Array.isArray(res.diag?.topKeys) && res.diag.topKeys.length) parts.push(`keys: ${res.diag.topKeys.join(',')}`)
