@@ -669,6 +669,53 @@ function latestSpccSearch(sinceTs) {
   return fallback
 }
 
+// ALL distinct spcc/list queries captured since sinceTs (newest first). Navigating
+// or clicking through the EPC tabs fires a different query per view; we collect
+// every one so we can test each and keep whichever returns the most rows —
+// resilient to the background tab firing them in any order / dropping some.
+function allSpccSearches(sinceTs) {
+  const out = []
+  const seenBodies = Object.create(null)
+  for (let i = _ccNetRing.length - 1; i >= 0; i--) {
+    const rec = _ccNetRing[i]
+    if (!rec || typeof rec.body !== 'string' || !rec.body) continue
+    if (sinceTs && rec.ts && rec.ts < sinceTs) continue
+    const url = String(rec.url || '')
+    if (!/\/connect\/api\//i.test(url)) continue
+    if (/\/(chat|message|conversation|thread)\b/i.test(url)) continue
+    if (/"fieldName"\s*:\s*"asin"/i.test(rec.body)) continue
+    const looksList = /(search|browse|list|query|campaign|spcc|opportunit)/i.test(url)
+      || /"(pageSize|pageNumber|nextToken|filterOptions|searchOptions|sortOptions)"/i.test(rec.body)
+    if (!looksList) continue
+    if (seenBodies[rec.body]) continue
+    seenBodies[rec.body] = 1
+    // Label by the statuses filter so the diagnostic is readable.
+    let label = 'list'
+    try { const st = (JSON.parse(rec.body).filterOptions || {}).statuses; if (st) label = Array.isArray(st) ? st.join('+') : String(st); else label = 'no-status' } catch (e) {}
+    out.push({ url: rec.url, body: rec.body, headers: rec.headers || {}, label })
+  }
+  return out
+}
+
+// Runs IN the page (MAIN world): click an EPC tab by its visible label (e.g.
+// "Accepted") so the SPA fires that tab's list query, which net-hook then
+// captures. Returns whether a matching tab was found + clicked.
+function clickSpccTabInPage(labelRe) {
+  try {
+    const re = new RegExp(labelRe, 'i')
+    const nodes = Array.from(document.querySelectorAll('a,button,[role="tab"],[role="button"],li,span'))
+    for (const el of nodes) {
+      const t = (el.textContent || '').trim()
+      if (t && t.length < 40 && re.test(t)) {
+        try { el.scrollIntoView() } catch (e) {}
+        el.click()
+        return { clicked: true, text: t }
+      }
+    }
+  } catch (e) {}
+  return { clicked: false }
+}
+
 // Replace the STRING value of a top-level-ish JSON key with a placeholder, leaving
 // the surrounding JSON intact. Handles escaped chars in the value. Only the first
 // non-null string value matches (so "campaignId":null elsewhere is left alone).
@@ -1365,22 +1412,27 @@ async function loadEpcViaApi() {
     await _sleep(1500)
     // Wait for the page to fire (and net-hook to capture) its spcc list query.
     for (let i = 0; i < 30 && !latestSpccSearch(openedAt) && !job.canceled; i++) await _sleep(500)
-    // Gather candidate list queries. The opportunities tab fires an OFFER_AVAILABLE
-    // query (empty once everything's accepted), so we ALSO navigate the same tab
-    // through the accepted-view URLs and capture what THEY fire — those carry the
-    // real accepted-status filter, so we don't have to guess Amazon's enum.
-    const caps = []
-    const addCap = (c, src) => { if (c && c.url && c.body && !caps.some((x) => x.body === c.body)) caps.push({ url: c.url, body: c.body, headers: c.headers || {}, src }) }
-    addCap(latestSpccSearch(openedAt), 'opportunity')
-    for (const st of ['accepted', 'active']) {
+    // Provoke each EPC tab's query. The opportunities tab fires an OFFER_AVAILABLE
+    // query (a handful of not-yet-accepted offers); the Accepted view fires a
+    // different one holding the full set. Clicking the tab in-page is the reliable
+    // way to make the SPA fire it; URL navigation is a backup. We collect EVERY
+    // distinct list query that fires and test them all — so the real accepted
+    // query is found regardless of order/naming, and we never guess the enum.
+    for (const t of [{ re: 'accepted', st: 'accepted' }, { re: 'active|joined|enrolled', st: 'active' }]) {
       if (job.canceled) break
       const t0 = Date.now()
-      const navUrl = `${CC_BASE}?${_ccCreatorId ? `creatorId=${encodeURIComponent(_ccCreatorId)}&` : ''}status=${st}&type=spcc`
+      try { await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: clickSpccTabInPage, args: [t.re] }) } catch (e) {}
+      await _sleep(1800)
+      for (let i = 0; i < 10 && !latestSpccSearch(t0) && !job.canceled; i++) await _sleep(500)
+      // Backup provocation: navigate the URL to that view.
+      const navUrl = `${CC_BASE}?${_ccCreatorId ? `creatorId=${encodeURIComponent(_ccCreatorId)}&` : ''}status=${t.st}&type=spcc`
       try { await chrome.tabs.update(tabId, { url: navUrl }) } catch (e) {}
       await waitForTabLoad(tabId, 12000); await _sleep(1500)
-      for (let i = 0; i < 16 && !latestSpccSearch(t0) && !job.canceled; i++) await _sleep(500)
-      addCap(latestSpccSearch(t0), st)
+      for (let i = 0; i < 10 && !latestSpccSearch(t0) && !job.canceled; i++) await _sleep(500)
     }
+    // Every distinct list query captured this whole run, newest first, labeled by
+    // its statuses filter (so the diagnostic literally shows Amazon's enum).
+    const caps = allSpccSearches(openedAt)
     if (!caps.length) {
       const seen = []
       try {
@@ -1392,7 +1444,7 @@ async function loadEpcViaApi() {
       } catch (e) {}
       job.error = 'no-capture'; job.diag = { capUrl: null, seenPosts: seen }; job.done = true; job.finishedAt = Date.now(); return
     }
-    job.diag = { capSources: caps.map((c) => c.src), capBody: String(caps[0].body || '').slice(0, 800) }
+    job.diag = { capSources: caps.map((c) => c.label), capBody: String(caps[0].body || '').slice(0, 800) }
 
     // Run one page of a specific captured query, with an optional statuses override.
     const fetchPageFor = async (capX, page, nextToken, so) => {
@@ -1405,10 +1457,9 @@ async function loadEpcViaApi() {
       } catch (e) { return null }
     }
 
-    // Pick the query that returns the MOST rows. The "New Opportunities" view is a
-    // small set of not-yet-accepted offers (optedIn:false); the Accepted view is
-    // the big one (tens of thousands). So we evaluate every captured view and take
-    // the largest, rather than the first non-empty.
+    // Test every captured query (and, as a safety net, a few status overrides on
+    // the base) and keep whichever returns the MOST rows — the Accepted set is
+    // orders of magnitude larger than the New-Opportunities handful.
     const base = caps[0]
     let best = null // { cap, so, total, item }
     const probe = []
@@ -1420,22 +1471,21 @@ async function loadEpcViaApi() {
     }
     for (const c of caps) {
       if (job.canceled || job.error) break
-      consider(`cap:${c.src}`, c, { has: false }, await fetchPageFor(c, 1, null, { has: false }))
+      consider(`cap:${c.label}`, c, { has: false }, await fetchPageFor(c, 1, null, { has: false }))
       await _sleep(300)
     }
-    // Fallback only if no captured view returned anything: probe status overrides.
-    if (!best && !job.error && !job.canceled) {
-      const overrides = [
-        { v: null, l: 'all' }, { v: ['OFFER_ACCEPTED'], l: 'OFFER_ACCEPTED' },
-        { v: ['ACCEPTED'], l: 'ACCEPTED' }, { v: ['OPTED_IN'], l: 'OPTED_IN' }, { v: ['ENROLLED'], l: 'ENROLLED' },
-      ]
-      for (const o of overrides) {
-        if (job.canceled || job.error) break
-        const r = await fetchPageFor(base, 1, null, { has: true, v: o.v })
-        consider(o.l, base, { has: true, v: o.v }, r)
-        if (best) break
-        await _sleep(300)
-      }
+    // Always also try status overrides on the base — cheap page-1 probes — so the
+    // full/accepted set is found even if its own view never got captured.
+    const overrides = [
+      { v: null, l: 'all' }, { v: ['OFFER_ACCEPTED'], l: 'OFFER_ACCEPTED' },
+      { v: ['ACCEPTED'], l: 'ACCEPTED' }, { v: ['OPTED_IN'], l: 'OPTED_IN' }, { v: ['ENROLLED'], l: 'ENROLLED' },
+    ]
+    for (const o of overrides) {
+      if (job.canceled || job.error) break
+      // Skip if a captured view already matches this status (avoid a dup fetch).
+      if (caps.some((c) => c.label === (o.v ? o.v.join('+') : 'no-status'))) continue
+      consider(o.l, base, { has: true, v: o.v }, await fetchPageFor(base, 1, null, { has: true, v: o.v }))
+      await _sleep(300)
     }
     job.diag.probe = probe
     job.diag.chosen = best ? `${best.cap.src}${best.so.has ? '+' + (best.so.v ? best.so.v.join(',') : 'all') : ''}(${best.total})` : null
