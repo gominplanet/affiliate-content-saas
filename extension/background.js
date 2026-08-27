@@ -1326,6 +1326,82 @@ function epcFetchPageInPage(opts) {
   })()
 }
 
+// Runs IN the page (MAIN world): fetch a BURST of consecutive pages, following the
+// cursor back-to-back inside the page. One executeScript round-trip pulls many
+// batches instead of one, which is the difference between ~30 items / 12s and a
+// few hundred items in the same time. Returns the combined items + the final
+// cursor. Stops the burst on a null cursor or a throttle/error (so the caller can
+// back off). Self-contained (serialized by executeScript — no outer refs).
+function epcFetchBurstInPage(opts) {
+  return (async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const DROP = { 'content-length': 1, 'host': 1, 'connection': 1, 'accept-encoding': 1 }
+    const hdr = () => {
+      const o = {}; const h = opts.headers || {}
+      for (const k in h) { if (!DROP[String(k).toLowerCase()]) o[k] = h[k] }
+      if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'
+      if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'
+      return o
+    }
+    const buildBody = (nextToken) => {
+      try {
+        const o = JSON.parse(opts.body)
+        o.pageNumber = 1
+        o.nextToken = nextToken || null
+        if (o.pageSize == null) o.pageSize = 30
+        if (o.pagination && typeof o.pagination === 'object') { o.pagination.pageNumber = 1; o.pagination.nextToken = nextToken || null }
+        if (opts.filterPatch && typeof opts.filterPatch === 'object') {
+          if (!o.filterOptions || typeof o.filterOptions !== 'object') o.filterOptions = {}
+          for (const k in opts.filterPatch) o.filterOptions[k] = opts.filterPatch[k]
+        }
+        return JSON.stringify(o)
+      } catch (e) { return opts.body }
+    }
+    const extract = (j) => {
+      const resp = (j.responses && j.responses[0]) || j
+      let items = (resp && (resp.asinInfoList || resp.ads || resp.items || resp.results || resp.campaigns || resp.opportunities || resp.records)) || j.asinInfoList || j.items || j.results || null
+      let itemsKey = items ? 'known' : null
+      if (!Array.isArray(items)) {
+        let best = null, bestKey = null
+        const walk = (o, path, depth) => {
+          if (!o || depth > 4) return
+          if (Array.isArray(o)) { if (o.length && typeof o[0] === 'object' && (!best || o.length > best.length)) { best = o; bestKey = path } return }
+          if (typeof o === 'object') for (const k in o) walk(o[k], path ? path + '.' + k : k, depth + 1)
+        }
+        try { walk(j, '', 0) } catch (e) {}
+        items = best || []; itemsKey = bestKey || 'none'
+      }
+      const nextToken = (resp && (resp.nextToken || (resp.pagination && resp.pagination.nextToken))) || j.nextToken || null
+      return { items: Array.isArray(items) ? items : [], nextToken, itemsKey }
+    }
+
+    let nextToken = opts.nextToken || null
+    const allItems = []
+    let lastStatus = 200, pages = 0, throttled = false, itemsKey = null, raw = ''
+    const burst = opts.burst || 8
+    for (let i = 0; i < burst; i++) {
+      let r
+      try { r = await fetch(opts.url, { method: 'POST', headers: hdr(), body: buildBody(nextToken), credentials: 'include' }) } catch (e) { lastStatus = 0; break }
+      lastStatus = r.status
+      if (r.status === 429 || r.status >= 500) { throttled = true; break }
+      if (r.status === 401 || r.status === 403) break
+      let text = ''
+      try { text = await r.text() } catch (e) {}
+      let j = null
+      try { j = JSON.parse(text) } catch (e) {}
+      if (!j) { if (!raw) raw = (text || '').slice(0, 1500); break }
+      const ex = extract(j)
+      if (!itemsKey) itemsKey = ex.itemsKey
+      for (const it of ex.items) allItems.push(it)
+      pages++
+      nextToken = ex.nextToken || null
+      if (!nextToken) break
+      if (i < burst - 1) await sleep(opts.inPageDelay || 300)
+    }
+    return { status: lastStatus, items: allItems, nextToken, pages, throttled, itemsKey, raw }
+  })()
+}
+
 // Defensive map of ONE raw API item → the EPC ingest row shape
 // (matches app/api/epc/ingest IncomingRow). Field names differ across Amazon's
 // item shapes, so try a spread of candidates and deep-search for the ASIN.
@@ -1451,6 +1527,16 @@ async function loadEpcViaApi() {
         return (out && out[0] && out[0].result) || null
       } catch (e) { return null }
     }
+    // Fetch a burst of consecutive pages in one in-page round-trip (much faster).
+    const fetchBurstFor = async (capX, nextToken, filterPatch, burst) => {
+      try {
+        const out = await chrome.scripting.executeScript({
+          target: { tabId }, world: 'MAIN', func: epcFetchBurstInPage,
+          args: [{ url: capX.url, headers: capX.headers, body: capX.body, nextToken, filterPatch: filterPatch || null, burst: burst || 8, inPageDelay: 300 }],
+        })
+        return (out && out[0] && out[0].result) || null
+      } catch (e) { return null }
+    }
 
     // Probe each captured spcc query (page 1) so we know which have rows. All caps
     // are spcc-only now, so any with items is a real grid feed.
@@ -1469,7 +1555,7 @@ async function loadEpcViaApi() {
     if (!liveCaps.length) { job.error = job.error || 'no-rows'; job.done = true; job.finishedAt = Date.now(); return }
     job.total = null // no reliable total; show "Loaded N" only
 
-    let pace = 1300
+    let pace = 700   // between bursts (each burst already spaces its own pages)
     const MAX_PAGES = 8000
     const CAP = 2000 // a query that returns ~this many hit Amazon's deep-paging cap
 
@@ -1478,11 +1564,18 @@ async function loadEpcViaApi() {
     // it added. Records the stop reason per query.
     const paginateQuery = async (cap, filterPatch, label) => {
       let nextToken = null, errStreak = 0, emptyStreak = 0, added = 0, stop = 'cursor-end'
-      for (let page = 1; page <= MAX_PAGES; page++) {
+      for (let round = 0; round < MAX_PAGES; round++) {
         if (job.canceled) { stop = 'canceled'; break }
-        const res = await fetchPageFor(cap, page, nextToken, filterPatch)
+        const res = await fetchBurstFor(cap, nextToken, filterPatch, 8)
         if (!res || res.status === 0) { if (++errStreak >= 4) { stop = 'fetch-failed'; break } await _sleep(pace * 2); continue }
-        if (res.status === 429 || res.status >= 500) { pace = Math.min(6000, pace + 1200); if (++errStreak >= 8) { stop = 'throttled'; break } await _sleep(pace); continue }
+        if (res.throttled || res.status === 429 || res.status >= 500) {
+          pace = Math.min(6000, pace + 800)
+          // Ingest what the burst got before backing off.
+          for (const raw of (res.items || [])) { const row = mapEpcApiItem(raw); if (!row || seen[row.asin]) continue; seen[row.asin] = 1; pending.push(row); job.loaded++; added++ }
+          nextToken = res.nextToken || nextToken
+          if (++errStreak >= 10) { stop = 'throttled'; break }
+          await _sleep(pace); continue
+        }
         if (res.status === 401 || res.status === 403) { job.error = 'unauthorized'; stop = 'unauthorized'; break }
         errStreak = 0
         const items = Array.isArray(res.items) ? res.items : []
@@ -1491,11 +1584,11 @@ async function loadEpcViaApi() {
           if (!row || seen[row.asin]) continue
           seen[row.asin] = 1; pending.push(row); job.loaded++; added++
         }
-        job.pages++
+        job.pages += res.pages || 1
         if (pending.length >= 300) await flush()
         nextToken = res.nextToken || null
         if (!nextToken) { stop = 'cursor-end'; break }
-        if (!items.length) { if (++emptyStreak >= 6) { stop = 'empty-streak'; break } } else emptyStreak = 0
+        if (!items.length) { if (++emptyStreak >= 4) { stop = 'empty-streak'; break } } else emptyStreak = 0
         await _sleep(pace)
       }
       job.diag.parts = job.diag.parts || []
