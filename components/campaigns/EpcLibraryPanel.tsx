@@ -275,6 +275,23 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         () => apiCancel.current,
       )
       await load(q, sort, filters)
+      // Surface the loader diagnostic (captured endpoint, response shape, sample)
+      // so a 0/low load is debuggable at a glance — copy this to support to tune.
+      if (res.loaded === 0 || res.diag) {
+        try {
+          const parts: string[] = []
+          if (res.diag?.capUrl) parts.push(`endpoint: ${res.diag.capUrl}`)
+          if (Array.isArray(res.diag?.seenPosts)) parts.push(`seenPosts: ${res.diag.seenPosts.join(' | ') || '(none fired)'}`)
+          if (res.diag?.firstStatus != null) parts.push(`status: ${res.diag.firstStatus}`)
+          if (res.diag?.firstItemCount != null) parts.push(`items: ${res.diag.firstItemCount}`)
+          if (res.diag?.itemsKey) parts.push(`itemsKey: ${res.diag.itemsKey}`)
+          if (Array.isArray(res.diag?.topKeys) && res.diag.topKeys.length) parts.push(`keys: ${res.diag.topKeys.join(',')}`)
+          if (res.diag?.raw) parts.push(`raw: ${res.diag.raw}`)
+          if (res.sample) parts.push(`sample: ${res.sample}`)
+          if (res.diag?.capBody) parts.push(`reqBody: ${res.diag.capBody}`)
+          setDebug(parts.length ? `EPC API load — ${parts.join(' · ')}` : null)
+        } catch { /* ignore */ }
+      }
       if (res.canceled) {
         toast.info(`Stopped. Loaded ${res.loaded.toLocaleString()} so far — they're saved.`)
       } else if (!res.ok) {

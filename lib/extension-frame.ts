@@ -298,10 +298,12 @@ export async function requestMyCcCampaigns(opts?: { keyword?: string; maxPages?:
 }
 
 export interface EpcApiLoadProgress { loaded: number; total: number | null; pages: number; addedTotal: number }
-export interface EpcApiLoadResult { ok: boolean; loaded: number; total: number | null; addedTotal: number; error?: string; sample?: string | null; canceled?: boolean }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface EpcApiLoadResult { ok: boolean; loaded: number; total: number | null; addedTotal: number; error?: string; sample?: string | null; canceled?: boolean; diag?: any }
 
 // A running EPC API load, as reported by the background job.
-interface EpcJobSnapshot { ok?: boolean; running?: boolean; started?: boolean; already?: boolean; loaded?: number; total?: number | null; done?: boolean; error?: string | null; pages?: number; addedTotal?: number; sample?: string | null }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface EpcJobSnapshot { ok?: boolean; running?: boolean; started?: boolean; already?: boolean; loaded?: number; total?: number | null; done?: boolean; error?: string | null; pages?: number; addedTotal?: number; sample?: string | null; diag?: any }
 
 /**
  * Load the creator's ENTIRE EPC / Sponsored-Products opportunity list straight
@@ -336,10 +338,10 @@ export async function loadEpcViaApi(
     last = snap
     if (onProgress) onProgress({ loaded: Number(snap.loaded) || 0, total: snap.total ?? null, pages: Number(snap.pages) || 0, addedTotal: Number(snap.addedTotal) || 0 })
     if (snap.done) {
-      return { ok: !snap.error, loaded: Number(snap.loaded) || 0, total: snap.total ?? null, addedTotal: Number(snap.addedTotal) || 0, error: snap.error || undefined, sample: snap.sample ?? null }
+      return { ok: !snap.error, loaded: Number(snap.loaded) || 0, total: snap.total ?? null, addedTotal: Number(snap.addedTotal) || 0, error: snap.error || undefined, sample: snap.sample ?? null, diag: snap.diag ?? null }
     }
   }
-  return { ok: false, loaded: Number(last.loaded) || 0, total: last.total ?? null, addedTotal: Number(last.addedTotal) || 0, error: 'poll-timeout', sample: last.sample ?? null }
+  return { ok: false, loaded: Number(last.loaded) || 0, total: last.total ?? null, addedTotal: Number(last.addedTotal) || 0, error: 'poll-timeout', sample: last.sample ?? null, diag: last.diag ?? null }
 }
 
 export async function requestMessageBrand(detailsUrl: string, message: string): Promise<MessageBrandResult> {

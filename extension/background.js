@@ -647,16 +647,23 @@ function latestSpccSearch(sinceTs) {
     if (!rec || typeof rec.body !== 'string' || !rec.body) continue
     if (sinceTs && rec.ts && rec.ts < sinceTs) continue
     const url = String(rec.url || '')
-    // A list/search query on the connect API (not chat/message/collaboration-msg).
-    if (!/\/connect\/api\/[^?]*search/i.test(url)) continue
+    if (!/\/connect\/api\//i.test(url)) continue
+    // Skip chat/messaging + per-ASIN lookups — we want the grid's LIST query.
+    if (/\/(chat|message|conversation|thread)\b/i.test(url)) continue
     if (/"fieldName"\s*:\s*"asin"/i.test(rec.body)) continue
+    // A list/browse query: either the URL reads like one, or the body carries the
+    // pagination/filter shape these grids use. Endpoint naming varies (search /
+    // browse / list / campaign / spcc), so match on the query SHAPE, not just name.
+    const looksList = /(search|browse|list|query|campaign|spcc|opportunit)/i.test(url)
+      || /"(pageSize|pageNumber|nextToken|filterOptions|searchOptions|sortOptions)"/i.test(rec.body)
+    if (!looksList) continue
     const hay = (url + ' ' + rec.body).toLowerCase()
     // Strong signal this is the sponsored-products (EPC) query, not affiliate-plus.
     if (/spcc|budgetavailability|sponsored|"type"\s*:\s*"spcc"|estimatedepc|\bepc\b/.test(hay)) {
       return { url: rec.url, body: rec.body, headers: rec.headers || {} }
     }
-    // Otherwise remember the newest search POST as a fallback — we opened the spcc
-    // grid, so its list query is the most likely recent search even without a hint.
+    // Otherwise remember the newest list-shaped POST as a fallback — we opened the
+    // spcc grid, so its list query is the most likely recent one even without a hint.
     if (!fallback) fallback = { url: rec.url, body: rec.body, headers: rec.headers || {} }
   }
   return fallback
@@ -1235,17 +1242,34 @@ function epcFetchPageInPage(opts) {
       try { text = await r.text() } catch (e) {}
       let j = null
       try { j = JSON.parse(text) } catch (e) {}
-      if (!r.ok || !j) return { status: r.status, items: [], nextToken: null, total: null, errText: (text || '').slice(0, 200) }
+      if (!r.ok || !j) return { status: r.status, items: [], nextToken: null, total: null, errText: (text || '').slice(0, 200), raw: (text || '').slice(0, 1500), topKeys: [] }
 
       // Find the item array + total + nextToken across the shapes Amazon uses for
       // these search endpoints (responses[0].ads is the collaboration shape; spcc
-      // may name it items/results/campaigns or nest it directly).
+      // may name it items/results/campaigns or nest it directly). When none of the
+      // known keys hit, fall back to the largest array of objects anywhere in the
+      // response so we still page SOMETHING and the diagnostic shows the real shape.
       const resp = (j.responses && j.responses[0]) || j
-      const items = (resp && (resp.ads || resp.items || resp.results || resp.campaigns || resp.opportunities || resp.records)) || j.items || j.results || []
+      let items = (resp && (resp.ads || resp.items || resp.results || resp.campaigns || resp.opportunities || resp.records)) || j.items || j.results || null
+      let itemsKey = items ? 'known' : null
+      if (!Array.isArray(items)) {
+        // Deep-scan for the biggest array of objects (the product/opportunity list).
+        let best = null, bestKey = null
+        const walk = (o, path, depth) => {
+          if (!o || depth > 4) return
+          if (Array.isArray(o)) { if (o.length && typeof o[0] === 'object' && (!best || o.length > best.length)) { best = o; bestKey = path } return }
+          if (typeof o === 'object') for (const k in o) walk(o[k], path ? path + '.' + k : k, depth + 1)
+        }
+        try { walk(j, '', 0) } catch (e) {}
+        items = best || []
+        itemsKey = bestKey || 'none'
+      }
       const total = (resp && (resp.totalResultCount ?? resp.totalCount ?? resp.total ?? (resp.pagination && (resp.pagination.totalCount ?? resp.pagination.total))))
         ?? (j.totalResultCount ?? j.totalCount ?? j.total) ?? null
       const nextToken = (resp && (resp.nextToken || (resp.pagination && resp.pagination.nextToken))) || j.nextToken || null
-      return { status: r.status, items: Array.isArray(items) ? items : [], nextToken, total, errText: '' }
+      const topKeys = []
+      try { for (const k in j) topKeys.push(k); if (resp && resp !== j) { topKeys.push('responses[0]:'); for (const k in resp) topKeys.push(k) } } catch (e) {}
+      return { status: r.status, items: Array.isArray(items) ? items : [], nextToken, total, errText: '', raw: (text || '').slice(0, 1500), topKeys, itemsKey }
     } catch (e) {
       return { status: 0, items: [], nextToken: null, total: null, errText: (e && e.message) || 'exception' }
     }
@@ -1300,6 +1324,7 @@ function _epcSnapshot() {
     running: !_epcJob.done, id: _epcJob.id, loaded: _epcJob.loaded, total: _epcJob.total,
     done: _epcJob.done, error: _epcJob.error || null, pages: _epcJob.pages,
     addedTotal: _epcJob.addedTotal, sample: _epcJob.sample || null,
+    diag: _epcJob.diag || null,
   }
 }
 
@@ -1328,7 +1353,21 @@ async function loadEpcViaApi() {
     // Wait for the page to fire (and net-hook to capture) its spcc list query.
     for (let i = 0; i < 30 && !latestSpccSearch(openedAt) && !job.canceled; i++) await _sleep(500)
     const cap = latestSpccSearch(openedAt)
-    if (!cap || !cap.url || !cap.body) { job.error = 'no-capture'; job.done = true; job.finishedAt = Date.now(); return }
+    if (!cap || !cap.url || !cap.body) {
+      // Report which connect-API POSTs DID fire this run, so we can tell "nothing
+      // fired" (background tab didn't render) from "the list is a GET we don't
+      // capture" from "captured but not recognized as a list query".
+      const seen = []
+      try {
+        for (let i = _ccNetRing.length - 1; i >= 0 && seen.length < 12; i--) {
+          const rec = _ccNetRing[i]
+          if (!rec || (openedAt && rec.ts && rec.ts < openedAt)) continue
+          if (/\/connect\/api\//i.test(String(rec.url || ''))) seen.push(String(rec.url).slice(0, 140))
+        }
+      } catch (e) {}
+      job.error = 'no-capture'; job.diag = { capUrl: null, seenPosts: seen }; job.done = true; job.finishedAt = Date.now(); return
+    }
+    job.diag = { capUrl: cap.url, capBody: String(cap.body || '').slice(0, 800) }
 
     let nextToken = null
     let pace = 1300           // ms between pages (throttle-safe)
@@ -1360,6 +1399,16 @@ async function loadEpcViaApi() {
       if (job.total == null && typeof res.total === 'number') job.total = res.total
 
       const items = Array.isArray(res.items) ? res.items : []
+      // First-page diagnostic: what the replayed request actually returned, so a
+      // 0-load is debuggable (endpoint, response keys, where the item array was
+      // found, a raw snippet) even when item mapping fails.
+      if (page === 1 && job.diag) {
+        job.diag.firstStatus = res.status
+        job.diag.firstItemCount = items.length
+        job.diag.topKeys = res.topKeys || []
+        job.diag.itemsKey = res.itemsKey || null
+        if (!items.length) job.diag.raw = res.raw || ''
+      }
       if (!job.sample && items.length) { try { job.sample = JSON.stringify(items[0]).slice(0, 1800) } catch (e) {} }
       let addedThisPage = 0
       for (const raw of items) {
