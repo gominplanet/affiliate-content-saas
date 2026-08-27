@@ -10,9 +10,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle, Tag } from 'lucide-react'
+import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle, Tag, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import CcCatalogUploader from '@/components/admin/CcCatalogUploader'
+import { requestCcCatalogScan } from '@/lib/extension-frame'
 
 interface KeepaStatus { tokensLeft: number | null; refillRate: number | null; refillIn: number | null }
 interface Counts { staged: number | null; live: number | null; enriched: number | null; enrichable: number | null; hasStaged: boolean | null; keepa: KeepaStatus | null }
@@ -38,6 +39,9 @@ export default function AdminCcImportPage() {
   // Server-side background drain (cron): status + start/stop.
   const [drain, setDrain] = useState<{ active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number } | null>(null)
   const [bgStarting, setBgStarting] = useState(false)
+  // One-click auto-load: SCOUT downloads Amazon's two exports itself (no manual
+  // ZIP download + upload).
+  const [autoLoading, setAutoLoading] = useState(false)
 
   const loadCounts = useCallback(async () => {
     setLoading(true); setErr(null)
@@ -53,6 +57,35 @@ export default function AdminCcImportPage() {
   }, [])
 
   useEffect(() => { loadCounts() }, [loadCounts])
+
+  // One click: SCOUT opens Amazon's CC page in a background tab, triggers both
+  // native "Download all" exports, unzips + parses them, stages every row, and
+  // arms the merge — replacing the manual download + upload entirely.
+  async function autoLoad() {
+    if (autoLoading) return
+    setAutoLoading(true)
+    const t = toast.loading('SCOUT is downloading your Amazon exports. This can take several minutes — keep this tab open.')
+    try {
+      const res = await requestCcCatalogScan()
+      toast.dismiss(t)
+      if (!res.ok) {
+        const why = res.error === 'not-installed' ? 'SCOUT isn’t installed. Install it, then try again.'
+          : res.error?.startsWith('outdated-scout') ? 'Your SCOUT is out of date for this. Update it, then try again.'
+          : res.error === 'timeout' ? 'Amazon took too long to build the exports. Try again shortly, or use the manual upload below.'
+          : `Auto-load failed (${res.error || 'unknown'}). You can still use the manual upload below.`
+        toast.error(why)
+        return
+      }
+      const staged = res.staged ?? 0
+      toast.success(`Loaded ${staged.toLocaleString()} campaigns from Amazon.${res.armed ? ' Merging into the live catalogue automatically.' : ' Now click “Merge into live catalog”.'}`)
+      await loadCounts()
+    } catch {
+      toast.dismiss(t)
+      toast.error('Auto-load failed unexpectedly. Try again, or use the manual upload below.')
+    } finally {
+      setAutoLoading(false)
+    }
+  }
 
   // While a background drain is running, poll the counts so the page reflects
   // progress live (the cron does the actual work — the tab can be closed).
@@ -265,9 +298,28 @@ export default function AdminCcImportPage() {
         subtitle="Merge the weekly Creator Connections CSV into the live catalog, safely : campaign economics update, enriched product signals are preserved, and campaigns that fell out of the CSV are purged."
       />
 
-      {/* Steps */}
+      {/* One-click auto-load — SCOUT downloads Amazon's exports itself. The
+          primary path; the manual ZIP upload below stays as a fallback. */}
+      <div className="card p-5 mb-5" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.04)' }}>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-[240px] flex-1">
+            <p className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Load all from Amazon (one click)</p>
+            <p className="text-[12.5px] leading-relaxed mt-1" style={{ color: 'var(--text-soft)' }}>
+              SCOUT opens your Creator Connections page in a background tab, runs Amazon&rsquo;s two “Download all” exports (available + accepted), unzips and stages them, and starts the merge, no manual download or upload. Amazon can take a few minutes to build the exports, so keep this tab open.
+            </p>
+          </div>
+          <button onClick={autoLoad} disabled={autoLoading}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70 shrink-0"
+            style={{ background: '#7C3AED' }}>
+            {autoLoading ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+            {autoLoading ? 'Loading from Amazon…' : 'Load all from Amazon'}
+          </button>
+        </div>
+      </div>
+
+      {/* Steps — the manual fallback if you'd rather download + drop the ZIPs. */}
       <div className="card p-5 mb-5">
-        <p className="text-[13px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Weekly steps</p>
+        <p className="text-[13px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Or upload manually</p>
         <ol className="text-[13px] leading-relaxed list-decimal pl-5 space-y-1.5" style={{ color: 'var(--text-soft)' }}>
           <li><b>Drag the two ZIP files</b> from Amazon (Download all available + Download all accepted campaigns) into the upload box below and click <b>Upload to staging</b>. MVP unzips them in your browser. Loose CSVs work too, and multiple files combine automatically.</li>
           <li>Confirm the <b>Staged</b> count looks right (tens of thousands).</li>
