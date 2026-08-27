@@ -1463,33 +1463,42 @@ async function loadEpcViaApi() {
     const base = caps[0]
     let best = null // { cap, so, total, item }
     const probe = []
+    // We want the creator's ACCEPTED set — items carry optedIn:true. The New
+    // Opportunities set (optedIn:false) and the whole-program catalog (statuses:
+    // null → ~780k, optedIn:false) are NOT it. So a candidate only qualifies when
+    // its page-1 items are mostly opted-in; among those we take the largest.
     const consider = (label, cap, so, r) => {
-      const total = r && typeof r.total === 'number' ? r.total : (r && Array.isArray(r.items) ? r.items.length : 0)
-      probe.push({ try: label, http: r ? r.status : 0, total: r ? r.total : null, items: r && r.items ? r.items.length : 0 })
+      const items = r && Array.isArray(r.items) ? r.items : []
+      const total = r && typeof r.total === 'number' ? r.total : items.length
+      const optedIn = items.filter((it) => it && it.optedIn === true).length
+      const accepted = items.length > 0 && optedIn >= items.length * 0.5
+      probe.push({ try: label, http: r ? r.status : 0, total: r ? r.total : null, items: items.length, optedIn, accepted })
       if (r && (r.status === 401 || r.status === 403)) job.error = 'unauthorized'
-      if (total > 0 && (!best || total > best.total)) best = { cap, so, total, item: r.items && r.items[0] }
+      if (accepted && total > 0 && (!best || total > best.total)) best = { cap, so, total, item: items[0], label }
     }
     for (const c of caps) {
       if (job.canceled || job.error) break
       consider(`cap:${c.label}`, c, { has: false }, await fetchPageFor(c, 1, null, { has: false }))
       await _sleep(300)
     }
-    // Always also try status overrides on the base — cheap page-1 probes — so the
-    // full/accepted set is found even if its own view never got captured.
+    // Fallback: accepted-type status overrides on the base — cheap page-1 probes —
+    // in case the accepted view's own query never got captured. Deliberately NO
+    // null/"all" here: that returns Amazon's entire catalog, not the creator's set.
     const overrides = [
-      { v: null, l: 'all' }, { v: ['OFFER_ACCEPTED'], l: 'OFFER_ACCEPTED' },
-      { v: ['ACCEPTED'], l: 'ACCEPTED' }, { v: ['OPTED_IN'], l: 'OPTED_IN' }, { v: ['ENROLLED'], l: 'ENROLLED' },
+      { v: ['OFFER_ACCEPTED'], l: 'OFFER_ACCEPTED' }, { v: ['ACCEPTED'], l: 'ACCEPTED' },
+      { v: ['OPTED_IN'], l: 'OPTED_IN' }, { v: ['OFFER_OPTED_IN'], l: 'OFFER_OPTED_IN' }, { v: ['ENROLLED'], l: 'ENROLLED' },
     ]
     for (const o of overrides) {
-      if (job.canceled || job.error) break
-      // Skip if a captured view already matches this status (avoid a dup fetch).
-      if (caps.some((c) => c.label === (o.v ? o.v.join('+') : 'no-status'))) continue
+      if (job.canceled || job.error || best) break
+      if (caps.some((c) => c.label === o.v.join('+'))) continue
       consider(o.l, base, { has: true, v: o.v }, await fetchPageFor(base, 1, null, { has: true, v: o.v }))
       await _sleep(300)
     }
     job.diag.probe = probe
-    job.diag.chosen = best ? `${best.cap.src}${best.so.has ? '+' + (best.so.v ? best.so.v.join(',') : 'all') : ''}(${best.total})` : null
-    if (!best) { job.done = true; job.finishedAt = Date.now(); return }
+    job.diag.chosen = best ? `${best.label}(${best.total})` : null
+    // Don't load a non-accepted set (opportunities / whole catalog). If we couldn't
+    // identify the opted-in set, stop and surface the probe so it's tunable.
+    if (!best) { job.error = job.error || 'no-accepted-set'; job.done = true; job.finishedAt = Date.now(); return }
     const chosenCap = best.cap, chosenSo = best.so
     if (job.total == null && typeof best.total === 'number') job.total = best.total
     if (!job.sample && best.item) { try { job.sample = JSON.stringify(best.item).slice(0, 1800) } catch (e) {} }
