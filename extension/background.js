@@ -1430,6 +1430,16 @@ function mapEpcApiItem(raw) {
   const priceValue = money(raw.buyingPrice) ?? money(raw.listPrice) ?? firstNum(raw.price, raw.priceValue, raw.priceAmount, raw.priceCents != null ? Number(raw.priceCents) / 100 : null, raw.amount)
   const rating = firstNum(raw.numberOfReviewStars, raw.rating, raw.starRating, raw.averageRating, raw.averageStarRating, raw.reviewRating)
   const endsAtRaw = firstStr(raw.dealMetadata && raw.dealMetadata.endDate, raw.endDate, raw.endsAt, raw.campaignEndDate, raw.endTime, raw.expiresAt)
+  const reviewCount = firstNum(raw.reviewCount, raw.numberOfReviews, raw.totalReviews, raw.reviewsCount)
+  // Availability → a short, friendly label (Amazon uses IN_STOCK / IN_STOCK_SCARCE
+  // / LEADTIME / AVAILABLE_DATE).
+  const availRaw = firstStr(raw.availability, raw.stockStatus, raw.inventoryStatus)
+  const availability = availRaw ? (
+    /scarce|low/i.test(availRaw) ? 'Low stock'
+    : /out|unavailable/i.test(availRaw) ? 'Out of stock'
+    : /leadtime|available_date|backorder/i.test(availRaw) ? 'Ships later'
+    : /in_?stock/i.test(availRaw) ? 'In stock' : null
+  ) : null
   return {
     asin,
     campaignName: firstStr(raw.displayTitle, raw.dedupeString, raw.title, raw.productTitle, raw.campaignName, raw.name, raw.productName, raw.itemName),
@@ -1439,6 +1449,9 @@ function mapEpcApiItem(raw) {
     price: priceValue != null ? `$${priceValue.toFixed(2)}` : firstStr(raw.priceDisplay),
     priceValue,
     rating,
+    reviewCount,
+    availability,
+    category: firstStr(raw.category, raw.productCategory, raw.categoryName),
     budget,
     endsAt: endsAtRaw,
     image: firstStr(raw.imageUrl, raw.image, raw.productImage, raw.mainImageUrl, raw.imageLink, raw.thumbnailUrl, Array.isArray(raw.images) && raw.images[0]),
@@ -1557,7 +1570,6 @@ async function loadEpcViaApi() {
 
     let pace = 700   // between bursts (each burst already spaces its own pages)
     const MAX_PAGES = 8000
-    const CAP = 2000 // a query that returns ~this many hit Amazon's deep-paging cap
 
     // Paginate ONE query (cap + optional filter patch) by cursor until the feed
     // ends, unioning rows into the shared seen/pending. Returns how many NEW rows
@@ -1596,18 +1608,13 @@ async function loadEpcViaApi() {
       return { added, stop }
     }
 
-    // For each live query: paginate the whole feed. If it stops at the 2048 cap
-    // (cursor-end at ~2000+), it's truncated — re-run it split by budget score
-    // (Low/Medium/High), each with its own cap, to reach past 2048. Union dedupes.
+    // Paginate every live query and union the rows. The Accepted (OPTED_IN) feed
+    // is NOT subject to the 2048 ranked-feed cap and returns the whole set on its
+    // own, so we don't bother splitting the capped New-Opportunities feed by budget
+    // (that just churns dupes and trips Amazon's throttle for ~zero new rows).
     for (const c of liveCaps) {
       if (job.canceled || job.error) break
-      const base = await paginateQuery(c, null, c.label)
-      if (base.stop === 'cursor-end' && base.added >= CAP) {
-        for (const b of ['High', 'Medium', 'Low']) {
-          if (job.canceled || job.error) break
-          await paginateQuery(c, { budgetAvailabilityScoreList: [b] }, `${c.label}/${b}`)
-        }
-      }
+      await paginateQuery(c, null, c.label)
     }
     job.diag.stop = 'done'
     job.diag.stopLoaded = job.loaded

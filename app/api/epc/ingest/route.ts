@@ -37,6 +37,9 @@ interface IncomingRow {
   rating?: string | number | null
   budget?: string | null
   image?: string | null
+  reviewCount?: number | null
+  availability?: string | null
+  category?: string | null
 }
 
 const num = (v: unknown): number | null => {
@@ -91,6 +94,9 @@ export async function POST(request: Request) {
           epc_display: (r.epc || '').trim() || null,
           budget: cleanBudget(r.budget),
           rating: num(r.rating),
+          review_count: num(r.reviewCount),
+          availability: (r.availability || '').trim().slice(0, 40) || null,
+          category: (r.category || '').trim().slice(0, 80) || null,
           ends_at: cleanDate(r.endsAt),
           details_url: null as string | null,
           scanned_at: scannedAt,
@@ -176,6 +182,7 @@ export async function POST(request: Request) {
       const catalogRows = rows.map((r) => ({
         asin: r.asin, title: r.title, brand: r.brand, image_url: r.image_url,
         price_cents: r.price_cents, rating: r.rating,
+        review_count: r.review_count, availability: r.availability, category: r.category,
         epc_value_ref: r.epc_value, budget_ref: r.budget, last_seen_at: scannedAt,
       }))
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

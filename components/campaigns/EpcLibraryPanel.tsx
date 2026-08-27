@@ -25,6 +25,9 @@ interface EpcProduct {
   epc_display: string | null
   budget: string | null
   rating: number | null
+  review_count: number | null
+  availability: string | null
+  category: string | null
   monthly_sold: number | null
   sales_rank: number | null
   sales_rank_avg90: number | null
@@ -772,12 +775,12 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, canRemove, onQuickPos
           <p className="text-[12.5px] font-medium leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>{p.title || p.asin}</p>
           <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
             {p.price_cents != null ? `$${(p.price_cents / 100).toFixed(2)}` : ''}
-            {p.rating != null ? <> · <Star size={9} className="inline -mt-0.5" style={{ color: '#ff9500' }} /> {p.rating}</> : null}
+            {p.rating != null ? <> · <Star size={9} className="inline -mt-0.5" style={{ color: '#ff9500' }} /> {p.rating}{p.review_count != null && p.review_count > 0 ? ` (${p.review_count >= 1000 ? `${Math.round(p.review_count / 1000)}k` : p.review_count.toLocaleString()})` : ''}</> : null}
             {p.monthly_sold != null ? <> · {p.monthly_sold >= 1000 ? `${Math.round(p.monthly_sold / 1000)}k` : p.monthly_sold}+ sold/mo</> : null}
           </p>
-          {(p.sales_rank != null || p.sales_rank_category) && (
-            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
-              {p.sales_rank != null ? `#${p.sales_rank.toLocaleString()}` : ''}{p.sales_rank_category ? ` in ${p.sales_rank_category}` : ''}
+          {(p.sales_rank != null || p.sales_rank_category || p.category) && (
+            <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-faint)' }}>
+              {p.sales_rank != null ? `#${p.sales_rank.toLocaleString()}` : ''}{(p.sales_rank_category || p.category) ? ` in ${p.sales_rank_category || p.category}` : ''}
             </p>
           )}
         </div>
@@ -803,6 +806,11 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, canRemove, onQuickPos
         {p.budget && (
           <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: bs.bg, color: bs.color }} title="Budget availability score">
             {p.budget} budget
+          </span>
+        )}
+        {p.availability && p.availability !== 'In stock' && (
+          <span className="px-2 py-1 rounded-md text-[11px] font-semibold" style={{ background: 'rgba(255,149,0,0.14)', color: '#b45309' }} title="Stock availability on Amazon">
+            {p.availability}
           </span>
         )}
       </div>

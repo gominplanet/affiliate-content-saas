@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.16.67'
+export const SCOUT_LATEST_VERSION = '1.16.68'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'EPC library can now load every Sponsored Products opportunity straight from Amazon’s own API, paginated with a live running count and no duplicates, instead of scraping the on-screen grid. The old grid scan stays as a fallback.'
+  'EPC “Load all from Amazon” now pulls the full accepted set via Amazon’s API (the Accepted feed has no page cap), and each product carries more detail: review count, stock availability, and category.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
