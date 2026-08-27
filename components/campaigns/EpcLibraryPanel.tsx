@@ -280,10 +280,11 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
       if (res.loaded === 0 || res.diag) {
         try {
           const parts: string[] = []
-          if (res.diag?.capUrl) parts.push(`endpoint: ${res.diag.capUrl}`)
+          if (Array.isArray(res.diag?.capSources)) parts.push(`captured: ${res.diag.capSources.join(',')}`)
           if (Array.isArray(res.diag?.seenPosts)) parts.push(`seenPosts: ${res.diag.seenPosts.join(' | ') || '(none fired)'}`)
+          if (Array.isArray(res.diag?.probe)) parts.push(`probe: ${res.diag.probe.map((p: { try: string; http: number; total: number | null; items: number }) => `${p.try}=${p.total ?? '?'}(${p.http})`).join(', ')}`)
+          if (res.diag?.chosen) parts.push(`chosen: ${res.diag.chosen}`)
           if (res.diag?.firstStatus != null) parts.push(`status: ${res.diag.firstStatus}`)
-          if (res.diag?.firstItemCount != null) parts.push(`items: ${res.diag.firstItemCount}`)
           if (res.diag?.itemsKey) parts.push(`itemsKey: ${res.diag.itemsKey}`)
           if (Array.isArray(res.diag?.topKeys) && res.diag.topKeys.length) parts.push(`keys: ${res.diag.topKeys.join(',')}`)
           if (res.diag?.raw) parts.push(`raw: ${res.diag.raw}`)

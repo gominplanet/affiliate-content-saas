@@ -1360,11 +1360,23 @@ async function loadEpcViaApi() {
     await _sleep(1500)
     // Wait for the page to fire (and net-hook to capture) its spcc list query.
     for (let i = 0; i < 30 && !latestSpccSearch(openedAt) && !job.canceled; i++) await _sleep(500)
-    const cap = latestSpccSearch(openedAt)
-    if (!cap || !cap.url || !cap.body) {
-      // Report which connect-API POSTs DID fire this run, so we can tell "nothing
-      // fired" (background tab didn't render) from "the list is a GET we don't
-      // capture" from "captured but not recognized as a list query".
+    // Gather candidate list queries. The opportunities tab fires an OFFER_AVAILABLE
+    // query (empty once everything's accepted), so we ALSO navigate the same tab
+    // through the accepted-view URLs and capture what THEY fire — those carry the
+    // real accepted-status filter, so we don't have to guess Amazon's enum.
+    const caps = []
+    const addCap = (c, src) => { if (c && c.url && c.body && !caps.some((x) => x.body === c.body)) caps.push({ url: c.url, body: c.body, headers: c.headers || {}, src }) }
+    addCap(latestSpccSearch(openedAt), 'opportunity')
+    for (const st of ['accepted', 'active', 'opted-in', 'enrolled']) {
+      if (job.canceled) break
+      const t0 = Date.now()
+      const navUrl = `${CC_BASE}?${_ccCreatorId ? `creatorId=${encodeURIComponent(_ccCreatorId)}&` : ''}status=${st}&type=spcc`
+      try { await chrome.tabs.update(tabId, { url: navUrl }) } catch (e) {}
+      await waitForTabLoad(tabId, 12000); await _sleep(1500)
+      for (let i = 0; i < 16 && !latestSpccSearch(t0) && !job.canceled; i++) await _sleep(500)
+      addCap(latestSpccSearch(t0), st)
+    }
+    if (!caps.length) {
       const seen = []
       try {
         for (let i = _ccNetRing.length - 1; i >= 0 && seen.length < 12; i--) {
@@ -1375,45 +1387,48 @@ async function loadEpcViaApi() {
       } catch (e) {}
       job.error = 'no-capture'; job.diag = { capUrl: null, seenPosts: seen }; job.done = true; job.finishedAt = Date.now(); return
     }
-    job.diag = { capUrl: cap.url, capBody: String(cap.body || '').slice(0, 800) }
+    job.diag = { capSources: caps.map((c) => c.src), capBody: String(caps[0].body || '').slice(0, 800) }
 
-    // Fetch one page with an optional statuses override. `so` is { has, v }.
-    const fetchPage = async (page, nextToken, so) => {
+    // Run one page of a specific captured query, with an optional statuses override.
+    const fetchPageFor = async (capX, page, nextToken, so) => {
       try {
         const out = await chrome.scripting.executeScript({
           target: { tabId }, world: 'MAIN', func: epcFetchPageInPage,
-          args: [{ url: cap.url, headers: cap.headers, body: cap.body, pageNumber: page, nextToken, hasStatusOverride: !!(so && so.has), statusesValue: so ? so.v : null }],
+          args: [{ url: capX.url, headers: capX.headers, body: capX.body, pageNumber: page, nextToken, hasStatusOverride: !!(so && so.has), statusesValue: so ? so.v : null }],
         })
         return (out && out[0] && out[0].result) || null
       } catch (e) { return null }
     }
 
-    // The captured query filters to whatever tab we happened to open (usually
-    // OFFER_AVAILABLE = new offers, which is empty once everything's accepted).
-    // Probe status filters until one returns rows, then lock it for every page.
-    // null = no status filter (all offers), first candidate since it's broadest.
-    const STATUS_CANDIDATES = [
-      { label: 'as-captured', has: false, v: null },
-      { label: 'all', has: true, v: null },
-      { label: 'OFFER_ACCEPTED', has: true, v: ['OFFER_ACCEPTED'] },
-      { label: 'ACCEPTED', has: true, v: ['ACCEPTED'] },
-      { label: 'ENROLLED', has: true, v: ['ENROLLED'] },
-      { label: 'AVAILABLE+ACCEPTED', has: true, v: ['OFFER_AVAILABLE', 'OFFER_ACCEPTED'] },
+    // Attempts: each captured query AS-IS (its own status filter), then status
+    // overrides on the base query. Use the first that returns rows.
+    const base = caps[0]
+    const attempts = [
+      ...caps.map((c) => ({ cap: c, so: { has: false }, label: `cap:${c.src}` })),
+      { cap: base, so: { has: true, v: null }, label: 'all' },
+      { cap: base, so: { has: true, v: ['OFFER_ACCEPTED'] }, label: 'OFFER_ACCEPTED' },
+      { cap: base, so: { has: true, v: ['ACCEPTED'] }, label: 'ACCEPTED' },
+      { cap: base, so: { has: true, v: ['OPTED_IN'] }, label: 'OPTED_IN' },
+      { cap: base, so: { has: true, v: ['ENROLLED'] }, label: 'ENROLLED' },
+      { cap: base, so: { has: true, v: ['OFFER_AVAILABLE', 'OFFER_ACCEPTED'] }, label: 'AVAIL+ACC' },
     ]
-    let chosen = null
+    let chosenCap = null, chosenSo = null
     const probe = []
-    for (const cand of STATUS_CANDIDATES) {
+    for (const a of attempts) {
       if (job.canceled) break
-      const r = await fetchPage(1, null, cand)
-      const n = r && typeof r.total === 'number' ? r.total : (r && Array.isArray(r.items) ? r.items.length : 0)
-      probe.push({ status: cand.label, http: r ? r.status : 0, total: r ? r.total : null, items: r && r.items ? r.items.length : 0 })
+      const r = await fetchPageFor(a.cap, 1, null, a.so)
+      probe.push({ try: a.label, http: r ? r.status : 0, total: r ? r.total : null, items: r && r.items ? r.items.length : 0 })
       if (r && (r.status === 401 || r.status === 403)) { job.error = 'unauthorized'; break }
-      if (r && ((typeof r.total === 'number' && r.total > 0) || (Array.isArray(r.items) && r.items.length > 0))) { chosen = cand; if (!job.sample && r.items && r.items.length) { try { job.sample = JSON.stringify(r.items[0]).slice(0, 1800) } catch (e) {} } break }
+      if (r && ((typeof r.total === 'number' && r.total > 0) || (Array.isArray(r.items) && r.items.length > 0))) {
+        chosenCap = a.cap; chosenSo = a.so
+        if (!job.sample && r.items && r.items.length) { try { job.sample = JSON.stringify(r.items[0]).slice(0, 1800) } catch (e) {} }
+        break
+      }
       await _sleep(400)
     }
     job.diag.probe = probe
-    job.diag.chosenStatus = chosen ? chosen.label : null
-    if (!chosen) { job.done = true; job.finishedAt = Date.now(); return }
+    job.diag.chosen = chosenCap ? `${chosenCap.src}${chosenSo && chosenSo.has ? '+' + (chosenSo.v ? chosenSo.v.join(',') : 'all') : ''}` : null
+    if (!chosenCap) { job.done = true; job.finishedAt = Date.now(); return }
 
     let nextToken = null
     let pace = 1300           // ms between pages (throttle-safe)
@@ -1422,7 +1437,7 @@ async function loadEpcViaApi() {
     const MAX_PAGES = 4000    // hard backstop (~120k opportunities)
     for (let page = 1; page <= MAX_PAGES; page++) {
       if (job.canceled) break
-      let res = await fetchPage(page, nextToken, chosen)
+      let res = await fetchPageFor(chosenCap, page, nextToken, chosenSo)
 
       if (!res || res.status === 0) {
         if (++errStreak >= 4) { job.error = job.error || 'page-fetch-failed'; break }
