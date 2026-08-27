@@ -137,6 +137,8 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   const [cleanupOpen, setCleanupOpen] = useState(false)
   const [cleanupData, setCleanupData] = useState<EpcCleanupPreview | null>(null)
   const cleanupRef = useRef<HTMLDivElement>(null)
+  // Newest scanned_at across the library (admin) — drives the 48h refresh nudge.
+  const [newestScan, setNewestScan] = useState<string | null>(null)
   // The active site's US Associates tag + whether Passport Links (geo-routing) is
   // on. "Get link" hands out a Passport Link when enabled (sends each visitor to
   // their own country's Amazon), else the standard tagged link.
@@ -171,6 +173,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
       const data = await res.json()
       setProducts(Array.isArray(data.products) ? data.products : [])
       setTotal(data.total ?? 0)
+      if (isAdmin && 'newestScan' in data) setNewestScan(data.newestScan ?? null)
     } catch {
       setProducts([])
     } finally {
@@ -491,6 +494,33 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           )}
         </div>
       </div>
+
+      {/* 48h refresh nudge (operator-only): the catalogue is loaded through the
+          admin's Amazon session, so it can't refresh itself server-side. Remind
+          the operator when the newest row is older than 48 hours. */}
+      {isAdmin && (() => {
+        if (apiLoading) return null
+        const ageMs = newestScan ? Date.now() - new Date(newestScan).getTime() : Infinity
+        const hours = ageMs / 3_600_000
+        if (hours < 48) return null
+        const when = newestScan
+          ? `${Math.floor(hours / 24) >= 1 ? `${Math.floor(hours / 24)}d` : `${Math.floor(hours)}h`} ago`
+          : 'never'
+        return (
+          <div className="mb-4 rounded-lg px-3.5 py-2.5 flex items-center justify-between gap-3 flex-wrap"
+            style={{ background: 'rgba(255,149,0,0.10)', border: '1px solid rgba(255,149,0,0.30)' }}>
+            <span className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
+              <b style={{ color: '#b45309' }}>Catalogue is due for a refresh.</b>{' '}
+              Last updated {when}. MVP refreshes every 48 hours — run “Load all from Amazon” to bring it current.
+            </span>
+            <button onClick={loadViaApi} disabled={apiLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-70 shrink-0"
+              style={{ background: '#7C3AED' }}>
+              <Download size={13} /> Refresh now
+            </button>
+          </div>
+        )
+      })()}
 
       {/* Scan diagnostic — what SCOUT actually saw on the last scan. */}
       {debug && (

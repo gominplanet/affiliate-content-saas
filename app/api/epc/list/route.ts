@@ -80,7 +80,17 @@ export async function GET(request: Request) {
       console.error('[epc/list]', error.message)
       return NextResponse.json({ ok: true, products: [], total: 0 })
     }
-    return NextResponse.json({ ok: true, products: data ?? [], total: count ?? 0 })
+    // Newest scanned_at across the whole (unfiltered) library — powers the "refresh
+    // the catalogue" nudge. Cheap: one indexed row read. Best-effort.
+    let newestScan: string | null = null
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: newest } = await (supabase as any)
+        .from('epc_products').select('scanned_at').eq('user_id', user.id)
+        .order('scanned_at', { ascending: false }).limit(1).maybeSingle()
+      newestScan = newest?.scanned_at ?? null
+    } catch { /* ignore */ }
+    return NextResponse.json({ ok: true, products: data ?? [], total: count ?? 0, newestScan })
   } catch (err) {
     console.error('[epc/list]', err instanceof Error ? err.message : err)
     return NextResponse.json({ ok: true, products: [], total: 0 })
