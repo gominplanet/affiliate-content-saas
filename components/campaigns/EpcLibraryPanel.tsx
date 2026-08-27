@@ -39,6 +39,17 @@ interface EpcProduct {
   scanned_at: string
 }
 
+// Cleanup preview from GET /api/epc/cleanup — staleness buckets (rows not seen in
+// a scan for 30/60/90+ days), duplicate count, and crawl-coverage timestamps.
+interface EpcCleanupPreview {
+  total: number
+  expired: number
+  duplicates: number
+  newestScan: string | null
+  oldestScan: string | null
+  stale: { d30: number; d60: number; d90: number }
+}
+
 const SORTS: { key: string; label: string }[] = [
   { key: 'recent', label: 'Recently added' },
   { key: 'epc', label: 'Highest EPC' },
@@ -118,6 +129,9 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   const [filling, setFilling] = useState(false)
   const [fillMsg, setFillMsg] = useState<string | null>(null)
   const [cleaning, setCleaning] = useState(false)
+  const [cleanupOpen, setCleanupOpen] = useState(false)
+  const [cleanupData, setCleanupData] = useState<EpcCleanupPreview | null>(null)
+  const cleanupRef = useRef<HTMLDivElement>(null)
   // The active site's US Associates tag + whether Passport Links (geo-routing) is
   // on. "Get link" hands out a Passport Link when enabled (sends each visitor to
   // their own country's Amazon), else the standard tagged link.
@@ -167,6 +181,18 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
     debounce.current = setTimeout(() => void load(q, sort, filters), 300)
     return () => { if (debounce.current) clearTimeout(debounce.current) }
   }, [q]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close the cleanup popover on outside-click / Escape.
+  useEffect(() => {
+    if (!cleanupOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (cleanupRef.current && !cleanupRef.current.contains(e.target as Node)) setCleanupOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCleanupOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [cleanupOpen])
 
   async function scan() {
     setScanning(true)
@@ -263,31 +289,47 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
     try { await fetch(`/api/epc/list?asin=${asin}`, { method: 'DELETE' }) } catch { /* optimistic */ }
   }
 
-  // Trim the library down to what's actually live: drop ended campaigns (past
-  // end date, no longer in Amazon's EPC) and collapse any exact-ASIN duplicates.
-  // Previews the counts first so it's never a blind mass-delete.
-  async function cleanup() {
+  // Open the cleanup popover: fetch a fresh preview (staleness buckets, duplicate
+  // count, crawl coverage) so the operator picks a window with the numbers in view.
+  async function openCleanup() {
     if (cleaning) return
+    if (cleanupOpen) { setCleanupOpen(false); return }
     setCleaning(true)
     try {
       const pre = await fetch('/api/epc/cleanup').then((r) => r.json()).catch(() => null)
       if (!pre?.ok) { toast.error(pre?.error || 'Could not check the library.'); return }
-      const dupes = Number(pre.duplicates) || 0
-      const expired = Number(pre.expired) || 0
-      if (!dupes && !expired) { toast.info('Library is already clean — no ended campaigns or duplicates to remove.'); return }
-      const parts = [
-        expired ? `${expired.toLocaleString()} ended ${expired === 1 ? 'campaign' : 'campaigns'}` : '',
-        dupes ? `${dupes.toLocaleString()} duplicate ${dupes === 1 ? 'row' : 'rows'}` : '',
-      ].filter(Boolean).join(' and ')
-      if (!window.confirm(`Remove ${parts} from your EPC library? Live campaigns are kept.`)) return
+      setCleanupData(pre as EpcCleanupPreview)
+      setCleanupOpen(true)
+    } catch {
+      toast.error('Could not check the library. Try again.')
+    } finally {
+      setCleaning(false)
+    }
+  }
+
+  // Run one cleanup pass: 'stale' (not seen in a scan for N+ days) or 'duplicates'
+  // (collapse exact-ASIN dupes). Confirms, then refreshes the grid + preview.
+  async function runCleanup(mode: 'stale' | 'duplicates', days?: number) {
+    if (cleaning) return
+    const n = mode === 'stale'
+      ? (days === 30 ? cleanupData?.stale.d30 : days === 60 ? cleanupData?.stale.d60 : cleanupData?.stale.d90) ?? 0
+      : cleanupData?.duplicates ?? 0
+    if (!n) { toast.info('Nothing to remove for that option.'); return }
+    const label = mode === 'stale'
+      ? `${n.toLocaleString()} product${n === 1 ? '' : 's'} not seen in a scan for ${days}+ days`
+      : `${n.toLocaleString()} duplicate row${n === 1 ? '' : 's'}`
+    if (!window.confirm(`Remove ${label}? You can always re-scan to add anything back.`)) return
+    setCleaning(true)
+    try {
       const res = await fetch('/api/epc/cleanup', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'all' }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mode === 'stale' ? { mode, days } : { mode }),
       })
       const d = await res.json().catch(() => ({}))
       if (!res.ok || !d.ok) { toast.error(d.error || 'Cleanup failed.'); return }
-      const removed = (Number(d.removedExpired) || 0) + (Number(d.removedDuplicates) || 0)
       setTotal(Number(d.total) || 0)
-      toast.success(`Removed ${removed.toLocaleString()}. Library now holds ${(Number(d.total) || 0).toLocaleString()}.`)
+      toast.success(`Removed ${(Number(d.removed) || 0).toLocaleString()}. Library now holds ${(Number(d.total) || 0).toLocaleString()}.`)
+      setCleanupOpen(false)
       await load(q, sort, filters)
     } catch {
       toast.error('Cleanup failed unexpectedly. Try again.')
@@ -392,13 +434,53 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           </button>
         )}
         {isAdmin && total > 0 && (
-          <button onClick={cleanup} disabled={cleaning}
-            title="Trim the library to what's live: remove ended campaigns (past their end date) and collapse any duplicate ASIN rows. Live campaigns are kept."
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-medium border disabled:opacity-60"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
-            {cleaning ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-            {cleaning ? 'Cleaning…' : 'Clean up'}
-          </button>
+          <div ref={cleanupRef} className="relative">
+            <button onClick={openCleanup} disabled={cleaning}
+              title="Trim the library to what's live. EPC cards show no end date, so this uses the last time SCOUT saw each product — anything not seen in a while has likely dropped out of EPC."
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-medium border disabled:opacity-60"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+              {cleaning ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              {cleaning ? 'Working…' : 'Clean up'}
+            </button>
+            {cleanupOpen && cleanupData && (
+              <div className="mvp-panel absolute right-0 top-full mt-2 z-50 w-[320px] rounded-xl border p-3.5 shadow-xl">
+                <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Trim the EPC library</p>
+                <p className="text-[11.5px] leading-relaxed mt-1" style={{ color: 'var(--text-soft)' }}>
+                  EPC cards don&rsquo;t show an end date, so we use the last time a scan saw each product. Do a full scan pass first so live products are freshly stamped, then remove the stragglers.
+                </p>
+
+                <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Not seen in a scan for…</p>
+                <div className="mt-1.5 flex flex-col gap-1.5">
+                  {([30, 60, 90] as const).map((d) => {
+                    const n = d === 30 ? cleanupData.stale.d30 : d === 60 ? cleanupData.stale.d60 : cleanupData.stale.d90
+                    return (
+                      <button key={d} onClick={() => runCleanup('stale', d)} disabled={cleaning || !n}
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-[12.5px] font-medium border transition-colors disabled:opacity-45"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'var(--surface)' }}>
+                        <span>{d}+ days</span>
+                        <span style={{ color: n ? '#dc2626' : 'var(--text-faint)' }}>{n.toLocaleString()} to remove</span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {cleanupData.duplicates > 0 && (
+                  <button onClick={() => runCleanup('duplicates')} disabled={cleaning}
+                    className="mt-2 w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-[12.5px] font-medium border disabled:opacity-45"
+                    style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'var(--surface)' }}>
+                    <span>Collapse duplicate rows</span>
+                    <span style={{ color: '#dc2626' }}>{cleanupData.duplicates.toLocaleString()}</span>
+                  </button>
+                )}
+
+                <p className="mt-3 text-[10.5px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+                  {cleanupData.total.toLocaleString()} in library.
+                  {cleanupData.newestScan ? ` Last scan ${new Date(cleanupData.newestScan).toLocaleDateString()}.` : ''}
+                  {' '}Removing is safe: re-scan anytime to add anything back.
+                </p>
+              </div>
+            )}
+          </div>
         )}
         <span className="text-[12px] ml-auto" style={{ color: 'var(--text-faint)' }}>
           {total.toLocaleString()} {isAdmin ? 'in library' : 'opportunities'}{(q.trim() || activeFilterCount > 0) ? ' (filtered)' : ''}
