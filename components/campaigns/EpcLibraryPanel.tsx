@@ -420,7 +420,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
               <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
                 {isAdmin
                   ? 'Open your Sponsored Products on Amazon, accept your campaigns, then scan them into this searchable library.'
-                  : 'A searchable library of Amazon Sponsored Products EPC opportunities, kept updated for you. Search or filter, then grab a link or turn any one into a blog or social post.'}
+                  : 'A searchable library of Amazon Sponsored Products EPC opportunities. MVP refreshes the catalogue every 48 hours, so just search or filter, then grab a link or turn any one into a blog or social post.'}
               </p>
             </div>
             {/* Scan controls are operator-only: the library is built centrally and
@@ -638,7 +638,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           <p className="text-[13px] mt-1" style={{ color: 'var(--text-soft)' }}>
             {q.trim() ? 'Try a different search.'
               : isAdmin ? 'On Amazon, accept your Sponsored Products campaigns (“Accept all”), open the Accepted tab, then hit “Scan my EPC opportunities” to build it up.'
-              : 'New Sponsored Products opportunities are added regularly. Check back soon.'}
+              : 'MVP refreshes the catalogue every 48 hours, so check back soon.'}
           </p>
         </div>
       ) : (

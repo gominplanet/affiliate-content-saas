@@ -38,7 +38,7 @@ export default function EpcLibraryPage() {
     <>
       <PageHero
         title="EPC Library"
-        subtitle="Creator Connections products SCOUT has found, with their estimated EPC and budget. Turn any one into a blog post or social push, or grab its link."
+        subtitle="A catalogue of Amazon Sponsored Products opportunities with their estimated EPC and budget, refreshed by MVP every 48 hours. Turn any one into a blog post or social push, or grab its link."
       />
       <EpcLibraryPanel tier={tier} />
     </>
