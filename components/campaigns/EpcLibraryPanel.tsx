@@ -117,6 +117,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   const [helpOpen, setHelpOpen] = useState(false)
   const [filling, setFilling] = useState(false)
   const [fillMsg, setFillMsg] = useState<string | null>(null)
+  const [cleaning, setCleaning] = useState(false)
   // The active site's US Associates tag + whether Passport Links (geo-routing) is
   // on. "Get link" hands out a Passport Link when enabled (sends each visitor to
   // their own country's Amazon), else the standard tagged link.
@@ -262,6 +263,39 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
     try { await fetch(`/api/epc/list?asin=${asin}`, { method: 'DELETE' }) } catch { /* optimistic */ }
   }
 
+  // Trim the library down to what's actually live: drop ended campaigns (past
+  // end date, no longer in Amazon's EPC) and collapse any exact-ASIN duplicates.
+  // Previews the counts first so it's never a blind mass-delete.
+  async function cleanup() {
+    if (cleaning) return
+    setCleaning(true)
+    try {
+      const pre = await fetch('/api/epc/cleanup').then((r) => r.json()).catch(() => null)
+      if (!pre?.ok) { toast.error(pre?.error || 'Could not check the library.'); return }
+      const dupes = Number(pre.duplicates) || 0
+      const expired = Number(pre.expired) || 0
+      if (!dupes && !expired) { toast.info('Library is already clean — no ended campaigns or duplicates to remove.'); return }
+      const parts = [
+        expired ? `${expired.toLocaleString()} ended ${expired === 1 ? 'campaign' : 'campaigns'}` : '',
+        dupes ? `${dupes.toLocaleString()} duplicate ${dupes === 1 ? 'row' : 'rows'}` : '',
+      ].filter(Boolean).join(' and ')
+      if (!window.confirm(`Remove ${parts} from your EPC library? Live campaigns are kept.`)) return
+      const res = await fetch('/api/epc/cleanup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'all' }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || !d.ok) { toast.error(d.error || 'Cleanup failed.'); return }
+      const removed = (Number(d.removedExpired) || 0) + (Number(d.removedDuplicates) || 0)
+      setTotal(Number(d.total) || 0)
+      toast.success(`Removed ${removed.toLocaleString()}. Library now holds ${(Number(d.total) || 0).toLocaleString()}.`)
+      await load(q, sort, filters)
+    } catch {
+      toast.error('Cleanup failed unexpectedly. Try again.')
+    } finally {
+      setCleaning(false)
+    }
+  }
+
   return (
     <div>
       {/* Header — two actions + a collapsible how-to. */}
@@ -355,6 +389,15 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
             style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
             {filling ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
             {filling ? (fillMsg || 'Filling…') : 'Fill in details'}
+          </button>
+        )}
+        {isAdmin && total > 0 && (
+          <button onClick={cleanup} disabled={cleaning}
+            title="Trim the library to what's live: remove ended campaigns (past their end date) and collapse any duplicate ASIN rows. Live campaigns are kept."
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-medium border disabled:opacity-60"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+            {cleaning ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            {cleaning ? 'Cleaning…' : 'Clean up'}
           </button>
         )}
         <span className="text-[12px] ml-auto" style={{ color: 'var(--text-faint)' }}>
