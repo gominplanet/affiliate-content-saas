@@ -276,7 +276,12 @@ export default function CcCampaignsPage() {
   const [nextPage, setNextPage] = useState<number | null>(null)
   const [total, setTotal] = useState(0)
   const [sort, setSort] = useState<string>('score')
-  const [q, setQ] = useState('')
+  // Seed the search box from a ?q= deep link (e.g. "Message the brand" on the
+  // storefront Brands card jumps here pre-filtered to that brand).
+  const [q, setQ] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return new URLSearchParams(window.location.search).get('q') || ''
+  })
   const [minCommission, setMinCommission] = useState(0)
   const [payingOnly, setPayingOnly] = useState(false)
   const [hasSpots, setHasSpots] = useState(true)
