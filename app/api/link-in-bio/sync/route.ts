@@ -1,11 +1,14 @@
 /**
  * Link in Bio — import the creator's posted products as tiles.
  *
- * Pulls product_watches (populated when they turn a deal into a post, plus any
- * manual watches), and adds one tile per product it doesn't already have. Each
- * tile links to the tagged Amazon URL so clicks earn on the creator's Associates
- * tag; our own /api/link-click adds tile-level click counts on top. (Manual
- * tiles can carry a Geniuslink the creator pastes.)
+ * Pulls three sources and adds one tile per product it doesn't already have:
+ *   1. product_watches (posted deals + manual watches)
+ *   2. published reviews (a blog_post linked to a video's product)
+ *   3. Shorts MVP posted to TikTok / Instagram via Clip Factory (a video MVP
+ *      Direct-Posted, carrying a product link)
+ * Each tile links to the tagged Amazon URL so clicks earn on the creator's
+ * Associates tag; our own /api/link-click adds tile-level click counts on top.
+ * (Manual tiles can carry a Geniuslink the creator pastes.)
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -38,7 +41,7 @@ export async function POST() {
   const { data: page } = await sb.from('link_pages').select('id').eq('user_id', user.id).maybeSingle()
   if (!page?.id) return NextResponse.json({ error: 'Create your page first.' }, { status: 400 })
 
-  type SrcRow = { asin: string | null; title: string | null; image_url: string | null; url?: string | null; source: 'deal' | 'review' }
+  type SrcRow = { asin: string | null; title: string | null; image_url: string | null; url?: string | null; source: 'deal' | 'review' | 'social' }
 
   // Source 1 — products the creator has engaged with (posted DEALS auto-watch;
   // plus manual watches).
@@ -84,13 +87,39 @@ export async function POST() {
     // else: not an affiliate link we can use → skip
   }
 
-  // Merge + dedupe (deals first, so a posted deal keeps its richer data), capped
-  // to the import limit. ASIN rows dedupe by ASIN; link-only review rows (no ASIN)
-  // dedupe by URL.
+  // Source 3 — Shorts MVP posted to TikTok / Instagram through Clip Factory.
+  // youtube_videos.tiktok_posted_at and instagram_posted_at are written ONLY by
+  // MVP's own Direct Post endpoints (blog/tiktok-post/video and
+  // instagram/post-direct-video, the Clip Factory Publish stage), never by a post
+  // the creator makes by hand off-platform. So filtering on those timestamps means
+  // "MVP posted this via Clip Factory", which is exactly the set we want. The
+  // product is on youtube_videos.product_url; many of these never become a blog
+  // review, so Source 2 (which needs a blog_post) misses them.
+  const { data: socialVids } = await sb.from('youtube_videos')
+    .select('title, product_url, product_image_url, blog_thumbnail_url, thumbnail_url, tiktok_posted_at, instagram_posted_at, published_at')
+    .eq('user_id', user.id)
+    .not('product_url', 'is', null)
+    .or('tiktok_posted_at.not.is.null,instagram_posted_at.not.is.null')
+    .order('published_at', { ascending: false, nullsFirst: false })
+    .limit(IMPORT_MAX)
+  const socialRows: SrcRow[] = []
+  for (const yv of (socialVids ?? []) as YV[]) {
+    const purl = (yv?.product_url || '').trim()
+    if (!purl) continue
+    const title = yv?.title || null
+    const image_url = yv?.product_image_url || yv?.blog_thumbnail_url || yv?.thumbnail_url || null
+    const asin = asinFromAmazonUrl(purl)
+    if (asin) socialRows.push({ asin, title, image_url, source: 'social' })
+    else if (usableUrl(purl)) socialRows.push({ asin: null, title, image_url, url: purl, source: 'social' })
+  }
+
+  // Merge + dedupe (deals first, so a posted deal keeps its richer data; reviews
+  // before social so a reviewed product keeps its review image), capped to the
+  // import limit. ASIN rows dedupe by ASIN; link-only rows (no ASIN) dedupe by URL.
   const seenAsin = new Set<string>()
   const seenUrl = new Set<string>()
   const rows: SrcRow[] = []
-  for (const r of [...dealRows, ...reviewRows]) {
+  for (const r of [...dealRows, ...reviewRows, ...socialRows]) {
     if (r.asin) {
       const a = r.asin.toUpperCase()
       if (!/^[A-Z0-9]{10}$/.test(a) || seenAsin.has(a)) continue
