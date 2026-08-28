@@ -22,6 +22,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { toUserMessage } from '@/lib/friendly-error'
 import { snapshotActiveBlogIdentity } from '@/lib/site-identity'
+import { getOwnerUserId } from '@/lib/agency'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,9 +45,13 @@ export async function GET() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    // Link settings live on the OWNER's row: generation (getLinkStyle) and the
+    // Geniuslink connection test both read the owner, so a VA must read/write the
+    // owner too — otherwise the VA's choice saves to a row nobody generates from.
+    const ownerId = await getOwnerUserId(user.id)
     const admin = createAdminClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (admin as any).from('integrations').select('*').eq('user_id', user.id).maybeSingle()
+    const { data } = await (admin as any).from('integrations').select('*').eq('user_id', ownerId).maybeSingle()
     const row = (data || {}) as Record<string, unknown>
 
     const modeRaw = String(row.blog_social_link_mode ?? '')
@@ -82,13 +87,17 @@ export async function POST(request: Request) {
     const pin = PIN_PREFS.has(String(b.pinterestLinkPref)) ? String(b.pinterestLinkPref) : 'auto'
     const trim = (v?: string) => (v || '').trim() || null
 
+    // Write to the OWNER's row so generation (which reads getLinkStyle for the
+    // owner) actually sees the choice — a VA saving to their own row was silently
+    // ignored by the generator, which is exactly "connected but publishes bare URLs".
+    const ownerId = await getOwnerUserId(user.id)
     const admin = createAdminClient()
 
     // ── Core columns — these always exist. If this fails, the save truly failed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: coreErr } = await (admin as any).from('integrations').upsert(
       {
-        user_id: user.id,
+        user_id: ownerId,
         geniuslink_api_key: trim(b.geniuslinkKey),
         geniuslink_api_secret: trim(b.geniuslinkSecret),
         amazon_associates_tag: trim(b.amazonTag),
@@ -112,11 +121,11 @@ export async function POST(request: Request) {
     const skipped: string[] = []
     for (const [col, val] of Object.entries(extras)) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (admin as any).from('integrations').update({ [col]: val }).eq('user_id', user.id)
+      const { error } = await (admin as any).from('integrations').update({ [col]: val }).eq('user_id', ownerId)
       if (error) { skipped.push(col); console.warn(`[affiliate-links/save] ${col} skipped: ${error.message}`) }
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: bitlyErr } = await (admin as any).from('integrations').update({ bitly_access_token: bitly }).eq('user_id', user.id)
+    const { error: bitlyErr } = await (admin as any).from('integrations').update({ bitly_access_token: bitly }).eq('user_id', ownerId)
     if (bitlyErr) { skipped.push('bitly_access_token'); console.warn(`[affiliate-links/save] bitly skipped: ${bitlyErr.message}`) }
 
     // Capture the Amazon tag (and current brand) onto the ACTIVE site's row, so

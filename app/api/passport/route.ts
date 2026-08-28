@@ -11,10 +11,12 @@
 // have its own), with integrations.amazon_country_tags as the single-site fallback.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultSite } from '@/lib/wordpress-sites'
 import { passportLinkBase, AMAZON_MARKETPLACES } from '@/lib/passport-links'
 import { canUsePassport } from '@/lib/feature-access'
 import { normalizeTier } from '@/lib/tier'
+import { getOwnerUserId } from '@/lib/agency'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,9 +38,13 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // The passport flag + tier live on the OWNER's row (generation reads the owner
+  // via getLinkStyle), so a VA must read the owner too — else the UI shows a
+  // different state than the generator uses. Admin client crosses the RLS boundary.
+  const ownerId = await getOwnerUserId(user.id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: ig } = await (supabase as any)
-    .from('integrations').select('amazon_associates_tag, passport_links_enabled, amazon_country_tags, tier').eq('user_id', user.id).maybeSingle()
+  const { data: ig } = await (createAdminClient() as any)
+    .from('integrations').select('amazon_associates_tag, passport_links_enabled, amazon_country_tags, tier').eq('user_id', ownerId).maybeSingle()
 
   const canUse = canUsePassport(normalizeTier(ig?.tier))
 
@@ -66,18 +72,23 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Read tier + write the flag on the OWNER's row (matches getLinkStyle + the
+  // Geniuslink test), so a VA toggling Passport actually changes what generation
+  // sees. Admin client crosses RLS for the owner row.
+  const ownerId = await getOwnerUserId(user.id)
+  const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: tierRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  const { data: tierRow } = await (admin as any).from('integrations').select('tier').eq('user_id', ownerId).maybeSingle()
   if (!canUsePassport(normalizeTier(tierRow?.tier))) {
     return NextResponse.json({ error: 'Passport Links is available on the Amazon, Studio, and Pro plans.' }, { status: 403 })
   }
 
   const body = await request.json().catch(() => ({})) as { enabled?: boolean; countryTags?: unknown }
 
-  // Enable flag → account (integrations).
+  // Enable flag → the OWNER's account row.
   if (typeof body.enabled === 'boolean') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').upsert({ user_id: user.id, passport_links_enabled: body.enabled }, { onConflict: 'user_id' })
+    await (admin as any).from('integrations').upsert({ user_id: ownerId, passport_links_enabled: body.enabled }, { onConflict: 'user_id' })
   }
 
   // Country tags → the active site if there is one, else the account.

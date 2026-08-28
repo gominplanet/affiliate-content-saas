@@ -22,6 +22,7 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getOwnerUserId } from '@/lib/agency'
+import { getLinkStyle } from '@/lib/link-cloak'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -56,7 +57,26 @@ export async function POST(request: NextRequest) {
 
     const svc = createGeniuslinkService(apiKey, apiSecret)
     const groups = await svc.listGroups() // throws the friendly 401 message if rejected
-    return NextResponse.json({ ok: true, groupCount: groups.length })
+
+    // The creds work — but do the creator's GENERATED links actually resolve to
+    // Geniuslink? That's a separate question (link style must be Geniuslink, on the
+    // OWNER's row that generation reads). Surfacing the resolved style here turns
+    // "connected but publishes bare Amazon URLs" from a mystery into a visible fact.
+    let resolvedStyle: string | null = null
+    try {
+      const ownerId = await getOwnerUserId(user.id)
+      resolvedStyle = (await getLinkStyle(supabase, ownerId)).style
+    } catch { /* best-effort */ }
+
+    return NextResponse.json({
+      ok: true,
+      groupCount: groups.length,
+      resolvedStyle,
+      // A warning the UI can show verbatim when the creds work but links won't wrap.
+      styleWarning: resolvedStyle && resolvedStyle !== 'geniuslink'
+        ? `Your keys work, but your Link style is set to "${resolvedStyle}", so new posts won't use Geniuslink. Pick "Genius Links" in Brand Profile → Link style and Save.`
+        : null,
+    })
   } catch (e) {
     const error = e instanceof Error ? e.message : 'Could not reach Geniuslink. Try again in a moment.'
     return NextResponse.json({ ok: false, error })
