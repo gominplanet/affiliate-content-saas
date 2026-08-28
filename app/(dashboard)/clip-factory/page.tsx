@@ -183,6 +183,14 @@ export default function ClipFactoryPage() {
   const [uploading, setUploading] = useState(false)
   const [fetchingShortId, setFetchingShortId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  // A horizontal upload can't drop straight into Enhance (the burn would crop off
+  // its sides), so we park it here and let the creator pick a 9:16 reframe first.
+  const [pendingHorizontal, setPendingHorizontal] = useState<{ url: string; durationSec: number; title: string } | null>(null)
+  const [reframing, setReframing] = useState<null | 'center' | 'split'>(null)
+  // Default the Create step to the creator's Shorts when they have no long videos
+  // to cut from — but only once, and never over a tab they picked themselves.
+  const didAutoPick = useRef(false)
+  const [videosLoaded, setVideosLoaded] = useState(false)
 
   // Where the working clip came from: 'created' (rendered from a long video, so
   // it carries a plan caption) vs 'existing' (uploaded / picked short — no
@@ -263,8 +271,15 @@ export default function ClipFactoryPage() {
         id: v.id, youtubeVideoId: v.youtube_video_id ?? null, title: v.title ?? 'Untitled',
         thumbnailUrl: v.thumbnail_url ?? null, durationSeconds: v.duration_seconds ?? null,
       })))
+      setVideosLoaded(true)
     })()
   }, [supabase])
+
+  // Manual tab choice — flags auto-pick as spent so it never overrides the user.
+  const pickTab = useCallback((t: 'long' | 'short' | 'upload') => {
+    didAutoPick.current = true
+    setOnramp(t)
+  }, [])
 
   const loadShorts = useCallback(async () => {
     setLoadingShorts(true)
@@ -277,6 +292,17 @@ export default function ClipFactoryPage() {
   }, [])
 
   useEffect(() => { if (onramp === 'short' && shorts.length === 0) void loadShorts() }, [onramp, shorts.length, loadShorts])
+
+  // Auto-pick the Shorts tab for a creator with no long videos to cut from, so
+  // they land right on their Shorts instead of an empty "connect YouTube" screen.
+  // Runs once; a manual tab click (pickTab) or having long videos cancels it.
+  useEffect(() => {
+    if (didAutoPick.current || !videosLoaded) return
+    if (videos.length > 0) { didAutoPick.current = true; return }
+    if (shorts.length === 0) { void loadShorts(); return } // re-runs once shorts land
+    didAutoPick.current = true
+    setOnramp('short')
+  }, [videosLoaded, videos.length, shorts.length, loadShorts])
 
   const filteredVideos = useMemo(() => {
     const q = vidQuery.trim().toLowerCase()
@@ -364,6 +390,21 @@ export default function ClipFactoryPage() {
     }
   }, [loadShortById])
 
+  // Read a local file's dimensions + duration before upload, so we can tell a
+  // vertical clip (goes straight to Enhance) from a horizontal one (needs a 9:16
+  // reframe first). Best-effort: on any probe error we treat it as vertical and
+  // let the burn's center-crop handle it, rather than blocking the upload.
+  const probeVideo = (file: File): Promise<{ width: number; height: number; duration: number }> =>
+    new Promise((resolve) => {
+      const url = URL.createObjectURL(file)
+      const v = document.createElement('video')
+      v.preload = 'metadata'
+      const done = (r: { width: number; height: number; duration: number }) => { URL.revokeObjectURL(url); resolve(r) }
+      v.onloadedmetadata = () => done({ width: v.videoWidth || 0, height: v.videoHeight || 0, duration: Number.isFinite(v.duration) ? v.duration : 0 })
+      v.onerror = () => done({ width: 0, height: 0, duration: 0 })
+      v.src = url
+    })
+
   const handleUpload = useCallback(async (file: File) => {
     if (!file.type.startsWith('video/')) { toast.error('Please select a video file (MP4 recommended).'); return }
     if (file.size > 300 * 1024 * 1024) { toast.error(`That file is ${(file.size / 1024 / 1024).toFixed(1)}MB — keep it under 300MB.`); return }
@@ -371,18 +412,48 @@ export default function ClipFactoryPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not signed in')
+      const dims = await probeVideo(file)
+      const isHorizontal = dims.width > 0 && dims.height > 0 && dims.width > dims.height
       const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
       const path = `${user.id}/burner-${crypto.randomUUID()}.${ext}`
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: upErr } = await (supabase.storage as any).from('instagram-videos').upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || 'video/mp4' })
       if (upErr) throw new Error(upErr.message || 'Upload failed')
       const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
-      setClipSource('existing')
-      setClip({ url: urlData.publicUrl, title: file.name })
-      setStage('enhance')
+      if (isHorizontal) {
+        // Park it and let the creator choose the 9:16 layout (center vs split).
+        setPendingHorizontal({ url: urlData.publicUrl, durationSec: dims.duration, title: file.name })
+      } else {
+        setClipSource('existing')
+        setClip({ url: urlData.publicUrl, title: file.name })
+        setStage('enhance')
+      }
     } catch (e) { toast.error(errText(e)) }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
   }, [supabase])
+
+  // Reframe a parked horizontal upload to 9:16 (center-crop or split-screen) on
+  // the ingest service, then carry the vertical result into Enhance.
+  const doReframe = useCallback(async (mode: 'center' | 'split') => {
+    if (!pendingHorizontal) return
+    setReframing(mode)
+    try {
+      const res = await fetch('/api/clip-factory/reframe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: pendingHorizontal.url, reframe: mode, durationSec: pendingHorizontal.durationSec }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+        throw new Error(data.error || 'Could not reframe that video.')
+      }
+      setClipSource('existing')
+      setClip({ url: data.url as string, title: pendingHorizontal.title })
+      setPendingHorizontal(null)
+      setStage('enhance')
+    } catch (e) { toast.error(errText(e)) }
+    finally { setReframing(null) }
+  }, [pendingHorizontal])
 
   // Load the creator's saved custom CTA boxes ("My boxes").
   const loadMyStickers = useCallback(async () => {
@@ -625,14 +696,14 @@ export default function ClipFactoryPage() {
       {stage === 'create' && (
         <div>
           <div className="flex flex-wrap gap-2 mb-4">
-            <button onClick={() => setOnramp('long')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'long' ? PILL_ON : PILL_IDLE}`} style={onramp === 'long' ? { backgroundColor: PURPLE } : undefined}>
+            <button onClick={() => pickTab('long')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'long' ? PILL_ON : PILL_IDLE}`} style={onramp === 'long' ? { backgroundColor: PURPLE } : undefined}>
               <Scissors size={13} /> Pick a regular YouTube video
             </button>
-            <button onClick={() => setOnramp('short')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'short' ? PILL_ON : PILL_IDLE}`} style={onramp === 'short' ? { backgroundColor: PURPLE } : undefined}>
+            <button onClick={() => pickTab('short')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'short' ? PILL_ON : PILL_IDLE}`} style={onramp === 'short' ? { backgroundColor: PURPLE } : undefined}>
               <Video size={13} /> Pick a YouTube Short
             </button>
-            <button onClick={() => setOnramp('upload')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'upload' ? PILL_ON : PILL_IDLE}`} style={onramp === 'upload' ? { backgroundColor: PURPLE } : undefined}>
-              <UploadCloud size={13} /> Upload your own vertical video
+            <button onClick={() => pickTab('upload')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'upload' ? PILL_ON : PILL_IDLE}`} style={onramp === 'upload' ? { backgroundColor: PURPLE } : undefined}>
+              <UploadCloud size={13} /> Upload your own video
             </button>
           </div>
 
@@ -748,12 +819,37 @@ export default function ClipFactoryPage() {
                 Pick one of your Shorts to add a CTA and publish it to TikTok or Instagram. We fetch the video the first time you use it.
               </p>
             </div>
+          ) : pendingHorizontal ? (
+            <div>
+              <div className="rounded-xl border border-black/5 dark:border-white/10 p-6 bg-white dark:bg-[#1c1c1e]">
+                <p className="text-[15px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">This is a horizontal video</p>
+                <p className="text-[12px] text-[#86868b] mb-5 max-w-md">Shorts and Reels are vertical (9:16), so choose how to fit it. You can change your mind by uploading again.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
+                  <button onClick={() => void doReframe('center')} disabled={!!reframing} className="group text-left rounded-xl border border-black/10 dark:border-white/15 p-4 hover:border-[#7C3AED]/50 transition-colors disabled:opacity-60">
+                    <div className="flex items-center gap-2 mb-1">
+                      {reframing === 'center' ? <Loader2 size={15} className="animate-spin" style={{ color: PURPLE }} /> : <Scissors size={15} style={{ color: PURPLE }} />}
+                      <span className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Center crop</span>
+                    </div>
+                    <p className="text-[11px] text-[#86868b]">Zoom into the middle of the frame. Best when your subject stays centered.</p>
+                  </button>
+                  <button onClick={() => void doReframe('split')} disabled={!!reframing} className="group text-left rounded-xl border border-black/10 dark:border-white/15 p-4 hover:border-[#7C3AED]/50 transition-colors disabled:opacity-60">
+                    <div className="flex items-center gap-2 mb-1">
+                      {reframing === 'split' ? <Loader2 size={15} className="animate-spin" style={{ color: PURPLE }} /> : <Video size={15} style={{ color: PURPLE }} />}
+                      <span className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Split screen</span>
+                    </div>
+                    <p className="text-[11px] text-[#86868b]">Stack the frame top and bottom so nothing gets cut off the sides.</p>
+                  </button>
+                </div>
+                {reframing && <p className="text-[11px] text-[#86868b] mt-4 inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Reframing your video… this takes a moment.</p>}
+                <button onClick={() => setPendingHorizontal(null)} disabled={!!reframing} className="mt-4 block text-[12px] font-medium text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white disabled:opacity-50">Cancel and upload a different video</button>
+              </div>
+            </div>
           ) : (
             <div>
               <div className="rounded-xl border border-dashed border-black/15 dark:border-white/20 p-8 flex flex-col items-center justify-center text-center gap-3 bg-white dark:bg-[#1c1c1e]">
                 <UploadCloud size={30} style={{ color: PURPLE }} />
-                <p className="text-[15px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload your own vertical video</p>
-                <p className="text-[12px] text-[#86868b] max-w-xs">A 9:16 MP4 works best. Add a shoppable CTA and product link, then publish to TikTok or Instagram. Up to 300MB.</p>
+                <p className="text-[15px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload your own video</p>
+                <p className="text-[12px] text-[#86868b] max-w-xs">Vertical (9:16) works best and is ready right away. Horizontal is fine too, we&apos;ll help you reframe it to 9:16. Add a shoppable CTA and product link, then publish to TikTok or Instagram. Up to 300MB.</p>
                 <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) void handleUpload(f) }} />
                 <button onClick={() => fileRef.current?.click()} disabled={uploading} className="mt-1 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
                   {uploading ? <Loader2 size={15} className="animate-spin" /> : <UploadCloud size={15} />}
