@@ -478,7 +478,9 @@ export default function AmazonBrainstorm() {
         }
       />
 
-      {/* Period toggle */}
+      {/* Period toggle — hidden on the Brands tab, whose data is all-time (a dead
+          control there would just confuse). */}
+      {tab !== 'brands' && (
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div className="inline-flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
           {([['ytd', 'Year to date'], ['monthly', 'Monthly'], ['weekly', 'Weekly']] as const).map(([p, label]) => {
@@ -508,6 +510,7 @@ export default function AmazonBrainstorm() {
           </span>
         )}
       </div>
+      )}
 
       {/* Sales-history coverage + how to load more. SCOUT captures whatever
           report period is on screen, keyed per period, so opening past date
@@ -624,20 +627,37 @@ export default function AmazonBrainstorm() {
         </div>
       )}
 
-      {/* Tabs — split the page's three jobs so each view is short and scannable. */}
+      {/* Tabs — split the page's three jobs so each view is short and scannable.
+          A persistent earnings anchor keeps status above the fold on every tab. */}
       {!loading && !error && data?.hasData && (
-        <div className="flex items-center gap-1 mb-5 border-b overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
-          {([['performance', 'Performance'], ['optimize', 'Optimize'], ['brands', 'Brands']] as const).map(([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setTab(k)}
-              className="px-4 py-2 text-[13px] font-semibold -mb-px border-b-2 whitespace-nowrap transition-colors"
-              style={tab === k ? { borderColor: ACCENT, color: ACCENT } : { borderColor: 'transparent', color: 'var(--text-soft)' }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="flex items-center justify-between gap-3 border-b" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center gap-1 overflow-x-auto">
+              {([['performance', 'Performance'], ['optimize', 'Optimize'], ['brands', 'Brands']] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => setTab(k)}
+                  className="px-4 py-2 text-[13px] font-semibold -mb-px border-b-2 whitespace-nowrap transition-colors"
+                  style={tab === k ? { borderColor: ACCENT, color: ACCENT } : { borderColor: 'transparent', color: 'var(--text-soft)' }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {t && tab !== 'brands' && (
+              <span className="hidden sm:inline text-[12px] pr-1 whitespace-nowrap" style={{ color: 'var(--text-soft)' }}>
+                <b style={{ color: 'var(--text)' }}>{usd(t.earnings)}</b> earned
+              </span>
+            )}
+          </div>
+          <p className="text-[12px] mt-2 mb-5" style={{ color: 'var(--text-soft)' }}>
+            {tab === 'performance'
+              ? 'How your storefront is performing this period.'
+              : tab === 'optimize'
+                ? 'What to fix next — the fastest money hiding in your catalog.'
+                : 'Every brand you feature, and the ones you can pitch for a paid deal.'}
+          </p>
+        </>
       )}
 
       {/* KPIs + table */}
