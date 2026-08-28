@@ -23,6 +23,7 @@ import { acceptCampaignViaScout } from '@/lib/accept-campaign'
 import StorefrontCharts from '@/components/amazon/StorefrontCharts'
 import StorefrontCatalog from '@/components/amazon/StorefrontCatalog'
 import StorefrontBrands from '@/components/amazon/StorefrontBrands'
+import TrybeCrossCheck from '@/components/amazon/TrybeCrossCheck'
 import StorefrontOpportunities from '@/components/amazon/StorefrontOpportunities'
 
 const ACCENT = '#C2410C'
@@ -709,6 +710,11 @@ export default function AmazonBrainstorm() {
           {/* Brands you've featured — deduped from the same synced catalog. */}
           <div className="mt-3">
             <StorefrontBrands />
+          </div>
+
+          {/* Cross-check those brands against TRYBE's Discover Brands. */}
+          <div className="mt-3">
+            <TrybeCrossCheck />
           </div>
 
           {/* Per-product table */}
