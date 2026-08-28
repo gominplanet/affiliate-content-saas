@@ -429,7 +429,10 @@ export async function overlayCaptionOnVideo(
       format: 'mp4',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       transformation: [
-        { width: 1080, height: 1920, crop: 'fill', gravity: 'center', video_codec: 'h264' },
+        // quality:auto:best + a 6 Mbps target give Instagram a crisp, high-bitrate
+        // Reel to re-encode from. Without them Cloudinary picks a conservative
+        // default bitrate, and after IG's own re-compression that reads as soft.
+        { width: 1080, height: 1920, crop: 'fill', gravity: 'center', video_codec: 'h264', quality: 'auto:best', bit_rate: '6m' },
         overlayLayer,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ] as any,
@@ -583,7 +586,10 @@ export async function renderVerticalShort(opts: RenderShortOpts): Promise<Render
         start_offset: Math.round(startSec * 10) / 10,
         end_offset: Math.round(endSec * 10) / 10,
         // gravity 'center' (not 'auto' — Cloudinary can 400 on g_auto video crop).
+        // quality:auto:best + a 6 Mbps target keep the clip crisp through IG's
+        // re-encode; without them Cloudinary's default bitrate reads soft.
         width: 1080, height: 1920, crop: 'fill', gravity: 'center', video_codec: 'h264',
+        quality: 'auto:best', bit_rate: '6m',
       },
     ]
 
