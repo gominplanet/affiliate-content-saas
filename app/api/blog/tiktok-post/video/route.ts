@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { addPostedProductToBio } from '@/lib/link-bio-import'
 import {
   getValidTikTokToken,
   directPostVideoUpload,
@@ -169,6 +170,10 @@ export async function POST(request: Request) {
     })
     .eq('id', videoId)
     .eq('user_id', user.id)
+
+  // If the creator opted in, add this product to their Link in Bio shop page
+  // automatically. Best-effort — a bio-import hiccup must not fail the publish.
+  await addPostedProductToBio(sb, user.id, videoId)
 
   return NextResponse.json({ ok: true, publishId })
 }

@@ -20,6 +20,7 @@ import { maybeDecrypt } from '@/lib/secrets'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
+import { addPostedProductToBio } from '@/lib/link-bio-import'
 
 export const maxDuration = 300
 
@@ -137,6 +138,9 @@ export async function POST(request: Request) {
       .update(patch)
       .eq('id', videoId)
       .eq('user_id', user.id)
+    // If the creator opted in, drop this product onto their Link in Bio shop page
+    // automatically. Best-effort — never let a bio-import hiccup fail the publish.
+    await addPostedProductToBio(sb, user.id, videoId)
   }
 
   if (!reelId && !storyId) {

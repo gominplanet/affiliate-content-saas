@@ -569,6 +569,25 @@ export default function LinkInBioPage() {
               </Button>
             </div>
 
+            {/* Auto-add posts to the page. On → a Clip Factory post to TikTok /
+                Instagram drops its product tile here the moment it publishes. */}
+            <label className="flex items-start gap-2.5 rounded-xl border bg-background px-3 py-2.5 cursor-pointer select-none">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!!page.auto_import_posts}
+                onClick={() => savePage({ auto_import_posts: !page.auto_import_posts })}
+                disabled={busy}
+                className={`mt-0.5 relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${page.auto_import_posts ? 'bg-violet-600' : 'bg-muted-foreground/30'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${page.auto_import_posts ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </button>
+              <span className="text-xs leading-snug">
+                <span className="font-medium">Auto-add products from my posts</span>
+                <span className="block text-muted-foreground">When you post a Short to TikTok or Instagram from Clip Factory, its product lands here automatically, no need to click Import.</span>
+              </span>
+            </label>
+
             {/* Add a product manually */}
             <div className="rounded-xl border bg-background p-3 grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
               <label className="text-[11px] font-medium text-muted-foreground">Title

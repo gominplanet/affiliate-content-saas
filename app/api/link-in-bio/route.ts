@@ -76,6 +76,7 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({})) as {
     handle?: string; title?: string; bio?: string; avatar_url?: string; theme?: string; published?: boolean
+    auto_import_posts?: boolean
     cta_label?: string; cta_url?: string
     ad_enabled?: boolean; ad_image_url?: string; ad_title?: string; ad_subtitle?: string; ad_url?: string
     heading_stories?: string; heading_ads?: string; heading_more?: string; accent?: string
@@ -106,6 +107,7 @@ export async function POST(request: Request) {
   if (body.avatar_url !== undefined) patch.avatar_url = (body.avatar_url || '').trim() || null
   if (body.theme !== undefined) patch.theme = themeFor(body.theme).key
   if (body.published !== undefined) patch.published = !!body.published
+  if (body.auto_import_posts !== undefined) patch.auto_import_posts = !!body.auto_import_posts
   // Custom main CTA button. cta_url renders as a raw <a href> on the PUBLIC
   // shop page, so it MUST be scheme-sanitized — safeUrl() forces http(s) and
   // neutralizes javascript:/data: (stored-XSS guard).

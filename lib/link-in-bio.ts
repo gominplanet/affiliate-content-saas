@@ -29,6 +29,8 @@ export interface LinkPage {
   heading_more?: string | null
   // Custom accent hex — overrides the theme preset's accent when set.
   accent?: string | null
+  // When on, a Clip Factory post to TikTok / Instagram auto-adds its product tile.
+  auto_import_posts?: boolean
 }
 
 // ── Retailer detection (for the "Buy now from <retailer>" CTA) ──────────────
