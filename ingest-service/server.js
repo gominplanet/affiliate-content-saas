@@ -325,10 +325,10 @@ function ffmpegClip(input, startSec, dur, outPath) {
     execFile('ffmpeg', [
       '-hide_banner', '-loglevel', 'error', '-threads', '1',
       '-ss', String(startSec), '-i', input, '-t', String(dur),
-      // Cap at 720p — the clip is reframed to 9:16 by Cloudinary anyway, so 1080p
-      // is wasted memory/bytes here; keeps the encode light on a small container.
-      '-vf', "scale='min(1280,iw)':-2",
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+      // Cap at 1080p so the segment keeps native detail for the 9:16 reframe
+      // Cloudinary does downstream. Don't upscale a smaller source (min with iw).
+      '-vf', "scale='min(1920,iw)':-2",
+      '-c:v', 'libx264', '-preset', 'faster', '-crf', '20',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
     ], { maxBuffer: 1024 * 1024 * 64, timeout: 240_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
       if (err) {
@@ -402,14 +402,16 @@ app.post('/ingest', async (req, res) => {
       }
     } catch { /* non-fatal — proceed to download */ }
 
-    // Best video ≤720p + best audio, ANY codec (VP9/webm included), merged to
-    // mp4 by ffmpeg. 720p (not 1080p) because Shorts are a 9:16 center-crop that
-    // Cloudinary re-encodes anyway, so 1080p is wasted bytes — and the download
-    // runs through a per-GB residential proxy, so ~halving the bytes ~halves the
-    // dominant per-video cost. No ext filter — that's what caused "Requested
-    // format is not available" on videos YouTube only serves in webm.
+    // Best video ≤1080p + best audio, ANY codec (VP9/webm included), merged to
+    // mp4 by ffmpeg. This cached file is the MASTER every Short/reel is reframed
+    // from, so its resolution is the ceiling on final quality. At 720p the 9:16
+    // crop then rendered out at 1080 was an upscale, which read as soft once
+    // Instagram re-encoded it. 1080p costs more residential-proxy bandwidth, but
+    // one download is reused across every clip cut from the video, so the cost is
+    // amortised. No ext filter — that's what caused "Requested format is not
+    // available" on videos YouTube only serves in webm.
     await ytDlp([
-      '-f', 'bv*[height<=720]+ba/b[height<=720]/bv*+ba/b',
+      '-f', 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b',
       '--merge-output-format', 'mp4',
       '-o', tmp,
       '--no-playlist', '--no-warnings',
@@ -581,7 +583,10 @@ function ffmpegRender(input, startSec, dur, vf, outPath) {
       // resets to 0 at startSec, so the clip-relative caption timings line up.
       '-ss', String(startSec), '-i', input, '-t', String(dur),
       '-vf', vf,
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      // crf 20 + the "faster" preset give Instagram a sharper, higher-bitrate
+      // source to re-encode from, which is where the visible quality lives once
+      // the platform compresses again. Both cost some CPU on a short clip, not RAM.
+      '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
       // Keep the encoder's memory footprint small so a low-RAM container (Railway)
       // doesn't OOM-kill ffmpeg mid-render: no B-frames, single ref frame, and no
       // lookahead buffers. Negligible quality hit for a short clip.
@@ -637,7 +642,7 @@ function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outP
       '-ss', String(startSec), '-i', input, '-t', String(dur),
       '-filter_complex', filterComplex,
       '-map', '[vout]', '-map', audioMap,
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
       '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
     ], { maxBuffer: 1024 * 1024 * 64, timeout: 240_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
@@ -676,7 +681,12 @@ app.post('/render-short', async (req, res) => {
     if (fromYouTube) {
       // Download ONLY the [start,end] window — ~15-30MB vs the whole video.
       await ytDlp([
-        '-f', 'bv*[height<=720]+ba/b[height<=720]/bv*+ba/b',
+        // Pull the section at up to 1080p so the reframe has real 1080-line
+        // detail to work with. A 720p source is the ceiling for everything
+        // downstream: render it out at 1080 and you're upscaling missing pixels,
+        // which is exactly the soft, out-of-focus look creators were seeing once
+        // Instagram re-encoded it. Fall back gracefully when 1080 isn't offered.
+        '-f', 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b',
         '--download-sections', `*${startSec}-${endSec}`,
         '--force-keyframes-at-cuts',
         '--merge-output-format', 'mp4',
@@ -692,13 +702,14 @@ app.post('/render-short', async (req, res) => {
 
     const withCaptions = words.length > 0
     if (withCaptions) fs.writeFileSync(assTmp, buildAss(words))
-    // Output at 720x1280 (9:16). The source is already capped at ≤720p, so this
-    // avoids a wasteful upscale to 1080 — and, critically, halves the pixels the
-    // x264 encoder has to buffer, which is what was OOM-killing ffmpeg on
-    // Railway's small container. libass scales the 1080-designed captions down to
-    // fit automatically (they're positioned via PlayResX/Y), so they look
-    // identical, just at 720p. Override with RENDER_HEIGHT if you have more RAM.
-    const H = Math.max(640, Math.min(1920, Number(process.env.RENDER_HEIGHT || 1280)))
+    // Output at 1080x1920 (9:16), the native Instagram Reels / TikTok / YouTube
+    // Shorts frame. Rendering smaller means the platform upscales on its side and
+    // the result looks soft, which is what creators were reporting. The captions
+    // are already authored against a 1080-wide canvas (PlayResX/Y), so they land
+    // pixel-for-pixel here. The x264 params below keep the encoder's memory
+    // footprint bounded so 1080 still fits the container. Set RENDER_HEIGHT to
+    // 1280 to drop back to 720p on a very small box.
+    const H = Math.max(640, Math.min(1920, Number(process.env.RENDER_HEIGHT || 1920)))
     const W = Math.round(H * 9 / 16 / 2) * 2 // keep 9:16, even width for yuv420p
 
     if (reframeMode === 'split') {
