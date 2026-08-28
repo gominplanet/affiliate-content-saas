@@ -120,17 +120,27 @@ export async function GET(request: NextRequest) {
         .eq('period_start', latestStart)
       const tr = (totRows ?? []) as Array<{ earnings_cents: number | null; revenue_cents: number | null; units: number | null; clicks: number | null }>
       if (tr.length) {
+        // EARNINGS is the one additive metric: Commissions and Creator Connections
+        // are separate income streams, so SUM them — this is Amazon's Summary total.
         const sEarn = tr.reduce((s, r) => s + money(r.earnings_cents), 0)
-        const sRev = tr.reduce((s, r) => s + money(r.revenue_cents), 0)
-        const sUnits = tr.reduce((s, r) => s + (r.units ?? 0), 0)
-        const sClicks = tr.reduce((s, r) => s + (r.clicks ?? 0), 0)
-        // A real summary total is never LESS than the tracked top-100 sum, so
-        // only trust a summary figure that meets or exceeds it — this quietly
-        // rejects a mis-parsed number without letting it corrupt the headline.
-        if (sEarn >= totals.earnings && sEarn > 0) { totals.earnings = Math.round(sEarn * 100) / 100; totalsSource = 'summary' }
-        if (sRev >= totals.revenue && sRev > 0) totals.revenue = Math.round(sRev * 100) / 100
-        if (sUnits >= totals.units && sUnits > 0) totals.units = sUnits
-        if (sClicks >= totals.clicks && sClicks > 0) totals.clicks = sClicks
+        // CLICKS / REVENUE / UNITS are whole-account figures Amazon reports ONCE.
+        // A per-source row can repeat the same global number (the Creator
+        // Connections row carrying the account's click count too), so take the MAX
+        // across sources, never the sum. Summing is what doubled clicks and halved
+        // conversion on accounts with more than one income source.
+        const mRev = tr.reduce((s, r) => Math.max(s, money(r.revenue_cents)), 0)
+        const mUnits = tr.reduce((s, r) => Math.max(s, r.units ?? 0), 0)
+        const mClicks = tr.reduce((s, r) => Math.max(s, r.clicks ?? 0), 0)
+        // These period_totals are SCOUT's parse of Amazon's own summary tiles — the
+        // authoritative "all products" figure — so use them whenever present and
+        // positive. The product-sum fallback double-counts any product that earns
+        // through BOTH sources, so it is NOT a valid floor: the old ">= product-sum"
+        // guard let that inflated sum win and corrupt the headline (earnings and
+        // clicks both read high).
+        if (sEarn > 0) { totals.earnings = Math.round(sEarn * 100) / 100; totalsSource = 'summary' }
+        if (mRev > 0) totals.revenue = Math.round(mRev * 100) / 100
+        if (mUnits > 0) totals.units = mUnits
+        if (mClicks > 0) totals.clicks = mClicks
         // Recompute the derived ratios off the authoritative figures.
         totals.conversion = Math.round(ratio(totals.units, totals.clicks) * 1000) / 10
         totals.epc = Math.round(ratio(totals.earnings, totals.clicks) * 100) / 100
