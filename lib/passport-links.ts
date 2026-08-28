@@ -42,23 +42,43 @@ export const AMAZON_MARKETPLACES: Record<string, { host: string; code: string }>
   TR: { host: 'www.amazon.com.tr', code: 'TR' },
 }
 
-/** The base URL a Passport Link is built on. Set PASSPORT_LINK_BASE to the short
- *  branded domain (e.g. https://mvpl.ink) once it's registered + pointed at the
- *  app; until then it defaults to the app origin, and the same codes keep working
- *  when the domain is swapped in (only this env changes). No trailing slash. */
-export function passportLinkBase(): string {
+/** The branded short base from env, normalized so links resolve for real
+ *  visitors. A BARE APEX (a host with a single label before the TLD, e.g.
+ *  mvpl.ink) is upgraded to its www host: the apex is a redirect-only domain
+ *  that times out for many visitors (ERR_TIMED_OUT), while www.<domain> serves
+ *  the redirect directly in one clean hop. A base that already carries a
+ *  subdomain (https://www.mvpl.ink) is used as-is, so this stays overridable. */
+function brandedShortBase(): string {
   const explicit = (process.env.PASSPORT_LINK_BASE || '').trim().replace(/\/+$/, '')
-  if (explicit) return explicit
+  if (!explicit) return ''
+  try {
+    const u = new URL(explicit)
+    if (u.hostname.split('.').length === 2) {
+      u.hostname = `www.${u.hostname}`
+      return u.origin
+    }
+  } catch { /* not a parseable URL → fall through to the raw value */ }
+  return explicit
+}
+
+/** The base URL a Passport Link is built on. Set PASSPORT_LINK_BASE to the short
+ *  branded domain (e.g. https://www.mvpl.ink) once it's registered + pointed at
+ *  the app; until then it defaults to the app origin, and the same codes keep
+ *  working when the domain is swapped in (only this env changes). No trailing
+ *  slash. */
+export function passportLinkBase(): string {
+  const branded = brandedShortBase()
+  if (branded) return branded
   const app = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://www.mvpaffiliate.io').trim().replace(/\/+$/, '')
   return app
 }
 
 /** Full public URL for a link code. On the branded short domain the redirect is
- *  served at the root via a host rewrite (mvpl.ink/x7k), so no /go segment; on the
- *  app's own domain (the pre-domain fallback) the route lives at /go/x7k. */
+ *  served at the root via a host rewrite (www.mvpl.ink/x7k), so no /go segment;
+ *  on the app's own domain (the pre-domain fallback) the route lives at /go/x7k. */
 export function passportLinkUrl(code: string): string {
-  const explicit = (process.env.PASSPORT_LINK_BASE || '').trim().replace(/\/+$/, '')
-  if (explicit) return `${explicit}/${code}`
+  const branded = brandedShortBase()
+  if (branded) return `${branded}/${code}`
   const app = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://www.mvpaffiliate.io').trim().replace(/\/+$/, '')
   return `${app}/go/${code}`
 }
