@@ -26,6 +26,22 @@ interface Resp {
 
 const PURPLE = '#7C3AED'
 
+// The card already shows the brand as the group header, and scraped titles often
+// repeat it ("Kasa Smart Kasa Outdoor Smart Plug…"), so drop a leading brand
+// prefix from each product title for a clean, non-redundant label.
+function stripBrandPrefix(title: string | null, brand: string): string {
+  const t = (title || '').trim()
+  const b = (brand || '').trim()
+  if (b && t.toLowerCase().startsWith(b.toLowerCase())) {
+    const rest = t.slice(b.length).replace(/^[\s\-–—:,|]+/, '').trim()
+    if (rest) return rest
+  }
+  return t
+}
+
+// Robust 2-line clamp that doesn't depend on the Tailwind line-clamp plugin.
+const CLAMP2: React.CSSProperties = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
+
 export default function StorefrontBrands() {
   const [data, setData] = useState<Resp | null>(null)
   const [loading, setLoading] = useState(true)
@@ -139,21 +155,24 @@ export default function StorefrontBrands() {
                       </div>
 
                       {/* Products under this brand */}
-                      <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-8 gap-2">
-                        {b.products.map(p => (
-                          <a key={p.asin} href={`https://www.amazon.com/dp/${p.asin}`} target="_blank" rel="noopener noreferrer" title={p.title || p.asin} className="group block rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-                            <div className="relative aspect-square" style={{ background: 'var(--surface-2, var(--surface))' }}>
-                              {p.image ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={p.image} alt="" className="w-full h-full object-cover" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: 'var(--text-faint)' }}>{p.asin.slice(-4)}</div>
-                              )}
-                              <span className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity rounded bg-black/60 text-white p-0.5"><ExternalLink size={10} /></span>
-                            </div>
-                            <p className="text-[9.5px] leading-tight px-1 py-1 line-clamp-2" style={{ color: 'var(--text-soft)' }}>{p.title || p.asin}</p>
-                          </a>
-                        ))}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
+                        {b.products.map(p => {
+                          const label = stripBrandPrefix(p.title, b.brand) || p.asin
+                          return (
+                            <a key={p.asin} href={`https://www.amazon.com/dp/${p.asin}`} target="_blank" rel="noopener noreferrer" title={p.title || p.asin} className="group block rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                              <div className="relative aspect-square" style={{ background: 'var(--surface-2, var(--surface))' }}>
+                                {p.image ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={p.image} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-[11px]" style={{ color: 'var(--text-faint)' }}>{p.asin.slice(-4)}</div>
+                                )}
+                                <span className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity rounded bg-black/60 text-white p-0.5"><ExternalLink size={10} /></span>
+                              </div>
+                              <p className="text-[11px] leading-snug px-1.5 py-1.5" style={{ ...CLAMP2, color: 'var(--text-soft)', minHeight: '2.6em' }}>{label}</p>
+                            </a>
+                          )
+                        })}
                       </div>
                       {b.count > b.products.length && (
                         <p className="text-[10px] mt-2" style={{ color: 'var(--text-faint)' }}>Showing {b.products.length} of {b.count}.</p>

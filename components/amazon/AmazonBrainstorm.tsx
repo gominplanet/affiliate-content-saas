@@ -320,6 +320,9 @@ export default function AmazonBrainstorm() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('earnings')
+  // Storefront tabs — one page, three focused jobs, so it stops being an endless
+  // scroll: Performance (how am I doing), Optimize (what to fix), Brands (partners).
+  const [tab, setTab] = useState<'performance' | 'optimize' | 'brands'>('performance')
   const [openAsin, setOpenAsin] = useState<string | null>(null)
   const tier = useEffectiveTier()
   const hasBlog = tier !== 'amazon' // Amazon tier has no blog sites; others do.
@@ -621,9 +624,27 @@ export default function AmazonBrainstorm() {
         </div>
       )}
 
+      {/* Tabs — split the page's three jobs so each view is short and scannable. */}
+      {!loading && !error && data?.hasData && (
+        <div className="flex items-center gap-1 mb-5 border-b overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
+          {([['performance', 'Performance'], ['optimize', 'Optimize'], ['brands', 'Brands']] as const).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setTab(k)}
+              className="px-4 py-2 text-[13px] font-semibold -mb-px border-b-2 whitespace-nowrap transition-colors"
+              style={tab === k ? { borderColor: ACCENT, color: ACCENT } : { borderColor: 'transparent', color: 'var(--text-soft)' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* KPIs + table */}
       {!loading && !error && data?.hasData && t && (
         <>
+          {tab === 'performance' && (
+          <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
             {KPIS.map((k) => {
               // Earnings is the number that matters most — give it an accent tile so
@@ -654,15 +675,17 @@ export default function AmazonBrainstorm() {
               Headline totals are your full Amazon report (all products). The cards below are your top {data.productCount ?? products.length} earners — the ones worth posting more of.
             </p>
           )}
+          </>
+          )}
 
-          {/* Video-but-not-earning — the highest-value insight, up top. Products
-              the creator already made a video for that aren't turning into
-              sales. Self-fetches the catalog; renders nothing until it exists. */}
-          <StorefrontOpportunities />
+          {/* Video-but-not-earning — the highest-value insight. Products the
+              creator already made a video for that aren't turning into sales.
+              Self-fetches the catalog; renders nothing until it exists. */}
+          {tab === 'optimize' && <StorefrontOpportunities />}
 
           {/* Movers — biggest per-product earnings swings vs the prior period.
               Only shows once 2+ periods of this type are synced. */}
-          {(risers.length > 0 || fallers.length > 0) && (
+          {tab === 'performance' && (risers.length > 0 || fallers.length > 0) && (
             <div className="grid sm:grid-cols-2 gap-3 mb-6">
               {[
                 { title: 'Rising', color: GREEN, rows: risers },
@@ -698,26 +721,31 @@ export default function AmazonBrainstorm() {
           )}
 
           {/* Charts & visuals — collapsible so the table stays the default view */}
-          <StorefrontCharts period={period} series={data.series ?? []} products={products} />
+          {tab === 'performance' && <StorefrontCharts period={period} series={data.series ?? []} products={products} />}
 
           {/* Storefront health — products quietly costing the creator money */}
-          <StorefrontHealth products={products} />
+          {tab === 'optimize' && <StorefrontHealth products={products} />}
 
           {/* Full storefront catalog — every product you feature (past the top
               100), with real earnings overlaid. SCOUT reads the public store. */}
-          <StorefrontCatalog />
+          {tab === 'brands' && <StorefrontCatalog />}
 
           {/* Brands you've featured — deduped from the same synced catalog. */}
+          {tab === 'brands' && (
           <div className="mt-3">
             <StorefrontBrands />
           </div>
+          )}
 
           {/* Cross-check those brands against TRYBE's Discover Brands. */}
+          {tab === 'brands' && (
           <div className="mt-3">
             <TrybeCrossCheck />
           </div>
+          )}
 
           {/* Per-product table */}
+          {tab === 'performance' && (
           <div className="rounded-2xl border overflow-hidden mb-8" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <div className="px-4 py-3 border-b flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: 'var(--border)' }}>
               <p className="font-bold text-[14px]" style={{ color: 'var(--text)' }}>Your products this period <span className="font-normal" style={{ color: 'var(--text-soft)' }}>({products.length}) · tap a row for stats &amp; actions</span></p>
@@ -836,11 +864,13 @@ export default function AmazonBrainstorm() {
               </table>
             </div>
           </div>
+          )}
         </>
       )}
 
-      {/* AI next moves — grounded in the numbers above */}
-      {!loading && !error && (
+      {/* AI next moves — grounded in the numbers above. On the Optimize tab (and
+          in the no-data state so it still greets a fresh account). */}
+      {!loading && !error && (tab === 'optimize' || !data?.hasData) && (
         <div className="rounded-2xl border p-5 sm:p-6" style={{ borderColor: 'rgba(234,88,12,0.25)', background: 'linear-gradient(180deg, rgba(234,88,12,0.05), transparent)' }}>
           <div className="flex items-start gap-3 mb-4">
             <span className="w-9 h-9 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ backgroundColor: ACCENT }}><Sparkles size={16} /></span>
