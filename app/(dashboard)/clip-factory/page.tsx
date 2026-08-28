@@ -6,8 +6,9 @@
 // clip from a long video, from the ground up) and Shop Burner (add a CTA/link
 // overlay + product + auto-DM, then publish). One section, three stages:
 //
-//   1) Create  — get a vertical clip: build one from a long video (Shorts
-//                Studio) OR upload / pick an existing Short.
+//   1) Create  — get a vertical clip three ways: cut one from a regular
+//                YouTube video (Shorts Studio), pick one of your existing
+//                YouTube Shorts, or upload your own vertical video.
 //   2) Enhance — burn a CTA overlay + attach a product link (Shop Burner engine).
 //   3) Publish — push to Instagram / TikTok / YouTube (or download).
 //
@@ -175,7 +176,7 @@ export default function ClipFactoryPage() {
   const [generating, setGenerating] = useState(false)
 
   // ---- Create: existing-short / upload on-ramp ----
-  const [onramp, setOnramp] = useState<'long' | 'existing'>('long')
+  const [onramp, setOnramp] = useState<'long' | 'short' | 'upload'>('long')
   const [shorts, setShorts] = useState<ShortItem[]>([])
   const [loadingShorts, setLoadingShorts] = useState(false)
   const [shortQuery, setShortQuery] = useState('')
@@ -275,7 +276,7 @@ export default function ClipFactoryPage() {
     finally { setLoadingShorts(false) }
   }, [])
 
-  useEffect(() => { if (onramp === 'existing' && shorts.length === 0) void loadShorts() }, [onramp, shorts.length, loadShorts])
+  useEffect(() => { if (onramp === 'short' && shorts.length === 0) void loadShorts() }, [onramp, shorts.length, loadShorts])
 
   const filteredVideos = useMemo(() => {
     const q = vidQuery.trim().toLowerCase()
@@ -342,7 +343,7 @@ export default function ClipFactoryPage() {
       if (!videoUrl) throw new Error('No video available for this Short.')
       if (productUrl) setProduct(productUrl)
       setClipSource('existing')
-      setOnramp('existing')
+      setOnramp('short')
       setClip({ url: videoUrl, title })
       setStage('enhance')
     } catch (e) { toast.error(errText(e)) }
@@ -623,12 +624,15 @@ export default function ClipFactoryPage() {
       {/* ---------------- CREATE ---------------- */}
       {stage === 'create' && (
         <div>
-          <div className="flex gap-2 mb-4">
+          <div className="flex flex-wrap gap-2 mb-4">
             <button onClick={() => setOnramp('long')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'long' ? PILL_ON : PILL_IDLE}`} style={onramp === 'long' ? { backgroundColor: PURPLE } : undefined}>
-              <Scissors size={13} /> From a long video
+              <Scissors size={13} /> Pick a regular YouTube video
             </button>
-            <button onClick={() => setOnramp('existing')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'existing' ? PILL_ON : PILL_IDLE}`} style={onramp === 'existing' ? { backgroundColor: PURPLE } : undefined}>
-              <UploadCloud size={13} /> Upload or pick a short
+            <button onClick={() => setOnramp('short')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'short' ? PILL_ON : PILL_IDLE}`} style={onramp === 'short' ? { backgroundColor: PURPLE } : undefined}>
+              <Video size={13} /> Pick a YouTube Short
+            </button>
+            <button onClick={() => setOnramp('upload')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'upload' ? PILL_ON : PILL_IDLE}`} style={onramp === 'upload' ? { backgroundColor: PURPLE } : undefined}>
+              <UploadCloud size={13} /> Upload your own vertical video
             </button>
           </div>
 
@@ -707,23 +711,20 @@ export default function ClipFactoryPage() {
                 Pick a video to find its best moments and render a vertical clip right here, then add a CTA and publish. No downloads, no re-uploads.
               </p>
             </div>
-          ) : (
+          ) : onramp === 'short' ? (
             <div>
               <div className="relative mb-4 max-w-sm">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
                 <input value={shortQuery} onChange={e => setShortQuery(e.target.value)} placeholder="Search your shorts…" className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent pl-9 pr-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
               </div>
-              <div className="mb-4">
-                <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) void handleUpload(f) }} />
-                <button onClick={() => fileRef.current?.click()} disabled={uploading} className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
-                  {uploading ? <Loader2 size={15} className="animate-spin" /> : <UploadCloud size={15} />}
-                  {uploading ? 'Uploading…' : 'Upload a vertical video'}
-                </button>
-              </div>
               {loadingShorts ? (
                 <div className="flex items-center justify-center py-12 text-[#86868b]"><Loader2 size={20} className="animate-spin" /></div>
               ) : shorts.length === 0 ? (
-                <p className="text-sm text-[#86868b] py-8 text-center">No vertical shorts found. Upload one above, or build one from a long video.</p>
+                <div className="flex flex-col items-center justify-center py-16 text-center gap-3 text-[#86868b]">
+                  <Youtube size={30} />
+                  <p className="text-sm max-w-xs">No YouTube Shorts found yet. Sync your YouTube channel so we can pull them in, or use "Upload your own vertical video".</p>
+                  <Link href="/content" className="text-sm font-medium" style={{ color: PURPLE }}>Go to Content →</Link>
+                </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {filteredShorts.map(s => {
@@ -743,6 +744,22 @@ export default function ClipFactoryPage() {
                   })}
                 </div>
               )}
+              <p className="text-[11px] text-[#86868b] mt-4">
+                Pick one of your Shorts to add a CTA and publish it to TikTok or Instagram. We fetch the video the first time you use it.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <div className="rounded-xl border border-dashed border-black/15 dark:border-white/20 p-8 flex flex-col items-center justify-center text-center gap-3 bg-white dark:bg-[#1c1c1e]">
+                <UploadCloud size={30} style={{ color: PURPLE }} />
+                <p className="text-[15px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload your own vertical video</p>
+                <p className="text-[12px] text-[#86868b] max-w-xs">A 9:16 MP4 works best. Add a shoppable CTA and product link, then publish to TikTok or Instagram. Up to 300MB.</p>
+                <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) void handleUpload(f) }} />
+                <button onClick={() => fileRef.current?.click()} disabled={uploading} className="mt-1 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
+                  {uploading ? <Loader2 size={15} className="animate-spin" /> : <UploadCloud size={15} />}
+                  {uploading ? 'Uploading…' : 'Choose a video'}
+                </button>
+              </div>
             </div>
           )}
         </div>
