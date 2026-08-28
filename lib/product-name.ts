@@ -42,7 +42,23 @@ export function cleanBrand(raw: string | null | undefined): string {
   // Strip a trailing noise word, repeatedly ("Xprite Official Store" → "Xprite").
   let prev: string
   do { prev = s; s = s.replace(BRAND_TAIL, '').trim() } while (s !== prev && s.length > 0)
-  return s.replace(/\s{2,}/g, ' ').replace(/[|,\-–—/]+$/g, '').trim()
+  s = s.replace(/\s{2,}/g, ' ').replace(/[|,\-–—/]+$/g, '').trim()
+  // Collapse an immediately-repeated brand token ("GoveeLife GoveeLife" →
+  // "GoveeLife", "MUNBYN MUNBYN" → "MUNBYN"): Amazon's byline + brand field often
+  // duplicate, and the scrape stores both. Only drops CONSECUTIVE identical words,
+  // so real two-word brands ("Kasa Smart", "Comrad Knee-High") are untouched.
+  return collapseRepeatedWords(s)
+}
+
+/** Drop consecutive duplicate words (case-insensitive), preserving the first. */
+export function collapseRepeatedWords(s: string): string {
+  const out: string[] = []
+  for (const w of (s || '').split(/\s+/)) {
+    if (!w) continue
+    if (out.length && out[out.length - 1].toLowerCase() === w.toLowerCase()) continue
+    out.push(w)
+  }
+  return out.join(' ')
 }
 
 // Tokens that mark the END of the core product name — everything from here on is

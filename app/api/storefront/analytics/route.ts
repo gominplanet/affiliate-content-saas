@@ -86,10 +86,15 @@ export async function GET(request: NextRequest) {
       for (const r of input) {
         const cur = m.get(r.asin)
         if (!cur) { m.set(r.asin, { ...r }); continue }
-        cur.units = (cur.units ?? 0) + (r.units ?? 0)
-        cur.revenue_cents = (cur.revenue_cents ?? 0) + (r.revenue_cents ?? 0)
+        // COMMISSION is additive across sources (regular + Creator Connections are
+        // separate income on the same product). UNITS / REVENUE / CLICKS are the
+        // product's whole-account figures, reported ONCE; a second source row can
+        // repeat the same number, so take the MAX, never the sum, or the product
+        // (and the totals summed from it) double-count.
+        cur.units = Math.max(cur.units ?? 0, r.units ?? 0)
+        cur.revenue_cents = Math.max(cur.revenue_cents ?? 0, r.revenue_cents ?? 0)
         cur.commission_cents = (cur.commission_cents ?? 0) + (r.commission_cents ?? 0)
-        cur.clicks = (cur.clicks ?? 0) + (r.clicks ?? 0)
+        cur.clicks = Math.max(cur.clicks ?? 0, r.clicks ?? 0)
         if (!cur.product_title && r.product_title) cur.product_title = r.product_title
       }
       return [...m.values()]
