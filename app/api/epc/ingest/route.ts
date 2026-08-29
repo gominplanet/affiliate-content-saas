@@ -127,19 +127,37 @@ export async function POST(request: Request) {
     // Upsert on (user_id, asin). first_seen_at is omitted so it keeps its
     // original value on update and defaults on insert.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any)
+    let { error } = await (supabase as any)
       .from('epc_products')
       .upsert(rows, { onConflict: 'user_id,asin' })
+
+    // review_count / availability / category came in migration 299. If the server
+    // hasn't run 299 yet, the upsert errors on the unknown COLUMN (not a missing
+    // table) — so strip those three and retry once. The core scan still saves; the
+    // richer card fields just fill in on the next scan once 299 is run.
+    const isColumnError = (m: string) => /could not find the '.*' column|column .* does not exist/i.test(m)
+    const isMissingTable = (m: string) => /relation .*epc_products.* does not exist|could not find the table/i.test(m)
+    if (error && isColumnError(error.message || '') && !isMissingTable(error.message || '')) {
+      const stripped = rows.map((r) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const o: any = { ...r }; delete o.review_count; delete o.availability; delete o.category; return o
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const retry = await (supabase as any).from('epc_products').upsert(stripped, { onConflict: 'user_id,asin' })
+      error = retry.error
+    }
+
     if (error) {
       console.error('[epc/ingest]', error.message)
-      // The most common cause on a fresh deploy: migration 278 (the epc_products
-      // table) hasn't been run. Name it so it's fixable at a glance instead of a
-      // generic "try again".
-      const missingTable = /does not exist|could not find the table|schema cache|relation .* does not exist/i.test(error.message || '')
+      // Distinguish a genuinely missing TABLE (migration 278) from a missing COLUMN
+      // (migration 299) so the message points at the right fix instead of a stale one.
+      const msg = error.message || ''
       return NextResponse.json({
-        error: missingTable
+        error: isMissingTable(msg)
           ? 'EPC storage isn’t set up on the server yet — run database migration 278 (epc_products), then scan again.'
-          : `Could not save the scan: ${error.message}`,
+          : isColumnError(msg)
+            ? 'EPC needs a quick database update — run migration 299 (epc_card_fields), then scan again.'
+            : `Could not save the scan: ${msg}`,
       }, { status: 500 })
     }
 
@@ -186,7 +204,17 @@ export async function POST(request: Request) {
         epc_value_ref: r.epc_value, budget_ref: r.budget, last_seen_at: scannedAt,
       }))
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (createAdminClient() as any).from('epc_catalog').upsert(catalogRows, { onConflict: 'asin' })
+      const admin = createAdminClient() as any
+      const { error: catErr } = await admin.from('epc_catalog').upsert(catalogRows, { onConflict: 'asin' })
+      // Same migration-299 guard as epc_products: strip the new columns and retry
+      // so the shared catalog still builds before 299 is run.
+      if (catErr && isColumnError(catErr.message || '') && !isMissingTable(catErr.message || '')) {
+        const stripped = catalogRows.map((r) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const o: any = { ...r }; delete o.review_count; delete o.availability; delete o.category; return o
+        })
+        await admin.from('epc_catalog').upsert(stripped, { onConflict: 'asin' })
+      }
     } catch (e) { console.warn('[epc/ingest] catalog upsert skipped:', e instanceof Error ? e.message : e) }
 
     return NextResponse.json({ ok: true, saved: rows.length, added: addedCount })
