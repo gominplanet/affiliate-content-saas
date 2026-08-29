@@ -185,7 +185,7 @@ export default function ClipFactoryPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   // A horizontal upload can't drop straight into Enhance (the burn would crop off
   // its sides), so we park it here and let the creator pick a 9:16 reframe first.
-  const [pendingHorizontal, setPendingHorizontal] = useState<{ url: string; durationSec: number; title: string } | null>(null)
+  const [pendingHorizontal, setPendingHorizontal] = useState<{ url: string; durationSec: number; title: string; frame: string | null } | null>(null)
   const [reframing, setReframing] = useState<null | 'center' | 'split'>(null)
   // Default the Create step to the creator's Shorts when they have no long videos
   // to cut from — but only once, and never over a tab they picked themselves.
@@ -394,14 +394,35 @@ export default function ClipFactoryPage() {
   // vertical clip (goes straight to Enhance) from a horizontal one (needs a 9:16
   // reframe first). Best-effort: on any probe error we treat it as vertical and
   // let the burn's center-crop handle it, rather than blocking the upload.
-  const probeVideo = (file: File): Promise<{ width: number; height: number; duration: number }> =>
+  // Also grab a single frame as a data URL so a horizontal upload can show a real
+  // preview of the center-crop vs split-screen reframe before the creator commits.
+  // The frame comes from a same-origin blob URL, so the canvas isn't tainted.
+  const probeVideo = (file: File): Promise<{ width: number; height: number; duration: number; frame: string | null }> =>
     new Promise((resolve) => {
       const url = URL.createObjectURL(file)
       const v = document.createElement('video')
       v.preload = 'metadata'
-      const done = (r: { width: number; height: number; duration: number }) => { URL.revokeObjectURL(url); resolve(r) }
-      v.onloadedmetadata = () => done({ width: v.videoWidth || 0, height: v.videoHeight || 0, duration: Number.isFinite(v.duration) ? v.duration : 0 })
-      v.onerror = () => done({ width: 0, height: 0, duration: 0 })
+      v.muted = true
+      let settled = false
+      const done = (r: { width: number; height: number; duration: number; frame: string | null }) => {
+        if (settled) return; settled = true; URL.revokeObjectURL(url); resolve(r)
+      }
+      v.onloadedmetadata = () => {
+        const width = v.videoWidth || 0, height = v.videoHeight || 0
+        const duration = Number.isFinite(v.duration) ? v.duration : 0
+        const grab = () => {
+          try {
+            const c = document.createElement('canvas'); c.width = width || 640; c.height = height || 360
+            const ctx = c.getContext('2d')
+            if (ctx) { ctx.drawImage(v, 0, 0, c.width, c.height); done({ width, height, duration, frame: c.toDataURL('image/jpeg', 0.7) }) }
+            else done({ width, height, duration, frame: null })
+          } catch { done({ width, height, duration, frame: null }) }
+        }
+        v.onseeked = grab
+        try { v.currentTime = Math.min(1, (duration || 2) / 2) } catch { grab() }
+        setTimeout(grab, 1500) // fallback if 'seeked' never fires
+      }
+      v.onerror = () => done({ width: 0, height: 0, duration: 0, frame: null })
       v.src = url
     })
 
@@ -422,7 +443,7 @@ export default function ClipFactoryPage() {
       const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
       if (isHorizontal) {
         // Park it and let the creator choose the 9:16 layout (center vs split).
-        setPendingHorizontal({ url: urlData.publicUrl, durationSec: dims.duration, title: file.name })
+        setPendingHorizontal({ url: urlData.publicUrl, durationSec: dims.duration, title: file.name, frame: dims.frame })
       } else {
         setClipSource('existing')
         setClip({ url: urlData.publicUrl, title: file.name })
@@ -826,6 +847,12 @@ export default function ClipFactoryPage() {
                 <p className="text-[12px] text-[#86868b] mb-5 max-w-md">Shorts and Reels are vertical (9:16), so choose how to fit it. You can change your mind by uploading again.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
                   <button onClick={() => void doReframe('center')} disabled={!!reframing} className="group text-left rounded-xl border border-black/10 dark:border-white/15 p-4 hover:border-[#7C3AED]/50 transition-colors disabled:opacity-60">
+                    {pendingHorizontal.frame && (
+                      <div className="mx-auto mb-3 w-[84px] aspect-[9/16] rounded-md overflow-hidden border border-black/10 dark:border-white/15 bg-black/5">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={pendingHorizontal.frame} alt="" className="w-full h-full object-cover object-center" />
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 mb-1">
                       {reframing === 'center' ? <Loader2 size={15} className="animate-spin" style={{ color: PURPLE }} /> : <Scissors size={15} style={{ color: PURPLE }} />}
                       <span className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Center crop</span>
@@ -833,6 +860,14 @@ export default function ClipFactoryPage() {
                     <p className="text-[11px] text-[#86868b]">Zoom into the middle of the frame. Best when your subject stays centered.</p>
                   </button>
                   <button onClick={() => void doReframe('split')} disabled={!!reframing} className="group text-left rounded-xl border border-black/10 dark:border-white/15 p-4 hover:border-[#7C3AED]/50 transition-colors disabled:opacity-60">
+                    {pendingHorizontal.frame && (
+                      <div className="mx-auto mb-3 w-[84px] aspect-[9/16] rounded-md overflow-hidden border border-black/10 dark:border-white/15 bg-black/5 flex flex-col">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={pendingHorizontal.frame} alt="" className="w-full h-1/2 object-cover object-top" />
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={pendingHorizontal.frame} alt="" className="w-full h-1/2 object-cover object-bottom" />
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 mb-1">
                       {reframing === 'split' ? <Loader2 size={15} className="animate-spin" style={{ color: PURPLE }} /> : <Video size={15} style={{ color: PURPLE }} />}
                       <span className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Split screen</span>
