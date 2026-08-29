@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.92
+ * Version: 1.0.93
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -78,6 +78,14 @@ if (!function_exists('mvp_affiliate_safe')) {
     function mvp_affiliate_safe($fn) {
         return function (...$args) use ($fn) {
             try {
+                // Connection-only mode: the creator wants MVP's posting/connection
+                // features WITHOUT any on-site layout changes. Every presentational
+                // injection is registered through this wrapper (the_content blocks),
+                // so one guard here turns them all off at once — filters hand back
+                // the article untouched, actions no-op.
+                if (function_exists('mvp_affiliate_connection_only') && mvp_affiliate_connection_only()) {
+                    return $args[0] ?? null;
+                }
                 if (!is_callable($fn)) { return $args[0] ?? null; }
                 return call_user_func_array($fn, $args);
             } catch (\Throwable $e) {
@@ -540,6 +548,18 @@ if (!function_exists('mvp_affiliate_get_data')) {
     }
 }
 
+// Connection-only mode: when the creator turns this on in Customize Blog, MVP
+// keeps its connection + posting features but stops changing the site's blog
+// design (the homepage strip, the in-content review blocks, the extra homepage
+// paging). One flag, read here, that the front-end hooks below check.
+if (!function_exists('mvp_affiliate_connection_only')) {
+    function mvp_affiliate_connection_only() {
+        $data = mvp_affiliate_get_data();
+        $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
+        return !empty($layout['connectionOnly']);
+    }
+}
+
 // ─── 3b. Read counter ─────────────────────────────────────────────────────────
 // Opt-in "N reads" social-proof chip. Controlled by the `showReadCount` toggle in
 // Customize Blog. Counts are stored in the `_mvp_reads` post meta, bumped by a
@@ -662,6 +682,7 @@ add_action('rest_api_init', function () {
 // fetches the live total and only draws the badge once total ≥ threshold. Nothing
 // here depends on the page cache regenerating.
 add_action('wp_footer', function () {
+    if (mvp_affiliate_connection_only()) return; // connection-only: no read-count chip
     // Show on the blog landing — the posts index (is_home) OR a static Page set
     // as the front page (is_front_page). Never on single posts (own per-post chip).
     if (!(is_home() || is_front_page())) return;
@@ -908,10 +929,12 @@ if (!function_exists('mvp_affiliate_render_block')) {
 
 // ─── 6. Sidebar blocks ────────────────────────────────────────────────────────
 add_action('kadence_after_sidebar_widget_area', function () {
+    if (mvp_affiliate_connection_only()) return; // connection-only: no injected sidebar blocks
     $sidebar = mvp_affiliate_get_data()['sidebar'] ?? [];
     foreach ($sidebar as $block) echo mvp_affiliate_render_block($block);
 });
 add_action('dynamic_sidebar_after', function () {
+    if (mvp_affiliate_connection_only()) return; // connection-only: no injected sidebar blocks
     if (!doing_action('kadence_after_sidebar_widget_area')) {
         $sidebar = mvp_affiliate_get_data()['sidebar'] ?? [];
         foreach ($sidebar as $block) echo mvp_affiliate_render_block($block);
@@ -1428,6 +1451,7 @@ add_filter('the_content', mvp_affiliate_safe(function ($content) {
 // document.body. Works across Kadence / Astra / GeneratePress / any theme
 // without needing per-theme hooks.
 add_action('wp_footer', function () {
+    if (mvp_affiliate_connection_only()) return; // connection-only: no homepage strip
     if (!is_home() && !is_front_page()) return;
 
     $q = new WP_Query([
@@ -1867,6 +1891,7 @@ add_action('wp_footer', function () {
 // ─── 8. Query fixes ───────────────────────────────────────────────────────────
 add_action('pre_get_posts', function (WP_Query $query) {
     if (is_admin() || !$query->is_main_query()) return;
+    if (mvp_affiliate_connection_only()) return; // connection-only: leave the theme's own paging alone
     if (is_home() || is_front_page()) {
         $query->set('posts_per_page', 12);
         $query->set('post_status', 'publish');

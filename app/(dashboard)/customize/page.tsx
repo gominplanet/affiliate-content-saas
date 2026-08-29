@@ -155,6 +155,11 @@ interface LayoutData {
    *  the comment form also carries an opt-in checkbox that feeds the same
    *  double-opt-in subscriber list. */
   enableComments: boolean
+  /** Connection-only mode. Default OFF. ON = MVP keeps posting + connection but
+   *  makes NO changes to the blog design: no homepage "Recently Updated" strip,
+   *  no in-content review blocks, no extra homepage paging. For creators who want
+   *  their own theme layout untouched. Read plugin-side as layout.connectionOnly. */
+  connectionOnly: boolean
 }
 
 interface BrandCtaData {
@@ -196,6 +201,7 @@ const emptyLayout: LayoutData = {
   readCountThreshold: 100,
   blogReadCountThreshold: 100,
   enableComments: false,
+  connectionOnly: false,
 }
 const emptyBrandCta: BrandCtaData = {
   enabled: false,
@@ -408,6 +414,7 @@ export default function CustomizePage() {
           readCountThreshold: typeof bc.layout?.readCountThreshold === 'number' && bc.layout.readCountThreshold >= 0 ? bc.layout.readCountThreshold : 100,
           blogReadCountThreshold: typeof bc.layout?.blogReadCountThreshold === 'number' && bc.layout.blogReadCountThreshold >= 0 ? bc.layout.blogReadCountThreshold : 100,
           enableComments: bc.layout?.enableComments === true, // opt-in
+          connectionOnly: bc.layout?.connectionOnly === true, // opt-in
         },
       })
     }
@@ -658,6 +665,28 @@ export default function CustomizePage() {
               aria-label="Toggle post dates"
             >
               {data.postMeta.showDate
+                ? <ToggleRight size={28} className="text-[#7C3AED]" />
+                : <ToggleLeft size={28} />}
+            </button>
+          </div>
+        </Section>
+
+        {/* Connection only — master off switch for all on-site layout changes */}
+        <Section
+          title="Connection only (keep my blog design)"
+          description="Use MVP's posting and connection features without changing your blog's design. On = no homepage “Recently Updated” strip, no in-content review blocks, and your theme's own homepage layout is left exactly as it is."
+        >
+          <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+            <div>
+              <p className="text-sm font-medium text-[var(--text)]">Leave my blog layout untouched</p>
+              <p className="text-xs text-[var(--text-3)]">On = MVP still connects and posts, but adds nothing to your homepage or posts. Off = MVP's blog enhancements are active.</p>
+            </div>
+            <button
+              onClick={() => setData(d => ({ ...d, layout: { ...d.layout, connectionOnly: !d.layout.connectionOnly } }))}
+              className="text-[var(--text-3)]"
+              aria-label="Toggle connection only"
+            >
+              {data.layout.connectionOnly
                 ? <ToggleRight size={28} className="text-[#7C3AED]" />
                 : <ToggleLeft size={28} />}
             </button>
