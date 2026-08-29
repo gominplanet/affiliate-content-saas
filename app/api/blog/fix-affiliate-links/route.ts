@@ -26,6 +26,9 @@ import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 export const maxDuration = 300
 
 const GENIUSLINK = /(?:geni\.us|\bgnz\.)/i
+// A Passport Link (branded short domain or the app-origin /go/ fallback). Switching
+// a geni.us link to Passport is an UPGRADE the creator chose, not a downgrade.
+const PASSPORT = /mvpl\.ink|\/go\//i
 const SHORTENERS = /(?:amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i
 const AFFILIATE_HREF = /href="(https?:\/\/[^"]*(?:geni\.us|gnz\.|amzn\.to|a\.co|amazon\.[a-z.]+)[^"]*)"/i
 
@@ -261,9 +264,11 @@ export async function POST(request: Request) {
           // new link doesn't validate to the product — that fallback is right
           // for BROKEN links, but applying it to a working geni.us link would
           // strip its geo-routing + click tracking. Skip instead; leave the
-          // live link as-is and report it so the user can retry. (Broken-mode
-          // links and non-geni.us originals still take the Amazon fallback.)
-          if (mode === 'regroup' && GENIUSLINK.test(oldUrl) && !GENIUSLINK.test(affiliateUrl)) {
+          // live link as-is and report it so the user can retry.
+          // EXCEPTION: converting geni.us → a Passport link is an UPGRADE the
+          // creator chose (Passport keeps geo-routing + tracking), so allow it —
+          // this is how a creator who switched to Passport re-links old posts.
+          if (mode === 'regroup' && GENIUSLINK.test(oldUrl) && !GENIUSLINK.test(affiliateUrl) && !PASSPORT.test(affiliateUrl)) {
             unresolved.push(post.title || post.slug || post.id)
             return
           }
