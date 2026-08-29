@@ -46,6 +46,7 @@ export default function LinkStyleTiles({
   onSelect: (style: LinkStyle) => void
 }) {
   return (
+    <>
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
       {TILES.map(({ key, name, tagline, geo, cost, Icon }) => {
         const on = selected === key
@@ -106,5 +107,27 @@ export default function LinkStyleTiles({
         )
       })}
     </div>
+
+    {/* Push the free alternative whenever the creator is eligible but not on it —
+        especially Geniuslink users, who are paying per click for the same
+        geo-routing Passport gives them free on their plan. */}
+    {passportCanUse && selected !== 'passport' && (
+      <button
+        type="button"
+        onClick={() => onSelect('passport')}
+        disabled={busy}
+        className="mt-2.5 w-full text-left rounded-xl border p-3 flex items-start gap-2.5 disabled:opacity-70"
+        style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(52,199,89,0.04))' }}
+      >
+        <Globe size={15} style={{ color: '#7C3AED' }} className="mt-0.5 flex-shrink-0" />
+        <span className="text-[11.5px] text-[#3a3a3c] dark:text-[#d2d2d7] leading-snug">
+          <b className="text-[#1d1d1f] dark:text-[#f5f5f7]">Passport Links geo-routes your links free</b> on your plan, with no per-click fees.{' '}
+          {selected === 'geniuslink'
+            ? 'Keep Geniuslink if you use its choice pages or non-Amazon retailers. Otherwise, tap to switch to Passport.'
+            : 'Tap to switch to Passport.'}
+        </span>
+      </button>
+    )}
+    </>
   )
 }
