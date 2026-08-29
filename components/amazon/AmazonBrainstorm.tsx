@@ -323,6 +323,20 @@ export default function AmazonBrainstorm() {
   // Storefront tabs — one page, three focused jobs, so it stops being an endless
   // scroll: Performance (how am I doing), Optimize (what to fix), Brands (partners).
   const [tab, setTab] = useState<'performance' | 'optimize' | 'brands'>('performance')
+  // Lightweight counts for the tab badges (fetched here so a badge shows BEFORE
+  // its tab is opened — the tab's own components only mount once active).
+  const [optimizeCount, setOptimizeCount] = useState<number | null>(null)
+  const [brandsCcCount, setBrandsCcCount] = useState<number | null>(null)
+  useEffect(() => {
+    let alive = true
+    fetch('/api/storefront/catalog').then(r => r.json()).then((d: { products?: Array<{ hasVideo?: boolean; hasEarnings?: boolean }> }) => {
+      if (alive) setOptimizeCount((d.products ?? []).filter(p => p.hasVideo && !p.hasEarnings).length)
+    }).catch(() => {})
+    fetch('/api/storefront/brands').then(r => r.json()).then((d: { ccCount?: number }) => {
+      if (alive) setBrandsCcCount(typeof d.ccCount === 'number' ? d.ccCount : null)
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [])
   const [openAsin, setOpenAsin] = useState<string | null>(null)
   const tier = useEffectiveTier()
   const hasBlog = tier !== 'amazon' // Amazon tier has no blog sites; others do.
@@ -633,16 +647,22 @@ export default function AmazonBrainstorm() {
         <>
           <div className="flex items-center justify-between gap-3 border-b" style={{ borderColor: 'var(--border)' }}>
             <div className="flex items-center gap-1 overflow-x-auto">
-              {([['performance', 'Performance'], ['optimize', 'Optimize'], ['brands', 'Brands']] as const).map(([k, label]) => (
-                <button
-                  key={k}
-                  onClick={() => setTab(k)}
-                  className="px-4 py-2 text-[13px] font-semibold -mb-px border-b-2 whitespace-nowrap transition-colors"
-                  style={tab === k ? { borderColor: ACCENT, color: ACCENT } : { borderColor: 'transparent', color: 'var(--text-soft)' }}
-                >
-                  {label}
-                </button>
-              ))}
+              {([['performance', 'Performance'], ['optimize', 'Optimize'], ['brands', 'Brands']] as const).map(([k, label]) => {
+                const badge = k === 'optimize' ? optimizeCount : k === 'brands' ? brandsCcCount : null
+                return (
+                  <button
+                    key={k}
+                    onClick={() => setTab(k)}
+                    className="px-4 py-2 text-[13px] font-semibold -mb-px border-b-2 whitespace-nowrap transition-colors inline-flex items-center gap-1.5"
+                    style={tab === k ? { borderColor: ACCENT, color: ACCENT } : { borderColor: 'transparent', color: 'var(--text-soft)' }}
+                  >
+                    {label}
+                    {badge != null && badge > 0 && (
+                      <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none" style={{ background: tab === k ? ACCENT : 'rgba(234,88,12,0.14)', color: tab === k ? '#fff' : ACCENT }}>{badge}</span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
             {t && tab !== 'brands' && (
               <span className="hidden sm:inline text-[12px] pr-1 whitespace-nowrap" style={{ color: 'var(--text-soft)' }}>
