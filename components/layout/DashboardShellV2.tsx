@@ -55,7 +55,7 @@ import SocialHealthTopbarButton from './SocialHealthTopbarButton'
 import UsageBar from './UsageBar'
 import UsageNudge from './UsageNudge'
 import AmazonTagNudge from './AmazonTagNudge'
-import { passportLinkUrl } from '@/lib/passport-links'
+// TRYBE referral link (direct, so it never depends on the Passport short domain).
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 import AmazonUpgradeGate from '@/components/upgrade/AmazonUpgradeGate'
@@ -582,7 +582,7 @@ export default function DashboardShellV2({
         { href: 'https://geni.us/Z0q3hY', icon: <ExternalLink size={13} />, label: 'PartnerBoost', external: true },
         { href: 'https://geni.us/khuHTe', icon: <ExternalLink size={13} />, label: 'Archer Affiliate', external: true },
         { href: 'https://geni.us/9qSLP', icon: <ExternalLink size={13} />, label: 'Cha-Ching Automate', external: true },
-        { href: passportLinkUrl('trybe'), icon: <ExternalLink size={13} />, label: 'TRYBE', external: true },
+        { href: 'https://jointrybe.com/r/HTLEJE47', icon: <ExternalLink size={13} />, label: 'TRYBE', external: true },
       ],
     },
     // LABS — experimental tools, Pro-only (gate: isPro), NOT promoted on

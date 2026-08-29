@@ -8,7 +8,7 @@
 // in sync when a partner is added/removed.
 
 import { ExternalLink } from 'lucide-react'
-import { passportLinkUrl } from '@/lib/passport-links'
+// TRYBE referral link (direct, so it never depends on the Passport short domain).
 
 // Order is intentional (not alphabetical): Oink first (highest converter),
 // Geniuslink second (link wrapping), then programs in revenue-rank order —
@@ -22,7 +22,7 @@ const TOOLS: Array<{ href: string; label: string; desc: string; highlight?: stri
   { href: 'https://geni.us/9qSLP', label: 'Cha-Ching Automate', desc: 'Auto-sync your videos to YouTube + 13 global Amazon storefronts' },
   // Cloaked through our own Passport redirect (code seeded in migration 296) so
   // clicks land in the operator's Passport analytics.
-  { href: passportLinkUrl('trybe'), label: 'TRYBE', desc: 'Land brand collabs & gifted products as a creator' },
+  { href: 'https://jointrybe.com/r/HTLEJE47', label: 'TRYBE', desc: 'Land brand collabs & gifted products as a creator' },
 ]
 
 export default function RecommendedToolsCard() {

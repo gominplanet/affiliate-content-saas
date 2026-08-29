@@ -20,7 +20,8 @@ export default function MadeForYouFeed() {
   const [data, setData] = useState<Resp | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [open, setOpen] = useState(true)
+  // Collapsed by default — it's an opt-in "peek" so the main product search leads.
+  const [open, setOpen] = useState(false)
   const [dive, setDive] = useState<{ asin: string; title?: string | null; imageUrl?: string | null } | null>(null)
 
   const load = () => {
@@ -50,25 +51,33 @@ export default function MadeForYouFeed() {
 
   return (
     <div className="mb-5">
-      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between gap-2 mb-2">
-        <span className="inline-flex items-center gap-2">
-          <Sparkles size={16} style={{ color: '#7C3AED' }} />
-          <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>{personalized ? 'Made for your channel' : 'Trending picks to try'}</span>
-          <span className="text-[11px] font-medium" style={{ color: 'var(--text-faint)' }}>
-            {personalized ? '— matched to what already earns for you' : '— sync your storefront earnings to personalize these'}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-3 rounded-2xl border p-3.5 transition-colors hover:brightness-[1.03]"
+        style={{ borderColor: open ? '#7C3AED' : 'rgba(124,58,237,0.35)', background: 'linear-gradient(160deg, rgba(124,58,237,0.10), rgba(124,58,237,0.02))' }}
+      >
+        <span className="inline-flex items-center gap-2.5 min-w-0">
+          <span className="w-8 h-8 rounded-lg grid place-items-center flex-shrink-0 text-white" style={{ background: '#7C3AED' }}><Sparkles size={16} /></span>
+          <span className="flex flex-col items-start min-w-0">
+            <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>{personalized ? 'Made for your channel' : 'Trending picks to try'}</span>
+            <span className="text-[11px] text-left" style={{ color: 'var(--text-soft)' }}>
+              {personalized ? 'Products matched to what already earns for you' : 'Sync your storefront earnings to personalize these'}
+            </span>
           </span>
         </span>
-        <span className="inline-flex items-center gap-2">
+        <span className="inline-flex items-center gap-2 flex-shrink-0">
+          <span className="text-[11px] font-bold rounded-full px-2 py-0.5 hidden sm:inline" style={{ background: 'rgba(124,58,237,0.14)', color: '#7C3AED' }}>{picks.length} pick{picks.length === 1 ? '' : 's'}</span>
           <span onClick={(e) => { e.stopPropagation(); refresh() }} title="Recompute from your latest earnings"
             className="p-1 rounded-md cursor-pointer" style={{ color: 'var(--text-faint)' }}>
             {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           </span>
-          <ChevronDown size={16} style={{ color: 'var(--text-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+          <span className="text-[12px] font-bold" style={{ color: '#7C3AED' }}>{open ? 'Hide' : 'View'}</span>
+          <ChevronDown size={17} style={{ color: '#7C3AED', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
         </span>
       </button>
 
       {open && (
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="mt-3 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {picks.map(({ product: p, reasons }) => (
             <ProductSignalCard
               key={p.asin}
