@@ -7,7 +7,7 @@ import { CustomizeGuide } from '@/components/guide/tool-guides'
 import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
-  RefreshCw, Sparkles, AlertCircle,
+  RefreshCw, Sparkles, AlertCircle, Check,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -269,6 +269,28 @@ export default function CustomizePage() {
   // comment opt-in can be turned on in the same place). null = still loading.
   const [newsletterOn, setNewsletterOn] = useState<boolean | null>(null)
   const [newsletterSaving, setNewsletterSaving] = useState(false)
+  // Installed WP plugin version — Connection-only needs 1.0.93+ to take effect, so
+  // the card can tell the creator whether any WordPress step is required.
+  // undefined = still checking, null = couldn't read (assume needs update).
+  const [pluginVer, setPluginVer] = useState<string | null | undefined>(undefined)
+
+  useEffect(() => {
+    let alive = true
+    fetch('/api/wordpress/wp-status')
+      .then(r => (r.ok ? r.json() : null))
+      .then((d: { plugin?: { installed?: string | null } } | null) => { if (alive) setPluginVer(d?.plugin?.installed ?? null) })
+      .catch(() => { if (alive) setPluginVer(null) })
+    return () => { alive = false }
+  }, [])
+
+  // a.b.c >= x.y.z
+  const verGte = (a: string | null | undefined, b: string) => {
+    const pa = String(a || '').split('.').map(n => parseInt(n, 10) || 0)
+    const pb = b.split('.').map(n => parseInt(n, 10) || 0)
+    for (let i = 0; i < 3; i++) { const x = pa[i] || 0, y = pb[i] || 0; if (x !== y) return x > y }
+    return true
+  }
+  const connOnlyReady = pluginVer != null && verGte(pluginVer, '1.0.93')
 
   // (Logo upload / bio / socials editing was removed — those are managed in Brand Profile now.)
 
@@ -537,6 +559,47 @@ export default function CustomizePage() {
 
       <div className="flex flex-col gap-6 max-w-2xl">
 
+        {/* Connection only — the master "leave my design alone" switch. Pinned to
+            the very top in an accent card so a creator who only wants MVP's
+            posting/connection (not the blog restyle) can't miss it. */}
+        <div className="rounded-2xl border-2 p-5" style={{ borderColor: '#7C3AED', background: 'linear-gradient(160deg, rgba(124,58,237,0.10), rgba(124,58,237,0.02))' }}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-6 h-6 rounded-lg grid place-items-center flex-shrink-0 text-white" style={{ background: '#7C3AED' }}><Sparkles size={13} /></span>
+                <h2 className="text-[15px] font-bold text-[var(--text)]">Connection only (keep my blog design)</h2>
+              </div>
+              <p className="text-xs text-[var(--text-3)] leading-relaxed">
+                Turn this on to use MVP&rsquo;s posting and connection features <b>without changing your blog&rsquo;s design</b>. No homepage &ldquo;Recently Updated&rdquo; strip, no in-content review blocks, and your theme&rsquo;s own homepage and post layout are left exactly as they are.
+              </p>
+            </div>
+            <button
+              onClick={() => setData(d => ({ ...d, layout: { ...d.layout, connectionOnly: !d.layout.connectionOnly } }))}
+              className="flex-shrink-0 text-[var(--text-3)]"
+              aria-label="Toggle connection only"
+            >
+              {data.layout.connectionOnly
+                ? <ToggleRight size={34} className="text-[#7C3AED]" />
+                : <ToggleLeft size={34} />}
+            </button>
+          </div>
+          {data.layout.connectionOnly && (
+            <p className="text-[11px] mt-3 font-medium" style={{ color: '#7C3AED' }}>
+              On — MVP is connected and posting, but making no changes to your blog layout.
+            </p>
+          )}
+          {/* Point the creator to the one possible WordPress step (a plugin
+              update), or reassure them there's nothing to do. */}
+          {connOnlyReady ? (
+            <p className="text-[11px] mt-2 flex items-center gap-1" style={{ color: '#16a34a' }}>
+              <Check size={12} /> Nothing to do on WordPress — your MVP plugin already supports this.
+            </p>
+          ) : pluginVer !== undefined ? (
+            <p className="text-[11px] mt-2" style={{ color: 'var(--text-3)' }}>
+              One quick WordPress step: update the MVP Affiliate plugin to <b>1.0.93</b> on your site&rsquo;s Plugins page (one click, WordPress often does it automatically). Until then this switch won&rsquo;t take effect. Nothing else on WordPress needs changing.
+            </p>
+          ) : null}
+        </div>
 
         {/* Cross-link banner */}
         <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 px-4 py-3 flex items-start gap-3">
@@ -665,28 +728,6 @@ export default function CustomizePage() {
               aria-label="Toggle post dates"
             >
               {data.postMeta.showDate
-                ? <ToggleRight size={28} className="text-[#7C3AED]" />
-                : <ToggleLeft size={28} />}
-            </button>
-          </div>
-        </Section>
-
-        {/* Connection only — master off switch for all on-site layout changes */}
-        <Section
-          title="Connection only (keep my blog design)"
-          description="Use MVP's posting and connection features without changing your blog's design. On = no homepage “Recently Updated” strip, no in-content review blocks, and your theme's own homepage layout is left exactly as it is."
-        >
-          <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
-            <div>
-              <p className="text-sm font-medium text-[var(--text)]">Leave my blog layout untouched</p>
-              <p className="text-xs text-[var(--text-3)]">On = MVP still connects and posts, but adds nothing to your homepage or posts. Off = MVP's blog enhancements are active.</p>
-            </div>
-            <button
-              onClick={() => setData(d => ({ ...d, layout: { ...d.layout, connectionOnly: !d.layout.connectionOnly } }))}
-              className="text-[var(--text-3)]"
-              aria-label="Toggle connection only"
-            >
-              {data.layout.connectionOnly
                 ? <ToggleRight size={28} className="text-[#7C3AED]" />
                 : <ToggleLeft size={28} />}
             </button>
