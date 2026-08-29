@@ -28,6 +28,9 @@ export interface BrandEvent {
   url?: string
   email?: string
   product?: string
+  /** The campaign product's ASIN, when we can resolve one — lets Brand Hub create
+   *  a blog/social post straight from the campaign. */
+  asin?: string | null
   platforms?: string[]
   /** Inbound inquiry that hasn't been read yet. */
   unread?: boolean
@@ -79,6 +82,8 @@ export interface CampaignRow {
   status?: string | null
   wordpress_url?: string | null
   details_url?: string | null
+  asin?: string | null
+  product_url?: string | null
   created_at?: string | null
 }
 
@@ -131,6 +136,16 @@ export function normalizeBrandKey(name: string | null | undefined): string {
     .replace(/\b(inc|llc|ltd|co|corp|corporation|company|gmbh)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+// Pull an ASIN out of a bare ASIN string, a /dp/ (or /gp/product/) URL, or an
+// ?asin= query. Pure + self-contained so this join layer stays framework-free.
+function asinFrom(raw?: string | null): string | null {
+  const s = (raw || '').trim()
+  if (!s) return null
+  if (/^[A-Z0-9]{10}$/i.test(s)) return s.toUpperCase()
+  const m = s.match(/\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})/i) || s.match(/[?&]asin=([A-Z0-9]{10})/i)
+  return m ? m[1].toUpperCase() : null
 }
 
 function emailDomainName(email: string | null | undefined): string {
@@ -241,6 +256,10 @@ export function buildBrandHub(
     acc.counts.campaigns += 1
     const product = (cp.product_title || cp.campaign_name || '').trim() || undefined
 
+    // Resolve the campaign product's ASIN (bare ASIN, /dp/ URL, or ?asin=) so the
+    // Brand Hub can spin a blog/social post straight from this campaign.
+    const campaignAsin = asinFrom(cp.asin) || asinFrom(cp.product_url) || asinFrom(cp.details_url)
+
     acc.statuses.add('Saved')
     acc.events.push({
       type: 'campaign_added',
@@ -248,6 +267,7 @@ export function buildBrandHub(
       title: 'Campaign added',
       detail: cp.commission_pct ? `${cp.commission_pct}% commission` : undefined,
       product,
+      asin: campaignAsin,
       url: cp.details_url || undefined,
     })
     if (cp.messaged_at) {

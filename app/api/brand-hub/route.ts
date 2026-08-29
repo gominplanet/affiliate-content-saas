@@ -28,7 +28,7 @@ export async function GET() {
   const CAMP_OPT = [
     'brand_name', 'product_title', 'campaign_name', 'commission_pct',
     'messaged_at', 'last_message', 'accepted_at', 'amazon_joined_at',
-    'status', 'wordpress_url', 'details_url',
+    'status', 'wordpress_url', 'details_url', 'asin', 'product_url',
   ]
   const fetchCampaigns = async () => {
     let cols = [...CAMP_CORE, ...CAMP_OPT]

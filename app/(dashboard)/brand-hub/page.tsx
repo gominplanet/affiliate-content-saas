@@ -187,6 +187,38 @@ function Stat({ label, value, icon, accent }: { label: string; value: number; ic
   )
 }
 
+// Create content straight from a campaign: "Blog post" writes + publishes a full
+// post for the product (same engine as CC Campaigns' "Make blog post"); "Post to
+// socials" opens the social composer for it.
+function CampaignActions({ asin, campaignName }: { asin: string; campaignName?: string }) {
+  const [gen, setGen] = useState(false)
+  const makeBlog = async () => {
+    if (gen) return
+    setGen(true)
+    const id = toast.loading('Writing and publishing a blog post…')
+    try {
+      const res = await fetch('/api/campaigns/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asin, campaignName }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d?.error || 'Could not generate the post.')
+      toast.success('Blog post published.', { id, duration: 6000 })
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to generate', { id, duration: 8000 }) }
+    finally { setGen(false) }
+  }
+  return (
+    <>
+      <button onClick={makeBlog} disabled={gen} className="inline-flex items-center gap-1 text-[11px] font-medium text-[#7C3AED] hover:underline disabled:opacity-60">
+        {gen ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />} {gen ? 'Publishing…' : 'Blog post'}
+      </button>
+      <Link href={`/amazon/social?asin=${encodeURIComponent(asin)}`} className="inline-flex items-center gap-1 text-[11px] font-medium text-[#7C3AED] hover:underline">
+        <Send size={11} /> Post to socials
+      </Link>
+    </>
+  )
+}
+
 function BrandCard({ brand, open, onToggle }: { brand: BrandEntity; open: boolean; onToggle: () => void }) {
   const sc = statusColor(brand.status)
   return (
@@ -249,6 +281,7 @@ function BrandCard({ brand, open, onToggle }: { brand: BrandEntity; open: boolea
                         <ExternalLink size={11} /> {e.type === 'post_published' ? 'View post' : 'Open'}
                       </a>
                     )}
+                    {e.asin && <CampaignActions asin={e.asin} campaignName={brand.name} />}
                   </div>
                 </div>
               </li>
