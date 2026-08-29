@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-08-16'
+const RELEASE_ID = '2026-08-29'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -31,43 +31,45 @@ interface Update {
 const UPDATES: Update[] = [
   {
     badge: 'NEW',
-    tone: '#C2410C',
-    title: 'Turn any idea list into a shopping guide',
-    desc: 'Paste an Amazon idea list link, or pick one of your synced lists, and MVP builds a full ranked shopping guide. It scores every product on live price, rating, reviews, demand and current deals, writes an SEO title, intro, a real blurb per product and a conclusion, and designs the thumbnail. You pick the size, Top 10 to 20.',
-    href: '/idea-lists',
-  },
-  {
-    badge: 'NEW',
     tone: '#7C3AED',
-    title: 'You pick, or MVP picks',
-    desc: 'Run a guide on full auto and let MVP choose the best products, or switch to manual and tick the ones you want yourself. Either way it ranks every item in the list (not just the first 20) so you can see what is worth featuring. Products tied to your brand deals get priority.',
-    href: '/idea-lists',
+    title: 'Post your Shorts to TikTok and Instagram',
+    desc: 'Clip Factory now has three clear ways to start: cut a Short from a regular video, pick one of your YouTube Shorts, or upload your own. Upload a horizontal video and MVP reframes it to vertical for you (center crop or split screen) before you post.',
+    href: '/clip-factory',
   },
   {
     badge: 'IMPROVED',
-    tone: '#E60023',
-    title: 'No more years in your titles',
-    desc: 'Post titles and thumbnails no longer stamp the year, so a guide you publish today still reads fresh next year. Evergreen by default, no re-editing later.',
-  },
-  {
-    badge: 'FIXED',
-    tone: '#0a84ff',
-    title: 'Refresh actually pulls new videos',
-    desc: 'On Video to Blog, the Refresh button now pulls your newest YouTube uploads and reloads, so a video you posted after your last sync shows up right away instead of staying hidden.',
-    href: '/content',
+    tone: '#C2410C',
+    title: 'Sharper Reels and Shorts',
+    desc: 'Reels and Shorts now render at full 1080x1920 with a higher bitrate, so they stay crisp after TikTok and Instagram re-compress them. No more soft, out of focus posts.',
+    href: '/clip-factory',
   },
   {
     badge: 'FIXED',
     tone: '#34c759',
-    title: 'Campaign filters you can trust',
-    desc: '“Paying brands only” and “Has open spots” in CC Campaigns now filter exactly, no campaigns slipping through that do not fit what you asked for.',
-    href: '/cc-campaigns',
+    title: 'Your storefront numbers now match Amazon',
+    desc: 'Clicks and earnings were being double counted across income sources. The storefront now shows the same totals as your Amazon report, and it is split into Performance, Optimize and Brands tabs so it is easier to scan.',
+    href: '/storefront',
   },
   {
-    badge: 'IMPROVED',
+    badge: 'NEW',
+    tone: '#0a84ff',
+    title: 'Message the brands you already feature',
+    desc: 'Brands you have featured now shows the products under each brand and, for the ones on Creator Connections, a one tap Message the brand button. There is also a cross check against TRYBE so you can see which of their brands you already promote.',
+    href: '/storefront',
+  },
+  {
+    badge: 'NEW',
+    tone: '#E60023',
+    title: 'Your shop page can fill itself',
+    desc: 'Link in Bio pulls in the products from Shorts you posted to TikTok and Instagram, and there is an opt in so each new post adds its product to your page automatically.',
+    href: '/link-in-bio',
+  },
+  {
+    badge: 'NEW',
     tone: '#1877F2',
-    title: 'SCOUT stays on your own storefront',
-    desc: 'SCOUT now imports idea lists from your storefront only, never from other creators’ storefronts you happen to browse. Update to the latest SCOUT to get it.',
+    title: 'Keep your own blog design',
+    desc: 'A new Connection only switch in Customize Blog lets you keep MVP posting and connecting with zero changes to your blog layout. Nothing on your homepage or posts is touched.',
+    href: '/customize',
   },
 ]
 

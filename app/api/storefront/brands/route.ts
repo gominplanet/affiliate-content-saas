@@ -24,6 +24,7 @@ interface BrandOut {
   products: BrandProduct[]
   cc: boolean                       // any product live on Creator Connections
   ccCommissionPct: number | null    // best commission % seen across matched campaigns
+  ccAsin: string | null             // a representative in-CC ASIN (deep-link target)
 }
 
 const PRODUCTS_PER_BRAND = 24 // cap the product list we return per brand
@@ -67,7 +68,7 @@ export async function GET() {
     // GIN-indexed anti-join over the shared catalog (cc_campaign_catalog.asins),
     // instead of a per-ASIN lookup. Mark each brand cc=true when any of its
     // products is covered, and keep the best commission % seen for the card.
-    const ccByBrandKey = new Map<string, { commissionPct: number | null }>()
+    const ccByBrandKey = new Map<string, { commissionPct: number | null; asin: string | null }>()
     try {
       const allAsins = [...asinToBrandKey.keys()]
       if (allAsins.length) {
@@ -87,7 +88,9 @@ export async function GET() {
             if (!key) continue
             const prev = ccByBrandKey.get(key)
             const best = Math.max(prev?.commissionPct ?? 0, pct ?? 0) || null
-            ccByBrandKey.set(key, { commissionPct: best })
+            // Keep a representative in-CC ASIN so the "Message the brand" button can
+            // deep-link to that exact campaign (searching by ASIN in the CC browser).
+            ccByBrandKey.set(key, { commissionPct: best, asin: prev?.asin || a })
           }
         }
       }
@@ -103,6 +106,7 @@ export async function GET() {
           products: v.products,
           cc: !!cc,
           ccCommissionPct: cc?.commissionPct ?? null,
+          ccAsin: cc?.asin ?? null,
         }
       })
       .sort((a, b) => b.count - a.count || a.brand.localeCompare(b.brand))

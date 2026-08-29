@@ -17,7 +17,7 @@ import { Loader2, Tag, ChevronDown, Copy, Check, Handshake, MessageSquare, Exter
 interface BrandProduct { asin: string; title: string | null; image: string | null }
 interface Brand {
   brand: string; count: number; image: string | null
-  products: BrandProduct[]; cc: boolean; ccCommissionPct: number | null
+  products: BrandProduct[]; cc: boolean; ccCommissionPct: number | null; ccAsin?: string | null
 }
 interface Resp {
   ok: boolean; hasData: boolean; brands: Brand[]
@@ -142,7 +142,7 @@ export default function StorefrontBrands() {
                       {/* Actions */}
                       <div className="flex flex-wrap items-center gap-2 my-2.5">
                         {b.cc ? (
-                          <Link href={`/cc-campaigns?q=${encodeURIComponent(b.brand)}`} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white" style={{ background: PURPLE }}>
+                          <Link href={`/cc-campaigns?q=${encodeURIComponent(b.ccAsin || b.brand)}`} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white" style={{ background: PURPLE }}>
                             <MessageSquare size={13} /> Message the brand
                           </Link>
                         ) : (
