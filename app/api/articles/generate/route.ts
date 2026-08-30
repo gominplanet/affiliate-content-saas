@@ -187,6 +187,32 @@ function addAnchorsAndToc(html: string): { html: string; toc: string } {
 
 export const maxDuration = 300
 
+// ── Competitor term coverage (rivals Surfer/Koala) ───────────────────────────
+// One small web_search pass that returns the subtopics/terms the top-ranking
+// pages for the topic consistently cover, so the writer can address the same
+// ground and we can score how complete the finished article is. Best-effort:
+// returns [] on any error so generation never blocks on it.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function researchCoverageTerms(client: any, topic: string, usage: { userId: string; tier: string }): Promise<string[]> {
+  try {
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 700,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 } as any],
+      messages: [{ role: 'user', content: `Research the pages currently ranking for "${topic}". Identify the specific subtopics, entities and terms those pages consistently cover — what a comprehensive article on this topic must address to compete. Return ONLY a JSON array of 12 to 20 short lowercase terms or phrases (2 to 4 words each), no prose, e.g. ["term one","term two"].` }],
+    })
+    recordAnthropicUsage(msg, { userId: usage.userId, tier: usage.tier, feature: 'article_coverage', model: 'claude-sonnet-4-6' })
+    let text = ''
+    for (const b of msg.content) if (b.type === 'text') text += b.text
+    const m = text.match(/\[[\s\S]*\]/)
+    if (!m) return []
+    const arr = JSON.parse(m[0]) as unknown
+    if (!Array.isArray(arr)) return []
+    return [...new Set(arr.map(x => String(x).trim().toLowerCase()).filter(t => t.length > 1 && t.length < 60))].slice(0, 20)
+  } catch { return [] }
+}
+
 // The full set of toggleable sections. The client sends the subset the user
 // ticked; we honor ONLY those (plus their order below for a sensible flow).
 const SECTION_LABELS: Record<string, string> = {
@@ -375,6 +401,16 @@ Where it genuinely helps a point you're making, link to these existing reviews b
 ${inlineReviews.map(r => `- ${r.title} — ${r.url}`).join('\n')}
 ` : ''
 
+  const client = createAnthropicClient()
+  // Competitor term coverage — the terms the top-ranking pages cover, fed to the
+  // writer and scored after. Skipped on a preview-republish (reuses exact bytes).
+  const mustCoverTerms = isRepublish ? [] : await researchCoverageTerms(client, topic, { userId: user.id, tier })
+  const coverageBlock = mustCoverTerms.length ? `
+═══════════════════════════════════════
+COMPETITOR COVERAGE — the pages ranking for this topic consistently cover these subtopics and terms. Address the RELEVANT ones naturally (skip any that don't fit the angle; never keyword-stuff):
+${mustCoverTerms.map(t => `- ${t}`).join('\n')}
+` : ''
+
   const writerPrompt = `You are writing a researched, informational blog article about "${topic}". This is NOT a product review or a sales page. It is a genuine, opinionated, well-structured article a real blogger would publish to inform their readers.
 
 Use the web_search tool to ground the article in real facts, current figures, and concrete examples. When you state a specific statistic, price, percentage, dated figure, study finding, or a direct quote you pulled from research, cite it INLINE right there in the sentence with a real link to the source, e.g. <p>According to <a href="https://www.example.com/report" rel="nofollow">Consumer Reports</a>, ...</p>. Every hard number in the article should be traceable to a linked source in the prose, not only in a list at the end. Use the actual result URL, name the source, and keep rel="nofollow".
@@ -412,6 +448,7 @@ FOR THE FAQ SECTION: use an H2 "Frequently Asked Questions", then 4-6 questions 
 ` : ''}
 
 ${inlineReviewsBlock}
+${coverageBlock}
 ═══════════════════════════════════════
 SEO + AI-DISCOVERABILITY (REQUIRED — the article must score 80+ on-page and be quotable by AI Overviews / ChatGPT / Perplexity):
 - ANSWER-FIRST INTRO: open with a direct, self-contained 2-3 sentence answer to "${topic}" BEFORE the first <h2> — the kind of summary an AI engine can quote verbatim. No preamble or throat-clearing.
@@ -446,8 +483,6 @@ VOICE / STYLE RULES:
     ? scrubAiHtml(body.html) : null
   const preTitle = publish && typeof body.title === 'string' && body.title.trim()
     ? scrubAiHtml(body.title.trim()).slice(0, 200) : null
-
-  const client = createAnthropicClient()
 
   // ── Generate ─────────────────────────────────────────────────────────────
   const sources: { url: string; title: string }[] = []
@@ -570,6 +605,16 @@ VOICE / STYLE RULES:
     seoScore = scorePostSeo({ title, metaDescription: metaDesc || null, contentHtml: html, seoKeyword: topic, postType: 'article', siteHost }).score
   } catch { /* non-fatal */ }
 
+  // Term coverage — how many of the competitor terms the finished article actually
+  // covers, plus the gaps, so the UI can show a Surfer-style completeness score.
+  let termCoverage: { score: number; covered: string[]; missing: string[] } | null = null
+  if (mustCoverTerms.length) {
+    const bodyText = html.replace(/<[^>]+>/g, ' ').toLowerCase()
+    const covered = mustCoverTerms.filter(t => bodyText.includes(t))
+    const missing = mustCoverTerms.filter(t => !bodyText.includes(t))
+    termCoverage = { score: Math.round((covered.length / mustCoverTerms.length) * 100), covered, missing }
+  }
+
   // ── Hero image ────────────────────────────────────────────────────────────
   // Three styles (toggle): 'generic' (editorial Flux photo of the topic),
   // 'face' (the creator composed into an editorial scene, from their Face Model),
@@ -675,7 +720,7 @@ VOICE / STYLE RULES:
 
   // ── Preview only — no WordPress write ─────────────────────────────────────
   if (!publish) {
-    return NextResponse.json({ ok: true, title, html, heroUrl, meta: metaDesc, seoScore })
+    return NextResponse.json({ ok: true, title, html, heroUrl, meta: metaDesc, seoScore, termCoverage })
   }
 
   // ── Publish to WordPress ──────────────────────────────────────────────────
@@ -785,5 +830,7 @@ VOICE / STYLE RULES:
     html,
     url: wpPost.link,
     postId: saved?.id ?? null,
+    seoScore,
+    termCoverage,
   })
 }

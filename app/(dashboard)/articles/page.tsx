@@ -70,7 +70,7 @@ export default function ArticlesPage() {
   // 'preview' = Generate preview button, 'publish' = Generate & publish,
   // 'publishing' = the preview's "Publish to my blog" button. null = idle.
   const [busy, setBusy] = useState<null | 'preview' | 'publish' | 'publishing'>(null)
-  const [preview, setPreview] = useState<{ title: string; html: string; heroUrl: string | null; meta: string; seoScore: number | null } | null>(null)
+  const [preview, setPreview] = useState<{ title: string; html: string; heroUrl: string | null; meta: string; seoScore: number | null; termCoverage: { score: number; covered: string[]; missing: string[] } | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -118,7 +118,7 @@ export default function ArticlesPage() {
         })
         setPreview(null)
       } else {
-        setPreview({ title: j.title, html: j.html, heroUrl: j.heroUrl ?? null, meta: j.meta ?? '', seoScore: j.seoScore ?? null })
+        setPreview({ title: j.title, html: j.html, heroUrl: j.heroUrl ?? null, meta: j.meta ?? '', seoScore: j.seoScore ?? null, termCoverage: j.termCoverage ?? null })
         toast.success('Preview ready — review it below.')
       }
     } catch (err) {
@@ -536,7 +536,24 @@ export default function ArticlesPage() {
                     SEO {preview.seoScore}/100
                   </span>
                 )}
+                {preview.termCoverage && (
+                  <span
+                    className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                    title={preview.termCoverage.missing.length ? `Not yet covered: ${preview.termCoverage.missing.join(', ')}` : 'Covers every key subtopic the top pages cover'}
+                    style={{
+                      background: preview.termCoverage.score >= 80 ? 'rgba(52,199,89,.15)' : preview.termCoverage.score >= 60 ? 'rgba(255,149,0,.15)' : 'rgba(255,59,48,.15)',
+                      color: preview.termCoverage.score >= 80 ? '#248a3d' : preview.termCoverage.score >= 60 ? '#b26a00' : '#c0392b',
+                    }}
+                  >
+                    Topic coverage {preview.termCoverage.score}%
+                  </span>
+                )}
               </div>
+              {preview.termCoverage && preview.termCoverage.missing.length > 0 && (
+                <p className="text-[11px] mt-1" style={{ color: 'var(--fg-muted)' }}>
+                  Competitors also cover: {preview.termCoverage.missing.slice(0, 8).join(', ')}. Add a line on the relevant ones to rank fuller.
+                </p>
+              )}
               {preview.meta && <p className="text-xs mt-1 italic" style={{ color: 'var(--fg-muted)' }}>{preview.meta}</p>}
               <p className="text-xs mt-1" style={{ color: 'var(--fg-muted)' }}>Preview — nothing has been published yet.</p>
             </div>
