@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { jsonrepair } from 'jsonrepair'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { learnProfileToPrompt } from '@/lib/learn'
+import { buildLearnedVoiceBlock } from '@/lib/voice-fingerprint'
 import { resolveNicheScaffold, nicheScaffoldToPrompt, type NicheScaffold } from '@/lib/niche-scaffold'
 import { deriveProductName } from '@/lib/product-name'
 
@@ -30,6 +31,9 @@ export interface BrandProfile {
   secondary_color?: string | null
   /** Structured LEARN voice profile (jsonb). Shape validated in lib/learn. */
   learn_profile?: unknown
+  /** Continually-learned voice fingerprint (plain text, migration 301). How the
+   *  creator actually sounds, refined from their own transcripts over time. */
+  voice_fingerprint?: string | null
   /** Per-user toggle for the "What we'd improve" section (#14, 2026-06-08).
    *  When true, the generator adds a manufacturer-facing critique block
    *  between the body and FAQ. Defaults to false — opt-in. */
@@ -277,6 +281,11 @@ function buildSystemPrompt(
   // High priority: it encodes what THIS user finds fake vs trustworthy.
   const learnSection = learnProfileToPrompt(brand.learn_profile)
 
+  // The continually-learned voice fingerprint — how the creator actually sounds,
+  // distilled from their own videos over time (migration 301). Complements the
+  // manual LEARN profile; the hand-tuned answers still stand.
+  const learnedVoiceSection = buildLearnedVoiceBlock(brand.voice_fingerprint)
+
   // Per-niche scaffold (Sprint 3). When present:
   //   - nicheBlock: the injected niche-context block (FAQ emphasis, depth
   //     lean, image setting) placed near the top of the prompt.
@@ -412,6 +421,7 @@ Target post length: ${targetLength}
 ${ctaGuidance}
 ${writingGuidance}
 ${avoidLine}
+${learnedVoiceSection}
 ${learnSection}
 ${voiceSection}
 ${nicheBlock}

@@ -32,6 +32,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { checkArticlesUsage, normalizeTier, TIERS } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { learnProfileToPrompt } from '@/lib/learn'
+import { buildLearnedVoiceBlock } from '@/lib/voice-fingerprint'
 import { scorePostSeo } from '@/lib/seo-score'
 import { enforceSeoBasics } from '@/lib/seo-autofix'
 import { writeContentSchema } from '@/lib/content-schema'
@@ -427,15 +428,18 @@ ${mustCoverTerms.map(t => `- ${t}`).join('\n')}
   let voiceBlock = ''
   let voiceUsed = false
   if (!isRepublish && useMyVoice) {
-    const { data: brand } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: brand } = await (supabase as any)
       .from('brand_profiles')
-      .select('learn_profile,writing_sample,words_to_avoid')
+      .select('learn_profile,writing_sample,words_to_avoid,voice_fingerprint')
       .eq('user_id', user.id).maybeSingle()
     const learn = learnProfileToPrompt(brand?.learn_profile)
+    const learned = buildLearnedVoiceBlock(brand?.voice_fingerprint as string | null)
     const sample = (((brand?.writing_sample as string) || '').trim()).slice(0, 1500)
     const avoid = Array.isArray(brand?.words_to_avoid)
-      ? (brand!.words_to_avoid as string[]).map(w => (w || '').trim()).filter(Boolean).slice(0, 30) : []
+      ? (brand!.words_to_avoid as string[]).map((w: string) => (w || '').trim()).filter(Boolean).slice(0, 30) : []
     const parts: string[] = []
+    if (learned) parts.push(learned)
     if (learn) parts.push(learn.trim())
     if (sample) parts.push(`THE CREATOR'S OWN WRITING SAMPLE — mirror this voice exactly: sentence rhythm, vocabulary, how they open and how they transition. Match the VOICE, not the topic:\n"""${sample}"""`)
     if (avoid.length) parts.push(`WORDS THE CREATOR NEVER USES — do not use any of these: ${avoid.join(', ')}.`)

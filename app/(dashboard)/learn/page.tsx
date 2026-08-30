@@ -35,8 +35,15 @@ const DEFAULT: State = {
   learn_profile: emptyLearnProfile(),
 }
 
+interface LearnedVoice {
+  text: string
+  sources: number
+  updatedAt: string | null
+}
+
 export default function LearnPage() {
   const [data, setData] = useState<State>(DEFAULT)
+  const [learned, setLearned] = useState<LearnedVoice | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [evolving, setEvolving] = useState(false)
@@ -56,6 +63,8 @@ export default function LearnPage() {
         words_to_avoid: d.words_to_avoid ?? '',
         learn_profile: { ...emptyLearnProfile(), ...d.learn_profile },
       })
+      const fp = (d.voice_fingerprint || '').trim()
+      setLearned(fp ? { text: fp, sources: d.voice_fingerprint_sources || 0, updatedAt: d.voice_fingerprint_updated_at || null } : null)
     } catch {
       setError('Could not load your Learning profile.')
     } finally {
@@ -171,6 +180,39 @@ export default function LearnPage() {
           </div>
         </div>
       </div>
+
+      {/* What MVP has learned on its own — the continually-refined voice
+          fingerprint, read from the creator's own videos over time. Read-only:
+          it complements the fields below, it never replaces them. Only shown
+          once the learner has read at least one transcript. */}
+      {learned && (
+        <div className="max-w-3xl mb-4">
+          <div className="card p-5" style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(52,199,89,0.05))', borderColor: 'rgba(124,58,237,0.25)' }}>
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-full bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
+                <Sparkles size={16} className="text-[#7C3AED]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">What MVP has learned about your voice</p>
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>
+                    Learned from {learned.sources} {learned.sources === 1 ? 'video' : 'videos'}
+                  </span>
+                </div>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                  MVP builds this automatically from your own YouTube videos and gets sharper the more you publish. It sits alongside your answers below, it never overwrites them.
+                </p>
+                <p className="text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#d2d2d7] mt-3 whitespace-pre-wrap">{learned.text}</p>
+                {learned.updatedAt && (
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3">
+                    Last updated {new Date(learned.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-3xl space-y-6 pb-28">
 

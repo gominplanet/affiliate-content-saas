@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { learnProfileToPrompt } from '@/lib/learn'
+import { buildLearnedVoiceBlock } from '@/lib/voice-fingerprint'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { scrubAiHtml } from '@/lib/html-scrub'
@@ -74,15 +75,18 @@ export async function POST(request: Request) {
 
     // The creator's trained voice — keep the refresh sounding like them, not like
     // a generic rewrite. Same LEARN profile + writing sample the writer uses.
-    const { data: brand } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: brand } = await (supabase as any)
       .from('brand_profiles')
-      .select('learn_profile,writing_sample,words_to_avoid')
+      .select('learn_profile,writing_sample,words_to_avoid,voice_fingerprint')
       .eq('user_id', user.id).maybeSingle()
     const learn = learnProfileToPrompt(brand?.learn_profile)
+    const learned = buildLearnedVoiceBlock(brand?.voice_fingerprint as string | null)
     const sample = (((brand?.writing_sample as string) || '').trim()).slice(0, 1200)
     const avoid = Array.isArray(brand?.words_to_avoid)
-      ? (brand!.words_to_avoid as string[]).map(w => (w || '').trim()).filter(Boolean).slice(0, 30) : []
+      ? (brand!.words_to_avoid as string[]).map((w: string) => (w || '').trim()).filter(Boolean).slice(0, 30) : []
     const vParts: string[] = []
+    if (learned) vParts.push(learned)
     if (learn) vParts.push(learn.trim())
     if (sample) vParts.push(`THE CREATOR'S OWN WRITING SAMPLE — keep the refreshed copy in this voice:\n"""${sample}"""`)
     if (avoid.length) vParts.push(`WORDS THE CREATOR NEVER USES — do not introduce any of these: ${avoid.join(', ')}.`)

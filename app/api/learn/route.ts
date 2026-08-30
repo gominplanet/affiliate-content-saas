@@ -22,9 +22,9 @@ export async function GET() {
     const { ownerId } = auth
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: row } = await supabase
+    const { data: row } = await (supabase as any)
       .from('brand_profiles')
-      .select('writing_sample,author_bio,target_audience,words_to_avoid,learn_profile')
+      .select('writing_sample,author_bio,target_audience,words_to_avoid,learn_profile,voice_fingerprint,voice_fingerprint_updated_at,voice_fingerprint_sources')
       .eq('user_id', ownerId)
       .single()
 
@@ -34,6 +34,11 @@ export async function GET() {
       target_audience: row?.target_audience ?? '',
       words_to_avoid: row?.words_to_avoid ?? '',
       learn_profile: normalizeLearnProfile(row?.learn_profile),
+      // Continually-learned voice fingerprint (read-only in the UI). Null/0 until
+      // migration 301 runs and the learner has read at least one transcript.
+      voice_fingerprint: row?.voice_fingerprint ?? '',
+      voice_fingerprint_updated_at: row?.voice_fingerprint_updated_at ?? null,
+      voice_fingerprint_sources: row?.voice_fingerprint_sources ?? 0,
     })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
