@@ -16,7 +16,6 @@ type Link = { href: string; label: string; desc: string; highlight?: string }
 const TOOLS: Link[] = [
   { href: 'https://geni.us/2y5sBo', label: 'Oink', desc: 'Manage Amazon Creator Connections, earnings & storefronts', highlight: '#E0218A' },
   { href: 'https://geni.us/9qSLP', label: 'Cha-Ching Automate', desc: 'Auto-sync your videos to YouTube + 13 global Amazon storefronts' },
-  { href: 'https://geni.us/Y70p9R', label: 'Geniuslink', desc: 'Auto-localize Amazon links + route mobile shoppers to the app' },
 ]
 
 // PROGRAMS = affiliate/collab networks the creator joins to earn (brand deals,
