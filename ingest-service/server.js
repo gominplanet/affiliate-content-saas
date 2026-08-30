@@ -777,6 +777,33 @@ function buildCtaAss(opts) {
 // POST /render-cta — burn a CTA onto a full horizontal video.
 //   body: { videoUrl, userId, text, subtext?, style: 'lowerthird'|'endcard',
 //           startSec, endSec }
+// Probe a media file's pixel width + height (first video/image stream).
+function ffprobeWH(file) {
+  return new Promise((resolve) => {
+    execFile('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x', file], { timeout: 30_000, killSignal: 'SIGKILL' }, (err, stdout) => {
+      if (err) return resolve(null)
+      const m = /(\d+)x(\d+)/.exec(String(stdout).trim())
+      resolve(m ? { w: parseInt(m[1], 10), h: parseInt(m[2], 10) } : null)
+    })
+  })
+}
+
+// Top-left (x,y) for a scaled overlay of size (sw,sh) on a (W,H) frame, by name.
+function overlayXY(position, W, H, sw, sh) {
+  const mx = Math.round(W * 0.05), my = Math.round(H * 0.06), by = Math.round(H * 0.08)
+  switch (position) {
+    case 'upper-left':  return { x: mx, y: my }
+    case 'upper-right': return { x: W - sw - mx, y: my }
+    case 'top':         return { x: Math.round((W - sw) / 2), y: my }
+    case 'center':      return { x: Math.round((W - sw) / 2), y: Math.round((H - sh) / 2) }
+    case 'lower-right': return { x: W - sw - mx, y: H - sh - by }
+    case 'bottom':
+    case 'lower-third': return { x: Math.round((W - sw) / 2), y: H - sh - by }
+    case 'lower-left':
+    default:            return { x: mx, y: H - sh - by }
+  }
+}
+
 app.post('/render-cta', async (req, res) => {
   if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
   const url = String(req.body?.videoUrl || '').trim()
@@ -784,34 +811,66 @@ app.post('/render-cta', async (req, res) => {
   const text = String(req.body?.text || '').trim()
   const subtext = String(req.body?.subtext || '').trim()
   const style = req.body?.style === 'endcard' ? 'endcard' : 'lowerthird'
+  const stickerUrl = String(req.body?.stickerUrl || '').trim()
+  const position = String(req.body?.position || (style === 'endcard' ? 'center' : 'lower-left'))
+  const widthPct = Math.min(0.95, Math.max(0.1, Number(req.body?.widthPct) || 0.5))
   const startSec = Math.max(0, Number(req.body?.startSec) || 0)
   const endSec = Number(req.body?.endSec)
   if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad source' })
-  if (!text) return res.status(400).json({ error: 'text required' })
+  const sticker = /^https?:\/\//i.test(stickerUrl)
+  if (!sticker && !text) return res.status(400).json({ error: 'text or sticker required' })
   if (!Number.isFinite(endSec) || endSec <= startSec) return res.status(400).json({ error: 'bad window' })
   const srcTmp = path.join(os.tmpdir(), `cta-src-${Date.now()}.mp4`)
   const assTmp = path.join(os.tmpdir(), `cta-${Date.now()}.ass`)
+  const pngTmp = path.join(os.tmpdir(), `cta-badge-${Date.now()}.png`)
   const outTmp = path.join(os.tmpdir(), `cta-out-${Date.now()}.mp4`)
   try {
     await assertPublicHttpUrl(url)
     await downloadToFile(url, srcTmp)
     if (!fs.existsSync(srcTmp)) throw new Error('source download produced no file')
-    const ass = buildCtaAss({ style, text, subtext, startSec, endSec })
-    if (!ass) throw new Error('empty cta')
-    fs.writeFileSync(assTmp, ass)
-    // Burn over the FULL video at its original resolution (no trim, copy audio).
-    await new Promise((resolve, reject) => {
-      execFile('ffmpeg', [
-        '-hide_banner', '-loglevel', 'error', '-threads', '1',
-        '-i', srcTmp, '-vf', `ass=${assTmp}`,
-        '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
-        '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
-        '-c:a', 'copy', '-movflags', '+faststart', '-y', outTmp,
-      ], { maxBuffer: 1024 * 1024 * 64, timeout: 540_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
-        if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed')).slice(0, 400)))
-        else resolve()
+
+    if (sticker) {
+      // Cool designed CTA box (PNG) overlaid on the video — the same gallery
+      // Clip Factory burns, sized + placed + windowed. Re-encode to composite.
+      await assertPublicHttpUrl(stickerUrl)
+      await downloadToFile(stickerUrl, pngTmp)
+      if (!fs.existsSync(pngTmp)) throw new Error('sticker download produced no file')
+      const vwh = await ffprobeWH(srcTmp) || { w: 1920, h: 1080 }
+      const pwh = await ffprobeWH(pngTmp) || { w: 1000, h: 1000 }
+      const sw = Math.max(1, Math.round(vwh.w * widthPct))
+      const sh = Math.max(1, Math.round(sw * (pwh.h / pwh.w)))
+      const { x, y } = overlayXY(position, vwh.w, vwh.h, sw, sh)
+      const fc = `[1:v]scale=${sw}:${sh}[st];[0:v][st]overlay=${x}:${y}:enable='between(t,${startSec.toFixed(2)},${endSec.toFixed(2)})'[vout]`
+      await new Promise((resolve, reject) => {
+        execFile('ffmpeg', [
+          '-hide_banner', '-loglevel', 'error', '-threads', '1',
+          '-i', srcTmp, '-i', pngTmp, '-filter_complex', fc, '-map', '[vout]', '-map', '0:a?',
+          '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
+          '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
+          '-c:a', 'copy', '-movflags', '+faststart', '-y', outTmp,
+        ], { maxBuffer: 1024 * 1024 * 64, timeout: 540_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
+          if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed')).slice(0, 400)))
+          else resolve()
+        })
       })
-    })
+    } else {
+      // Styled text CTA (ASS).
+      const ass = buildCtaAss({ style, text, subtext, startSec, endSec })
+      if (!ass) throw new Error('empty cta')
+      fs.writeFileSync(assTmp, ass)
+      await new Promise((resolve, reject) => {
+        execFile('ffmpeg', [
+          '-hide_banner', '-loglevel', 'error', '-threads', '1',
+          '-i', srcTmp, '-vf', `ass=${assTmp}`,
+          '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
+          '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
+          '-c:a', 'copy', '-movflags', '+faststart', '-y', outTmp,
+        ], { maxBuffer: 1024 * 1024 * 64, timeout: 540_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
+          if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed')).slice(0, 400)))
+          else resolve()
+        })
+      })
+    }
     if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
     const key = `${userId || 'ingest'}/cta-${Date.now()}.mp4`
     await uploadToSupabase(key, outTmp)
@@ -820,7 +879,7 @@ app.post('/render-cta', async (req, res) => {
     console.error('[render-cta] failed', e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   } finally {
-    cleanupTmp(srcTmp, assTmp, outTmp)
+    cleanupTmp(srcTmp, assTmp, pngTmp, outTmp)
   }
 })
 
@@ -892,7 +951,7 @@ app.post('/dub', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'dub-2026-08-30'
+const BUILD = 'cta-stickers-2026-08-30'
 // Bind the port FIRST so health checks pass immediately, THEN load cookies and
 // self-update yt-dlp in the background (they only populate cookiesReady /
 // ytDlpVersion, both reported by /health). Previously we awaited a ~120s pip

@@ -28,13 +28,18 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({})) as {
     videoUrl?: string; durationSec?: number; text?: string; subtext?: string
     style?: string; startSec?: number; endSec?: number
+    stickerUrl?: string; widthPct?: number; position?: string
   }
   const videoUrl = (body.videoUrl || '').trim()
   const text = (body.text || '').trim()
   const style: 'lowerthird' | 'endcard' = body.style === 'endcard' ? 'endcard' : 'lowerthird'
   const dur = Math.max(0, Number(body.durationSec) || 0)
+  // A designed CTA box (PNG from our own /cta-burner gallery) is an alternative
+  // to plain text. Only accept sticker URLs on our own origin.
+  const stickerUrl = (body.stickerUrl || '').trim()
+  const stickerOk = /^https:\/\/[^/]+\/cta-burner\/[A-Za-z0-9._-]+\.png$/i.test(stickerUrl)
   if (!/^https?:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A hosted video URL is required.' }, { status: 400 })
-  if (!text) return NextResponse.json({ error: 'CTA text is required.' }, { status: 400 })
+  if (!text && !stickerOk) return NextResponse.json({ error: 'Pick a CTA design or enter CTA text.' }, { status: 400 })
 
   // Derive the on-screen window from the style unless the caller set it. End card
   // rides the last 8 seconds; a lower third shows early for ~10 seconds.
@@ -45,7 +50,12 @@ export async function POST(req: Request) {
     else { startSec = 3; endSec = dur > 0 ? Math.min(dur, 13) : 13 }
   }
 
-  const out = await renderCta(videoUrl, { text, subtext: (body.subtext || '').trim(), style, startSec, endSec }, user.id)
+  const out = await renderCta(videoUrl, {
+    text, subtext: (body.subtext || '').trim(), style, startSec, endSec,
+    ...(stickerOk ? { stickerUrl } : {}),
+    ...(Number(body.widthPct) ? { widthPct: Number(body.widthPct) } : {}),
+    ...(body.position ? { position: String(body.position) } : {}),
+  }, user.id)
   if (!out) {
     return NextResponse.json({ error: 'Couldn’t render the CTA just now. If this keeps happening, the video service may be busy.' }, { status: 502 })
   }

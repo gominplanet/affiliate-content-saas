@@ -10,8 +10,17 @@ import { useMemo, useRef, useState } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Upload, Loader2, Download, Youtube, Check } from 'lucide-react'
 import { toast } from 'sonner'
+import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 
 type Style = 'lowerthird' | 'endcard'
+type Overlay = 'design' | 'text'
+const POSITIONS: { key: string; label: string }[] = [
+  { key: 'lower-left', label: 'Lower left' },
+  { key: 'lower-right', label: 'Lower right' },
+  { key: 'upper-left', label: 'Upper left' },
+  { key: 'upper-right', label: 'Upper right' },
+  { key: 'center', label: 'Center' },
+]
 
 // Measure a video file client-side (dimensions + duration) so we can size the
 // CTA window and warn on portrait uploads without a round trip.
@@ -42,6 +51,10 @@ export default function UploadStage() {
 
   const [uploading, setUploading] = useState(false)
   const [source, setSource] = useState<{ url: string; durationSec: number; name: string } | null>(null)
+  const [overlay, setOverlay] = useState<Overlay>('design')
+  const [stickerId, setStickerId] = useState<string>(CTA_STICKERS[0]?.id || '')
+  const [position, setPosition] = useState<string>('lower-right')
+  const [widthPct, setWidthPct] = useState<number>(0.4)
   const [text, setText] = useState('')
   const [subtext, setSubtext] = useState('')
   const [style, setStyle] = useState<Style>('lowerthird')
@@ -81,12 +94,17 @@ export default function UploadStage() {
 
   async function render() {
     if (!source) { toast.error('Upload a video first'); return }
-    if (!text.trim()) { toast.error('Add your CTA text'); return }
+    const useSticker = overlay === 'design' && !!stickerId
+    if (!useSticker && !text.trim()) { toast.error('Pick a CTA design or add text'); return }
     setRendering(true); setRendered(null); setPublished(null)
     try {
+      const sticker = CTA_STICKERS.find(s => s.id === stickerId)
+      const stickerUrl = useSticker && sticker ? `${window.location.origin}${ctaStickerUrl(sticker.file)}` : undefined
       const r = await fetch('/api/youtube-studio/cta', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: source.url, durationSec: source.durationSec, text: text.trim(), subtext: subtext.trim(), style }),
+        body: JSON.stringify(useSticker
+          ? { videoUrl: source.url, durationSec: source.durationSec, style, stickerUrl, widthPct, position }
+          : { videoUrl: source.url, durationSec: source.durationSec, text: text.trim(), subtext: subtext.trim(), style }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.url) throw new Error(j.error || 'Render failed')
@@ -134,31 +152,78 @@ export default function UploadStage() {
 
       {/* 2. CTA */}
       <div className="card p-5">
-        <h2 className="text-sm font-semibold mb-3" style={label}>Design the CTA</h2>
-        <div className="space-y-3">
-          <div>
-            <label className="text-[12px] font-medium" style={muted}>Main line</label>
-            <input value={text} onChange={e => setText(e.target.value)} maxLength={60}
-              placeholder="Shop my Amazon storefront"
-              className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
-          </div>
-          <div>
-            <label className="text-[12px] font-medium" style={muted}>Subtext (optional)</label>
-            <input value={subtext} onChange={e => setSubtext(e.target.value)} maxLength={80}
-              placeholder="Link in the description"
-              className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
-          </div>
-          <div className="flex gap-2">
-            {(['lowerthird', 'endcard'] as Style[]).map(s => (
-              <button key={s} type="button" onClick={() => setStyle(s)}
-                className="flex-1 px-3 py-2 rounded-lg border text-sm font-medium"
-                style={{ borderColor: style === s ? '#7C3AED' : 'var(--border)', borderWidth: style === s ? 2 : 1, color: 'var(--fg)' }}>
-                {s === 'lowerthird' ? 'Lower third (early)' : 'End card (last 8s)'}
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+          <h2 className="text-sm font-semibold" style={label}>Design the CTA</h2>
+          <div className="inline-flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+            {(['design', 'text'] as Overlay[]).map(o => (
+              <button key={o} type="button" onClick={() => setOverlay(o)}
+                className="px-3 py-1.5 text-[12px] font-medium"
+                style={{ background: overlay === o ? 'rgba(124,58,237,0.10)' : 'transparent', color: overlay === o ? '#7C3AED' : 'var(--fg-muted)' }}>
+                {o === 'design' ? 'CTA designs' : 'Just text'}
               </button>
             ))}
           </div>
         </div>
-        <button onClick={() => void render()} disabled={rendering || !source || !text.trim()}
+
+        {overlay === 'design' ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-72 overflow-y-auto pr-1">
+              {CTA_STICKERS.map(s => {
+                const on = stickerId === s.id
+                return (
+                  <button key={s.id} type="button" onClick={() => setStickerId(s.id)} title={s.label}
+                    className="rounded-lg border p-1.5 flex items-center justify-center"
+                    style={{ borderColor: on ? '#7C3AED' : 'var(--border)', borderWidth: on ? 2 : 1, background: 'var(--bg)', aspectRatio: '1 / 1' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={ctaStickerUrl(s.file)} alt={s.label} className="max-w-full max-h-full object-contain" />
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {POSITIONS.map(p => (
+                <button key={p.key} type="button" onClick={() => setPosition(p.key)}
+                  className="px-2.5 py-1.5 rounded-lg border text-[12px] font-medium"
+                  style={{ borderColor: position === p.key ? '#7C3AED' : 'var(--border)', borderWidth: position === p.key ? 2 : 1, color: 'var(--fg)' }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[12px]" style={muted}>Size</span>
+              <input type="range" min={0.2} max={0.8} step={0.05} value={widthPct}
+                onChange={e => setWidthPct(Number(e.target.value))} className="flex-1 accent-[#7C3AED]" />
+              <span className="text-[12px] tabular-nums" style={muted}>{Math.round(widthPct * 100)}%</span>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <label className="text-[12px] font-medium" style={muted}>Main line</label>
+              <input value={text} onChange={e => setText(e.target.value)} maxLength={60}
+                placeholder="Shop my Amazon storefront"
+                className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
+            </div>
+            <div>
+              <label className="text-[12px] font-medium" style={muted}>Subtext (optional)</label>
+              <input value={subtext} onChange={e => setSubtext(e.target.value)} maxLength={80}
+                placeholder="Link in the description"
+                className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2 mt-3">
+          {(['lowerthird', 'endcard'] as Style[]).map(s => (
+            <button key={s} type="button" onClick={() => setStyle(s)}
+              className="flex-1 px-3 py-2 rounded-lg border text-sm font-medium"
+              style={{ borderColor: style === s ? '#7C3AED' : 'var(--border)', borderWidth: style === s ? 2 : 1, color: 'var(--fg)' }}>
+              {s === 'lowerthird' ? 'Show early (~10s)' : 'End card (last 8s)'}
+            </button>
+          ))}
+        </div>
+
+        <button onClick={() => void render()} disabled={rendering || !source || (overlay === 'text' && !text.trim())}
           className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
           style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
           {rendering ? <><Loader2 size={15} className="animate-spin" /> Burning in…</> : <>Render CTA</>}

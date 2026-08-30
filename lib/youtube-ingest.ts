@@ -250,10 +250,16 @@ export interface CtaSpec {
   style: 'lowerthird' | 'endcard'
   startSec: number
   endSec: number
+  // Sticker mode: a designed CTA box (PNG) burned onto the video instead of
+  // plain text. When stickerUrl is set the render service overlays it.
+  stickerUrl?: string
+  widthPct?: number
+  position?: string
 }
 export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string): Promise<string | null> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
-  if (!base || !videoUrl || !cta.text.trim() || !(cta.endSec > cta.startSec)) return null
+  const hasSticker = !!(cta.stickerUrl && /^https:\/\//i.test(cta.stickerUrl))
+  if (!base || !videoUrl || (!cta.text.trim() && !hasSticker) || !(cta.endSec > cta.startSec)) return null
   try {
     const res = await fetch(`${base}/render-cta`, {
       method: 'POST',
@@ -268,6 +274,9 @@ export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string)
         style: cta.style === 'endcard' ? 'endcard' : 'lowerthird',
         startSec: cta.startSec,
         endSec: cta.endSec,
+        ...(hasSticker ? { stickerUrl: cta.stickerUrl } : {}),
+        ...(cta.widthPct ? { widthPct: cta.widthPct } : {}),
+        ...(cta.position ? { position: cta.position } : {}),
         ...(userId ? { userId } : {}),
       }),
       signal: AbortSignal.timeout(540_000),
