@@ -30,6 +30,7 @@ const DEFAULT_STEPS: Step[] = [
   { key: 'blog', label: 'Blog post', desc: 'A full SEO review on your site, in your voice.', on: true, state: 'idle' },
   { key: 'social', label: 'Social posts', desc: 'Fan out to your connected networks.', on: true, state: 'idle' },
   { key: 'short', label: 'Short for TikTok & Instagram', desc: 'A vertical short cut from the video.', on: true, state: 'idle' },
+  { key: 'storefront', label: 'Global Storefront Sync', desc: 'Localize the title and description for every Amazon market you sell in.', on: false, state: 'idle' },
 ]
 
 export default function LaunchpadPage() {
@@ -153,6 +154,34 @@ export default function LaunchpadPage() {
             }
           }
         } catch { setState('short', 'skipped', 'Open Clip Factory to cut a short.') }
+      }
+      // 5. Global Storefront Sync — localize the master metadata for every Amazon
+      // market the creator sells in (off by default; opt-in per run).
+      if (steps.find(s => s.key === 'storefront')?.on) {
+        setState('storefront', 'running', 'Localizing for your markets…')
+        try {
+          const mr = await fetch('/api/global-sync/markets').then(r => r.json()).catch(() => ({}))
+          const domains: string[] = Array.isArray(mr?.markets)
+            ? mr.markets.map((m: { domain: string }) => m.domain).filter((d: string) => d !== 'amazon.com')
+            : []
+          if (domains.length === 0) { setState('storefront', 'skipped', 'No markets available right now.') }
+          else {
+            const rs = await fetch('/api/global-sync/start', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ videoId: vid.id, markets: domains }),
+            })
+            const sj = await rs.json().catch(() => ({}))
+            if (!rs.ok || !sj.jobId) throw new Error(sj.error || 'Could not start the sync')
+            let syncDone = false
+            for (let i = 0; i < 40 && !syncDone; i++) {
+              await sleep(3000)
+              const jr = await fetch(`/api/global-sync/${sj.jobId}`).then(x => x.json()).catch(() => ({}))
+              if (jr?.status === 'done') { setState('storefront', 'done', `Localized for ${sj.markets} markets — review them in Storefront Sync.`); syncDone = true }
+              else if (jr?.status === 'failed') { setState('storefront', 'error', 'Sync failed — try it in Storefront Sync.'); syncDone = true }
+            }
+            if (!syncDone) setState('storefront', 'done', 'Still localizing — check Storefront Sync.')
+          }
+        } catch (e) { setState('storefront', 'error', e instanceof Error ? e.message : 'Sync failed') }
       }
       toast.success('Launchpad run finished')
     } finally { setRunning(false) }
