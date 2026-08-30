@@ -15,7 +15,7 @@
 
 import { useEffect, useState, FormEvent } from 'react'
 import { toast } from 'sonner'
-import { Newspaper, Sparkles, Loader2, ExternalLink, UploadCloud, FlaskConical } from 'lucide-react'
+import { Newspaper, Sparkles, Loader2, ExternalLink, UploadCloud, FlaskConical, Layers, ChevronDown, Check, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { TIERS, normalizeTier } from '@/lib/tier'
@@ -65,6 +65,11 @@ export default function ArticlesPage() {
   const [productMode, setProductMode] = useState<'throughout' | 'end'>('end')
   // Topic suggestions (tied to the creator's existing reviews + niche).
   const [suggesting, setSuggesting] = useState(false)
+  // Bulk mode — paste many topics, publish them one after another.
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkTopics, setBulkTopics] = useState('')
+  const [bulkRunning, setBulkRunning] = useState(false)
+  const [bulkResults, setBulkResults] = useState<Array<{ topic: string; status: 'queued' | 'writing' | 'done' | 'error'; url?: string; error?: string }>>([])
   const [suggestions, setSuggestions] = useState<{ topic: string; angle: string; keywords: string }[]>([])
 
   // 'preview' = Generate preview button, 'publish' = Generate & publish,
@@ -126,6 +131,32 @@ export default function ArticlesPage() {
     } finally {
       setBusy(null)
     }
+  }
+
+  /** Bulk: publish one article per pasted topic, sequentially, using the current
+   *  sections / tone / length. Each reuses the single-article endpoint. */
+  async function runBulk() {
+    const topics = bulkTopics.split('\n').map(t => t.trim()).filter(Boolean).slice(0, 25)
+    if (!topics.length) { toast.error('Paste at least one topic (one per line).'); return }
+    if (sections.length === 0) { toast.error('Pick at least one section to include'); return }
+    setBulkRunning(true)
+    setBulkResults(topics.map(t => ({ topic: t, status: 'queued' as const })))
+    for (let i = 0; i < topics.length; i++) {
+      setBulkResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: 'writing' } : r))
+      try {
+        const res = await fetch('/api/articles/generate', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: topics[i], angle, sections, tone, length, keywords, notes, publish: true, heroStyle, productMode, inArticleImages }),
+        })
+        const j = await res.json()
+        if (!res.ok) throw new Error(j.error || 'Failed')
+        setBulkResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: 'done', url: j.url } : r))
+      } catch (e) {
+        setBulkResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: 'error', error: e instanceof Error ? e.message : 'Failed' } : r))
+      }
+    }
+    setBulkRunning(false)
+    toast.success('Bulk run finished.')
   }
 
   /** Ask MVP for informational article topics tied to the creator's own
@@ -516,6 +547,51 @@ export default function ArticlesPage() {
           </p>
         )}
       </form>
+
+      {/* ── Bulk generate ────────────────────────────────────────────── */}
+      <div className="rounded-xl border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
+        <button onClick={() => setBulkOpen(o => !o)} className="w-full flex items-center justify-between gap-2 p-4 text-left">
+          <span className="inline-flex items-center gap-2 min-w-0">
+            <Layers className="w-4 h-4" style={{ color: '#7C3AED' }} />
+            <span className="font-semibold" style={{ color: 'var(--fg)' }}>Bulk generate</span>
+            <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>Publish many articles from a list of topics</span>
+          </span>
+          <ChevronDown className="w-4 h-4" style={{ color: 'var(--fg-muted)', transform: bulkOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+        </button>
+        {bulkOpen && (
+          <div className="px-4 pb-4">
+            <textarea
+              value={bulkTopics}
+              onChange={e => setBulkTopics(e.target.value)}
+              rows={5}
+              placeholder={'One topic per line, e.g.\nHow to pack a carry-on without wrinkles\nWhy your lumbar pillow isn’t working\nEmergency food storage: what lasts vs. what spoils'}
+              className="w-full rounded-lg border px-3 py-2 text-sm"
+              style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+            />
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
+              <Button onClick={() => void runBulk()} disabled={bulkRunning || !bulkTopics.trim()} className="px-5" style={{ background: '#7C3AED', color: '#fff' }}>
+                {bulkRunning ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Publishing…</> : <><UploadCloud className="w-4 h-4 mr-2" /> Publish all</>}
+              </Button>
+              <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>Uses your current sections, tone and length. Up to 25 at a time; each takes ~1 minute.</span>
+            </div>
+            {bulkResults.length > 0 && (
+              <ul className="mt-3 flex flex-col gap-1.5 text-sm">
+                {bulkResults.map((r, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    {r.status === 'done' ? <Check className="w-3.5 h-3.5" style={{ color: '#248a3d' }} />
+                      : r.status === 'error' ? <AlertCircle className="w-3.5 h-3.5" style={{ color: '#c0392b' }} />
+                      : r.status === 'writing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#7C3AED' }} />
+                      : <span className="w-3.5 h-3.5 rounded-full border" style={{ borderColor: 'var(--border)' }} />}
+                    <span className="flex-1 truncate" style={{ color: 'var(--fg)' }}>{r.topic}</span>
+                    {r.status === 'done' && r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium inline-flex items-center gap-0.5" style={{ color: '#7C3AED' }}>View <ExternalLink className="w-3 h-3" /></a>}
+                    {r.status === 'error' && <span className="text-xs" style={{ color: '#c0392b' }}>{r.error}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── Preview ──────────────────────────────────────────────────── */}
       {preview && (
