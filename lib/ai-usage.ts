@@ -105,6 +105,15 @@ export const PRICING: Record<string, Pricing> = {
   //    images:1) per successful post. Without this it fell to the $0.04 image
   //    fallback and the admin cost dashboard under-counted X spend ~5x.
   'twitter-api':    { in: 0, out: 0, imageCost: 0.20 },
+
+  // ── Text-to-speech (Storefront Sync dubs). Priced per CHARACTER via `out`,
+  //    with the synthesized character count recorded as output_tokens. $/1M
+  //    chars: ElevenLabs multilingual v2 = $100 ($0.10/1k), Flash v2.5 = $50,
+  //    OpenAI tts-1 = $15. Without these a dub fell to the $0.04 image fallback
+  //    and the spend circuit breaker under-counted ElevenLabs cost ~10x.
+  'elevenlabs-multilingual-v2': { in: 0, out: 100 },
+  'elevenlabs-flash-v2.5':      { in: 0, out: 50  },
+  'openai-tts-1':               { in: 0, out: 15  },
 }
 export const WEB_SEARCH_COST = 0.01 // $ per search (Anthropic server tool)
 /** Fallback per-image cost when an image model isn't in PRICING. */

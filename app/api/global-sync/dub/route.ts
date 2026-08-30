@@ -101,7 +101,13 @@ export async function POST(req: Request) {
     const speech = await synthesizeSpeech(script, clonedVoiceId ? { voiceId: clonedVoiceId } : undefined)
     if (!speech) throw new Error('Voiceover engine is not available.')
     const mp3 = speech.buffer
-    recordUsage({ userId: user.id, tier, feature: 'global_sync_dub_tts', model: ttsProvider() || 'tts', images: 1 })
+    // Price the dub by the real synthesized character count so it counts
+    // accurately toward the account-wide monthly spend ceiling.
+    recordUsage({
+      userId: user.id, tier, feature: 'global_sync_dub_tts',
+      model: ttsProvider() === 'elevenlabs' ? 'elevenlabs-multilingual-v2' : 'openai-tts-1',
+      output: script.length,
+    })
 
     // 3) Host the audio so the render service can fetch it.
     const admin = createAdminClient()
