@@ -25,7 +25,6 @@ import {
 } from 'lucide-react'
 import NextImage from 'next/image'
 import { FAQSection, StickyBottomBar } from '@/components/landing/islands'
-import AudienceSplit from '@/components/landing/AudienceSplit'
 
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
 // page. Any section wrapped in <DarkBand> flips its text/surface tokens so
@@ -90,39 +89,26 @@ export default function LandingPreview() {
     >
       {/* Hub-animation keyframes + smooth scroll now live in globals.css so
           this page can render as a Server Component (styled-jsx is client-only). */}
+      {/* Condensed funnel (2026-08): the page was ~24 stacked sections, which
+          lost cold visitors before pricing. Now it's a tight ~10-section flow —
+          hero → how it works → one features grid (absorbs the old feature
+          sections and surfaces the new voice/Shorts/Passport work) → comparison
+          → proof → pricing → FAQ → CTA. The dropped section components are kept
+          defined below (reusable / not deleted), just no longer rendered. The
+          Amazon-only buyer is routed by AmazonRouter instead of the old pre-hero
+          two-panel splitter. */}
       <Nav />
-      {/* Audience splitter — the first thing a cold visitor sees. Routes the two
-          very different buyers (Amazon storefront creators vs full-suite
-          marketers) before the generic hero, so neither reads copy meant for the
-          other. Amazon side jumps to its own sales page; suite side scrolls on. */}
-      <AudienceSplit />
-      {/* One accent (purple) + lots of white, logie5-style — with a few dark
-          emphasis bands to break up the page and make the flagship features
-          punch. The banded sections were designed for a dark background. */}
       <Hero />
+      <AmazonRouter variant="strip" />
       <PlatformBar />
-      <WhyMvpSection />
+      <HowItWorks />
+      <FeaturesGridCondensed />
+      {/* Real proof: actual thumbnails MVP made from one product photo. */}
       <ThumbnailShowcase />
       <ComparisonSection />
-      <FreeResearchSection />
-      <RolesSection />
-      <WorkflowSection />
-      <DarkBand bg="linear-gradient(160deg, #1A0B2E 0%, #2A0E3A 45%, #3A0E22 100%)">
-        <DealRadarSection />
-      </DarkBand>
-      <AsinSection />
-      <BeforeAfterSection />
-      <GroundedSection />
-      <DarkBand bg="linear-gradient(160deg, #120A2E 0%, #1E0E3E 100%)">
-        <DiscoverabilitySection />
-      </DarkBand>
-      <BrandedSiteSection />
-      <BusinessLayerSection />
-      <PartnerNetworksSection />
-      <CapabilitiesSection />
-      <PricingSection />
-      <BundleMathSection />
       <ProofSection />
+      <PricingSection />
+      <AmazonRouter variant="callout" />
       <FAQSection />
       <DarkBand bg="linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)">
         <FinalCTASection />
@@ -130,6 +116,108 @@ export default function LandingPreview() {
       <Footer />
       <StickyBottomBar />
     </div>
+  )
+}
+
+/** Amazon-only router — the "no blog, no YouTube" buyer. Replaces the old
+ *  pre-hero two-panel splitter with two light touchpoints: a slim strip under
+ *  the hero, and a callout at the pricing decision point. Both deep-link to the
+ *  Amazon plan's own sales page. */
+function AmazonRouter({ variant }: { variant: 'strip' | 'callout' }) {
+  if (variant === 'callout') {
+    return (
+      <section className="px-6 lg:px-8 pb-16 sm:pb-20 relative">
+        <p className="max-w-3xl mx-auto text-center text-[14px]" style={{ color: 'var(--text-soft)' }}>
+          Not building a blog? The{' '}
+          <a href="/amazon-influencer" className="font-bold" style={{ color: '#EA580C' }}>Amazon storefront plan</a>{' '}
+          covers thumbnails, designs, storefront and brand deals only, from $79/mo.
+        </p>
+      </section>
+    )
+  }
+  return (
+    <div style={{ background: 'linear-gradient(90deg, rgba(234,88,12,0.09), rgba(192,38,211,0.06))', borderBottom: '1px solid var(--border)' }}>
+      <div className="max-w-6xl mx-auto px-6 lg:px-8 py-3.5 flex items-center justify-center gap-x-4 gap-y-1.5 flex-wrap text-center text-[13.5px]">
+        <b style={{ color: 'var(--text)' }}>Not building a blog or YouTube?</b>
+        <span style={{ color: 'var(--text-soft)' }}>MVP has an Amazon storefront plan: thumbnails, designs, storefront and brand deals, from $79/mo.</span>
+        <a href="/amazon-influencer" className="font-bold whitespace-nowrap inline-flex items-center gap-1" style={{ color: '#EA580C' }}>
+          See the Amazon plan <ArrowRight size={13} />
+        </a>
+      </div>
+    </div>
+  )
+}
+
+/** How it works — the 3-step spine, condensed. Connect → written in your voice
+ *  → published everywhere. Replaces the long WorkflowSection in the tight funnel. */
+const HOW_STEPS = [
+  { t: 'Connect your channel', d: 'Link YouTube, or just paste a product, brand or Amazon link. MVP reads it, with none of your personal data touched.' },
+  { t: 'MVP writes in your voice', d: 'It drafts the review, buying guides, comparisons and social posts the way you actually sound, learned from your own videos.' },
+  { t: 'It publishes everywhere', d: 'Straight to a blog that stays yours, plus your socials and a shoppable bio, with affiliate links already in place.' },
+]
+function HowItWorks() {
+  return (
+    <section id="how-it-works" className="px-6 lg:px-8 pt-16 sm:pt-24 pb-8 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-2xl mx-auto">
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>How it works</span>
+          <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
+            From a video to a full post in three steps
+          </h2>
+        </div>
+        <div className="grid md:grid-cols-3 gap-4 sm:gap-5 mt-10">
+          {HOW_STEPS.map((s, i) => (
+            <div key={s.t} className="rounded-2xl border p-6" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <div className="w-8 h-8 rounded-lg grid place-items-center text-white font-extrabold text-[15px] mb-3.5" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>{i + 1}</div>
+              <h3 className="text-[18px] font-bold mb-1.5" style={{ color: 'var(--text)' }}>{s.t}</h3>
+              <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{s.d}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** Condensed features grid — absorbs ~10 of the old feature sections into one
+ *  scannable grid, and leads with the new work (voice, Shorts, Passport). */
+const CONDENSED_FEATURES: { icon: React.ReactNode; title: string; desc: string; isNew?: boolean }[] = [
+  { icon: <Sparkles size={19} />, title: 'Writes in your real voice', desc: 'MVP learns how you actually sound from your own videos and edits, and sharpens over time. Every post reads like you, not generic AI.', isNew: true },
+  { icon: <Scissors size={19} />, title: 'Post Shorts to TikTok & Instagram', desc: 'Clip Factory turns long videos into ready-to-post shorts, and reframes a horizontal video to vertical for you before you post.', isNew: true },
+  { icon: <Globe size={19} />, title: 'Free Passport geo-links', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included on every paid plan.', isNew: true },
+  { icon: <Zap size={19} />, title: 'Amazon Deal Radar', desc: 'Live, price-history-verified deals, not fake “was” prices. MVP turns the real drops into posts and a shoppable bio.' },
+  { icon: <FileText size={19} />, title: 'SEO & AI-optimized articles', desc: 'Reviews, comparisons, buying guides and researched articles built to rank on Google and get quoted by AI answers.' },
+  { icon: <Search size={19} />, title: 'Free product research', desc: 'Filter all of Amazon by sales, rating, price and video competition. Scout Creator Connections, Levanta and PartnerBoost too.' },
+  { icon: <Store size={19} />, title: 'Your own blog, forever', desc: 'A beautifully designed WordPress site that stays yours, even if you leave. No walled garden, no lock-in.' },
+  { icon: <ShieldCheck size={19} />, title: 'Your data stays yours', desc: 'MVP never uses or sells your personal data. It works from your content, nothing else.' },
+]
+function FeaturesGridCondensed() {
+  return (
+    <section id="features" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-24 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-2xl mx-auto">
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>Everything in one place</span>
+          <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
+            One subscription replaces your whole stack
+          </h2>
+          <p className="mt-4 text-[15.5px]" style={{ color: 'var(--text-soft)' }}>
+            The writer, the researcher, the editor, the social team and the link cloaker. All of it, and it sounds like you.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-10">
+          {CONDENSED_FEATURES.map(f => (
+            <div key={f.title} className="rounded-2xl border p-5 transition-all hover:-translate-y-0.5" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <div className="w-10 h-10 rounded-xl grid place-items-center mb-3.5" style={{ background: 'rgba(124,58,237,0.1)', color: '#7C3AED' }}>{f.icon}</div>
+              <h3 className="text-[16.5px] font-bold mb-1.5 flex items-center gap-2 flex-wrap" style={{ color: 'var(--text)' }}>
+                {f.title}
+                {f.isNew && <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-white px-1.5 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>New</span>}
+              </h3>
+              <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -1915,7 +2003,10 @@ function ProofSection() {
             className="text-[16px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Gominplanet grew this affiliate business past $3M a year in revenue — and it&apos;s a big reason brands want to work with us. We built MVP to run it. Now it&apos;s yours.
+            Gominplanet grew this affiliate business past $3M a year in revenue, and it&apos;s a big reason brands want to work with us. We built MVP to run our own business. Now it runs yours, in your voice.
+          </p>
+          <p className="mt-4 text-[13px] font-semibold" style={{ color: '#9D6BFF' }}>
+            Seb and Michelle, Gominplanet
           </p>
         </div>
 
@@ -2226,7 +2317,7 @@ function Hero() {
             className="mt-5 text-[20px] sm:text-[22px] font-semibold tracking-tight"
             style={{ color: 'var(--text-muted)' }}
           >
-            The only tool that runs your whole Amazon affiliate business — and never uses your personal data.
+            One tool that runs your whole affiliate business, and writes every word in your real voice.
           </p>
 
           {/* Sub */}
@@ -2234,7 +2325,7 @@ function Hero() {
             className="mt-6 text-[16px] leading-relaxed max-w-xl"
             style={{ color: 'var(--text-soft)' }}
           >
-            Connect your channel and MVP turns each video into a published, SEO- and AI-optimized review post — and finishes the upload for you: optimized description, tags, affiliate links and a CTR-tested thumbnail pushed back to the video. <span style={{ color: 'var(--text)' }}>No video? Just drop a product or service link</span> — any store, brand, or Amazon ASIN — and MVP writes the review, buying guides, comparisons and deal posts itself. Everything lands on a beautifully designed blog that&apos;s yours to keep — forever.
+            Connect your channel and MVP turns each video into a published, SEO and AI optimized review, then finishes the upload for you: description, tags, affiliate links and a tested thumbnail. <span style={{ color: 'var(--text)' }}>No video? Drop any product link</span> and it writes the review, buying guides and comparisons itself. Everything lands on a blog that&apos;s yours to keep, forever.
           </p>
 
           {/* CTAs — primary button + its supporting reassurance live as
@@ -2275,10 +2366,10 @@ function Hero() {
               </span>
             </div>
 
-            {/* New-feature ribbon — vibrant strip that ties the hero to the
-                flagship Deal Radar section below. */}
+            {/* New-feature ribbon — ties the hero to the flagship new work in the
+                features grid below (voice + Shorts). */}
             <a
-              href="#deal-radar"
+              href="#features"
               className="mt-6 inline-flex items-center gap-2.5 rounded-2xl px-4 py-3 text-[13px] font-medium transition-transform hover:-translate-y-0.5"
               style={{
                 background: 'linear-gradient(135deg, rgba(249,115,22,0.14), rgba(192,38,211,0.14))',
@@ -2287,11 +2378,11 @@ function Hero() {
               }}
             >
               <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #F97316, #C026D3)', color: '#fff' }}>
-                <Zap size={14} />
+                <Sparkles size={14} />
               </span>
               <span>
-                <span className="font-semibold">New — Amazon Deal Radar.</span>{' '}
-                <span style={{ color: 'var(--text-soft)' }}>Now MVP finds live, verified deals for you — and turns them into posts + a shoppable bio.</span>
+                <span className="font-semibold">New.</span>{' '}
+                <span style={{ color: 'var(--text-soft)' }}>MVP now writes in your real voice, learned from your own videos, and posts your Shorts to TikTok and Instagram.</span>
               </span>
               <ArrowRight size={14} className="flex-shrink-0" style={{ color: '#F97316' }} />
             </a>
