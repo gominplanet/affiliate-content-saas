@@ -97,10 +97,11 @@ export const NAV_ACCESS = {
   },
   passport: {
     label: 'Passport Links',
-    // Amazon-Influencer plan too (its pitch is earning more from Amazon links),
-    // on top of Studio + Pro. Inlined (not a const) so scripts/test-feature-access
+    // Every PAID plan: Creator, Amazon, Studio and Pro (plus admin). Passport is
+    // the free geo-routing link tool, so it ships on the entry paid plan up. Only
+    // trial/free is excluded. Inlined (not a const) so scripts/test-feature-access
     // can statically read the tiers.
-    tiers: ['amazon', 'studio', 'pro', 'admin'],
+    tiers: ['creator', 'amazon', 'studio', 'pro', 'admin'],
     // Every Passport route (settings, link-mint, analytics) + the shared
     // passportLinkForUser() gate call canUsePassport(). This matters because the
     // free SCOUT extension can hit POST /api/passport/link — without the server
@@ -116,7 +117,7 @@ export function canUseDealRadar(tier: Tier | null | undefined): boolean {
 }
 
 /** Can this tier use Passport Links (geo-routing links, the paste box, the
- *  dashboard, and auto-wiring into content)? Amazon, Studio + Pro. The free SCOUT
+ *  dashboard, and auto-wiring into content)? Every paid plan. The free SCOUT
  *  extension can call the link-mint route, so this must be enforced server-side. */
 export function canUsePassport(tier: Tier | null | undefined): boolean {
   return canSeeNav('passport', tier)

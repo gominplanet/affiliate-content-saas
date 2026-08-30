@@ -88,7 +88,7 @@ export default function LinkStyleTiles({
                     style={geo ? { background: 'rgba(52,199,89,0.12)', color: '#1f7a4d' } : { background: 'var(--surface-2,#f2f2f4)', color: '#86868b' }}>
                     {geo ? 'Geo-routing' : 'No geo-routing'}
                   </span>
-                  <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">{locked ? 'Amazon, Studio & Pro' : cost}</span>
+                  <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">{locked ? 'Any paid plan' : cost}</span>
                 </div>
               </div>
               <div className="flex-shrink-0">
