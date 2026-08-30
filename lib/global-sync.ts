@@ -31,8 +31,9 @@ export const MARKETS: Market[] = [
   { domain: 'amazon.co.uk',  code: 'UK', country: 'United Kingdom', lang: 'en-GB', langName: 'English', needsTranslation: false },
   { domain: 'amazon.fr',     code: 'FR', country: 'France',         lang: 'fr-FR', langName: 'French',  needsTranslation: true },
   { domain: 'amazon.de',     code: 'DE', country: 'Germany',        lang: 'de-DE', langName: 'German',  needsTranslation: true },
-  { domain: 'amazon.es',     code: 'ES', country: 'Spain',          lang: 'es-ES', langName: 'Spanish', needsTranslation: true },
-  { domain: 'amazon.it',     code: 'IT', country: 'Italy',          lang: 'it-IT', langName: 'Italian', needsTranslation: true },
+  { domain: 'amazon.es',     code: 'ES', country: 'Spain',          lang: 'es-ES', langName: 'Spanish',  needsTranslation: true },
+  { domain: 'amazon.it',     code: 'IT', country: 'Italy',          lang: 'it-IT', langName: 'Italian',  needsTranslation: true },
+  { domain: 'amazon.co.jp',  code: 'JP', country: 'Japan',          lang: 'ja-JP', langName: 'Japanese', needsTranslation: true },
 ]
 
 export function marketByDomain(domain: string): Market | undefined {
