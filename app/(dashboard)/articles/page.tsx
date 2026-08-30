@@ -15,7 +15,7 @@
 
 import { useEffect, useState, FormEvent } from 'react'
 import { toast } from 'sonner'
-import { Newspaper, Sparkles, Loader2, ExternalLink, UploadCloud, FlaskConical, Layers, ChevronDown, Check, AlertCircle } from 'lucide-react'
+import { Newspaper, Sparkles, Loader2, ExternalLink, UploadCloud, FlaskConical, Layers, ChevronDown, Check, AlertCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { TIERS, normalizeTier } from '@/lib/tier'
@@ -70,6 +70,32 @@ export default function ArticlesPage() {
   const [bulkTopics, setBulkTopics] = useState('')
   const [bulkRunning, setBulkRunning] = useState(false)
   const [bulkResults, setBulkResults] = useState<Array<{ topic: string; status: 'queued' | 'writing' | 'done' | 'error'; url?: string; error?: string }>>([])
+  // Refresh — re-research a published article and update it in place.
+  const [refreshOpen, setRefreshOpen] = useState(false)
+  const [articles, setArticles] = useState<Array<{ id: string; title: string; url: string | null; updatedAt: string | null }>>([])
+  const [articlesLoading, setArticlesLoading] = useState(false)
+  const [refreshingId, setRefreshingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!refreshOpen || articles.length || articlesLoading) return
+    setArticlesLoading(true)
+    fetch('/api/articles/refresh').then(r => r.json()).then((j: { articles?: typeof articles }) => setArticles(j.articles ?? []))
+      .catch(() => {}).finally(() => setArticlesLoading(false))
+  }, [refreshOpen, articles.length, articlesLoading])
+
+  async function refreshArticle(id: string) {
+    if (refreshingId) return
+    setRefreshingId(id)
+    const t = toast.loading('Re-researching and updating the article…')
+    try {
+      const res = await fetch('/api/articles/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: id }) })
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || 'Refresh failed')
+      setArticles(prev => prev.map(a => a.id === id ? { ...a, updatedAt: new Date().toISOString() } : a))
+      toast.success('Article refreshed.', { id: t, action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined, duration: 8000 })
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Refresh failed', { id: t, duration: 8000 }) }
+    finally { setRefreshingId(null) }
+  }
   const [suggestions, setSuggestions] = useState<{ topic: string; angle: string; keywords: string }[]>([])
 
   // 'preview' = Generate preview button, 'publish' = Generate & publish,
@@ -585,6 +611,39 @@ export default function ArticlesPage() {
                     <span className="flex-1 truncate" style={{ color: 'var(--fg)' }}>{r.topic}</span>
                     {r.status === 'done' && r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium inline-flex items-center gap-0.5" style={{ color: '#7C3AED' }}>View <ExternalLink className="w-3 h-3" /></a>}
                     {r.status === 'error' && <span className="text-xs" style={{ color: '#c0392b' }}>{r.error}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Refresh published articles ───────────────────────────────── */}
+      <div className="rounded-xl border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
+        <button onClick={() => setRefreshOpen(o => !o)} className="w-full flex items-center justify-between gap-2 p-4 text-left">
+          <span className="inline-flex items-center gap-2 min-w-0">
+            <RefreshCw className="w-4 h-4" style={{ color: '#7C3AED' }} />
+            <span className="font-semibold" style={{ color: 'var(--fg)' }}>Refresh a published article</span>
+            <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>Re-research and update the facts, in place</span>
+          </span>
+          <ChevronDown className="w-4 h-4" style={{ color: 'var(--fg-muted)', transform: refreshOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+        </button>
+        {refreshOpen && (
+          <div className="px-4 pb-4">
+            {articlesLoading ? (
+              <p className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--fg-muted)' }}><Loader2 className="w-4 h-4 animate-spin" /> Loading your articles…</p>
+            ) : articles.length === 0 ? (
+              <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>No published articles yet. Publish one above and it will show here to refresh later.</p>
+            ) : (
+              <ul className="flex flex-col gap-1.5 text-sm">
+                {articles.map(a => (
+                  <li key={a.id} className="flex items-center gap-2">
+                    <span className="flex-1 truncate" style={{ color: 'var(--fg)' }}>{a.title}</span>
+                    {a.updatedAt && <span className="text-[11px] shrink-0" style={{ color: 'var(--fg-muted)' }}>updated {new Date(a.updatedAt).toLocaleDateString()}</span>}
+                    <button onClick={() => void refreshArticle(a.id)} disabled={!!refreshingId} className="text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50" style={{ color: '#7C3AED' }}>
+                      {refreshingId === a.id ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Refreshing…</> : <><RefreshCw className="w-3.5 h-3.5" /> Refresh</>}
+                    </button>
                   </li>
                 ))}
               </ul>
