@@ -289,10 +289,14 @@ export async function buildDigestThumbnail(
     // A ready face model with source selfies is required for the face.
     const { data: fms } = await supabase
       .from('face_models').select('id,source_images,status').eq('user_id', opts.userId)
+    // We only need the raw selfies to build the identity anchor — the model does
+    // NOT have to be fully "ready" (trained). So use any face that has selfies on
+    // file, preferring a ready one. Maximizes how many creators get the cover.
     const asStrArr = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
-    const face = ((fms as Array<{ id: string; source_images: unknown; status: string }> | null) || [])
+    const withSelfies = ((fms as Array<{ id: string; source_images: unknown; status: string }> | null) || [])
       .map(m => ({ id: m.id, source_images: asStrArr(m.source_images), status: m.status }))
-      .find(m => m.status === 'ready' && m.source_images.length > 0)
+      .filter(m => m.source_images.length > 0)
+    const face = withSelfies.find(m => m.status === 'ready') || withSelfies[0]
     if (!face) return null
 
     const faceRef = await getThumbnailFaceRef(supabase, opts.userId, {
