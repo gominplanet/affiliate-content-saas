@@ -43,6 +43,23 @@ const DARK_SECTION_VARS: React.CSSProperties = {
   ['--accent-text' as string]: '#C4B5FD',
 }
 
+// ── Sales-page config (edit these; each renders only when it has a real value,
+//    so nothing fake ever ships) ──────────────────────────────────────────────
+//
+// GUARANTEE: the risk-reversal line near the CTAs and pricing. Set to your real
+//   terms, or leave null to show none. (Awaiting the exact terms.)
+const GUARANTEE: string | null = null
+//
+// FOUNDING_DEADLINE: ISO date the founding prices end (e.g. '2026-09-30'). When
+//   set AND in the future, a real countdown shows. null = no urgency. Never fake
+//   this — only set a genuine deadline. (Awaiting a real date.)
+const FOUNDING_DEADLINE: string | null = null
+//
+// TESTIMONIALS: real customer quotes only — never fabricated. The section is
+//   hidden until this has entries. Add { quote, name, handle? }.
+const TESTIMONIALS: { quote: string; name: string; handle?: string }[] = [
+]
+
 /** Wrap a section to give it a bold dark (or gradient) background — used to
  *  break up the bright page and make key sections punch. Pass `accent` to also
  *  recolor its card accents. */
@@ -109,8 +126,9 @@ export default function LandingPreview() {
       <ThumbnailShowcase />
       <ComparisonSection />
       <ProofSection />
+      <TestimonialsSection />
+      <FounderSection />
       <PricingSection />
-      <AmazonRouter variant="callout" />
       <FAQSection />
       <DarkBand bg="linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)">
         <FinalCTASection />
@@ -150,28 +168,35 @@ function AmazonRouter({ variant }: { variant: 'strip' | 'callout' }) {
   )
 }
 
-/** How it works — the 3-step spine, condensed. Connect → written in your voice
- *  → published everywhere. Replaces the long WorkflowSection in the tight funnel. */
-const HOW_STEPS = [
-  { t: 'Connect your channel', d: 'Link YouTube, or just paste a product, brand or Amazon link. MVP reads it, with none of your personal data touched.' },
-  { t: 'MVP writes in your voice', d: 'It drafts the review, buying guides, comparisons and social posts the way you actually sound, learned from your own videos.' },
-  { t: 'It publishes everywhere', d: 'Straight to a blog that stays yours, plus your socials and a shoppable bio, with affiliate links already in place.' },
+/** The MVP Loop — the named signature process (Find → Create → Publish → Earn).
+ *  Branding the flow reads as a system that runs the business side, not a set of
+ *  generic steps. */
+const LOOP_STEPS = [
+  { n: 'Find', d: 'Research all of Amazon and live Deal Radar for products worth promoting, or just paste any product, brand or Amazon link.' },
+  { n: 'Create', d: 'MVP writes the review, comparisons and social posts in your real voice, and makes the thumbnail and the Shorts for you.' },
+  { n: 'Publish', d: 'It all lands on a blog that stays yours, plus your socials and a shoppable bio, with affiliate links already in place.' },
+  { n: 'Earn', d: 'Free Passport geo-links and Creator Connections keep every shopper earning, with the commission going to you.' },
 ]
 function HowItWorks() {
   return (
     <section id="how-it-works" className="px-6 lg:px-8 pt-16 sm:pt-24 pb-8 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-2xl mx-auto">
-          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>How it works</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>The MVP Loop</span>
           <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
-            From a video to a full post in three steps
+            Find. Create. Publish. Earn.
           </h2>
+          <p className="mt-4 text-[15.5px]" style={{ color: 'var(--text-soft)' }}>
+            One system that runs the whole business side while you create.
+          </p>
         </div>
-        <div className="grid md:grid-cols-3 gap-4 sm:gap-5 mt-10">
-          {HOW_STEPS.map((s, i) => (
-            <div key={s.t} className="rounded-2xl border p-6" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
-              <div className="w-8 h-8 rounded-lg grid place-items-center text-white font-extrabold text-[15px] mb-3.5" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>{i + 1}</div>
-              <h3 className="text-[18px] font-bold mb-1.5" style={{ color: 'var(--text)' }}>{s.t}</h3>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mt-10">
+          {LOOP_STEPS.map((s, i) => (
+            <div key={s.n} className="rounded-2xl border p-6" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="w-8 h-8 rounded-lg grid place-items-center text-white font-extrabold text-[15px]" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>{i + 1}</div>
+                <h3 className="text-[18px] font-extrabold tracking-tight" style={{ color: 'var(--text)' }}>{s.n}</h3>
+              </div>
               <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{s.d}</p>
             </div>
           ))}
@@ -306,6 +331,26 @@ function PricingSection() {
           >
             Every blog plan includes the full Central Hub. Cancel anytime. Your WordPress site stays yours forever.
           </p>
+          {/* Risk reversal + honest urgency. Each renders only when set in the
+              sales-page config, so nothing unverified ships. */}
+          <div className="mt-5 flex items-center justify-center gap-x-5 gap-y-2 flex-wrap">
+            {GUARANTEE && (
+              <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: '#059669' }}>
+                <ShieldCheck size={15} /> {GUARANTEE}
+              </span>
+            )}
+            {(() => {
+              if (!FOUNDING_DEADLINE) return null
+              const end = new Date(FOUNDING_DEADLINE + 'T23:59:59')
+              if (isNaN(end.getTime()) || end.getTime() <= Date.now()) return null
+              const when = end.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+              return (
+                <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold px-3 py-1 rounded-full" style={{ background: 'rgba(234,88,12,0.1)', color: '#C2410C' }}>
+                  <Zap size={14} /> Founding prices end {when}
+                </span>
+              )
+            })()}
+          </div>
         </div>
 
         {/* Trial banner — the no-card "way in" sits ABOVE the cards so it
@@ -325,10 +370,10 @@ function PricingSection() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
-              Try MVP free. No card required.
+              Free to start. No card required.
             </p>
             <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              Get 5 full posts on the house. Generate, publish, share, see if it fits your workflow before you pay a cent. No time limit on the trial.
+              Product research and Deal Radar are free forever. Plus 5 full posts on the house, so you can generate, publish and share before you pay a cent. No time limit on the trial.
             </p>
           </div>
           <a
@@ -661,6 +706,69 @@ function PricingCard({ tier }: { tier: PricingTier }) {
  *  Backed by defensible numbers (the 4-min workflow, 9 outputs/video, the
  *  fact-grounding guarantee). No fabricated customer quotes.
  */
+/** Founder section — a real face + the $3M story. Trust lever the competitors
+ *  both use (logie5's "since day one", Oink's "I'm Rob"). Photo: sebmichelle. */
+function FounderSection() {
+  return (
+    <section id="founder" className="px-6 lg:px-8 pt-12 pb-8 relative">
+      <div className="max-w-5xl mx-auto">
+        <div className="rounded-3xl border p-6 sm:p-10 grid md:grid-cols-[minmax(0,300px)_1fr] gap-8 items-center"
+          style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.05), rgba(192,38,211,0.04))', borderColor: 'var(--border)' }}>
+          <NextImage
+            src="/png/sebmichelle.png"
+            alt="Seb and Michelle, the founders of MVP Affiliate"
+            width={600}
+            height={600}
+            loading="lazy"
+            className="w-full h-auto rounded-2xl border"
+            style={{ borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}
+          />
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>Built by creators, not a software company</span>
+            <h2 className="text-[28px] sm:text-[38px] font-extrabold tracking-[-0.03em] leading-[1.05] mt-3" style={{ color: 'var(--text)' }}>
+              We built MVP to run our own business.
+            </h2>
+            <p className="mt-4 text-[15.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              We&apos;re Seb and Michelle. We grew Gominplanet past <span className="font-semibold" style={{ color: 'var(--text)' }}>$3M a year</span> in affiliate revenue, and we got tired of stitching together a stack of tools that each took a cut and none of which sounded like us. So we built the tool we wished existed and ran our whole business on it. Now it runs yours, in your voice.
+            </p>
+            <p className="mt-4 text-[13px] font-semibold" style={{ color: '#9D6BFF' }}>Seb and Michelle, Gominplanet</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** Testimonials wall — real customer quotes only (never fabricated). Hidden
+ *  until TESTIMONIALS has entries. */
+function TestimonialsSection() {
+  if (TESTIMONIALS.length === 0) return null
+  return (
+    <section id="testimonials" className="px-6 lg:px-8 pt-16 sm:pt-20 pb-8 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-2xl mx-auto">
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>Loved by creators</span>
+          <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
+            What creators say
+          </h2>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-10">
+          {TESTIMONIALS.map((t, i) => (
+            <figure key={i} className="rounded-2xl border p-5 flex flex-col" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <div className="text-[13px] mb-2" style={{ color: '#F5A623' }}>★★★★★</div>
+              <blockquote className="text-[14px] leading-relaxed flex-1" style={{ color: 'var(--text)' }}>“{t.quote}”</blockquote>
+              <figcaption className="mt-4 text-[12.5px]">
+                <span className="font-semibold" style={{ color: 'var(--text)' }}>{t.name}</span>
+                {t.handle && <span style={{ color: 'var(--text-faint)' }}> · {t.handle}</span>}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function ProofSection() {
   return (
     <section id="proof" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative">
@@ -1015,7 +1123,7 @@ function Hero() {
             className="mt-5 text-[20px] sm:text-[22px] font-semibold tracking-tight"
             style={{ color: 'var(--text-muted)' }}
           >
-            One tool that runs your whole affiliate business, and writes every word in your real voice.
+            It runs the whole business side while you create, and writes every word in your real voice.
           </p>
 
           {/* Sub */}
