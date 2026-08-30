@@ -16,6 +16,10 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { Rocket, Check, Loader2, Circle, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 
+// Networks the blog job can auto-post to (the runner skips any not connected).
+const SOCIAL_KEYS = ['twitter', 'facebook', 'threads', 'linkedin', 'bluesky', 'pinterest', 'telegram']
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
 interface Vid { id: string; youtube_video_id: string | null; title: string; thumbnail_url: string | null; duration_seconds: number | null }
 type StepState = 'idle' | 'running' | 'done' | 'error' | 'skipped'
 interface Step { key: string; label: string; desc: string; on: boolean; state: StepState; note?: string }
@@ -73,20 +77,39 @@ export default function LaunchpadPage() {
           setState('metadata', r.ok ? 'done' : 'error', r.ok ? undefined : 'Could not generate metadata')
         } catch { setState('metadata', 'error', 'Could not generate metadata') }
       }
-      // 2. Blog (needs our internal video id).
-      if (steps.find(s => s.key === 'blog')?.on) {
+      // 2 + 3. Blog + social run in ONE real generation job (the same pipeline
+      // auto-pilot uses): enqueue with the chosen socials, then poll to done.
+      const wantBlog = !!steps.find(s => s.key === 'blog')?.on
+      const wantSocial = !!steps.find(s => s.key === 'social')?.on
+      if (wantBlog || wantSocial) {
         setState('blog', 'running')
+        if (wantSocial) setState('social', 'running')
         try {
-          const r = await fetch('/api/blog/generate', {
+          const enq = await fetch('/api/blog/enqueue', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ videoId: vid.id }),
+            body: JSON.stringify({ videoId: vid.id, includeImages: true, autoSocials: wantSocial ? SOCIAL_KEYS : [] }),
           })
-          setState('blog', r.ok ? 'done' : 'error', r.ok ? undefined : 'Could not generate the blog post')
-        } catch { setState('blog', 'error', 'Could not generate the blog post') }
+          const ej = await enq.json().catch(() => ({}))
+          if (!enq.ok || !ej.jobId) throw new Error(ej.error || 'Could not queue the post')
+          // Poll the job (~5 min cap). Surface the stage as the step note.
+          let done = false
+          for (let i = 0; i < 75 && !done; i++) {
+            await sleep(4000)
+            const jr = await fetch(`/api/blog/job/${ej.jobId}`)
+            const jj = await jr.json().catch(() => ({}))
+            if (jj.stage) setState('blog', 'running', String(jj.stage))
+            if (jj.status === 'done') {
+              setState('blog', 'done'); if (wantSocial) setState('social', 'done'); done = true
+            } else if (jj.status === 'failed') {
+              setState('blog', 'error', jj.error || 'Post failed'); if (wantSocial) setState('social', 'error'); done = true
+            }
+          }
+          if (!done) { setState('blog', 'error', 'Still running — check the Blog Post Generator'); if (wantSocial) setState('social', 'error') }
+        } catch (e) {
+          setState('blog', 'error', e instanceof Error ? e.message : 'Post failed'); if (wantSocial) setState('social', 'error')
+        }
       }
-      // 3 + 4. Social + Short are the next steps to wire into the orchestrator.
-      // For now, point the creator at the section so the flow is honest.
-      if (steps.find(s => s.key === 'social')?.on) setState('social', 'skipped', 'Open Social to push this out')
+      // 4. Short — the next step to wire into the orchestrator.
       if (steps.find(s => s.key === 'short')?.on) setState('short', 'skipped', 'Open Clip Factory to cut a short')
       toast.success('Launchpad run finished')
     } finally { setRunning(false) }
