@@ -13,7 +13,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { recordUsage } from '@/lib/ai-usage'
 import { checkUsageCap, PRIMARY_FEATURE, DUB_MONTHLY_CAP } from '@/lib/usage-cap'
 import { marketByDomain, translateScript } from '@/lib/global-sync'
-import { synthesizeSpeech, ttsProvider } from '@/lib/tts'
+import { synthesizeSpeech, ttsConfigured, elevenConfigured } from '@/lib/tts'
 import { getClonedVoiceId } from '@/lib/voice-clone'
 import { ingestConfigured, ingestYouTubeVideo, renderDub } from '@/lib/youtube-ingest'
 
@@ -34,28 +34,10 @@ export async function POST(req: Request) {
   const gate = await spendGate(user.id, tier)
   if (gate) return gate
 
-  // Bound our ElevenLabs exposure: cap dubs per billing period (admin unlimited).
-  // Checked BEFORE we spend; the usage row that advances the count is written on
-  // success, same as the CTA-box generator.
-  const capLimit = tier === 'admin' ? null : DUB_MONTHLY_CAP
-  const capCheck = await checkUsageCap(
-    supabase, user.id, PRIMARY_FEATURE.dub, capLimit,
-    (integ?.subscription_period_start as string | null) ?? null,
-    (integ?.subscription_period_end as string | null) ?? null,
-  )
-  if (capCheck?.exceeded) {
-    return NextResponse.json({
-      error: `You've used all ${capLimit} dubs for this billing period. Your finished dubs still play — this only limits new ones. Resets ${capCheck.resetLabel}.`,
-      limitReached: true, cap: 'dub', currentTier: tier,
-    }, { status: 429 })
-  }
-  // Dubs left AFTER this one succeeds (null = admin/unlimited), for the UI.
-  const dubsRemaining = capLimit === null ? null : Math.max(0, capLimit - ((capCheck?.used ?? 0) + 1))
-
   if (!ingestConfigured()) {
     return NextResponse.json({ error: 'The video service is not available right now. Please try again shortly.' }, { status: 503 })
   }
-  if (!ttsProvider()) {
+  if (!ttsConfigured()) {
     return NextResponse.json({ error: 'Voiceover is not configured right now.' }, { status: 503 })
   }
 
@@ -94,22 +76,43 @@ export async function POST(req: Request) {
     const script = await translateScript(transcript, market, brand, { userId: user.id, tier })
     if (!script) throw new Error('Could not build the dub script.')
 
-    // 2) Synthesize the voiceover. The engine (ElevenLabs when configured, else
-    // OpenAI) detects the target language from the translated script. When the
-    // creator has a cloned voice, narrate the dub in THEIR voice.
+    // 2) Pick the dub lane. A creator with a cloned voice gets the premium
+    // ElevenLabs "sounds like you" dub, which is capped per period; everyone
+    // else (and anyone over the premium cap) gets the standard OpenAI voice,
+    // which is ~7x cheaper and uncapped. So dubbing every geo on every video
+    // never blocks — it only drops to the standard voice past the premium cap.
     const clonedVoiceId = await getClonedVoiceId(sb, user.id)
-    const speech = await synthesizeSpeech(script, clonedVoiceId ? { voiceId: clonedVoiceId } : undefined)
+    const wantClone = !!clonedVoiceId && elevenConfigured()
+    let cloneCapHit = false
+    let clonedRemaining: number | null = null
+    if (wantClone) {
+      const capLimit = tier === 'admin' ? null : DUB_MONTHLY_CAP
+      const capCheck = await checkUsageCap(
+        sb, user.id, PRIMARY_FEATURE.dub, capLimit,
+        (integ?.subscription_period_start as string | null) ?? null,
+        (integ?.subscription_period_end as string | null) ?? null,
+      )
+      if (capCheck?.exceeded) cloneCapHit = true
+      else clonedRemaining = capLimit === null ? null : Math.max(0, capLimit - ((capCheck?.used ?? 0) + 1))
+    }
+    const useVoiceId = wantClone && !cloneCapHit ? clonedVoiceId : undefined
+
+    // 3) Synthesize. The engine detects the language from the translated script.
+    const speech = await synthesizeSpeech(script, useVoiceId ? { voiceId: useVoiceId } : undefined)
     if (!speech) throw new Error('Voiceover engine is not available.')
     const mp3 = speech.buffer
-    // Price the dub by the real synthesized character count so it counts
-    // accurately toward the account-wide monthly spend ceiling.
+    const usedClone = speech.engine === 'elevenlabs' && !!useVoiceId
+    // Price by the real synthesized character count so it counts accurately
+    // toward the account spend ceiling; only the cloned lane counts to the cap.
     recordUsage({
-      userId: user.id, tier, feature: 'global_sync_dub_tts',
-      model: ttsProvider() === 'elevenlabs' ? 'elevenlabs-multilingual-v2' : 'openai-tts-1',
+      userId: user.id, tier,
+      feature: usedClone ? 'global_sync_dub_cloned' : 'global_sync_dub_std',
+      model: speech.engine === 'elevenlabs' ? 'elevenlabs-multilingual-v2' : 'openai-tts-1',
       output: script.length,
     })
+    const voice: 'cloned' | 'standard' = usedClone ? 'cloned' : 'standard'
 
-    // 3) Host the audio so the render service can fetch it.
+    // 4) Host the audio so the render service can fetch it.
     const admin = createAdminClient()
     const audioKey = `${user.id}/dub-${jobId}-${market.code}-${Date.now()}.mp3`
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -118,7 +121,7 @@ export async function POST(req: Request) {
     const { data: audioUrlData } = admin.storage.from('instagram-videos').getPublicUrl(audioKey)
     const audioUrl = audioUrlData.publicUrl
 
-    // 4) Make sure we have a hosted source MP4 to dub onto (auto-pull once).
+    // 5) Make sure we have a hosted source MP4 to dub onto (auto-pull once).
     let sourceUrl = (video.source_video_url as string | null) || ''
     let durationSec = Number(video.duration_seconds) || 0
     if (!/^https:\/\//i.test(sourceUrl)) {
@@ -133,15 +136,15 @@ export async function POST(req: Request) {
     if (!/^https:\/\//i.test(sourceUrl)) {
       // No source video available — still deliver the voiceover track itself.
       await sb.from('global_sync_targets').update({ video_url: audioUrl, state: 'localized', detail: 'Voiceover ready. Add the source video in Clip Factory to mux the dub.', updated_at: new Date().toISOString() }).eq('id', target.id)
-      return NextResponse.json({ ok: true, audioUrl, videoUrl: null, note: 'voiceover_only', dubsRemaining })
+      return NextResponse.json({ ok: true, audioUrl, videoUrl: null, note: 'voiceover_only', voice, clonedDubsRemaining: clonedRemaining, cloneCapHit })
     }
 
-    // 5) Mux the dub onto the video.
+    // 6) Mux the dub onto the video.
     const dubbed = await renderDub(sourceUrl, audioUrl, user.id, durationSec || undefined)
     if (!dubbed) throw new Error('The dub render did not finish.')
 
-    await sb.from('global_sync_targets').update({ video_url: dubbed, state: 'localized', detail: 'Dubbed', updated_at: new Date().toISOString() }).eq('id', target.id)
-    return NextResponse.json({ ok: true, videoUrl: dubbed, dubsRemaining })
+    await sb.from('global_sync_targets').update({ video_url: dubbed, state: 'localized', detail: voice === 'cloned' ? 'Dubbed in your voice' : 'Dubbed', updated_at: new Date().toISOString() }).eq('id', target.id)
+    return NextResponse.json({ ok: true, videoUrl: dubbed, voice, clonedDubsRemaining: clonedRemaining, cloneCapHit })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Dub failed.'
     await sb.from('global_sync_targets').update({ state: 'failed', detail: msg.slice(0, 200), updated_at: new Date().toISOString() }).eq('id', target.id)

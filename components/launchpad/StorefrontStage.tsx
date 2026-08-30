@@ -130,8 +130,14 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error || 'Dub failed')
       await refreshTargets()
-      const left = typeof j.dubsRemaining === 'number' ? ` · ${j.dubsRemaining} dubs left this month` : ''
-      toast.success((j.note === 'voiceover_only' ? 'Voiceover ready' : 'Dub ready') + left)
+      const base = j.note === 'voiceover_only' ? 'Voiceover ready' : j.voice === 'cloned' ? 'Dubbed in your voice' : 'Dub ready'
+      if (j.voice === 'cloned' && typeof j.clonedDubsRemaining === 'number') {
+        toast.success(`${base} · ${j.clonedDubsRemaining} your-voice dubs left this month`)
+      } else if (j.cloneCapHit) {
+        toast.success(`${base} · your-voice dubs used up this month, standard voice used`)
+      } else {
+        toast.success(base)
+      }
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Dub failed'); await refreshTargets() } finally { setDubbing(null) }
   }
 

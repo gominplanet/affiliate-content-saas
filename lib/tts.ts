@@ -9,13 +9,17 @@
 
 import { createOpenAIService } from '@/services/openai'
 
-export interface SpeechResult { buffer: Buffer; contentType: string }
+export type TtsEngine = 'elevenlabs' | 'openai'
+export interface SpeechResult { buffer: Buffer; contentType: string; engine: TtsEngine }
 
-/** Which engine will run, for logging / UI copy. */
-export function ttsProvider(): 'elevenlabs' | 'openai' | null {
-  if (process.env.ELEVENLABS_API_KEY) return 'elevenlabs'
-  if (process.env.OPENAI_API_KEY) return 'openai'
-  return null
+/** True when at least one TTS engine is configured. */
+export function ttsConfigured(): boolean {
+  return !!(process.env.ELEVENLABS_API_KEY || process.env.OPENAI_API_KEY)
+}
+
+/** True when ElevenLabs (the cloned-voice / premium engine) is available. */
+export function elevenConfigured(): boolean {
+  return !!process.env.ELEVENLABS_API_KEY
 }
 
 // A neutral, well-supported multilingual default voice. A creator's own cloned
@@ -33,21 +37,32 @@ async function elevenSpeech(text: string, voiceId?: string): Promise<SpeechResul
     signal: AbortSignal.timeout(120_000),
   })
   if (!res.ok) throw new Error(`ElevenLabs TTS ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`)
-  return { buffer: Buffer.from(await res.arrayBuffer()), contentType: 'audio/mpeg' }
+  return { buffer: Buffer.from(await res.arrayBuffer()), contentType: 'audio/mpeg', engine: 'elevenlabs' }
 }
 
 async function openaiSpeech(text: string): Promise<SpeechResult> {
   const buffer = await createOpenAIService().synthesizeSpeech(text)
-  return { buffer, contentType: 'audio/mpeg' }
+  return { buffer, contentType: 'audio/mpeg', engine: 'openai' }
 }
 
-/** Synthesize speech from already-translated text. The engine detects the
- *  language from the text, so pass the target-language script. Returns null when
- *  no provider is configured. `voiceId` selects a specific (e.g. cloned) voice
- *  on providers that support it. */
+/**
+ * Synthesize a dub from already-translated text. Two lanes:
+ *   - `voiceId` set (the creator's cloned voice) → ElevenLabs, the premium
+ *     "sounds like you" engine. This is the bounded, higher-cost path.
+ *   - no `voiceId` → OpenAI TTS, the standard engine (~7x cheaper), so dubbing
+ *     every geo on every video stays affordable.
+ * Falls back to whichever single engine is configured. Returns null when none
+ * is, or the text is empty. The result reports which engine actually ran.
+ */
 export async function synthesizeSpeech(text: string, opts?: { voiceId?: string }): Promise<SpeechResult | null> {
-  const provider = ttsProvider()
-  if (!provider || !text.trim()) return null
-  if (provider === 'elevenlabs') return elevenSpeech(text, opts?.voiceId)
-  return openaiSpeech(text)
+  if (!text.trim()) return null
+  const hasEleven = !!process.env.ELEVENLABS_API_KEY
+  const hasOpenAI = !!process.env.OPENAI_API_KEY
+  // Cloned voice → ElevenLabs (premium).
+  if (opts?.voiceId && hasEleven) return elevenSpeech(text, opts.voiceId)
+  // Standard dub → OpenAI (cheap); fall back to an ElevenLabs default voice only
+  // when OpenAI isn't configured.
+  if (hasOpenAI) return openaiSpeech(text)
+  if (hasEleven) return elevenSpeech(text)
+  return null
 }
