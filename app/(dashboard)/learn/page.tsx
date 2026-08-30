@@ -48,6 +48,8 @@ export default function LearnPage() {
   const [saving, setSaving] = useState(false)
   const [evolving, setEvolving] = useState(false)
   const [evolveResult, setEvolveResult] = useState<string | null>(null)
+  const [bootstrapping, setBootstrapping] = useState(false)
+  const [bootstrapMsg, setBootstrapMsg] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -109,6 +111,26 @@ export default function LearnPage() {
     } finally {
       setEvolving(false)
       setTimeout(() => setEvolveResult(null), 6000)
+    }
+  }
+
+  async function bootstrapFromVideos() {
+    setBootstrapping(true); setBootstrapMsg(null)
+    try {
+      const res = await fetch('/api/learn/bootstrap', { method: 'POST' })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Scan failed')
+      if (d.learned || d.fetched > 0) {
+        setBootstrapMsg(`MVP read ${d.fetched} video transcript${d.fetched === 1 ? '' : 's'} and updated your voice. Reloading…`)
+        setTimeout(() => load(), 900)
+      } else {
+        setBootstrapMsg('No new transcripts were available to read. Try again after syncing your videos.')
+      }
+    } catch (e) {
+      setBootstrapMsg(e instanceof Error ? e.message : 'Scan failed')
+    } finally {
+      setBootstrapping(false)
+      setTimeout(() => setBootstrapMsg(null), 8000)
     }
   }
 
@@ -203,10 +225,56 @@ export default function LearnPage() {
                   MVP builds this automatically from your own YouTube videos and gets sharper the more you publish. It sits alongside your answers below, it never overwrites them.
                 </p>
                 <p className="text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#d2d2d7] mt-3 whitespace-pre-wrap">{learned.text}</p>
-                {learned.updatedAt && (
-                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3">
-                    Last updated {new Date(learned.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                  </p>
+                <div className="flex items-center gap-3 mt-3 flex-wrap">
+                  <button
+                    onClick={bootstrapFromVideos}
+                    disabled={bootstrapping}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:opacity-90 disabled:opacity-60 transition-opacity"
+                  >
+                    {bootstrapping
+                      ? <><Loader2 size={11} className="animate-spin" /> Reading your videos…</>
+                      : <><Sparkles size={11} /> Rescan my videos</>}
+                  </button>
+                  {learned.updatedAt && (
+                    <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                      Last updated {new Date(learned.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </span>
+                  )}
+                  {bootstrapMsg && (
+                    <span className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">{bootstrapMsg}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cold start: no fingerprint yet. Offer to learn straight from the
+          creator's videos now instead of waiting for them to publish. */}
+      {!learned && (
+        <div className="max-w-3xl mb-4">
+          <div className="card p-4 flex items-start gap-3" style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(52,199,89,0.05))', borderColor: 'rgba(124,58,237,0.25)' }}>
+            <div className="w-8 h-8 rounded-full bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
+              <Sparkles size={16} className="text-[#7C3AED]" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Learn my voice from my videos</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                MVP can read your recent YouTube videos right now and build a profile of how you actually sound, so your very first post reads like you. It keeps getting sharper as you publish.
+              </p>
+              <div className="flex items-center gap-3 mt-3 flex-wrap">
+                <button
+                  onClick={bootstrapFromVideos}
+                  disabled={bootstrapping}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:opacity-90 disabled:opacity-60 transition-opacity"
+                >
+                  {bootstrapping
+                    ? <><Loader2 size={11} className="animate-spin" /> Reading your videos…</>
+                    : <><Sparkles size={11} /> Scan my recent videos</>}
+                </button>
+                {bootstrapMsg && (
+                  <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{bootstrapMsg}</span>
                 )}
               </div>
             </div>

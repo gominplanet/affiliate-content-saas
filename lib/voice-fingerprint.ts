@@ -56,6 +56,7 @@ export async function maybeUpdateVoiceFingerprint(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   ctx: Ctx,
+  opts: { force?: boolean } = {},
 ): Promise<boolean> {
   try {
     const { data: brand } = await supabase
@@ -65,9 +66,10 @@ export async function maybeUpdateVoiceFingerprint(
       .single()
 
     // Debounce: don't re-run within the window (a creator shipping a burst of
-    // posts shouldn't fire this on every one).
+    // posts shouldn't fire this on every one). `force` (an explicit "scan my
+    // videos now" from the creator) bypasses it.
     const last = brand?.voice_fingerprint_updated_at
-    if (last && Date.now() - new Date(last).getTime() < DEBOUNCE_MS) return false
+    if (!opts.force && last && Date.now() - new Date(last).getTime() < DEBOUNCE_MS) return false
 
     const seen: string[] = Array.isArray(brand?.voice_fingerprint_seen)
       ? (brand.voice_fingerprint_seen as unknown[]).filter((x): x is string => typeof x === 'string')
