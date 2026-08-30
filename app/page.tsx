@@ -58,6 +58,10 @@ const FOUNDING_DEADLINE: string | null = null
 // TESTIMONIALS: real customer quotes only — never fabricated. The section is
 //   hidden until this has entries. Add { quote, name, handle? }.
 const TESTIMONIALS: { quote: string; name: string; handle?: string }[] = [
+  {
+    quote: 'I was skeptical at first but I needed to try something new to push my Amazon offsite revenue. Within the first 2 weeks of testing MVP, I made the subscription back and then some. So grateful for this tool and what it generates for my business.',
+    name: 'Verified MVP creator',
+  },
 ]
 
 /** Wrap a section to give it a bold dark (or gradient) background — used to
@@ -752,7 +756,7 @@ function TestimonialsSection() {
             What creators say
           </h2>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-10">
+        <div className={`mt-10 gap-4 ${TESTIMONIALS.length === 1 ? 'max-w-xl mx-auto' : TESTIMONIALS.length === 2 ? 'grid sm:grid-cols-2 max-w-3xl mx-auto' : 'grid sm:grid-cols-2 lg:grid-cols-3'}`}>
           {TESTIMONIALS.map((t, i) => (
             <figure key={i} className="rounded-2xl border p-5 flex flex-col" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
               <div className="text-[13px] mb-2" style={{ color: '#F5A623' }}>★★★★★</div>
