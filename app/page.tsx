@@ -48,12 +48,12 @@ const DARK_SECTION_VARS: React.CSSProperties = {
 //
 // GUARANTEE: the risk-reversal line near the CTAs and pricing. Set to your real
 //   terms, or leave null to show none. (Awaiting the exact terms.)
-const GUARANTEE: string | null = null
+const GUARANTEE: string | null = '14-day money-back guarantee'
 //
 // FOUNDING_DEADLINE: ISO date the founding prices end (e.g. '2026-09-30'). When
 //   set AND in the future, a real countdown shows. null = no urgency. Never fake
 //   this — only set a genuine deadline. (Awaiting a real date.)
-const FOUNDING_DEADLINE: string | null = null
+const FOUNDING_DEADLINE: string | null = '2026-12-31'
 //
 // TESTIMONIALS: real customer quotes only — never fabricated. The section is
 //   hidden until this has entries. Add { quote, name, handle? }.
@@ -719,7 +719,7 @@ function FounderSection() {
         <div className="rounded-3xl border p-6 sm:p-10 grid md:grid-cols-[minmax(0,300px)_1fr] gap-8 items-center"
           style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.05), rgba(192,38,211,0.04))', borderColor: 'var(--border)' }}>
           <NextImage
-            src="/png/sebmichelle.png"
+            src="/png/sebmichelle.webp"
             alt="Seb and Michelle, the founders of MVP Affiliate"
             width={600}
             height={600}
@@ -1174,6 +1174,12 @@ function Hero() {
                 <ShieldCheck size={13} style={{ color: '#10B981' }} />
                 We never use or sell your personal data.
               </span>
+              {GUARANTEE && (
+                <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--text-soft)' }}>
+                  <Check size={13} style={{ color: '#10B981' }} />
+                  {GUARANTEE}.
+                </span>
+              )}
             </div>
 
             {/* New-feature ribbon — ties the hero to the flagship new work in the
