@@ -13,6 +13,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { recordUsage } from '@/lib/ai-usage'
 import { marketByDomain, translateScript } from '@/lib/global-sync'
 import { synthesizeSpeech, ttsProvider } from '@/lib/tts'
+import { getClonedVoiceId } from '@/lib/voice-clone'
 import { ingestConfigured, ingestYouTubeVideo, renderDub } from '@/lib/youtube-ingest'
 
 export const runtime = 'nodejs'
@@ -74,8 +75,10 @@ export async function POST(req: Request) {
     if (!script) throw new Error('Could not build the dub script.')
 
     // 2) Synthesize the voiceover. The engine (ElevenLabs when configured, else
-    // OpenAI) detects the target language from the translated script.
-    const speech = await synthesizeSpeech(script)
+    // OpenAI) detects the target language from the translated script. When the
+    // creator has a cloned voice, narrate the dub in THEIR voice.
+    const clonedVoiceId = await getClonedVoiceId(sb, user.id)
+    const speech = await synthesizeSpeech(script, clonedVoiceId ? { voiceId: clonedVoiceId } : undefined)
     if (!speech) throw new Error('Voiceover engine is not available.')
     const mp3 = speech.buffer
     recordUsage({ userId: user.id, tier, feature: 'global_sync_dub_tts', model: ttsProvider() || 'tts', images: 1 })

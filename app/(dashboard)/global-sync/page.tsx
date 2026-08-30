@@ -30,12 +30,21 @@ export default function GlobalSyncPage() {
   const [targets, setTargets] = useState<Target[]>([])
   const [dubbing, setDubbing] = useState<string | null>(null)
 
+  // Cloned voice ("sounds like you" dubs).
+  const [voice, setVoice] = useState<{ enabled: boolean; hasVoice: boolean; name: string | null } | null>(null)
+  const [consent, setConsent] = useState(false)
+  const [cloning, setCloning] = useState(false)
+
   const load = useCallback(async () => {
     try {
       const sb = createBrowserClient()
       const { data: { user } } = await sb.auth.getUser()
-      const [mr] = await Promise.all([fetch('/api/global-sync/markets').then(r => r.json()).catch(() => ({}))])
+      const [mr, vr] = await Promise.all([
+        fetch('/api/global-sync/markets').then(r => r.json()).catch(() => ({})),
+        fetch('/api/voice-clone/status').then(r => r.json()).catch(() => ({})),
+      ])
       if (Array.isArray(mr?.markets)) setMarkets(mr.markets)
+      if (vr?.ok) setVoice({ enabled: !!vr.enabled, hasVoice: !!vr.hasVoice, name: vr.name || null })
       if (user) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data } = await (sb as any)
@@ -76,6 +85,37 @@ export default function GlobalSyncPage() {
     } finally { setRunning(false) }
   }
 
+  async function refreshVoice() {
+    const vr = await fetch('/api/voice-clone/status').then(r => r.json()).catch(() => ({}))
+    if (vr?.ok) setVoice({ enabled: !!vr.enabled, hasVoice: !!vr.hasVoice, name: vr.name || null })
+  }
+
+  async function cloneVoice() {
+    if (!consent) { toast.error('Please confirm you have the right to clone this voice'); return }
+    setCloning(true)
+    try {
+      const r = await fetch('/api/voice-clone/create', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ consent: true }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || 'Voice cloning failed')
+      await refreshVoice()
+      toast.success('Your voice is ready. New dubs will sound like you.')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Voice cloning failed')
+    } finally { setCloning(false) }
+  }
+
+  async function removeVoice() {
+    setCloning(true)
+    try {
+      await fetch('/api/voice-clone/delete', { method: 'POST' })
+      await refreshVoice(); setConsent(false)
+      toast.success('Cloned voice removed')
+    } catch { /* ignore */ } finally { setCloning(false) }
+  }
+
   async function refreshTargets() {
     if (!jobId) return
     const jr = await fetch(`/api/global-sync/${jobId}`).then(x => x.json()).catch(() => ({}))
@@ -111,6 +151,38 @@ export default function GlobalSyncPage() {
       />
 
       <div className="max-w-3xl space-y-6 pb-28">
+        {/* Sounds like you — cloned voice for dubs */}
+        {voice?.enabled && (
+          <div className="card p-4" style={{ background: 'rgba(14,165,164,0.04)' }}>
+            {voice.hasVoice ? (
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Mic size={15} style={{ color: '#0EA5A4' }} />
+                  <span className="text-sm" style={label}>Dubs use <span className="font-semibold">your voice</span>{voice.name ? ` (from “${voice.name}”)` : ''}.</span>
+                </div>
+                <button type="button" onClick={() => void removeVoice()} disabled={cloning} className="text-[12px] underline disabled:opacity-60" style={muted}>Remove</button>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Mic size={15} style={{ color: '#0EA5A4' }} />
+                  <span className="text-sm font-semibold" style={label}>Make dubs sound like you</span>
+                </div>
+                <p className="text-[12px] mb-2.5" style={muted}>MVP learns your voice from a recent video, then narrates every non-English dub in your own voice.</p>
+                <label className="flex items-start gap-2 text-[12px] cursor-pointer mb-2.5" style={muted}>
+                  <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5 accent-[#0EA5A4]" />
+                  <span>I confirm this is my own voice, or I have permission to clone it.</span>
+                </label>
+                <button type="button" onClick={() => void cloneVoice()} disabled={cloning || !consent}
+                  className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-2 rounded-lg text-white disabled:opacity-60"
+                  style={{ background: '#0EA5A4' }}>
+                  {cloning ? <><Loader2 size={14} className="animate-spin" /> Learning your voice…</> : <><Mic size={14} /> Use my voice</>}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 1. Master video */}
         <div className="card p-5">
           <h2 className="text-sm font-semibold mb-3" style={label}>1. Pick your master video</h2>
