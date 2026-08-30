@@ -31,6 +31,10 @@ export interface PlanOpts {
   videoTitle: string
   niches?: string
   tone?: string
+  /** The creator's trained voice block (fingerprint + LEARN profile) from
+   *  lib/creator-voice. When set, the hooks and captions are written in their
+   *  voice instead of the generic tone. Optional. */
+  voiceBlock?: string
   /** How many clips to try to surface (clamped 1–10). */
   count?: number
   /** Clip length bounds in seconds. Defaults 15–30 (YouTube Shorts sweet spot). */
@@ -225,6 +229,7 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
   const user =
     `VIDEO: "${opts.videoTitle}"\n` +
     `NICHE: ${niches}\nTONE: ${tone}\n` +
+    (opts.voiceBlock ? `\nWRITE THE HOOKS AND CAPTIONS IN THE CREATOR'S OWN VOICE (this overrides the generic tone above):\n${opts.voiceBlock}\n\n` : '') +
     `VIDEO LENGTH: ${Math.round(videoEnd)}s\n\n` +
     (desc ? `VIDEO DESCRIPTION (for product + context — use it to make hooks, captions and hashtags land the product; do NOT quote it as a subtitle):\n${desc}\n\n` : '') +
     `Timestamps below are [mm:ss]; seconds = minutes*60 + seconds.\n\n` +

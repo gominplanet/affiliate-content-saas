@@ -29,6 +29,7 @@ import { storagePathFromPublicUrl } from '@/lib/storage-url'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { recordUsage } from '@/lib/ai-usage'
 import { planShorts } from '@/lib/shorts-planner'
+import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { rowToShort } from '@/lib/shorts-row'
 import type { ShortRow, TranscriptCue } from '@/lib/shorts-types'
 
@@ -168,13 +169,15 @@ export async function POST(request: Request) {
     const videoTitle = (video.title as string) || 'Untitled'
 
     // Brand voice for the hooks/captions.
-    const { data: brand } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: brand } = await (supabase as any)
       .from('brand_profiles')
-      .select('niches,tone')
+      .select('niches,tone,learn_profile,voice_fingerprint')
       .eq('user_id', user.id)
       .maybeSingle()
     const niches = ((brand?.niches as string[]) || []).join(', ') || 'general'
     const tone = ((brand?.tone as string[]) || []).join(', ') || 'conversational, energetic'
+    const voiceBlock = creatorVoiceBlock(brand as never)
 
     // Timestamped transcript — timings are REQUIRED here (no timings, no clip
     // windows). Layered, most-reliable first:
@@ -301,7 +304,7 @@ export async function POST(request: Request) {
 
     const anthropic = createAnthropicClient()
     const clips = await planShorts(anthropic, {
-      cues, videoTitle, niches, tone,
+      cues, videoTitle, niches, tone, voiceBlock,
       count: Math.min(10, Math.max(1, Number(body.count) || 5)),
       sourceDescription,
       excludeRanges,

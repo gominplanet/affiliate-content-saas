@@ -49,6 +49,10 @@ export interface DirectCaptionInput {
    *  + IG both require it for affiliate content). */
   affiliateDisclaimer: string
   platform: CaptionPlatform
+  /** The creator's trained voice block (fingerprint + LEARN profile), built by
+   *  lib/creator-voice. When present the caption is written in their voice, not
+   *  a generic one. Optional — falls back to the platform voice preset. */
+  voiceBlock?: string
   /** Optional product context. When the user pastes an ASIN / product URL
    *  into the publish modal, we resolve it upstream (Amazon scrape or
    *  generic page meta) and pass the structured info here. The caption
@@ -155,7 +159,7 @@ Hook + value lines should reference the REAL product (not a generic category). P
    ${disclaimer}
 
 VOICE: ${rules.voice}
-
+${input.voiceBlock ? `\nWRITE IN THE CREATOR'S OWN VOICE (this overrides the generic platform voice above — the hook and value lines should sound like them):\n${input.voiceBlock}\n` : ''}
 HARD BANS:
 - The word "honest", "honestly", or "honesty" in any form.
 - Mentions of "link in description / bio / below" — both platforms have other surfaces for links.

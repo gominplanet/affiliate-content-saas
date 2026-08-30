@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { generateDirectCaption } from '@/lib/direct-caption'
+import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { resolveFinalUrl } from '@/lib/product-link'
@@ -80,7 +81,7 @@ export async function GET(request: Request) {
   }
 
   const [{ data: brand }, { data: integ }] = await Promise.all([
-    sb.from('brand_profiles').select('niches,words_to_avoid,affiliate_disclaimer').eq('user_id', user.id).maybeSingle(),
+    sb.from('brand_profiles').select('niches,words_to_avoid,affiliate_disclaimer,learn_profile,voice_fingerprint').eq('user_id', user.id).maybeSingle(),
     sb.from('integrations').select('tier,instagram_username').eq('user_id', user.id).maybeSingle(),
   ])
   const tier: Tier = normalizeTier(integ?.tier)
@@ -95,6 +96,7 @@ export async function GET(request: Request) {
       wordsToAvoid: Array.isArray(brand?.words_to_avoid) ? (brand!.words_to_avoid as string[]) : [],
       affiliateDisclaimer: (brand?.affiliate_disclaimer as string) || '',
       platform: 'instagram',
+      voiceBlock: creatorVoiceBlock(brand),
       ...(product ? { product: { title: product.title, bullets: product.bullets, asin: product.asin } } : {}),
     },
     { userId: user.id, tier },
