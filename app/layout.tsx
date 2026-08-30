@@ -30,11 +30,26 @@ const jakarta = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://www.mvpaffiliate.io'),
   title: {
     default: 'MVP Affiliate',
     template: '%s · MVP Affiliate',
   },
-  description: 'Automate your affiliate content pipeline from YouTube to blog to social.',
+  description: 'Run your whole Amazon affiliate business, written in your real voice.',
+  openGraph: {
+    title: 'MVP Affiliate',
+    description: 'Run your whole Amazon affiliate business, written in your real voice.',
+    url: 'https://www.mvpaffiliate.io',
+    siteName: 'MVP Affiliate',
+    images: [{ url: '/png/mvp-video-to-blog.png', width: 1200, height: 630, alt: 'MVP Affiliate turns your video into a published, SEO optimized blog post' }],
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'MVP Affiliate',
+    description: 'Run your whole Amazon affiliate business, written in your real voice.',
+    images: ['/png/mvp-video-to-blog.png'],
+  },
   other: {
     // Pinterest domain verification — links mvpaffiliate.io to our Pinterest
     // business account so the Pinterest Developer Platform can verify the
