@@ -41,9 +41,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Voiceover is not configured right now.' }, { status: 503 })
   }
 
-  const body = await req.json().catch(() => ({})) as { jobId?: string; domain?: string }
+  const body = await req.json().catch(() => ({})) as { jobId?: string; domain?: string; voice?: string }
   const jobId = (body.jobId || '').trim()
   const domain = (body.domain || '').trim()
+  // The creator can opt for the free generic voice even when they have a clone.
+  const requestedStandard = body.voice === 'standard'
   const market = marketByDomain(domain)
   if (!jobId || !market) return NextResponse.json({ error: 'jobId and a valid market are required.' }, { status: 400 })
   if (!market.needsTranslation) return NextResponse.json({ error: 'This market speaks English — no dub needed.' }, { status: 400 })
@@ -83,7 +85,7 @@ export async function POST(req: Request) {
     // blocks — it only drops to the standard voice when the credits run out.
     const periodStart = (integ?.subscription_period_start as string | null) ?? null
     const clonedVoiceId = await getClonedVoiceId(sb, user.id)
-    const wantClone = !!clonedVoiceId && elevenConfigured()
+    const wantClone = !requestedStandard && !!clonedVoiceId && elevenConfigured()
     let outOfCredits = false
     if (wantClone) {
       const bal = await dubCreditBalance(sb, user.id, tier, periodStart)

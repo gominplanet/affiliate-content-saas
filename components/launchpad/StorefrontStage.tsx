@@ -39,6 +39,9 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
   const [consent, setConsent] = useState(false)
   const [cloning, setCloning] = useState(false)
   const [buying, setBuying] = useState(false)
+  // Optional: use the cloned voice (costs a credit) or the free generic voice.
+  const [useMyVoice, setUseMyVoice] = useState(false)
+  useEffect(() => { if (voice?.hasVoice) setUseMyVoice(true) }, [voice?.hasVoice])
 
   useEffect(() => { if (presetVideoId) setPicked(presetVideoId) }, [presetVideoId])
 
@@ -144,7 +147,7 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
     if (!jobId) return
     setDubbing(domain)
     try {
-      const r = await fetch('/api/global-sync/dub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId, domain }) })
+      const r = await fetch('/api/global-sync/dub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId, domain, voice: voice?.hasVoice && useMyVoice ? 'cloned' : 'standard' }) })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error || 'Dub failed')
       await refreshTargets()
@@ -170,16 +173,29 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
                   <Mic size={15} style={{ color: '#0EA5A4' }} />
-                  <span className="text-sm" style={label}>
-                    Dubs use <span className="font-semibold">your voice</span>{voice.name ? ` (from “${voice.name}”)` : ''}.
-                    {typeof voice.credits === 'number'
-                      ? <span style={muted}> {voice.credits} credits left; standard voice is free after that.</span>
-                      : <span style={muted}> Unlimited.</span>}
-                  </span>
+                  <span className="text-sm" style={label}>Your voice is ready{voice.name ? ` (from “${voice.name}”)` : ''}. Choose how dubs sound:</span>
                 </div>
                 <button type="button" onClick={() => void removeVoice()} disabled={cloning} className="text-[12px] underline disabled:opacity-60" style={muted}>Remove</button>
               </div>
-              {typeof voice.credits === 'number' && (
+              {/* Optional: my voice (credits) vs generic (free) */}
+              <div className="inline-flex rounded-lg border overflow-hidden mt-2.5" style={{ borderColor: 'var(--border)' }}>
+                <button type="button" onClick={() => setUseMyVoice(true)}
+                  className="px-3 py-1.5 text-[12px] font-medium"
+                  style={{ background: useMyVoice ? 'rgba(14,165,164,0.12)' : 'transparent', color: useMyVoice ? '#0EA5A4' : 'var(--fg-muted)' }}>
+                  My voice (1 credit)
+                </button>
+                <button type="button" onClick={() => setUseMyVoice(false)}
+                  className="px-3 py-1.5 text-[12px] font-medium"
+                  style={{ background: !useMyVoice ? 'rgba(14,165,164,0.12)' : 'transparent', color: !useMyVoice ? '#0EA5A4' : 'var(--fg-muted)' }}>
+                  Generic voice (free)
+                </button>
+              </div>
+              <p className="text-[12px] mt-1.5" style={muted}>
+                {useMyVoice
+                  ? <>Each non-English dub narrates in your voice and uses 1 credit.{typeof voice.credits === 'number' ? <> {voice.credits} left this month.</> : <> Unlimited on your plan.</>}</>
+                  : <>Dubs use a clean generic voice, free and unlimited. Your credits are untouched.</>}
+              </p>
+              {useMyVoice && typeof voice.credits === 'number' && (
                 <div className="flex items-center gap-2 mt-2.5 flex-wrap">
                   <span className="text-[12px]" style={muted}>Top up:</span>
                   {([['50', '$29'], ['150', '$69'], ['500', '$199']] as const).map(([b, price]) => (
@@ -196,9 +212,16 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
             <div>
               <div className="flex items-center gap-2 mb-1.5">
                 <Mic size={15} style={{ color: '#0EA5A4' }} />
-                <span className="text-sm font-semibold" style={label}>Make dubs sound like you</span>
+                <span className="text-sm font-semibold" style={label}>Make dubs sound like you <span className="font-normal" style={muted}>(optional)</span></span>
               </div>
-              <p className="text-[12px] mb-2.5" style={muted}>MVP learns your voice from a recent video, then narrates every non-English dub in your own voice.</p>
+              <p className="text-[12px] mb-1.5" style={muted}>Dubs work out of the box in a clean generic voice, free and unlimited. This is an optional upgrade: MVP learns your voice from a recent video and narrates every non-English dub in your own voice.</p>
+              <p className="text-[12px] mb-2.5" style={muted}>
+                Your-voice dubs use <span className="font-semibold" style={label}>1 credit per market</span>.
+                {typeof voice.credits === 'number'
+                  ? <> You have <span className="font-semibold" style={label}>{voice.credits} credits</span> this month.</>
+                  : <> Unlimited on your plan.</>}
+                {' '}Standard-voice dubs are always free.
+              </p>
               <label className="flex items-start gap-2 text-[12px] cursor-pointer mb-2.5" style={muted}>
                 <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5 accent-[#0EA5A4]" />
                 <span>I confirm this is my own voice, or I have permission to clone it.</span>
