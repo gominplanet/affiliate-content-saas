@@ -66,15 +66,25 @@ export default function LaunchpadPage() {
     setRunning(true)
     setSteps(s => s.map(st => ({ ...st, state: st.on ? 'idle' : 'skipped', note: undefined })))
     try {
-      // 1. Metadata (needs the YouTube video id + current title/description).
+      // 1. Co-Pilot: metadata, then the thumbnail (both ground on the YouTube id).
       if (steps.find(s => s.key === 'metadata')?.on) {
         setState('metadata', 'running')
         try {
-          const r = await fetch('/api/youtube/generate-metadata', {
+          const rm = await fetch('/api/youtube/generate-metadata', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ youtubeVideoId: vid.youtube_video_id, videoTitle: vid.title, videoDescription: '' }),
           })
-          setState('metadata', r.ok ? 'done' : 'error', r.ok ? undefined : 'Could not generate metadata')
+          setState('metadata', 'running', 'Designing the thumbnail…')
+          let thumbOk = false
+          try {
+            const rt = await fetch('/api/youtube/generate-thumbnail', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ videoTitle: vid.title, youtubeVideoId: vid.youtube_video_id, videoDescription: '' }),
+            })
+            thumbOk = rt.ok
+          } catch { /* thumbnail is best-effort */ }
+          if (!rm.ok) setState('metadata', 'error', 'Could not generate metadata')
+          else setState('metadata', 'done', thumbOk ? undefined : 'Metadata done. Thumbnail needs a retry in Co-Pilot.')
         } catch { setState('metadata', 'error', 'Could not generate metadata') }
       }
       // 2 + 3. Blog + social run in ONE real generation job (the same pipeline
