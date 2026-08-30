@@ -21,7 +21,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { applyPostFixes } from '@/lib/seo-fix'
 import { checkSpendCeiling } from '@/lib/ai-spend'
-import { pickDigestDeals, resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal } from '@/lib/weekly-digest'
+import { pickDigestDeals, resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, buildDigestThumbnail, type DigestDeal } from '@/lib/weekly-digest'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { writeContentSchema } from '@/lib/content-schema'
 
@@ -123,12 +123,16 @@ export async function GET(req: Request) {
       // File under a real "Deals" category (create if missing), never "Blog".
       let categoryIds: number[] = []
       try { const id = await wpService.createCategory('Deals'); if (id) categoryIds = [id] } catch { /* leave as-is */ }
-      // Featured thumbnail — lead deal's product image (roundup spans products).
+      // Featured thumbnail — a branded "WEEKLY DEALS" cover with the creator's
+      // face when they have a ready face model; otherwise the lead deal's
+      // product image. Branded generation is best-effort and never blocks.
       let featuredMediaId: number | null = null
-      const heroImage = deals.find((d) => d.image_url)?.image_url
-      if (heroImage) {
+      const productImage = deals.find((d) => d.image_url)?.image_url || null
+      const branded = await buildDigestThumbnail(admin, { userId: u.user_id, tier: u.tier, leadImageUrl: productImage, theme })
+      const coverImage = branded || productImage
+      if (coverImage) {
         try {
-          const media = await wpService.uploadImageFromUrl(heroImage, `${(theme || 'deals').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deals'}-weekly.jpg`)
+          const media = await wpService.uploadImageFromUrl(coverImage, `${(theme || 'deals').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deals'}-weekly.jpg`)
           featuredMediaId = (media?.id as number | undefined) ?? null
         } catch (err) { console.warn('[weekly-digest] featured image upload failed:', err instanceof Error ? err.message : err) }
       }
@@ -169,7 +173,7 @@ export async function GET(req: Request) {
         title,
         description: excerpt,
         html: body,
-        imageUrl: heroImage || null,
+        imageUrl: coverImage || null,
         pageType: 'BlogPosting',
         category: 'Deals',
       })

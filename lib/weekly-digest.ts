@@ -12,6 +12,9 @@ import { passportLinkForUser } from '@/lib/passport-links'
 import { getLinkStyle, type LinkStyleConfig } from '@/lib/link-cloak'
 import { shortenBitly } from '@/lib/bitly'
 import { scrubBanned } from '@/lib/scrub'
+import { getThumbnailFaceRef } from '@/lib/identity-anchor'
+import { rehostAll, composeWithNanoBananaPro, composeWithNanoBanana } from '@/lib/thumbnail-generators'
+import { recordUsage } from '@/lib/ai-usage'
 
 export interface DigestDealRow {
   asin: string
@@ -165,7 +168,7 @@ export async function generateDigestContent(opts: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   recordUsage?: (msg: any) => void
 }): Promise<{ title: string; html: string; excerpt: string; theme: string }> {
-  const { client, deals, reviewerName, nicheLabel, monthYear } = opts
+  const { client, deals, reviewerName, nicheLabel } = opts
   const retailer = opts.retailer || 'Amazon'
 
   const dealLines = deals.map((d, i) => {
@@ -192,7 +195,7 @@ Return ONLY valid JSON, no markdown fence, shaped exactly:
 {"title": "...", "theme": "...", "intro": "...", "blurbs": {"<ASIN>": "...", ...}, "outro": "..."}
 
 Rules:
-- "title": a natural, specific blog-post title for THIS exact set of products — find their common thread (e.g. kitchen upgrades, cozy home finds, pet essentials, tech accessories). Under 60 characters. Title Case. Do NOT force a category the products don't fit. No provider names, no clickbait, no em-dashes.
+- "title": a ROUNDUP title for the WHOLE set, naming the shared category, never a single product or brand. Good examples: "This Week's Best Kitchen Deals", "Weekly Home & Tech Deals", "This Week's Top Pet Finds". Under 55 characters. Title Case. NEVER put a year or date in the title. No single product names, no provider names, no clickbait, no dashes.
 - "theme": 1 to 3 plain lowercase words naming the product category these share, for the URL and site category (e.g. "kitchen", "home office", "pet supplies", "tech"). If they are a genuine mix, use "deals".
 - "intro": 2 sentences. Answer-first — say this is your hand-picked roundup of genuine price drops worth a look. First person.
 - "blurbs": one entry per ASIN above. 2 short sentences each: what it is + why THIS price is worth grabbing now. Present the price context as fact from the product's own price history. NEVER name any data provider, tool, or service (no "Keepa", "price tracker", "our data"). Never claim you personally tested it.
@@ -211,7 +214,10 @@ Rules:
   const themeClean = scrubBanned((model.theme || '').trim()).replace(/[^a-z0-9 &-]/gi, '').replace(/\s+/g, ' ').trim()
   const theme = (themeClean || nicheLabel || 'deals').slice(0, 40)
   const modelTitle = scrubBanned((model.title || '').trim()).replace(/^["']|["']$/g, '')
-  const fallbackTitle = scrubBanned(`${deals.length} ${titleCase(theme)} Deals Worth Grabbing This Week (${monthYear})`).slice(0, 65)
+  // Roundup fallback — a clear "this week's deals" title, never a single product
+  // and never a year/date stamp in the title itself.
+  const themeWord = theme && theme.toLowerCase() !== 'deals' ? `${titleCase(theme)} ` : ''
+  const fallbackTitle = scrubBanned(`This Week's Best ${themeWord}Deals`).slice(0, 60)
   const title = modelTitle.length >= 8 && modelTitle.length <= 70 ? modelTitle : fallbackTitle
 
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -265,4 +271,53 @@ export function keywordSlug(title: string, theme: string): string {
   if (slug.length >= 3) return slug.slice(0, 70).replace(/-+$/g, '')
   const themeSlug = clean(theme || 'deals').replace(/\s+/g, '-')
   return `best-${themeSlug || 'amazon'}-deals`
+}
+
+/**
+ * Build a branded "WEEKLY DEALS" thumbnail featuring the creator's face, so the
+ * roundup post leads with an on-brand cover instead of a random product photo.
+ * Best-effort: returns null when the creator has no ready face model or the
+ * compose fails, so the cron falls back to the lead product image. Bounded cost
+ * (one image per user per week).
+ */
+export async function buildDigestThumbnail(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  opts: { userId: string; tier?: string | null; leadImageUrl?: string | null; theme?: string | null },
+): Promise<string | null> {
+  try {
+    // A ready face model with source selfies is required for the face.
+    const { data: fms } = await supabase
+      .from('face_models').select('id,source_images,status').eq('user_id', opts.userId)
+    const asStrArr = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+    const face = ((fms as Array<{ id: string; source_images: unknown; status: string }> | null) || [])
+      .map(m => ({ id: m.id, source_images: asStrArr(m.source_images), status: m.status }))
+      .find(m => m.status === 'ready' && m.source_images.length > 0)
+    if (!face) return null
+
+    const faceRef = await getThumbnailFaceRef(supabase, opts.userId, {
+      faceId: face.id, sourceImages: face.source_images, expression: 'excited', tier: opts.tier ?? null,
+    })
+    if (!faceRef) return null
+
+    const refs = await rehostAll([faceRef, ...(opts.leadImageUrl ? [opts.leadImageUrl] : [])])
+    if (refs.length === 0) return null
+
+    const themeWord = opts.theme && opts.theme.toLowerCase() !== 'deals' ? ` ${opts.theme.toUpperCase()}` : ''
+    const prompt = `Design a bold, high-contrast YouTube-style thumbnail (16:9) for a WEEKLY DEALS roundup.
+FEATURE THE PERSON from the FIRST reference image — preserve their exact face and likeness — on one side, looking excited and pointing toward the deals. Do NOT invent a different person.
+Bake in LARGE, perfectly spelled headline text reading exactly "WEEKLY${themeWord} DEALS" with a smaller "PRICE DROPS" tag.
+Include a few tidy product boxes / price-tag graphics on the other side (use the product reference if provided). Bright, punchy, modern, saturated colours, clean composition. No watermark, no extra sentences.`
+
+    let imgs = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
+    let model = 'nano-banana-pro'
+    if (!imgs[0]) { imgs = await composeWithNanoBanana({ prompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }); model = 'nano-banana' }
+    if (!imgs[0]) return null
+
+    recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'weekly_digest_thumbnail', model, images: 1 })
+    return imgs[0]
+  } catch (err) {
+    console.warn('[weekly-digest] branded thumbnail failed:', err instanceof Error ? err.message : String(err))
+    return null
+  }
 }
