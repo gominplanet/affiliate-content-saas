@@ -3,7 +3,7 @@ import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { createFacebookService } from '@/services/facebook'
 import { createAnthropicClient } from '@/lib/anthropic'
-import { learnProfileToPrompt } from '@/lib/learn'
+import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { normalizeTier, socialAccountCap } from '@/lib/tier'
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('affiliate_disclaimer,name,learn_profile')
+      .select('affiliate_disclaimer,name,learn_profile,voice_fingerprint')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       reviewText = overrideText
     } else {
       const anthropic = createAnthropicClient()
-      const learnBlock = learnProfileToPrompt(brand?.learn_profile)
+      const learnBlock = creatorVoiceBlock(brand)
       const blogText = `Title: ${post.title}\n\nExcerpt: ${post.excerpt || ''}\n\nContent (first 1500 chars):\n${(post.content as string).replace(/<[^>]+>/g, '').slice(0, 1500)}`
 
       const msg = await anthropic.messages.create({

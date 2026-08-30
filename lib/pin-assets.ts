@@ -13,7 +13,7 @@ import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { composePin, PIN_DESIGN_COUNT } from '@/lib/pin-compose'
-import { learnProfileToPrompt } from '@/lib/learn'
+import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage, verifyProductMatchConsensus, verifyNoBrandLeak } from '@/lib/product-image'
@@ -64,8 +64,8 @@ export async function buildPinAssets(
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: bp } = await (createAdminClient() as any)
-        .from('brand_profiles').select('learn_profile').eq('user_id', ctx.userId).single()
-      learnBlock = learnProfileToPrompt(bp?.learn_profile)
+        .from('brand_profiles').select('learn_profile,voice_fingerprint').eq('user_id', ctx.userId).single()
+      learnBlock = creatorVoiceBlock(bp)
     } catch { /* no voice profile — generate without it */ }
   }
 

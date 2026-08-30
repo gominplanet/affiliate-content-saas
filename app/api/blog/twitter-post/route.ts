@@ -4,7 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { createAnthropicClient } from '@/lib/anthropic'
-import { learnProfileToPrompt } from '@/lib/learn'
+import { creatorVoiceBlock } from '@/lib/creator-voice'
 import {
   createTweet,
   refreshAccessToken,
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('name,voice_summary,learn_profile')
+      .select('name,voice_summary,learn_profile,voice_fingerprint')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
       const voiceNote = brand?.voice_summary
         ? `\n\nVoice guidance: ${brand.voice_summary}`
         : ''
-      const learnBlock = learnProfileToPrompt(brand?.learn_profile)
+      const learnBlock = creatorVoiceBlock(brand)
 
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',

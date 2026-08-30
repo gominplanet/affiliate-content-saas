@@ -29,7 +29,7 @@ import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage } from '@/services/research'
 import { checkUsageLimit, checkGenerationLimit, normalizeTier } from '@/lib/tier'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
-import { learnProfileToPrompt } from '@/lib/learn'
+import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
@@ -165,7 +165,7 @@ export async function POST(req: Request) {
     .select('*')
     .eq('user_id', ownerId)
     .maybeSingle()
-  const learnBlock = learnProfileToPrompt(brand?.learn_profile)
+  const learnBlock = creatorVoiceBlock(brand)
   const disclaimer = (brand?.affiliate_disclaimer as string) ||
     '📌 As an Amazon Associate I earn from qualifying purchases. This post contains affiliate links — I may earn a small commission at no extra cost to you.'
 

@@ -11,7 +11,7 @@ import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerClient } from '@/lib/supabase/server'
 import { spendGate } from '@/lib/ai-spend'
-import { learnProfileToPrompt } from '@/lib/learn'
+import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { toUserMessage } from '@/lib/friendly-error'
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
   const audience = String(b.target_audience || '').trim()
   const tone = (Array.isArray(b.tone) ? b.tone : []).filter(Boolean).join(', ')
   const website = String(b.website_url || '').trim()
-  const learnBlock = learnProfileToPrompt(b.learn_profile)
+  const learnBlock = creatorVoiceBlock(b as never)
 
   const boardsAsk = spec.boards
     ? `\n- "boards": exactly ${spec.boards} starter boards, each an object {"name","description"}. Board names are short and searchable; each description is 1-2 keyword-rich sentences (this is how Pinterest ranks them).`

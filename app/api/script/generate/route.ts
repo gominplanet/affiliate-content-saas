@@ -42,6 +42,7 @@ import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { checkScriptUsage } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
+import { creatorVoiceBlock } from '@/lib/creator-voice'
 
 // 'first_look' retired 2026-07-15 — no longer offered. Incoming first_look
 // requests fall back to hands_on (see the default below).
@@ -219,7 +220,7 @@ export async function POST(req: Request) {
   // ── Brand voice + recent post titles for hook style mirroring ─────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: brand }, { data: recentPosts }] = await Promise.all([
-    supabase.from('brand_profiles').select('name,author_name,niches,tone,writing_sample,target_audience,words_to_avoid').eq('user_id', user.id).maybeSingle(),
+    (supabase as any).from('brand_profiles').select('name,author_name,niches,tone,writing_sample,target_audience,words_to_avoid,voice_fingerprint,learn_profile').eq('user_id', user.id).maybeSingle(),
     supabase.from('blog_posts').select('title').eq('user_id', user.id).eq('status', 'published').order('published_at', { ascending: false, nullsFirst: false }).limit(6),
   ])
   const authorName = (brand?.author_name as string) || ''
@@ -233,6 +234,7 @@ export async function POST(req: Request) {
     .map(p => (p.title || '').trim())
     .filter(Boolean)
     .slice(0, 5)
+  const voiceBlock = creatorVoiceBlock(brand as never)
 
   // ── Build the prompt ──────────────────────────────────────────────────────
   const spec = STYLE_SPEC[style]
@@ -261,7 +263,7 @@ ${brandName ? `Channel: ${brandName}` : ''}${authorName ? `\nHost name: ${author
 ${niches.length ? `Niche: ${niches.join(', ')}` : ''}
 ${audience ? `Audience: ${audience}` : ''}
 ${tone.length ? `Tone keywords: ${tone.join(', ')}` : ''}
-${writingSample ? `Writing sample (match this rhythm + vocabulary):\n"""${writingSample}"""` : ''}
+${writingSample ? `Writing sample (match this rhythm + vocabulary):\n"""${writingSample}"""` : ''}${voiceBlock ? `\n${voiceBlock}` : ''}
 ${recentTitles.length ? `Recent video / post titles for hook-style cues:\n${recentTitles.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}` : ''}
 ${wordsToAvoid.length ? `Words the creator has flagged to avoid: ${wordsToAvoid.join(', ')}` : ''}
 

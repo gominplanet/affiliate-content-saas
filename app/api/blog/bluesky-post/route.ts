@@ -6,7 +6,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { createSession, createPost } from '@/services/bluesky'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
-import { learnProfileToPrompt } from '@/lib/learn'
+import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('name,voice_summary,learn_profile')
+      .select('name,voice_summary,learn_profile,voice_fingerprint')
       .eq('user_id', user.id)
       .maybeSingle()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
       const voiceNote = brand?.voice_summary
         ? `\n\nVoice guidance: ${brand.voice_summary}`
         : ''
-      const learnBlock = learnProfileToPrompt(brand?.learn_profile)
+      const learnBlock = creatorVoiceBlock(brand)
 
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',

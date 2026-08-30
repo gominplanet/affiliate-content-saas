@@ -22,6 +22,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
+import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import {
   renderNewsletterHtml,
@@ -109,7 +110,7 @@ export async function POST(req: Request) {
   // newsletter footer points at the default brand). Tier is per-user.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: brand }, { data: integ }, { data: nlSettings }, defaultSite] = await Promise.all([
-    supabase.from('brand_profiles').select('name,author_name,niches,tone,writing_sample,headshot_url,logo_url').eq('user_id', user.id).maybeSingle(),
+    (supabase as any).from('brand_profiles').select('name,author_name,niches,tone,writing_sample,headshot_url,logo_url,voice_fingerprint,learn_profile').eq('user_id', user.id).maybeSingle(),
     supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle(),
     supabase.from('newsletter_settings').select('sender_name,mailing_address').eq('user_id', user.id).maybeSingle(),
     getWordPressCredentials(supabase, user.id),
@@ -120,6 +121,7 @@ export async function POST(req: Request) {
   const tone: string[] = Array.isArray(brand?.tone) ? (brand!.tone as string[]) : []
   const writingSample = ((brand?.writing_sample as string) || '').slice(0, 800)
   const niches: string[] = Array.isArray(brand?.niches) ? (brand!.niches as string[]).slice(0, 4) : []
+  const voiceBlock = creatorVoiceBlock(brand as never)
   const tier = (integ?.tier as string | undefined) || 'trial'
 
   // Monthly AI-spend circuit breaker (Sonnet newsletter writer).
@@ -137,7 +139,7 @@ VOICE GUIDELINES${tone.length ? ` (tone keywords from the creator's brand profil
 - NEVER use the word "honest", "honestly" or any form of it. Banned.
 - Sound like a knowledgeable friend writing one email, not a marketing department.
 - No corporate phrases like "we're excited to share", "without further ado", "I hope this finds you well".
-${writingSample ? `- Match THIS voice (the creator's own writing sample):\n"""${writingSample}"""` : ''}
+${writingSample ? `- Match THIS voice (the creator's own writing sample):\n"""${writingSample}"""` : ''}${voiceBlock ? `\n${voiceBlock}` : ''}
 
 WHAT'S IN THE ISSUE:
 ${posts.length ? `Blog posts (in order, please write one short blurb for each — one sentence, why it's worth reading):\n${postsForPrompt}` : '(no blog posts selected)'}
