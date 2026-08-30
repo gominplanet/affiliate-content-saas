@@ -279,3 +279,32 @@ export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string)
     return null
   }
 }
+
+/** Replace a video's audio with a dub track (time-stretched to match length).
+ *  Used by Storefront Sync Milestone 2. Returns the hosted dubbed video URL, or
+ *  null when the render service isn't configured or the render fails. */
+export async function renderDub(
+  videoUrl: string,
+  audioUrl: string,
+  userId?: string,
+  durationSec?: number,
+): Promise<string | null> {
+  const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
+  if (!base || !/^https:\/\//i.test(videoUrl) || !/^https:\/\//i.test(audioUrl)) return null
+  try {
+    const res = await fetch(`${base}/dub`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
+      },
+      body: JSON.stringify({ videoUrl, audioUrl, ...(userId ? { userId } : {}), ...(durationSec ? { durationSec } : {}) }),
+      signal: AbortSignal.timeout(540_000),
+    })
+    if (!res.ok) return null
+    const data = await res.json().catch(() => ({}))
+    return data?.url && /^https:\/\//i.test(data.url) ? (data.url as string) : null
+  } catch {
+    return null
+  }
+}

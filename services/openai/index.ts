@@ -161,6 +161,23 @@ export class OpenAIService {
     ])
     return { hero, lifestyle, setting }
   }
+
+  /** Synthesize speech from text (used for Storefront Sync dubs). OpenAI TTS
+   *  detects the language from the input text, so a translated script narrates
+   *  in that language. Returns an MP3 buffer. */
+  async synthesizeSpeech(
+    text: string,
+    opts?: { voice?: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'; model?: string },
+  ): Promise<Buffer> {
+    const res = await this.client.audio.speech.create({
+      model: opts?.model || 'tts-1',
+      voice: opts?.voice || 'alloy',
+      input: text.slice(0, 4000), // TTS input cap
+      response_format: 'mp3',
+    })
+    const arr = Buffer.from(await res.arrayBuffer())
+    return arr
+  }
 }
 
 export function createOpenAIService() {

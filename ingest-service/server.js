@@ -824,10 +824,75 @@ app.post('/render-cta', async (req, res) => {
   }
 })
 
+// Build an atempo filter chain that stretches/compresses audio by `factor`
+// (audioDur / videoDur) so the dub ends with the video. Each atempo stage is
+// clamped to [0.5, 2.0]; larger factors chain multiple stages.
+function atempoChain(factor) {
+  if (!Number.isFinite(factor) || factor <= 0) return null
+  if (factor >= 0.95 && factor <= 1.05) return null // close enough, skip
+  const stages = []
+  let f = factor
+  while (f > 2.0) { stages.push(2.0); f /= 2.0 }
+  while (f < 0.5) { stages.push(0.5); f /= 0.5 }
+  stages.push(f)
+  return stages.map(s => `atempo=${s.toFixed(4)}`).join(',')
+}
+
+// POST /dub — replace a video's audio with a supplied voiceover (a translated
+// dub track), time-stretched to match the video length so they end together.
+// Video is stream-copied (no re-encode), so this is fast. Part of Storefront
+// Sync Milestone 2.
+//   body: { videoUrl, audioUrl, userId, durationSec? }  ->  { url, durationSeconds }
+app.post('/dub', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const videoUrl = String(req.body?.videoUrl || '').trim()
+  const audioUrl = String(req.body?.audioUrl || '').trim()
+  const userId = String(req.body?.userId || '').trim()
+  if (!/^https?:\/\//i.test(videoUrl)) return res.status(400).json({ error: 'bad video source' })
+  if (!/^https?:\/\//i.test(audioUrl)) return res.status(400).json({ error: 'bad audio source' })
+  const vTmp = path.join(os.tmpdir(), `dub-v-${Date.now()}.mp4`)
+  const aTmp = path.join(os.tmpdir(), `dub-a-${Date.now()}.mp3`)
+  const outTmp = path.join(os.tmpdir(), `dub-out-${Date.now()}.mp4`)
+  try {
+    await assertPublicHttpUrl(videoUrl)
+    await assertPublicHttpUrl(audioUrl)
+    await downloadToFile(videoUrl, vTmp)
+    await downloadToFile(audioUrl, aTmp)
+    if (!fs.existsSync(vTmp) || !fs.existsSync(aTmp)) throw new Error('download produced no file')
+
+    const vDur = Number(req.body?.durationSec) > 0 ? Math.round(Number(req.body.durationSec)) : await ffprobeDuration(vTmp)
+    const aDur = await ffprobeDuration(aTmp)
+    const chain = (vDur && aDur) ? atempoChain(aDur / vDur) : null
+
+    const args = ['-hide_banner', '-loglevel', 'error', '-threads', '1', '-i', vTmp, '-i', aTmp]
+    if (chain) args.push('-filter:a', chain)
+    args.push(
+      '-map', '0:v:0', '-map', '1:a:0',
+      '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k',
+      '-shortest', '-movflags', '+faststart', '-y', outTmp,
+    )
+    await new Promise((resolve, reject) => {
+      execFile('ffmpeg', args, { maxBuffer: 1024 * 1024 * 64, timeout: 540_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
+        if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed')).slice(0, 400)))
+        else resolve()
+      })
+    })
+    if (!fs.existsSync(outTmp)) throw new Error('dub produced no file')
+    const key = `${userId || 'ingest'}/dub-${Date.now()}.mp4`
+    await uploadToSupabase(key, outTmp)
+    return res.json({ url: publicUrl(key), durationSeconds: await ffprobeDuration(outTmp) })
+  } catch (e) {
+    console.error('[dub] failed', e && e.message)
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
+  } finally {
+    cleanupTmp(vTmp, aTmp, outTmp)
+  }
+})
+
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'cta-burn-in-2026-08-30'
+const BUILD = 'dub-2026-08-30'
 // Bind the port FIRST so health checks pass immediately, THEN load cookies and
 // self-update yt-dlp in the background (they only populate cookiesReady /
 // ytDlpVersion, both reported by /health). Previously we awaited a ~120s pip

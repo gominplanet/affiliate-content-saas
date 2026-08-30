@@ -85,3 +85,36 @@ export async function localizeMetadata(
     return { title, description }
   }
 }
+
+/** Turn a master transcript into a natural spoken script in the market's
+ *  language, ready for text-to-speech. Trims to a length TTS can voice in one
+ *  pass and strips filler. Returns '' when there's nothing to dub. */
+export async function translateScript(
+  transcript: string,
+  market: Market,
+  brand: CreatorVoiceFields | null,
+  ctx: { userId: string; tier?: string | null },
+): Promise<string> {
+  const src = (transcript || '').trim()
+  if (!src || !market.needsTranslation) return ''
+
+  const voice = creatorVoiceBlock(brand)
+  const system = `You adapt a creator's spoken product-review transcript into a clean, natural voiceover script in ${market.langName} for a ${market.country} audience. Write it to be READ ALOUD: full sentences, no timestamps, no stage directions, no speaker labels, no markdown. Keep the meaning and the product recommendation, translate idioms naturally, and DO NOT invent claims or prices. Return ONLY the script text.`
+  const prompt = `${voice ? `Match this creator's delivery where it still sounds natural in ${market.langName}:\n${voice}\n\n` : ''}TRANSCRIPT:\n${src.slice(0, 6000)}`
+
+  try {
+    const client = createAnthropicClient()
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1500,
+      system,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier ?? null, feature: 'global_sync_dub_script', model: 'claude-sonnet-4-6' })
+    let out = ''
+    for (const b of msg.content) if (b.type === 'text') out += b.text
+    return out.trim()
+  } catch {
+    return ''
+  }
+}

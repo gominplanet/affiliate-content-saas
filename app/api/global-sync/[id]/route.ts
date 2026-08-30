@@ -23,7 +23,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const { data: targets } = await sb
     .from('global_sync_targets')
-    .select('domain,lang,dub,title,description,state,detail,delivered_at')
+    .select('domain,lang,dub,title,description,state,detail,video_url,delivered_at')
     .eq('job_id', id).eq('user_id', user.id)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,6 +37,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     description: (t.description as string) || null,
     state: t.state as string,
     detail: (t.detail as string) || null,
+    videoUrl: (t.video_url as string) || null,
     deliveredAt: (t.delivered_at as string) || null,
   }))
 

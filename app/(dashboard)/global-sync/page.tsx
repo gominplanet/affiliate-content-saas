@@ -9,14 +9,14 @@
 import { useEffect, useState, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { Globe, Loader2, Check, Circle } from 'lucide-react'
+import { Globe, Loader2, Check, Circle, Mic, Play } from 'lucide-react'
 import { toast } from 'sonner'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 interface Vid { id: string; title: string; thumbnail_url: string | null }
 interface Market { domain: string; code: string; country: string; langName: string; needsTranslation: boolean }
-interface Target { domain: string; market: string; country: string; lang: string; dub: boolean; title: string | null; description: string | null; state: string }
+interface Target { domain: string; market: string; country: string; lang: string; dub: boolean; title: string | null; description: string | null; state: string; detail: string | null; videoUrl: string | null }
 
 export default function GlobalSyncPage() {
   const [videos, setVideos] = useState<Vid[]>([])
@@ -26,7 +26,9 @@ export default function GlobalSyncPage() {
   const [chosen, setChosen] = useState<Set<string>>(new Set())
   const [asin, setAsin] = useState('')
   const [running, setRunning] = useState(false)
+  const [jobId, setJobId] = useState<string | null>(null)
   const [targets, setTargets] = useState<Target[]>([])
+  const [dubbing, setDubbing] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -52,7 +54,7 @@ export default function GlobalSyncPage() {
   async function start() {
     if (!picked) { toast.error('Pick a master video first'); return }
     if (chosen.size === 0) { toast.error('Pick at least one marketplace'); return }
-    setRunning(true); setTargets([])
+    setRunning(true); setTargets([]); setJobId(null)
     try {
       const r = await fetch('/api/global-sync/start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -60,6 +62,7 @@ export default function GlobalSyncPage() {
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.jobId) throw new Error(j.error || 'Could not start the sync')
+      setJobId(j.jobId)
       // Poll the job until every market is localized (~2 min cap).
       for (let i = 0; i < 40; i++) {
         await sleep(3000)
@@ -71,6 +74,30 @@ export default function GlobalSyncPage() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not start the sync')
     } finally { setRunning(false) }
+  }
+
+  async function refreshTargets() {
+    if (!jobId) return
+    const jr = await fetch(`/api/global-sync/${jobId}`).then(x => x.json()).catch(() => ({}))
+    if (Array.isArray(jr?.targets)) setTargets(jr.targets)
+  }
+
+  async function dubOne(domain: string) {
+    if (!jobId) return
+    setDubbing(domain)
+    try {
+      const r = await fetch('/api/global-sync/dub', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId, domain }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || 'Dub failed')
+      await refreshTargets()
+      toast.success(j.note === 'voiceover_only' ? 'Voiceover ready' : 'Dub ready')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Dub failed')
+      await refreshTargets()
+    } finally { setDubbing(null) }
   }
 
   const label = { color: 'var(--fg)' } as const
@@ -161,6 +188,22 @@ export default function GlobalSyncPage() {
                   </div>
                   {t.title && <p className="text-[13px] font-medium" style={label}>{t.title}</p>}
                   {t.description && <p className="text-[12px] mt-0.5 line-clamp-3" style={muted}>{t.description}</p>}
+                  {t.detail && <p className="text-[11px] mt-1" style={muted}>{t.detail}</p>}
+                  {t.dub && (t.state === 'localized' || t.state === 'failed' || t.state === 'dubbing') && (
+                    <div className="flex items-center gap-3 mt-2">
+                      {t.videoUrl ? (
+                        <a href={t.videoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[12px] font-medium" style={{ color: '#0EA5A4' }}>
+                          <Play size={13} /> Play dub
+                        </a>
+                      ) : (
+                        <button type="button" onClick={() => void dubOne(t.domain)} disabled={dubbing === t.domain}
+                          className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border disabled:opacity-60"
+                          style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+                          {dubbing === t.domain ? <><Loader2 size={13} className="animate-spin" /> Dubbing…</> : <><Mic size={13} /> Generate dub</>}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
