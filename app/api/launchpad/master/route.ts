@@ -11,6 +11,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { cuesToText } from '@/lib/shorts-transcript'
+import { buildProductThumbnail } from '@/lib/product-thumbnail'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -44,15 +45,15 @@ export async function POST(req: Request) {
   const sb = supabase as any
   const productUrl = `https://www.amazon.com/dp/${asin}`
 
-  // Transcribe the uploaded video so dubs have a script (best-effort — a market
-  // can still get localized text if this fails).
-  let transcript = ''
-  if (transcriptionConfigured()) {
-    try {
-      const cues = await transcribeToCues(videoUrl)
-      transcript = cuesToText(cues).slice(0, 20000)
-    } catch { /* transcription is best-effort */ }
-  }
+  // In parallel (both best-effort): transcribe the video so dubs have a script,
+  // and build a branded product thumbnail from the ASIN + the creator's face —
+  // this is what makes the thumbnail exist even when YouTube is skipped.
+  const [transcriptRes, thumbRes] = await Promise.allSettled([
+    (async () => transcriptionConfigured() ? cuesToText(await transcribeToCues(videoUrl)).slice(0, 20000) : '')(),
+    buildProductThumbnail(sb, { userId: user.id, tier, title, asin }),
+  ])
+  const transcript = transcriptRes.status === 'fulfilled' ? transcriptRes.value : ''
+  const thumbnailUrl = thumbRes.status === 'fulfilled' ? thumbRes.value : null
 
   const { data: row, error } = await sb
     .from('youtube_videos')
@@ -63,10 +64,11 @@ export async function POST(req: Request) {
       source_video_url: videoUrl,
       product_url: productUrl,
       transcript: transcript || null,
+      ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
       published_at: new Date().toISOString(),
     })
     .select('id').single()
   if (error || !row) return NextResponse.json({ error: error?.message || 'Could not create the master.' }, { status: 500 })
 
-  return NextResponse.json({ ok: true, videoId: row.id, hasTranscript: !!transcript })
+  return NextResponse.json({ ok: true, videoId: row.id, hasTranscript: !!transcript, hasThumbnail: !!thumbnailUrl })
 }
