@@ -228,14 +228,13 @@ function FeaturesGridCondensed() {
  *  public/png. */
 const SPOTLIGHTS: { img: string; eyebrow: string; title: string; desc: string }[] = [
   {
-    img: '/png/mvp-voice.png',
+    img: '/png/mvp-voice.webp',
     eyebrow: 'New',
     title: 'It writes in your real voice',
     desc: 'MVP learns how you actually sound from your own videos and the edits you make, and gets sharper every time you publish. Your posts read like you wrote them, not like generic AI. Train it once, or just let it learn as you go.',
   },
   {
-    // NOTE: save this image without spaces in the filename (mvp-horiz-to-vertical.png).
-    img: '/png/mvp-horiz-to-vertical.png',
+    img: '/png/mvp-horiz-to-vertical.webp',
     eyebrow: 'New',
     title: 'Post your Shorts to TikTok and Instagram',
     desc: 'Clip Factory turns your long videos into ready-to-post shorts. Upload a horizontal video and MVP reframes it to vertical for you, center crop or split screen, so it is ready to post everywhere in a couple of clicks.',
@@ -2217,11 +2216,11 @@ function FinalCTASection() {
         {/* Hero product visual — the whole machine at a glance. */}
         <div className="mt-12 mx-auto w-full max-w-5xl">
           <NextImage
-            src="/png/44bf146a-8a53-461d-a77f-57c81e7ef03a.png"
-            alt="MVP Affiliate — find products, create content, and publish everywhere from one dashboard"
+            src="/png/44bf146a-8a53-461d-a77f-57c81e7ef03a.webp"
+            alt="MVP Affiliate: find products, create content, and publish everywhere from one dashboard"
             width={1717}
             height={916}
-            priority
+            loading="lazy"
             className="w-full h-auto rounded-2xl border"
             style={{ borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}
           />
@@ -2311,7 +2310,7 @@ function Hero() {
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
-          backgroundImage: 'url(/png/specialbkg.png)',
+          backgroundImage: 'url(/png/specialbkg.webp)',
           backgroundSize: 'cover',
           backgroundPosition: 'center top',
           opacity: 0.5,

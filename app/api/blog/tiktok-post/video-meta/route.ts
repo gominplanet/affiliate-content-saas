@@ -77,7 +77,7 @@ export async function GET(request: Request) {
   const sb = supabase as any
   const { data: video } = await sb
     .from('youtube_videos')
-    .select('id,title,description,instagram_video_url,youtube_video_id')
+    .select('id,title,description,instagram_video_url,youtube_video_id,channel_id')
     .eq('id', videoId)
     .eq('user_id', user.id)
     .maybeSingle()
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
   }
 
   const [{ data: brand }, { data: integ }] = await Promise.all([
-    sb.from('brand_profiles').select('niches,words_to_avoid,affiliate_disclaimer,learn_profile,voice_fingerprint').eq('user_id', user.id).maybeSingle(),
+    sb.from('brand_profiles').select('niches,words_to_avoid,affiliate_disclaimer,learn_profile,voice_fingerprint,channel_voice_fingerprints').eq('user_id', user.id).maybeSingle(),
     sb.from('integrations').select('tier').eq('user_id', user.id).maybeSingle(),
   ])
   const tier: Tier = normalizeTier(integ?.tier)
@@ -111,7 +111,7 @@ export async function GET(request: Request) {
       wordsToAvoid: Array.isArray(brand?.words_to_avoid) ? (brand!.words_to_avoid as string[]) : [],
       affiliateDisclaimer: (brand?.affiliate_disclaimer as string) || '',
       platform: 'tiktok',
-      voiceBlock: creatorVoiceBlock(brand),
+      voiceBlock: creatorVoiceBlock(brand, (video.channel_id as string | null) ?? null),
       ...(product ? { product: { title: product.title, bullets: product.bullets, asin: product.asin } } : {}),
     },
     { userId: user.id, tier },

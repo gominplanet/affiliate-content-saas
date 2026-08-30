@@ -45,6 +45,14 @@ import { pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-ima
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+// Best-effort per-user preview cooldown. A preview runs a coverage search + a
+// Sonnet writer + a hero image (~$0.20) and does NOT count against the monthly
+// article cap, so a double-click or an impatient re-click shouldn't each pay.
+// In-memory (per warm instance), so it catches the common rapid-repeat case
+// without new infrastructure; the monthly spendGate is the real ceiling.
+const PREVIEW_COOLDOWN_MS = 8000
+const lastPreviewAt = new Map<string, number>()
+
 // Temporary/generated image hosts whose URLs expire — the in-article images
 // come from these and must be re-hosted to WordPress media on publish.
 const TEMP_IMG_HOST = /https?:\/\/[^"']*(fal\.(media|ai|run)|\.fal\.|oaidalle|openai|replicate\.delivery|blob\.core\.windows)/i
@@ -316,6 +324,16 @@ export async function POST(req: Request) {
     ? body.length : 'medium') as string
   const publish = body.publish === true
   const productMode: 'throughout' | 'end' = body.productMode === 'throughout' ? 'throughout' : 'end'
+
+  // Preview cooldown (previews only — publishing has its own idempotency guard
+  // below). Blocks a rapid re-click from paying for a second preview.
+  if (!publish) {
+    const prev = lastPreviewAt.get(user.id) || 0
+    if (Date.now() - prev < PREVIEW_COOLDOWN_MS) {
+      return NextResponse.json({ error: 'Give it a few seconds before generating another preview.', code: 'cooldown' }, { status: 429 })
+    }
+    lastPreviewAt.set(user.id, Date.now())
+  }
 
   // Only honor known section keys, in the canonical order.
   const requested = Array.isArray(body.sections) ? body.sections : []

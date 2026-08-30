@@ -131,9 +131,12 @@ export default function LearnPage() {
       const res = await fetch('/api/learn/bootstrap', { method: 'POST' })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(d.error || 'Scan failed')
-      if (d.learned || d.fetched > 0) {
-        setBootstrapMsg(`MVP read ${d.fetched} video transcript${d.fetched === 1 ? '' : 's'} and updated your voice. Reloading…`)
+      if (d.learned) {
+        const read = d.fetched > 0 ? `read ${d.fetched} new transcript${d.fetched === 1 ? '' : 's'} and ` : ''
+        setBootstrapMsg(`MVP ${read}updated your voice. Reloading…`)
         setTimeout(() => load(), 900)
+      } else if (d.fetched > 0) {
+        setBootstrapMsg(`MVP read ${d.fetched} new transcript${d.fetched === 1 ? '' : 's'}. Your voice was already up to date.`)
       } else {
         setBootstrapMsg('No new transcripts were available to read. Try again after syncing your videos.')
       }

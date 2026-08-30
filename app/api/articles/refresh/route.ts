@@ -15,7 +15,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { normalizeTier } from '@/lib/tier'
+import { normalizeTier, TIERS } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { toUserMessage } from '@/lib/friendly-error'
 
@@ -52,9 +52,13 @@ export async function POST(request: Request) {
 
     const { data: integ } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     const tier = normalizeTier(integ?.tier)
-    if (await spendGate(user.id, tier)) {
-      return NextResponse.json({ error: 'You’ve hit today’s AI spend limit. Try again tomorrow.' }, { status: 429 })
+    // Same entitlement as writing an article: Creator, Studio and Pro (and admin).
+    // Trial + Amazon (articlesPerMonth 0) can't refresh either.
+    if (TIERS[tier].articlesPerMonth === 0) {
+      return NextResponse.json({ error: 'Articles is a Creator, Studio and Pro feature.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
     }
+    const gate = await spendGate(user.id, tier)
+    if (gate) return gate
 
     const body = await request.json().catch(() => ({})) as { postId?: string }
     const postId = (body.postId || '').trim()
@@ -63,10 +67,19 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: post } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,content,seo_keyword,wordpress_post_id,wordpress_url,post_type')
+      .select('id,title,content,seo_keyword,wordpress_post_id,wordpress_url,post_type,updated_at')
       .eq('id', postId).eq('user_id', user.id).maybeSingle()
     if (!post) return NextResponse.json({ error: 'Article not found.' }, { status: 404 })
     if (!post.wordpress_post_id) return NextResponse.json({ error: 'This article isn’t linked to a WordPress post, so it can’t be refreshed in place.' }, { status: 400 })
+
+    // Per-post cooldown: a refresh re-runs web research + a Sonnet rewrite, so
+    // block re-refreshing the same article within 6 hours. Stops an accidental
+    // or repeated click from paying for the same rewrite over and over.
+    const REFRESH_COOLDOWN_MS = 6 * 60 * 60 * 1000
+    const lastUpdated = post.updated_at ? new Date(post.updated_at as string).getTime() : 0
+    if (lastUpdated && Date.now() - lastUpdated < REFRESH_COOLDOWN_MS) {
+      return NextResponse.json({ error: 'This article was refreshed recently. You can refresh it again in a few hours.', code: 'cooldown' }, { status: 429 })
+    }
 
     const title = (post.title as string) || ''
     const topic = (post.seo_keyword as string) || title

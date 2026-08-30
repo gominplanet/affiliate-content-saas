@@ -48,9 +48,10 @@ export async function bootstrapVoiceFromChannel(
       .filter((v: { youtube_video_id?: string | null }) => !!v.youtube_video_id)
       .slice(0, MAX_VIDEOS)
     if (candidates.length === 0) {
-      // Nothing to fetch — still try a (forced) refine in case transcripts were
-      // cached by earlier generations but never folded in.
-      const learned = await maybeUpdateVoiceFingerprint(supabase, ctx, { force: true })
+      // Nothing new to fetch. Run the normal DEBOUNCED refine (not forced) so a
+      // creator who keeps clicking "Scan" doesn't pay for an LLM run each time,
+      // while still folding in any transcripts earlier generations cached.
+      const learned = await maybeUpdateVoiceFingerprint(supabase, ctx, { force: false })
       return { ok: true, fetched: 0, learned }
     }
 
@@ -101,8 +102,11 @@ export async function bootstrapVoiceFromChannel(
       } catch { /* non-fatal */ }
     }
 
-    // Force a fingerprint refinement now, folding in whatever we just cached.
-    const learned = await maybeUpdateVoiceFingerprint(supabase, ctx, { force: true })
+    // Force a fingerprint refinement ONLY when we actually cached new
+    // transcripts. If nothing new was fetched (a repeated scan after everything
+    // is already transcribed), fall back to the normal debounced call so a
+    // creator clicking "Scan" repeatedly can't force a paid LLM run each time.
+    const learned = await maybeUpdateVoiceFingerprint(supabase, ctx, { force: fetched > 0 })
     return { ok: true, fetched, learned }
   } catch {
     return { ok: false, fetched: 0, learned: false }
