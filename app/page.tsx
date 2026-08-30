@@ -785,14 +785,14 @@ function PassportSpotlight() {
       <div className="max-w-5xl mx-auto rounded-3xl border p-6 sm:p-10"
         style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(52,199,89,0.05))', borderColor: 'rgba(124,58,237,0.25)' }}>
         <div className="max-w-2xl">
-          <span className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: '#7C3AED' }}>
-            <Globe size={13} /> Passport Links, free on every paid plan
+          <span className="inline-flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-white px-2.5 py-1 rounded-full" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
+            <Globe size={12} /> A first of its kind
           </span>
-          <h2 className="text-[28px] sm:text-[38px] font-extrabold tracking-[-0.03em] leading-[1.05] mt-3" style={{ color: 'var(--text)' }}>
-            Keep your international commission. Never pay per click.
+          <h2 className="text-[28px] sm:text-[38px] font-extrabold tracking-[-0.03em] leading-[1.05] mt-4" style={{ color: 'var(--text)' }}>
+            Geo-routing that&apos;s completely free. Never pay per click.
           </h2>
           <p className="mt-4 text-[15.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-            When a shopper from another country taps your link, Passport routes them to their own country&apos;s Amazon, so the sale counts and the commission is yours. Most geo-routing link tools bill you by the click for that, and the bill climbs as you grow. Passport is included free on every paid MVP plan, with unlimited links and unlimited clicks. No overage, ever.
+            When a shopper from another country taps your link, Passport routes them to their own country&apos;s Amazon, so the sale counts and the commission is yours. Everyone else charges by the click for this, and the bill climbs as you grow. Passport is the first to make it completely free: included on every paid MVP plan, with <span className="font-semibold" style={{ color: 'var(--text)' }}>unlimited links and unlimited clicks, no matter how big you get.</span> No overage, ever.
           </p>
         </div>
         <div className="grid sm:grid-cols-2 gap-4 mt-7">
