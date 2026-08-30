@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-08-29'
+const RELEASE_ID = '2026-08-30'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,27 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  {
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'MVP writes in your real voice now',
+    desc: 'MVP learns how you actually sound from your own YouTube videos and keeps getting sharper the more you publish. Blog posts, articles, and your TikTok and Instagram captions are all written in your voice, not a generic AI tone. It also folds in the edits you make to drafts, so it keeps learning your taste.',
+    href: '/learn',
+  },
+  {
+    badge: 'NEW',
+    tone: '#6d28d9',
+    title: 'See and train your voice',
+    desc: 'The Voice Training page now shows what MVP has learned about how you sound, with a Scan my recent videos button that reads your videos on the spot so your first post already sounds like you. If you run more than one channel, each channel gets its own learned voice.',
+    href: '/learn',
+  },
+  {
+    badge: 'NEW',
+    tone: '#bc1888',
+    title: 'Articles that sound like you',
+    desc: 'Articles has a Write in my trained voice toggle and a Why this sounds like you panel so you can see exactly what shaped each draft. Plus bulk writing from a list of topics, one tap refresh to update an old article, and a topic coverage score against the pages already ranking.',
+    href: '/articles',
+  },
   {
     badge: 'NEW',
     tone: '#7C3AED',

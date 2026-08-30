@@ -22,11 +22,41 @@ export async function GET() {
     const { ownerId } = auth
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: row } = await (supabase as any)
+    const sb = supabase as any
+    const { data: row } = await sb
       .from('brand_profiles')
-      .select('writing_sample,author_bio,target_audience,words_to_avoid,learn_profile,voice_fingerprint,voice_fingerprint_updated_at,voice_fingerprint_sources')
+      .select('writing_sample,author_bio,target_audience,words_to_avoid,learn_profile,voice_fingerprint,voice_fingerprint_updated_at,voice_fingerprint_sources,channel_voice_fingerprints')
       .eq('user_id', ownerId)
       .single()
+
+    // Per-channel fingerprints (migration 302). Turn the stored { channelId: {…} }
+    // map into a titled array for the UI, resolving channel names from the
+    // creator's synced videos. Only present for multi-channel creators.
+    type ChanEntry = { text?: string; updated_at?: string; sources?: number }
+    const rawMap = (row?.channel_voice_fingerprints && typeof row.channel_voice_fingerprints === 'object')
+      ? row.channel_voice_fingerprints as Record<string, ChanEntry> : {}
+    const channelIds = Object.keys(rawMap).filter(id => ((rawMap[id]?.text || '').trim().length >= 120))
+    const titleById = new Map<string, string>()
+    if (channelIds.length) {
+      const { data: vs } = await sb
+        .from('youtube_videos')
+        .select('channel_id,channel_title')
+        .eq('user_id', ownerId)
+        .in('channel_id', channelIds)
+        .not('channel_title', 'is', null)
+        .limit(400)
+      for (const v of (Array.isArray(vs) ? vs : [])) {
+        const cid = v.channel_id as string
+        if (cid && !titleById.has(cid) && v.channel_title) titleById.set(cid, v.channel_title as string)
+      }
+    }
+    const channelVoices = channelIds.map(id => ({
+      channelId: id,
+      title: titleById.get(id) || 'Channel',
+      text: (rawMap[id]?.text || '').trim(),
+      sources: rawMap[id]?.sources || 0,
+      updatedAt: rawMap[id]?.updated_at || null,
+    }))
 
     return NextResponse.json({
       writing_sample: row?.writing_sample ?? '',
@@ -39,6 +69,8 @@ export async function GET() {
       voice_fingerprint: row?.voice_fingerprint ?? '',
       voice_fingerprint_updated_at: row?.voice_fingerprint_updated_at ?? null,
       voice_fingerprint_sources: row?.voice_fingerprint_sources ?? 0,
+      // Per-channel voices (multi-channel creators only). Empty otherwise.
+      channelVoices,
     })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })

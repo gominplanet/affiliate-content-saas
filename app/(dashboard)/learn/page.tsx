@@ -41,9 +41,19 @@ interface LearnedVoice {
   updatedAt: string | null
 }
 
+interface ChannelVoice {
+  channelId: string
+  title: string
+  text: string
+  sources: number
+  updatedAt: string | null
+}
+
 export default function LearnPage() {
   const [data, setData] = useState<State>(DEFAULT)
   const [learned, setLearned] = useState<LearnedVoice | null>(null)
+  const [channelVoices, setChannelVoices] = useState<ChannelVoice[]>([])
+  const [openChannel, setOpenChannel] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [evolving, setEvolving] = useState(false)
@@ -67,6 +77,7 @@ export default function LearnPage() {
       })
       const fp = (d.voice_fingerprint || '').trim()
       setLearned(fp ? { text: fp, sources: d.voice_fingerprint_sources || 0, updatedAt: d.voice_fingerprint_updated_at || null } : null)
+      setChannelVoices(Array.isArray(d.channelVoices) ? d.channelVoices : [])
     } catch {
       setError('Could not load your Learning profile.')
     } finally {
@@ -246,6 +257,51 @@ export default function LearnPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Per-channel voices — only for creators with more than one connected
+          channel. Each channel sounds a bit different, so MVP keeps a separate
+          learned voice per channel and uses it for content made from that
+          channel's videos. Read-only, collapsible so the list stays tidy. */}
+      {channelVoices.length > 0 && (
+        <div className="max-w-3xl mb-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-2" style={{ color: 'var(--text-faint)' }}>
+            Voice per channel
+          </p>
+          <div className="space-y-2">
+            {channelVoices.map(cv => {
+              const open = openChannel === cv.channelId
+              return (
+                <div key={cv.channelId} className="card overflow-hidden" style={{ borderColor: 'rgba(124,58,237,0.2)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenChannel(open ? null : cv.channelId)}
+                    className="w-full flex items-center justify-between gap-3 p-4 text-left"
+                  >
+                    <div className="min-w-0 flex items-center gap-2">
+                      <Sparkles size={14} className="text-[#7C3AED] flex-shrink-0" />
+                      <span className="text-sm font-semibold truncate text-[#1d1d1f] dark:text-[#f5f5f7]">{cv.title}</span>
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>
+                        {cv.sources} {cv.sources === 1 ? 'video' : 'videos'}
+                      </span>
+                    </div>
+                    <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▾</span>
+                  </button>
+                  {open && (
+                    <div className="px-4 pb-4 -mt-1">
+                      <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-soft)' }}>{cv.text}</p>
+                      {cv.updatedAt && (
+                        <p className="text-[11px] mt-3" style={{ color: 'var(--text-faint)' }}>
+                          Last updated {new Date(cv.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
