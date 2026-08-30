@@ -41,7 +41,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe, Film,
+  Inbox, PackageSearch, Rocket, Database, History, Globe,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -607,13 +607,12 @@ export default function DashboardShellV2({
         // Launchpad — the one-button auto pipeline (Co-Pilot + blog + social +
         // shorts in one). In LABS while we test the full end-to-end run; it
         // graduates to Create and leads that group once verified. Pro-gated.
+        // Launchpad is the ONE entry for "one video, everywhere": it folds in the
+        // upload + CTA path (CTA Studio) and the Amazon-geos path (Storefront
+        // Sync) as stages, so we don't split one feature across three nav items.
+        // Those two still have their own routes (/cta-studio, /global-sync) for
+        // granular use; they're just not promoted as separate nav entries.
         { href: '/launchpad', icon: <Rocket size={15} />, label: 'Launchpad', gate: isPro, badge: 'New' },
-        // CTA Studio — upload a horizontal video, burn in a branded CTA, publish
-        // to YouTube. The "MVP as origin" upload path; Pro-gated while in test.
-        { href: '/cta-studio', icon: <Film size={15} />, label: 'CTA Studio', gate: isPro, badge: 'New' },
-        // Storefront Sync — one master video localized for every Amazon market
-        // (title + description per market, in the creator's voice). Milestone 1.
-        { href: '/global-sync', icon: <Globe size={15} />, label: 'Storefront Sync', gate: isPro, badge: 'New' },
         // AMZ Storefront — SCOUT-synced Amazon earnings + full-catalog analytics.
         // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
         // finished; graduates back to "Grow" (gate: isPaid) when it's ready.

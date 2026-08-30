@@ -1,21 +1,20 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Launchpad — the one-button auto pipeline. Pick a video, choose what to make,
-// and Launchpad runs the whole thing: Co-Pilot metadata + thumbnail, a blog
-// post, social pushes, a short, and (coming) storefront sync. The individual
-// sections still exist for granular control; Launchpad just does it all.
-//
-// While in LABS this wires four real steps end to end: Co-Pilot metadata +
-// thumbnail, a blog post, social fan-out (one generation job), and a short
-// (plan the best moments, then render the top clip). Storefront sync slots in
-// next.
+// Launchpad — one video, everywhere. The single place a creator takes a finished
+// video and gets it out: ready for YouTube (metadata, thumbnail, optional CTA
+// burn-in + publish), turned into a blog post and social pushes and a short, and
+// distributed to every Amazon storefront they sell in (localized and dubbed in
+// their own voice). Every stage also exists on its own page for granular use;
+// Launchpad just runs them from one screen.
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { Rocket, Check, Loader2, Circle, ExternalLink } from 'lucide-react'
+import { Rocket, Check, Loader2, Circle, ExternalLink, Youtube, Upload, Globe } from 'lucide-react'
 import { toast } from 'sonner'
+import UploadStage from '@/components/launchpad/UploadStage'
+import StorefrontStage from '@/components/launchpad/StorefrontStage'
 
 // Networks the blog job can auto-post to (the runner skips any not connected).
 const SOCIAL_KEYS = ['twitter', 'facebook', 'threads', 'linkedin', 'bluesky', 'pinterest', 'telegram']
@@ -30,15 +29,19 @@ const DEFAULT_STEPS: Step[] = [
   { key: 'blog', label: 'Blog post', desc: 'A full SEO review on your site, in your voice.', on: true, state: 'idle' },
   { key: 'social', label: 'Social posts', desc: 'Fan out to your connected networks.', on: true, state: 'idle' },
   { key: 'short', label: 'Short for TikTok & Instagram', desc: 'A vertical short cut from the video.', on: true, state: 'idle' },
-  { key: 'storefront', label: 'Global Storefront Sync', desc: 'Localize the title and description for every Amazon market you sell in.', on: false, state: 'idle' },
 ]
 
+const label = { color: 'var(--fg)' } as const
+const muted = { color: 'var(--fg-muted)' } as const
+
 export default function LaunchpadPage() {
+  const [mode, setMode] = useState<'synced' | 'file'>('synced')
   const [videos, setVideos] = useState<Vid[]>([])
   const [loading, setLoading] = useState(true)
   const [picked, setPicked] = useState<string | null>(null)
   const [steps, setSteps] = useState<Step[]>(DEFAULT_STEPS)
   const [running, setRunning] = useState(false)
+  const [showStorefront, setShowStorefront] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -89,8 +92,7 @@ export default function LaunchpadPage() {
           else setState('metadata', 'done', thumbOk ? undefined : 'Metadata done. Thumbnail needs a retry in Co-Pilot.')
         } catch { setState('metadata', 'error', 'Could not generate metadata') }
       }
-      // 2 + 3. Blog + social run in ONE real generation job (the same pipeline
-      // auto-pilot uses): enqueue with the chosen socials, then poll to done.
+      // 2 + 3. Blog + social run in ONE real generation job.
       const wantBlog = !!steps.find(s => s.key === 'blog')?.on
       const wantSocial = !!steps.find(s => s.key === 'social')?.on
       if (wantBlog || wantSocial) {
@@ -103,7 +105,6 @@ export default function LaunchpadPage() {
           })
           const ej = await enq.json().catch(() => ({}))
           if (!enq.ok || !ej.jobId) throw new Error(ej.error || 'Could not queue the post')
-          // Poll the job (~5 min cap). Surface the stage as the step note.
           let done = false
           for (let i = 0; i < 75 && !done; i++) {
             await sleep(4000)
@@ -121,9 +122,7 @@ export default function LaunchpadPage() {
           setState('blog', 'error', e instanceof Error ? e.message : 'Post failed'); if (wantSocial) setState('social', 'error')
         }
       }
-      // 4. Short — plan the best moments off the transcript, then render the top
-      // clip. Render auto-pulls the source MP4 when it isn't stored yet, so this
-      // works from a picked YouTube video with no upload.
+      // 4. Short — plan the best moments, then render the top clip.
       if (steps.find(s => s.key === 'short')?.on) {
         setState('short', 'running', 'Finding the best moment…')
         try {
@@ -155,35 +154,8 @@ export default function LaunchpadPage() {
           }
         } catch { setState('short', 'skipped', 'Open Clip Factory to cut a short.') }
       }
-      // 5. Global Storefront Sync — localize the master metadata for every Amazon
-      // market the creator sells in (off by default; opt-in per run).
-      if (steps.find(s => s.key === 'storefront')?.on) {
-        setState('storefront', 'running', 'Localizing for your markets…')
-        try {
-          const mr = await fetch('/api/global-sync/markets').then(r => r.json()).catch(() => ({}))
-          const domains: string[] = Array.isArray(mr?.markets)
-            ? mr.markets.map((m: { domain: string }) => m.domain).filter((d: string) => d !== 'amazon.com')
-            : []
-          if (domains.length === 0) { setState('storefront', 'skipped', 'No markets available right now.') }
-          else {
-            const rs = await fetch('/api/global-sync/start', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ videoId: vid.id, markets: domains }),
-            })
-            const sj = await rs.json().catch(() => ({}))
-            if (!rs.ok || !sj.jobId) throw new Error(sj.error || 'Could not start the sync')
-            let syncDone = false
-            for (let i = 0; i < 40 && !syncDone; i++) {
-              await sleep(3000)
-              const jr = await fetch(`/api/global-sync/${sj.jobId}`).then(x => x.json()).catch(() => ({}))
-              if (jr?.status === 'done') { setState('storefront', 'done', `Localized for ${sj.markets} markets — review them in Storefront Sync.`); syncDone = true }
-              else if (jr?.status === 'failed') { setState('storefront', 'error', 'Sync failed — try it in Storefront Sync.'); syncDone = true }
-            }
-            if (!syncDone) setState('storefront', 'done', 'Still localizing — check Storefront Sync.')
-          }
-        } catch (e) { setState('storefront', 'error', e instanceof Error ? e.message : 'Sync failed') }
-      }
       toast.success('Launchpad run finished')
+      setShowStorefront(true)
     } finally { setRunning(false) }
   }
 
@@ -198,31 +170,51 @@ export default function LaunchpadPage() {
     <>
       <PageHero
         title="Launchpad"
-        subtitle="Upload or pick a video, choose what to make, and launch it all in one go. Co-Pilot, blog, social and shorts, from one button."
+        subtitle="One video, everywhere. Get it ready for YouTube, turn it into a blog, socials and a short, and push it to every Amazon storefront you sell in — from one screen."
       />
 
       <div className="max-w-4xl space-y-6 pb-28">
-        {/* 1. Pick a video */}
+        {/* 1. Start with your video */}
         <div className="card p-5">
-          <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--fg)' }}>1. Pick a video</h2>
-          {loading ? (
-            <div className="flex items-center gap-2 text-sm py-6 justify-center" style={{ color: 'var(--fg-muted)' }}>
+          <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+            <h2 className="text-sm font-semibold" style={label}>1. Start with your video</h2>
+            <div className="inline-flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+              <button type="button" onClick={() => setMode('synced')}
+                className="px-3 py-1.5 text-[12px] font-medium inline-flex items-center gap-1.5"
+                style={{ background: mode === 'synced' ? 'rgba(124,58,237,0.10)' : 'transparent', color: mode === 'synced' ? '#7C3AED' : 'var(--fg-muted)' }}>
+                <Youtube size={13} /> Already on YouTube
+              </button>
+              <button type="button" onClick={() => setMode('file')}
+                className="px-3 py-1.5 text-[12px] font-medium inline-flex items-center gap-1.5"
+                style={{ background: mode === 'file' ? 'rgba(124,58,237,0.10)' : 'transparent', color: mode === 'file' ? '#7C3AED' : 'var(--fg-muted)' }}>
+                <Upload size={13} /> Start from a file
+              </button>
+            </div>
+          </div>
+
+          {mode === 'file' ? (
+            <div>
+              <p className="text-[12px] mb-3" style={muted}>Upload your edited video, burn in a CTA, and publish it to YouTube. Once it&apos;s live and synced, switch to &ldquo;Already on YouTube&rdquo; to run the rest.</p>
+              <UploadStage />
+            </div>
+          ) : loading ? (
+            <div className="flex items-center gap-2 text-sm py-6 justify-center" style={muted}>
               <Loader2 size={16} className="animate-spin" /> Loading your videos…
             </div>
           ) : videos.length === 0 ? (
-            <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>No videos yet. Connect your channel and sync, then come back.</p>
+            <p className="text-sm" style={muted}>No videos yet. Connect your channel and sync, then come back — or start from a file above.</p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {videos.map(v => {
                 const on = picked === v.id
                 return (
-                  <button key={v.id} type="button" onClick={() => setPicked(v.id)}
+                  <button key={v.id} type="button" onClick={() => { setPicked(v.id); setShowStorefront(false) }}
                     className="text-left rounded-xl border overflow-hidden transition-all"
                     style={{ borderColor: on ? '#7C3AED' : 'var(--border)', borderWidth: on ? 2 : 1, background: 'var(--bg)' }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     {v.thumbnail_url ? <img src={v.thumbnail_url} alt="" className="w-full aspect-video object-cover" /> : <div className="w-full aspect-video" style={{ background: 'var(--surface)' }} />}
                     <div className="p-2">
-                      <p className="text-[12px] font-medium line-clamp-2" style={{ color: 'var(--fg)' }}>{v.title}</p>
+                      <p className="text-[12px] font-medium line-clamp-2" style={label}>{v.title}</p>
                     </div>
                   </button>
                 )
@@ -231,37 +223,64 @@ export default function LaunchpadPage() {
           )}
         </div>
 
-        {/* 2. Choose outputs */}
-        <div className="card p-5">
-          <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--fg)' }}>2. Choose what to make</h2>
-          <div className="space-y-2">
-            {steps.map(st => (
-              <label key={st.key} className="flex items-start gap-3 p-3 rounded-xl border cursor-pointer"
-                style={{ borderColor: 'var(--border)', background: st.on ? 'rgba(124,58,237,0.04)' : 'transparent' }}>
-                <input type="checkbox" checked={st.on} onChange={() => toggle(st.key)} disabled={running} className="mt-0.5 accent-[#7C3AED]" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{st.label}</span>
-                    <StateIcon s={st.state} />
-                  </div>
-                  <p className="text-[12px] mt-0.5" style={{ color: 'var(--fg-muted)' }}>{st.note || st.desc}</p>
-                </div>
-              </label>
-            ))}
-          </div>
-        </div>
+        {/* The checklist + storefront only apply to a synced video. */}
+        {mode === 'synced' && (
+          <>
+            {/* 2. Choose outputs */}
+            <div className="card p-5">
+              <h2 className="text-sm font-semibold mb-3" style={label}>2. Choose what to make</h2>
+              <div className="space-y-2">
+                {steps.map(st => (
+                  <label key={st.key} className="flex items-start gap-3 p-3 rounded-xl border cursor-pointer"
+                    style={{ borderColor: 'var(--border)', background: st.on ? 'rgba(124,58,237,0.04)' : 'transparent' }}>
+                    <input type="checkbox" checked={st.on} onChange={() => toggle(st.key)} disabled={running} className="mt-0.5 accent-[#7C3AED]" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium" style={label}>{st.label}</span>
+                        <StateIcon s={st.state} />
+                      </div>
+                      <p className="text-[12px] mt-0.5" style={muted}>{st.note || st.desc}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
 
-        {/* 3. Launch */}
-        <div className="flex items-center gap-3">
-          <button onClick={() => void launch()} disabled={running || !picked}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
-            style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
-            {running ? <><Loader2 size={16} className="animate-spin" /> Launching…</> : <><Rocket size={16} /> Launch</>}
-          </button>
-          <a href="/co-pilot" className="text-sm inline-flex items-center gap-1" style={{ color: 'var(--fg-muted)' }}>
-            or do steps separately <ExternalLink size={12} />
-          </a>
-        </div>
+            {/* 3. Launch */}
+            <div className="flex items-center gap-3">
+              <button onClick={() => void launch()} disabled={running || !picked}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
+                {running ? <><Loader2 size={16} className="animate-spin" /> Launching…</> : <><Rocket size={16} /> Launch</>}
+              </button>
+              <a href="/co-pilot" className="text-sm inline-flex items-center gap-1" style={muted}>
+                or do steps separately <ExternalLink size={12} />
+              </a>
+            </div>
+
+            {/* 4. Amazon storefronts */}
+            <div className="card p-5">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Globe size={16} style={{ color: '#0EA5A4' }} />
+                  <h2 className="text-sm font-semibold" style={label}>4. Amazon storefronts (US + your geos)</h2>
+                </div>
+                {!showStorefront && (
+                  <button type="button" onClick={() => setShowStorefront(true)} disabled={!picked}
+                    className="text-[12px] font-medium underline disabled:opacity-50" style={muted}>
+                    {picked ? 'Set up' : 'Pick a video first'}
+                  </button>
+                )}
+              </div>
+              <p className="text-[12px] mt-1" style={muted}>Localize the title and description for every market you sell in, and dub the video in your own voice.</p>
+              {showStorefront && picked && (
+                <div className="mt-4">
+                  <StorefrontStage presetVideoId={picked} />
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </>
   )
