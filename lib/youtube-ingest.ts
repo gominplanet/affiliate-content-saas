@@ -255,6 +255,9 @@ export interface CtaSpec {
   stickerUrl?: string
   widthPct?: number
   position?: string
+  // Free placement: the overlay's top-left as a fraction of the frame.
+  xPct?: number
+  yPct?: number
 }
 export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string): Promise<string | null> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
@@ -277,6 +280,7 @@ export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string)
         ...(hasSticker ? { stickerUrl: cta.stickerUrl } : {}),
         ...(cta.widthPct ? { widthPct: cta.widthPct } : {}),
         ...(cta.position ? { position: cta.position } : {}),
+        ...(Number.isFinite(cta.xPct) && Number.isFinite(cta.yPct) ? { xPct: cta.xPct, yPct: cta.yPct } : {}),
         ...(userId ? { userId } : {}),
       }),
       signal: AbortSignal.timeout(540_000),

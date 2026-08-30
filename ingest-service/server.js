@@ -814,6 +814,11 @@ app.post('/render-cta', async (req, res) => {
   const stickerUrl = String(req.body?.stickerUrl || '').trim()
   const position = String(req.body?.position || (style === 'endcard' ? 'center' : 'lower-left'))
   const widthPct = Math.min(0.95, Math.max(0.1, Number(req.body?.widthPct) || 0.5))
+  // Free placement (top-left as a fraction of the frame) wins over `position`
+  // when both coords are provided — this is the drag-to-place path.
+  const xPct = Number(req.body?.xPct)
+  const yPct = Number(req.body?.yPct)
+  const freePlace = Number.isFinite(xPct) && Number.isFinite(yPct)
   const startSec = Math.max(0, Number(req.body?.startSec) || 0)
   const endSec = Number(req.body?.endSec)
   if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad source' })
@@ -839,7 +844,10 @@ app.post('/render-cta', async (req, res) => {
       const pwh = await ffprobeWH(pngTmp) || { w: 1000, h: 1000 }
       const sw = Math.max(1, Math.round(vwh.w * widthPct))
       const sh = Math.max(1, Math.round(sw * (pwh.h / pwh.w)))
-      const { x, y } = overlayXY(position, vwh.w, vwh.h, sw, sh)
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+      const { x, y } = freePlace
+        ? { x: clamp(Math.round(vwh.w * xPct), 0, Math.max(0, vwh.w - sw)), y: clamp(Math.round(vwh.h * yPct), 0, Math.max(0, vwh.h - sh)) }
+        : overlayXY(position, vwh.w, vwh.h, sw, sh)
       const fc = `[1:v]scale=${sw}:${sh}[st];[0:v][st]overlay=${x}:${y}:enable='between(t,${startSec.toFixed(2)},${endSec.toFixed(2)})'[vout]`
       await new Promise((resolve, reject) => {
         execFile('ffmpeg', [

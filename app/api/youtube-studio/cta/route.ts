@@ -28,16 +28,20 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({})) as {
     videoUrl?: string; durationSec?: number; text?: string; subtext?: string
     style?: string; startSec?: number; endSec?: number
-    stickerUrl?: string; widthPct?: number; position?: string
+    stickerUrl?: string; widthPct?: number; position?: string; xPct?: number; yPct?: number
   }
   const videoUrl = (body.videoUrl || '').trim()
   const text = (body.text || '').trim()
   const style: 'lowerthird' | 'endcard' = body.style === 'endcard' ? 'endcard' : 'lowerthird'
   const dur = Math.max(0, Number(body.durationSec) || 0)
-  // A designed CTA box (PNG from our own /cta-burner gallery) is an alternative
-  // to plain text. Only accept sticker URLs on our own origin.
+  // A designed CTA box (PNG) is an alternative to plain text. Accept our own
+  // /cta-burner gallery OR an AI-generated badge we stored on our Supabase
+  // storage (the "write your own" path) — never an arbitrary external URL.
   const stickerUrl = (body.stickerUrl || '').trim()
-  const stickerOk = /^https:\/\/[^/]+\/cta-burner\/[A-Za-z0-9._-]+\.png$/i.test(stickerUrl)
+  const supaBase = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
+  const galleryOk = /^https:\/\/[^/]+\/cta-burner\/[A-Za-z0-9._-]+\.png$/i.test(stickerUrl)
+  const customOk = !!supaBase && stickerUrl.startsWith(`${supaBase}/storage/v1/object/public/instagram-videos/`) && /\.png(\?|$)/i.test(stickerUrl)
+  const stickerOk = galleryOk || customOk
   if (!/^https?:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A hosted video URL is required.' }, { status: 400 })
   if (!text && !stickerOk) return NextResponse.json({ error: 'Pick a CTA design or enter CTA text.' }, { status: 400 })
 
@@ -50,11 +54,13 @@ export async function POST(req: Request) {
     else { startSec = 3; endSec = dur > 0 ? Math.min(dur, 13) : 13 }
   }
 
+  const hasFree = Number.isFinite(Number(body.xPct)) && Number.isFinite(Number(body.yPct))
   const out = await renderCta(videoUrl, {
     text, subtext: (body.subtext || '').trim(), style, startSec, endSec,
     ...(stickerOk ? { stickerUrl } : {}),
     ...(Number(body.widthPct) ? { widthPct: Number(body.widthPct) } : {}),
     ...(body.position ? { position: String(body.position) } : {}),
+    ...(hasFree ? { xPct: Number(body.xPct), yPct: Number(body.yPct) } : {}),
   }, user.id)
   if (!out) {
     return NextResponse.json({ error: 'Couldn’t render the CTA just now. If this keeps happening, the video service may be busy.' }, { status: 502 })
