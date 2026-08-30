@@ -13,7 +13,7 @@ import { toast } from 'sonner'
 import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 
 type Style = 'lowerthird' | 'endcard'
-type Source = 'design' | 'words'
+type Source = 'design' | 'words' | 'upload'
 
 // Colorways for a "your words" badge.
 const WORD_STYLES: { key: string; label: string; bg: string; fg: string }[] = [
@@ -73,6 +73,7 @@ const muted = { color: 'var(--fg-muted)' } as const
 export default function UploadStage() {
   const supabase = useMemo(() => createBrowserClient(), [])
   const fileRef = useRef<HTMLInputElement>(null)
+  const badgeRef = useRef<HTMLInputElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const dragOffset = useRef<{ dx: number; dy: number } | null>(null)
 
@@ -85,6 +86,8 @@ export default function UploadStage() {
   const [wordStyle, setWordStyle] = useState(WORD_STYLES[0].key)
   const [wordBadgeUrl, setWordBadgeUrl] = useState<string | null>(null)
   const [making, setMaking] = useState(false)
+  const [uploadedBadgeUrl, setUploadedBadgeUrl] = useState<string | null>(null)
+  const [badgeUploading, setBadgeUploading] = useState(false)
 
   const [widthPct, setWidthPct] = useState<number>(0.4)
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0.55, y: 0.74 })
@@ -100,7 +103,9 @@ export default function UploadStage() {
   const gallerySticker = CTA_STICKERS.find(s => s.id === stickerId)
   const activeBadgeUrl = ctaSource === 'words'
     ? wordBadgeUrl
-    : (gallerySticker ? ctaStickerUrl(gallerySticker.file) : null)
+    : ctaSource === 'upload'
+      ? uploadedBadgeUrl
+      : (gallerySticker ? ctaStickerUrl(gallerySticker.file) : null)
 
   async function onPick(file: File) {
     if (!file.type.startsWith('video/')) { toast.error('Please pick a video file (MP4 works best).'); return }
@@ -150,6 +155,47 @@ export default function UploadStage() {
     } finally { setMaking(false) }
   }
 
+  // Sample the four corners of a PNG; if none are transparent it will burn as an
+  // opaque box, so we warn (but don't block — some badges are full-bleed).
+  function looksOpaque(file: File): Promise<boolean> {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        try {
+          const c = document.createElement('canvas'); c.width = img.width; c.height = img.height
+          const g = c.getContext('2d'); if (!g) { URL.revokeObjectURL(url); return resolve(false) }
+          g.drawImage(img, 0, 0)
+          const pts = [[0, 0], [c.width - 1, 0], [0, c.height - 1], [c.width - 1, c.height - 1]]
+          const opaque = pts.every(([x, y]) => g.getImageData(x, y, 1, 1).data[3] > 250)
+          URL.revokeObjectURL(url); resolve(opaque)
+        } catch { URL.revokeObjectURL(url); resolve(false) }
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(false) }
+      img.src = url
+    })
+  }
+
+  async function onPickBadge(file: File) {
+    if (file.type !== 'image/png') { toast.error('The badge must be a PNG (transparent background works best).'); return }
+    if (file.size > 8 * 1024 * 1024) { toast.error('Keep the badge under 8MB.'); return }
+    setBadgeUploading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      if (await looksOpaque(file)) toast('Heads up: this PNG has no transparent edges, so it may show as a box.')
+      const path = `${user.id}/cta-badge-${crypto.randomUUID()}.png`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: upErr } = await (supabase.storage as any).from('instagram-videos').upload(path, file, { cacheControl: '3600', upsert: false, contentType: 'image/png' })
+      if (upErr) throw new Error(upErr.message || 'Upload failed')
+      const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
+      setUploadedBadgeUrl(urlData.publicUrl)
+      toast.success('Badge uploaded. Drag it into place.')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not upload the badge')
+    } finally { setBadgeUploading(false) }
+  }
+
   // Drag the badge around the preview. Position is stored as a top-left fraction.
   function onBadgeDown(e: React.PointerEvent) {
     const stage = stageRef.current; if (!stage) return
@@ -169,7 +215,7 @@ export default function UploadStage() {
 
   async function render() {
     if (!source) { toast.error('Upload a video first'); return }
-    if (!activeBadgeUrl) { toast.error(ctaSource === 'words' ? 'Create your badge first' : 'Pick a CTA design'); return }
+    if (!activeBadgeUrl) { toast.error(ctaSource === 'words' ? 'Create your badge first' : ctaSource === 'upload' ? 'Upload your badge first' : 'Pick a CTA design'); return }
     setRendering(true); setRendered(null); setPublished(null)
     try {
       const r = await fetch('/api/youtube-studio/cta', {
@@ -225,11 +271,11 @@ export default function UploadStage() {
         <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
           <h2 className="text-sm font-semibold" style={label}>Design the CTA</h2>
           <div className="inline-flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-            {(['design', 'words'] as Source[]).map(o => (
+            {(['design', 'words', 'upload'] as Source[]).map(o => (
               <button key={o} type="button" onClick={() => setCtaSource(o)}
                 className="px-3 py-1.5 text-[12px] font-medium inline-flex items-center gap-1.5"
                 style={{ background: ctaSource === o ? 'rgba(124,58,237,0.10)' : 'transparent', color: ctaSource === o ? '#7C3AED' : 'var(--fg-muted)' }}>
-                {o === 'design' ? <><Wand2 size={13} /> CTA designs</> : <><Type size={13} /> Your words</>}
+                {o === 'design' ? <><Wand2 size={13} /> CTA designs</> : o === 'words' ? <><Type size={13} /> Your words</> : <><Upload size={13} /> Upload</>}
               </button>
             ))}
           </div>
@@ -264,6 +310,17 @@ export default function UploadStage() {
                 </button>
               )
             })}
+          </div>
+        ) : ctaSource === 'upload' ? (
+          <div>
+            <input ref={badgeRef} type="file" accept="image/png" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) void onPickBadge(f); e.currentTarget.value = '' }} />
+            <button type="button" onClick={() => badgeRef.current?.click()} disabled={badgeUploading}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border disabled:opacity-60"
+              style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+              {badgeUploading ? <><Loader2 size={15} className="animate-spin" /> Uploading…</> : <><Upload size={15} /> {uploadedBadgeUrl ? 'Replace badge' : 'Upload a PNG badge'}</>}
+            </button>
+            <p className="text-[12px] mt-2" style={muted}>Use a transparent PNG so only your design shows on the video.</p>
           </div>
         ) : (
           <div className="space-y-3">
