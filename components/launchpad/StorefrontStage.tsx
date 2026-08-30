@@ -23,13 +23,13 @@ const muted = { color: 'var(--fg-muted)' } as const
 
 /** presetVideoId: when set, the stage syncs THAT video and hides its own picker
  *  (Launchpad passes the already-picked video). */
-export default function StorefrontStage({ presetVideoId }: { presetVideoId?: string | null }) {
+export default function StorefrontStage({ presetVideoId, presetAsin }: { presetVideoId?: string | null; presetAsin?: string | null }) {
   const [videos, setVideos] = useState<Vid[]>([])
   const [markets, setMarkets] = useState<Market[]>([])
   const [loading, setLoading] = useState(!presetVideoId)
   const [picked, setPicked] = useState<string | null>(presetVideoId || null)
   const [chosen, setChosen] = useState<Set<string>>(new Set())
-  const [asin, setAsin] = useState('')
+  const [asin, setAsin] = useState(presetAsin || '')
   const [running, setRunning] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [targets, setTargets] = useState<Target[]>([])
@@ -53,8 +53,9 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
       ])
       if (Array.isArray(mr?.markets)) {
         setMarkets(mr.markets)
-        // Default to every non-US market so the common case is one click.
-        setChosen(new Set(mr.markets.filter((m: Market) => m.domain !== 'amazon.com').map((m: Market) => m.domain)))
+        // Auto-select EVERY storefront (US + all geos) — the whole point is to
+        // go everywhere; the creator can uncheck any they don't sell in.
+        setChosen(new Set(mr.markets.map((m: Market) => m.domain)))
       }
       if (vr?.ok) setVoice({ enabled: !!vr.enabled, hasVoice: !!vr.hasVoice, name: vr.name || null, credits: typeof vr.credits === 'number' ? vr.credits : null })
       if (!presetVideoId) {
@@ -79,6 +80,7 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
   async function start() {
     if (!picked) { toast.error('Pick a master video first'); return }
     if (chosen.size === 0) { toast.error('Pick at least one marketplace'); return }
+    if (!asin.trim()) { toast.error('Enter the product ASIN — MVP needs it to build each market’s title and thumbnail'); return }
     setRunning(true); setTargets([]); setJobId(null)
     try {
       const r = await fetch('/api/global-sync/start', {
@@ -286,13 +288,14 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
           })}
         </div>
         <div className="mt-3">
-          <label className="text-[12px] font-medium" style={muted}>Featured ASIN (optional)</label>
-          <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX or a product link"
-            className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
+          <label className="text-[12px] font-medium" style={label}>Featured ASIN <span style={{ color: '#e0554b' }}>*</span></label>
+          <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX or a product link" required
+            className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: asin.trim() ? 'var(--border)' : '#e0554b55', color: 'var(--fg)' }} />
+          <p className="text-[11px] mt-1" style={muted}>Required. MVP uses the product to write each market’s title and build the thumbnail.</p>
         </div>
       </div>
 
-      <button onClick={() => void start()} disabled={running || !picked || chosen.size === 0}
+      <button onClick={() => void start()} disabled={running || !picked || chosen.size === 0 || !asin.trim()}
         className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
         style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
         {running ? <><Loader2 size={16} className="animate-spin" /> Localizing…</> : <><Globe size={16} /> Sync to {chosen.size || ''} {chosen.size === 1 ? 'market' : 'markets'}</>}
