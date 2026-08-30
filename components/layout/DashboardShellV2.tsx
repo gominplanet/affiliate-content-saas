@@ -458,9 +458,8 @@ export default function DashboardShellV2({
     {
       label: 'Create',
       items: [
-        // Launchpad — the one-button auto pipeline (Co-Pilot + blog + social +
-        // shorts in one). Flagship, so it leads the group. Pro-gated.
-        { href: '/launchpad', icon: <Rocket size={15} />, label: 'Launchpad', gate: isPro, badge: 'New' },
+        // Launchpad lives in LABS while under test (moved 2026-08-30). It will
+        // graduate here and lead this group once the full pipeline is verified.
         { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot' },
         // "Library" renamed -> "Blog Post Generator" (2026-06-12 IA).
         { href: '/content', icon: <Library size={15} />, label: 'Blog Post Generator' },
@@ -605,6 +604,10 @@ export default function DashboardShellV2({
     {
       label: 'Labs',
       items: [
+        // Launchpad — the one-button auto pipeline (Co-Pilot + blog + social +
+        // shorts in one). In LABS while we test the full end-to-end run; it
+        // graduates to Create and leads that group once verified. Pro-gated.
+        { href: '/launchpad', icon: <Rocket size={15} />, label: 'Launchpad', gate: isPro, badge: 'New' },
         // AMZ Storefront — SCOUT-synced Amazon earnings + full-catalog analytics.
         // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
         // finished; graduates back to "Grow" (gate: isPaid) when it's ready.
