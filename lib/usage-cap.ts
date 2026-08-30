@@ -41,19 +41,12 @@ export const PRIMARY_FEATURE = {
    *  channel with a real per-post cost to us ($0.20 on the Pay Per Use plan),
    *  so it's the only social with its own cap. Counting it = tweets this period. */
   x: ['x_post'] as string[],
-  /** Storefront Sync CLONED-voice dub — one row per premium (ElevenLabs) dub.
-   *  Standard dubs run on OpenAI TTS (~7x cheaper) and are NOT capped; only the
-   *  premium "sounds like you" ElevenLabs dubs count here, so this bounds our
-   *  ElevenLabs exposure without limiting how much a creator can dub overall. */
+  /** Storefront Sync CLONED-voice dub — one row per premium (ElevenLabs) dub,
+   *  for cost telemetry. The premium lane is now gated by dub credits (see
+   *  lib/dub-credits), not a row-count cap; standard OpenAI dubs are free and
+   *  uncapped. Kept here so admin cost dashboards can still count premium dubs. */
   dub: ['global_sync_dub_cloned'] as string[],
 }
-
-/** CLONED-voice (ElevenLabs) dubs a Pro user can generate per billing period
- *  (admin = unlimited). At ~$0.50 max per dub this bounds ElevenLabs exposure at
- *  ~$75 per Pro user per month. Standard OpenAI dubs are uncapped (they're cheap
- *  and already inside the account spend ceiling). When this is hit, dubbing
- *  continues on the standard voice — it never blocks, it just drops the premium. */
-export const DUB_MONTHLY_CAP = 150
 
 /** Finished Shorts a Pro user can render per billing period (admin = unlimited). */
 export const SHORTS_MONTHLY_CAP = 50

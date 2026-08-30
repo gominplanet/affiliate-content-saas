@@ -35,7 +35,7 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
   const [targets, setTargets] = useState<Target[]>([])
   const [dubbing, setDubbing] = useState<string | null>(null)
 
-  const [voice, setVoice] = useState<{ enabled: boolean; hasVoice: boolean; name: string | null } | null>(null)
+  const [voice, setVoice] = useState<{ enabled: boolean; hasVoice: boolean; name: string | null; credits: number | null } | null>(null)
   const [consent, setConsent] = useState(false)
   const [cloning, setCloning] = useState(false)
 
@@ -52,7 +52,7 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
         // Default to every non-US market so the common case is one click.
         setChosen(new Set(mr.markets.filter((m: Market) => m.domain !== 'amazon.com').map((m: Market) => m.domain)))
       }
-      if (vr?.ok) setVoice({ enabled: !!vr.enabled, hasVoice: !!vr.hasVoice, name: vr.name || null })
+      if (vr?.ok) setVoice({ enabled: !!vr.enabled, hasVoice: !!vr.hasVoice, name: vr.name || null, credits: typeof vr.credits === 'number' ? vr.credits : null })
       if (!presetVideoId) {
         const sb = createBrowserClient()
         const { data: { user } } = await sb.auth.getUser()
@@ -98,7 +98,7 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
 
   async function refreshVoice() {
     const vr = await fetch('/api/voice-clone/status').then(r => r.json()).catch(() => ({}))
-    if (vr?.ok) setVoice({ enabled: !!vr.enabled, hasVoice: !!vr.hasVoice, name: vr.name || null })
+    if (vr?.ok) setVoice({ enabled: !!vr.enabled, hasVoice: !!vr.hasVoice, name: vr.name || null, credits: typeof vr.credits === 'number' ? vr.credits : null })
   }
   async function cloneVoice() {
     if (!consent) { toast.error('Please confirm you have the right to clone this voice'); return }
@@ -132,12 +132,13 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
       await refreshTargets()
       const base = j.note === 'voiceover_only' ? 'Voiceover ready' : j.voice === 'cloned' ? 'Dubbed in your voice' : 'Dub ready'
       if (j.voice === 'cloned' && typeof j.clonedDubsRemaining === 'number') {
-        toast.success(`${base} · ${j.clonedDubsRemaining} your-voice dubs left this month`)
-      } else if (j.cloneCapHit) {
-        toast.success(`${base} · your-voice dubs used up this month, standard voice used`)
+        toast.success(`${base} · ${j.clonedDubsRemaining} your-voice credits left`)
+      } else if (j.outOfCredits) {
+        toast.success(`${base} · out of your-voice credits, standard voice used`)
       } else {
         toast.success(base)
       }
+      if (j.voice === 'cloned' || j.outOfCredits) void refreshVoice()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Dub failed'); await refreshTargets() } finally { setDubbing(null) }
   }
 
@@ -150,7 +151,12 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2">
                 <Mic size={15} style={{ color: '#0EA5A4' }} />
-                <span className="text-sm" style={label}>Dubs use <span className="font-semibold">your voice</span>{voice.name ? ` (from “${voice.name}”)` : ''}.</span>
+                <span className="text-sm" style={label}>
+                  Dubs use <span className="font-semibold">your voice</span>{voice.name ? ` (from “${voice.name}”)` : ''}.
+                  {typeof voice.credits === 'number'
+                    ? <span style={muted}> {voice.credits} credits left; standard voice is free after that.</span>
+                    : <span style={muted}> Unlimited.</span>}
+                </span>
               </div>
               <button type="button" onClick={() => void removeVoice()} disabled={cloning} className="text-[12px] underline disabled:opacity-60" style={muted}>Remove</button>
             </div>
