@@ -41,7 +41,18 @@ export const PRIMARY_FEATURE = {
    *  channel with a real per-post cost to us ($0.20 on the Pay Per Use plan),
    *  so it's the only social with its own cap. Counting it = tweets this period. */
   x: ['x_post'] as string[],
+  /** Storefront Sync dub — one row per finished per-market dub (the TTS step).
+   *  Each dub's input is capped at ~5,000 characters, so at $0.10/1k the cost is
+   *  bounded at ~$0.50 per dub; counting dubs therefore bounds our ElevenLabs
+   *  exposure directly. */
+  dub: ['global_sync_dub_tts'] as string[],
 }
+
+/** Per-market dubs a Pro user can generate per billing period (admin = unlimited).
+ *  At ~$0.50 max per dub this bounds ElevenLabs exposure at ~$75 per Pro user per
+ *  month. Tune here as pricing / plans evolve; power users beyond this need an
+ *  overage add-on rather than a higher hard cap. */
+export const DUB_MONTHLY_CAP = 150
 
 /** Finished Shorts a Pro user can render per billing period (admin = unlimited). */
 export const SHORTS_MONTHLY_CAP = 50

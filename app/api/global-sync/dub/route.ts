@@ -11,6 +11,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { recordUsage } from '@/lib/ai-usage'
+import { checkUsageCap, PRIMARY_FEATURE, DUB_MONTHLY_CAP } from '@/lib/usage-cap'
 import { marketByDomain, translateScript } from '@/lib/global-sync'
 import { synthesizeSpeech, ttsProvider } from '@/lib/tts'
 import { getClonedVoiceId } from '@/lib/voice-clone'
@@ -24,13 +25,32 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: integ } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  const { data: integ } = await supabase
+    .from('integrations').select('tier,subscription_period_start,subscription_period_end').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(integ?.tier)
   if (!['pro', 'admin'].includes(tier)) {
     return NextResponse.json({ error: 'Global Storefront Sync is a Pro feature.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
   }
   const gate = await spendGate(user.id, tier)
   if (gate) return gate
+
+  // Bound our ElevenLabs exposure: cap dubs per billing period (admin unlimited).
+  // Checked BEFORE we spend; the usage row that advances the count is written on
+  // success, same as the CTA-box generator.
+  const capLimit = tier === 'admin' ? null : DUB_MONTHLY_CAP
+  const capCheck = await checkUsageCap(
+    supabase, user.id, PRIMARY_FEATURE.dub, capLimit,
+    (integ?.subscription_period_start as string | null) ?? null,
+    (integ?.subscription_period_end as string | null) ?? null,
+  )
+  if (capCheck?.exceeded) {
+    return NextResponse.json({
+      error: `You've used all ${capLimit} dubs for this billing period. Your finished dubs still play — this only limits new ones. Resets ${capCheck.resetLabel}.`,
+      limitReached: true, cap: 'dub', currentTier: tier,
+    }, { status: 429 })
+  }
+  // Dubs left AFTER this one succeeds (null = admin/unlimited), for the UI.
+  const dubsRemaining = capLimit === null ? null : Math.max(0, capLimit - ((capCheck?.used ?? 0) + 1))
 
   if (!ingestConfigured()) {
     return NextResponse.json({ error: 'The video service is not available right now. Please try again shortly.' }, { status: 503 })
@@ -107,7 +127,7 @@ export async function POST(req: Request) {
     if (!/^https:\/\//i.test(sourceUrl)) {
       // No source video available — still deliver the voiceover track itself.
       await sb.from('global_sync_targets').update({ video_url: audioUrl, state: 'localized', detail: 'Voiceover ready. Add the source video in Clip Factory to mux the dub.', updated_at: new Date().toISOString() }).eq('id', target.id)
-      return NextResponse.json({ ok: true, audioUrl, videoUrl: null, note: 'voiceover_only' })
+      return NextResponse.json({ ok: true, audioUrl, videoUrl: null, note: 'voiceover_only', dubsRemaining })
     }
 
     // 5) Mux the dub onto the video.
@@ -115,7 +135,7 @@ export async function POST(req: Request) {
     if (!dubbed) throw new Error('The dub render did not finish.')
 
     await sb.from('global_sync_targets').update({ video_url: dubbed, state: 'localized', detail: 'Dubbed', updated_at: new Date().toISOString() }).eq('id', target.id)
-    return NextResponse.json({ ok: true, videoUrl: dubbed })
+    return NextResponse.json({ ok: true, videoUrl: dubbed, dubsRemaining })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Dub failed.'
     await sb.from('global_sync_targets').update({ state: 'failed', detail: msg.slice(0, 200), updated_at: new Date().toISOString() }).eq('id', target.id)
