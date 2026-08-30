@@ -2305,6 +2305,20 @@ const NAV_ANCHORS = [
 function Hero() {
   return (
     <section className="relative overflow-hidden">
+      {/* Base backdrop — the special hero background image, held subtle and faded
+          at the bottom so it never fights the headline. The color mesh sits on
+          top for the brand glow. */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage: 'url(/png/specialbkg.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center top',
+          opacity: 0.5,
+          maskImage: 'linear-gradient(to bottom, black 55%, transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, black 55%, transparent 100%)',
+        }}
+      />
       {/* Background mesh gradient — same recipe as the dashboard preview's
           hero, scaled up. Opacity adapts to theme via var. */}
       <div
