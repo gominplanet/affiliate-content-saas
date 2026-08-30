@@ -34,6 +34,12 @@ export async function GET(req: Request) {
   // unverified-scope warning. include_granted_scopes merges it with what they
   // already granted (we don't re-pick the account for an upgrade).
   const wantUpload = new URL(req.url).searchParams.get('intent') === 'upload'
+  // `verified=1` forces a strictly verified-scope reconnect: request ONLY the
+  // Google-verified force-ssl scope and never add the sensitive youtube.upload
+  // scope, whatever the tier or public flag. The "MVP is now verified by Google"
+  // nudge uses this so that button always yields the warning-free connection it
+  // promises (upload is opted into separately via intent=upload).
+  const verifiedOnly = new URL(req.url).searchParams.get('verified') === '1'
 
   // Who may grant the sensitive youtube.upload scope. Dark to the public until
   // Google verifies it; admins can grant it now (to record the verification demo
@@ -44,7 +50,7 @@ export async function GET(req: Request) {
   const uploadEligible = youtubeUploadEnabled({ tier: intRow?.tier as string | null })
   // Add the upload scope when the viewer is eligible AND either they explicitly
   // asked for it (incremental auth) or the public flag is on (grab it on connect).
-  const addUploadScope = uploadEligible && (wantUpload || youtubeUploadEnabled())
+  const addUploadScope = !verifiedOnly && uploadEligible && (wantUpload || youtubeUploadEnabled())
 
   // Encode user ID (+ optional return path) in state so the callback can
   // identify the user without a session cookie. JSON now; the callback still

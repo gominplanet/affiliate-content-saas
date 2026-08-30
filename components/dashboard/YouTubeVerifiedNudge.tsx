@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { Youtube, X, ArrowRight, ShieldCheck } from 'lucide-react'
 
 /**
@@ -61,12 +60,12 @@ export default function YouTubeVerifiedNudge({ show }: { show: boolean }) {
             Your YouTube connection still works, but a quick one-time reconnect gives you the new verified connection: no more &ldquo;unverified app&rdquo; warning, and a permanent link that won&apos;t quietly drop. Takes about 20 seconds.
           </p>
           <div className="flex items-center gap-3">
-            <Link
-              href="/connect-youtube"
+            <a
+              href="/api/auth/youtube?returnTo=/connect-youtube&verified=1"
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#7C3AED] hover:opacity-90 transition-opacity"
             >
               Reconnect YouTube <ArrowRight size={11} />
-            </Link>
+            </a>
             <button
               onClick={dismiss}
               className="text-xs font-medium text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
