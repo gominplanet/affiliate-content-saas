@@ -458,6 +458,9 @@ export default function DashboardShellV2({
     {
       label: 'Create',
       items: [
+        // Launchpad — the one-button auto pipeline (Co-Pilot + blog + social +
+        // shorts in one). Flagship, so it leads the group. Pro-gated.
+        { href: '/launchpad', icon: <Rocket size={15} />, label: 'Launchpad', gate: isPro, badge: 'New' },
         { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot' },
         // "Library" renamed -> "Blog Post Generator" (2026-06-12 IA).
         { href: '/content', icon: <Library size={15} />, label: 'Blog Post Generator' },
