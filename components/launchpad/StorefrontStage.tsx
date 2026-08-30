@@ -38,6 +38,7 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
   const [voice, setVoice] = useState<{ enabled: boolean; hasVoice: boolean; name: string | null; credits: number | null } | null>(null)
   const [consent, setConsent] = useState(false)
   const [cloning, setCloning] = useState(false)
+  const [buying, setBuying] = useState(false)
 
   useEffect(() => { if (presetVideoId) setPicked(presetVideoId) }, [presetVideoId])
 
@@ -116,6 +117,23 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
     try { await fetch('/api/voice-clone/delete', { method: 'POST' }); await refreshVoice(); setConsent(false); toast.success('Cloned voice removed') }
     catch { /* ignore */ } finally { setCloning(false) }
   }
+  async function buyCredits(block: '50' | '150' | '500') {
+    setBuying(true)
+    try {
+      const r = await fetch('/api/stripe/credits-checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block }) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.url) throw new Error(j.error || 'Could not start checkout')
+      window.location.href = j.url
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not start checkout'); setBuying(false) }
+  }
+
+  // Returning from a successful credit purchase.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const p = new URLSearchParams(window.location.search).get('credits')
+    if (p === 'ok') { toast.success('Credits added to your account.'); void refreshVoice(); window.history.replaceState({}, '', window.location.pathname) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function refreshTargets() {
     if (!jobId) return
@@ -148,17 +166,31 @@ export default function StorefrontStage({ presetVideoId }: { presetVideoId?: str
       {voice?.enabled && (
         <div className="card p-4" style={{ background: 'rgba(14,165,164,0.04)' }}>
           {voice.hasVoice ? (
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Mic size={15} style={{ color: '#0EA5A4' }} />
-                <span className="text-sm" style={label}>
-                  Dubs use <span className="font-semibold">your voice</span>{voice.name ? ` (from “${voice.name}”)` : ''}.
-                  {typeof voice.credits === 'number'
-                    ? <span style={muted}> {voice.credits} credits left; standard voice is free after that.</span>
-                    : <span style={muted}> Unlimited.</span>}
-                </span>
+            <div>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Mic size={15} style={{ color: '#0EA5A4' }} />
+                  <span className="text-sm" style={label}>
+                    Dubs use <span className="font-semibold">your voice</span>{voice.name ? ` (from “${voice.name}”)` : ''}.
+                    {typeof voice.credits === 'number'
+                      ? <span style={muted}> {voice.credits} credits left; standard voice is free after that.</span>
+                      : <span style={muted}> Unlimited.</span>}
+                  </span>
+                </div>
+                <button type="button" onClick={() => void removeVoice()} disabled={cloning} className="text-[12px] underline disabled:opacity-60" style={muted}>Remove</button>
               </div>
-              <button type="button" onClick={() => void removeVoice()} disabled={cloning} className="text-[12px] underline disabled:opacity-60" style={muted}>Remove</button>
+              {typeof voice.credits === 'number' && (
+                <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                  <span className="text-[12px]" style={muted}>Top up:</span>
+                  {([['50', '$29'], ['150', '$69'], ['500', '$199']] as const).map(([b, price]) => (
+                    <button key={b} type="button" onClick={() => void buyCredits(b)} disabled={buying}
+                      className="text-[12px] font-medium px-2.5 py-1 rounded-lg border disabled:opacity-60"
+                      style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+                      {b} for {price}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div>

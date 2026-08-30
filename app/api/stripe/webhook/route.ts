@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getStripe } from '@/lib/stripe'
+import { getStripe, creditsForPriceId } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { alertOps } from '@/lib/ops-alert'
 import type { Tier } from '@/lib/tier'
@@ -242,6 +242,7 @@ export async function POST(request: NextRequest) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as unknown as {
       id: string
+      mode?: string
       metadata: { user_id: string; tier: Tier }
       customer: string
       subscription: string
@@ -253,13 +254,8 @@ export async function POST(request: NextRequest) {
       customer_email?: string | null
       customer_details?: { email?: string | null }
     }
-    // Derive tier from the ACTUAL priceId — never trust metadata.tier for paid
-    // status. IMPORTANT: Stripe does NOT expand `line_items` on the webhook
-    // event object (only on a `retrieve({expand})` / `listLineItems` call), so
-    // the guard was previously dead — priceId was always undefined and tier
-    // fell through to metadata.tier every time. Fetch the line item explicitly
-    // so the source-of-truth check actually runs; fall back to metadata.tier
-    // only if the fetch fails or the price isn't in our env map.
+    // Fetch the purchased price id (Stripe doesn't expand line_items on the
+    // event object; only a listLineItems call returns it).
     let priceId = session.line_items?.data?.[0]?.price?.id
     if (!priceId) {
       try {
@@ -268,6 +264,32 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.warn('[stripe-webhook] listLineItems failed; falling back to metadata.tier', e)
       }
+    }
+
+    // ── One-time "your-voice" dub credit block (payment mode) ───────────────
+    // Credit the ledger from the ACTUAL purchased price, never client metadata.
+    // Handled and returned BEFORE the subscription-tier logic so a credit
+    // purchase never touches the user's plan. Idempotent via the event dedup
+    // insert above.
+    const creditAmount = creditsForPriceId(priceId)
+    if (session.mode === 'payment' || creditAmount > 0) {
+      if (creditAmount > 0) {
+        let cuid = session.metadata?.user_id || null
+        if (!cuid) {
+          cuid = await findUserIdByEmail(admin, session.customer_details?.email || session.customer_email)
+            || await findUserIdByEmail(admin, await stripeCustomerEmail(stripe, session.customer))
+        }
+        if (!cuid) {
+          await alertOps('Stripe credit purchase completed but no MVP user matched', `customer ${session.customer}, price ${priceId}. Add the credits manually.`)
+          return NextResponse.json({ received: true, unmatched: true })
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (admin as any).rpc('dub_credits_add', { p_user: cuid, p_add: creditAmount })
+        return NextResponse.json({ received: true, creditsAdded: creditAmount })
+      }
+      // A payment-mode session we don't recognize — ignore rather than treating
+      // it as a subscription.
+      return NextResponse.json({ received: true, ignored: 'unrecognized_payment' })
     }
     const tier: Tier = (priceId && PRICE_TO_TIER[priceId]) || session.metadata?.tier
     // Runtime guard (TS types tier as Tier, but a Payment-Link session can have

@@ -27,6 +27,30 @@ export const PRICE_IDS = {
   amazon:  process.env.STRIPE_PRICE_AMAZON!,
 } as const
 
+// One-time "your-voice" dub credit blocks. Each is a Stripe ONE-TIME price
+// (mode: payment). Set the STRIPE_PRICE_CREDITS_* envs in Vercel after creating
+// the prices in Stripe. `credits` is what we add to the ledger on purchase.
+//   50 credits  → $29   150 credits → $69   500 credits → $199
+export const CREDIT_BLOCKS: Record<string, { credits: number; priceEnv: string }> = {
+  '50':  { credits: 50,  priceEnv: 'STRIPE_PRICE_CREDITS_50' },
+  '150': { credits: 150, priceEnv: 'STRIPE_PRICE_CREDITS_150' },
+  '500': { credits: 500, priceEnv: 'STRIPE_PRICE_CREDITS_500' },
+}
+export function creditBlockPriceId(block: string): string | null {
+  const cfg = CREDIT_BLOCKS[block]
+  return cfg ? (process.env[cfg.priceEnv] || null) : null
+}
+/** Credits for a Stripe price id, or 0 if it isn't a credit-block price. Used by
+ *  the webhook to credit the ledger from the ACTUAL purchased price (never
+ *  trusting client metadata for the amount). */
+export function creditsForPriceId(priceId: string | null | undefined): number {
+  if (!priceId) return 0
+  for (const cfg of Object.values(CREDIT_BLOCKS)) {
+    if (process.env[cfg.priceEnv] && process.env[cfg.priceEnv] === priceId) return cfg.credits
+  }
+  return 0
+}
+
 // A Stripe price id looks like "price_…". Guard against a mis-pasted env value —
 // e.g. a `sk_live_…` secret key or a `prod_…` product id ending up in a
 // STRIPE_PRICE_* slot, which would either break checkout or (with the metadata
