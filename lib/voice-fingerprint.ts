@@ -60,7 +60,7 @@ export async function maybeUpdateVoiceFingerprint(
   try {
     const { data: brand } = await supabase
       .from('brand_profiles')
-      .select('voice_fingerprint,voice_fingerprint_updated_at,voice_fingerprint_sources,voice_fingerprint_seen,writing_sample')
+      .select('voice_fingerprint,voice_fingerprint_updated_at,voice_fingerprint_sources,voice_fingerprint_seen,writing_sample,edit_pattern_feedback,edit_pattern_feedback_at,distilled_feedback')
       .eq('user_id', ctx.userId)
       .single()
 
@@ -88,9 +88,32 @@ export async function maybeUpdateVoiceFingerprint(
       .filter((v: { id: string; transcript: string | null }) => v.id && !seenSet.has(v.id) && (v.transcript || '').trim().length > 200)
       .slice(0, MAX_NEW_VIDEOS)
 
-    // Nothing new to learn from → skip. (The manual profile + existing
-    // fingerprint already cover the writer's needs.)
-    if (newVideos.length === 0) return false
+    const current = (brand?.voice_fingerprint as string | null)?.trim() || ''
+
+    // The creator's OWN editorial choices — the strongest taste signal we have.
+    //   edit_pattern_feedback: rules distilled from what they CUT and ADD when
+    //     they edit our drafts (lib/edit-learning).
+    //   distilled_feedback: rules from the explicit "Rewrite" notes they type
+    //     (lib/feedback-distill).
+    // Both are the creator telling us, in their own decisions, how they want to
+    // sound. Treat as ground-truth-adjacent taste.
+    const editRules = ((brand?.edit_pattern_feedback as string) || '').trim()
+    const rewriteRules = ((brand?.distilled_feedback as string) || '').trim()
+    const tasteSignal = [
+      editRules ? `What they consistently change about our drafts:\n${editRules}` : '',
+      rewriteRules ? `Rewrite instructions they've given:\n${rewriteRules}` : '',
+    ].filter(Boolean).join('\n\n').slice(0, 1800)
+
+    // Has the edit signal moved since we last refined the fingerprint? If so we
+    // refresh even with no new videos, so a creator who's been heavily editing
+    // (but not adding videos) still shapes their fingerprint.
+    const editAt = brand?.edit_pattern_feedback_at as string | null
+    const editIsNew = !!editAt && !!tasteSignal && (!last || new Date(editAt).getTime() > new Date(last).getTime())
+
+    // Nothing new to learn from → skip. We run when there are unseen transcripts,
+    // OR when we already have a fingerprint and the creator's edit signal has
+    // moved since the last refinement.
+    if (newVideos.length === 0 && !(current && editIsNew)) return false
 
     // One recent published post as a SECONDARY signal for written-format habits
     // only (headings, list use, link style). Never the model of the voice.
@@ -109,17 +132,16 @@ export async function maybeUpdateVoiceFingerprint(
       .map((v: { title: string; transcript: string }) => `── VIDEO: ${v.title || 'Untitled'} ──\n${(v.transcript || '').replace(/\s+/g, ' ').trim().slice(0, 2500)}`)
       .join('\n\n')
 
-    const current = (brand?.voice_fingerprint as string | null)?.trim() || ''
     const writingSample = ((brand?.writing_sample as string) || '').trim().slice(0, 800)
 
     const anthropic = createAnthropicClient()
     const system = `You study how ONE creator actually sounds and maintain a living style guide MVP's writers follow so their blog posts read like the creator wrote them, not like generic AI. You return ONLY the updated style guide as plain text, no preamble, no markdown headings syntax, no code fence.`
 
     const prompt = `${current
-      ? `Here is the CURRENT voice fingerprint for this creator. Refine it with the new evidence below: keep what still holds true, sharpen vague parts, and add anything new the transcripts reveal. Do not discard earlier observations unless the new evidence contradicts them.\n\nCURRENT VOICE FINGERPRINT:\n"""\n${current}\n"""\n`
+      ? `Here is the CURRENT voice fingerprint for this creator. Refine it with the new evidence below: keep what still holds true, sharpen vague parts, and add anything new the evidence reveals. Do not discard earlier observations unless the new evidence contradicts them.\n\nCURRENT VOICE FINGERPRINT:\n"""\n${current}\n"""\n`
       : `Build the FIRST voice fingerprint for this creator from the evidence below.`}
 
-GROUND TRUTH = the creator's OWN spoken words in the transcripts below. That is how they actually talk, and the written voice should echo it. ${recentPost ? 'The published post is only for written-format habits (how they use headings, lists, links); do not treat its wording as the voice, since MVP may have drafted it.' : ''} ${writingSample ? 'The writing sample is the creator\'s own, treat it as voice signal too.' : ''}
+GROUND TRUTH = the creator's OWN words and choices. ${transcriptBlock ? 'The transcripts below are them speaking, so the written voice should echo how they actually talk. ' : ''}${tasteSignal ? 'The edit signal below is even more direct: it is what this creator consistently changes when they edit our drafts, so it states their taste in their own decisions. Weight it heavily. ' : ''}${recentPost ? 'The published post is only for written-format habits (how they use headings, lists, links); do not treat its wording as the voice, since MVP may have drafted it. ' : ''}${writingSample ? "The writing sample is the creator's own, treat it as voice signal too." : ''}
 
 Capture, concretely and only where the evidence supports it:
 - Signature phrases, filler words, and turns of phrase they actually use.
@@ -127,13 +149,11 @@ Capture, concretely and only where the evidence supports it:
 - Sentence rhythm (short and punchy vs long and winding), and how they open and close a thought.
 - How they show opinion, humor, skepticism, or enthusiasm.
 - Pacing: do they tease, digress, compare, tell stories, ask rhetorical questions?
-- Pet peeves / things they'd never say.
+- Pet peeves / things they'd never say, including anything the edit signal shows they strip out.
 
 Write it as a direct, practical guide (2nd person: "You tend to...", "You open with..."). Be specific with examples pulled from the evidence. Do NOT invent traits you can't see. Keep it under ${Math.floor(MAX_FINGERPRINT_CHARS * 0.9)} characters.
 
-${writingSample ? `WRITING SAMPLE (creator's own):\n"""${writingSample}"""\n\n` : ''}NEW TRANSCRIPTS (creator speaking — primary evidence):
-${transcriptBlock}
-${recentPost ? `\nRECENT PUBLISHED POST (format habits only):\n${recentPost}` : ''}`
+${writingSample ? `WRITING SAMPLE (creator's own):\n"""${writingSample}"""\n\n` : ''}${tasteSignal ? `THE CREATOR'S EDIT SIGNAL (their own editorial choices — strongest taste evidence):\n${tasteSignal}\n\n` : ''}${transcriptBlock ? `NEW TRANSCRIPTS (creator speaking — primary voice evidence):\n${transcriptBlock}\n` : ''}${recentPost ? `\nRECENT PUBLISHED POST (format habits only):\n${recentPost}` : ''}`
 
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
