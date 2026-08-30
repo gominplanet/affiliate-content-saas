@@ -131,6 +131,7 @@ export default function LandingPreview() {
       <ComparisonSection />
       <ProofSection />
       <TestimonialsSection />
+      <CommunitySection />
       <FounderSection />
       <PricingSection />
       <FAQSection />
@@ -766,6 +767,37 @@ function TestimonialsSection() {
                 {t.handle && <span style={{ color: 'var(--text-faint)' }}> · {t.handle}</span>}
               </figcaption>
             </figure>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** Support & community — the "you're not doing this alone" section. Matches the
+ *  education + community that logie5 and Oink lean on (tutorials, calls, group). */
+const COMMUNITY = [
+  { Icon: Play, title: 'Video tutorials', desc: 'Step-by-step tutorials for every feature on the MVP YouTube channel, so you are never stuck.' },
+  { Icon: Calendar, title: 'Weekly live calls', desc: 'Jump on our weekly calls to get your questions answered and talk shop on affiliate marketing and everything online.' },
+  { Icon: Facebook, title: 'A private community', desc: 'A Facebook group where creators share what is working, celebrate wins, and help shape what we build next.' },
+]
+function CommunitySection() {
+  return (
+    <section id="community" className="px-6 lg:px-8 pt-12 pb-8 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-2xl mx-auto">
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>You are not doing this alone</span>
+          <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
+            Support and a community behind you
+          </h2>
+        </div>
+        <div className="grid sm:grid-cols-3 gap-4 mt-10">
+          {COMMUNITY.map(({ Icon, title, desc }) => (
+            <div key={title} className="rounded-2xl border p-6 text-center" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <div className="w-11 h-11 rounded-xl grid place-items-center mx-auto mb-3.5" style={{ background: 'rgba(124,58,237,0.1)', color: '#7C3AED' }}><Icon size={20} /></div>
+              <h3 className="text-[16.5px] font-bold mb-1.5" style={{ color: 'var(--text)' }}>{title}</h3>
+              <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{desc}</p>
+            </div>
           ))}
         </div>
       </div>
