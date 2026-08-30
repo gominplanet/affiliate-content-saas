@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { learnProfileToPrompt } from '@/lib/learn'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { scrubAiHtml } from '@/lib/html-scrub'
@@ -71,6 +72,22 @@ export async function POST(request: Request) {
     const existingHtml = (post.content as string) || ''
     if (existingHtml.length < 200) return NextResponse.json({ error: 'This article has no stored body to refresh.' }, { status: 400 })
 
+    // The creator's trained voice — keep the refresh sounding like them, not like
+    // a generic rewrite. Same LEARN profile + writing sample the writer uses.
+    const { data: brand } = await supabase
+      .from('brand_profiles')
+      .select('learn_profile,writing_sample,words_to_avoid')
+      .eq('user_id', user.id).maybeSingle()
+    const learn = learnProfileToPrompt(brand?.learn_profile)
+    const sample = (((brand?.writing_sample as string) || '').trim()).slice(0, 1200)
+    const avoid = Array.isArray(brand?.words_to_avoid)
+      ? (brand!.words_to_avoid as string[]).map(w => (w || '').trim()).filter(Boolean).slice(0, 30) : []
+    const vParts: string[] = []
+    if (learn) vParts.push(learn.trim())
+    if (sample) vParts.push(`THE CREATOR'S OWN WRITING SAMPLE — keep the refreshed copy in this voice:\n"""${sample}"""`)
+    if (avoid.length) vParts.push(`WORDS THE CREATOR NEVER USES — do not introduce any of these: ${avoid.join(', ')}.`)
+    const voiceBlock = vParts.length ? `\n\n${vParts.join('\n\n')}` : ''
+
     const client = createAnthropicClient()
     const prompt = `You are UPDATING an existing published article so it stays current. Use the web_search tool to re-check the facts, and refresh anything out of date: statistics, prices, percentages, dated figures, study findings, product availability, and any "as of" language. Keep the SAME structure, headings, angle and voice — this is a refresh, not a rewrite. Keep every existing inline source link that is still valid and add new linked sources (rel="nofollow") for any figure you change. Do not add or remove sections.
 
@@ -83,7 +100,7 @@ RULES:
 - ABSOLUTE BAN on em-dashes and en-dashes. Never put a year inside a heading or the title. No invented numbers — only figures a search result supports.
 
 EXISTING ARTICLE HTML TO UPDATE:
-${existingHtml.slice(0, 24000)}`
+${existingHtml.slice(0, 24000)}${voiceBlock}`
 
     let html = ''
     try {

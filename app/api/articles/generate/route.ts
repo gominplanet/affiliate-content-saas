@@ -31,6 +31,7 @@ import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
 import { checkArticlesUsage, normalizeTier, TIERS } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
+import { learnProfileToPrompt } from '@/lib/learn'
 import { scorePostSeo } from '@/lib/seo-score'
 import { enforceSeoBasics } from '@/lib/seo-autofix'
 import { writeContentSchema } from '@/lib/content-schema'
@@ -292,6 +293,11 @@ export async function POST(req: Request) {
     // The previewed meta description, carried back so the published excerpt
     // matches what was reviewed.
     meta?: string
+    // Voice: 'brand' (default) writes in the creator's trained voice — their
+    // LEARN profile + writing sample + words-to-avoid. 'preset' uses the plain
+    // tone dropdown instead. Falls back to the tone preset when nothing is
+    // trained yet.
+    voiceMode?: string
   }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
@@ -411,6 +417,31 @@ COMPETITOR COVERAGE — the pages ranking for this topic consistently cover thes
 ${mustCoverTerms.map(t => `- ${t}`).join('\n')}
 ` : ''
 
+  // ── True brand voice (add-on D) ───────────────────────────────────────────
+  // Default: write in the creator's OWN trained voice, not a generic tone preset.
+  // Pull their LEARN profile (taste/style/thought-process), their writing sample,
+  // and their words-to-avoid — the same voice the blog agents already use — and
+  // hand it to the writer as high-priority instruction. 'preset' opts back to the
+  // plain tone dropdown; either way an empty profile falls back to the tone preset.
+  const useMyVoice = body.voiceMode !== 'preset'
+  let voiceBlock = ''
+  let voiceUsed = false
+  if (!isRepublish && useMyVoice) {
+    const { data: brand } = await supabase
+      .from('brand_profiles')
+      .select('learn_profile,writing_sample,words_to_avoid')
+      .eq('user_id', user.id).maybeSingle()
+    const learn = learnProfileToPrompt(brand?.learn_profile)
+    const sample = (((brand?.writing_sample as string) || '').trim()).slice(0, 1500)
+    const avoid = Array.isArray(brand?.words_to_avoid)
+      ? (brand!.words_to_avoid as string[]).map(w => (w || '').trim()).filter(Boolean).slice(0, 30) : []
+    const parts: string[] = []
+    if (learn) parts.push(learn.trim())
+    if (sample) parts.push(`THE CREATOR'S OWN WRITING SAMPLE — mirror this voice exactly: sentence rhythm, vocabulary, how they open and how they transition. Match the VOICE, not the topic:\n"""${sample}"""`)
+    if (avoid.length) parts.push(`WORDS THE CREATOR NEVER USES — do not use any of these: ${avoid.join(', ')}.`)
+    if (parts.length) { voiceBlock = parts.join('\n\n'); voiceUsed = true }
+  }
+
   const writerPrompt = `You are writing a researched, informational blog article about "${topic}". This is NOT a product review or a sales page. It is a genuine, opinionated, well-structured article a real blogger would publish to inform their readers.
 
 Use the web_search tool to ground the article in real facts, current figures, and concrete examples. When you state a specific statistic, price, percentage, dated figure, study finding, or a direct quote you pulled from research, cite it INLINE right there in the sentence with a real link to the source, e.g. <p>According to <a href="https://www.example.com/report" rel="nofollow">Consumer Reports</a>, ...</p>. Every hard number in the article should be traceable to a linked source in the prose, not only in a list at the end. Use the actual result URL, name the source, and keep rel="nofollow".
@@ -421,7 +452,7 @@ ${angle ? `\nTHE WRITER'S ANGLE / OPINION (make the article reflect this point o
 ${keywords ? `\nKEYWORDS to work in naturally (for SEO, no stuffing): ${keywords}` : ''}
 ${notes ? `\nEXTRA NOTES from the writer: ${notes}` : ''}
 
-TONE: ${TONE_GUIDE[tone]}
+${voiceBlock ? `WRITE IN THE CREATOR'S OWN VOICE (below). This is the whole point of the article sounding like them, so it OVERRIDES any generic tone and must hold across every section, headings included.\n${voiceBlock}` : `TONE: ${TONE_GUIDE[tone]}`}
 LENGTH: ${LENGTH_WORDS[length]}
 
 ═══════════════════════════════════════
@@ -720,7 +751,7 @@ VOICE / STYLE RULES:
 
   // ── Preview only — no WordPress write ─────────────────────────────────────
   if (!publish) {
-    return NextResponse.json({ ok: true, title, html, heroUrl, meta: metaDesc, seoScore, termCoverage })
+    return NextResponse.json({ ok: true, title, html, heroUrl, meta: metaDesc, seoScore, termCoverage, voiceUsed })
   }
 
   // ── Publish to WordPress ──────────────────────────────────────────────────
@@ -832,5 +863,6 @@ VOICE / STYLE RULES:
     postId: saved?.id ?? null,
     seoScore,
     termCoverage,
+    voiceUsed,
   })
 }

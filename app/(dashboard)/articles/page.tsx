@@ -52,6 +52,11 @@ export default function ArticlesPage() {
   const [angle, setAngle] = useState('')
   const [sections, setSections] = useState<string[]>(DEFAULT_SECTIONS)
   const [tone, setTone] = useState('conversational')
+  // True brand voice (add-on D): write in the creator's trained voice (their LEARN
+  // profile + writing sample) instead of a generic tone preset. voiceReady is null
+  // while we check, then true/false once we know whether anything is trained.
+  const [useMyVoice, setUseMyVoice] = useState(true)
+  const [voiceReady, setVoiceReady] = useState<boolean | null>(null)
   const [length, setLength] = useState<'short' | 'medium' | 'long'>('medium')
   const [keywords, setKeywords] = useState('')
   const [notes, setNotes] = useState('')
@@ -101,7 +106,33 @@ export default function ArticlesPage() {
   // 'preview' = Generate preview button, 'publish' = Generate & publish,
   // 'publishing' = the preview's "Publish to my blog" button. null = idle.
   const [busy, setBusy] = useState<null | 'preview' | 'publish' | 'publishing'>(null)
-  const [preview, setPreview] = useState<{ title: string; html: string; heroUrl: string | null; meta: string; seoScore: number | null; termCoverage: { score: number; covered: string[]; missing: string[] } | null } | null>(null)
+  const [preview, setPreview] = useState<{ title: string; html: string; heroUrl: string | null; meta: string; seoScore: number | null; termCoverage: { score: number; covered: string[]; missing: string[] } | null; voiceUsed?: boolean } | null>(null)
+
+  // Detect whether the creator has trained a voice yet (writing sample or any
+  // filled LEARN section). If not, default the toggle off so we don't promise a
+  // voice we can't deliver, and point them to Voice Training.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch('/api/learn')
+        const j = await r.json().catch(() => ({}))
+        const sample = (j?.writing_sample || '').trim()
+        const lp = j?.learn_profile || {}
+        const hasLearn = !!(lp && (
+          (lp.voice && Object.keys(lp.voice).length) ||
+          (lp.style && Object.values(lp.style).some(Boolean)) ||
+          (Array.isArray(lp.speech_patterns) && lp.speech_patterns.length) ||
+          (Array.isArray(lp.thought_process) && lp.thought_process.length)
+        ))
+        const ready = !!sample || hasLearn
+        if (!cancelled) { setVoiceReady(ready); setUseMyVoice(ready) }
+      } catch {
+        if (!cancelled) { setVoiceReady(false); setUseMyVoice(false) }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -138,7 +169,7 @@ export default function ArticlesPage() {
       const r = await fetch('/api/articles/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish, heroStyle, productImageUrl, productMode, inArticleImages }),
+        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish, heroStyle, productImageUrl, productMode, inArticleImages, voiceMode: useMyVoice ? 'brand' : 'preset' }),
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Generation failed')
@@ -149,7 +180,7 @@ export default function ArticlesPage() {
         })
         setPreview(null)
       } else {
-        setPreview({ title: j.title, html: j.html, heroUrl: j.heroUrl ?? null, meta: j.meta ?? '', seoScore: j.seoScore ?? null, termCoverage: j.termCoverage ?? null })
+        setPreview({ title: j.title, html: j.html, heroUrl: j.heroUrl ?? null, meta: j.meta ?? '', seoScore: j.seoScore ?? null, termCoverage: j.termCoverage ?? null, voiceUsed: j.voiceUsed ?? false })
         toast.success('Preview ready — review it below.')
       }
     } catch (err) {
@@ -172,7 +203,7 @@ export default function ArticlesPage() {
       try {
         const res = await fetch('/api/articles/generate', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ topic: topics[i], angle, sections, tone, length, keywords, notes, publish: true, heroStyle, productMode, inArticleImages }),
+          body: JSON.stringify({ topic: topics[i], angle, sections, tone, length, keywords, notes, publish: true, heroStyle, productMode, inArticleImages, voiceMode: useMyVoice ? 'brand' : 'preset' }),
         })
         const j = await res.json()
         if (!res.ok) throw new Error(j.error || 'Failed')
@@ -396,6 +427,44 @@ export default function ArticlesPage() {
           </div>
         </div>
 
+        {/* Voice: the creator's trained voice vs a generic tone preset. */}
+        <div>
+          <div className="flex items-start gap-3 rounded-xl border p-3.5"
+            style={{ borderColor: useMyVoice ? 'rgba(124,58,237,0.35)' : 'var(--border)', background: useMyVoice ? 'linear-gradient(135deg, rgba(124,58,237,0.07), rgba(52,199,89,0.04))' : 'var(--bg)' }}>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: useMyVoice ? 'linear-gradient(135deg,#7C3AED,#34c759)' : 'rgba(124,58,237,0.10)', color: useMyVoice ? '#fff' : '#7C3AED' }}>
+              <Sparkles size={15} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>Write in my trained voice</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={useMyVoice}
+                  disabled={generating}
+                  onClick={() => setUseMyVoice(v => !v)}
+                  className="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition disabled:opacity-60"
+                  style={{ background: useMyVoice ? '#7C3AED' : 'var(--border)' }}
+                >
+                  <span className="inline-block h-5 w-5 transform rounded-full bg-white transition" style={{ transform: useMyVoice ? 'translateX(22px)' : 'translateX(2px)' }} />
+                </button>
+              </div>
+              <p className="text-xs mt-1 leading-snug" style={{ color: 'var(--fg-muted)' }}>
+                {useMyVoice
+                  ? 'Uses your Voice Training (writing sample, taste and style) so the article sounds like you, not a generic AI blog.'
+                  : 'Off — the article uses the plain tone preset below instead of your trained voice.'}
+              </p>
+              {voiceReady === false && (
+                <p className="text-xs mt-1.5 leading-snug" style={{ color: '#b45309' }}>
+                  You haven’t set up Voice Training yet, so this falls back to the tone preset.{' '}
+                  <a href="/learn" className="underline font-medium" style={{ color: '#7C3AED' }}>Train your voice</a> to make articles sound like you.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Tone + Length */}
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
@@ -403,12 +472,15 @@ export default function ArticlesPage() {
             <select
               value={tone}
               onChange={e => setTone(e.target.value)}
-              disabled={generating}
-              className="w-full rounded-lg px-3 py-2.5 text-sm outline-none border"
+              disabled={generating || useMyVoice}
+              className="w-full rounded-lg px-3 py-2.5 text-sm outline-none border disabled:opacity-50"
               style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
             >
               {TONES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
+            {useMyVoice && (
+              <p className="text-[11px] mt-1" style={{ color: 'var(--fg-muted)' }}>Your trained voice is on, so the tone preset is set aside.</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>Length</label>
@@ -681,6 +753,15 @@ export default function ArticlesPage() {
                     }}
                   >
                     Topic coverage {preview.termCoverage.score}%
+                  </span>
+                )}
+                {preview.voiceUsed && (
+                  <span
+                    className="text-[11px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                    title="Written in your trained voice (Voice Training)"
+                    style={{ background: 'rgba(124,58,237,.15)', color: '#6d28d9' }}
+                  >
+                    <Sparkles size={11} /> In your voice
                   </span>
                 )}
               </div>
