@@ -15,12 +15,19 @@ import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 type Style = 'lowerthird' | 'endcard'
 type Source = 'design' | 'words' | 'upload'
 
-// Colorways for a "your words" badge.
+// Colorways for a "your words" pill badge.
 const WORD_STYLES: { key: string; label: string; bg: string; fg: string }[] = [
   { key: 'dark', label: 'White on dark', bg: '#111318', fg: '#FFFFFF' },
   { key: 'gold', label: 'Gold', bg: '#F4B400', fg: '#111318' },
   { key: 'red', label: 'Red', bg: '#E0554B', fg: '#FFFFFF' },
   { key: 'purple', label: 'Purple', bg: '#7C3AED', fg: '#FFFFFF' },
+]
+// Platform-neutral AI badge themes (no TikTok / Instagram logos).
+const BADGE_THEMES: { key: string; label: string }[] = [
+  { key: 'shop', label: 'Shop now' },
+  { key: 'storefront', label: 'My storefront' },
+  { key: 'link', label: 'Link below' },
+  { key: 'bold', label: 'Bold burst' },
 ]
 
 // Render a rounded-pill badge PNG (transparent background) from words, so it can
@@ -83,7 +90,9 @@ export default function UploadStage() {
   const [ctaSource, setCtaSource] = useState<Source>('design')
   const [stickerId, setStickerId] = useState<string>(CTA_STICKERS[0]?.id || '')
   const [words, setWords] = useState('')
+  const [wordMode, setWordMode] = useState<'simple' | 'designed'>('simple')
   const [wordStyle, setWordStyle] = useState(WORD_STYLES[0].key)
+  const [theme, setTheme] = useState('shop')
   const [wordBadgeUrl, setWordBadgeUrl] = useState<string | null>(null)
   const [making, setMaking] = useState(false)
   const [uploadedBadgeUrl, setUploadedBadgeUrl] = useState<string | null>(null)
@@ -152,6 +161,25 @@ export default function UploadStage() {
       toast.success('Badge ready. Drag it into place.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not make the badge')
+    } finally { setMaking(false) }
+  }
+
+  async function makeDesignedBadge() {
+    const t = words.trim()
+    if (!t) { toast.error('Type your CTA words first'); return }
+    setMaking(true)
+    try {
+      const r = await fetch('/api/instagram/burn/generate-sticker', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: t, theme }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (r.status === 429 || j.limitReached) { toast.error(j.error || 'You have hit your monthly badge limit.'); return }
+      if (!r.ok || !j.stickerUrl) throw new Error(j.error || 'Could not design the badge')
+      setWordBadgeUrl(j.stickerUrl)
+      toast.success('Badge designed. Drag it into place.')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not design the badge')
     } finally { setMaking(false) }
   }
 
@@ -330,20 +358,51 @@ export default function UploadStage() {
                 placeholder="SHOP MY STOREFRONT"
                 className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
             </div>
-            <div className="flex flex-wrap gap-2">
-              {WORD_STYLES.map(s => (
-                <button key={s.key} type="button" onClick={() => setWordStyle(s.key)}
-                  className="px-2.5 py-1.5 rounded-lg border text-[12px] font-semibold"
-                  style={{ background: s.bg, color: s.fg, outline: wordStyle === s.key ? '2px solid #7C3AED' : 'none', outlineOffset: 1, borderColor: 'transparent' }}>
-                  {s.label}
+            <div className="inline-flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+              {(['simple', 'designed'] as const).map(m => (
+                <button key={m} type="button" onClick={() => { setWordMode(m); setWordBadgeUrl(null) }}
+                  className="px-3 py-1.5 text-[12px] font-medium"
+                  style={{ background: wordMode === m ? 'rgba(124,58,237,0.10)' : 'transparent', color: wordMode === m ? '#7C3AED' : 'var(--fg-muted)' }}>
+                  {m === 'simple' ? 'Simple pill' : 'Designed badge'}
                 </button>
               ))}
             </div>
-            <button type="button" onClick={() => void makeWordBadge()} disabled={making || !words.trim()}
-              className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-2 rounded-lg border disabled:opacity-60"
-              style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
-              {making ? <><Loader2 size={14} className="animate-spin" /> Building…</> : <><Type size={14} /> {wordBadgeUrl ? 'Update badge' : 'Create badge'}</>}
-            </button>
+            {wordMode === 'simple' ? (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {WORD_STYLES.map(s => (
+                    <button key={s.key} type="button" onClick={() => setWordStyle(s.key)}
+                      className="px-2.5 py-1.5 rounded-lg border text-[12px] font-semibold"
+                      style={{ background: s.bg, color: s.fg, outline: wordStyle === s.key ? '2px solid #7C3AED' : 'none', outlineOffset: 1, borderColor: 'transparent' }}>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onClick={() => void makeWordBadge()} disabled={making || !words.trim()}
+                  className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-2 rounded-lg border disabled:opacity-60"
+                  style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+                  {making ? <><Loader2 size={14} className="animate-spin" /> Building…</> : <><Type size={14} /> {wordBadgeUrl ? 'Update badge' : 'Create badge'}</>}
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-[12px]" style={muted}>A glossy designed badge in your words, no TikTok or Instagram logos. Pick a look:</p>
+                <div className="flex flex-wrap gap-2">
+                  {BADGE_THEMES.map(th => (
+                    <button key={th.key} type="button" onClick={() => setTheme(th.key)}
+                      className="px-2.5 py-1.5 rounded-lg border text-[12px] font-medium"
+                      style={{ borderColor: theme === th.key ? '#7C3AED' : 'var(--border)', borderWidth: theme === th.key ? 2 : 1, color: 'var(--fg)' }}>
+                      {th.label}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onClick={() => void makeDesignedBadge()} disabled={making || !words.trim()}
+                  className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-2 rounded-lg text-white disabled:opacity-60"
+                  style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
+                  {making ? <><Loader2 size={14} className="animate-spin" /> Designing…</> : <><Wand2 size={14} /> {wordBadgeUrl ? 'Regenerate badge' : 'Design badge'}</>}
+                </button>
+              </>
+            )}
           </div>
         )}
 

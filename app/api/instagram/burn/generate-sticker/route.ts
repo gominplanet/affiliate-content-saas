@@ -96,6 +96,30 @@ const BADGE_STYLES: Record<`${CtaDestination}-${CtaMode}`, BadgeStyle> = {
   },
 }
 
+// Platform-NEUTRAL badge themes — the same glossy sticker style, but with NO
+// TikTok / Instagram / YouTube / Amazon logos. For a horizontal YouTube video or
+// anywhere a creator just wants a clean "shop" CTA. Keyed by a `theme` param.
+const GENERIC_STYLES: Record<string, BadgeStyle> = {
+  shop: {
+    defaultTag: 'SHOP NOW',
+    style: `Style: a premium, high-energy shopping CTA badge — a glossy 3D neon pill/pennant with vivid gradient colors on a deep glossy body, a clean white shopping-cart or shopping-bag icon, bold chrome / gradient display lettering, and a bold arrow. Platform-neutral.`,
+  },
+  storefront: {
+    defaultTag: 'SHOP MY STOREFRONT',
+    style: `Style: a premium shopping CTA badge — a glossy 3D neon pill with a warm orange-to-gold gradient on a glossy body, a clean white shopping-bag / storefront icon, and bold gradient display lettering. Feels like "shop my picks". Platform-neutral.`,
+  },
+  link: {
+    defaultTag: 'LINK IN DESCRIPTION',
+    style: `Style: a premium "link in description" badge — a glossy 3D neon pill with vivid gradient colors, a small link / chain icon, bold display lettering, and an arrow pointing DOWN toward the description. Platform-neutral.`,
+  },
+  bold: {
+    defaultTag: 'SHOP BELOW',
+    style: `Style: a bold comic-burst CTA badge — a spiky starburst/explosion shape with vivid saturated colors, thick outline, and chunky display lettering with a small arrow. Loud and attention-grabbing. Platform-neutral.`,
+  },
+}
+// Generic reference badges (no platform logos) for the neutral themes.
+const GENERIC_REF_FILES = ['burner011.png', 'burner013.png', 'burner015.png', 'burner016.png']
+
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
@@ -134,12 +158,14 @@ export async function POST(request: Request) {
       }, { status: 429 })
     }
 
-    const body = await request.json() as { tag?: string; destination?: string; mode?: string }
-    // Destination + mode drive the design. Default TikTok Shop (the most common
-    // one-time-purchase case). Legacy callers that send neither still work.
+    const body = await request.json() as { tag?: string; destination?: string; mode?: string; theme?: string }
+    // A `theme` selects a platform-NEUTRAL badge (no TikTok/IG logos). Otherwise
+    // destination + mode drive a platform badge. Default TikTok Shop.
+    const theme = String(body.theme || '').toLowerCase()
+    const generic = GENERIC_STYLES[theme]
     const destination: CtaDestination = body.destination === 'instagram' ? 'instagram' : 'tiktok'
     const mode: CtaMode = body.mode === 'bio' ? 'bio' : 'shop'
-    const badgeStyle = BADGE_STYLES[`${destination}-${mode}`]
+    const badgeStyle = generic || BADGE_STYLES[`${destination}-${mode}`]
     // The words on the badge. Optional — fall back to the combo's default
     // ("SHOP NOW" / "LINK IN BIO") so a one-tap generate still works.
     const tag = ((body.tag || '').replace(/\s+/g, ' ').trim() || badgeStyle.defaultTag).slice(0, 40)
@@ -154,11 +180,17 @@ export async function POST(request: Request) {
     // AI output matches the real platform shop look. gpt-image needs at least one
     // reference (compose-with adapter). Fall back to the generic examples if a
     // combo somehow has no finalized badge yet.
-    const refFiles = platformBadges(destination, mode).map(b => b.file)
+    const refFiles = generic ? GENERIC_REF_FILES : platformBadges(destination, mode).map(b => b.file)
     const refUrls = await rehostAll((refFiles.length ? refFiles : FALLBACK_REF_FILES).map(f => ctaStickerUrl(f)))
     if (refUrls.length === 0) return NextResponse.json({ error: 'Could not load style references.' }, { status: 502 })
 
-    const prompt = `Design a single die-cut "call to action" sticker badge that reads EXACTLY: "${tag}".
+    const prompt = generic
+      ? `Design a single die-cut "call to action" sticker badge that reads EXACTLY: "${tag}".
+${badgeStyle.style}
+Match the neon/glossy 3D sticker treatment of the reference badges (shape, finish, vivid colors), but this is PLATFORM-NEUTRAL: DO NOT include any social-media or brand logos (no TikTok, no Instagram, no YouTube, no Amazon, no brand marks of any kind).
+Spell the text PERFECTLY and make it large and legible — "${tag}". Besides that text, no extra sentences, no watermark.
+The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE background with NOTHING else around it (no scene, no phone, no hands, no photo). Crisp, polished, professional sticker with clean edges, high contrast and vivid, harmonious colors — premium.`
+      : `Design a single die-cut "call to action" sticker badge that reads EXACTLY: "${tag}".
 ${badgeStyle.style}
 Match the look, shape and finish of the reference badge(s): the same neon/glossy 3D treatment, the platform logo/icon, and the same arrow direction.
 Spell the text PERFECTLY and make it large and legible — "${tag}". Besides that text and the platform's short label, no extra sentences, no watermark.
