@@ -172,12 +172,12 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brand } = await (supabase as any)
       .from('brand_profiles')
-      .select('niches,tone,learn_profile,voice_fingerprint')
+      .select('niches,tone,learn_profile,voice_fingerprint,channel_voice_fingerprints')
       .eq('user_id', user.id)
       .maybeSingle()
     const niches = ((brand?.niches as string[]) || []).join(', ') || 'general'
     const tone = ((brand?.tone as string[]) || []).join(', ') || 'conversational, energetic'
-    const voiceBlock = creatorVoiceBlock(brand as never)
+    const voiceBlock = creatorVoiceBlock(brand as never, (video.channel_id as string | null) ?? null)
 
     // Timestamped transcript — timings are REQUIRED here (no timings, no clip
     // windows). Layered, most-reliable first:

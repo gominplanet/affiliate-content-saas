@@ -34,7 +34,7 @@ import { getValidGscToken, querySearchAnalytics } from '@/lib/gsc'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { maybeDistillFeedback } from '@/lib/feedback-distill'
 import { maybeLearnFromEdits } from '@/lib/edit-learning'
-import { maybeUpdateVoiceFingerprint } from '@/lib/voice-fingerprint'
+import { maybeUpdateVoiceFingerprint, maybeUpdateChannelVoiceFingerprints, resolveVoiceFingerprint } from '@/lib/voice-fingerprint'
 import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 import { composeWithGptImage, rehostToFal, GPT_IMAGE_COMPOSE_LOW_COST_MODEL } from '@/lib/thumbnail-generators'
 import { generateArtDirectorBlogHero } from '@/lib/art-director-pin'
@@ -1105,7 +1105,10 @@ async function handleGenerate(request: Request) {
         learn_profile: (brand as Record<string, unknown>).learn_profile,
         // Continually-learned voice fingerprint (migration 301). Undefined until
         // the column exists / the learner has run — a safe no-op in the prompt.
-        voice_fingerprint: (brand as Record<string, unknown>).voice_fingerprint as string | null,
+        voice_fingerprint: resolveVoiceFingerprint(
+          brand as { voice_fingerprint?: string | null; channel_voice_fingerprints?: unknown },
+          (video as Record<string, unknown>)?.channel_id as string | null,
+        ),
         // 2026-06-08 (#14): opt-in "What we'd improve" section. Read from
         // brand_profiles.include_improvements_section (migration 110).
         // Falls back to false when the column is missing so the toggle is
@@ -1918,6 +1921,11 @@ async function handleGenerate(request: Request) {
   // like them. Debounced 12h. No await — reads + writes the OWNER's profile.
   // Safe no-op until migration 301 runs (catches missing column).
   void maybeUpdateVoiceFingerprint(supabase, { userId: ownerId, tier: (wp?.tier as string) ?? null })
+
+  // And the per-channel fingerprints, but only for creators with more than one
+  // connected channel (the function returns early otherwise). Same fire-and-
+  // forget, debounced-per-channel pattern. Safe no-op until migration 302.
+  void maybeUpdateChannelVoiceFingerprints(supabase, { userId: ownerId, tier: (wp?.tier as string) ?? null })
 
   // ── 10. Body images + cache purge ─────────────────────────────────────────
   // Heavy follow-up: title/body fact-checks, schema, and IN-ARTICLE IMAGES.

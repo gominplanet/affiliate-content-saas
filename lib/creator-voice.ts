@@ -9,20 +9,26 @@
 // Returns '' when the creator has neither, so prompts aren't padded with empties.
 
 import { learnProfileToPrompt } from '@/lib/learn'
-import { buildLearnedVoiceBlock } from '@/lib/voice-fingerprint'
+import { buildLearnedVoiceBlock, resolveVoiceFingerprint } from '@/lib/voice-fingerprint'
 
-/** The two fields this reads off a brand_profiles row. */
+/** The fields this reads off a brand_profiles row. */
 export interface CreatorVoiceFields {
   voice_fingerprint?: string | null
   learn_profile?: unknown
+  /** Per-channel fingerprint map (migration 302). Optional. */
+  channel_voice_fingerprints?: unknown
 }
 
-/** Combine fingerprint + LEARN profile into one prompt block. Pass the
- *  brand_profiles row (only these two fields are read). */
-export function creatorVoiceBlock(brand: CreatorVoiceFields | null | undefined): string {
+/** Combine the (per-channel or overall) fingerprint + LEARN profile into one
+ *  prompt block. Pass the brand_profiles row; pass `channelId` when the content
+ *  comes from a specific channel so its own voice is used when it has one. */
+export function creatorVoiceBlock(
+  brand: CreatorVoiceFields | null | undefined,
+  channelId?: string | null,
+): string {
   if (!brand) return ''
   return [
-    buildLearnedVoiceBlock(brand.voice_fingerprint),
+    buildLearnedVoiceBlock(resolveVoiceFingerprint(brand, channelId)),
     learnProfileToPrompt(brand.learn_profile),
   ]
     .map(s => (s || '').trim())
@@ -32,4 +38,4 @@ export function creatorVoiceBlock(brand: CreatorVoiceFields | null | undefined):
 
 /** The columns to add to a brand_profiles select so `creatorVoiceBlock` has
  *  what it needs. Spread or append when building a select string. */
-export const CREATOR_VOICE_COLUMNS = 'learn_profile,voice_fingerprint'
+export const CREATOR_VOICE_COLUMNS = 'learn_profile,voice_fingerprint,channel_voice_fingerprints'

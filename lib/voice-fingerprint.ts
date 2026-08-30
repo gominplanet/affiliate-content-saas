@@ -136,6 +136,43 @@ export async function maybeUpdateVoiceFingerprint(
 
     const writingSample = ((brand?.writing_sample as string) || '').trim().slice(0, 800)
 
+    const text = await refineFingerprint(ctx, { current, transcriptBlock, tasteSignal, recentPost, writingSample })
+    if (!text) return false
+
+    // Fold the new video ids into `seen` (cap the stored list so it can't grow
+    // without bound) and bump the learned-from counter.
+    const nextSeen = [...newVideos.map((v: { id: string }) => v.id), ...seen].slice(0, 500)
+    const nextSources = (Number(brand?.voice_fingerprint_sources) || 0) + newVideos.length
+
+    await supabase
+      .from('brand_profiles')
+      .update({
+        voice_fingerprint: text,
+        voice_fingerprint_updated_at: new Date().toISOString(),
+        voice_fingerprint_sources: nextSources,
+        voice_fingerprint_seen: nextSeen,
+      })
+      .eq('user_id', ctx.userId)
+
+    return true
+  } catch {
+    // Silent — telemetry, not load-bearing. Also swallows the missing-column
+    // error when running ahead of migration 301.
+    return false
+  }
+}
+
+/**
+ * The core LLM refinement, shared by the per-creator and per-channel learners.
+ * Given the current fingerprint plus new evidence, returns the refined
+ * fingerprint text (or null if the model came back empty / errored).
+ */
+async function refineFingerprint(
+  ctx: Ctx,
+  ev: { current: string; transcriptBlock: string; tasteSignal: string; recentPost: string; writingSample: string },
+): Promise<string | null> {
+  try {
+    const { current, transcriptBlock, tasteSignal, recentPost, writingSample } = ev
     const anthropic = createAnthropicClient()
     const system = `You study how ONE creator actually sounds and maintain a living style guide MVP's writers follow so their blog posts read like the creator wrote them, not like generic AI. You return ONLY the updated style guide as plain text, no preamble, no markdown headings syntax, no code fence.`
 
@@ -167,33 +204,123 @@ ${writingSample ? `WRITING SAMPLE (creator's own):\n"""${writingSample}"""\n\n` 
       userId: ctx.userId, tier: ctx.tier ?? null,
       feature: 'voice_fingerprint', model: 'claude-haiku-4-5-20251001',
     })
-
     let text = ''
     for (const b of msg.content) if (b.type === 'text') text += b.text
     text = text.trim().slice(0, MAX_FINGERPRINT_CHARS)
-    if (text.length < 120) return false
+    return text.length >= 120 ? text : null
+  } catch {
+    return null
+  }
+}
 
-    // Fold the new video ids into `seen` (cap the stored list so it can't grow
-    // without bound) and bump the learned-from counter.
-    const nextSeen = [...newVideos.map((v: { id: string }) => v.id), ...seen].slice(0, 500)
-    const nextSources = (Number(brand?.voice_fingerprint_sources) || 0) + newVideos.length
+interface ChannelEntry { text?: string; updated_at?: string; sources?: number; seen?: string[] }
 
+/**
+ * Per-channel fingerprints (migration 302). A creator with more than one
+ * connected channel usually sounds different on each. This maintains a separate
+ * fingerprint per channel in brand_profiles.channel_voice_fingerprints, learned
+ * only from THAT channel's transcripts. The per-creator fingerprint (above)
+ * stays the overall/default voice. Only does anything when the creator actually
+ * has multiple channels — a single-channel creator is fully covered by the
+ * per-creator learner, so this returns early and spends nothing.
+ * Fire-and-forget; silent no-op until migration 302.
+ */
+export async function maybeUpdateChannelVoiceFingerprints(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  ctx: Ctx,
+): Promise<boolean> {
+  try {
+    // Distinct channels this creator has transcribed videos for. One channel →
+    // nothing to split; the per-creator fingerprint already covers it.
+    const { data: vids } = await supabase
+      .from('youtube_videos')
+      .select('id,title,transcript,channel_id,transcript_fetched_at')
+      .eq('user_id', ctx.userId)
+      .not('transcript', 'is', null)
+      .order('transcript_fetched_at', { ascending: false, nullsFirst: false })
+      .limit(200)
+    const rows = (Array.isArray(vids) ? vids : [])
+      .filter((v: { channel_id?: string | null; transcript?: string | null }) => v.channel_id && (v.transcript || '').trim().length > 200)
+    const channels = [...new Set(rows.map((v: { channel_id: string }) => v.channel_id))]
+    if (channels.length < 2) return false
+
+    const { data: brand } = await supabase
+      .from('brand_profiles')
+      .select('channel_voice_fingerprints,writing_sample,edit_pattern_feedback,distilled_feedback')
+      .eq('user_id', ctx.userId)
+      .single()
+
+    const map: Record<string, ChannelEntry> =
+      (brand?.channel_voice_fingerprints && typeof brand.channel_voice_fingerprints === 'object')
+        ? { ...(brand.channel_voice_fingerprints as Record<string, ChannelEntry>) } : {}
+
+    const writingSample = ((brand?.writing_sample as string) || '').trim().slice(0, 800)
+    const editRules = ((brand?.edit_pattern_feedback as string) || '').trim()
+    const rewriteRules = ((brand?.distilled_feedback as string) || '').trim()
+    const tasteSignal = [
+      editRules ? `What they consistently change about our drafts:\n${editRules}` : '',
+      rewriteRules ? `Rewrite instructions they've given:\n${rewriteRules}` : '',
+    ].filter(Boolean).join('\n\n').slice(0, 1800)
+
+    let changed = false
+    // Bound to 2 channels per run so a burst doesn't fan out into many LLM calls.
+    for (const channelId of channels.slice(0, 2)) {
+      const entry: ChannelEntry = map[channelId] || {}
+      const last = entry.updated_at
+      if (last && Date.now() - new Date(last).getTime() < DEBOUNCE_MS) continue
+      const seen = Array.isArray(entry.seen) ? entry.seen.filter((x): x is string => typeof x === 'string') : []
+      const seenSet = new Set(seen)
+      const newVideos = rows
+        .filter((v: { channel_id: string; id: string }) => v.channel_id === channelId && !seenSet.has(v.id))
+        .slice(0, MAX_NEW_VIDEOS)
+      if (newVideos.length === 0) continue
+
+      const transcriptBlock = newVideos
+        .map((v: { title: string; transcript: string }) => `── VIDEO: ${v.title || 'Untitled'} ──\n${(v.transcript || '').replace(/\s+/g, ' ').trim().slice(0, 2500)}`)
+        .join('\n\n')
+
+      const text = await refineFingerprint(ctx, {
+        current: (entry.text || '').trim(), transcriptBlock, tasteSignal, recentPost: '', writingSample,
+      })
+      if (!text) continue
+
+      map[channelId] = {
+        text,
+        updated_at: new Date().toISOString(),
+        sources: (Number(entry.sources) || 0) + newVideos.length,
+        seen: [...newVideos.map((v: { id: string }) => v.id), ...seen].slice(0, 500),
+      }
+      changed = true
+    }
+
+    if (!changed) return false
     await supabase
       .from('brand_profiles')
-      .update({
-        voice_fingerprint: text,
-        voice_fingerprint_updated_at: new Date().toISOString(),
-        voice_fingerprint_sources: nextSources,
-        voice_fingerprint_seen: nextSeen,
-      })
+      .update({ channel_voice_fingerprints: map })
       .eq('user_id', ctx.userId)
-
     return true
   } catch {
-    // Silent — telemetry, not load-bearing. Also swallows the missing-column
-    // error when running ahead of migration 301.
     return false
   }
+}
+
+/**
+ * Pick the right fingerprint text for a piece of content. Uses the channel's
+ * fingerprint when the content comes from a known channel that has one, else the
+ * creator's overall fingerprint. Pure — the caller already loaded the row.
+ */
+export function resolveVoiceFingerprint(
+  brand: { voice_fingerprint?: string | null; channel_voice_fingerprints?: unknown } | null | undefined,
+  channelId?: string | null,
+): string | null {
+  if (!brand) return null
+  if (channelId && brand.channel_voice_fingerprints && typeof brand.channel_voice_fingerprints === 'object') {
+    const entry = (brand.channel_voice_fingerprints as Record<string, ChannelEntry>)[channelId]
+    const t = (entry?.text || '').trim()
+    if (t.length >= 120) return t
+  }
+  return (brand.voice_fingerprint || '').trim() || null
 }
 
 /**
