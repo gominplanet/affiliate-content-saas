@@ -106,7 +106,8 @@ export default function ArticlesPage() {
   // 'preview' = Generate preview button, 'publish' = Generate & publish,
   // 'publishing' = the preview's "Publish to my blog" button. null = idle.
   const [busy, setBusy] = useState<null | 'preview' | 'publish' | 'publishing'>(null)
-  const [preview, setPreview] = useState<{ title: string; html: string; heroUrl: string | null; meta: string; seoScore: number | null; termCoverage: { score: number; covered: string[]; missing: string[] } | null; voiceUsed?: boolean } | null>(null)
+  const [preview, setPreview] = useState<{ title: string; html: string; heroUrl: string | null; meta: string; seoScore: number | null; termCoverage: { score: number; covered: string[]; missing: string[] } | null; voiceUsed?: boolean; voiceWhy?: { fingerprint: string | null; usedLearn: boolean; usedSample: boolean; usedAvoid: number } | null } | null>(null)
+  const [voiceWhyOpen, setVoiceWhyOpen] = useState(false)
 
   // Detect whether the creator has trained a voice yet (writing sample or any
   // filled LEARN section). If not, default the toggle off so we don't promise a
@@ -180,7 +181,8 @@ export default function ArticlesPage() {
         })
         setPreview(null)
       } else {
-        setPreview({ title: j.title, html: j.html, heroUrl: j.heroUrl ?? null, meta: j.meta ?? '', seoScore: j.seoScore ?? null, termCoverage: j.termCoverage ?? null, voiceUsed: j.voiceUsed ?? false })
+        setVoiceWhyOpen(false)
+        setPreview({ title: j.title, html: j.html, heroUrl: j.heroUrl ?? null, meta: j.meta ?? '', seoScore: j.seoScore ?? null, termCoverage: j.termCoverage ?? null, voiceUsed: j.voiceUsed ?? false, voiceWhy: j.voiceWhy ?? null })
         toast.success('Preview ready — review it below.')
       }
     } catch (err) {
@@ -756,15 +758,35 @@ export default function ArticlesPage() {
                   </span>
                 )}
                 {preview.voiceUsed && (
-                  <span
-                    className="text-[11px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1"
-                    title="Written in your trained voice (Voice Training)"
+                  <button
+                    type="button"
+                    onClick={() => setVoiceWhyOpen(o => !o)}
+                    className="text-[11px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 transition-opacity hover:opacity-80"
+                    title="See why this sounds like you"
                     style={{ background: 'rgba(124,58,237,.15)', color: '#6d28d9' }}
                   >
                     <Sparkles size={11} /> In your voice
-                  </span>
+                    <ChevronDown size={11} style={{ transform: voiceWhyOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+                  </button>
                 )}
               </div>
+              {preview.voiceUsed && voiceWhyOpen && (
+                <div className="mt-2 rounded-lg border p-3 text-xs" style={{ borderColor: 'rgba(124,58,237,0.25)', background: 'rgba(124,58,237,0.05)', color: 'var(--fg)' }}>
+                  <p className="font-semibold mb-1" style={{ color: '#6d28d9' }}>Why this sounds like you</p>
+                  {preview.voiceWhy?.fingerprint && (
+                    <p className="leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--fg-muted)' }}>{preview.voiceWhy.fingerprint}</p>
+                  )}
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {preview.voiceWhy?.fingerprint && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>Learned from your videos</span>}
+                    {preview.voiceWhy?.usedLearn && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>Your Voice Training answers</span>}
+                    {preview.voiceWhy?.usedSample && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>Your writing sample</span>}
+                    {!!preview.voiceWhy?.usedAvoid && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>{preview.voiceWhy.usedAvoid} words you avoid</span>}
+                  </div>
+                  <p className="mt-2" style={{ color: 'var(--fg-muted)' }}>
+                    Want to shape this? <a href="/learn" className="underline font-medium" style={{ color: '#7C3AED' }}>Edit your Voice Training</a>.
+                  </p>
+                </div>
+              )}
               {preview.termCoverage && preview.termCoverage.missing.length > 0 && (
                 <p className="text-[11px] mt-1" style={{ color: 'var(--fg-muted)' }}>
                   Competitors also cover: {preview.termCoverage.missing.slice(0, 8).join(', ')}. Add a line on the relevant ones to rank fuller.

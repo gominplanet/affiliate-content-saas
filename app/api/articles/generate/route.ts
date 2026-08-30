@@ -428,6 +428,9 @@ ${mustCoverTerms.map(t => `- ${t}`).join('\n')}
   const useMyVoice = body.voiceMode !== 'preset'
   let voiceBlock = ''
   let voiceUsed = false
+  // "Why this sounds like you" — the specific voice sources MVP applied, shown
+  // back to the creator in the preview so they can see (and trust) it.
+  let voiceWhy: { fingerprint: string | null; usedLearn: boolean; usedSample: boolean; usedAvoid: number } | null = null
   if (!isRepublish && useMyVoice) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brand } = await (supabase as any)
@@ -444,7 +447,13 @@ ${mustCoverTerms.map(t => `- ${t}`).join('\n')}
     if (learn) parts.push(learn.trim())
     if (sample) parts.push(`THE CREATOR'S OWN WRITING SAMPLE — mirror this voice exactly: sentence rhythm, vocabulary, how they open and how they transition. Match the VOICE, not the topic:\n"""${sample}"""`)
     if (avoid.length) parts.push(`WORDS THE CREATOR NEVER USES — do not use any of these: ${avoid.join(', ')}.`)
-    if (parts.length) { voiceBlock = parts.join('\n\n'); voiceUsed = true }
+    if (parts.length) {
+      voiceBlock = parts.join('\n\n'); voiceUsed = true
+      voiceWhy = {
+        fingerprint: ((brand?.voice_fingerprint as string) || '').trim().slice(0, 700) || null,
+        usedLearn: !!learn, usedSample: !!sample, usedAvoid: avoid.length,
+      }
+    }
   }
 
   // Self-repetition guard: show the writer how this creator's recent posts
@@ -779,7 +788,7 @@ ${repetitionBlock ? `\n${repetitionBlock}` : ''}`
 
   // ── Preview only — no WordPress write ─────────────────────────────────────
   if (!publish) {
-    return NextResponse.json({ ok: true, title, html, heroUrl, meta: metaDesc, seoScore, termCoverage, voiceUsed })
+    return NextResponse.json({ ok: true, title, html, heroUrl, meta: metaDesc, seoScore, termCoverage, voiceUsed, voiceWhy })
   }
 
   // ── Publish to WordPress ──────────────────────────────────────────────────
