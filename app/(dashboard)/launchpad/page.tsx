@@ -1,286 +1,196 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Launchpad — one video, everywhere. The single place a creator takes a finished
-// video and gets it out: ready for YouTube (metadata, thumbnail, optional CTA
-// burn-in + publish), turned into a blog post and social pushes and a short, and
-// distributed to every Amazon storefront they sell in (localized and dubbed in
-// their own voice). Every stage also exists on its own page for granular use;
-// Launchpad just runs them from one screen.
+// Launchpad — the origin pipeline for a video that is NOT on YouTube yet. One
+// linear flow: upload the file, design + burn a CTA, let Co-Pilot prepare the
+// YouTube metadata and thumbnail, publish (draft or public), then take it to
+// Amazon — US first, then every geo storefront (localized, and dubbed in the
+// creator's own voice for non-English markets).
+//
+// Creators whose video is already on YouTube use the individual tools
+// (Co-Pilot, Blog, Clip Factory, Storefront Sync) directly — Launchpad is the
+// "start from scratch" path.
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { createBrowserClient } from '@/lib/supabase/client'
-import { Rocket, Check, Loader2, Circle, ExternalLink, Youtube, Upload, Globe } from 'lucide-react'
+import { Loader2, Check, Youtube, Sparkles, Globe, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import UploadStage from '@/components/launchpad/UploadStage'
 import StorefrontStage from '@/components/launchpad/StorefrontStage'
 
-// Networks the blog job can auto-post to (the runner skips any not connected).
-const SOCIAL_KEYS = ['twitter', 'facebook', 'threads', 'linkedin', 'bluesky', 'pinterest', 'telegram']
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
-
-interface Vid { id: string; youtube_video_id: string | null; title: string; thumbnail_url: string | null; duration_seconds: number | null }
-type StepState = 'idle' | 'running' | 'done' | 'error' | 'skipped'
-interface Step { key: string; label: string; desc: string; on: boolean; state: StepState; note?: string }
-
-const DEFAULT_STEPS: Step[] = [
-  { key: 'metadata', label: 'YouTube metadata + thumbnail', desc: 'Optimized title, description, tags and a CTR-tested thumbnail.', on: true, state: 'idle' },
-  { key: 'blog', label: 'Blog post', desc: 'A full SEO review on your site, in your voice.', on: true, state: 'idle' },
-  { key: 'social', label: 'Social posts', desc: 'Fan out to your connected networks.', on: true, state: 'idle' },
-  { key: 'short', label: 'Short for TikTok & Instagram', desc: 'A vertical short cut from the video.', on: true, state: 'idle' },
-]
-
 const label = { color: 'var(--fg)' } as const
 const muted = { color: 'var(--fg-muted)' } as const
 
+interface Meta { title: string; alternatives: string[]; description: string; tags: string[] }
+
+function StepCard({ n, title, done, locked, children }: { n: number; title: string; done?: boolean; locked?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="card p-5" style={{ opacity: locked ? 0.55 : 1 }}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[12px] font-bold text-white"
+          style={{ background: done ? '#10B981' : locked ? 'var(--border)' : '#7C3AED' }}>
+          {done ? <Check size={13} /> : locked ? <Lock size={12} /> : n}
+        </span>
+        <h2 className="text-sm font-semibold" style={label}>{title}</h2>
+      </div>
+      {children}
+    </div>
+  )
+}
+
 export default function LaunchpadPage() {
-  const [mode, setMode] = useState<'synced' | 'file'>('synced')
-  const [videos, setVideos] = useState<Vid[]>([])
-  const [loading, setLoading] = useState(true)
-  const [picked, setPicked] = useState<string | null>(null)
-  const [steps, setSteps] = useState<Step[]>(DEFAULT_STEPS)
-  const [running, setRunning] = useState(false)
-  const [showStorefront, setShowStorefront] = useState(false)
+  const [renderedUrl, setRenderedUrl] = useState<string | null>(null)
+  const [workingTitle, setWorkingTitle] = useState('')
 
-  const load = useCallback(async () => {
+  // Step 3 — Co-Pilot YouTube prep.
+  const [preparing, setPreparing] = useState(false)
+  const [meta, setMeta] = useState<Meta | null>(null)
+  const [chosenTitle, setChosenTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [tags, setTags] = useState('')
+
+  // Step 4 — publish.
+  const [privacy, setPrivacy] = useState<'draft' | 'public'>('draft')
+  const [publishing, setPublishing] = useState(false)
+  const [publishedUrl, setPublishedUrl] = useState<string | null>(null)
+
+  async function prepare() {
+    if (!workingTitle) { toast.error('Render your video first'); return }
+    setPreparing(true)
     try {
-      const sb = createBrowserClient()
-      const { data: { user } } = await sb.auth.getUser()
-      if (!user) { setLoading(false); return }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (sb as any)
-        .from('youtube_videos')
-        .select('id,youtube_video_id,title,thumbnail_url,duration_seconds')
-        .eq('user_id', user.id)
-        .order('published_at', { ascending: false, nullsFirst: false })
-        .limit(24)
-      setVideos(Array.isArray(data) ? data : [])
-    } catch { /* ignore */ } finally { setLoading(false) }
-  }, [])
-  useEffect(() => { load() }, [load])
-
-  const toggle = (key: string) => setSteps(s => s.map(st => st.key === key ? { ...st, on: !st.on } : st))
-  const setState = (key: string, state: StepState, note?: string) =>
-    setSteps(s => s.map(st => st.key === key ? { ...st, state, note } : st))
-
-  const vid = videos.find(v => v.id === picked) || null
-
-  async function launch() {
-    if (!vid) { toast.error('Pick a video first'); return }
-    setRunning(true)
-    setSteps(s => s.map(st => ({ ...st, state: st.on ? 'idle' : 'skipped', note: undefined })))
-    try {
-      // 1. Co-Pilot: metadata, then the thumbnail (both ground on the YouTube id).
-      if (steps.find(s => s.key === 'metadata')?.on) {
-        setState('metadata', 'running')
-        try {
-          const rm = await fetch('/api/youtube/generate-metadata', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ youtubeVideoId: vid.youtube_video_id, videoTitle: vid.title, videoDescription: '' }),
-          })
-          setState('metadata', 'running', 'Designing the thumbnail…')
-          let thumbOk = false
-          try {
-            const rt = await fetch('/api/youtube/generate-thumbnail', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ videoTitle: vid.title, youtubeVideoId: vid.youtube_video_id, videoDescription: '' }),
-            })
-            thumbOk = rt.ok
-          } catch { /* thumbnail is best-effort */ }
-          if (!rm.ok) setState('metadata', 'error', 'Could not generate metadata')
-          else setState('metadata', 'done', thumbOk ? undefined : 'Metadata done. Thumbnail needs a retry in Co-Pilot.')
-        } catch { setState('metadata', 'error', 'Could not generate metadata') }
-      }
-      // 2 + 3. Blog + social run in ONE real generation job.
-      const wantBlog = !!steps.find(s => s.key === 'blog')?.on
-      const wantSocial = !!steps.find(s => s.key === 'social')?.on
-      if (wantBlog || wantSocial) {
-        setState('blog', 'running')
-        if (wantSocial) setState('social', 'running')
-        try {
-          const enq = await fetch('/api/blog/enqueue', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ videoId: vid.id, includeImages: true, autoSocials: wantSocial ? SOCIAL_KEYS : [] }),
-          })
-          const ej = await enq.json().catch(() => ({}))
-          if (!enq.ok || !ej.jobId) throw new Error(ej.error || 'Could not queue the post')
-          let done = false
-          for (let i = 0; i < 75 && !done; i++) {
-            await sleep(4000)
-            const jr = await fetch(`/api/blog/job/${ej.jobId}`)
-            const jj = await jr.json().catch(() => ({}))
-            if (jj.stage) setState('blog', 'running', String(jj.stage))
-            if (jj.status === 'done') {
-              setState('blog', 'done'); if (wantSocial) setState('social', 'done'); done = true
-            } else if (jj.status === 'failed') {
-              setState('blog', 'error', jj.error || 'Post failed'); if (wantSocial) setState('social', 'error'); done = true
-            }
-          }
-          if (!done) { setState('blog', 'error', 'Still running — check the Blog Post Generator'); if (wantSocial) setState('social', 'error') }
-        } catch (e) {
-          setState('blog', 'error', e instanceof Error ? e.message : 'Post failed'); if (wantSocial) setState('social', 'error')
-        }
-      }
-      // 4. Short — plan the best moments, then render the top clip.
-      if (steps.find(s => s.key === 'short')?.on) {
-        setState('short', 'running', 'Finding the best moment…')
-        try {
-          const rp = await fetch('/api/youtube/shorts/plan', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ videoId: vid.id, count: 3 }),
-          })
-          const pj = await rp.json().catch(() => ({}))
-          if (!rp.ok || !Array.isArray(pj.shorts) || pj.shorts.length === 0) {
-            const why = pj.noTranscript ? 'No transcript yet — open Clip Factory to add one.'
-              : pj.noClips ? 'No strong Short-worthy moments in this video.'
-              : (pj.error || 'Open Clip Factory to cut a short.')
-            setState('short', 'skipped', why)
-          } else {
-            const topId = pj.shorts[0]?.id
-            setState('short', 'running', 'Rendering your Short…')
-            const rr = await fetch('/api/youtube/shorts/render', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ shortId: topId }),
-            })
-            const rj = await rr.json().catch(() => ({}))
-            if (rr.ok && rj.ok) {
-              setState('short', 'done', `${pj.shorts.length} moments planned. Top Short rendered — finish the rest in Clip Factory.`)
-            } else if (rj.needsUpload) {
-              setState('short', 'done', `${pj.shorts.length} moments planned. Upload the source in Clip Factory to render.`)
-            } else {
-              setState('short', 'done', `${pj.shorts.length} moments planned — render them in Clip Factory.`)
-            }
-          }
-        } catch { setState('short', 'skipped', 'Open Clip Factory to cut a short.') }
-      }
-      toast.success('Launchpad run finished')
-      setShowStorefront(true)
-    } finally { setRunning(false) }
+      const r = await fetch('/api/youtube/generate-metadata', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoTitle: workingTitle, skipAsinCheck: true }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.generated) throw new Error(j.error || 'Could not prepare the metadata')
+      const g = j.generated as { title: string; description: string; tags: string[]; title_alternatives?: string[] }
+      const m: Meta = { title: g.title, alternatives: g.title_alternatives || [], description: g.description, tags: g.tags || [] }
+      setMeta(m); setChosenTitle(m.title); setDescription(m.description); setTags(m.tags.join(', '))
+      toast.success('YouTube metadata ready. Review and publish.')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not prepare the metadata')
+    } finally { setPreparing(false) }
   }
 
-  const StateIcon = ({ s }: { s: StepState }) =>
-    s === 'running' ? <Loader2 size={15} className="animate-spin text-[#7C3AED]" />
-    : s === 'done' ? <Check size={15} className="text-[#10B981]" />
-    : s === 'error' ? <span className="text-[#e0554b] text-xs font-bold">!</span>
-    : s === 'skipped' ? <Circle size={14} className="text-[#c9c2d6]" />
-    : <Circle size={14} style={{ color: 'var(--border)' }} />
+  async function publish() {
+    if (!renderedUrl || !chosenTitle.trim()) return
+    setPublishing(true)
+    try {
+      const r = await fetch('/api/youtube/upload-video', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoUrl: renderedUrl, title: chosenTitle.trim(), description,
+          tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+          privacyStatus: privacy === 'public' ? 'public' : 'private',
+        }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (j.notEnabled) { toast.error("Publishing to YouTube isn't switched on yet — Google is verifying our upload access."); return }
+      if (j.reconnectRequired) { toast.error('Reconnect YouTube to grant upload permission, then try again.'); return }
+      if (!r.ok || !j.url) throw new Error(j.error || 'Publish failed')
+      setPublishedUrl(j.url)
+      toast.success(privacy === 'public' ? 'Published to YouTube.' : 'Saved to YouTube as a private draft.')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Publish failed')
+    } finally { setPublishing(false) }
+  }
 
   return (
     <>
       <PageHero
         title="Launchpad"
-        subtitle="One video, everywhere. Get it ready for YouTube, turn it into a blog, socials and a short, and push it to every Amazon storefront you sell in — from one screen."
+        subtitle="Start with a video that isn't on YouTube yet. Upload it, add a CTA, and MVP takes it all the way — YouTube, then every Amazon storefront you sell in, dubbed in your own voice."
       />
 
-      <div className="max-w-4xl space-y-6 pb-28">
-        {/* 1. Start with your video */}
+      <div className="max-w-3xl space-y-5 pb-28">
+        {/* 1 + 2. Upload + CTA */}
         <div className="card p-5">
-          <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-            <h2 className="text-sm font-semibold" style={label}>1. Start with your video</h2>
-            <div className="inline-flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-              <button type="button" onClick={() => setMode('synced')}
-                className="px-3 py-1.5 text-[12px] font-medium inline-flex items-center gap-1.5"
-                style={{ background: mode === 'synced' ? 'rgba(124,58,237,0.10)' : 'transparent', color: mode === 'synced' ? '#7C3AED' : 'var(--fg-muted)' }}>
-                <Youtube size={13} /> Already on YouTube
-              </button>
-              <button type="button" onClick={() => setMode('file')}
-                className="px-3 py-1.5 text-[12px] font-medium inline-flex items-center gap-1.5"
-                style={{ background: mode === 'file' ? 'rgba(124,58,237,0.10)' : 'transparent', color: mode === 'file' ? '#7C3AED' : 'var(--fg-muted)' }}>
-                <Upload size={13} /> Start from a file
-              </button>
-            </div>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[12px] font-bold text-white" style={{ background: renderedUrl ? '#10B981' : '#7C3AED' }}>
+              {renderedUrl ? <Check size={13} /> : '1'}
+            </span>
+            <h2 className="text-sm font-semibold" style={label}>Upload your video & design the CTA</h2>
           </div>
-
-          {mode === 'file' ? (
-            <div>
-              <p className="text-[12px] mb-3" style={muted}>Upload your edited video, burn in a CTA, and publish it to YouTube. Once it&apos;s live and synced, switch to &ldquo;Already on YouTube&rdquo; to run the rest.</p>
-              <UploadStage />
-            </div>
-          ) : loading ? (
-            <div className="flex items-center gap-2 text-sm py-6 justify-center" style={muted}>
-              <Loader2 size={16} className="animate-spin" /> Loading your videos…
-            </div>
-          ) : videos.length === 0 ? (
-            <p className="text-sm" style={muted}>No videos yet. Connect your channel and sync, then come back — or start from a file above.</p>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {videos.map(v => {
-                const on = picked === v.id
-                return (
-                  <button key={v.id} type="button" onClick={() => { setPicked(v.id); setShowStorefront(false) }}
-                    className="text-left rounded-xl border overflow-hidden transition-all"
-                    style={{ borderColor: on ? '#7C3AED' : 'var(--border)', borderWidth: on ? 2 : 1, background: 'var(--bg)' }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {v.thumbnail_url ? <img src={v.thumbnail_url} alt="" className="w-full aspect-video object-cover" /> : <div className="w-full aspect-video" style={{ background: 'var(--surface)' }} />}
-                    <div className="p-2">
-                      <p className="text-[12px] font-medium line-clamp-2" style={label}>{v.title}</p>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          )}
+          <UploadStage hidePublish onRendered={(url, title) => { setRenderedUrl(url); setWorkingTitle(title); if (!chosenTitle) setChosenTitle(title) }} />
         </div>
 
-        {/* The checklist + storefront only apply to a synced video. */}
-        {mode === 'synced' && (
-          <>
-            {/* 2. Choose outputs */}
-            <div className="card p-5">
-              <h2 className="text-sm font-semibold mb-3" style={label}>2. Choose what to make</h2>
-              <div className="space-y-2">
-                {steps.map(st => (
-                  <label key={st.key} className="flex items-start gap-3 p-3 rounded-xl border cursor-pointer"
-                    style={{ borderColor: 'var(--border)', background: st.on ? 'rgba(124,58,237,0.04)' : 'transparent' }}>
-                    <input type="checkbox" checked={st.on} onChange={() => toggle(st.key)} disabled={running} className="mt-0.5 accent-[#7C3AED]" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium" style={label}>{st.label}</span>
-                        <StateIcon s={st.state} />
-                      </div>
-                      <p className="text-[12px] mt-0.5" style={muted}>{st.note || st.desc}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* 3. Launch */}
-            <div className="flex items-center gap-3">
-              <button onClick={() => void launch()} disabled={running || !picked}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+        {/* 3. Co-Pilot YouTube prep */}
+        <StepCard n={3} title="Prepare for YouTube (Co-Pilot)" done={!!meta} locked={!renderedUrl}>
+          {!meta ? (
+            <div>
+              <p className="text-[12px] mb-3" style={muted}>Co-Pilot writes an optimized title (with alternatives), description and tags, and sets the right upload options (audience, made-for-kids off). Thumbnails finish in Co-Pilot once the video is up.</p>
+              <button onClick={() => void prepare()} disabled={preparing || !renderedUrl}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
                 style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
-                {running ? <><Loader2 size={16} className="animate-spin" /> Launching…</> : <><Rocket size={16} /> Launch</>}
+                {preparing ? <><Loader2 size={15} className="animate-spin" /> Preparing…</> : <><Sparkles size={15} /> Prepare metadata</>}
               </button>
-              <a href="/co-pilot" className="text-sm inline-flex items-center gap-1" style={muted}>
-                or do steps separately <ExternalLink size={12} />
-              </a>
             </div>
-
-            {/* 4. Amazon storefronts */}
-            <div className="card p-5">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <Globe size={16} style={{ color: '#0EA5A4' }} />
-                  <h2 className="text-sm font-semibold" style={label}>4. Amazon storefronts (US + your geos)</h2>
-                </div>
-                {!showStorefront && (
-                  <button type="button" onClick={() => setShowStorefront(true)} disabled={!picked}
-                    className="text-[12px] font-medium underline disabled:opacity-50" style={muted}>
-                    {picked ? 'Set up' : 'Pick a video first'}
-                  </button>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="text-[12px] font-medium" style={muted}>Title (pick one or edit)</label>
+                <input value={chosenTitle} onChange={e => setChosenTitle(e.target.value)} maxLength={100}
+                  className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
+                {meta.alternatives.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {[meta.title, ...meta.alternatives].slice(0, 5).map((t, i) => (
+                      <button key={i} type="button" onClick={() => setChosenTitle(t)}
+                        className="text-[11px] px-2 py-1 rounded-lg border text-left" style={{ borderColor: chosenTitle === t ? '#7C3AED' : 'var(--border)', color: 'var(--fg)' }}>
+                        {t.length > 48 ? `${t.slice(0, 48)}…` : t}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
-              <p className="text-[12px] mt-1" style={muted}>Localize the title and description for every market you sell in, and dub the video in your own voice.</p>
-              {showStorefront && picked && (
-                <div className="mt-4">
-                  <StorefrontStage presetVideoId={picked} />
-                </div>
-              )}
+              <div>
+                <label className="text-[12px] font-medium" style={muted}>Description</label>
+                <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4}
+                  className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium" style={muted}>Tags (comma-separated)</label>
+                <input value={tags} onChange={e => setTags(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
+              </div>
             </div>
-          </>
-        )}
+          )}
+        </StepCard>
+
+        {/* 4. Publish */}
+        <StepCard n={4} title="Publish to YouTube" done={!!publishedUrl} locked={!meta}>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {(['draft', 'public'] as const).map(p => (
+              <button key={p} type="button" onClick={() => setPrivacy(p)}
+                className="px-3 py-2 rounded-lg border text-sm font-medium"
+                style={{ borderColor: privacy === p ? '#7C3AED' : 'var(--border)', borderWidth: privacy === p ? 2 : 1, color: 'var(--fg)' }}>
+                {p === 'draft' ? 'Private draft' : 'Public'}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => void publish()} disabled={publishing || !meta || !chosenTitle.trim()}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+            style={{ background: '#FF0000' }}>
+            {publishing ? <><Loader2 size={15} className="animate-spin" /> Publishing…</> : <><Youtube size={15} /> {privacy === 'public' ? 'Publish public' : 'Save as draft'}</>}
+          </button>
+          {publishedUrl && (
+            <p className="text-[13px] mt-3 inline-flex items-center gap-1.5" style={{ color: '#10B981' }}>
+              <Check size={14} /> Done. <a href={publishedUrl} target="_blank" rel="noreferrer" className="underline">Open on YouTube</a>
+            </p>
+          )}
+        </StepCard>
+
+        {/* 5-8. Amazon storefronts */}
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[12px] font-bold text-white" style={{ background: '#0EA5A4' }}>
+              <Globe size={13} />
+            </span>
+            <h2 className="text-sm font-semibold" style={label}>Amazon storefronts — US + every geo</h2>
+          </div>
+          <p className="text-[12px] mb-4" style={muted}>Take the same video to Amazon: US first, then MVP matches the ASIN in each geo, writes titles in the local language, and dubs the video in your own voice for non-English markets. Upload happens through your logged-in Amazon Creator account.</p>
+          <StorefrontStage />
+        </div>
       </div>
     </>
   )

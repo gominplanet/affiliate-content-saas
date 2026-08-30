@@ -77,7 +77,10 @@ function probe(file: File): Promise<{ width: number; height: number; duration: n
 const label = { color: 'var(--fg)' } as const
 const muted = { color: 'var(--fg-muted)' } as const
 
-export default function UploadStage() {
+// onRendered: called with the burned video URL + a working title (the filename)
+//   so a parent pipeline (Launchpad) can carry it into the next stage.
+// hidePublish: hide the built-in publish button when the parent owns publishing.
+export default function UploadStage({ onRendered, hidePublish }: { onRendered?: (url: string, title: string) => void; hidePublish?: boolean } = {}) {
   const supabase = useMemo(() => createBrowserClient(), [])
   const fileRef = useRef<HTMLInputElement>(null)
   const badgeRef = useRef<HTMLInputElement>(null)
@@ -253,6 +256,7 @@ export default function UploadStage() {
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.url) throw new Error(j.error || 'Render failed')
       setRendered(j.url)
+      onRendered?.(j.url as string, (source.name || 'My video').replace(/\.[^.]+$/, ''))
       toast.success('CTA burned in. Preview it below.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Render failed')
@@ -436,24 +440,28 @@ export default function UploadStage() {
           <h2 className="text-sm font-semibold mb-3" style={label}>Preview & publish</h2>
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video src={rendered} controls className="w-full rounded-xl border" style={{ borderColor: 'var(--border)' }} />
-          <div className="mt-3">
-            <label className="text-[12px] font-medium" style={muted}>Video title</label>
-            <input value={title} onChange={e => setTitle(e.target.value)} maxLength={100}
-              className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
-          </div>
+          {!hidePublish && (
+            <div className="mt-3">
+              <label className="text-[12px] font-medium" style={muted}>Video title</label>
+              <input value={title} onChange={e => setTitle(e.target.value)} maxLength={100}
+                className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
+            </div>
+          )}
           <div className="flex items-center gap-3 mt-3 flex-wrap">
             <a href={rendered} download
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border"
               style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
               <Download size={15} /> Download
             </a>
-            <button onClick={() => void publish()} disabled={publishing || !title.trim()}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
-              style={{ background: '#FF0000' }}>
-              {publishing ? <><Loader2 size={15} className="animate-spin" /> Publishing…</> : <><Youtube size={15} /> Publish to YouTube</>}
-            </button>
+            {!hidePublish && (
+              <button onClick={() => void publish()} disabled={publishing || !title.trim()}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+                style={{ background: '#FF0000' }}>
+                {publishing ? <><Loader2 size={15} className="animate-spin" /> Publishing…</> : <><Youtube size={15} /> Publish to YouTube</>}
+              </button>
+            )}
           </div>
-          {published && (
+          {!hidePublish && published && (
             <p className="text-[13px] mt-3 inline-flex items-center gap-1.5" style={{ color: '#10B981' }}>
               <Check size={14} /> Published as private. <a href={published} target="_blank" rel="noreferrer" className="underline">Open on YouTube</a>
             </p>
