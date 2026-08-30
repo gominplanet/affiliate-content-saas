@@ -21,21 +21,18 @@ export interface Market {
   needsTranslation: boolean
 }
 
-// The launch set. English markets first (no translation needed), then the
-// larger non-English marketplaces. Extend as we verify each Creator Hub flow.
+// The supported set. English markets first (no translation, no dub), then the
+// four non-English marketplaces we localize + dub for. This is the deliberate
+// service scope — extend only as we verify each new Creator Hub flow.
 export const MARKETS: Market[] = [
-  { domain: 'amazon.com',    code: 'US', country: 'United States',  lang: 'en-US', langName: 'English',    needsTranslation: false },
-  { domain: 'amazon.ca',     code: 'CA', country: 'Canada',         lang: 'en-CA', langName: 'English',    needsTranslation: false },
-  { domain: 'amazon.co.uk',  code: 'UK', country: 'United Kingdom', lang: 'en-GB', langName: 'English',    needsTranslation: false },
-  { domain: 'amazon.com.au', code: 'AU', country: 'Australia',      lang: 'en-AU', langName: 'English',    needsTranslation: false },
-  { domain: 'amazon.de',     code: 'DE', country: 'Germany',        lang: 'de-DE', langName: 'German',     needsTranslation: true },
-  { domain: 'amazon.fr',     code: 'FR', country: 'France',         lang: 'fr-FR', langName: 'French',     needsTranslation: true },
-  { domain: 'amazon.it',     code: 'IT', country: 'Italy',          lang: 'it-IT', langName: 'Italian',    needsTranslation: true },
-  { domain: 'amazon.es',     code: 'ES', country: 'Spain',          lang: 'es-ES', langName: 'Spanish',    needsTranslation: true },
-  { domain: 'amazon.com.mx', code: 'MX', country: 'Mexico',         lang: 'es-MX', langName: 'Spanish',    needsTranslation: true },
-  { domain: 'amazon.co.jp',  code: 'JP', country: 'Japan',          lang: 'ja-JP', langName: 'Japanese',   needsTranslation: true },
-  { domain: 'amazon.nl',     code: 'NL', country: 'Netherlands',    lang: 'nl-NL', langName: 'Dutch',      needsTranslation: true },
-  { domain: 'amazon.com.br', code: 'BR', country: 'Brazil',         lang: 'pt-BR', langName: 'Portuguese', needsTranslation: true },
+  { domain: 'amazon.com',    code: 'US', country: 'United States',  lang: 'en-US', langName: 'English', needsTranslation: false },
+  { domain: 'amazon.ca',     code: 'CA', country: 'Canada',         lang: 'en-CA', langName: 'English', needsTranslation: false },
+  { domain: 'amazon.com.au', code: 'AU', country: 'Australia',      lang: 'en-AU', langName: 'English', needsTranslation: false },
+  { domain: 'amazon.co.uk',  code: 'UK', country: 'United Kingdom', lang: 'en-GB', langName: 'English', needsTranslation: false },
+  { domain: 'amazon.fr',     code: 'FR', country: 'France',         lang: 'fr-FR', langName: 'French',  needsTranslation: true },
+  { domain: 'amazon.de',     code: 'DE', country: 'Germany',        lang: 'de-DE', langName: 'German',  needsTranslation: true },
+  { domain: 'amazon.es',     code: 'ES', country: 'Spain',          lang: 'es-ES', langName: 'Spanish', needsTranslation: true },
+  { domain: 'amazon.it',     code: 'IT', country: 'Italy',          lang: 'it-IT', langName: 'Italian', needsTranslation: true },
 ]
 
 export function marketByDomain(domain: string): Market | undefined {
