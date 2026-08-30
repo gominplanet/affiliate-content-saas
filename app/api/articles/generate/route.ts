@@ -33,6 +33,7 @@ import { checkArticlesUsage, normalizeTier, TIERS } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { buildLearnedVoiceBlock } from '@/lib/voice-fingerprint'
+import { repetitionGuardBlock } from '@/lib/repetition-guard'
 import { scorePostSeo } from '@/lib/seo-score'
 import { enforceSeoBasics } from '@/lib/seo-autofix'
 import { writeContentSchema } from '@/lib/content-schema'
@@ -446,6 +447,28 @@ ${mustCoverTerms.map(t => `- ${t}`).join('\n')}
     if (parts.length) { voiceBlock = parts.join('\n\n'); voiceUsed = true }
   }
 
+  // Self-repetition guard: show the writer how this creator's recent posts
+  // opened so it does not start yet another one the same way. Skipped on a
+  // preview republish (those bytes are reused verbatim).
+  let repetitionBlock = ''
+  if (!isRepublish) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: recent } = await (supabase as any)
+        .from('blog_posts')
+        .select('content')
+        .eq('user_id', user.id)
+        .eq('status', 'published')
+        .not('content', 'is', null)
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .limit(12)
+      const openings = (Array.isArray(recent) ? recent : [])
+        .map((r: { content: string | null }) => (r.content || ''))
+        .filter(Boolean)
+      repetitionBlock = repetitionGuardBlock(openings)
+    } catch { /* best-effort — no guard rather than a failed generation */ }
+  }
+
   const writerPrompt = `You are writing a researched, informational blog article about "${topic}". This is NOT a product review or a sales page. It is a genuine, opinionated, well-structured article a real blogger would publish to inform their readers.
 
 Use the web_search tool to ground the article in real facts, current figures, and concrete examples. When you state a specific statistic, price, percentage, dated figure, study finding, or a direct quote you pulled from research, cite it INLINE right there in the sentence with a real link to the source, e.g. <p>According to <a href="https://www.example.com/report" rel="nofollow">Consumer Reports</a>, ...</p>. Every hard number in the article should be traceable to a linked source in the prose, not only in a list at the end. Use the actual result URL, name the source, and keep rel="nofollow".
@@ -510,7 +533,8 @@ The HTML body rules:
 VOICE / STYLE RULES:
 - ABSOLUTE BAN on em-dashes (—) and en-dashes (–) EVERYWHERE. Use a comma, a period, or parentheses instead.
 - Never use the word "honest" or any variant. Avoid: moreover, furthermore, additionally, in conclusion, to summarize, overall, delve, tapestry, elevate, utilize, game-changer, cutting-edge, genuinely, actually, "it's important to", "it's essential to".
-- Contractions are good. Vary sentence length and openings. No invented statistics — if a number isn't backed by a search result, don't fabricate it.`
+- Contractions are good. Vary sentence length and openings. No invented statistics — if a number isn't backed by a search result, don't fabricate it.
+${repetitionBlock ? `\n${repetitionBlock}` : ''}`
 
   // ── Publish the exact previewed bytes, if the client sent them back ────────
   // (preview → "Publish this" is deterministic: no fresh writer run).

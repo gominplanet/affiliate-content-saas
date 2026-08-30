@@ -4,6 +4,7 @@ import { jsonrepair } from 'jsonrepair'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { buildLearnedVoiceBlock } from '@/lib/voice-fingerprint'
+import { repetitionGuardBlock } from '@/lib/repetition-guard'
 import { resolveNicheScaffold, nicheScaffoldToPrompt, type NicheScaffold } from '@/lib/niche-scaffold'
 import { deriveProductName } from '@/lib/product-name'
 
@@ -2207,16 +2208,19 @@ These are the user's most recent published posts. Use them as VOICE / RHYTHM / S
 
 DO:
 - Mirror the sentence-length mix
-- Mirror the opener style (do they start with a scene? a question? a one-line declaration?)
+- Match how they open a thought (a scene? a question? a one-line declaration?) as a STYLE, without reusing the same actual opening line as a recent post
 - Reuse their characteristic transitional moves and connective phrases
 - Match the level of formality / contractions / asides
 
 DO NOT:
 - Copy whole sentences or paragraphs from these posts
 - Reuse the same product, same hook, or same anecdotes
+- Open this post the same way as a recent post (see the anti-repetition list below)
 - Reproduce specific facts/quotes — those belong only to their original posts
 
 ${priorExamples.map((ex, i) => `── EXAMPLE ${i + 1}: "${ex.title}" ──\n${ex.excerpt}`).join('\n\n')}
+
+${repetitionGuardBlock(priorExamples.map(ex => ex.excerpt))}
 ═══════════════════════════════════════\n`
       : ''
 
