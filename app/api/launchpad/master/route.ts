@@ -45,30 +45,43 @@ export async function POST(req: Request) {
   const sb = supabase as any
   const productUrl = `https://www.amazon.com/dp/${asin}`
 
-  // In parallel (both best-effort): transcribe the video so dubs have a script,
-  // and build a branded product thumbnail from the ASIN + the creator's face —
-  // this is what makes the thumbnail exist even when YouTube is skipped.
-  const [transcriptRes, thumbRes] = await Promise.allSettled([
-    (async () => transcriptionConfigured() ? cuesToText(await transcribeToCues(videoUrl)).slice(0, 20000) : '')(),
-    buildProductThumbnail(sb, { userId: user.id, tier, title, asin }),
-  ])
-  const transcript = transcriptRes.status === 'fulfilled' ? transcriptRes.value : ''
-  const thumbnailUrl = thumbRes.status === 'fulfilled' ? thumbRes.value : null
-
+  // Create the master row FAST and return, so the UI never hangs. The heavy
+  // work (transcription for dubs, the branded thumbnail) is enriched in the
+  // background and also lazily on demand — the dub route transcribes the source
+  // if it's still missing when a dub runs, so nothing depends on this finishing.
   const { data: row, error } = await sb
     .from('youtube_videos')
     .insert({
+      // Not a real YouTube id (this video isn't on YouTube). A synthetic
+      // "upload-<uuid>" satisfies the not-null constraint and is deliberately
+      // NOT 11 chars, so the 11-char YouTube-id guards elsewhere skip it and
+      // never try to pull it from YouTube (we dub from source_video_url).
       user_id: user.id,
-      youtube_video_id: null,
+      youtube_video_id: `upload-${crypto.randomUUID()}`,
       title,
       source_video_url: videoUrl,
       product_url: productUrl,
-      transcript: transcript || null,
-      ...(thumbnailUrl ? { thumbnail_url: thumbnailUrl } : {}),
       published_at: new Date().toISOString(),
     })
     .select('id').single()
   if (error || !row) return NextResponse.json({ error: error?.message || 'Could not create the master.' }, { status: 500 })
 
-  return NextResponse.json({ ok: true, videoId: row.id, hasTranscript: !!transcript, hasThumbnail: !!thumbnailUrl })
+  // Fire-and-forget enrichment. Best-effort: the dub route re-transcribes on
+  // demand if this doesn't finish, and the thumbnail isn't on the critical path.
+  void (async () => {
+    try {
+      const [t, thumb] = await Promise.allSettled([
+        (async () => transcriptionConfigured() ? cuesToText(await transcribeToCues(videoUrl)).slice(0, 20000) : '')(),
+        buildProductThumbnail(sb, { userId: user.id, tier, title, asin }),
+      ])
+      const transcript = t.status === 'fulfilled' ? t.value : ''
+      const thumbnailUrl = thumb.status === 'fulfilled' ? thumb.value : null
+      const patch: Record<string, unknown> = {}
+      if (transcript) patch.transcript = transcript
+      if (thumbnailUrl) patch.thumbnail_url = thumbnailUrl
+      if (Object.keys(patch).length) await sb.from('youtube_videos').update(patch).eq('id', row.id)
+    } catch { /* best-effort */ }
+  })()
+
+  return NextResponse.json({ ok: true, videoId: row.id })
 }

@@ -99,7 +99,6 @@ export default function LaunchpadPage() {
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.videoId) throw new Error(j.error || 'Could not set up the storefront sync')
       setMasterId(j.videoId)
-      if (!j.hasTranscript) toast('Dubs will use the on-screen text; add a transcript later for a spoken dub.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not set up the storefront sync')
     } finally { setCreatingMaster(false) }

@@ -16,6 +16,8 @@ import { synthesizeSpeech, ttsConfigured, elevenConfigured } from '@/lib/tts'
 import { getClonedVoiceId } from '@/lib/voice-clone'
 import { dubCreditBalance, spendDubCredit } from '@/lib/dub-credits'
 import { ingestConfigured, ingestYouTubeVideo, renderDub } from '@/lib/youtube-ingest'
+import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
+import { cuesToText } from '@/lib/shorts-transcript'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -63,7 +65,18 @@ export async function POST(req: Request) {
     .eq('id', job.video_id).eq('user_id', user.id).maybeSingle()
   if (!video) return NextResponse.json({ error: 'Master video not found.' }, { status: 404 })
 
-  const transcript = (video.transcript as string | null) || ''
+  let transcript = (video.transcript as string | null) || ''
+  // Lazy transcription for a file-first master: if we don't have a transcript
+  // yet but we do have the hosted source, transcribe it now and cache it.
+  if (!transcript.trim()) {
+    const src = (video.source_video_url as string | null) || ''
+    if (transcriptionConfigured() && /^https:\/\//i.test(src)) {
+      try {
+        const t = cuesToText(await transcribeToCues(src)).slice(0, 20000)
+        if (t.trim()) { transcript = t; await sb.from('youtube_videos').update({ transcript: t }).eq('id', video.id) }
+      } catch { /* fall through to the no-transcript response */ }
+    }
+  }
   if (!transcript.trim()) {
     await sb.from('global_sync_targets').update({ detail: 'No transcript to dub yet.', updated_at: new Date().toISOString() }).eq('id', target.id)
     return NextResponse.json({ error: 'This video has no transcript yet, so there is nothing to dub.', noTranscript: true }, { status: 422 })
