@@ -5,9 +5,10 @@
 // post, social pushes, a short, and (coming) storefront sync. The individual
 // sections still exist for granular control; Launchpad just does it all.
 //
-// v1 wires the two cleanest real steps (metadata + blog) end to end and shows
-// the full pipeline so the flow is clear. Each further step slots into STEPS as
-// it is wired.
+// While in LABS this wires four real steps end to end: Co-Pilot metadata +
+// thumbnail, a blog post, social fan-out (one generation job), and a short
+// (plan the best moments, then render the top clip). Storefront sync slots in
+// next.
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
@@ -119,8 +120,40 @@ export default function LaunchpadPage() {
           setState('blog', 'error', e instanceof Error ? e.message : 'Post failed'); if (wantSocial) setState('social', 'error')
         }
       }
-      // 4. Short — the next step to wire into the orchestrator.
-      if (steps.find(s => s.key === 'short')?.on) setState('short', 'skipped', 'Open Clip Factory to cut a short')
+      // 4. Short — plan the best moments off the transcript, then render the top
+      // clip. Render auto-pulls the source MP4 when it isn't stored yet, so this
+      // works from a picked YouTube video with no upload.
+      if (steps.find(s => s.key === 'short')?.on) {
+        setState('short', 'running', 'Finding the best moment…')
+        try {
+          const rp = await fetch('/api/youtube/shorts/plan', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoId: vid.id, count: 3 }),
+          })
+          const pj = await rp.json().catch(() => ({}))
+          if (!rp.ok || !Array.isArray(pj.shorts) || pj.shorts.length === 0) {
+            const why = pj.noTranscript ? 'No transcript yet — open Clip Factory to add one.'
+              : pj.noClips ? 'No strong Short-worthy moments in this video.'
+              : (pj.error || 'Open Clip Factory to cut a short.')
+            setState('short', 'skipped', why)
+          } else {
+            const topId = pj.shorts[0]?.id
+            setState('short', 'running', 'Rendering your Short…')
+            const rr = await fetch('/api/youtube/shorts/render', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ shortId: topId }),
+            })
+            const rj = await rr.json().catch(() => ({}))
+            if (rr.ok && rj.ok) {
+              setState('short', 'done', `${pj.shorts.length} moments planned. Top Short rendered — finish the rest in Clip Factory.`)
+            } else if (rj.needsUpload) {
+              setState('short', 'done', `${pj.shorts.length} moments planned. Upload the source in Clip Factory to render.`)
+            } else {
+              setState('short', 'done', `${pj.shorts.length} moments planned — render them in Clip Factory.`)
+            }
+          }
+        } catch { setState('short', 'skipped', 'Open Clip Factory to cut a short.') }
+      }
       toast.success('Launchpad run finished')
     } finally { setRunning(false) }
   }
