@@ -239,3 +239,43 @@ export async function ingestAudio(youtubeVideoId: string, userId?: string): Prom
     return null
   }
 }
+
+// ── CTA burn-in ──────────────────────────────────────────────────────────────
+// Burn a branded call-to-action onto a full horizontal video via the ingest
+// service (/render-cta). Returns the hosted URL of the rendered video, or null
+// when the service isn't configured or the render failed. Uploaded-source only.
+export interface CtaSpec {
+  text: string
+  subtext?: string
+  style: 'lowerthird' | 'endcard'
+  startSec: number
+  endSec: number
+}
+export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string): Promise<string | null> {
+  const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
+  if (!base || !videoUrl || !cta.text.trim() || !(cta.endSec > cta.startSec)) return null
+  try {
+    const res = await fetch(`${base}/render-cta`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
+      },
+      body: JSON.stringify({
+        videoUrl,
+        text: cta.text.trim(),
+        subtext: (cta.subtext || '').trim(),
+        style: cta.style === 'endcard' ? 'endcard' : 'lowerthird',
+        startSec: cta.startSec,
+        endSec: cta.endSec,
+        ...(userId ? { userId } : {}),
+      }),
+      signal: AbortSignal.timeout(540_000),
+    })
+    if (!res.ok) return null
+    const data = await res.json().catch(() => ({}))
+    return data?.url && /^https:\/\//i.test(data.url) ? (data.url as string) : null
+  } catch {
+    return null
+  }
+}

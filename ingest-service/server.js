@@ -735,10 +735,99 @@ app.post('/render-short', async (req, res) => {
   }
 })
 
+// ── CTA burn-in (FFmpeg + libass) ───────────────────────────────────────────
+// Burns a branded call-to-action onto a full-length horizontal video for a time
+// window (a lower-third bar, or a big end-card in the last few seconds). Same
+// ASS-over-ffmpeg mechanism as the Hormozi captions. v1 uses bold outlined text
+// (no box) so it renders reliably across libass builds; a filled box can follow.
+function buildCtaAss(opts) {
+  const w = Number(opts.width) || 1920
+  const h = Number(opts.height) || 1080
+  const start = Math.max(0, Number(opts.startSec) || 0)
+  const end = Math.max(start + 0.5, Number(opts.endSec) || start + 6)
+  const endcard = opts.style === 'endcard'
+  const text = assEscape(opts.text).slice(0, 80)
+  const sub = assEscape(opts.subtext).slice(0, 80)
+  if (!text) return null
+  // Alignment: 2 = bottom-center (lower-third), 5 = middle-center (end-card).
+  const align = endcard ? 5 : 2
+  const fontMain = Math.round(h * (endcard ? 0.075 : 0.05))
+  const fontSub = Math.round(h * (endcard ? 0.045 : 0.032))
+  const marginV = Math.round(h * (endcard ? 0.0 : 0.06))
+  const outline = Math.max(3, Math.round(h * 0.004))
+  const styles = [
+    `Style: CtaMain,Arial,${fontMain},&H00FFFFFF,&H00FFFFFF,&H00201010,&H00000000,1,0,0,0,100,100,0,0,1,${outline},2,${align},80,80,${marginV},1`,
+    `Style: CtaSub,Arial,${fontSub},&H00E6D8FF,&H00E6D8FF,&H00201010,&H00000000,1,0,0,0,100,100,0,0,1,${Math.max(2, outline - 1)},1,${align},80,80,${Math.round(marginV + fontMain * 1.15)},1`,
+  ]
+  const header = [
+    '[Script Info]', 'ScriptType: v4.00+', `PlayResX: ${w}`, `PlayResY: ${h}`,
+    'WrapStyle: 0', 'ScaledBorderAndShadow: yes', '',
+    '[V4+ Styles]',
+    'Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding',
+    ...styles, '',
+    '[Events]', 'Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text',
+  ]
+  // A soft fade in/out so the CTA does not pop harshly.
+  const fade = '{\\fad(300,300)}'
+  const events = [`Dialogue: 0,${assTime(start)},${assTime(end)},CtaMain,,0,0,0,,${fade}${text}`]
+  if (sub) events.push(`Dialogue: 0,${assTime(start)},${assTime(end)},CtaSub,,0,0,0,,${fade}${sub}`)
+  return header.concat(events).join('\n')
+}
+
+// POST /render-cta — burn a CTA onto a full horizontal video.
+//   body: { videoUrl, userId, text, subtext?, style: 'lowerthird'|'endcard',
+//           startSec, endSec }
+app.post('/render-cta', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const url = String(req.body?.videoUrl || '').trim()
+  const userId = String(req.body?.userId || '').trim()
+  const text = String(req.body?.text || '').trim()
+  const subtext = String(req.body?.subtext || '').trim()
+  const style = req.body?.style === 'endcard' ? 'endcard' : 'lowerthird'
+  const startSec = Math.max(0, Number(req.body?.startSec) || 0)
+  const endSec = Number(req.body?.endSec)
+  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad source' })
+  if (!text) return res.status(400).json({ error: 'text required' })
+  if (!Number.isFinite(endSec) || endSec <= startSec) return res.status(400).json({ error: 'bad window' })
+  const srcTmp = path.join(os.tmpdir(), `cta-src-${Date.now()}.mp4`)
+  const assTmp = path.join(os.tmpdir(), `cta-${Date.now()}.ass`)
+  const outTmp = path.join(os.tmpdir(), `cta-out-${Date.now()}.mp4`)
+  try {
+    await assertPublicHttpUrl(url)
+    await downloadToFile(url, srcTmp)
+    if (!fs.existsSync(srcTmp)) throw new Error('source download produced no file')
+    const ass = buildCtaAss({ style, text, subtext, startSec, endSec })
+    if (!ass) throw new Error('empty cta')
+    fs.writeFileSync(assTmp, ass)
+    // Burn over the FULL video at its original resolution (no trim, copy audio).
+    await new Promise((resolve, reject) => {
+      execFile('ffmpeg', [
+        '-hide_banner', '-loglevel', 'error', '-threads', '1',
+        '-i', srcTmp, '-vf', `ass=${assTmp}`,
+        '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
+        '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
+        '-c:a', 'copy', '-movflags', '+faststart', '-y', outTmp,
+      ], { maxBuffer: 1024 * 1024 * 64, timeout: 540_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
+        if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed')).slice(0, 400)))
+        else resolve()
+      })
+    })
+    if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
+    const key = `${userId || 'ingest'}/cta-${Date.now()}.mp4`
+    await uploadToSupabase(key, outTmp)
+    return res.json({ url: publicUrl(key) })
+  } catch (e) {
+    console.error('[render-cta] failed', e && e.message)
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
+  } finally {
+    cleanupTmp(srcTmp, assTmp, outTmp)
+  }
+})
+
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'audit-hardening-2026-08-09'
+const BUILD = 'cta-burn-in-2026-08-30'
 // Bind the port FIRST so health checks pass immediately, THEN load cookies and
 // self-update yt-dlp in the background (they only populate cookiesReady /
 // ytDlpVersion, both reported by /health). Previously we awaited a ~120s pip
