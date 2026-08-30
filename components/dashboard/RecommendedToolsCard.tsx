@@ -8,49 +8,68 @@
 // in sync when a partner is added/removed.
 
 import { ExternalLink } from 'lucide-react'
-// TRYBE referral link (direct, so it never depends on the Passport short domain).
 
-// Order is intentional (not alphabetical): Oink first (highest converter),
-// Geniuslink second (link wrapping), then programs in revenue-rank order —
-// matching the sidebar group.
-const TOOLS: Array<{ href: string; label: string; desc: string; highlight?: string }> = [
+type Link = { href: string; label: string; desc: string; highlight?: string }
+
+// TOOLS = software the creator runs day to day (link wrapping, storefront ops,
+// auto-syncing). Order is intentional: Oink first (highest converter).
+const TOOLS: Link[] = [
   { href: 'https://geni.us/2y5sBo', label: 'Oink', desc: 'Manage Amazon Creator Connections, earnings & storefronts', highlight: '#E0218A' },
+  { href: 'https://geni.us/9qSLP', label: 'Cha-Ching Automate', desc: 'Auto-sync your videos to YouTube + 13 global Amazon storefronts' },
   { href: 'https://geni.us/Y70p9R', label: 'Geniuslink', desc: 'Auto-localize Amazon links + route mobile shoppers to the app' },
+]
+
+// PROGRAMS = affiliate/collab networks the creator joins to earn (brand deals,
+// higher commissions, gifted products). Revenue-rank order.
+const PROGRAMS: Link[] = [
   { href: 'https://geni.us/GCad5Q', label: 'Levanta', desc: 'Exclusive brand deals on Amazon, Shopify & Walmart' },
   { href: 'https://geni.us/Z0q3hY', label: 'PartnerBoost', desc: 'Top brands across retail, travel, D2C & subscriptions' },
   { href: 'https://geni.us/khuHTe', label: 'Archer Affiliate', desc: 'Partner with Amazon sellers — up to 60% commissions' },
-  { href: 'https://geni.us/9qSLP', label: 'Cha-Ching Automate', desc: 'Auto-sync your videos to YouTube + 13 global Amazon storefronts' },
   // Cloaked through our own Passport redirect (code seeded in migration 296) so
   // clicks land in the operator's Passport analytics.
   { href: 'https://jointrybe.com/r/HTLEJE47', label: 'TRYBE', desc: 'Land brand collabs & gifted products as a creator' },
 ]
 
+function LinkGrid({ items }: { items: Link[] }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+      {items.map(t => (
+        <a
+          key={t.href}
+          href={t.href}
+          target="_blank"
+          rel="noopener noreferrer sponsored"
+          className="group rounded-xl border p-4 flex flex-col gap-1 transition-all hover:-translate-y-0.5"
+          style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[14px] font-semibold truncate" style={{ color: t.highlight || 'var(--text)' }}>
+              {t.label}
+            </span>
+            <ExternalLink size={13} className="flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--text-faint)' }} />
+          </div>
+          <span className="text-[12px] leading-snug" style={{ color: 'var(--text-soft)' }}>{t.desc}</span>
+        </a>
+      ))}
+    </div>
+  )
+}
+
 export default function RecommendedToolsCard() {
   return (
-    <section>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>
-        Recommended tools
-      </p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {TOOLS.map(t => (
-          <a
-            key={t.href}
-            href={t.href}
-            target="_blank"
-            rel="noopener noreferrer sponsored"
-            className="group rounded-xl border p-4 flex flex-col gap-1 transition-all hover:-translate-y-0.5"
-            style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[14px] font-semibold truncate" style={{ color: t.highlight || 'var(--text)' }}>
-                {t.label}
-              </span>
-              <ExternalLink size={13} className="flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--text-faint)' }} />
-            </div>
-            <span className="text-[12px] leading-snug" style={{ color: 'var(--text-soft)' }}>{t.desc}</span>
-          </a>
-        ))}
-      </div>
-    </section>
+    <div className="flex flex-col gap-6">
+      <section>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>
+          Recommended tools
+        </p>
+        <LinkGrid items={TOOLS} />
+      </section>
+      <section>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>
+          Recommended programs
+        </p>
+        <LinkGrid items={PROGRAMS} />
+      </section>
+    </div>
   )
 }
