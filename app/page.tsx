@@ -126,6 +126,7 @@ export default function LandingPreview() {
       <FeaturesGridCondensed />
       {/* Flagship new work, shown with real product images. */}
       <FeatureSpotlights />
+      <PassportSpotlight />
       {/* Real proof: actual thumbnails MVP made from one product photo. */}
       <ThumbnailShowcase />
       <ComparisonSection />
@@ -774,12 +775,49 @@ function TestimonialsSection() {
   )
 }
 
+/** Passport spotlight — the pricing differentiator. Geo-routing itself isn't
+ *  unique (Geniuslink and others do it), so we lead with what IS: no per-click
+ *  fees, unlimited, included free on every paid plan. Comparison kept generic on
+ *  purpose (we recommend Geniuslink elsewhere, so we don't name-and-shame it). */
+function PassportSpotlight() {
+  return (
+    <section id="passport" className="px-6 lg:px-8 pt-12 pb-8 relative">
+      <div className="max-w-5xl mx-auto rounded-3xl border p-6 sm:p-10"
+        style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(52,199,89,0.05))', borderColor: 'rgba(124,58,237,0.25)' }}>
+        <div className="max-w-2xl">
+          <span className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: '#7C3AED' }}>
+            <Globe size={13} /> Passport Links, free on every paid plan
+          </span>
+          <h2 className="text-[28px] sm:text-[38px] font-extrabold tracking-[-0.03em] leading-[1.05] mt-3" style={{ color: 'var(--text)' }}>
+            Keep your international commission. Never pay per click.
+          </h2>
+          <p className="mt-4 text-[15.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            When a shopper from another country taps your link, Passport routes them to their own country&apos;s Amazon, so the sale counts and the commission is yours. Most geo-routing link tools bill you by the click for that, and the bill climbs as you grow. Passport is included free on every paid MVP plan, with unlimited links and unlimited clicks. No overage, ever.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-4 mt-7">
+          <div className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Typical geo-link tool</p>
+            <p className="text-[15px] font-semibold mt-2" style={{ color: 'var(--text)' }}>Monthly fee, then charged by the click.</p>
+            <p className="text-[13px] mt-1.5" style={{ color: 'var(--text-soft)' }}>Your cost grows with your traffic. The more you scale, the more you pay.</p>
+          </div>
+          <div className="rounded-2xl border p-5" style={{ borderColor: 'rgba(124,58,237,0.4)', background: 'linear-gradient(135deg, rgba(124,58,237,0.1), rgba(52,199,89,0.06))' }}>
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: '#7C3AED' }}>Passport Links</p>
+            <p className="text-[15px] font-semibold mt-2" style={{ color: 'var(--text)' }}>Free on your plan. Unlimited links and clicks.</p>
+            <p className="text-[13px] mt-1.5" style={{ color: 'var(--text-soft)' }}>No per-click fees, no overage. The more you scale, the more you keep.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 /** Support & community — the "you're not doing this alone" section. Matches the
  *  education + community that logie5 and Oink lean on (tutorials, calls, group). */
-const COMMUNITY = [
-  { Icon: Play, title: 'Video tutorials', desc: 'Step-by-step tutorials for every feature on the MVP YouTube channel, so you are never stuck.' },
+const COMMUNITY: { Icon: typeof Play; title: string; desc: string; href?: string; cta?: string }[] = [
+  { Icon: Play, title: 'Video tutorials', desc: 'Step-by-step tutorials for every feature on the MVP YouTube channel, so you are never stuck.', href: 'https://www.youtube.com/@MVPaffiliate', cta: 'Watch on YouTube' },
   { Icon: Calendar, title: 'Weekly live calls', desc: 'Jump on our weekly calls to get your questions answered and talk shop on affiliate marketing and everything online.' },
-  { Icon: Facebook, title: 'A private community', desc: 'A Facebook group where creators share what is working, celebrate wins, and help shape what we build next.' },
+  { Icon: Facebook, title: 'A private community', desc: 'A Facebook group where creators share what is working, celebrate wins, and help shape what we build next.', href: 'https://www.facebook.com/groups/mvpaffiliate', cta: 'Join the group' },
 ]
 function CommunitySection() {
   return (
@@ -792,13 +830,29 @@ function CommunitySection() {
           </h2>
         </div>
         <div className="grid sm:grid-cols-3 gap-4 mt-10">
-          {COMMUNITY.map(({ Icon, title, desc }) => (
-            <div key={title} className="rounded-2xl border p-6 text-center" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
-              <div className="w-11 h-11 rounded-xl grid place-items-center mx-auto mb-3.5" style={{ background: 'rgba(124,58,237,0.1)', color: '#7C3AED' }}><Icon size={20} /></div>
-              <h3 className="text-[16.5px] font-bold mb-1.5" style={{ color: 'var(--text)' }}>{title}</h3>
-              <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{desc}</p>
-            </div>
-          ))}
+          {COMMUNITY.map(({ Icon, title, desc, href, cta }) => {
+            const inner = (
+              <>
+                <div className="w-11 h-11 rounded-xl grid place-items-center mx-auto mb-3.5" style={{ background: 'rgba(124,58,237,0.1)', color: '#7C3AED' }}><Icon size={20} /></div>
+                <h3 className="text-[16.5px] font-bold mb-1.5" style={{ color: 'var(--text)' }}>{title}</h3>
+                <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{desc}</p>
+                {href && cta && (
+                  <span className="inline-flex items-center gap-1 text-[12.5px] font-semibold mt-3" style={{ color: '#7C3AED' }}>{cta} <ArrowRight size={12} /></span>
+                )}
+              </>
+            )
+            return href ? (
+              <a key={title} href={href} target="_blank" rel="noopener noreferrer"
+                className="rounded-2xl border p-6 text-center block transition-all hover:-translate-y-0.5"
+                style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+                {inner}
+              </a>
+            ) : (
+              <div key={title} className="rounded-2xl border p-6 text-center" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+                {inner}
+              </div>
+            )
+          })}
         </div>
       </div>
     </section>
