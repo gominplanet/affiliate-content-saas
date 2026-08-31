@@ -86,6 +86,9 @@ export async function GET(req: Request) {
       asin: (r.asin as string) || null,
       // The dubbed video for a dubbed market; otherwise the master render.
       videoUrl: (r.video_url as string) || masterSrc,
+      // The English master, so a market can be delivered without its dub on
+      // purpose ("skip dub") even after one was generated.
+      masterUrl: masterSrc,
       thumbnailUrl: thumbByVideo.get(videoIdByJob.get(r.job_id) || '') || null,
     }
   }).filter(i => !!i.videoUrl && !!i.title)

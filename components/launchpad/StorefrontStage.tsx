@@ -48,6 +48,10 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
   const [jobId, setJobId] = useState<string | null>(null)
   const [targets, setTargets] = useState<Target[]>([])
   const [dubbing, setDubbing] = useState<string | null>(null)
+  // Non-English markets the creator chose to deliver WITHOUT a dub (English audio
+  // on purpose). Domains in here are skipped by the auto-dub and delivered with
+  // the master video.
+  const [skipDub, setSkipDub] = useState<Set<string>>(new Set())
   const [delivering, setDelivering] = useState(false)
   // True while we hold the upload waiting for the branded thumbnail to render.
   const [thumbWaiting, setThumbWaiting] = useState(false)
@@ -210,7 +214,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
       // translate + TTS + render) and best-effort — a market whose dub fails just
       // falls back to the master video. Uses the voice you picked (your cloned
       // voice spends 1 credit per market; the standard voice is free).
-      const needDub = targets.filter(t => t.dub && !t.videoUrl)
+      const needDub = targets.filter(t => t.dub && !t.videoUrl && !skipDub.has(t.domain))
       if (needDub.length > 0) {
         const useClone = !!(voice?.hasVoice && useMyVoice)
         toast(`Preparing ${needDub.length} ${needDub.length === 1 ? 'dub' : 'dubs'} first — this can take a couple of minutes each.`)
@@ -230,7 +234,11 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
 
       const loadQueue = async () => {
         const q = await fetch(`/api/global-sync/deliver/queue?jobId=${jobId}`).then(r => r.json()).catch(() => ({}))
-        return Array.isArray(q?.items) ? q.items : []
+        const arr = Array.isArray(q?.items) ? q.items : []
+        // Honor "skip dub": deliver the English master to those markets even if a
+        // dub was generated earlier.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return arr.map((i: any) => (skipDub.has(i.domain) && i.masterUrl) ? { ...i, videoUrl: i.masterUrl } : i)
       }
       let items = await loadQueue()
       if (items.length === 0) { toast('Nothing to upload yet — localize the markets first.'); return }
@@ -525,7 +533,16 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
                 {t.title && <p className="text-[13px] font-medium" style={label}>{t.title}</p>}
                 {t.description && <p className="text-[12px] mt-0.5 line-clamp-3" style={muted}>{t.description}</p>}
                 {t.detail && <p className="text-[11px] mt-1" style={muted}>{t.detail}</p>}
-                {t.dub && t.videoUrl && (
+                {/* Skip dub: deliver the English master to this market on purpose. */}
+                {t.dub && t.state !== 'delivered' && (
+                  <label className="flex items-center gap-1.5 text-[11px] mt-1.5 cursor-pointer" style={muted}>
+                    <input type="checkbox" checked={skipDub.has(t.domain)}
+                      onChange={() => setSkipDub(prev => { const n = new Set(prev); n.has(t.domain) ? n.delete(t.domain) : n.add(t.domain); return n })}
+                      className="accent-[#0EA5A4]" />
+                    Skip dub — upload with English audio
+                  </label>
+                )}
+                {t.dub && !skipDub.has(t.domain) && t.videoUrl && (
                   // Listen to the generated dub in-page. Stays available after the
                   // market is delivered so you can always check how it sounds. A
                   // voiceover-only result is an .mp3; a muxed dub is an .mp4.
@@ -547,7 +564,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
                     )}
                   </div>
                 )}
-                {t.dub && !t.videoUrl && (t.state === 'localized' || t.state === 'failed' || t.state === 'dubbing') && (
+                {t.dub && !skipDub.has(t.domain) && !t.videoUrl && (t.state === 'localized' || t.state === 'failed' || t.state === 'dubbing') && (
                   <div className="flex items-center gap-3 mt-2">
                     <button type="button" onClick={() => void dubOne(t.domain)} disabled={dubbing === t.domain}
                       className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border disabled:opacity-60"
