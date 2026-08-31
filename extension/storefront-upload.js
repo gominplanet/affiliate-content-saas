@@ -30,39 +30,52 @@
   // host — so a page whose DOM hasn't hydrated the token yet still resolves.
   async function readContext() {
     const out = { slateToken: null, csrf: null, ownerAffiliateId: null, storeId: null, via: [] }
-    const html = document.documentElement.innerHTML
 
-    // slateToken: the PUBLISH needs the create app's own token, which sits in the
-    // page state as bare JSON ("slateToken":"AwcAC…"). The SiteStripe context
-    // wraps ITS (different) token in Optional[…] and that one 403's the publish,
-    // so prefer a bare, non-Optional match and only fall back to the wrapped one.
-    const bareSlate = html.match(/"slateToken"\s*:\s*"([A-Za-z0-9+/=]{40,})"/)
-    const anySlate = html.match(/slateToken\s*[:=]\s*"?(?:Optional\[)?([A-Za-z0-9+/=]{40,})\]?"?/)
-    if (bareSlate) { out.slateToken = bareSlate[1]; out.via.push('dom:slate-bare') }
-    else if (anySlate) { out.slateToken = anySlate[1]; out.via.push('dom:slate-opt') }
+    // 1. AUTHORITATIVE: the create app serializes its whole session into the
+    //    #pageState element's data-page-state ATTRIBUTE as JSON — the slateToken
+    //    the publish actually needs, plus the creator's rootAffiliateId. Read the
+    //    attribute (getAttribute + JSON.parse), NOT innerHTML: serializing
+    //    innerHTML escapes the attribute's quotes to &quot;, which is exactly why
+    //    every earlier regex scrape missed this token.
+    try {
+      const raw = document.getElementById('pageState')?.getAttribute('data-page-state')
+      if (raw) {
+        const ps = JSON.parse(raw)
+        if (ps && typeof ps.slateToken === 'string') { out.slateToken = ps.slateToken; out.via.push('pageState:slate') }
+        const sf = (ps && (ps.defaultStorefront || (Array.isArray(ps.storefronts) ? ps.storefronts[0] : null))) || {}
+        if (sf.rootAffiliateId) { out.ownerAffiliateId = sf.rootAffiliateId; out.via.push('pageState:owner') }
+        if (sf.offsiteStoreId) out.storeId = sf.offsiteStoreId
+      }
+    } catch { /* fall through to the scrapes below */ }
 
-    // CSRF: prefer the token our MAIN-world sniffer captured off Amazon's OWN
-    // create-API calls (the exact anti-csrftoken-a2z the create app uses). Amazon
-    // fires those on load, but give it up to ~4s to appear before falling back to
-    // whatever token is scraped from the page markup (which 403'd the publish).
+    // 2. CSRF: the MAIN-world sniffer records the exact anti-csrftoken-a2z the
+    //    create app sends on its own API calls. Amazon fires those on load; give
+    //    it up to ~5s to appear.
     let sniffed = document.documentElement.getAttribute('data-mvp-a2z')
-    for (let i = 0; !sniffed && i < 20; i++) { await new Promise(r => setTimeout(r, 200)); sniffed = document.documentElement.getAttribute('data-mvp-a2z') }
+    for (let i = 0; !sniffed && i < 25; i++) { await new Promise(r => setTimeout(r, 200)); sniffed = document.documentElement.getAttribute('data-mvp-a2z') }
     if (sniffed) { out.csrf = sniffed; out.via.push('sniff:csrf') }
-    else {
-      out.csrf =
-        document.querySelector('meta[name="anti-csrftoken-a2z"]')?.content ||
-        document.querySelector('input[name="anti-csrftoken-a2z"]')?.value ||
-        (html.match(/anti-?csrftoken-?a2z["'\s:=]+["']([^"']+)["']/i) || [])[1] || null
-      if (out.csrf) out.via.push('dom:csrf')
+
+    // 3. Fallbacks if #pageState was absent (older Creator Hub) or the sniffer
+    //    hadn't captured a token yet.
+    if (!out.slateToken || !out.csrf || !out.ownerAffiliateId) {
+      const html = document.documentElement.innerHTML
+      if (!out.slateToken) {
+        const m = html.match(/slateToken["'\s:=&quot;]+(?:Optional\[)?([A-Za-z0-9+/=]{60,})/)
+        if (m) { out.slateToken = m[1]; out.via.push('dom:slate') }
+      }
+      if (!out.csrf) {
+        out.csrf = document.querySelector('meta[name="anti-csrftoken-a2z"]')?.content ||
+          document.querySelector('input[name="anti-csrftoken-a2z"]')?.value || null
+        if (out.csrf) out.via.push('dom:csrf')
+      }
+      if (!out.ownerAffiliateId) {
+        const m = html.match(/rootAffiliateId["'\s:=&quot;]+([A-Za-z0-9-]+)/) || html.match(/affiliateId=([^&"']+)/)
+        if (m) { out.ownerAffiliateId = m[1]; out.via.push('dom:owner') }
+      }
     }
 
-    out.ownerAffiliateId =
-      (html.match(/"(?:ownerAffiliateId|selectedRootAffiliateId|affiliateId)"\s*:\s*"([^"]+)"/) || [])[1] ||
-      (location.search.match(/affiliateId=([^&]+)/) || [])[1] || null
-    if (out.ownerAffiliateId) out.via.push('dom:owner')
-
-    // Fallback / cross-marketplace: the SiteStripe render endpoint. Same-origin,
-    // credentialed; the `scripts` field holds the amzn-ss-context block.
+    // 4. Last resort for slate/csrf: the SiteStripe render endpoint (its tokens
+    //    are a different generation and may 403 the publish, but better than none).
     if (!out.slateToken || !out.csrf) {
       try {
         const r = await fetch(`https://${location.host}/creators/links/render/ss?pageType=CreatorStudioZaphodUI`, { credentials: 'include' })
@@ -71,8 +84,6 @@
           const blob = j && typeof j.scripts === 'string' ? j.scripts : ''
           if (!out.slateToken) { const m = blob.match(/slateToken:\s*"(?:Optional\[)?([^"\]]+)\]?"/); if (m) { out.slateToken = m[1]; out.via.push('render:slate') } }
           if (!out.csrf) { const m = blob.match(/csrfToken:\s*"([^"]+)"/); if (m) { out.csrf = m[1]; out.via.push('render:csrf') } }
-          const ms = blob.match(/defaultStoreId:\s*"([^"]+)"/) || blob.match(/getDefaultStoreId:\s*function\s*\(\)\s*\{\s*return\s*"([^"]+)"/)
-          if (ms) { out.storeId = ms[1]; out.via.push('render:store') }
         }
       } catch { /* ignore — reported via the slateToken guard below */ }
     }
