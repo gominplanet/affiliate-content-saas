@@ -71,7 +71,10 @@
   function bgS3Put({ srcUrl, creds, key, contentType }) {
     return new Promise((resolve, reject) => {
       let settled = false
-      const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('timed out')) } }, 200000)
+      // Longer than the worker's own step timeouts (download 120s + PUT 120s) so
+      // its specific error surfaces instead of this blanket one; still under the
+      // 300s per-job budget in deliverStorefronts.
+      const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('no worker response (SW may have been killed)')) } }, 260000)
       chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_S3PUT', srcUrl, creds, key, contentType }, (resp) => {
         if (settled) return
         settled = true; clearTimeout(to)

@@ -5427,10 +5427,18 @@ async function _s3hmac(key, msg) {
 async function storefrontS3Put({ srcUrl, creds, key, contentType }) {
   if (!srcUrl || !creds || !key) throw new Error('bad-s3put-args')
   // 1. Download the media (Supabase public object → CORS-ok; amazonaws/media
-  //    hosts covered by host_permissions).
-  const src = await fetch(srcUrl, { signal: AbortSignal.timeout(180000) })
-  if (!src.ok) throw new Error(`source ${src.status}`)
+  //    hosts covered by host_permissions). Labelled so a stall here is
+  //    distinguishable from a stall on the PUT.
+  console.log('[SCOUT s3put] download start', srcUrl.slice(0, 80))
+  let src
+  try {
+    src = await fetch(srcUrl, { signal: AbortSignal.timeout(120000) })
+  } catch (e) {
+    throw new Error(`download failed: ${e && e.message || e}`)
+  }
+  if (!src.ok) throw new Error(`download HTTP ${src.status}`)
   const bytes = new Uint8Array(await src.arrayBuffer())
+  console.log('[SCOUT s3put] downloaded', bytes.length, 'bytes → PUT to', `${creds.s3Bucket}.s3.${creds.s3BucketRegion}.amazonaws.com`)
 
   // 2. SigV4-sign + PUT to the creator-studio bucket (UNSIGNED-PAYLOAD).
   const host = `${creds.s3Bucket}.s3.${creds.s3BucketRegion}.amazonaws.com`
@@ -5454,19 +5462,26 @@ async function storefrontS3Put({ srcUrl, creds, key, contentType }) {
   k = await _s3hmac(k, region); k = await _s3hmac(k, service); k = await _s3hmac(k, 'aws4_request')
   const signature = _s3hex(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), _s3enc.encode(stringToSign)))
   const auth = `AWS4-HMAC-SHA256 Credential=${creds.awsAccessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
-  const res = await fetch(url, {
-    method: 'PUT', body: bytes,
-    headers: {
-      'Content-Type': contentType,
-      'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
-      'x-amz-date': amzDate,
-      'x-amz-security-token': creds.awsSessionToken,
-      'x-amz-tagging': 'temporary=true',
-      'Authorization': auth,
-    },
-    signal: AbortSignal.timeout(180000),
-  })
+  let res
+  try {
+    res = await fetch(url, {
+      method: 'PUT', body: bytes,
+      headers: {
+        'Content-Type': contentType,
+        'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+        'x-amz-date': amzDate,
+        'x-amz-security-token': creds.awsSessionToken,
+        'x-amz-tagging': 'temporary=true',
+        'Authorization': auth,
+      },
+      signal: AbortSignal.timeout(120000),
+    })
+  } catch (e) {
+    console.error('[SCOUT s3put] PUT failed', e && e.message || e)
+    throw new Error(`put failed: ${e && e.message || e}`)
+  }
   if (!res.ok) throw new Error(`S3 PUT ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`)
+  console.log('[SCOUT s3put] PUT ok', res.status)
   return { ok: true, key }
 }
 
