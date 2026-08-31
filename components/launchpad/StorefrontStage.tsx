@@ -204,6 +204,30 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
     if (!jobId) return
     setDelivering(true)
     try {
+      // Auto-dub first: generate a voiceover in each non-English market's language
+      // for any market that doesn't already have one, so no storefront ships with
+      // English audio under a translated title. Sequential (each dub is a heavy
+      // translate + TTS + render) and best-effort — a market whose dub fails just
+      // falls back to the master video. Uses the voice you picked (your cloned
+      // voice spends 1 credit per market; the standard voice is free).
+      const needDub = targets.filter(t => t.dub && !t.videoUrl)
+      if (needDub.length > 0) {
+        const useClone = !!(voice?.hasVoice && useMyVoice)
+        toast(`Preparing ${needDub.length} ${needDub.length === 1 ? 'dub' : 'dubs'} first — this can take a couple of minutes each.`)
+        for (const t of needDub) {
+          setDubbing(t.domain)
+          try {
+            await fetch('/api/global-sync/dub', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jobId, domain: t.domain, voice: useClone ? 'cloned' : 'standard' }),
+            })
+          } catch { /* fall back to the master video for this market */ }
+        }
+        setDubbing(null)
+        await refreshTargets()
+        if (useClone) void refreshVoice()
+      }
+
       const loadQueue = async () => {
         const q = await fetch(`/api/global-sync/deliver/queue?jobId=${jobId}`).then(r => r.json()).catch(() => ({}))
         return Array.isArray(q?.items) ? q.items : []
@@ -466,7 +490,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
               </button>
             </div>
           </div>
-          <p className="text-[12px] mb-2" style={muted}>Uploads through SCOUT into your logged-in Amazon Creator account. You must be signed in to each marketplace and enrolled in its Creator program. Use “Check sign-in” first. Keep this tab open while it runs.</p>
+          <p className="text-[12px] mb-2" style={muted}>Uploads through SCOUT into your logged-in Amazon Creator account. Any non-English market without a dub yet is dubbed automatically first, so no storefront ships with English audio. You must be signed in to each marketplace and enrolled in its Creator program. Use “Check sign-in” first. Keep this tab open while it runs.</p>
           {scout && (
             scout.installed
               ? <p className="text-[11px] mb-3" style={scoutStale ? { color: '#d97706' } : muted}>
