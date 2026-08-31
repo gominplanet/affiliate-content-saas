@@ -49,6 +49,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
   const [targets, setTargets] = useState<Target[]>([])
   const [dubbing, setDubbing] = useState<string | null>(null)
   const [delivering, setDelivering] = useState(false)
+  // True while we hold the upload waiting for the branded thumbnail to render.
+  const [thumbWaiting, setThumbWaiting] = useState(false)
   // Per-marketplace sign-in / enrollment status from the SCOUT pre-flight.
   const [signin, setSignin] = useState<Record<string, StorefrontMarketStatus>>({})
   const [checking, setChecking] = useState(false)
@@ -202,9 +204,33 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
     if (!jobId) return
     setDelivering(true)
     try {
-      const q = await fetch(`/api/global-sync/deliver/queue?jobId=${jobId}`).then(r => r.json()).catch(() => ({}))
-      const items = Array.isArray(q?.items) ? q.items : []
+      const loadQueue = async () => {
+        const q = await fetch(`/api/global-sync/deliver/queue?jobId=${jobId}`).then(r => r.json()).catch(() => ({}))
+        return Array.isArray(q?.items) ? q.items : []
+      }
+      let items = await loadQueue()
       if (items.length === 0) { toast('Nothing to upload yet — localize the markets first.'); return }
+
+      // Thumbnail gate: MVP renders a branded product thumbnail in the background
+      // after the master is created. If we upload before it's ready, Amazon
+      // attaches its own video-frame thumbnail instead. Wait for it (up to ~2 min),
+      // and only then let the user choose to go with Amazon's auto thumbnail.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hasThumb = (arr: any[]) => arr.some((i: { thumbnailUrl?: string | null }) => !!i.thumbnailUrl)
+      if (!hasThumb(items)) {
+        setThumbWaiting(true)
+        try {
+          for (let i = 0; i < 24 && !hasThumb(items); i++) { await sleep(5000); items = await loadQueue() }
+        } finally { setThumbWaiting(false) }
+        if (!hasThumb(items)) {
+          const go = typeof window !== 'undefined' && window.confirm(
+            'Your branded thumbnail is still rendering. Upload now and let Amazon use a frame from the video instead?\n\nClick Cancel to wait a bit longer and try again.',
+          )
+          if (!go) { toast('Held off — try again once the thumbnail has finished rendering.'); return }
+        } else {
+          toast.success('Thumbnail ready — uploading with your branded thumbnail.')
+        }
+      }
 
       // Pre-flight FIRST: only upload to marketplaces the creator is signed in +
       // enrolled on, so a signed-out geo doesn't fail silently in a background tab.
@@ -436,7 +462,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
               <button onClick={() => void deliverAll()} disabled={delivering || checking}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
                 style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
-                {delivering ? <><Loader2 size={15} className="animate-spin" /> Uploading…</> : <><Upload size={15} /> Upload to all storefronts</>}
+                {thumbWaiting ? <><Loader2 size={15} className="animate-spin" /> Waiting for thumbnail…</> : delivering ? <><Loader2 size={15} className="animate-spin" /> Uploading…</> : <><Upload size={15} /> Upload to all storefronts</>}
               </button>
             </div>
           </div>
