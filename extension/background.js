@@ -5410,86 +5410,76 @@ function openStorefrontLogin(domain) {
   })
 }
 
-// ── S3 upload from the BACKGROUND worker ────────────────────────────────────
-// The content script can't PUT the video to Amazon's creator S3 bucket: a signed
-// cross-origin PUT from the Amazon page triggers a CORS preflight that hangs
-// ("[upload-video] timed out"). The service worker has host_permissions for
-// *.amazonaws.com, so its fetch bypasses CORS entirely — no preflight, no hang.
-// The content script (which holds the page session) fetches the temp creds and
-// hands us {srcUrl, creds, key, contentType}; we download the media and PUT it.
-const _s3enc = new TextEncoder()
-const _s3hex = (buf) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
-async function _s3sha256(s) { return _s3hex(await crypto.subtle.digest('SHA-256', typeof s === 'string' ? _s3enc.encode(s) : s)) }
-async function _s3hmac(key, msg) {
-  const k = await crypto.subtle.importKey('raw', typeof key === 'string' ? _s3enc.encode(key) : key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  return new Uint8Array(await crypto.subtle.sign('HMAC', k, _s3enc.encode(msg)))
-}
-async function storefrontS3Put({ srcUrl, creds, key, contentType }) {
-  if (!srcUrl || !creds || !key) throw new Error('bad-s3put-args')
-  // 1. Download the media (Supabase public object → CORS-ok; amazonaws/media
-  //    hosts covered by host_permissions). Labelled so a stall here is
-  //    distinguishable from a stall on the PUT.
-  console.log('[SCOUT s3put] download start', srcUrl.slice(0, 80))
-  let src
-  try {
-    src = await fetch(srcUrl, { signal: AbortSignal.timeout(120000) })
-  } catch (e) {
-    throw new Error(`download failed: ${e && e.message || e}`)
-  }
-  if (!src.ok) throw new Error(`download HTTP ${src.status}`)
-  const bytes = new Uint8Array(await src.arrayBuffer())
-  console.log('[SCOUT s3put] downloaded', bytes.length, 'bytes → PUT to', `${creds.s3Bucket}.s3.${creds.s3BucketRegion}.amazonaws.com`)
-
-  // 2. SigV4-sign + PUT to the creator-studio bucket (UNSIGNED-PAYLOAD).
-  const host = `${creds.s3Bucket}.s3.${creds.s3BucketRegion}.amazonaws.com`
-  const url = `https://${host}/${key}?x-id=PutObject`
-  const now = new Date()
-  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
-  const dateStamp = amzDate.slice(0, 8)
-  const region = creds.s3BucketRegion, service = 's3'
-  const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token;x-amz-tagging'
-  const canonicalHeaders =
-    `content-type:${contentType}\n` +
-    `host:${host}\n` +
-    `x-amz-content-sha256:UNSIGNED-PAYLOAD\n` +
-    `x-amz-date:${amzDate}\n` +
-    `x-amz-security-token:${creds.awsSessionToken}\n` +
-    `x-amz-tagging:temporary=true\n`
-  const canonicalReq = ['PUT', `/${key.split('/').map(encodeURIComponent).join('/')}`, 'x-id=PutObject', canonicalHeaders, signedHeaders, 'UNSIGNED-PAYLOAD'].join('\n')
-  const scope = `${dateStamp}/${region}/${service}/aws4_request`
-  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await _s3sha256(canonicalReq)].join('\n')
-  let k = await _s3hmac('AWS4' + creds.awsSecretAccessKey, dateStamp)
-  k = await _s3hmac(k, region); k = await _s3hmac(k, service); k = await _s3hmac(k, 'aws4_request')
-  const signature = _s3hex(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), _s3enc.encode(stringToSign)))
-  const auth = `AWS4-HMAC-SHA256 Credential=${creds.awsAccessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
-  let res
-  try {
-    res = await fetch(url, {
-      method: 'PUT', body: bytes,
-      headers: {
-        'Content-Type': contentType,
-        'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
-        'x-amz-date': amzDate,
-        'x-amz-security-token': creds.awsSessionToken,
-        'x-amz-tagging': 'temporary=true',
-        'Authorization': auth,
-      },
-      signal: AbortSignal.timeout(120000),
-    })
-  } catch (e) {
-    console.error('[SCOUT s3put] PUT failed', e && e.message || e)
-    throw new Error(`put failed: ${e && e.message || e}`)
-  }
-  if (!res.ok) throw new Error(`S3 PUT ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`)
-  console.log('[SCOUT s3put] PUT ok', res.status)
-  return { ok: true, key }
+// ── S3 upload from the PAGE'S MAIN WORLD ────────────────────────────────────
+// A signed cross-origin PUT to Amazon's creator S3 bucket has to run from the
+// SAME context the real Creator Hub uploads from, or it stalls: an isolated
+// content-script PUT and a service-worker PUT both failed ("[upload-video]
+// timed out"). So we inject the whole download+sign+PUT into the create tab's
+// MAIN world (world:'MAIN'), where the origin, cookies and CORS handling are
+// exactly Amazon's own uploader's — the bucket already trusts it. This also
+// keeps the work in the tab (alive while open) rather than the service worker
+// (which Chrome kills mid-upload). Self-contained: executeScript serializes the
+// function, so it can close over NOTHING — every helper is defined inside.
+function mainWorldS3Put(params) {
+  return (async () => {
+    const { srcUrl, creds, key, contentType } = params
+    const log = (...a) => { try { console.log('[SCOUT s3put]', ...a) } catch (e) {} }
+    const enc = new TextEncoder()
+    const hex = (buf) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+    const sha256 = async (s) => hex(await crypto.subtle.digest('SHA-256', typeof s === 'string' ? enc.encode(s) : s))
+    const hmac = async (k, m) => new Uint8Array(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', typeof k === 'string' ? enc.encode(k) : k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), enc.encode(m)))
+    try {
+      log('download start', String(srcUrl).slice(0, 80))
+      const src = await fetch(srcUrl)
+      if (!src.ok) return { ok: false, error: `download HTTP ${src.status}` }
+      const bytes = new Uint8Array(await src.arrayBuffer())
+      const host = `${creds.s3Bucket}.s3.${creds.s3BucketRegion}.amazonaws.com`
+      log('downloaded', bytes.length, 'bytes → PUT', host)
+      const url = `https://${host}/${key}?x-id=PutObject`
+      const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '')
+      const dateStamp = amzDate.slice(0, 8)
+      const region = creds.s3BucketRegion, service = 's3'
+      const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token;x-amz-tagging'
+      const canonicalHeaders =
+        `content-type:${contentType}\n` + `host:${host}\n` +
+        `x-amz-content-sha256:UNSIGNED-PAYLOAD\n` + `x-amz-date:${amzDate}\n` +
+        `x-amz-security-token:${creds.awsSessionToken}\n` + `x-amz-tagging:temporary=true\n`
+      const canonicalReq = ['PUT', `/${key.split('/').map(encodeURIComponent).join('/')}`, 'x-id=PutObject', canonicalHeaders, signedHeaders, 'UNSIGNED-PAYLOAD'].join('\n')
+      const scope = `${dateStamp}/${region}/${service}/aws4_request`
+      const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256(canonicalReq)].join('\n')
+      let k = await hmac('AWS4' + creds.awsSecretAccessKey, dateStamp)
+      k = await hmac(k, region); k = await hmac(k, service); k = await hmac(k, 'aws4_request')
+      const signature = hex(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), enc.encode(stringToSign)))
+      const auth = `AWS4-HMAC-SHA256 Credential=${creds.awsAccessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
+      const res = await fetch(url, {
+        method: 'PUT', body: bytes,
+        headers: {
+          'Content-Type': contentType, 'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+          'x-amz-date': amzDate, 'x-amz-security-token': creds.awsSessionToken,
+          'x-amz-tagging': 'temporary=true', 'Authorization': auth,
+        },
+      })
+      if (!res.ok) return { ok: false, error: `S3 PUT ${res.status}: ${(await res.text().catch(() => '')).slice(0, 150)}` }
+      log('PUT ok', res.status)
+      return { ok: true, key }
+    } catch (e) {
+      log('failed', e && e.message || e)
+      return { ok: false, error: String(e && e.message || e) }
+    }
+  })()
 }
 
-// Content script → background: run one S3 PUT (video or thumbnail) off-page.
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+// Content script → background: run one S3 PUT (video or thumbnail) by injecting
+// the upload into the SAME tab's main world.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.action === 'MVP_STOREFRONT_S3PUT') {
-    storefrontS3Put(msg)
-      .then((r) => sendResponse(r))
+    const tabId = sender && sender.tab && sender.tab.id
+    if (!tabId) { sendResponse({ ok: false, error: 'no-tab' }); return true }
+    chrome.scripting.executeScript({
+      target: { tabId }, world: 'MAIN', func: mainWorldS3Put,
+      args: [{ srcUrl: msg.srcUrl, creds: msg.creds, key: msg.key, contentType: msg.contentType }],
+    })
+      .then((results) => sendResponse((results && results[0] && results[0].result) || { ok: false, error: 'no-result' }))
       .catch((e) => sendResponse({ ok: false, error: String(e && e.message || e) }))
     return true // async
   }
