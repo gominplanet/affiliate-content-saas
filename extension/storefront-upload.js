@@ -35,11 +35,20 @@
     const mSlate = html.match(/slateToken\s*[:=]\s*"?(?:Optional\[)?([A-Za-z0-9+/=]{40,})\]?"?/)
     if (mSlate) { out.slateToken = mSlate[1]; out.via.push('dom:slate') }
 
-    out.csrf =
-      document.querySelector('meta[name="anti-csrftoken-a2z"]')?.content ||
-      document.querySelector('input[name="anti-csrftoken-a2z"]')?.value ||
-      (html.match(/anti-?csrftoken-?a2z["'\s:=]+["']([^"']+)["']/i) || [])[1] || null
-    if (out.csrf) out.via.push('dom:csrf')
+    // CSRF: prefer the token our MAIN-world sniffer captured off Amazon's OWN
+    // create-API calls (the exact anti-csrftoken-a2z the create app uses). Amazon
+    // fires those on load, but give it up to ~4s to appear before falling back to
+    // whatever token is scraped from the page markup (which 403'd the publish).
+    let sniffed = document.documentElement.getAttribute('data-mvp-a2z')
+    for (let i = 0; !sniffed && i < 20; i++) { await new Promise(r => setTimeout(r, 200)); sniffed = document.documentElement.getAttribute('data-mvp-a2z') }
+    if (sniffed) { out.csrf = sniffed; out.via.push('sniff:csrf') }
+    else {
+      out.csrf =
+        document.querySelector('meta[name="anti-csrftoken-a2z"]')?.content ||
+        document.querySelector('input[name="anti-csrftoken-a2z"]')?.value ||
+        (html.match(/anti-?csrftoken-?a2z["'\s:=]+["']([^"']+)["']/i) || [])[1] || null
+      if (out.csrf) out.via.push('dom:csrf')
+    }
 
     out.ownerAffiliateId =
       (html.match(/"(?:ownerAffiliateId|selectedRootAffiliateId|affiliateId)"\s*:\s*"([^"]+)"/) || [])[1] ||
