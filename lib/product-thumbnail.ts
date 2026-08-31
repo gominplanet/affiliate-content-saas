@@ -42,7 +42,14 @@ export async function buildProductThumbnail(
   const withText = opts.withText !== false
   try {
     const product = await fetchAmazonProduct(opts.asin).catch(() => null)
-    const productImg = (product?.imageUrl as string | undefined) || null
+    // Feed the model the REAL product photos (main + one more angle) so it
+    // reproduces the actual item, not a generic stand-in. Falls back to the
+    // single main image.
+    const gallery = Array.isArray(product?.images) ? (product!.images as string[]).filter(Boolean) : []
+    const productImgs = (gallery.length ? gallery : [product?.imageUrl]).filter((u): u is string => !!u).slice(0, 2)
+    if (productImgs.length === 0) {
+      console.error('[buildProductThumbnail] no product image for ASIN', opts.asin, '— the model will invent a product; check the Amazon fetch')
+    }
 
     // Creator's face (from a ready-enough face model). Optional but preferred.
     const { data: fms } = await sb.from('face_models').select('id,source_images,status').eq('user_id', opts.userId)
@@ -55,7 +62,7 @@ export async function buildProductThumbnail(
       ? await getThumbnailFaceRef(sb, opts.userId, { faceId: face.id, sourceImages: face.source_images, expression: 'excited', tier: opts.tier ?? null })
       : null
 
-    const refs = await rehostAll([...(faceRef ? [faceRef] : []), ...(productImg ? [productImg] : [])])
+    const refs = await rehostAll([...(faceRef ? [faceRef] : []), ...productImgs])
     if (refs.length === 0) return null
 
     // The hook is baked into the image by the generator, so it only applies to
@@ -66,14 +73,20 @@ export async function buildProductThumbnail(
       recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'product_thumbnail_hook', model: 'claude-haiku-4-5-20251001', images: 0 })
     }
 
-    const faceLine = faceRef ? 'FEATURE THE PERSON from the first reference image (preserve their exact face and likeness), looking excited and gesturing toward the product. Do NOT invent a different person.' : ''
+    const productName = ((product?.title as string) || '').trim().slice(0, 120)
+    const faceLine = faceRef
+      ? 'The FIRST reference image is the CREATOR. Feature this exact person (preserve their real face and likeness), looking excited and gesturing toward the product. Do NOT invent a different person. '
+      : ''
+    // Bind the product as strictly as the face: the real photos are the source of
+    // truth for the item's form factor. Without this the model drifts to a generic
+    // stand-in (e.g. drawing over-ear headphones when the product is neckband
+    // earbuds) — the exact bug this guards against.
+    const productLine = `The ${faceRef ? 'other reference image(s) are' : 'reference image(s) are'} the ACTUAL product being reviewed${productName ? ` ("${productName}")` : ''}. Reproduce THAT exact product faithfully — same category, form factor, shape, colour and design — large and prominent. Do NOT substitute, redesign, or invent a different product, and do NOT change its form factor (for example, if it is neckband or in-ear earbuds, do NOT draw over-ear headphones). `
     const textLine = withText
-      ? `Bake in LARGE, perfectly spelled overlay text reading exactly "${hook}". `
+      ? `Bake in LARGE, perfectly spelled overlay text reading exactly "${hook}" and nothing else — no subtitle, no second line, no other words. `
       : 'Do NOT put ANY text, words, letters, captions or logos anywhere on the image. '
     const prompt = `Design a bold, high-contrast YouTube-style thumbnail (16:9) for a product review.
-${faceLine}
-Show the PRODUCT from the reference clearly and prominently.
-${textLine}Bright, punchy, modern, saturated colours, clean composition. No watermark, no extra sentences.`
+${faceLine}${productLine}${textLine}Bright, punchy, modern, saturated colours, clean composition. No watermark.`
 
     let imgs = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
     let model = 'nano-banana-pro'
