@@ -5430,7 +5430,9 @@ function mainWorldS3Put(params) {
     const hmac = async (k, m) => new Uint8Array(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', typeof k === 'string' ? enc.encode(k) : k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), enc.encode(m)))
     try {
       log('download start', String(srcUrl).slice(0, 80))
-      const src = await fetch(srcUrl)
+      let src
+      try { src = await fetch(srcUrl, { signal: AbortSignal.timeout(120000) }) }
+      catch (e) { return { ok: false, error: `download ${/abort|timeout/i.test(String(e && e.message)) ? 'timed out' : 'failed: ' + (e && e.message || e)}` } }
       if (!src.ok) return { ok: false, error: `download HTTP ${src.status}` }
       const bytes = new Uint8Array(await src.arrayBuffer())
       const host = `${creds.s3Bucket}.s3.${creds.s3BucketRegion}.amazonaws.com`
@@ -5451,14 +5453,18 @@ function mainWorldS3Put(params) {
       k = await hmac(k, region); k = await hmac(k, service); k = await hmac(k, 'aws4_request')
       const signature = hex(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), enc.encode(stringToSign)))
       const auth = `AWS4-HMAC-SHA256 Credential=${creds.awsAccessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
-      const res = await fetch(url, {
-        method: 'PUT', body: bytes,
-        headers: {
-          'Content-Type': contentType, 'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
-          'x-amz-date': amzDate, 'x-amz-security-token': creds.awsSessionToken,
-          'x-amz-tagging': 'temporary=true', 'Authorization': auth,
-        },
-      })
+      let res
+      try {
+        res = await fetch(url, {
+          method: 'PUT', body: bytes,
+          headers: {
+            'Content-Type': contentType, 'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+            'x-amz-date': amzDate, 'x-amz-security-token': creds.awsSessionToken,
+            'x-amz-tagging': 'temporary=true', 'Authorization': auth,
+          },
+          signal: AbortSignal.timeout(150000),
+        })
+      } catch (e) { return { ok: false, error: `S3 PUT ${/abort|timeout/i.test(String(e && e.message)) ? 'timed out' : 'failed: ' + (e && e.message || e)}` } }
       if (!res.ok) return { ok: false, error: `S3 PUT ${res.status}: ${(await res.text().catch(() => '')).slice(0, 150)}` }
       log('PUT ok', res.status)
       return { ok: true, key }
@@ -5475,12 +5481,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.action === 'MVP_STOREFRONT_S3PUT') {
     const tabId = sender && sender.tab && sender.tab.id
     if (!tabId) { sendResponse({ ok: false, error: 'no-tab' }); return true }
+    // Keep this service worker alive for the length of the (possibly minutes-long)
+    // upload: a periodic chrome API call resets the ~30s idle-shutdown timer, so
+    // the worker is still around to receive the injected function's result and
+    // reply — the "no worker response (SW may have been killed)" failure.
+    const keepAlive = setInterval(() => { try { chrome.runtime.getPlatformInfo(() => {}) } catch (e) {} }, 20000)
+    let done = false
+    const finish = (resp) => { if (done) return; done = true; clearInterval(keepAlive); clearTimeout(guard); sendResponse(resp) }
+    // Never leave the content script hanging past its own 260s budget.
+    const guard = setTimeout(() => finish({ ok: false, error: 'upload timed out in worker' }), 250000)
     chrome.scripting.executeScript({
       target: { tabId }, world: 'MAIN', func: mainWorldS3Put,
       args: [{ srcUrl: msg.srcUrl, creds: msg.creds, key: msg.key, contentType: msg.contentType }],
     })
-      .then((results) => sendResponse((results && results[0] && results[0].result) || { ok: false, error: 'no-result' }))
-      .catch((e) => sendResponse({ ok: false, error: String(e && e.message || e) }))
+      .then((results) => finish((results && results[0] && results[0].result) || { ok: false, error: 'no-result' }))
+      .catch((e) => finish({ ok: false, error: String(e && e.message || e) }))
     return true // async
   }
 })
