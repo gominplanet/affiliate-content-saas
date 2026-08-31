@@ -367,15 +367,27 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {markets.map(m => {
             const on = chosen.has(m.domain)
+            const status = signin[m.domain]
             return (
-              <label key={m.domain} className="flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer text-sm"
+              <div key={m.domain} className="flex items-center gap-2 p-2.5 rounded-lg border text-sm"
                 style={{ borderColor: on ? '#0EA5A4' : 'var(--border)', background: on ? 'rgba(14,165,164,0.05)' : 'transparent', color: 'var(--fg)' }}>
-                <input type="checkbox" checked={on} onChange={() => toggleMarket(m.domain)} disabled={running} className="accent-[#0EA5A4]" />
-                <span className="flex-1 min-w-0">
-                  <span className="font-medium">{m.code}</span>
-                  <span className="text-[11px] ml-1" style={muted}>{m.needsTranslation ? m.langName : 'English'}</span>
-                </span>
-              </label>
+                <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                  <input type="checkbox" checked={on} onChange={() => toggleMarket(m.domain)} disabled={running} className="accent-[#0EA5A4]" />
+                  <span className="flex-1 min-w-0">
+                    <span className="font-medium">{m.code}</span>
+                    <span className="text-[11px] ml-1" style={muted}>{m.needsTranslation ? m.langName : 'English'}</span>
+                  </span>
+                </label>
+                {status === 'ready' ? (
+                  <span className="text-[11px] inline-flex items-center gap-0.5 whitespace-nowrap" style={{ color: '#10B981' }} title="Signed in on this marketplace"><Check size={11} /> in</span>
+                ) : (
+                  <button type="button" onClick={() => void signInMarket(m.domain, m.country)}
+                    className="text-[11px] underline whitespace-nowrap inline-flex items-center gap-0.5" style={muted}
+                    title={`Open ${m.country} on Amazon to sign in`}>
+                    <LogIn size={11} /> Log in
+                  </button>
+                )}
+              </div>
             )
           })}
         </div>
