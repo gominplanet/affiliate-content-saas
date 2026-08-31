@@ -59,6 +59,8 @@ export async function POST(req: Request) {
       user_id: user.id,
       youtube_video_id: `upload-${crypto.randomUUID()}`,
       title,
+      channel_id: 'unknown',
+      channel_title: '',
       source_video_url: videoUrl,
       product_url: productUrl,
       published_at: new Date().toISOString(),
