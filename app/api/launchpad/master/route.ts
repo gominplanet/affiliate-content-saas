@@ -34,10 +34,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Launchpad is a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
-  const body = await req.json().catch(() => ({})) as { title?: string; videoUrl?: string; asin?: string }
+  const body = await req.json().catch(() => ({})) as { title?: string; videoUrl?: string; asin?: string; durationSec?: number }
   const title = (body.title || 'My video').trim().slice(0, 200)
   const videoUrl = (body.videoUrl || '').trim()
   const asin = asinFrom(body.asin || '')
+  const durationSec = Math.max(0, Math.round(Number(body.durationSec) || 0))
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A hosted video URL is required.' }, { status: 400 })
   if (!asin) return NextResponse.json({ error: 'A valid product ASIN is required.' }, { status: 400 })
 
@@ -63,6 +64,10 @@ export async function POST(req: Request) {
       channel_title: '',
       source_video_url: videoUrl,
       product_url: productUrl,
+      // Store the video's length so Storefront Sync can spot a duplicate already
+      // on a marketplace (same product + same duration = almost certainly the
+      // same upload).
+      ...(durationSec > 0 ? { duration_seconds: durationSec } : {}),
       published_at: new Date().toISOString(),
     })
     .select('id').single()

@@ -83,7 +83,7 @@ const muted = { color: 'var(--fg-muted)' } as const
 // source instead.
 //   so a parent pipeline (Launchpad) can carry it into the next stage.
 // hidePublish: hide the built-in publish button when the parent owns publishing.
-export default function UploadStage({ onRendered, hidePublish }: { onRendered?: (url: string, title: string, sourceUrl: string) => void; hidePublish?: boolean } = {}) {
+export default function UploadStage({ onRendered, hidePublish }: { onRendered?: (url: string, title: string, sourceUrl: string, durationSec: number) => void; hidePublish?: boolean } = {}) {
   const supabase = useMemo(() => createBrowserClient(), [])
   const fileRef = useRef<HTMLInputElement>(null)
   const badgeRef = useRef<HTMLInputElement>(null)
@@ -259,7 +259,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.url) throw new Error(j.error || 'Render failed')
       setRendered(j.url)
-      onRendered?.(j.url as string, (source.name || 'My video').replace(/\.[^.]+$/, ''), source.url)
+      onRendered?.(j.url as string, (source.name || 'My video').replace(/\.[^.]+$/, ''), source.url, source.durationSec)
       toast.success('CTA burned in. Preview it below.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Render failed')
@@ -271,7 +271,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
   function skipCta() {
     if (!source) { toast.error('Upload a video first'); return }
     setRendered(source.url); setPublished(null)
-    onRendered?.(source.url, (source.name || 'My video').replace(/\.[^.]+$/, ''), source.url)
+    onRendered?.(source.url, (source.name || 'My video').replace(/\.[^.]+$/, ''), source.url, source.durationSec)
     toast.success('Continuing without a CTA.')
   }
 

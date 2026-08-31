@@ -32,6 +32,7 @@ export default function LaunchpadPage() {
   // Amazon storefronts get this instead — the CTA is a YouTube-only overlay.
   const [cleanUrl, setCleanUrl] = useState<string | null>(null)
   const [workingTitle, setWorkingTitle] = useState('')
+  const [durationSec, setDurationSec] = useState(0)
   const [asin, setAsin] = useState('')
 
   // YouTube (optional) — prepare metadata + publish, or skip.
@@ -99,7 +100,7 @@ export default function LaunchpadPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         // Storefronts get the CLEAN upload (no CTA). Fall back to the render
         // only if the clean URL is somehow missing, so the flow never blocks.
-        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asin.trim() }),
+        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asin.trim(), durationSec }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.videoId) throw new Error(j.error || 'Could not set up the storefront sync')
@@ -122,7 +123,7 @@ export default function LaunchpadPage() {
         {/* 1. Upload + CTA */}
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-3"><Num n={1} done={!!renderedUrl} /><h2 className="text-sm font-semibold" style={label}>Upload your video & design the CTA</h2></div>
-          <UploadStage hidePublish onRendered={(url, title, sourceUrl) => { setRenderedUrl(url); setCleanUrl(sourceUrl); setWorkingTitle(title); if (!chosenTitle) setChosenTitle(title) }} />
+          <UploadStage hidePublish onRendered={(url, title, sourceUrl, dur) => { setRenderedUrl(url); setCleanUrl(sourceUrl); setWorkingTitle(title); setDurationSec(dur || 0); if (!chosenTitle) setChosenTitle(title) }} />
         </div>
 
         {renderedUrl && (
