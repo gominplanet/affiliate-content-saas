@@ -259,10 +259,16 @@ export interface CtaSpec {
   xPct?: number
   yPct?: number
 }
-export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string): Promise<string | null> {
+/** Result of a CTA render. `ok:false` carries a short reason so the caller can
+ *  tell the creator WHAT went wrong (service not configured, ingest error,
+ *  timeout) instead of a single opaque "busy" message. */
+export type RenderCtaResult = { ok: true; url: string } | { ok: false; reason: string }
+
+export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string): Promise<RenderCtaResult> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
   const hasSticker = !!(cta.stickerUrl && /^https:\/\//i.test(cta.stickerUrl))
-  if (!base || !videoUrl || (!cta.text.trim() && !hasSticker) || !(cta.endSec > cta.startSec)) return null
+  if (!base) return { ok: false, reason: 'render-service-not-configured' }
+  if (!videoUrl || (!cta.text.trim() && !hasSticker) || !(cta.endSec > cta.startSec)) return { ok: false, reason: 'bad-render-request' }
   try {
     const res = await fetch(`${base}/render-cta`, {
       method: 'POST',
@@ -285,11 +291,19 @@ export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string)
       }),
       signal: AbortSignal.timeout(540_000),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => '')).slice(0, 300)
+      console.error('[renderCta] ingest', res.status, detail)
+      return { ok: false, reason: `ingest-${res.status}${detail ? `: ${detail}` : ''}` }
+    }
     const data = await res.json().catch(() => ({}))
-    return data?.url && /^https:\/\//i.test(data.url) ? (data.url as string) : null
-  } catch {
-    return null
+    if (data?.url && /^https:\/\//i.test(data.url)) return { ok: true, url: data.url as string }
+    console.error('[renderCta] ingest 200 but no url', JSON.stringify(data).slice(0, 300))
+    return { ok: false, reason: 'ingest-no-url' }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[renderCta] fetch failed', msg)
+    return { ok: false, reason: /timeout|abort/i.test(msg) ? 'render-timeout' : 'render-unreachable' }
   }
 }
 

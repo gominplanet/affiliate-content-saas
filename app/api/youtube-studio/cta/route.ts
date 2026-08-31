@@ -62,8 +62,18 @@ export async function POST(req: Request) {
     ...(body.position ? { position: String(body.position) } : {}),
     ...(hasFree ? { xPct: Number(body.xPct), yPct: Number(body.yPct) } : {}),
   }, user.id)
-  if (!out) {
-    return NextResponse.json({ error: 'Couldn’t render the CTA just now. If this keeps happening, the video service may be busy.' }, { status: 502 })
+  if (!out.ok) {
+    // Map the render failure to a message the creator can act on. The raw
+    // reason is logged server-side; keep the public copy friendly but specific.
+    const friendly =
+      out.reason === 'render-service-not-configured'
+        ? 'The video rendering service isn’t connected yet. We’re on it, please try again shortly.'
+        : out.reason === 'render-timeout'
+          ? 'Rendering took too long, usually a large video. Try a shorter clip or retry in a moment.'
+          : out.reason.startsWith('ingest-')
+            ? 'The video service rejected this render. If it keeps happening, your CTA design or video may be unsupported.'
+            : 'Couldn’t render the CTA just now. If this keeps happening, the video service may be busy.'
+    return NextResponse.json({ error: friendly, reason: out.reason }, { status: 502 })
   }
-  return NextResponse.json({ ok: true, url: out })
+  return NextResponse.json({ ok: true, url: out.url })
 }
