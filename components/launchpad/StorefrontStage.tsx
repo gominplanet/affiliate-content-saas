@@ -500,19 +500,35 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
                 {t.title && <p className="text-[13px] font-medium" style={label}>{t.title}</p>}
                 {t.description && <p className="text-[12px] mt-0.5 line-clamp-3" style={muted}>{t.description}</p>}
                 {t.detail && <p className="text-[11px] mt-1" style={muted}>{t.detail}</p>}
-                {t.dub && (t.state === 'localized' || t.state === 'failed' || t.state === 'dubbing') && (
-                  <div className="flex items-center gap-3 mt-2">
-                    {t.videoUrl ? (
-                      <a href={t.videoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[12px] font-medium" style={{ color: '#0EA5A4' }}>
-                        <Play size={13} /> Play dub
-                      </a>
+                {t.dub && t.videoUrl && (
+                  // Listen to the generated dub in-page. Stays available after the
+                  // market is delivered so you can always check how it sounds. A
+                  // voiceover-only result is an .mp3; a muxed dub is an .mp4.
+                  <div className="mt-2">
+                    <div className="flex items-center gap-1.5 mb-1 text-[12px] font-medium" style={{ color: '#0EA5A4' }}>
+                      <Play size={13} /> Your {t.country} dub
+                    </div>
+                    {/\.mp3(\?|$)/i.test(t.videoUrl) ? (
+                      <audio controls preload="none" src={t.videoUrl} className="w-full h-9" />
                     ) : (
+                      <video controls preload="none" src={t.videoUrl} className="w-full rounded-lg" style={{ maxHeight: 220 }} />
+                    )}
+                    {(t.state === 'localized' || t.state === 'failed') && (
                       <button type="button" onClick={() => void dubOne(t.domain)} disabled={dubbing === t.domain}
-                        className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border disabled:opacity-60"
-                        style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
-                        {dubbing === t.domain ? <><Loader2 size={13} className="animate-spin" /> Dubbing…</> : <><Mic size={13} /> Generate dub</>}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-medium mt-1 disabled:opacity-60"
+                        style={{ color: 'var(--muted)' }}>
+                        {dubbing === t.domain ? <><Loader2 size={12} className="animate-spin" /> Regenerating…</> : <><Mic size={12} /> Regenerate dub</>}
                       </button>
                     )}
+                  </div>
+                )}
+                {t.dub && !t.videoUrl && (t.state === 'localized' || t.state === 'failed' || t.state === 'dubbing') && (
+                  <div className="flex items-center gap-3 mt-2">
+                    <button type="button" onClick={() => void dubOne(t.domain)} disabled={dubbing === t.domain}
+                      className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border disabled:opacity-60"
+                      style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+                      {dubbing === t.domain ? <><Loader2 size={13} className="animate-spin" /> Dubbing…</> : <><Mic size={13} /> Generate dub</>}
+                    </button>
                   </div>
                 )}
               </div>

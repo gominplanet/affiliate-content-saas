@@ -10,6 +10,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { MARKETS, marketByDomain, localizeMetadata } from '@/lib/global-sync'
+import { buildProductThumbnail } from '@/lib/product-thumbnail'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
   const sb = supabase as any
   const { data: video } = await sb
     .from('youtube_videos')
-    .select('id,title,generated_title,description,generated_description,transcript,product_url,channel_id')
+    .select('id,title,generated_title,description,generated_description,transcript,product_url,channel_id,thumbnail_clean_url')
     .eq('id', videoId).eq('user_id', user.id).maybeSingle()
   if (!video) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
 
@@ -74,6 +75,14 @@ export async function POST(req: Request) {
 
   // Fire-and-forget: localize each market's metadata, then mark the job done.
   // (Milestone 2 will also produce captions + dub here.)
+  // Non-English storefronts get a text-free thumbnail (the branded one bakes an
+  // English hook into the image, which reads wrong to a French/German shopper).
+  // Generate that clean variant once per video, only when this sync actually
+  // includes a non-English market and we haven't already cached one. Cheap: it's
+  // one extra image, cached on the video for every future sync.
+  const needsClean = domains.some(d => marketByDomain(d)?.needsTranslation)
+  const hasClean = !!(video.thumbnail_clean_url as string | null)
+
   void (async () => {
     try {
       for (const domain of domains) {
@@ -86,6 +95,12 @@ export async function POST(req: Request) {
         await sb.from('global_sync_targets')
           .update({ title: meta.title, description: meta.description, state: 'localized', updated_at: new Date().toISOString() })
           .eq('job_id', job.id).eq('domain', domain)
+      }
+      if (needsClean && !hasClean && asin) {
+        try {
+          const clean = await buildProductThumbnail(sb, { userId: user.id, tier, title: masterTitle, asin, withText: false })
+          if (clean) await sb.from('youtube_videos').update({ thumbnail_clean_url: clean }).eq('id', videoId)
+        } catch { /* non-fatal: non-English markets fall back to the text thumbnail */ }
       }
       await sb.from('global_sync_jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', job.id)
     } catch {

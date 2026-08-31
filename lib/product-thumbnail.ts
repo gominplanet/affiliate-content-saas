@@ -32,11 +32,14 @@ async function shortHook(title: string, productTitle: string): Promise<string> {
   } catch { return fallback }
 }
 
-/** Generate a branded product thumbnail; returns a hosted PNG URL or null. */
+/** Generate a branded product thumbnail; returns a hosted PNG URL or null.
+ *  `withText` (default true) bakes the English hook into the image. Pass false
+ *  for the clean, wordless variant delivered to non-English storefronts. */
 export async function buildProductThumbnail(
   sb: Sb,
-  opts: { userId: string; tier?: string | null; title: string; asin: string },
+  opts: { userId: string; tier?: string | null; title: string; asin: string; withText?: boolean },
 ): Promise<string | null> {
+  const withText = opts.withText !== false
   try {
     const product = await fetchAmazonProduct(opts.asin).catch(() => null)
     const productImg = (product?.imageUrl as string | undefined) || null
@@ -55,16 +58,22 @@ export async function buildProductThumbnail(
     const refs = await rehostAll([...(faceRef ? [faceRef] : []), ...(productImg ? [productImg] : [])])
     if (refs.length === 0) return null
 
-    const hook = await shortHook(opts.title, (product?.title as string) || '')
-    if (product?.title) {
+    // The hook is baked into the image by the generator, so it only applies to
+    // the text variant. The clean variant (non-English storefronts) carries no
+    // words at all, so we skip the hook call entirely.
+    const hook = withText ? await shortHook(opts.title, (product?.title as string) || '') : ''
+    if (withText && product?.title) {
       recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'product_thumbnail_hook', model: 'claude-haiku-4-5-20251001', images: 0 })
     }
 
     const faceLine = faceRef ? 'FEATURE THE PERSON from the first reference image (preserve their exact face and likeness), looking excited and gesturing toward the product. Do NOT invent a different person.' : ''
+    const textLine = withText
+      ? `Bake in LARGE, perfectly spelled overlay text reading exactly "${hook}". `
+      : 'Do NOT put ANY text, words, letters, captions or logos anywhere on the image. '
     const prompt = `Design a bold, high-contrast YouTube-style thumbnail (16:9) for a product review.
 ${faceLine}
 Show the PRODUCT from the reference clearly and prominently.
-Bake in LARGE, perfectly spelled overlay text reading exactly "${hook}". Bright, punchy, modern, saturated colours, clean composition. No watermark, no extra sentences, no other text.`
+${textLine}Bright, punchy, modern, saturated colours, clean composition. No watermark, no extra sentences.`
 
     let imgs = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
     let model = 'nano-banana-pro'
@@ -77,13 +86,13 @@ Bake in LARGE, perfectly spelled overlay text reading exactly "${hook}". Bright,
       const res = await fetch(imgs[0])
       if (res.ok) {
         const bytes = new Uint8Array(await res.arrayBuffer())
-        const path = `${opts.userId}/thumb-${opts.asin}-${Date.now()}.png`
+        const path = `${opts.userId}/thumb-${withText ? '' : 'clean-'}${opts.asin}-${Date.now()}.png`
         const { error: upErr } = await sb.storage.from('instagram-videos').upload(path, bytes, { contentType: 'image/png', upsert: false })
         if (!upErr) hosted = sb.storage.from('instagram-videos').getPublicUrl(path).data.publicUrl
       }
     } catch { /* fall back to the fal url below */ }
 
-    recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'product_thumbnail', model, images: 1 })
+    recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: withText ? 'product_thumbnail' : 'product_thumbnail_clean', model, images: 1 })
     return hosted || imgs[0]
   } catch {
     return null

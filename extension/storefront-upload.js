@@ -145,9 +145,10 @@
       //    ("[upload-video] timed out"); the service worker has host_permissions
       //    for *.amazonaws.com so its PUT skips the preflight. It also does the
       //    source download, so the bytes never transit through page messaging.
-      step = 'upload-video'
-      const videoKey = `${creds.s3Folder}/${uuid()}.mp4`
-      await bgS3Put({ srcUrl: job.videoUrl, creds, key: videoKey, contentType: 'video/mp4' })
+      // Upload the branded thumbnail FIRST. It's tiny next to the video, so
+      // doing it up front means a slow multi-minute video PUT can't starve it
+      // (the earlier order let a strained/near-timeout video transfer swallow
+      // the thumbnail, and the post published with Amazon's auto-frame instead).
       let thumbKey = null
       if (job.thumbnailUrl) {
         try {
@@ -155,8 +156,17 @@
           const tKey = `${creds.s3Folder}/${uuid()}.png`
           await bgS3Put({ srcUrl: job.thumbnailUrl, creds, key: tKey, contentType: 'image/png' })
           thumbKey = tKey
-        } catch { thumbKey = null }
+        } catch (e) {
+          // Non-fatal, but never silent: without this the post ships with no
+          // branded thumbnail and we'd have no idea why.
+          try { console.error('[SCOUT] thumbnail upload failed:', e && e.message || e) } catch (_) {}
+          thumbKey = null
+        }
       }
+
+      step = 'upload-video'
+      const videoKey = `${creds.s3Folder}/${uuid()}.mp4`
+      await bgS3Put({ srcUrl: job.videoUrl, creds, key: videoKey, contentType: 'video/mp4' })
 
       // 3. validate our ASIN (non-fatal)
       if (job.asin) { try { await api('asins', { sourceType: 'REQUEST_BODY', slateToken: ctx.slateToken, asins: [job.asin] }, ctx.csrf) } catch { /* non-fatal */ } }

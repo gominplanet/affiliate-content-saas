@@ -23,14 +23,6 @@ const steps: Step[] = [
     required: true,
     done: false,
   },
-  {
-    id: 'geniuslink',
-    label: 'Sign up for Geniuslink',
-    description: 'Optional but worth it. Geniuslink turns every Amazon link into a geo-routed affiliate link that pays you on .com, .co.uk, .ca and the rest — and tracks every click. Without it, we fall back to plain US Amazon links.',
-    href: 'https://geni.us/Y70p9R',
-    required: false,
-    done: false,
-  },
 ]
 
 export default function SetupChecklist() {
@@ -86,12 +78,12 @@ export default function SetupChecklist() {
           </div>
           <div className="text-left">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {allDone ? 'External accounts ready' : 'Before you generate — two external accounts'}
+              {allDone ? 'Account ready' : 'Before you generate — one external account'}
             </p>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
               {allDone
-                ? 'All required accounts are set up.'
-                : `${allRequired.length - doneCount} required · 1 recommended — opens in a new tab`}
+                ? 'Your hosting account is set up.'
+                : `${allRequired.length - doneCount} required — opens in a new tab`}
             </p>
           </div>
         </div>

@@ -45,18 +45,26 @@ export async function GET(req: Request) {
   for (const j of (jobs ?? [])) if (j.video_id) videoIdByJob.set(j.id, j.video_id)
   const videoIds = Array.from(new Set([...videoIdByJob.values()]))
   const { data: vids } = videoIds.length
-    ? await sb.from('youtube_videos').select('id,source_video_url,thumbnail_url').eq('user_id', user.id).in('id', videoIds)
+    ? await sb.from('youtube_videos').select('id,source_video_url,thumbnail_url,thumbnail_clean_url').eq('user_id', user.id).in('id', videoIds)
     : { data: [] }
   const srcByVideo = new Map<string, string>()
   const thumbByVideo = new Map<string, string>()
+  const cleanThumbByVideo = new Map<string, string>()
   for (const v of (vids ?? [])) {
     if (v.source_video_url) srcByVideo.set(v.id, v.source_video_url)
     if (v.thumbnail_url) thumbByVideo.set(v.id, v.thumbnail_url)
+    if (v.thumbnail_clean_url) cleanThumbByVideo.set(v.id, v.thumbnail_clean_url)
   }
 
   const items = rows.map(r => {
     const mkt = marketByDomain(r.domain)
-    const masterSrc = srcByVideo.get(videoIdByJob.get(r.job_id) || '') || null
+    const vidId = videoIdByJob.get(r.job_id) || ''
+    const masterSrc = srcByVideo.get(vidId) || null
+    // Non-English storefronts get the text-free thumbnail so no English hook
+    // sits on the image; English markets keep the branded (with-text) one. Fall
+    // back to the text thumbnail if the clean one isn't ready yet.
+    const textThumb = thumbByVideo.get(vidId) || null
+    const thumb = mkt?.needsTranslation ? (cleanThumbByVideo.get(vidId) || textThumb) : textThumb
     return {
       targetId: r.id as string,
       jobId: r.job_id as string,
