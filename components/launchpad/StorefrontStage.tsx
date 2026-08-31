@@ -508,7 +508,11 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
           )}
           <div className="space-y-3">
             {targets.map(t => (
-              <div key={t.domain} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
+              <div key={t.domain} className="rounded-xl border p-3" style={
+                t.state === 'delivered' ? { borderColor: 'rgba(16,185,129,0.5)', background: 'rgba(16,185,129,0.08)' }
+                  : t.state === 'failed' ? { borderColor: 'rgba(224,85,75,0.45)', background: 'rgba(224,85,75,0.06)' }
+                  : { borderColor: 'var(--border)' }
+              }>
                 <div className="flex items-center gap-2 mb-1">
                   {t.state === 'localized' || t.state === 'delivered' ? <Check size={14} style={{ color: '#10B981' }} /> : <Circle size={13} style={muted} />}
                   <span className="text-sm font-medium" style={label}>{t.country}</span>
@@ -532,7 +536,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
                 )}
                 {t.title && <p className="text-[13px] font-medium" style={label}>{t.title}</p>}
                 {t.description && <p className="text-[12px] mt-0.5 line-clamp-3" style={muted}>{t.description}</p>}
-                {t.detail && <p className="text-[11px] mt-1" style={muted}>{t.detail}</p>}
+                {t.detail && t.state !== 'delivered' && <p className="text-[11px] mt-1" style={muted}>{t.detail}</p>}
                 {/* Skip dub: deliver the English master to this market on purpose. */}
                 {t.dub && t.state !== 'delivered' && (
                   <label className="flex items-center gap-1.5 text-[11px] mt-1.5 cursor-pointer" style={muted}>
