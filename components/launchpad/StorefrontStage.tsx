@@ -11,9 +11,22 @@ import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Globe, Loader2, Check, Circle, Mic, Play, Upload, LogIn, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
-import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, type StorefrontMarketStatus } from '@/lib/extension-frame'
+import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, getScoutStatus, type StorefrontMarketStatus } from '@/lib/extension-frame'
+import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+/** -1 / 0 / 1 dotted-version compare; a null/unknown left side sorts oldest. */
+function cmpVer(a: string | null | undefined, b: string): number {
+  if (!a) return -1
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0)
+  const pb = b.split('.').map(n => parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] ?? 0, y = pb[i] ?? 0
+    if (x !== y) return x < y ? -1 : 1
+  }
+  return 0
+}
 
 interface Vid { id: string; title: string; thumbnail_url: string | null }
 interface Market { domain: string; code: string; country: string; langName: string; needsTranslation: boolean }
@@ -39,6 +52,11 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
   // Per-marketplace sign-in / enrollment status from the SCOUT pre-flight.
   const [signin, setSignin] = useState<Record<string, StorefrontMarketStatus>>({})
   const [checking, setChecking] = useState(false)
+  // Installed SCOUT version — surfaced so a stale build (the #1 cause of a
+  // repeated upload failure after a fix ships) is obvious, not a guess.
+  const [scout, setScout] = useState<{ installed: boolean; version: string | null } | null>(null)
+  useEffect(() => { getScoutStatus().then(setScout).catch(() => setScout({ installed: false, version: null })) }, [])
+  const scoutStale = !!scout && scout.installed && cmpVer(scout.version, SCOUT_LATEST_VERSION) < 0
 
   const [voice, setVoice] = useState<{ enabled: boolean; hasVoice: boolean; name: string | null; credits: number | null } | null>(null)
   const [consent, setConsent] = useState(false)
@@ -422,7 +440,14 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
               </button>
             </div>
           </div>
-          <p className="text-[12px] mb-3" style={muted}>Uploads through SCOUT into your logged-in Amazon Creator account. You must be signed in to each marketplace and enrolled in its Creator program. Use “Check sign-in” first. Keep this tab open while it runs.</p>
+          <p className="text-[12px] mb-2" style={muted}>Uploads through SCOUT into your logged-in Amazon Creator account. You must be signed in to each marketplace and enrolled in its Creator program. Use “Check sign-in” first. Keep this tab open while it runs.</p>
+          {scout && (
+            scout.installed
+              ? <p className="text-[11px] mb-3" style={scoutStale ? { color: '#d97706' } : muted}>
+                  SCOUT v{scout.version || '?'}{scoutStale ? ` — please update to ${SCOUT_LATEST_VERSION} (remove the old unpacked build in chrome://extensions and load the new one). Uploads before you update will keep failing.` : ' · up to date'}
+                </p>
+              : <p className="text-[11px] mb-3" style={{ color: '#e0554b' }}>SCOUT not detected. Install it and sign in to Amazon to upload.</p>
+          )}
           <div className="space-y-3">
             {targets.map(t => (
               <div key={t.domain} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
