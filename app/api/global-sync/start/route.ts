@@ -49,7 +49,7 @@ export async function POST(req: Request) {
   const sb = supabase as any
   const { data: video } = await sb
     .from('youtube_videos')
-    .select('id,title,generated_title,description,generated_description,transcript,product_url,channel_id,thumbnail_clean_url')
+    .select('id,title,generated_title,description,generated_description,transcript,product_url,channel_id')
     .eq('id', videoId).eq('user_id', user.id).maybeSingle()
   if (!video) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
 
@@ -81,7 +81,6 @@ export async function POST(req: Request) {
   // includes a non-English market and we haven't already cached one. Cheap: it's
   // one extra image, cached on the video for every future sync.
   const needsClean = domains.some(d => marketByDomain(d)?.needsTranslation)
-  const hasClean = !!(video.thumbnail_clean_url as string | null)
 
   void (async () => {
     try {
@@ -96,11 +95,22 @@ export async function POST(req: Request) {
           .update({ title: meta.title, description: meta.description, state: 'localized', updated_at: new Date().toISOString() })
           .eq('job_id', job.id).eq('domain', domain)
       }
-      if (needsClean && !hasClean && asin) {
+      if (needsClean && asin) {
+        // Read the cached clean thumbnail defensively: the column is added by
+        // migration 306, so tolerate its absence (older DB) — a failure here
+        // just means we regenerate, and the deliver queue falls back to the
+        // text thumbnail either way.
+        let hasClean = false
         try {
-          const clean = await buildProductThumbnail(sb, { userId: user.id, tier, title: masterTitle, asin, withText: false })
-          if (clean) await sb.from('youtube_videos').update({ thumbnail_clean_url: clean }).eq('id', videoId)
-        } catch { /* non-fatal: non-English markets fall back to the text thumbnail */ }
+          const { data: v } = await sb.from('youtube_videos').select('thumbnail_clean_url').eq('id', videoId).maybeSingle()
+          hasClean = !!(v?.thumbnail_clean_url)
+        } catch { /* column not present yet */ }
+        if (!hasClean) {
+          try {
+            const clean = await buildProductThumbnail(sb, { userId: user.id, tier, title: masterTitle, asin, withText: false })
+            if (clean) await sb.from('youtube_videos').update({ thumbnail_clean_url: clean }).eq('id', videoId)
+          } catch { /* non-fatal: non-English markets fall back to the text thumbnail */ }
+        }
       }
       await sb.from('global_sync_jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', job.id)
     } catch {

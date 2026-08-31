@@ -45,15 +45,24 @@ export async function GET(req: Request) {
   for (const j of (jobs ?? [])) if (j.video_id) videoIdByJob.set(j.id, j.video_id)
   const videoIds = Array.from(new Set([...videoIdByJob.values()]))
   const { data: vids } = videoIds.length
-    ? await sb.from('youtube_videos').select('id,source_video_url,thumbnail_url,thumbnail_clean_url').eq('user_id', user.id).in('id', videoIds)
+    ? await sb.from('youtube_videos').select('id,source_video_url,thumbnail_url').eq('user_id', user.id).in('id', videoIds)
     : { data: [] }
   const srcByVideo = new Map<string, string>()
   const thumbByVideo = new Map<string, string>()
-  const cleanThumbByVideo = new Map<string, string>()
   for (const v of (vids ?? [])) {
     if (v.source_video_url) srcByVideo.set(v.id, v.source_video_url)
     if (v.thumbnail_url) thumbByVideo.set(v.id, v.thumbnail_url)
-    if (v.thumbnail_clean_url) cleanThumbByVideo.set(v.id, v.thumbnail_clean_url)
+  }
+
+  // The text-free thumbnail for non-English markets (migration 306). Read it in
+  // a SEPARATE query so an older DB without the column can't break the queue —
+  // non-English markets just fall back to the text thumbnail until it exists.
+  const cleanThumbByVideo = new Map<string, string>()
+  if (videoIds.length) {
+    try {
+      const { data: cleans } = await sb.from('youtube_videos').select('id,thumbnail_clean_url').eq('user_id', user.id).in('id', videoIds)
+      for (const v of (cleans ?? [])) if (v.thumbnail_clean_url) cleanThumbByVideo.set(v.id, v.thumbnail_clean_url)
+    } catch { /* column not present yet */ }
   }
 
   const items = rows.map(r => {
