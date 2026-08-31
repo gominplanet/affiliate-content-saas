@@ -32,8 +32,14 @@
     const out = { slateToken: null, csrf: null, ownerAffiliateId: null, storeId: null, via: [] }
     const html = document.documentElement.innerHTML
 
-    const mSlate = html.match(/slateToken\s*[:=]\s*"?(?:Optional\[)?([A-Za-z0-9+/=]{40,})\]?"?/)
-    if (mSlate) { out.slateToken = mSlate[1]; out.via.push('dom:slate') }
+    // slateToken: the PUBLISH needs the create app's own token, which sits in the
+    // page state as bare JSON ("slateToken":"AwcAC…"). The SiteStripe context
+    // wraps ITS (different) token in Optional[…] and that one 403's the publish,
+    // so prefer a bare, non-Optional match and only fall back to the wrapped one.
+    const bareSlate = html.match(/"slateToken"\s*:\s*"([A-Za-z0-9+/=]{40,})"/)
+    const anySlate = html.match(/slateToken\s*[:=]\s*"?(?:Optional\[)?([A-Za-z0-9+/=]{40,})\]?"?/)
+    if (bareSlate) { out.slateToken = bareSlate[1]; out.via.push('dom:slate-bare') }
+    else if (anySlate) { out.slateToken = anySlate[1]; out.via.push('dom:slate-opt') }
 
     // CSRF: prefer the token our MAIN-world sniffer captured off Amazon's OWN
     // create-API calls (the exact anti-csrftoken-a2z the create app uses). Amazon
