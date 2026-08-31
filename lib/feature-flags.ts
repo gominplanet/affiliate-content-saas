@@ -49,7 +49,10 @@ const LIVE_SOCIAL: ReadonlySet<GatedSocialPlatform> = new Set(['facebook', 'inst
  */
 export function youtubeUploadEnabled(opts?: { tier?: string | null }): boolean {
   if (opts?.tier === 'admin') return true
-  return process.env.NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED === 'true'
+  // Default ON (reopened 2026-08-31 by request, accepting the "unverified app"
+  // OAuth screen until Google finishes verifying the youtube.upload scope).
+  // Kill switch: set NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED=false to turn it back off.
+  return process.env.NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED !== 'false'
 }
 
 /**
