@@ -243,7 +243,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
       for (const b of blocked) {
         const why = map[b.domain] === 'not_signed_in' ? 'Not signed in to this marketplace — sign in and retry.'
           : map[b.domain] === 'not_enrolled' ? 'Signed in, but not enrolled in this marketplace’s Creator program.'
-          : 'Couldn’t confirm sign-in for this marketplace.'
+          : 'Couldn’t confirm you’re signed in here — open it, sign in, and retry.'
         await fetch('/api/global-sync/deliver/result', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ targetId: b.targetId, ok: false, detail: why }),
@@ -487,8 +487,9 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
                   {signin[t.domain] === 'ready' && <span className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: '#10B981' }}><Check size={12} /> signed in</span>}
                   {signin[t.domain] === 'not_signed_in' && <span className="text-[11px] font-medium" style={{ color: '#e0554b' }}>not signed in</span>}
                   {signin[t.domain] === 'not_enrolled' && <span className="text-[11px] font-medium" style={{ color: '#d97706' }}>not enrolled</span>}
+                  {signin[t.domain] === 'unknown' && <span className="text-[11px] font-medium" style={{ color: '#d97706' }}>sign-in not confirmed</span>}
                 </div>
-                {(signin[t.domain] === 'not_signed_in' || signin[t.domain] === 'not_enrolled') && (
+                {(signin[t.domain] === 'not_signed_in' || signin[t.domain] === 'not_enrolled' || signin[t.domain] === 'unknown') && (
                   <div className="mb-1">
                     <button type="button" onClick={() => void signInMarket(t.domain, t.country)}
                       className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border"

@@ -5417,6 +5417,18 @@ async function preflightStorefronts(domains) {
       else if (probe && probe.signedIn === false) status = 'not_signed_in'
       else if (probe && probe.signedIn === true) status = 'not_enrolled'
       else status = 'unknown'
+      // A signed-OUT creator is bounced from /create/* to Amazon's sign-in page,
+      // where our content script isn't injected — so the probe above can't answer
+      // and we'd wrongly report 'unknown' for the exact case we must catch. Read
+      // the tab's final URL: if Amazon redirected it to an auth page, they're not
+      // signed in, full stop.
+      if (status === 'unknown') {
+        try {
+          const tab = await chrome.tabs.get(tabId)
+          const u = (tab && tab.url) || ''
+          if (/\/ap\/signin|\/ap\/register|\/ap\/|\/gp\/(?:sign-in|css\/homepage)|signin\?/i.test(u)) status = 'not_signed_in'
+        } catch { /* keep 'unknown' */ }
+      }
     } catch { status = 'unknown' }
     try { chrome.tabs.remove(tabId) } catch { /* ignore */ }
     results.push({ domain, status })
