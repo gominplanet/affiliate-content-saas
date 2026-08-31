@@ -9,9 +9,9 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { Globe, Loader2, Check, Circle, Mic, Play, Upload } from 'lucide-react'
+import { Globe, Loader2, Check, Circle, Mic, Play, Upload, LogIn, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
-import { requestStorefrontDelivery } from '@/lib/extension-frame'
+import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, type StorefrontMarketStatus } from '@/lib/extension-frame'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -36,6 +36,9 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
   const [targets, setTargets] = useState<Target[]>([])
   const [dubbing, setDubbing] = useState<string | null>(null)
   const [delivering, setDelivering] = useState(false)
+  // Per-marketplace sign-in / enrollment status from the SCOUT pre-flight.
+  const [signin, setSignin] = useState<Record<string, StorefrontMarketStatus>>({})
+  const [checking, setChecking] = useState(false)
 
   const [voice, setVoice] = useState<{ enabled: boolean; hasVoice: boolean; name: string | null; credits: number | null } | null>(null)
   const [consent, setConsent] = useState(false)
@@ -142,6 +145,41 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Ask SCOUT which marketplaces the creator is signed in + enrolled on. Returns
+  // the domain→status map (also stored in state for the per-market badges).
+  async function runPreflight(domains: string[]): Promise<Record<string, StorefrontMarketStatus>> {
+    const res = await requestStorefrontPreflight(domains)
+    if (!res.ok) {
+      toast.error(res.error === 'not-installed'
+        ? 'Install SCOUT (and sign in to Amazon) to upload to your storefronts.'
+        : (res.error || 'Could not check your sign-in status.'))
+      return {}
+    }
+    const map: Record<string, StorefrontMarketStatus> = {}
+    for (const r of (res.results || [])) map[r.domain] = r.status
+    setSignin(prev => ({ ...prev, ...map }))
+    return map
+  }
+
+  // Standalone "Check sign-in" — preflight the localized markets without uploading.
+  async function checkSignins() {
+    const domains = targets.map(t => t.domain)
+    if (domains.length === 0) { toast('Localize the markets first.'); return }
+    setChecking(true)
+    try {
+      const map = await runPreflight(domains)
+      const ready = Object.values(map).filter(s => s === 'ready').length
+      if (Object.keys(map).length > 0) toast.success(`${ready} of ${domains.length} ${domains.length === 1 ? 'storefront' : 'storefronts'} ready to upload`)
+    } finally { setChecking(false) }
+  }
+
+  // Open one marketplace's Creator Hub in a new tab so the creator can sign in.
+  async function signInMarket(domain: string, country: string) {
+    const res = await requestStorefrontLogin(domain)
+    if (!res.ok) { toast.error(res.error === 'not-installed' ? 'Install SCOUT first.' : 'Could not open the sign-in page.'); return }
+    toast(`Opened ${country} in a new tab. Sign in there, then click “Check sign-in”.`)
+  }
+
   async function deliverAll() {
     if (!jobId) return
     setDelivering(true)
@@ -149,8 +187,35 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
       const q = await fetch(`/api/global-sync/deliver/queue?jobId=${jobId}`).then(r => r.json()).catch(() => ({}))
       const items = Array.isArray(q?.items) ? q.items : []
       if (items.length === 0) { toast('Nothing to upload yet — localize the markets first.'); return }
-      toast('Uploading to your storefronts… keep this tab open.')
-      const res = await requestStorefrontDelivery(items)
+
+      // Pre-flight FIRST: only upload to marketplaces the creator is signed in +
+      // enrolled on, so a signed-out geo doesn't fail silently in a background tab.
+      const map = await runPreflight(items.map((i: { domain: string }) => i.domain))
+      const known = Object.keys(map).length > 0
+      const ready = known ? items.filter((i: { domain: string }) => map[i.domain] === 'ready') : items
+      const blocked = known ? items.filter((i: { domain: string }) => map[i.domain] !== 'ready') : []
+
+      // Surface the blocked markets in the per-market list so the reason is visible.
+      for (const b of blocked) {
+        const why = map[b.domain] === 'not_signed_in' ? 'Not signed in to this marketplace — sign in and retry.'
+          : map[b.domain] === 'not_enrolled' ? 'Signed in, but not enrolled in this marketplace’s Creator program.'
+          : 'Couldn’t confirm sign-in for this marketplace.'
+        await fetch('/api/global-sync/deliver/result', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetId: b.targetId, ok: false, detail: why }),
+        }).catch(() => {})
+      }
+
+      if (ready.length === 0) {
+        await refreshTargets()
+        toast.error('You’re not signed in to any of these marketplaces yet. Use “Sign in” on each, then retry.')
+        return
+      }
+      toast(blocked.length > 0
+        ? `Uploading to ${ready.length} ready ${ready.length === 1 ? 'market' : 'markets'}. ${blocked.length} skipped (not signed in / not enrolled).`
+        : 'Uploading to your storefronts… keep this tab open.')
+
+      const res = await requestStorefrontDelivery(ready)
       if (!res.ok && !res.results) { toast.error(res.error || 'Could not reach SCOUT.'); return }
       // Report each outcome so the UI shows delivery state.
       for (const r of (res.results || [])) {
@@ -332,13 +397,20 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
         <div className="card p-5">
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <h2 className="text-sm font-semibold" style={label}>Localized copy</h2>
-            <button onClick={() => void deliverAll()} disabled={delivering}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
-              style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
-              {delivering ? <><Loader2 size={15} className="animate-spin" /> Uploading…</> : <><Upload size={15} /> Upload to all storefronts</>}
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={() => void checkSignins()} disabled={checking || delivering}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border disabled:opacity-60"
+                style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+                {checking ? <><Loader2 size={14} className="animate-spin" /> Checking…</> : <><ShieldCheck size={14} /> Check sign-in</>}
+              </button>
+              <button onClick={() => void deliverAll()} disabled={delivering || checking}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
+                {delivering ? <><Loader2 size={15} className="animate-spin" /> Uploading…</> : <><Upload size={15} /> Upload to all storefronts</>}
+              </button>
+            </div>
           </div>
-          <p className="text-[12px] mb-3" style={muted}>Uploads through SCOUT into your logged-in Amazon Creator account. Keep this tab open while it runs.</p>
+          <p className="text-[12px] mb-3" style={muted}>Uploads through SCOUT into your logged-in Amazon Creator account. You must be signed in to each marketplace and enrolled in its Creator program. Use “Check sign-in” first. Keep this tab open while it runs.</p>
           <div className="space-y-3">
             {targets.map(t => (
               <div key={t.domain} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
@@ -348,7 +420,20 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
                   <span className="text-[11px]" style={muted}>{t.lang}{t.dub ? ' · dub' : ''}</span>
                   {t.state === 'delivered' && <span className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: '#10B981' }}><Check size={12} /> on storefront</span>}
                   {t.state === 'failed' && <span className="text-[11px] font-medium" style={{ color: '#e0554b' }}>upload failed</span>}
+                  {/* Sign-in / enrollment status from the pre-flight. */}
+                  {signin[t.domain] === 'ready' && <span className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: '#10B981' }}><Check size={12} /> signed in</span>}
+                  {signin[t.domain] === 'not_signed_in' && <span className="text-[11px] font-medium" style={{ color: '#e0554b' }}>not signed in</span>}
+                  {signin[t.domain] === 'not_enrolled' && <span className="text-[11px] font-medium" style={{ color: '#d97706' }}>not enrolled</span>}
                 </div>
+                {(signin[t.domain] === 'not_signed_in' || signin[t.domain] === 'not_enrolled') && (
+                  <div className="mb-1">
+                    <button type="button" onClick={() => void signInMarket(t.domain, t.country)}
+                      className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border"
+                      style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+                      <LogIn size={13} /> {signin[t.domain] === 'not_enrolled' ? `Open ${t.country} Creator Hub` : `Sign in on ${t.country}`}
+                    </button>
+                  </div>
+                )}
                 {t.title && <p className="text-[13px] font-medium" style={label}>{t.title}</p>}
                 {t.description && <p className="text-[12px] mt-0.5 line-clamp-3" style={muted}>{t.description}</p>}
                 {t.detail && <p className="text-[11px] mt-1" style={muted}>{t.detail}</p>}

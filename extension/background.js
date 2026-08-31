@@ -5371,6 +5371,45 @@ async function deliverStorefronts(items) {
   return results
 }
 
+// Pre-flight the storefront upload: for each marketplace, open its Creator Hub
+// in a background tab and ask the content script whether the creator is signed
+// in and has a Creator session (slateToken). Returns a per-domain status so the
+// app can show a checklist instead of failing silently. Closes each tab after.
+async function preflightStorefronts(domains) {
+  const results = []
+  for (const domain of (domains || [])) {
+    let tabId = null, status = 'unknown'
+    try { tabId = await openCreateTab(domain) } catch { /* open failed */ }
+    if (!tabId) { results.push({ domain, status: 'unknown' }); continue }
+    try {
+      try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* declared inject may already be present */ }
+      const probe = await new Promise((resolve) => {
+        const to = setTimeout(() => resolve(null), 25000)
+        chrome.tabs.sendMessage(tabId, { action: 'MVP_STOREFRONT_PROBE' }, (resp) => {
+          clearTimeout(to)
+          resolve(chrome.runtime.lastError ? null : resp)
+        })
+      })
+      if (probe && probe.ready) status = 'ready'
+      else if (probe && probe.signedIn === false) status = 'not_signed_in'
+      else if (probe && probe.signedIn === true) status = 'not_enrolled'
+      else status = 'unknown'
+    } catch { status = 'unknown' }
+    try { chrome.tabs.remove(tabId) } catch { /* ignore */ }
+    results.push({ domain, status })
+  }
+  return results
+}
+
+// Open one marketplace's Creator Hub in a FOREGROUND tab so the creator can sign
+// in / finish enrollment, then retry the sync. Returns the tab id.
+function openStorefrontLogin(domain) {
+  const host = `www.${domain || 'amazon.com'}`
+  return new Promise((resolve) => {
+    chrome.tabs.create({ url: `https://${host}/create/post`, active: true }, (tab) => resolve(tab && tab.id))
+  })
+}
+
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return
   // Storefront delivery: upload each localized/dubbed video to its Amazon
@@ -5381,6 +5420,22 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     deliverStorefronts(items)
       .then((results) => sendResponse({ ok: true, results }))
       .catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'delivery-failed' }))
+    return true // async
+  }
+  // Pre-flight sign-in / enrollment check across marketplaces (no upload).
+  if (msg.type === 'MVP_STOREFRONT_PREFLIGHT') {
+    const domains = Array.isArray(msg.domains) ? msg.domains : []
+    if (domains.length === 0) { sendResponse({ ok: true, results: [] }); return false }
+    preflightStorefronts(domains)
+      .then((results) => sendResponse({ ok: true, results }))
+      .catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'preflight-failed' }))
+    return true // async
+  }
+  // Open a marketplace's Creator Hub in the foreground so the user can sign in.
+  if (msg.type === 'MVP_STOREFRONT_LOGIN') {
+    openStorefrontLogin(String(msg.domain || 'amazon.com'))
+      .then((tabId) => sendResponse({ ok: true, tabId }))
+      .catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'login-open-failed' }))
     return true // async
   }
   // DIAGNOSTIC (from the MVP app): report what the net-hook captured on Creator

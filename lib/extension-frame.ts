@@ -138,6 +138,44 @@ export async function requestStorefrontDelivery(
   return res || { ok: false, error: 'SCOUT not reachable — is the extension installed and are you signed into Amazon?' }
 }
 
+/** Per-marketplace sign-in / enrollment status ahead of an upload.
+ *  - ready:          signed in AND the Creator Hub session token resolved
+ *  - not_signed_in:  the marketplace redirected to sign-in
+ *  - not_enrolled:   signed in, but no Creator/Influencer session (no slateToken)
+ *  - unknown:        couldn't determine (tab failed to open, etc.) */
+export type StorefrontMarketStatus = 'ready' | 'not_signed_in' | 'not_enrolled' | 'unknown'
+export interface StorefrontPreflightResult {
+  ok: boolean
+  results?: Array<{ domain: string; status: StorefrontMarketStatus }>
+  error?: string
+}
+
+/**
+ * Pre-flight the storefront upload: for each marketplace domain, check whether
+ * the creator is signed in and enrolled BEFORE any upload runs, so the app can
+ * show a per-market checklist instead of failing silently in a background tab.
+ * Best-effort: resolves, never throws.
+ */
+export async function requestStorefrontPreflight(domains: string[]): Promise<StorefrontPreflightResult> {
+  const clean = Array.from(new Set((domains || []).map(d => String(d || '').trim()).filter(Boolean)))
+  if (clean.length === 0) return { ok: true, results: [] }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const res = await sendToExtension<StorefrontPreflightResult>({ type: 'MVP_STOREFRONT_PREFLIGHT', domains: clean }, 180_000)
+  return res || { ok: false, error: 'timeout' }
+}
+
+/**
+ * Open ONE marketplace's Creator Hub in a FOREGROUND tab so the creator can sign
+ * in (or finish enrollment), then come back and retry. Best-effort.
+ */
+export async function requestStorefrontLogin(domain: string): Promise<{ ok: boolean; error?: string }> {
+  const d = String(domain || '').trim()
+  if (!d) return { ok: false, error: 'no-domain' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const res = await sendToExtension<{ ok?: boolean; error?: string }>({ type: 'MVP_STOREFRONT_LOGIN', domain: d }, 15_000)
+  return res ? { ok: !!res.ok, error: res.error } : { ok: false, error: 'timeout' }
+}
+
 export interface MessageBrandResult { ok: boolean; error?: string; reason?: string; steps?: Record<string, boolean>; diag?: Record<string, unknown>; groups?: number; leftOpen?: boolean }
 
 /**

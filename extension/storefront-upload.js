@@ -172,10 +172,28 @@
     return { ok: true, mediaAci: pub.mediaAci || null }
   }
 
-  // Background asks us to run a job on this page.
+  // Is this a sign-in page? Amazon bounces an unauthenticated Creator Hub to
+  // /ap/signin (or /ap/…). Used by the pre-flight to tell "not signed in" from
+  // "signed in but not enrolled".
+  function looksSignedOut() {
+    return /\/ap\/signin|\/ap\/register|\/gp\/(?:sign-in|css\/homepage)/i.test(location.href) ||
+      !!document.querySelector('form[name="signIn"], #ap_email, input[name="email"][type="email"]')
+  }
+
   chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
+    // Background asks us to run a job on this page.
     if (msg && msg.action === 'MVP_STOREFRONT_UPLOAD_ONE' && msg.job) {
       uploadOne(msg.job).then(r => sendResponse(r)).catch(e => sendResponse({ ok: false, error: String(e && e.message || e) }))
+      return true // async
+    }
+    // Pre-flight probe: report sign-in + Creator-session status without uploading.
+    if (msg && msg.action === 'MVP_STOREFRONT_PROBE') {
+      (async () => {
+        const signedIn = !looksSignedOut()
+        let ctx = {}
+        try { ctx = await readContext() } catch { /* treat as no context */ }
+        sendResponse({ ready: !!ctx.slateToken, signedIn, href: location.href, via: ctx.via || [] })
+      })()
       return true // async
     }
   })
