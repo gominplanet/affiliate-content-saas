@@ -27,22 +27,49 @@
     return new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(msg)))
   }
 
-  // ── Read the page's session tokens ─────────────────────────────────────────
-  function pageToken(re) {
-    // Search inline scripts / html for a "name":"value" token.
+  // ── Read the Creator session context (slateToken, csrf, affiliate id) ───────
+  // The Creator Hub embeds these in an `amzn-ss-context` config the page renders
+  // as a JS object literal:  slateToken: "Optional[<token>]"  (UNquoted key, and
+  // the value wrapped in Java's Optional[...] serialization). The old
+  // /"slateToken":"..."/ scrape missed both the bare key and the wrapper, which
+  // is why every marketplace reported "Could not read slateToken". We now match
+  // that real shape, and fall back to the SiteStripe render endpoint — which
+  // returns the SAME context in a `scripts` blob and exists on every marketplace
+  // host — so a page whose DOM hasn't hydrated the token yet still resolves.
+  async function readContext() {
+    const out = { slateToken: null, csrf: null, ownerAffiliateId: null, storeId: null, via: [] }
     const html = document.documentElement.innerHTML
-    const m = html.match(re)
-    return m ? m[1] : null
-  }
-  function readContext() {
-    const csrf =
+
+    const mSlate = html.match(/slateToken\s*[:=]\s*"?(?:Optional\[)?([A-Za-z0-9+/=]{40,})\]?"?/)
+    if (mSlate) { out.slateToken = mSlate[1]; out.via.push('dom:slate') }
+
+    out.csrf =
       document.querySelector('meta[name="anti-csrftoken-a2z"]')?.content ||
-      pageToken(/anti-?csrftoken-?a2z["'\s:=]+["']([^"']+)["']/i)
-    const slateToken = pageToken(/"slateToken"\s*:\s*"([^"]+)"/)
-    const ownerAffiliateId =
-      pageToken(/"(?:ownerAffiliateId|selectedRootAffiliateId|affiliateId)"\s*:\s*"([^"]+)"/) ||
+      document.querySelector('input[name="anti-csrftoken-a2z"]')?.value ||
+      (html.match(/anti-?csrftoken-?a2z["'\s:=]+["']([^"']+)["']/i) || [])[1] || null
+    if (out.csrf) out.via.push('dom:csrf')
+
+    out.ownerAffiliateId =
+      (html.match(/"(?:ownerAffiliateId|selectedRootAffiliateId|affiliateId)"\s*:\s*"([^"]+)"/) || [])[1] ||
       (location.search.match(/affiliateId=([^&]+)/) || [])[1] || null
-    return { csrf, slateToken, ownerAffiliateId }
+    if (out.ownerAffiliateId) out.via.push('dom:owner')
+
+    // Fallback / cross-marketplace: the SiteStripe render endpoint. Same-origin,
+    // credentialed; the `scripts` field holds the amzn-ss-context block.
+    if (!out.slateToken || !out.csrf) {
+      try {
+        const r = await fetch(`https://${location.host}/creators/links/render/ss?pageType=CreatorStudioZaphodUI`, { credentials: 'include' })
+        if (r.ok) {
+          const j = await r.json().catch(() => null)
+          const blob = j && typeof j.scripts === 'string' ? j.scripts : ''
+          if (!out.slateToken) { const m = blob.match(/slateToken:\s*"(?:Optional\[)?([^"\]]+)\]?"/); if (m) { out.slateToken = m[1]; out.via.push('render:slate') } }
+          if (!out.csrf) { const m = blob.match(/csrfToken:\s*"([^"]+)"/); if (m) { out.csrf = m[1]; out.via.push('render:csrf') } }
+          const ms = blob.match(/defaultStoreId:\s*"([^"]+)"/) || blob.match(/getDefaultStoreId:\s*function\s*\(\)\s*\{\s*return\s*"([^"]+)"/)
+          if (ms) { out.storeId = ms[1]; out.via.push('render:store') }
+        }
+      } catch { /* ignore — reported via the slateToken guard below */ }
+    }
+    return out
   }
 
   // ── SigV4-sign + PUT bytes to the creator-studio S3 bucket ─────────────────
@@ -92,9 +119,12 @@
 
   // ── The full upload for ONE job ─────────────────────────────────────────────
   async function uploadOne(job) {
-    const ctx = readContext()
-    if (!ctx.slateToken) throw new Error('Could not read slateToken from the Creator Hub page — open the Create page and retry.')
-    if (!ctx.csrf) throw new Error('Could not read the CSRF token from the page.')
+    const ctx = await readContext()
+    if (!ctx.slateToken) {
+      throw new Error(`Could not read your Creator session token. Sign in to Amazon and make sure this account is enrolled in the Creator/Influencer program for this marketplace, then retry. [ctx:${ctx.via.join('|') || 'none'}]`)
+    }
+    // csrf is best-effort: if we can't find the anti-csrftoken-a2z the publish
+    // call will surface Amazon's own error, which is more precise than guessing.
 
     // 1. temp S3 creds
     const credRes = await fetch(`https://${location.host}/create/api/path-and-credentials`, { credentials: 'include' })
