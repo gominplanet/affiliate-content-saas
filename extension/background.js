@@ -5334,17 +5334,33 @@ async function deliverStorefronts(items) {
   for (const domain of Object.keys(byDomain)) {
     let tabId = null
     try { tabId = await openCreateTab(domain) } catch { /* tab open failed */ }
+    // Make sure the storefront-upload content script is actually present in the
+    // tab before we message it. The declared content_scripts injection can be
+    // absent (a still-hydrating SPA, a marketplace redirect, or an install that
+    // predates this file), which surfaces as Chrome's "Could not establish
+    // connection. Receiving end does not exist." Injecting it here — idempotent,
+    // guarded by window.__mvpStorefrontUploadLoaded — self-heals that. Mirrors
+    // the scanTab() inject-then-retry pattern.
+    if (tabId) {
+      try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* fall through; per-job retry below still tries */ }
+    }
+    const sendJob = (job) => new Promise((resolve) => {
+      const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 300000)
+      chrome.tabs.sendMessage(tabId, { action: 'MVP_STOREFRONT_UPLOAD_ONE', job }, (resp) => {
+        clearTimeout(to)
+        if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message, _unreachable: true })
+        resolve(resp || { ok: false, error: 'no response' })
+      })
+    })
     for (const job of byDomain[domain]) {
       if (!tabId) { results.push({ targetId: job.targetId, ok: false, error: 'Could not open the Amazon Creator Hub tab.' }); continue }
       try {
-        const r = await new Promise((resolve) => {
-          const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 300000)
-          chrome.tabs.sendMessage(tabId, { action: 'MVP_STOREFRONT_UPLOAD_ONE', job }, (resp) => {
-            clearTimeout(to)
-            if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message })
-            resolve(resp || { ok: false, error: 'no response' })
-          })
-        })
+        let r = await sendJob(job)
+        // One retry if the content script wasn't reachable: (re)inject and resend.
+        if (r && r._unreachable) {
+          try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* ignore */ }
+          r = await sendJob(job)
+        }
         results.push({ targetId: job.targetId, ok: !!r.ok, mediaAci: r.mediaAci || null, error: r.ok ? null : (r.error || 'upload failed') })
       } catch (e) {
         results.push({ targetId: job.targetId, ok: false, error: String(e && e.message || e) })

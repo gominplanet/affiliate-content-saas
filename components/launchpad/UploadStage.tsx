@@ -77,10 +77,13 @@ function probe(file: File): Promise<{ width: number; height: number; duration: n
 const label = { color: 'var(--fg)' } as const
 const muted = { color: 'var(--fg-muted)' } as const
 
-// onRendered: called with the burned video URL + a working title (the filename)
+// onRendered: called with the burned video URL, a working title (the filename),
+// and the CLEAN source URL (no CTA). The CTA is a YouTube-only overlay, so the
+// parent publishes the burned URL to YouTube but hands storefronts the clean
+// source instead.
 //   so a parent pipeline (Launchpad) can carry it into the next stage.
 // hidePublish: hide the built-in publish button when the parent owns publishing.
-export default function UploadStage({ onRendered, hidePublish }: { onRendered?: (url: string, title: string) => void; hidePublish?: boolean } = {}) {
+export default function UploadStage({ onRendered, hidePublish }: { onRendered?: (url: string, title: string, sourceUrl: string) => void; hidePublish?: boolean } = {}) {
   const supabase = useMemo(() => createBrowserClient(), [])
   const fileRef = useRef<HTMLInputElement>(null)
   const badgeRef = useRef<HTMLInputElement>(null)
@@ -256,7 +259,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.url) throw new Error(j.error || 'Render failed')
       setRendered(j.url)
-      onRendered?.(j.url as string, (source.name || 'My video').replace(/\.[^.]+$/, ''))
+      onRendered?.(j.url as string, (source.name || 'My video').replace(/\.[^.]+$/, ''), source.url)
       toast.success('CTA burned in. Preview it below.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Render failed')

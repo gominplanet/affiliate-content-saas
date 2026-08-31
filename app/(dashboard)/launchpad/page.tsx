@@ -28,6 +28,9 @@ function Num({ n, done }: { n: number | string; done?: boolean }) {
 
 export default function LaunchpadPage() {
   const [renderedUrl, setRenderedUrl] = useState<string | null>(null)
+  // The CLEAN uploaded video (no CTA). YouTube gets the CTA-burned render;
+  // Amazon storefronts get this instead — the CTA is a YouTube-only overlay.
+  const [cleanUrl, setCleanUrl] = useState<string | null>(null)
   const [workingTitle, setWorkingTitle] = useState('')
   const [asin, setAsin] = useState('')
 
@@ -94,7 +97,9 @@ export default function LaunchpadPage() {
     try {
       const r = await fetch('/api/launchpad/master', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: renderedUrl, asin: asin.trim() }),
+        // Storefronts get the CLEAN upload (no CTA). Fall back to the render
+        // only if the clean URL is somehow missing, so the flow never blocks.
+        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asin.trim() }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.videoId) throw new Error(j.error || 'Could not set up the storefront sync')
@@ -117,7 +122,7 @@ export default function LaunchpadPage() {
         {/* 1. Upload + CTA */}
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-3"><Num n={1} done={!!renderedUrl} /><h2 className="text-sm font-semibold" style={label}>Upload your video & design the CTA</h2></div>
-          <UploadStage hidePublish onRendered={(url, title) => { setRenderedUrl(url); setWorkingTitle(title); if (!chosenTitle) setChosenTitle(title) }} />
+          <UploadStage hidePublish onRendered={(url, title, sourceUrl) => { setRenderedUrl(url); setCleanUrl(sourceUrl); setWorkingTitle(title); if (!chosenTitle) setChosenTitle(title) }} />
         </div>
 
         {renderedUrl && (
