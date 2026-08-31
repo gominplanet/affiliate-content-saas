@@ -124,7 +124,7 @@ function sendToExtension<T>(message: unknown, timeoutMs: number): Promise<T | nu
   })()
 }
 
-export interface StorefrontDeliverResult { ok: boolean; results?: Array<{ targetId: string; ok: boolean; mediaAci?: string | null; error?: string | null }>; error?: string }
+export interface StorefrontDeliverResult { ok: boolean; results?: Array<{ targetId: string; ok: boolean; duplicate?: boolean; mediaAci?: string | null; error?: string | null }>; error?: string }
 
 /**
  * Ask SCOUT to upload each localized/dubbed video to its Amazon storefront via

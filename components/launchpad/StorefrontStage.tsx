@@ -293,16 +293,25 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
 
       const res = await requestStorefrontDelivery(ready)
       if (!res.ok && !res.results) { toast.error(res.error || 'Could not reach SCOUT.'); return }
-      // Report each outcome so the UI shows delivery state.
+      // Report each outcome so the UI shows delivery state. A duplicate is not a
+      // failure — the video is already on that storefront — so mark it present
+      // (green) with a clear note instead of an error, and don't create a copy.
       for (const r of (res.results || [])) {
+        const isDup = !r.ok && r.duplicate
         await fetch('/api/global-sync/deliver/result', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetId: r.targetId, ok: r.ok, detail: r.ok ? 'Uploaded to storefront' : (r.error || 'Upload failed') }),
+          body: JSON.stringify({
+            targetId: r.targetId,
+            ok: r.ok || isDup,
+            detail: isDup ? 'Already on this storefront — skipped duplicate' : (r.ok ? 'Uploaded to storefront' : (r.error || 'Upload failed')),
+          }),
         }).catch(() => {})
       }
       await refreshTargets()
-      const done = (res.results || []).filter(r => r.ok).length
-      toast.success(`Uploaded to ${done} of ${(res.results || []).length} storefronts`)
+      const results = res.results || []
+      const done = results.filter(r => r.ok).length
+      const dups = results.filter(r => !r.ok && r.duplicate).length
+      toast.success(`Uploaded to ${done} of ${results.length} storefronts${dups > 0 ? ` · ${dups} already there` : ''}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Storefront upload failed')
     } finally { setDelivering(false) }

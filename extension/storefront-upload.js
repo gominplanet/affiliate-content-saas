@@ -120,12 +120,76 @@
 
   const uuid = () => crypto.randomUUID()
 
+  // Normalize a title for duplicate comparison: lowercase, drop a trailing file
+  // extension (manual uploads are named "Foo - B0XXXX.mp4"), collapse whitespace.
+  function normTitle(s) {
+    return String(s || '').toLowerCase().replace(/\.(mp4|mov|m4v|webm)\b/g, '').replace(/\s+/g, ' ').trim()
+  }
+  function titleTokens(s) {
+    return normTitle(s).replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean)
+  }
+  // Word-set Jaccard similarity (0..1). Robust to the small wording differences a
+  // re-generated translation can produce (e.g. "j'ai" vs "j'aie") while staying
+  // low for genuinely different videos — MVP does NOT reliably write the exact
+  // same title twice, so an exact match alone would miss real duplicates.
+  function titleSimilar(a, b) {
+    const A = new Set(titleTokens(a)), B = new Set(titleTokens(b))
+    if (A.size === 0 || B.size === 0) return 0
+    let inter = 0
+    for (const x of A) if (B.has(x)) inter++
+    return inter / (A.size + B.size - inter)
+  }
+  const DUP_SIMILARITY = 0.8
+
+  // Is a video with this title already on THIS marketplace's storefront? Replays
+  // the Creator Hub's own content-list call (same session) and matches the title
+  // — the reliable signal, since the list doesn't expose duration. Best-effort:
+  // any failure (CSRF, network, shape change) returns null so we never block a
+  // legitimate upload. Returns the matching item or null.
+  async function findDuplicateOnStorefront(ctx, job) {
+    try {
+      const want = normTitle(job.title)
+      if (!want) return null
+      const body = {
+        pageSize: 50, startIndex: 0, contentState: 'LIVE',
+        ownerAffiliateId: ctx.ownerAffiliateId || job.ownerAffiliateId || '',
+        query: { filters: ['CONTENT_STATE', 'LAST_UPDATE'], sorts: ['LAST_UPDATE'] },
+        orderingType: 'DECREASING', retrieveMetrics: false, globalizeStatus: 'notApplicable',
+      }
+      const r = await fetch(`https://${location.host}/manage-content/api/get-content-list`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(ctx.csrf ? { 'anti-csrftoken-a2z': ctx.csrf } : {}) },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(20000),
+      })
+      if (!r.ok) return null
+      const j = await r.json().catch(() => null)
+      const list = j && Array.isArray(j.result) ? j.result : []
+      for (const it of list) {
+        const cd = it && it.contentDetail
+        if (!cd || it.contentType !== 'VIDEO') continue
+        const existing = cd.description || ''
+        if (normTitle(existing) === want || titleSimilar(existing, job.title) >= DUP_SIMILARITY) {
+          return { aci: cd.mediaACI || null, title: existing }
+        }
+      }
+      return null
+    } catch { return null }
+  }
+
   // ── The full upload for ONE job ─────────────────────────────────────────────
   async function uploadOne(job) {
     const ctx = await readContext()
     if (!ctx.slateToken) {
       throw new Error(`Could not read your Creator session token. Sign in to Amazon and make sure this account is enrolled in the Creator/Influencer program for this marketplace, then retry. [ctx:${ctx.via.join('|') || 'none'}]`)
     }
+
+    // Duplicate guard: if this marketplace already has a video with the same
+    // title, skip rather than create a second copy. Opt out with job.dedupe:false.
+    if (job.dedupe !== false && job.title) {
+      const dup = await findDuplicateOnStorefront(ctx, job)
+      if (dup) return { ok: false, duplicate: true, mediaAci: dup.aci, error: 'Already on this storefront' }
+    }
+
     // csrf is best-effort: if we can't find the anti-csrftoken-a2z the publish
     // call will surface Amazon's own error, which is more precise than guessing.
 

@@ -5360,7 +5360,7 @@ async function deliverOneDomain(domain, jobs) {
         try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* ignore */ }
         r = await sendJob(job)
       }
-      out.push({ targetId: job.targetId, ok: !!r.ok, mediaAci: r.mediaAci || null, error: r.ok ? null : (r.error || 'upload failed') })
+      out.push({ targetId: job.targetId, ok: !!r.ok, duplicate: !!r.duplicate, mediaAci: r.mediaAci || null, error: r.ok ? null : (r.error || 'upload failed') })
     } catch (e) {
       out.push({ targetId: job.targetId, ok: false, error: String(e && e.message || e) })
     }
