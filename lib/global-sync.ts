@@ -40,6 +40,17 @@ export function marketByDomain(domain: string): Market | undefined {
   return MARKETS.find(m => m.domain === domain)
 }
 
+/** Decode the handful of HTML entities that sneak into generated titles
+ *  (apostrophes, ampersands, quotes) so localized copy reads as plain text. */
+export function decodeEntities(s: string): string {
+  return (s || '')
+    .replace(/&#0*39;|&#x0*27;|&apos;/gi, "'")
+    .replace(/&quot;|&#0*34;/gi, '"')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+}
+
 export interface LocalizedMeta { title: string; description: string }
 
 /** Translate a master title + description into one market's language, in the
@@ -52,8 +63,8 @@ export async function localizeMetadata(
   brand: CreatorVoiceFields | null,
   ctx: { userId: string; tier?: string | null },
 ): Promise<LocalizedMeta> {
-  const title = (master.title || '').trim()
-  const description = (master.description || '').trim()
+  const title = decodeEntities((master.title || '').trim())
+  const description = decodeEntities((master.description || '').trim())
   if (!market.needsTranslation) return { title, description }
   if (!title && !description) return { title, description }
 
@@ -76,8 +87,8 @@ export async function localizeMetadata(
     if (!m) return { title, description }
     const parsed = JSON.parse(m[0]) as { title?: string; description?: string }
     return {
-      title: (parsed.title || title).trim().slice(0, 500),
-      description: (parsed.description || description).trim(),
+      title: decodeEntities((parsed.title || title).trim()).slice(0, 500),
+      description: decodeEntities((parsed.description || description).trim()),
     }
   } catch {
     return { title, description }
