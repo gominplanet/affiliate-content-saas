@@ -19,14 +19,6 @@
   if (window.__mvpStorefrontUploadLoaded) return
   window.__mvpStorefrontUploadLoaded = true
 
-  const enc = new TextEncoder()
-  const hex = (buf) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
-  const sha256 = async (s) => hex(await crypto.subtle.digest('SHA-256', typeof s === 'string' ? enc.encode(s) : s))
-  async function hmac(key, msg) {
-    const k = await crypto.subtle.importKey('raw', typeof key === 'string' ? enc.encode(key) : key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-    return new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(msg)))
-  }
-
   // ── Read the Creator session context (slateToken, csrf, affiliate id) ───────
   // The Creator Hub embeds these in an `amzn-ss-context` config the page renders
   // as a JS object literal:  slateToken: "Optional[<token>]"  (UNquoted key, and
@@ -72,43 +64,22 @@
     return out
   }
 
-  // ── SigV4-sign + PUT bytes to the creator-studio S3 bucket ─────────────────
-  async function s3Put(creds, key, bytes, contentType) {
-    const host = `${creds.s3Bucket}.s3.${creds.s3BucketRegion}.amazonaws.com`
-    const url = `https://${host}/${key}?x-id=PutObject`
-    const now = new Date()
-    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '') // 20260831T115841Z
-    const dateStamp = amzDate.slice(0, 8)
-    const region = creds.s3BucketRegion, service = 's3'
-    const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token;x-amz-tagging'
-    const canonicalHeaders =
-      `content-type:${contentType}\n` +
-      `host:${host}\n` +
-      `x-amz-content-sha256:UNSIGNED-PAYLOAD\n` +
-      `x-amz-date:${amzDate}\n` +
-      `x-amz-security-token:${creds.awsSessionToken}\n` +
-      `x-amz-tagging:temporary=true\n`
-    const canonicalReq = ['PUT', `/${key.split('/').map(encodeURIComponent).join('/')}`, 'x-id=PutObject', canonicalHeaders, signedHeaders, 'UNSIGNED-PAYLOAD'].join('\n')
-    const scope = `${dateStamp}/${region}/${service}/aws4_request`
-    const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256(canonicalReq)].join('\n')
-    let k = await hmac('AWS4' + creds.awsSecretAccessKey, dateStamp)
-    k = await hmac(k, region); k = await hmac(k, service); k = await hmac(k, 'aws4_request')
-    const signature = hex(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), enc.encode(stringToSign)))
-    const auth = `AWS4-HMAC-SHA256 Credential=${creds.awsAccessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
-    const res = await fetch(url, {
-      method: 'PUT', body: bytes,
-      headers: {
-        'Content-Type': contentType,
-        'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
-        'x-amz-date': amzDate,
-        'x-amz-security-token': creds.awsSessionToken,
-        'x-amz-tagging': 'temporary=true',
-        'Authorization': auth,
-      },
-      // Never hang the whole delivery on a stalled PUT — fail with a clear error.
-      signal: AbortSignal.timeout(180000),
+  // Delegate the S3 upload to the background worker (host_permissions bypass the
+  // CORS preflight that hangs a signed PUT made from this Amazon page). The
+  // worker downloads the source and PUTs it, so large bytes never cross the
+  // messaging boundary. Resolves on success, throws with the reason otherwise.
+  function bgS3Put({ srcUrl, creds, key, contentType }) {
+    return new Promise((resolve, reject) => {
+      let settled = false
+      const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('timed out')) } }, 200000)
+      chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_S3PUT', srcUrl, creds, key, contentType }, (resp) => {
+        if (settled) return
+        settled = true; clearTimeout(to)
+        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message))
+        if (!resp || !resp.ok) return reject(new Error((resp && resp.error) || 'S3 PUT failed'))
+        resolve(resp)
+      })
     })
-    if (!res.ok) throw new Error(`S3 PUT ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`)
   }
 
   const api = (path, body, csrf) => fetch(`https://${location.host}/create/api/${path}`, {
@@ -140,21 +111,21 @@
       if (!credRes.ok) throw new Error(`path-and-credentials ${credRes.status}`)
       const creds = await credRes.json()
 
-      // 2. fetch the media bytes (from MVP storage) and PUT to S3
-      step = 'download-video'
-      const vr = await fetch(job.videoUrl, { signal: AbortSignal.timeout(180000) })
-      if (!vr.ok) throw new Error(`could not fetch the source video (${vr.status})`)
-      const videoBytes = new Uint8Array(await vr.arrayBuffer())
+      // 2. Upload media to S3 — via the BACKGROUND worker. A signed cross-origin
+      //    PUT from this Amazon page triggers a CORS preflight that hangs
+      //    ("[upload-video] timed out"); the service worker has host_permissions
+      //    for *.amazonaws.com so its PUT skips the preflight. It also does the
+      //    source download, so the bytes never transit through page messaging.
       step = 'upload-video'
       const videoKey = `${creds.s3Folder}/${uuid()}.mp4`
-      await s3Put(creds, videoKey, videoBytes, 'video/mp4')
+      await bgS3Put({ srcUrl: job.videoUrl, creds, key: videoKey, contentType: 'video/mp4' })
       let thumbKey = null
       if (job.thumbnailUrl) {
         try {
           step = 'thumbnail'
-          const tb = new Uint8Array(await (await fetch(job.thumbnailUrl, { signal: AbortSignal.timeout(60000) })).arrayBuffer())
-          thumbKey = `${creds.s3Folder}/${uuid()}.png`
-          await s3Put(creds, thumbKey, tb, 'image/png')
+          const tKey = `${creds.s3Folder}/${uuid()}.png`
+          await bgS3Put({ srcUrl: job.thumbnailUrl, creds, key: tKey, contentType: 'image/png' })
+          thumbKey = tKey
         } catch { thumbKey = null }
       }
 

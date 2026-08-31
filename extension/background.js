@@ -5410,6 +5410,76 @@ function openStorefrontLogin(domain) {
   })
 }
 
+// ── S3 upload from the BACKGROUND worker ────────────────────────────────────
+// The content script can't PUT the video to Amazon's creator S3 bucket: a signed
+// cross-origin PUT from the Amazon page triggers a CORS preflight that hangs
+// ("[upload-video] timed out"). The service worker has host_permissions for
+// *.amazonaws.com, so its fetch bypasses CORS entirely — no preflight, no hang.
+// The content script (which holds the page session) fetches the temp creds and
+// hands us {srcUrl, creds, key, contentType}; we download the media and PUT it.
+const _s3enc = new TextEncoder()
+const _s3hex = (buf) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+async function _s3sha256(s) { return _s3hex(await crypto.subtle.digest('SHA-256', typeof s === 'string' ? _s3enc.encode(s) : s)) }
+async function _s3hmac(key, msg) {
+  const k = await crypto.subtle.importKey('raw', typeof key === 'string' ? _s3enc.encode(key) : key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  return new Uint8Array(await crypto.subtle.sign('HMAC', k, _s3enc.encode(msg)))
+}
+async function storefrontS3Put({ srcUrl, creds, key, contentType }) {
+  if (!srcUrl || !creds || !key) throw new Error('bad-s3put-args')
+  // 1. Download the media (Supabase public object → CORS-ok; amazonaws/media
+  //    hosts covered by host_permissions).
+  const src = await fetch(srcUrl, { signal: AbortSignal.timeout(180000) })
+  if (!src.ok) throw new Error(`source ${src.status}`)
+  const bytes = new Uint8Array(await src.arrayBuffer())
+
+  // 2. SigV4-sign + PUT to the creator-studio bucket (UNSIGNED-PAYLOAD).
+  const host = `${creds.s3Bucket}.s3.${creds.s3BucketRegion}.amazonaws.com`
+  const url = `https://${host}/${key}?x-id=PutObject`
+  const now = new Date()
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
+  const dateStamp = amzDate.slice(0, 8)
+  const region = creds.s3BucketRegion, service = 's3'
+  const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token;x-amz-tagging'
+  const canonicalHeaders =
+    `content-type:${contentType}\n` +
+    `host:${host}\n` +
+    `x-amz-content-sha256:UNSIGNED-PAYLOAD\n` +
+    `x-amz-date:${amzDate}\n` +
+    `x-amz-security-token:${creds.awsSessionToken}\n` +
+    `x-amz-tagging:temporary=true\n`
+  const canonicalReq = ['PUT', `/${key.split('/').map(encodeURIComponent).join('/')}`, 'x-id=PutObject', canonicalHeaders, signedHeaders, 'UNSIGNED-PAYLOAD'].join('\n')
+  const scope = `${dateStamp}/${region}/${service}/aws4_request`
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await _s3sha256(canonicalReq)].join('\n')
+  let k = await _s3hmac('AWS4' + creds.awsSecretAccessKey, dateStamp)
+  k = await _s3hmac(k, region); k = await _s3hmac(k, service); k = await _s3hmac(k, 'aws4_request')
+  const signature = _s3hex(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), _s3enc.encode(stringToSign)))
+  const auth = `AWS4-HMAC-SHA256 Credential=${creds.awsAccessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
+  const res = await fetch(url, {
+    method: 'PUT', body: bytes,
+    headers: {
+      'Content-Type': contentType,
+      'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+      'x-amz-date': amzDate,
+      'x-amz-security-token': creds.awsSessionToken,
+      'x-amz-tagging': 'temporary=true',
+      'Authorization': auth,
+    },
+    signal: AbortSignal.timeout(180000),
+  })
+  if (!res.ok) throw new Error(`S3 PUT ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`)
+  return { ok: true, key }
+}
+
+// Content script → background: run one S3 PUT (video or thumbnail) off-page.
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg && msg.action === 'MVP_STOREFRONT_S3PUT') {
+    storefrontS3Put(msg)
+      .then((r) => sendResponse(r))
+      .catch((e) => sendResponse({ ok: false, error: String(e && e.message || e) }))
+    return true // async
+  }
+})
+
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return
   // Storefront delivery: upload each localized/dubbed video to its Amazon
