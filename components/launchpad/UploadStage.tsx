@@ -266,6 +266,15 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
     } finally { setRendering(false) }
   }
 
+  // Continue with no CTA. The uploaded video IS the finished video, so it
+  // becomes both the (clean) storefront source and what YouTube publishes.
+  function skipCta() {
+    if (!source) { toast.error('Upload a video first'); return }
+    setRendered(source.url); setPublished(null)
+    onRendered?.(source.url, (source.name || 'My video').replace(/\.[^.]+$/, ''), source.url)
+    toast.success('Continuing without a CTA.')
+  }
+
   async function publish() {
     if (!rendered) return
     if (!title.trim()) { toast.error('Add a title first'); return }
@@ -304,7 +313,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
       {/* 2. CTA */}
       <div className="card p-5">
         <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-          <h2 className="text-sm font-semibold" style={label}>Design the CTA</h2>
+          <h2 className="text-sm font-semibold" style={label}>Design the CTA <span className="font-normal" style={muted}>(optional)</span></h2>
           <div className="inline-flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
             {(['design', 'words', 'upload'] as Source[]).map(o => (
               <button key={o} type="button" onClick={() => setCtaSource(o)}
@@ -430,11 +439,19 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
           ))}
         </div>
 
-        <button onClick={() => void render()} disabled={rendering || !source || !activeBadgeUrl}
-          className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
-          style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
-          {rendering ? <><Loader2 size={15} className="animate-spin" /> Burning in…</> : <>Render CTA</>}
-        </button>
+        <div className="mt-4 flex items-center gap-3 flex-wrap">
+          <button onClick={() => void render()} disabled={rendering || !source || !activeBadgeUrl}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+            style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
+            {rendering ? <><Loader2 size={15} className="animate-spin" /> Burning in…</> : <>Render CTA</>}
+          </button>
+          <button onClick={skipCta} disabled={rendering || !source}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border disabled:opacity-60"
+            style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+            Skip, no CTA
+          </button>
+        </div>
+        <p className="text-[12px] mt-2" style={muted}>The CTA is optional. Skip it to use your video exactly as uploaded.</p>
       </div>
 
       {/* 3. Result */}
