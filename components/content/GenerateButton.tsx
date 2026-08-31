@@ -425,6 +425,9 @@ export function GenerateButton({
       // move on. Image gen (if requested) keeps running in the
       // background per the IIFE above.
       setStatus('done')
+      // The Art Director thumbnail renders in the background and lands a minute
+      // or two after the post is up — tell the user so it doesn't look skipped.
+      if (artThumb) toast.success('Your new thumbnail is rendering and will appear on the post in a minute or two.', { duration: 7000 })
       onDone(data.wordpressUrl as string, data.title as string, data.postId as string)
     } catch (err: unknown) {
       let message = err instanceof Error ? err.message : 'Unknown error'
