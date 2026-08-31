@@ -5326,48 +5326,71 @@ function openCreateTab(domain) {
 
 // Run each storefront-upload job on its marketplace's Creator Hub, sequentially.
 // Returns [{ targetId, ok, mediaAci?, error? }].
+// Deliver one marketplace's jobs: open its Creator Hub tab, upload each job's
+// video, then close the tab. Returns a result row per job. Runs standalone so
+// several marketplaces can be delivered concurrently (see deliverStorefronts).
+async function deliverOneDomain(domain, jobs) {
+  const out = []
+  let tabId = null
+  try { tabId = await openCreateTab(domain) } catch { /* tab open failed */ }
+  // Make sure the storefront-upload content script is actually present in the
+  // tab before we message it. The declared content_scripts injection can be
+  // absent (a still-hydrating SPA, a marketplace redirect, or an install that
+  // predates this file), which surfaces as Chrome's "Could not establish
+  // connection. Receiving end does not exist." Injecting it here — idempotent,
+  // guarded by window.__mvpStorefrontUploadLoaded — self-heals that. Mirrors
+  // the scanTab() inject-then-retry pattern.
+  if (tabId) {
+    try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* fall through; per-job retry below still tries */ }
+  }
+  const sendJob = (job) => new Promise((resolve) => {
+    const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 820000)
+    chrome.tabs.sendMessage(tabId, { action: 'MVP_STOREFRONT_UPLOAD_ONE', job }, (resp) => {
+      clearTimeout(to)
+      if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message, _unreachable: true })
+      resolve(resp || { ok: false, error: 'no response' })
+    })
+  })
+  for (const job of jobs) {
+    if (!tabId) { out.push({ targetId: job.targetId, ok: false, error: 'Could not open the Amazon Creator Hub tab.' }); continue }
+    try {
+      let r = await sendJob(job)
+      // One retry if the content script wasn't reachable: (re)inject and resend.
+      if (r && r._unreachable) {
+        try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* ignore */ }
+        r = await sendJob(job)
+      }
+      out.push({ targetId: job.targetId, ok: !!r.ok, mediaAci: r.mediaAci || null, error: r.ok ? null : (r.error || 'upload failed') })
+    } catch (e) {
+      out.push({ targetId: job.targetId, ok: false, error: String(e && e.message || e) })
+    }
+  }
+  try { if (tabId) chrome.tabs.remove(tabId) } catch { /* ignore */ }
+  return out
+}
+
 async function deliverStorefronts(items) {
-  const results = []
   // Group by domain so we reuse one create tab per marketplace.
   const byDomain = {}
   for (const it of items) (byDomain[it.domain || 'amazon.com'] ||= []).push(it)
-  for (const domain of Object.keys(byDomain)) {
-    let tabId = null
-    try { tabId = await openCreateTab(domain) } catch { /* tab open failed */ }
-    // Make sure the storefront-upload content script is actually present in the
-    // tab before we message it. The declared content_scripts injection can be
-    // absent (a still-hydrating SPA, a marketplace redirect, or an install that
-    // predates this file), which surfaces as Chrome's "Could not establish
-    // connection. Receiving end does not exist." Injecting it here — idempotent,
-    // guarded by window.__mvpStorefrontUploadLoaded — self-heals that. Mirrors
-    // the scanTab() inject-then-retry pattern.
-    if (tabId) {
-      try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* fall through; per-job retry below still tries */ }
+  const domains = Object.keys(byDomain)
+
+  // Deliver several marketplaces at once instead of strictly one after another.
+  // Each domain uses its own tab and holds its video in that tab's memory only
+  // while uploading, so a bounded pool keeps total memory in check while cutting
+  // wall-clock from the sum of every market to roughly the slowest few. Cap at 3
+  // to stay gentle on the machine and on Amazon.
+  const POOL = 3
+  const results = []
+  let next = 0
+  const runNext = async () => {
+    while (next < domains.length) {
+      const domain = domains[next++]
+      const rows = await deliverOneDomain(domain, byDomain[domain])
+      for (const r of rows) results.push(r)
     }
-    const sendJob = (job) => new Promise((resolve) => {
-      const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 820000)
-      chrome.tabs.sendMessage(tabId, { action: 'MVP_STOREFRONT_UPLOAD_ONE', job }, (resp) => {
-        clearTimeout(to)
-        if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message, _unreachable: true })
-        resolve(resp || { ok: false, error: 'no response' })
-      })
-    })
-    for (const job of byDomain[domain]) {
-      if (!tabId) { results.push({ targetId: job.targetId, ok: false, error: 'Could not open the Amazon Creator Hub tab.' }); continue }
-      try {
-        let r = await sendJob(job)
-        // One retry if the content script wasn't reachable: (re)inject and resend.
-        if (r && r._unreachable) {
-          try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* ignore */ }
-          r = await sendJob(job)
-        }
-        results.push({ targetId: job.targetId, ok: !!r.ok, mediaAci: r.mediaAci || null, error: r.ok ? null : (r.error || 'upload failed') })
-      } catch (e) {
-        results.push({ targetId: job.targetId, ok: false, error: String(e && e.message || e) })
-      }
-    }
-    try { if (tabId) chrome.tabs.remove(tabId) } catch { /* ignore */ }
   }
+  await Promise.all(Array.from({ length: Math.min(POOL, domains.length) }, () => runNext()))
   return results
 }
 
@@ -5429,12 +5452,23 @@ function mainWorldS3Put(params) {
     const sha256 = async (s) => hex(await crypto.subtle.digest('SHA-256', typeof s === 'string' ? enc.encode(s) : s))
     const hmac = async (k, m) => new Uint8Array(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', typeof k === 'string' ? enc.encode(k) : k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), enc.encode(m)))
     try {
-      log('download start', String(srcUrl).slice(0, 80))
-      let src
-      try { src = await fetch(srcUrl, { signal: AbortSignal.timeout(300000) }) }
-      catch (e) { return { ok: false, error: `download ${/abort|timeout/i.test(String(e && e.message)) ? 'timed out' : 'failed: ' + (e && e.message || e)}` } }
-      if (!src.ok) return { ok: false, error: `download HTTP ${src.status}` }
-      const bytes = new Uint8Array(await src.arrayBuffer())
+      // Reuse the bytes if this same source was already downloaded into this
+      // tab (e.g. several ASINs published to the same marketplace from one
+      // video): the fetch is the slow half, so skipping the re-download is a
+      // straight speed win. Scoped to this tab's page memory, cleared on reload.
+      let bytes = null
+      try { const c = window.__mvpS3Cache; if (c && c.url === srcUrl && c.bytes) bytes = c.bytes } catch (e) {}
+      if (!bytes) {
+        log('download start', String(srcUrl).slice(0, 80))
+        let src
+        try { src = await fetch(srcUrl, { signal: AbortSignal.timeout(300000) }) }
+        catch (e) { return { ok: false, error: `download ${/abort|timeout/i.test(String(e && e.message)) ? 'timed out' : 'failed: ' + (e && e.message || e)}` } }
+        if (!src.ok) return { ok: false, error: `download HTTP ${src.status}` }
+        bytes = new Uint8Array(await src.arrayBuffer())
+        try { window.__mvpS3Cache = { url: srcUrl, bytes } } catch (e) {}
+      } else {
+        log('reusing cached bytes for', String(srcUrl).slice(0, 80))
+      }
       const host = `${creds.s3Bucket}.s3.${creds.s3BucketRegion}.amazonaws.com`
       log('downloaded', bytes.length, 'bytes → PUT', host)
       const url = `https://${host}/${key}?x-id=PutObject`
