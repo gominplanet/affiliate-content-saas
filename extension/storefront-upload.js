@@ -105,6 +105,8 @@
         'x-amz-tagging': 'temporary=true',
         'Authorization': auth,
       },
+      // Never hang the whole delivery on a stalled PUT — fail with a clear error.
+      signal: AbortSignal.timeout(180000),
     })
     if (!res.ok) throw new Error(`S3 PUT ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`)
   }
@@ -113,6 +115,7 @@
     method: 'POST', credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(csrf ? { 'anti-csrftoken-a2z': csrf } : {}) },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60000),
   })
 
   const uuid = () => crypto.randomUUID()
@@ -126,31 +129,52 @@
     // csrf is best-effort: if we can't find the anti-csrftoken-a2z the publish
     // call will surface Amazon's own error, which is more precise than guessing.
 
-    // 1. temp S3 creds
-    const credRes = await fetch(`https://${location.host}/create/api/path-and-credentials`, { credentials: 'include' })
-    if (!credRes.ok) throw new Error(`path-and-credentials ${credRes.status}`)
-    const creds = await credRes.json()
+    // Each step is labelled + time-boxed so a stalled call fails with a clear
+    // "[step] …" message instead of running out the background clock as a bare
+    // "timeout" (which is exactly what a signed-in-but-hung upload looked like).
+    let step = 'session'
+    try {
+      // 1. temp S3 creds
+      step = 'credentials'
+      const credRes = await fetch(`https://${location.host}/create/api/path-and-credentials`, { credentials: 'include', signal: AbortSignal.timeout(30000) })
+      if (!credRes.ok) throw new Error(`path-and-credentials ${credRes.status}`)
+      const creds = await credRes.json()
 
-    // 2. fetch the media bytes (from MVP storage) and PUT to S3
-    const videoBytes = new Uint8Array(await (await fetch(job.videoUrl)).arrayBuffer())
-    const videoKey = `${creds.s3Folder}/${uuid()}.mp4`
-    await s3Put(creds, videoKey, videoBytes, 'video/mp4')
-    let thumbKey = null
-    if (job.thumbnailUrl) {
-      try {
-        const tb = new Uint8Array(await (await fetch(job.thumbnailUrl)).arrayBuffer())
-        thumbKey = `${creds.s3Folder}/${uuid()}.png`
-        await s3Put(creds, thumbKey, tb, 'image/png')
-      } catch { thumbKey = null }
+      // 2. fetch the media bytes (from MVP storage) and PUT to S3
+      step = 'download-video'
+      const vr = await fetch(job.videoUrl, { signal: AbortSignal.timeout(180000) })
+      if (!vr.ok) throw new Error(`could not fetch the source video (${vr.status})`)
+      const videoBytes = new Uint8Array(await vr.arrayBuffer())
+      step = 'upload-video'
+      const videoKey = `${creds.s3Folder}/${uuid()}.mp4`
+      await s3Put(creds, videoKey, videoBytes, 'video/mp4')
+      let thumbKey = null
+      if (job.thumbnailUrl) {
+        try {
+          step = 'thumbnail'
+          const tb = new Uint8Array(await (await fetch(job.thumbnailUrl, { signal: AbortSignal.timeout(60000) })).arrayBuffer())
+          thumbKey = `${creds.s3Folder}/${uuid()}.png`
+          await s3Put(creds, thumbKey, tb, 'image/png')
+        } catch { thumbKey = null }
+      }
+
+      // 3. validate our ASIN (non-fatal)
+      if (job.asin) { try { await api('asins', { sourceType: 'REQUEST_BODY', slateToken: ctx.slateToken, asins: [job.asin] }, ctx.csrf) } catch { /* non-fatal */ } }
+
+      // 4. moderation gate (non-fatal)
+      try { await api('check-content-quality', { slateToken: ctx.slateToken, mediaUri: videoKey, mediaAci: null, mediaContentInDraft: false, contentType: 'SHOPPABLE_VIDEO' }, ctx.csrf) } catch { /* non-fatal */ }
+
+      // 5. PUBLISH
+      step = 'publish'
+      return await publish(job, ctx, videoKey, thumbKey)
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e)
+      const timedOut = /abort|timeout|signal/i.test(msg)
+      throw new Error(`[${step}] ${timedOut ? 'timed out' : msg}`)
     }
+  }
 
-    // 3. validate our ASIN
-    if (job.asin) { try { await api('asins', { sourceType: 'REQUEST_BODY', slateToken: ctx.slateToken, asins: [job.asin] }, ctx.csrf) } catch { /* non-fatal */ } }
-
-    // 4. moderation gate
-    try { await api('check-content-quality', { slateToken: ctx.slateToken, mediaUri: videoKey, mediaAci: null, mediaContentInDraft: false, contentType: 'SHOPPABLE_VIDEO' }, ctx.csrf) } catch { /* non-fatal */ }
-
-    // 5. PUBLISH
+  async function publish(job, ctx, videoKey, thumbKey) {
     const pubRes = await api('shoppable-media', {
       contentType: 'SHOPPABLE_POST',
       mediaId: uuid(),
