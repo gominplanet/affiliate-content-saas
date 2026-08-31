@@ -9,8 +9,9 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { Globe, Loader2, Check, Circle, Mic, Play } from 'lucide-react'
+import { Globe, Loader2, Check, Circle, Mic, Play, Upload } from 'lucide-react'
 import { toast } from 'sonner'
+import { requestStorefrontDelivery } from '@/lib/extension-frame'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -34,6 +35,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
   const [jobId, setJobId] = useState<string | null>(null)
   const [targets, setTargets] = useState<Target[]>([])
   const [dubbing, setDubbing] = useState<string | null>(null)
+  const [delivering, setDelivering] = useState(false)
 
   const [voice, setVoice] = useState<{ enabled: boolean; hasVoice: boolean; name: string | null; credits: number | null } | null>(null)
   const [consent, setConsent] = useState(false)
@@ -139,6 +141,31 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
     if (p === 'ok') { toast.success('Credits added to your account.'); void refreshVoice(); window.history.replaceState({}, '', window.location.pathname) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  async function deliverAll() {
+    if (!jobId) return
+    setDelivering(true)
+    try {
+      const q = await fetch(`/api/global-sync/deliver/queue?jobId=${jobId}`).then(r => r.json()).catch(() => ({}))
+      const items = Array.isArray(q?.items) ? q.items : []
+      if (items.length === 0) { toast('Nothing to upload yet — localize the markets first.'); return }
+      toast('Uploading to your storefronts… keep this tab open.')
+      const res = await requestStorefrontDelivery(items)
+      if (!res.ok && !res.results) { toast.error(res.error || 'Could not reach SCOUT.'); return }
+      // Report each outcome so the UI shows delivery state.
+      for (const r of (res.results || [])) {
+        await fetch('/api/global-sync/deliver/result', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetId: r.targetId, ok: r.ok, detail: r.ok ? 'Uploaded to storefront' : (r.error || 'Upload failed') }),
+        }).catch(() => {})
+      }
+      await refreshTargets()
+      const done = (res.results || []).filter(r => r.ok).length
+      toast.success(`Uploaded to ${done} of ${(res.results || []).length} storefronts`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Storefront upload failed')
+    } finally { setDelivering(false) }
+  }
 
   async function refreshTargets() {
     if (!jobId) return
@@ -303,7 +330,15 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
 
       {targets.length > 0 && (
         <div className="card p-5">
-          <h2 className="text-sm font-semibold mb-3" style={label}>Localized copy</h2>
+          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <h2 className="text-sm font-semibold" style={label}>Localized copy</h2>
+            <button onClick={() => void deliverAll()} disabled={delivering}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+              style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
+              {delivering ? <><Loader2 size={15} className="animate-spin" /> Uploading…</> : <><Upload size={15} /> Upload to all storefronts</>}
+            </button>
+          </div>
+          <p className="text-[12px] mb-3" style={muted}>Uploads through SCOUT into your logged-in Amazon Creator account. Keep this tab open while it runs.</p>
           <div className="space-y-3">
             {targets.map(t => (
               <div key={t.domain} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
@@ -311,6 +346,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
                   {t.state === 'localized' || t.state === 'delivered' ? <Check size={14} style={{ color: '#10B981' }} /> : <Circle size={13} style={muted} />}
                   <span className="text-sm font-medium" style={label}>{t.country}</span>
                   <span className="text-[11px]" style={muted}>{t.lang}{t.dub ? ' · dub' : ''}</span>
+                  {t.state === 'delivered' && <span className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: '#10B981' }}><Check size={12} /> on storefront</span>}
+                  {t.state === 'failed' && <span className="text-[11px] font-medium" style={{ color: '#e0554b' }}>upload failed</span>}
                 </div>
                 {t.title && <p className="text-[13px] font-medium" style={label}>{t.title}</p>}
                 {t.description && <p className="text-[12px] mt-0.5 line-clamp-3" style={muted}>{t.description}</p>}

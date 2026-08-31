@@ -5303,8 +5303,70 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
 }
 
 // ── Messages from the MVP dashboard (externally_connectable) ────────────────
+// Open (or reuse) an Amazon Creator Hub "create" tab for a marketplace domain,
+// wait for it to load + our content script to be ready, and return the tab id.
+function openCreateTab(domain) {
+  const host = `www.${domain || 'amazon.com'}`
+  const url = `https://${host}/create/post`
+  return new Promise((resolve, reject) => {
+    chrome.tabs.create({ url, active: false }, (tab) => {
+      const tabId = tab.id
+      let settled = false
+      const onUpdated = (id, info) => {
+        if (id !== tabId || info.status !== 'complete') return
+        chrome.tabs.onUpdated.removeListener(onUpdated)
+        // Give the SPA + content script a moment to hydrate.
+        setTimeout(() => { if (!settled) { settled = true; resolve(tabId) } }, 3500)
+      }
+      chrome.tabs.onUpdated.addListener(onUpdated)
+      setTimeout(() => { if (!settled) { settled = true; chrome.tabs.onUpdated.removeListener(onUpdated); resolve(tabId) } }, 30000)
+    })
+  })
+}
+
+// Run each storefront-upload job on its marketplace's Creator Hub, sequentially.
+// Returns [{ targetId, ok, mediaAci?, error? }].
+async function deliverStorefronts(items) {
+  const results = []
+  // Group by domain so we reuse one create tab per marketplace.
+  const byDomain = {}
+  for (const it of items) (byDomain[it.domain || 'amazon.com'] ||= []).push(it)
+  for (const domain of Object.keys(byDomain)) {
+    let tabId = null
+    try { tabId = await openCreateTab(domain) } catch { /* tab open failed */ }
+    for (const job of byDomain[domain]) {
+      if (!tabId) { results.push({ targetId: job.targetId, ok: false, error: 'Could not open the Amazon Creator Hub tab.' }); continue }
+      try {
+        const r = await new Promise((resolve) => {
+          const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 300000)
+          chrome.tabs.sendMessage(tabId, { action: 'MVP_STOREFRONT_UPLOAD_ONE', job }, (resp) => {
+            clearTimeout(to)
+            if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message })
+            resolve(resp || { ok: false, error: 'no response' })
+          })
+        })
+        results.push({ targetId: job.targetId, ok: !!r.ok, mediaAci: r.mediaAci || null, error: r.ok ? null : (r.error || 'upload failed') })
+      } catch (e) {
+        results.push({ targetId: job.targetId, ok: false, error: String(e && e.message || e) })
+      }
+    }
+    try { if (tabId) chrome.tabs.remove(tabId) } catch { /* ignore */ }
+  }
+  return results
+}
+
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return
+  // Storefront delivery: upload each localized/dubbed video to its Amazon
+  // storefront via the creator's logged-in Creator Hub. Async.
+  if (msg.type === 'MVP_STOREFRONT_DELIVER') {
+    const items = Array.isArray(msg.items) ? msg.items : []
+    if (items.length === 0) { sendResponse({ ok: true, results: [] }); return false }
+    deliverStorefronts(items)
+      .then((results) => sendResponse({ ok: true, results }))
+      .catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'delivery-failed' }))
+    return true // async
+  }
   // DIAGNOSTIC (from the MVP app): report what the net-hook captured on Creator
   // Connections and whether a send recipe was learned — so a failed send can be
   // tuned against Amazon's REAL request instead of guessing. Synchronous.

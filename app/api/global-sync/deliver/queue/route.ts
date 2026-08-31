@@ -45,10 +45,14 @@ export async function GET(req: Request) {
   for (const j of (jobs ?? [])) if (j.video_id) videoIdByJob.set(j.id, j.video_id)
   const videoIds = Array.from(new Set([...videoIdByJob.values()]))
   const { data: vids } = videoIds.length
-    ? await sb.from('youtube_videos').select('id,source_video_url').eq('user_id', user.id).in('id', videoIds)
+    ? await sb.from('youtube_videos').select('id,source_video_url,thumbnail_url').eq('user_id', user.id).in('id', videoIds)
     : { data: [] }
   const srcByVideo = new Map<string, string>()
-  for (const v of (vids ?? [])) if (v.source_video_url) srcByVideo.set(v.id, v.source_video_url)
+  const thumbByVideo = new Map<string, string>()
+  for (const v of (vids ?? [])) {
+    if (v.source_video_url) srcByVideo.set(v.id, v.source_video_url)
+    if (v.thumbnail_url) thumbByVideo.set(v.id, v.thumbnail_url)
+  }
 
   const items = rows.map(r => {
     const mkt = marketByDomain(r.domain)
@@ -65,6 +69,7 @@ export async function GET(req: Request) {
       asin: (r.asin as string) || null,
       // The dubbed video for a dubbed market; otherwise the master render.
       videoUrl: (r.video_url as string) || masterSrc,
+      thumbnailUrl: thumbByVideo.get(videoIdByJob.get(r.job_id) || '') || null,
     }
   }).filter(i => !!i.videoUrl && !!i.title)
 

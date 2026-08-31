@@ -124,6 +124,20 @@ function sendToExtension<T>(message: unknown, timeoutMs: number): Promise<T | nu
   })()
 }
 
+export interface StorefrontDeliverResult { ok: boolean; results?: Array<{ targetId: string; ok: boolean; mediaAci?: string | null; error?: string | null }>; error?: string }
+
+/**
+ * Ask SCOUT to upload each localized/dubbed video to its Amazon storefront via
+ * the creator's logged-in Creator Hub. Best-effort: resolves, never throws.
+ * Uploads run in background tabs entirely inside the user's Amazon session.
+ */
+export async function requestStorefrontDelivery(
+  items: Array<{ targetId: string; domain: string; title: string; asin: string | null; videoUrl: string; thumbnailUrl?: string | null }>,
+): Promise<StorefrontDeliverResult> {
+  const res = await sendToExtension<StorefrontDeliverResult>({ type: 'MVP_STOREFRONT_DELIVER', items }, 600_000)
+  return res || { ok: false, error: 'SCOUT not reachable — is the extension installed and are you signed into Amazon?' }
+}
+
 export interface MessageBrandResult { ok: boolean; error?: string; reason?: string; steps?: Record<string, boolean>; diag?: Record<string, unknown>; groups?: number; leftOpen?: boolean }
 
 /**
