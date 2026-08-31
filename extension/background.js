@@ -5345,7 +5345,7 @@ async function deliverStorefronts(items) {
       try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* fall through; per-job retry below still tries */ }
     }
     const sendJob = (job) => new Promise((resolve) => {
-      const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 300000)
+      const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 820000)
       chrome.tabs.sendMessage(tabId, { action: 'MVP_STOREFRONT_UPLOAD_ONE', job }, (resp) => {
         clearTimeout(to)
         if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message, _unreachable: true })
@@ -5431,7 +5431,7 @@ function mainWorldS3Put(params) {
     try {
       log('download start', String(srcUrl).slice(0, 80))
       let src
-      try { src = await fetch(srcUrl, { signal: AbortSignal.timeout(120000) }) }
+      try { src = await fetch(srcUrl, { signal: AbortSignal.timeout(300000) }) }
       catch (e) { return { ok: false, error: `download ${/abort|timeout/i.test(String(e && e.message)) ? 'timed out' : 'failed: ' + (e && e.message || e)}` } }
       if (!src.ok) return { ok: false, error: `download HTTP ${src.status}` }
       const bytes = new Uint8Array(await src.arrayBuffer())
@@ -5462,7 +5462,7 @@ function mainWorldS3Put(params) {
             'x-amz-date': amzDate, 'x-amz-security-token': creds.awsSessionToken,
             'x-amz-tagging': 'temporary=true', 'Authorization': auth,
           },
-          signal: AbortSignal.timeout(150000),
+          signal: AbortSignal.timeout(420000),
         })
       } catch (e) { return { ok: false, error: `S3 PUT ${/abort|timeout/i.test(String(e && e.message)) ? 'timed out' : 'failed: ' + (e && e.message || e)}` } }
       if (!res.ok) return { ok: false, error: `S3 PUT ${res.status}: ${(await res.text().catch(() => '')).slice(0, 150)}` }
@@ -5489,7 +5489,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     let done = false
     const finish = (resp) => { if (done) return; done = true; clearInterval(keepAlive); clearTimeout(guard); sendResponse(resp) }
     // Never leave the content script hanging past its own 260s budget.
-    const guard = setTimeout(() => finish({ ok: false, error: 'upload timed out in worker' }), 250000)
+    const guard = setTimeout(() => finish({ ok: false, error: 'upload timed out in worker' }), 740000)
     chrome.scripting.executeScript({
       target: { tabId }, world: 'MAIN', func: mainWorldS3Put,
       args: [{ srcUrl: msg.srcUrl, creds: msg.creds, key: msg.key, contentType: msg.contentType }],

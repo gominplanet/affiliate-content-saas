@@ -134,7 +134,9 @@ export interface StorefrontDeliverResult { ok: boolean; results?: Array<{ target
 export async function requestStorefrontDelivery(
   items: Array<{ targetId: string; domain: string; title: string; asin: string | null; videoUrl: string; thumbnailUrl?: string | null }>,
 ): Promise<StorefrontDeliverResult> {
-  const res = await sendToExtension<StorefrontDeliverResult>({ type: 'MVP_STOREFRONT_DELIVER', items }, 600_000)
+  // Large videos upload slowly (download from storage → PUT to S3, per market,
+  // sequentially), so give the whole delivery a generous ceiling.
+  const res = await sendToExtension<StorefrontDeliverResult>({ type: 'MVP_STOREFRONT_DELIVER', items }, 1_800_000)
   return res || { ok: false, error: 'SCOUT not reachable — is the extension installed and are you signed into Amazon?' }
 }
 
