@@ -10,6 +10,12 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { creatorVoiceBlock, type CreatorVoiceFields } from '@/lib/creator-voice'
 
+// One place for the localization/dub model. The old id 'claude-sonnet-4-6' was
+// stale and every call threw, so localizeMetadata silently fell back to the
+// English master (non-English storefronts shipped untranslated titles). Keep
+// this pointed at a current, capable model for all languages.
+const LOCALIZE_MODEL = 'claude-sonnet-5'
+
 /** A supported Amazon marketplace. `needsTranslation` false = English market
  *  (US/CA/UK/AU), so we skip the translation call and reuse the master copy. */
 export interface Market {
@@ -75,22 +81,25 @@ export async function localizeMetadata(
   try {
     const client = createAnthropicClient()
     const msg = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: LOCALIZE_MODEL,
       max_tokens: 1200,
       system,
       messages: [{ role: 'user', content: prompt }],
     })
-    recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier ?? null, feature: 'global_sync_localize', model: 'claude-sonnet-4-6' })
+    recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier ?? null, feature: 'global_sync_localize', model: LOCALIZE_MODEL })
     let raw = ''
     for (const b of msg.content) if (b.type === 'text') raw += b.text
     const m = raw.match(/\{[\s\S]*\}/)
-    if (!m) return { title, description }
+    if (!m) { console.error('[localizeMetadata] no JSON in model output for', market.code); return { title, description } }
     const parsed = JSON.parse(m[0]) as { title?: string; description?: string }
     return {
       title: decodeEntities((parsed.title || title).trim()).slice(0, 500),
       description: decodeEntities((parsed.description || description).trim()),
     }
-  } catch {
+  } catch (e) {
+    // Falling back to the English master would silently ship an untranslated
+    // title (the exact bug that stale model id caused) — log it loudly.
+    console.error('[localizeMetadata] translation failed for', market.code, e instanceof Error ? e.message : e)
     return { title, description }
   }
 }
@@ -114,16 +123,17 @@ export async function translateScript(
   try {
     const client = createAnthropicClient()
     const msg = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: LOCALIZE_MODEL,
       max_tokens: 1500,
       system,
       messages: [{ role: 'user', content: prompt }],
     })
-    recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier ?? null, feature: 'global_sync_dub_script', model: 'claude-sonnet-4-6' })
+    recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier ?? null, feature: 'global_sync_dub_script', model: LOCALIZE_MODEL })
     let out = ''
     for (const b of msg.content) if (b.type === 'text') out += b.text
     return out.trim()
-  } catch {
+  } catch (e) {
+    console.error('[translateScript] dub script failed for', market.code, e instanceof Error ? e.message : e)
     return ''
   }
 }
