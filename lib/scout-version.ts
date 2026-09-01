@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.19'
+export const SCOUT_LATEST_VERSION = '1.17.20'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Bulk brand messaging now sends fully in the background on a fresh install — no manual “prime” send and no visible tab. SCOUT uses Amazon’s own chat API (cookie-authed) to accept and message each brand silently.'
+  'The learned brand-messaging recipe now backs up to your MVP account, so it survives reinstalls and switching between the sideloaded and Web Store builds — SCOUT re-hydrates it automatically and never forgets.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

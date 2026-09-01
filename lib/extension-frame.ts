@@ -291,6 +291,25 @@ export async function requestCcSendDebug(): Promise<CcSendDebug> {
   return resp
 }
 
+/** One learned request template (safe to persist — no cookies/headers). */
+export interface CcRecipeTemplate { url: string; method: string; bodyTemplate: string }
+
+/** Read SCOUT's currently-learned CC send + search recipe templates (or null),
+ *  so the app can back them up to the creator's account. Best-effort. */
+export async function getScoutCcRecipe(): Promise<{ send: CcRecipeTemplate | null; search: CcRecipeTemplate | null }> {
+  if (!(await isExtensionAvailable())) return { send: null, search: null }
+  const resp = await sendToExtension<{ ok?: boolean; send?: CcRecipeTemplate | null; search?: CcRecipeTemplate | null }>({ type: 'MVP_CC_GET_RECIPE' }, 8000)
+  return { send: resp?.send ?? null, search: resp?.search ?? null }
+}
+
+/** Restore a saved CC recipe INTO SCOUT (only fills in when SCOUT has none, so a
+ *  fresh local learn is never clobbered by a stale backup). Best-effort. */
+export async function setScoutCcRecipe(recipe: { send: CcRecipeTemplate; search: CcRecipeTemplate }): Promise<{ ok: boolean; applied?: boolean }> {
+  if (!(await isExtensionAvailable())) return { ok: false }
+  const resp = await sendToExtension<{ ok?: boolean; applied?: boolean }>({ type: 'MVP_CC_SET_RECIPE', ...recipe }, 8000)
+  return { ok: !!resp?.ok, applied: !!resp?.applied }
+}
+
 export async function requestAcceptAndSendBrand(detailsUrl: string, message: string, asin?: string | null): Promise<MessageBrandResult & { accepted?: boolean }> {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message.trim()) return { ok: false, error: 'no-message' }

@@ -5665,6 +5665,39 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     } catch (e) { sendResponse({ ok: false, error: e && e.message ? e.message : 'debug-failed' }) }
     return false
   }
+  // Hand the MVP app the learned send/search recipe TEMPLATES so it can back them
+  // up to the creator's account (durable across reinstalls + build switches). We
+  // return ONLY {url, method, bodyTemplate} — never headers/cookies.
+  if (msg.type === 'MVP_CC_GET_RECIPE') {
+    ensureRecipesLoaded().then(() => {
+      const tpl = (r) => (r && typeof r.bodyTemplate === 'string')
+        ? { url: r.url, method: r.method || 'POST', bodyTemplate: r.bodyTemplate } : null
+      sendResponse({ ok: true, send: tpl(_ccSendRecipe), search: tpl(_ccSearchRecipe) })
+    }).catch(() => sendResponse({ ok: true, send: null, search: null }))
+    return true // async
+  }
+  // Restore a backed-up recipe INTO SCOUT — but only when it has none learned
+  // locally, so a fresh real send (always the truest) is never overwritten by a
+  // stale server copy. Validates the same new-format placeholders learnSendRecipe
+  // requires, so a malformed backup can't poison replay.
+  if (msg.type === 'MVP_CC_SET_RECIPE') {
+    ensureRecipesLoaded().then(() => {
+      let applied = false
+      try {
+        const okSend = msg.send && typeof msg.send.bodyTemplate === 'string'
+          && msg.send.bodyTemplate.includes(CTX_PLACEHOLDER) && msg.send.bodyTemplate.includes(MSG_PLACEHOLDER)
+        const okSearch = msg.search && typeof msg.search.bodyTemplate === 'string' && msg.search.bodyTemplate.includes(CAMPAIGN_PLACEHOLDER)
+        if (okSend && okSearch && !(_ccSendRecipe && _ccSearchRecipe)) {
+          _ccSendRecipe = { url: msg.send.url, method: msg.send.method || 'POST', headers: {}, bodyTemplate: msg.send.bodyTemplate, learnedAt: Date.now(), restored: true }
+          _ccSearchRecipe = { url: msg.search.url, method: msg.search.method || 'POST', headers: {}, bodyTemplate: msg.search.bodyTemplate, learnedAt: Date.now(), restored: true }
+          try { chrome.storage.local.set({ ccSendRecipe: _ccSendRecipe, ccSearchRecipe: _ccSearchRecipe }) } catch (e) {}
+          applied = true
+        }
+      } catch (e) {}
+      sendResponse({ ok: true, applied })
+    }).catch(() => sendResponse({ ok: false }))
+    return true // async
+  }
   if (msg.type === 'MVP_STUDIO_SCHEDULE') {
     // Scraping Studio + paginating the internal API can take a bit; allow 2 min.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)

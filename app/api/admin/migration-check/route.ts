@@ -182,6 +182,31 @@ create index if not exists scheduled_posts_updated_at_idx
     table: 'external_api_keys', column: 'encrypted_key',
     sql: `-- Apply migration 133: run supabase/migrations/133_external_api_keys.sql in the Supabase SQL editor.`,
   },
+  {
+    id: '303', what: 'Global Storefront Sync (global_sync_targets)',
+    table: 'global_sync_targets', column: 'domain',
+    sql: `-- Apply migration 303: run supabase/migrations/303_global_sync.sql in the Supabase SQL editor.`,
+  },
+  {
+    id: '304', what: 'Cloned voice for dubs (brand_profiles.eleven_voice_id)',
+    table: 'brand_profiles', column: 'eleven_voice_id',
+    sql: `alter table public.brand_profiles add column if not exists eleven_voice_id text;\nalter table public.brand_profiles add column if not exists eleven_voice_name text;\nalter table public.brand_profiles add column if not exists eleven_voice_created_at timestamptz;`,
+  },
+  {
+    id: '305', what: 'Own-voice dub credits (dub_credits + RPCs)',
+    table: 'dub_credits', column: 'balance',
+    sql: `-- Apply migration 305: run supabase/migrations/305_dub_credits.sql in the Supabase SQL editor (it also creates the dub_credits_balance / _spend / _add RPCs).`,
+  },
+  {
+    id: '306', what: 'Text-free storefront thumbnail (youtube_videos.thumbnail_clean_url)',
+    table: 'youtube_videos', column: 'thumbnail_clean_url',
+    sql: `alter table public.youtube_videos add column if not exists thumbnail_clean_url text;`,
+  },
+  {
+    id: '307', what: 'SCOUT recipe backup (integrations.cc_send_recipe)',
+    table: 'integrations', column: 'cc_send_recipe',
+    sql: `alter table public.integrations add column if not exists cc_send_recipe jsonb;\nalter table public.integrations add column if not exists cc_search_recipe jsonb;`,
+  },
 ]
 
 // Per-instance memo of the last probe result. Schema drift is not a
