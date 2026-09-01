@@ -343,6 +343,38 @@ export default function CcCampaignsPage() {
     })
   }, [])
   const clearSelected = useCallback(() => setSelected(new Map()), [])
+  // Bulk accept: join every selected campaign on Amazon (via SCOUT), without
+  // messaging. Sequential + background; idempotent (already-joined is a no-op).
+  const [bulkAccepting, setBulkAccepting] = useState(false)
+  const bulkAccept = useCallback(async () => {
+    const list = Array.from(selected.values()).filter(c => c.repAsin)
+    if (list.length === 0) return
+    setBulkAccepting(true)
+    const tId = 'cc-bulk-accept'
+    let done = 0, joined = 0, already = 0, failed = 0
+    toast.loading(`Accepting 0 of ${list.length}…`, { id: tId, duration: Infinity })
+    for (const c of list) {
+      try {
+        const r = await requestAcceptCampaign(c.detailsUrl)
+        if (r.ok && r.already) already++
+        else if (r.ok) {
+          joined++
+          void fetch('/api/campaigns/mark-accepted', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ asin: c.repAsin, campaignId: c.campaignId, detailsUrl: c.detailsUrl, brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name }),
+          }).catch(() => {})
+        } else failed++
+      } catch { failed++ }
+      done++
+      toast.loading(`Accepting ${done} of ${list.length}…`, { id: tId, duration: Infinity })
+      if (done < list.length) await new Promise(r => setTimeout(r, 1500 + Math.random() * 2000))
+    }
+    toast.success(`Accepted ${joined} · ${already} already joined${failed ? ` · ${failed} failed` : ''}`, { id: tId, duration: 7000 })
+    setBulkAccepting(false)
+    clearSelected()
+    loadStatus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, clearSelected])
   // Dismissible "how messaging works" explainer.
   const [showHelp, setShowHelp] = useState(true)
   useEffect(() => { try { if (localStorage.getItem('mvp.cc.help.v1') === 'off') setShowHelp(false) } catch { /* ignore */ } }, [])
@@ -857,8 +889,14 @@ export default function CcCampaignsPage() {
             {selected.size} of {BULK_MAX} selected
           </span>
           <button onClick={clearSelected} className="text-[12px] font-medium hover:underline" style={{ color: 'var(--text-soft)' }}>Clear</button>
-          <button onClick={() => setBulkOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-semibold text-white"
+          <button onClick={() => void bulkAccept()} disabled={bulkAccepting}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-semibold border disabled:opacity-60"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            title="Accept (join) all selected campaigns on Amazon, without messaging">
+            {bulkAccepting ? <Loader2 size={14} className="animate-spin" /> : <Handshake size={14} />} Accept {selected.size}
+          </button>
+          <button onClick={() => setBulkOpen(true)} disabled={bulkAccepting}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-semibold text-white disabled:opacity-60"
             style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
             <Send size={14} /> Message {selected.size} {selected.size === 1 ? 'brand' : 'brands'}
           </button>
