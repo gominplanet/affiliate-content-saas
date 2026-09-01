@@ -343,6 +343,15 @@ export default function CcCampaignsPage() {
     })
   }, [])
   const clearSelected = useCallback(() => setSelected(new Map()), [])
+  // One-click select the top N eligible campaigns from the current (sorted) view —
+  // pairs with the "Best opportunities" sort to pitch the strongest N fast.
+  const selectTop = useCallback((n: number, list: Campaign[]) => {
+    const pick = list
+      .filter(c => !c.isFull && c.repAsin && !(statusByAsin[c.repAsin]?.messaged))
+      .slice(0, Math.min(n, BULK_MAX))
+    setSelected(new Map(pick.map(c => [c.campaignId, c])))
+    if (pick.length === 0) toast('No eligible campaigns to select here.')
+  }, [statusByAsin])
   // Bulk accept: join every selected campaign on Amazon (via SCOUT), without
   // messaging. Sequential + background; idempotent (already-joined is a no-op).
   const [bulkAccepting, setBulkAccepting] = useState(false)
@@ -831,12 +840,20 @@ export default function CcCampaignsPage() {
         }
         return (
         <>
-          <p className="text-xs text-[var(--text-3)] mb-3">
-            {joinedOnly
-              ? <>{total.toLocaleString()} joined campaign{total === 1 ? '' : 's'}{joinedHasMore && <span> · showing first {visible.length.toLocaleString()} — narrow your keyword or Load more</span>}</>
-              : <>{total.toLocaleString()} live campaign{total === 1 ? '' : 's'}</>}
-            {hiddenCount > 0 && <span> · {hiddenCount.toLocaleString()} hidden</span>}
-          </p>
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+            <p className="text-xs text-[var(--text-3)]">
+              {joinedOnly
+                ? <>{total.toLocaleString()} joined campaign{total === 1 ? '' : 's'}{joinedHasMore && <span> · showing first {visible.length.toLocaleString()} — narrow your keyword or Load more</span>}</>
+                : <>{total.toLocaleString()} live campaign{total === 1 ? '' : 's'}</>}
+              {hiddenCount > 0 && <span> · {hiddenCount.toLocaleString()} hidden</span>}
+            </p>
+            <div className="flex items-center gap-2 text-[11px]">
+              <span style={{ color: 'var(--text-3)' }}>Quick select:</span>
+              {[25, 50, 100].map(n => (
+                <button key={n} onClick={() => selectTop(n, visible)} className="px-2 py-1 rounded-md border font-medium" style={{ borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>Top {n}</button>
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {visible.map((c) => (
               <CampaignCard key={c.campaignId} c={c}
