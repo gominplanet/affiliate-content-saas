@@ -17,7 +17,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Sparkles, Send, Users, Plus, Trash2, Check, AlertTriangle, RotateCcw } from 'lucide-react'
-import { requestSendByAsin, requestAcceptCampaign, getScoutStatus } from '@/lib/extension-frame'
+import { requestSendByAsin, requestSendByCampaign, requestAcceptCampaign, getScoutStatus } from '@/lib/extension-frame'
 import OutreachProfileModal from '@/components/collaborations/OutreachProfileModal'
 
 export interface BulkCampaign {
@@ -123,6 +123,9 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   const [sending, setSending] = useState(false)
   const [rows, setRows] = useState<Row[]>([])
   const [editWording, setEditWording] = useState(false)
+  // Flips true once we've taught SCOUT the send by routing ONE brand through the
+  // on-page path — after that every brand replays silently via the API.
+  const primedRef = useRef(false)
   const [templates, setTemplates] = useState<SavedTemplate[]>([])
   useEffect(() => { setTemplates(loadTemplates()) }, [])
   const cancelRef = useRef(false)
@@ -224,6 +227,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
     if (opts.shareAddress && address.trim()) { try { localStorage.setItem(ADDR_KEY, address.trim()) } catch { /* ignore */ } }
 
     cancelRef.current = false
+    primedRef.current = false
     setSending(true)
     // Seed the rows: queued to send, folded same-brand duplicates, and
     // already-messaged — the last two shown as skipped with the reason.
@@ -264,6 +268,28 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
         // campaign hasn't propagated to the collaboration search yet.
         let r = await requestSendByAsin(c.asin, message, [c.campaignId])
         if (!r.ok && justAccepted) { await sleep(3500); r = await requestSendByAsin(c.asin, message, [c.campaignId]) }
+        // AUTO-PRIME: the very first time SCOUT reports it hasn't learned Amazon's
+        // send yet, teach it by routing THIS brand through the on-page path
+        // (accept + fill + send in a tab), which captures the send recipe as a
+        // side effect. Every later brand then replays silently via the API — so
+        // the user never has to "message one brand by hand". One tab, once.
+        const notLearned = (rr: { reason?: string; error?: string } | undefined) =>
+          /not[-_]?learned|no[-_]?recipe|no[-_]?send[-_]?recipe|no[-_]?search[-_]?recipe/.test(String((rr && (rr.reason || rr.error)) || ''))
+        if (!r.ok && notLearned(r) && !primedRef.current) {
+          primedRef.current = true
+          setRows(rs => rs.map(row => (row.campaign.campaignId === c.campaignId ? { ...row, note: 'Teaching SCOUT your send (one-time)…' } : row)))
+          try {
+            const pr = await requestSendByCampaign([c.campaignId], message, c.asin)
+            if (pr.ok) r = { ok: true }
+            else {
+              // The recipe may now be learned even if this attempt didn't confirm
+              // delivery — give it a beat and try the fast API path once more.
+              await sleep(1500)
+              const r2 = await requestSendByAsin(c.asin, message, [c.campaignId])
+              r = r2.ok ? r2 : (pr as typeof r)
+            }
+          } catch { /* keep the original result */ }
+        }
         ok = !!r.ok
         err = r.ok ? '' : reasonText(r.reason || r.error || 'send failed')
         try { console.warn('[MVP bulk] send result:', c.brand || c.asin, r) } catch { /* ignore */ }
@@ -276,7 +302,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
           } catch { /* the message went out — recording is best-effort */ }
         }
       } catch (e) { ok = false; err = e instanceof Error ? e.message : 'send failed' }
-      setRows(rs => rs.map(r => (r.campaign.campaignId === c.campaignId ? { ...r, state: ok ? 'sent' : 'failed', error: ok ? undefined : err } : r)))
+      setRows(rs => rs.map(r => (r.campaign.campaignId === c.campaignId ? { ...r, state: ok ? 'sent' : 'failed', error: ok ? undefined : err, note: undefined } : r)))
       // Pace the burst (skip the wait after the last one / on cancel).
       if (i < targets.length - 1 && !cancelRef.current) await sleep(gap())
     }
@@ -329,10 +355,10 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                   in this browser with SCOUT installed, then hit send. Everything runs in the background, no tabs open.
                 </span>
               </div>
-              <div className="rounded-lg border p-2.5 mb-3 text-[12px] leading-relaxed flex items-start gap-2" style={{ borderColor: '#c99a2e', background: 'rgba(245,158,11,0.09)', color: 'var(--text)' }}>
+              <div className="rounded-lg border p-2.5 mb-3 text-[12px] leading-relaxed flex items-start gap-2" style={{ borderColor: 'rgba(52,199,89,0.4)', background: 'rgba(52,199,89,0.08)', color: 'var(--text)' }}>
                 <span aria-hidden className="mt-[1px]">🤝</span>
                 <span style={{ color: 'var(--text-soft)' }}>
-                  <b style={{ color: 'var(--text)' }}>Heads up:</b> sending also <b style={{ color: 'var(--text)' }}>accepts (joins) each brand&apos;s campaign</b> on Amazon first, since a brand&apos;s chat only opens once you&apos;ve joined. So the {toSend.length} {toSend.length === 1 ? 'brand' : 'brands'} you message here will also be joined on your account.
+                  MVP <b style={{ color: 'var(--text)' }}>joins each brand&apos;s campaign</b> as it messages them ({toSend.length} {toSend.length === 1 ? 'brand' : 'brands'} here), which is the recommended move. Joining opens the chat and lets you create offsite content for the brand, a blog post plus a social push, whether or not a sample ever arrives.
                 </span>
               </div>
               <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>Add to every message</p>
