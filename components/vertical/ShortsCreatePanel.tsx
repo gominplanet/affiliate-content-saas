@@ -27,6 +27,26 @@ function fmt(sec: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+/**
+ * Parse a JSON response, but tolerate a NON-JSON body. Our API routes always
+ * return JSON, so a non-JSON body is a platform/gateway response — usually a
+ * function timeout on a heavy render, or a 5xx/HTML error page. Rather than let
+ * `res.json()` throw a cryptic "Unexpected token 'A'…is not valid JSON", we throw
+ * a plain-English, actionable message keyed off the HTTP status.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function safeJson(res: Response): Promise<any> {
+  const raw = await res.text()
+  try {
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    if (res.status === 504 || res.status === 502 || res.status === 503 || res.status === 524) {
+      throw new Error('The render took too long and timed out on the server. Try again — or use “Upload or pick a short” to add the source video once, then clips render faster and more reliably.')
+    }
+    throw new Error(`The server hit an error (${res.status || 'network'}). Give it a moment and try again.`)
+  }
+}
+
 export function ShortsCreatePanel({
   videoId, youtubeVideoId, videoTitle, onUseClip,
 }: {
@@ -74,7 +94,7 @@ export function ShortsCreatePanel({
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoId, youtubeVideoId }),
       })
-      const data = await res.json()
+      const data = await safeJson(res)
       if (!res.ok) {
         if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
         throw new Error(data.error || 'Could not find Shorts')
@@ -106,7 +126,11 @@ export function ShortsCreatePanel({
           reframe: layoutById[clip.id] === 'split' ? 'split' : 'center',
         }),
       })
-      const data = await res.json()
+      // Our route always returns JSON, so a non-JSON body means a platform/gateway
+      // error — almost always the render (heavy video work) exceeding the function
+      // time limit. Surface something actionable, never a raw "Unexpected token" JSON
+      // parse error.
+      const data = await safeJson(res)
       if (!res.ok) {
         if (data.needsUpload) { setHasSource(false); throw new Error(data.error || 'Prepare the source video first.') }
         if (data.limitReached) dispatchCapReached(data.error || 'Rendering is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
