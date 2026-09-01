@@ -124,7 +124,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
 
   async function onPick(file: File) {
     if (!file.type.startsWith('video/')) { toast.error('Please pick a video file (MP4 works best).'); return }
-    if (file.size > 300 * 1024 * 1024) { toast.error(`That file is ${(file.size / 1024 / 1024).toFixed(1)}MB — keep it under 300MB.`); return }
+    if (file.size > 500 * 1024 * 1024) { toast.error(`That file is ${(file.size / 1024 / 1024).toFixed(1)}MB — keep it under 500MB.`); return }
     setUploading(true); setRendered(null); setPublished(null)
     try {
       const { data: { user } } = await supabase.auth.getUser()
