@@ -19,6 +19,7 @@ import { resolveSocialAccount } from '@/lib/social-accounts'
 import { publishMedia, subscribeToComments } from '@/services/instagram'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { toUserMessage } from '@/lib/friendly-error'
+import { addProductUrlToBio } from '@/lib/link-bio-import'
 
 export const maxDuration = 300
 
@@ -56,6 +57,11 @@ export async function POST(request: Request) {
       // Optional: attach a comment→DM campaign to this Reel. When present + valid,
       // commenting `keyword` on the published Reel auto-DMs `link` (lib/ig-dm.ts).
       autoDm?: { link?: string; keyword?: string; productName?: string }
+      // Clip Factory Enhance-step product: the link (and optional name) the
+      // creator typed. When their Link in Bio has auto-import on, we add it as a
+      // shop tile. Falls back to the auto-DM link when a dedicated one isn't sent.
+      product?: string
+      productTitle?: string
     }
     const videoUrl = (body.videoUrl || '').trim()
     if (!/^https:\/\//i.test(videoUrl)) {
@@ -116,6 +122,14 @@ export async function POST(request: Request) {
         caption,
         productText: (body.autoDm?.productName || '').trim() || null,
       })
+
+      // If the creator opted in, feature this product on their Link in Bio shop
+      // page automatically. Best-effort — never fail (or undo) a live Reel.
+      try {
+        const bioUrl = (body.product || '').trim() || (body.autoDm?.link || '').trim()
+        const bioTitle = (body.productTitle || '').trim() || (body.autoDm?.productName || '').trim()
+        await addProductUrlToBio(supabase, user.id, { url: bioUrl, title: bioTitle })
+      } catch { /* non-fatal */ }
 
       return NextResponse.json({ ok: true, published: true, mediaId, autoDm })
     } catch (e) {

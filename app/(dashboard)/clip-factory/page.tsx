@@ -1192,6 +1192,8 @@ export default function ClipFactoryPage() {
           initialCaption={publishCaption}
           tier={tier}
           sourceYoutubeVideoId={selectedVideo?.youtubeVideoId ?? ytVideoId ?? undefined}
+          product={product.trim() || undefined}
+          productTitle={(productName.trim() || clip?.title || '').trim() || undefined}
           onClose={() => setTtOpen(false)}
           onPosted={() => { setPosted(p => ({ ...p, tiktok: true })); setTtOpen(false); toast.success('Posted to TikTok') }}
         />
@@ -1201,6 +1203,8 @@ export default function ClipFactoryPage() {
           burnedVideoUrl={publishUrl}
           initialCaption={publishCaption}
           defaultDmLink={product.trim()}
+          product={product.trim() || undefined}
+          productTitle={(productName.trim() || clip?.title || '').trim() || undefined}
           coverOffsetMs={coverOffsetMs}
           onClose={() => setIgOpen(false)}
           onPosted={() => { setPosted(p => ({ ...p, instagram: true })); toast.success('Posted to Instagram') }}

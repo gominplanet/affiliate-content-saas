@@ -60,6 +60,8 @@ export function TikTokDirectModal({
   initialCaption,
   tier,
   sourceYoutubeVideoId,
+  product,
+  productTitle,
   onClose,
   onPosted,
 }: {
@@ -69,6 +71,11 @@ export function TikTokDirectModal({
    *  and skips the videoId-only bits (product input, upload zone, YT links). */
   burnedVideoUrl?: string
   initialCaption?: string
+  /** Clip Factory product link + name (from the Enhance step). When the creator's
+   *  Link in Bio has auto-import on, the burned-clip publish adds it as a shop
+   *  tile. Burned mode only. */
+  product?: string
+  productTitle?: string
   /** Viewer tier — drives the admin-only gate on the YouTube cross-post option. */
   tier?: string | null
   /** 11-char id of the YouTube video this clip came from. Used as the Pinterest
@@ -298,7 +305,7 @@ export function TikTokDirectModal({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ...(isBurned ? { videoUrl: burnedVideoUrl } : { videoId }),
+            ...(isBurned ? { videoUrl: burnedVideoUrl, product, productTitle } : { videoId }),
             caption,
             privacyLevel: privacy,
             disableComment: !allowComment || (info?.commentDisabled ?? false),
@@ -328,7 +335,7 @@ export function TikTokDirectModal({
           const igRes = isBurned
             ? await fetch('/api/instagram/publish-burned', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ videoUrl: burnedVideoUrl, caption }),
+                body: JSON.stringify({ videoUrl: burnedVideoUrl, caption, product, productTitle }),
               })
             : await fetch('/api/instagram/post-direct-video', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -406,7 +413,7 @@ export function TikTokDirectModal({
     } finally {
       setPosting(false)
     }
-  }, [canPost, videoId, isBurned, burnedVideoUrl, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg, alsoPin, ytEnabled, alsoYt, youtubeId, meta?.videoUrl, meta?.title, publishId, igResult, pinResult, ytResult])
+  }, [canPost, videoId, isBurned, burnedVideoUrl, product, productTitle, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg, alsoPin, ytEnabled, alsoYt, youtubeId, meta?.videoUrl, meta?.title, publishId, igResult, pinResult, ytResult])
 
   // Schedule this Short for a future time (real video targets only — a URL-only
   // burned clip has no DB row, so it can't be queued).

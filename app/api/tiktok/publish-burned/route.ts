@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { addProductUrlToBio } from '@/lib/link-bio-import'
 import {
   getValidTikTokToken,
   directPostVideoUpload,
@@ -36,6 +37,10 @@ export async function POST(request: Request) {
     disableStitch?: boolean
     brandContentToggle?: boolean
     brandOrganicToggle?: boolean
+    // Clip Factory Enhance-step product: the link (and optional name) the creator
+    // typed. When their Link in Bio has auto-import on, we add it as a shop tile.
+    product?: string
+    productTitle?: string
   }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
@@ -83,6 +88,10 @@ export async function POST(request: Request) {
       brandOrganicToggle: !!body.brandOrganicToggle,
       upstreamUrl: videoUrl,
     })
+    // If the creator opted in, feature this product on their Link in Bio shop
+    // page automatically. Best-effort — a bio-import hiccup must not fail (or
+    // undo) the TikTok post that already went out.
+    try { await addProductUrlToBio(sb, user.id, { url: body.product, title: body.productTitle }) } catch { /* non-fatal */ }
     return NextResponse.json({ ok: true, publishId })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'TikTok publish failed.'

@@ -19,6 +19,8 @@ export function InstagramBurnedModal({
   burnedVideoUrl,
   initialCaption,
   defaultDmLink,
+  product,
+  productTitle,
   coverOffsetMs,
   onClose,
   onPosted,
@@ -27,6 +29,11 @@ export function InstagramBurnedModal({
   initialCaption?: string
   /** Prefills the auto-DM link (e.g. the clip's product/affiliate link). */
   defaultDmLink?: string
+  /** Clip Factory product link + name (from the Enhance step). When the creator's
+   *  Link in Bio has auto-import on, publishing adds it as a shop tile — sent
+   *  independently of the auto-DM toggle. */
+  product?: string
+  productTitle?: string
   /** Reel COVER frame, ms into the burned clip (chosen in the picker). Passed
    *  through to publish as thumb_offset. null/undefined = IG default frame. */
   coverOffsetMs?: number | null
@@ -57,6 +64,7 @@ export function InstagramBurnedModal({
         body: JSON.stringify({
           videoUrl: burnedVideoUrl,
           caption,
+          ...(product && product.trim() ? { product: product.trim(), productTitle: (productTitle || '').trim() } : {}),
           ...(typeof coverOffsetMs === 'number' && coverOffsetMs >= 0 ? { thumbOffsetMs: Math.round(coverOffsetMs) } : {}),
           ...(wantDm ? { autoDm: { link: dmLink.trim(), keyword: dmKeyword.trim() || 'LINK' } } : {}),
         }),
@@ -73,7 +81,7 @@ export function InstagramBurnedModal({
     } finally {
       setPosting(false)
     }
-  }, [posting, posted, burnedVideoUrl, caption, coverOffsetMs, autoDm, dmKeyword, dmLink, onPosted])
+  }, [posting, posted, burnedVideoUrl, caption, product, productTitle, coverOffsetMs, autoDm, dmKeyword, dmLink, onPosted])
 
   const closeAllowed = !posting
   const panelRef = useRef<HTMLDivElement | null>(null)
