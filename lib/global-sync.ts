@@ -16,6 +16,28 @@ import { creatorVoiceBlock, type CreatorVoiceFields } from '@/lib/creator-voice'
 // this pointed at a current, capable model for all languages.
 const LOCALIZE_MODEL = 'claude-sonnet-5'
 
+/** Retry a Claude call on TRANSIENT upstream failures (overload / 5xx / rate
+ *  limit). Global sync fires several markets close together, so a brief 529 or
+ *  500 on one market would otherwise fail just that dub while its siblings
+ *  succeed — the "one market failed, the rest worked" symptom. Non-transient
+ *  errors (a real 400) throw immediately. */
+async function withAnthropicRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
+  let delay = 1500
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn()
+    } catch (e) {
+      const status = (e as { status?: number })?.status
+      const msg = (e instanceof Error ? e.message : String(e)).toLowerCase()
+      const transient = status === 429 || status === 500 || status === 502 || status === 503 || status === 529
+        || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('internal server error') || /\b5\d\d\b/.test(msg)
+      if (!transient || attempt >= tries) throw e
+      await new Promise(r => setTimeout(r, delay))
+      delay = Math.min(delay * 2, 12000)
+    }
+  }
+}
+
 /** A supported Amazon marketplace. `needsTranslation` false = English market
  *  (US/CA/UK/AU), so we skip the translation call and reuse the master copy. */
 export interface Market {
@@ -80,12 +102,12 @@ export async function localizeMetadata(
 
   try {
     const client = createAnthropicClient()
-    const msg = await client.messages.create({
+    const msg = await withAnthropicRetry(() => client.messages.create({
       model: LOCALIZE_MODEL,
       max_tokens: 1200,
       system,
       messages: [{ role: 'user', content: prompt }],
-    })
+    }))
     recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier ?? null, feature: 'global_sync_localize', model: LOCALIZE_MODEL })
     let raw = ''
     for (const b of msg.content) if (b.type === 'text') raw += b.text
@@ -122,12 +144,12 @@ export async function translateScript(
 
   try {
     const client = createAnthropicClient()
-    const msg = await client.messages.create({
+    const msg = await withAnthropicRetry(() => client.messages.create({
       model: LOCALIZE_MODEL,
       max_tokens: 1500,
       system,
       messages: [{ role: 'user', content: prompt }],
-    })
+    }))
     recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier ?? null, feature: 'global_sync_dub_script', model: LOCALIZE_MODEL })
     let out = ''
     for (const b of msg.content) if (b.type === 'text') out += b.text
