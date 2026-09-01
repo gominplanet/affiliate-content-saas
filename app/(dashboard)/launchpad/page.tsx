@@ -99,7 +99,11 @@ export default function LaunchpadPage() {
     try {
       const call = (noHuman: boolean) => fetch('/api/youtube/generate-thumbnail', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoTitle: t, asin: asin.trim() || undefined, ...(noHuman ? { noHuman: true } : {}) }),
+        // textMode: 'graphic' is REQUIRED to match Co-Pilot — it routes through the
+        // designed gpt-image path that downscales to a clean 1280×720 with safe
+        // margins. Without it the route fell into a fallback that produced the wrong
+        // dimensions and let the headline bleed off the frame.
+        body: JSON.stringify({ videoTitle: t, asin: asin.trim() || undefined, textMode: 'graphic', ...(noHuman ? { noHuman: true } : {}) }),
       })
       // First try WITH the creator's own face (their saved selfies, if any). If
       // they haven't added any, the route asks to set up a Face Model — but
