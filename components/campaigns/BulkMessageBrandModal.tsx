@@ -336,6 +336,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                   <button onClick={addSeg} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#7C3AED] hover:underline"><Plus size={13} /> Add a message</button>
                   <p className="text-[11px] leading-relaxed pt-1" style={{ color: 'var(--text-faint)' }}>
                     <b>[[PRODUCT]]</b> and <b>[[ASIN]]</b> get replaced with each brand&apos;s own product when it sends. Keep them in the message.
+                    {' '}Greeting, credibility, links &amp; sample address come from your <a href="/collaborations" target="_blank" rel="noreferrer" className="font-semibold underline" style={{ color: '#7C3AED' }}>Brand Outreach Profile</a>.
                   </p>
                 </div>
               )}

@@ -16,7 +16,7 @@ import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, ExternalLink, Search, ShieldCheck, ShieldAlert, ShieldQuestion,
   Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake, ShoppingBag,
-  Bookmark, BookmarkCheck, Check, Send,
+  Bookmark, BookmarkCheck, Check, Send, Info, X, Pencil,
 } from 'lucide-react'
 import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns } from '@/lib/extension-frame'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -342,6 +342,10 @@ export default function CcCampaignsPage() {
     })
   }, [])
   const clearSelected = useCallback(() => setSelected(new Map()), [])
+  // Dismissible "how messaging works" explainer.
+  const [showHelp, setShowHelp] = useState(true)
+  useEffect(() => { try { if (localStorage.getItem('mvp.cc.help.v1') === 'off') setShowHelp(false) } catch { /* ignore */ } }, [])
+  const dismissHelp = useCallback(() => { setShowHelp(false); try { localStorage.setItem('mvp.cc.help.v1', 'off') } catch { /* ignore */ } }, [])
   // ASINs the user has saved — drives the Save/Saved toggle on each card. Writes
   // to the shared cc_saved_finds shelf via /api/campaigns/saved (same store as
   // the dashboard digest + the Saved Campaigns page).
@@ -728,6 +732,24 @@ export default function CcCampaignsPage() {
           </button>
         )}
       </div>
+
+      {showHelp && (
+        <div className="card p-4 mb-4 relative" style={{ background: 'rgba(124,58,237,0.04)', borderColor: 'rgba(124,58,237,0.25)' }}>
+          <button onClick={dismissHelp} aria-label="Dismiss" className="absolute top-2.5 right-2.5 p-1 rounded-md hover:bg-black/5" style={{ color: 'var(--text-3)' }}><X size={15} /></button>
+          <div className="flex items-start gap-2.5 pr-6">
+            <Info size={16} className="text-[#7C3AED] mt-0.5 flex-shrink-0" />
+            <div className="text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+              <p className="font-semibold mb-1" style={{ color: 'var(--text)' }}>Messaging brands, and how to change what you say</p>
+              <ul className="space-y-1 list-disc pl-4">
+                <li><b>Message one brand:</b> the <Mail size={12} className="inline -mt-0.5" /> button on a card. MVP accepts the campaign if needed and sends the pitch through your logged-in Amazon session.</li>
+                <li><b>Message many at once:</b> tick the checkbox on up to {BULK_MAX} cards, then <b>Message N brands</b> in the bar that appears. Each is accepted and messaged in the background, one at a time.</li>
+                <li><b>Where your wording comes from:</b> every pitch is built from your <a href="/collaborations" className="font-semibold underline" style={{ color: '#7C3AED' }}>Brand Outreach Profile</a> — your greeting, credibility, offer, links and sample address. Edit it once on <a href="/collaborations" className="font-semibold underline inline-flex items-center gap-0.5" style={{ color: '#7C3AED' }}><Pencil size={11} /> Brand Deals</a> and it applies to every message.</li>
+                <li><b>Edit before it sends:</b> in the message window you can rewrite each message, add or remove one, and tick what to include (product &amp; ASIN, livestream/banner offers, portfolio links, free sample, shipping address). Nothing goes out until you hit Send.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[var(--text-3)] py-10"><Loader2 size={16} className="animate-spin" /> Loading campaigns…</div>
