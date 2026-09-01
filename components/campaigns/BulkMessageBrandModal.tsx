@@ -49,7 +49,13 @@ const DEFAULT_OPTIONS: Options = {
 
 const OPTS_KEY = 'mvp.messageBrand.opts.v2'
 const ADDR_KEY = 'mvp.messageBrand.address.v1'
+const TEMPLATES_KEY = 'mvp.cc.templates.v1'
 const MARK = '---- Add to Message Group ----'
+
+interface SavedTemplate { name: string; segments: string[]; opts: Options }
+function loadTemplates(): SavedTemplate[] {
+  try { const a = JSON.parse(localStorage.getItem(TEMPLATES_KEY) || '[]'); return Array.isArray(a) ? a : [] } catch { return [] }
+}
 
 const CHECKS: { key: keyof Options; label: string; msg: string }[] = [
   { key: 'includeAsin', label: 'Name the exact product & ASIN', msg: 'Msg 2' },
@@ -107,7 +113,31 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   // silently until it has, so we ask the user to send one message by hand once.
   const [needsPrime, setNeedsPrime] = useState(false)
   const [editWording, setEditWording] = useState(false)
+  const [templates, setTemplates] = useState<SavedTemplate[]>([])
+  useEffect(() => { setTemplates(loadTemplates()) }, [])
   const cancelRef = useRef(false)
+
+  const saveTemplate = () => {
+    const clean = segments.map(s => s.trim()).filter(Boolean)
+    if (clean.length === 0) { toast.error('Draft a message first.'); return }
+    const name = (typeof window !== 'undefined' ? window.prompt('Save this message as a template. Name it:') : '')?.trim()
+    if (!name) return
+    const next = [...loadTemplates().filter(t => t.name !== name), { name, segments: clean, opts }]
+    try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+    setTemplates(next)
+    toast.success(`Saved “${name}”.`)
+  }
+  const applyTemplate = (name: string) => {
+    const t = loadTemplates().find(x => x.name === name)
+    if (!t) return
+    setSegments(t.segments.length ? t.segments : [''])
+    setOpts({ ...DEFAULT_OPTIONS, ...t.opts })
+  }
+  const deleteTemplate = (name: string) => {
+    const next = loadTemplates().filter(t => t.name !== name)
+    try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+    setTemplates(next)
+  }
 
   // De-dupe by campaignId, then split into "will send" vs "already messaged".
   const unique = Array.from(new Map(campaigns.filter(c => c.campaignId && c.asin).map(c => [c.campaignId, c])).values())
@@ -312,6 +342,19 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                 placeholder="Anything else to mention in every message (optional)"
                 className="mt-2 w-full px-3 py-2 rounded-lg border text-[13px] bg-transparent"
                 style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+
+              {/* Saved templates — reuse a proven angle without re-ticking options. */}
+              <div className="flex items-center gap-2 mt-3">
+                <select value="" onChange={e => { if (e.target.value) applyTemplate(e.target.value) }}
+                  className="text-[12px] px-2 py-1.5 rounded-lg border bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                  <option value="">Load a saved template…</option>
+                  {templates.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+                </select>
+                <button type="button" onClick={saveTemplate} className="text-[12px] font-medium hover:underline" style={{ color: '#7C3AED' }}>Save current</button>
+                {templates.length > 0 && (
+                  <button type="button" onClick={() => { const n = window.prompt('Delete which template? Type its exact name:')?.trim(); if (n) deleteTemplate(n) }} className="text-[12px] font-medium hover:underline ml-auto" style={{ color: 'var(--text-faint)' }}>Delete…</button>
+                )}
+              </div>
 
               <div className="flex items-center justify-between mt-4 mb-1.5">
                 <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
