@@ -81,7 +81,21 @@ function TrustBadge({ t }: { t: Trust }) {
   )
 }
 
-interface CampaignStatus { accepted?: boolean; messaged?: boolean; posted?: boolean; url?: string | null }
+interface CampaignStatus { accepted?: boolean; messaged?: boolean; messagedAt?: string | null; posted?: boolean; url?: string | null }
+
+// Date the brand was messaged — short for the chip ("Sep 1"), full for the
+// tooltip ("September 1, 2026"). A stamped date is fine to show (it's not a
+// generated title). Returns '' for an unparseable value.
+function fmtMessagedShort(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso); if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+function fmtMessagedFull(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso); if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+}
 
 function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void) {
   const [gen, setGen] = useState(false)
@@ -180,7 +194,15 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
             {endingSoon && !c.isFull && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#b3261e] bg-[#ff3b30]/12">Ends {c.daysLeft === 0 ? 'today' : 'tomorrow'}</span>}
             {status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#1c7a35] bg-[#34c759]/15 inline-flex items-center gap-0.5"><CheckCircle2 size={10} /> Posted</span>}
             {isAccepted && !status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#7C3AED] bg-[#7C3AED]/12">Accepted</span>}
-            {status?.messaged && !isAccepted && !status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#8a6d00] bg-[#ffcc00]/15">Messaged</span>}
+            {/* Messaged badge shows ALONGSIDE Accepted (a brand can be both) and
+                carries the date so you don't re-message someone you already reached. */}
+            {status?.messaged && !status?.posted && (
+              <span
+                title={status?.messagedAt ? `You messaged this brand on ${fmtMessagedFull(status.messagedAt)}` : 'You already messaged this brand'}
+                className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#8a6d00] bg-[#ffcc00]/15">
+                Messaged{status?.messagedAt ? ` ${fmtMessagedShort(status.messagedAt)}` : ''}
+              </span>
+            )}
             {hasReply && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#1c7a35] bg-[#34c759]/15 inline-flex items-center gap-0.5"><Mail size={10} /> Replied</span>}
           </div>
           <p className="text-[11px] text-[var(--text-3)] truncate">{c.brand || 'Unknown brand'}</p>
@@ -510,6 +532,7 @@ export default function CcCampaignsPage() {
         map[asin] = {
           accepted: !!cur?.accepted || !!r.accepted_at,
           messaged: !!cur?.messaged || !!r.messaged_at,
+          messagedAt: cur?.messagedAt || (r.messaged_at ?? null),
           posted: !!cur?.posted || (r.status === 'published' && !!r.wordpress_url),
           url: cur?.url || (r.wordpress_url ?? null),
         }
@@ -528,6 +551,7 @@ export default function CcCampaignsPage() {
             map[asin] = {
               accepted: !!cur?.accepted,
               messaged: !!cur?.messaged,
+              messagedAt: cur?.messagedAt ?? null,
               posted: true,
               url: cur?.url || (url || null),
             }
