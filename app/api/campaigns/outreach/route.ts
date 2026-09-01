@@ -56,6 +56,10 @@ interface OutreachBody {
   channel?: 'cc' | 'direct'
   /** For 'direct' — the network the creator found the brand on (flavor only). */
   network?: string
+  /** Bulk reusable template: draft ONE message group with literal [[PRODUCT]] /
+   *  [[ASIN]] tokens the bulk sender swaps per brand. Neutral greeting, no brand,
+   *  no commission. cc channel only. */
+  template?: boolean
 }
 
 export async function POST(request: Request) {
@@ -90,11 +94,14 @@ export async function POST(request: Request) {
     // the greeting stays neutral ("Hi there,") instead of "Hey <product> team".
     const looksLikeProduct = (s: string) =>
       s.length > 40 || /\d{3,}/.test(s) || /\b(up to|for (home|large|small|the)|pack of|\d+\s?(ft|sq ?ft|oz|ml|l|w|watt|inch|"|cm|mm|pcs|count|pack))\b/i.test(s)
-    const brand = brandRaw && !looksLikeProduct(brandRaw) ? brandRaw : ''
-    const product = (body.product || '').toString().trim()
-    const asin = (body.asin || '').toString().trim().toUpperCase()
-    const brief = (body.brief || '').toString().trim().slice(0, 3000)
-    const commissionPct = typeof body.commissionPct === 'number' && isFinite(body.commissionPct) ? body.commissionPct : null
+    // Bulk reusable template: one draft, sent to many brands. Force neutral,
+    // brand-agnostic content with literal tokens the sender fills per brand.
+    const template = body.template === true
+    const brand = template ? '' : (brandRaw && !looksLikeProduct(brandRaw) ? brandRaw : '')
+    const product = template ? '[[PRODUCT]]' : (body.product || '').toString().trim()
+    const asin = template ? '[[ASIN]]' : (body.asin || '').toString().trim().toUpperCase()
+    const brief = template ? '' : (body.brief || '').toString().trim().slice(0, 3000)
+    const commissionPct = template ? null : (typeof body.commissionPct === 'number' && isFinite(body.commissionPct) ? body.commissionPct : null)
     const channel: 'cc' | 'direct' = body.channel === 'direct' ? 'direct' : 'cc'
     const network = (body.network || '').toString().trim().slice(0, 40)
     if (!brand && !product) {
@@ -176,6 +183,9 @@ export async function POST(request: Request) {
     if (!wantSample) asks.push('Do NOT include a sample-request / shipping message (skip that message entirely).')
     const extraNotes = (body.extraNotes || '').toString().trim().slice(0, 500)
     if (extraNotes) asks.push(`Also weave in: ${extraNotes}`)
+    if (template) {
+      asks.push('THIS IS A REUSABLE TEMPLATE sent to MANY different brands. In the PRODUCT message, write the product name as the literal token [[PRODUCT]] and its ASIN as the literal token [[ASIN]] — copy those tokens EXACTLY, character for character. Do NOT invent, name, or describe a specific product, and do NOT name any brand. Greet neutrally ("Hi there,").')
+    }
 
     // DIRECT channel (Levanta / PartnerBoost) — ONE cohesive message the creator
     // pastes into the brand's contact/message form. No Amazon Creator Connections.

@@ -16,7 +16,7 @@ import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, ExternalLink, Search, ShieldCheck, ShieldAlert, ShieldQuestion,
   Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake, ShoppingBag,
-  Bookmark, BookmarkCheck,
+  Bookmark, BookmarkCheck, Check, Send,
 } from 'lucide-react'
 import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns } from '@/lib/extension-frame'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -24,7 +24,11 @@ import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { type Tier } from '@/lib/tier'
 import { campaignRules } from '@/lib/cc-smart-rules'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
+import BulkMessageBrandModal, { type BulkCampaign } from '@/components/campaigns/BulkMessageBrandModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
+
+// Max campaigns selectable for one bulk-message run.
+const BULK_MAX = 100
 
 interface Trust { score: number; tier: 'reliable' | 'mixed' | 'risky' | 'unknown'; spendRatio: number | null; reasons: string[] }
 interface Campaign {
@@ -111,7 +115,7 @@ function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void
   return { gen, postUrl, makePost }
 }
 
-function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, socialOnly = false }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void; saved?: boolean; onToggleSave?: () => void; socialOnly?: boolean }) {
+function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, socialOnly = false, selected, onToggleSelect }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void; saved?: boolean; onToggleSave?: () => void; socialOnly?: boolean; selected?: boolean; onToggleSelect?: () => void }) {
   const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null, onActed)
   const endingSoon = c.daysLeft != null && c.daysLeft <= 1
 
@@ -149,8 +153,18 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
       toast.error(e instanceof Error ? e.message : 'Accept failed', { id: tId, duration: 8_000 })
     } finally { setAccepting(false) }
   }, [c.repAsin, c.campaignId, c.detailsUrl, c.brand, c.commissionPct, c.name, onActed])
+  const selectable = !c.isFull && !!c.repAsin
   return (
-    <div className="card p-4 flex flex-col gap-3">
+    <div className="card p-4 flex flex-col gap-3 relative" style={selected ? { outline: '2px solid #7C3AED', outlineOffset: -1 } : undefined}>
+      {/* Bulk-select checkbox — only where the brand can actually be messaged. */}
+      {onToggleSelect && selectable && (
+        <button type="button" onClick={onToggleSelect} aria-label={selected ? 'Deselect' : 'Select for bulk message'} aria-pressed={selected}
+          className="absolute top-2 left-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border shadow-sm"
+          style={{ background: selected ? '#7C3AED' : 'rgba(255,255,255,0.92)', borderColor: selected ? '#7C3AED' : 'var(--border)' }}
+          title={selected ? 'Selected — click to remove' : 'Select for bulk message'}>
+          {selected && <Check size={15} className="text-white" />}
+        </button>
+      )}
       <div className="flex gap-3">
         <div className="w-20 h-20 rounded-lg bg-[var(--surface-2)] border border-[var(--border-2)] flex items-center justify-center overflow-hidden flex-shrink-0">
           {c.image
@@ -310,6 +324,21 @@ export default function CcCampaignsPage() {
   const [statusByAsin, setStatusByAsin] = useState<Record<string, CampaignStatus>>({})
   const [coveredAsins, setCoveredAsins] = useState<string[]>([])
   const [msgModal, setMsgModal] = useState<MessageBrandCampaign | null>(null)
+  // Bulk brand messaging: tick campaigns (up to BULK_MAX), then message all at
+  // once. Keyed by campaignId; stores the whole Campaign so the bulk modal has
+  // each brand's product + ASIN without another lookup.
+  const [selected, setSelected] = useState<Map<string, Campaign>>(new Map())
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const toggleSelect = useCallback((c: Campaign) => {
+    setSelected(prev => {
+      const next = new Map(prev)
+      if (next.has(c.campaignId)) { next.delete(c.campaignId); return next }
+      if (next.size >= BULK_MAX) { toast.error(`You can select up to ${BULK_MAX} campaigns at once.`); return prev }
+      next.set(c.campaignId, c)
+      return next
+    })
+  }, [])
+  const clearSelected = useCallback(() => setSelected(new Map()), [])
   // ASINs the user has saved — drives the Save/Saved toggle on each card. Writes
   // to the shared cc_saved_finds shelf via /api/campaigns/saved (same store as
   // the dashboard digest + the Saved Campaigns page).
@@ -742,6 +771,8 @@ export default function CcCampaignsPage() {
                 saved={c.repAsin ? savedAsins.has(c.repAsin.toUpperCase()) : false}
                 onToggleSave={() => toggleSave(c)}
                 socialOnly={tier === 'amazon'}
+                selected={selected.has(c.campaignId)}
+                onToggleSelect={() => toggleSelect(c)}
                 onMessage={(cc) => {
                   if (!cc.repAsin) { toast.error('No product ASIN on this campaign yet.'); return }
                   setMsgModal({ product: cc.name || cc.repAsin, asin: cc.repAsin, commissionPct: cc.commissionPct ?? 0, detailsUrl: cc.detailsUrl, brandLabel: cc.brand || undefined })
@@ -773,6 +804,38 @@ export default function CcCampaignsPage() {
           onClose={() => setMsgModal(null)}
           onSent={() => { setMsgModal(null); loadStatus() }}
           onFindCampaign={() => requestFindCampaign(msgModal.brandLabel || msgModal.product || '', msgModal.asin || '')}
+        />
+      )}
+
+      {/* Floating bulk-select bar — appears once one campaign is ticked. */}
+      {selected.size > 0 && !bulkOpen && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9998] flex items-center gap-3 rounded-full pl-4 pr-2 py-2 shadow-lg"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+            {selected.size} of {BULK_MAX} selected
+          </span>
+          <button onClick={clearSelected} className="text-[12px] font-medium hover:underline" style={{ color: 'var(--text-soft)' }}>Clear</button>
+          <button onClick={() => setBulkOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-semibold text-white"
+            style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
+            <Send size={14} /> Message {selected.size} {selected.size === 1 ? 'brand' : 'brands'}
+          </button>
+        </div>
+      )}
+
+      {bulkOpen && (
+        <BulkMessageBrandModal
+          campaigns={Array.from(selected.values()).map((c): BulkCampaign => ({
+            campaignId: c.campaignId,
+            product: c.name || c.repAsin || '',
+            asin: c.repAsin || '',
+            brand: c.brand,
+            detailsUrl: c.detailsUrl,
+            commissionPct: c.commissionPct,
+          }))}
+          alreadyMessaged={new Set(Object.entries(statusByAsin).filter(([, s]) => s?.messaged).map(([a]) => a.toUpperCase()))}
+          onClose={() => { setBulkOpen(false); clearSelected(); loadStatus() }}
+          onDone={loadStatus}
         />
       )}
     </>

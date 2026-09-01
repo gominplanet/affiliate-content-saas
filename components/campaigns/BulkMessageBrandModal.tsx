@@ -1,0 +1,371 @@
+'use client'
+
+/**
+ * BulkMessageBrandModal — message MANY Creator Connections brands at once.
+ *
+ * You tick campaigns on the CC Campaigns grid (up to 100), open this, and:
+ *   1. MVP drafts ONE reusable message group from your Outreach Profile + the
+ *      options you tick, with [[PRODUCT]] / [[ASIN]] tokens.
+ *   2. On send, it fills each brand's product + ASIN into that template and hands
+ *      it to SCOUT, which accepts-if-needed and sends inside your Amazon session —
+ *      one brand at a time, spaced out so Amazon doesn't flag the burst.
+ *
+ * Brands you've already messaged are skipped. A failed brand doesn't stop the
+ * batch; you get a per-brand result list at the end and can retry the failures.
+ */
+
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { toast } from 'sonner'
+import { X, Loader2, Sparkles, Send, Users, Plus, Trash2, Check, AlertTriangle, RotateCcw } from 'lucide-react'
+import { requestSendByCampaign, getScoutStatus } from '@/lib/extension-frame'
+
+export interface BulkCampaign {
+  campaignId: string
+  product: string
+  asin: string
+  brand: string | null
+  detailsUrl: string
+  commissionPct: number | null
+}
+
+interface Options {
+  includeAsin: boolean
+  includeLinks: boolean
+  requestSample: boolean
+  shareAddress: boolean
+  offerLivestream: boolean
+  offerBannerAds: boolean
+}
+
+const DEFAULT_OPTIONS: Options = {
+  includeAsin: true,
+  includeLinks: true,
+  requestSample: true,
+  shareAddress: false,
+  offerLivestream: false,
+  offerBannerAds: false,
+}
+
+const OPTS_KEY = 'mvp.messageBrand.opts.v2'
+const ADDR_KEY = 'mvp.messageBrand.address.v1'
+const MARK = '---- Add to Message Group ----'
+
+const CHECKS: { key: keyof Options; label: string; msg: string }[] = [
+  { key: 'includeAsin', label: 'Name the exact product & ASIN', msg: 'Msg 2' },
+  { key: 'offerLivestream', label: 'Also offer a livestream', msg: 'Msg 2' },
+  { key: 'offerBannerAds', label: 'Also offer banner-ad placement', msg: 'Msg 2' },
+  { key: 'includeLinks', label: 'Include my portfolio & links', msg: 'Msg 3' },
+  { key: 'requestSample', label: 'Request a free sample', msg: 'Msg 4' },
+  { key: 'shareAddress', label: 'Share my shipping address', msg: 'Msg 4' },
+]
+
+function splitSegments(msg: string): string[] {
+  const s = (msg || '').trim()
+  const hasMarker = /-{2,}\s*add to message group\s*-{2,}/i.test(s)
+  const parts = hasMarker ? s.split(/\s*-{2,}\s*add to message group\s*-{2,}\s*/i) : s.split(/\n\s*\n+/)
+  const out = parts.map(x => x.trim()).filter(Boolean)
+  return out.length ? out : ['']
+}
+
+// Fill one brand's product + ASIN into the reusable template and rejoin with the
+// group marker SCOUT splits on.
+function fillTemplate(segs: string[], product: string, asin: string): string {
+  return segs
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => s
+      .replace(/\[\[\s*PRODUCT\s*\]\]/gi, product || 'your product')
+      .replace(/\[\[\s*ASIN\s*\]\]/gi, asin || ''))
+    .join(`\n\n${MARK}\n\n`)
+}
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+// 4–8s between sends: spaces the burst out so Amazon doesn't rate-limit / flag it.
+const gap = () => 4000 + Math.floor(Math.random() * 4000)
+
+type SendState = 'pending' | 'sending' | 'sent' | 'failed' | 'skipped'
+interface Row { campaign: BulkCampaign; state: SendState; error?: string }
+
+export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, onClose, onDone }: {
+  campaigns: BulkCampaign[]
+  /** Uppercased ASINs the user has already messaged — skipped, not re-sent. */
+  alreadyMessaged: Set<string>
+  onClose: () => void
+  onDone?: () => void
+}) {
+  const [opts, setOpts] = useState<Options>(DEFAULT_OPTIONS)
+  const [address, setAddress] = useState('')
+  const [extraNotes, setExtraNotes] = useState('')
+  const [segments, setSegments] = useState<string[]>([''])
+  const [drafting, setDrafting] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [rows, setRows] = useState<Row[]>([])
+  const cancelRef = useRef(false)
+
+  // De-dupe by campaignId and split into "will send" vs "already messaged".
+  const unique = Array.from(new Map(campaigns.filter(c => c.campaignId && c.asin).map(c => [c.campaignId, c])).values())
+  const toSend = unique.filter(c => !alreadyMessaged.has((c.asin || '').toUpperCase()))
+  const skipped = unique.filter(c => alreadyMessaged.has((c.asin || '').toUpperCase()))
+
+  useEffect(() => {
+    try {
+      const o = localStorage.getItem(OPTS_KEY)
+      if (o) setOpts({ ...DEFAULT_OPTIONS, ...JSON.parse(o) })
+      const a = localStorage.getItem(ADDR_KEY)
+      if (a) setAddress(a)
+    } catch { /* ignore */ }
+  }, [])
+
+  const draft = useCallback(async () => {
+    setDrafting(true)
+    try {
+      const res = await fetch('/api/campaigns/outreach', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template: true,
+          options: { ...opts, address: opts.shareAddress ? address : '' },
+          extraNotes,
+        }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || !d.message) throw new Error(d.error || 'Could not draft the template')
+      setSegments(splitSegments(d.message))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Draft failed')
+    } finally { setDrafting(false) }
+  }, [opts, address, extraNotes])
+
+  // Draft the template once on open.
+  useEffect(() => { draft() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
+
+  const toggle = (k: keyof Options) => setOpts(o => {
+    const next = { ...o, [k]: !o[k] }
+    try { localStorage.setItem(OPTS_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+    return next
+  })
+  const updateSeg = (i: number, v: string) => setSegments(s => s.map((x, j) => (j === i ? v : x)))
+  const removeSeg = (i: number) => setSegments(s => (s.length > 1 ? s.filter((_, j) => j !== i) : s))
+  const addSeg = () => setSegments(s => [...s, ''])
+
+  const cleanSegments = segments.map(s => s.trim()).filter(Boolean)
+  const hasPlaceholder = /\[\[\s*(product|asin)\s*\]\]/i.test(cleanSegments.join(' '))
+
+  // Send the template to a given set of campaigns, sequentially + paced.
+  const runBatch = useCallback(async (targets: BulkCampaign[]) => {
+    if (cleanSegments.length === 0) { toast.error('Draft a message first.'); return }
+    // One SCOUT presence check up front, so we don't hammer 100 sends at a wall.
+    const scout = await getScoutStatus().catch(() => ({ installed: false, version: null as string | null }))
+    if (!scout.installed) { toast.error('Install / enable SCOUT and sign in to Amazon, then try again.'); return }
+    if (opts.shareAddress && address.trim()) { try { localStorage.setItem(ADDR_KEY, address.trim()) } catch { /* ignore */ } }
+
+    cancelRef.current = false
+    setSending(true)
+    // Seed the rows: everything queued, already-messaged marked skipped.
+    setRows([
+      ...targets.map(c => ({ campaign: c, state: 'pending' as SendState })),
+      ...skipped.map(c => ({ campaign: c, state: 'skipped' as SendState })),
+    ])
+
+    for (let i = 0; i < targets.length; i++) {
+      if (cancelRef.current) break
+      const c = targets[i]
+      setRows(rs => rs.map(r => (r.campaign.campaignId === c.campaignId ? { ...r, state: 'sending' } : r)))
+      let ok = false, err = ''
+      try {
+        const message = fillTemplate(segments, c.product, c.asin)
+        const r = await requestSendByCampaign([c.campaignId], message, c.asin)
+        ok = !!r.ok
+        err = r.ok ? '' : (r.reason || r.error || 'send failed')
+        if (ok) {
+          try {
+            await fetch('/api/campaigns/mark-messaged', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ asin: c.asin, message }),
+            })
+          } catch { /* the message went out — recording is best-effort */ }
+        }
+      } catch (e) { ok = false; err = e instanceof Error ? e.message : 'send failed' }
+      setRows(rs => rs.map(r => (r.campaign.campaignId === c.campaignId ? { ...r, state: ok ? 'sent' : 'failed', error: ok ? undefined : err } : r)))
+      // Pace the burst (skip the wait after the last one / on cancel).
+      if (i < targets.length - 1 && !cancelRef.current) await sleep(gap())
+    }
+
+    setSending(false)
+    onDone?.()
+  }, [segments, cleanSegments.length, opts.shareAddress, address, skipped, onDone])
+
+  const started = rows.length > 0
+  const sentCount = rows.filter(r => r.state === 'sent').length
+  const failedRows = rows.filter(r => r.state === 'failed')
+  const doneCount = rows.filter(r => r.state === 'sent' || r.state === 'failed').length
+  const finished = started && !sending && doneCount + rows.filter(r => r.state === 'skipped').length >= rows.length && rows.some(r => r.state !== 'skipped')
+
+  const stateChip = (s: SendState) => {
+    const map: Record<SendState, { c: string; bg: string; t: string }> = {
+      pending: { c: 'var(--text-faint)', bg: 'var(--surface-2)', t: 'Queued' },
+      sending: { c: '#7C3AED', bg: 'rgba(124,58,237,0.12)', t: 'Sending…' },
+      sent: { c: '#1c7a35', bg: 'rgba(52,199,89,0.15)', t: 'Sent' },
+      failed: { c: '#b3261e', bg: 'rgba(255,59,48,0.12)', t: 'Failed' },
+      skipped: { c: '#8a6d00', bg: 'rgba(255,204,0,0.15)', t: 'Already messaged' },
+    }
+    return map[s]
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={sending ? undefined : onClose}>
+      <div className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col max-h-[92vh] bg-white dark:bg-[#111113]" style={{ border: '1px solid var(--border)' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 p-5 pb-3">
+          <div className="min-w-0">
+            <h2 className="text-[17px] font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}>
+              <Users size={17} className="text-[#7C3AED]" /> Message {toSend.length} {toSend.length === 1 ? 'brand' : 'brands'}
+            </h2>
+            <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+              One message, filled with each brand&apos;s product{skipped.length > 0 ? ` · ${skipped.length} already messaged (skipped)` : ''}
+            </p>
+          </div>
+          {!sending && <button onClick={onClose} aria-label="Close" className="p-1 rounded-md hover:bg-black/5" style={{ color: 'var(--text-faint)' }}><X size={18} /></button>}
+        </div>
+
+        <div className="px-5 overflow-y-auto">
+          {!started ? (
+            <>
+              <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>Add to every message</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                {CHECKS.map(c => (
+                  <label key={c.key} className="flex items-center gap-2 text-[13px] cursor-pointer" style={{ color: 'var(--text)' }}>
+                    <input type="checkbox" checked={opts[c.key]} onChange={() => toggle(c.key)} className="accent-[#7C3AED] w-4 h-4 flex-shrink-0" />
+                    <span className="min-w-0">{c.label}</span>
+                    <span className="ml-auto text-[9px] font-bold uppercase tracking-wide px-1 py-[1px] rounded flex-shrink-0" style={{ background: 'rgba(124,58,237,0.10)', color: '#9D6BFF' }}>{c.msg}</span>
+                  </label>
+                ))}
+              </div>
+
+              {opts.shareAddress && (
+                <input value={address} onChange={e => setAddress(e.target.value)}
+                  placeholder="Shipping / forwarding address for samples"
+                  className="mt-3 w-full px-3 py-2 rounded-lg border text-[13px] bg-transparent"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+              )}
+              <input value={extraNotes} onChange={e => setExtraNotes(e.target.value)}
+                placeholder="Anything else to mention in every message (optional)"
+                className="mt-2 w-full px-3 py-2 rounded-lg border text-[13px] bg-transparent"
+                style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+
+              <div className="flex items-center justify-between mt-4 mb-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
+                  Template {cleanSegments.length > 0 && <span>· each brand&apos;s product fills in</span>}
+                </p>
+                <button onClick={draft} disabled={drafting}
+                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-50">
+                  {drafting ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {cleanSegments.length ? 'Regenerate' : 'Generate'}
+                </button>
+              </div>
+
+              {drafting && cleanSegments.length === 0 ? (
+                <div className="flex items-center gap-2 text-[13px] py-6 justify-center" style={{ color: 'var(--text-faint)' }}>
+                  <Loader2 size={14} className="animate-spin" /> Drafting your template…
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {segments.map((seg, i) => {
+                    const over = seg.length > 1000
+                    return (
+                      <div key={i} className="rounded-lg border" style={{ borderColor: over ? '#ff3b30' : 'var(--border)' }}>
+                        <div className="flex items-center justify-between px-2.5 pt-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-[1px] rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}>Message {i + 1}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] tabular-nums" style={{ color: over ? '#ff3b30' : 'var(--text-faint)' }}>{seg.length}/1000</span>
+                            {segments.length > 1 && (
+                              <button onClick={() => removeSeg(i)} aria-label={`Remove message ${i + 1}`} className="p-0.5 rounded hover:bg-black/5" style={{ color: 'var(--text-faint)' }}><Trash2 size={13} /></button>
+                            )}
+                          </div>
+                        </div>
+                        <textarea value={seg} onChange={e => updateSeg(i, e.target.value)}
+                          rows={Math.min(6, Math.max(2, Math.ceil((seg.length || 1) / 55)))}
+                          placeholder={`Message ${i + 1}…`}
+                          className="w-full px-2.5 pb-2 pt-1 text-[13px] bg-transparent leading-relaxed outline-none resize-y"
+                          style={{ color: 'var(--text)' }} />
+                      </div>
+                    )
+                  })}
+                  <button onClick={addSeg} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#7C3AED] hover:underline"><Plus size={13} /> Add a message</button>
+                  <p className="text-[11px] leading-relaxed pt-1" style={{ color: 'var(--text-faint)' }}>
+                    <b>[[PRODUCT]]</b> and <b>[[ASIN]]</b> get replaced with each brand&apos;s own product when it sends. Keep them in the message.
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            // Sending / results view.
+            <div className="space-y-1.5 pb-1">
+              {rows.map(r => {
+                const chip = stateChip(r.state)
+                return (
+                  <div key={r.campaign.campaignId} className="flex items-center gap-2 rounded-lg border px-2.5 py-1.5" style={{ borderColor: 'var(--border)' }}>
+                    <span className="min-w-0 flex-1">
+                      <span className="text-[12px] font-medium block truncate" style={{ color: 'var(--text)' }}>{r.campaign.brand || 'Unknown brand'}</span>
+                      <span className="text-[11px] block truncate" style={{ color: 'var(--text-faint)' }}>{r.campaign.product || r.campaign.asin}{r.error ? ` · ${r.error}` : ''}</span>
+                    </span>
+                    <span className="text-[10px] font-semibold px-1.5 py-[2px] rounded flex-shrink-0 inline-flex items-center gap-1" style={{ background: chip.bg, color: chip.c }}>
+                      {r.state === 'sending' && <Loader2 size={10} className="animate-spin" />}
+                      {r.state === 'sent' && <Check size={10} />}
+                      {r.state === 'failed' && <AlertTriangle size={10} />}
+                      {chip.t}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {sending && (
+          <div className="px-5 pt-3">
+            <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: 'var(--text-soft)' }}>
+              <span>Sending {doneCount + 1 > toSend.length ? toSend.length : doneCount + 1} of {toSend.length}… (paced to protect your account)</span>
+              <span className="tabular-nums">{Math.round((doneCount / Math.max(1, toSend.length)) * 100)}%</span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+              <div className="h-full transition-all duration-300 ease-linear" style={{ width: `${(doneCount / Math.max(1, toSend.length)) * 100}%`, background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }} />
+            </div>
+          </div>
+        )}
+
+        <div className="p-5 pt-3 flex items-center gap-2 border-t" style={{ borderColor: 'var(--border)' }}>
+          {!started ? (
+            <>
+              <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px] font-semibold" style={{ color: 'var(--text-soft)' }}>Cancel</button>
+              <button onClick={() => runBatch(toSend)} disabled={drafting || cleanSegments.length === 0 || toSend.length === 0 || !hasPlaceholder}
+                className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-50"
+                style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
+                <Send size={14} /> Send to {toSend.length} {toSend.length === 1 ? 'brand' : 'brands'}
+              </button>
+            </>
+          ) : sending ? (
+            <button onClick={() => { cancelRef.current = true }} className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+              Stop after current
+            </button>
+          ) : (
+            <>
+              <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
+                {sentCount} sent{failedRows.length ? ` · ${failedRows.length} failed` : ''}{skipped.length ? ` · ${skipped.length} skipped` : ''}
+              </span>
+              {failedRows.length > 0 && (
+                <button onClick={() => runBatch(failedRows.map(r => r.campaign))} className="ml-auto inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                  <RotateCcw size={13} /> Retry {failedRows.length} failed
+                </button>
+              )}
+              <button onClick={onClose} className={`${failedRows.length > 0 ? '' : 'ml-auto'} inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white`} style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>Done</button>
+            </>
+          )}
+        </div>
+        {!started && (
+          <p className="px-5 pb-4 -mt-1 text-[11px]" style={{ color: 'var(--text-faint)' }}>
+            SCOUT accepts each campaign if needed and sends from your Amazon session, one brand at a time spaced a few seconds apart so the burst isn&apos;t flagged. Keep this tab open; a failed brand won&apos;t stop the rest.
+            {finished ? '' : !hasPlaceholder && cleanSegments.length > 0 ? ' Add [[PRODUCT]] / [[ASIN]] back into the message so each brand is named.' : ''}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
