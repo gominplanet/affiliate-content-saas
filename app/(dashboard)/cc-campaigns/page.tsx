@@ -307,6 +307,8 @@ export default function CcCampaignsPage() {
   // pages — status comes from statusByAsin, no API change needed).
   const [hideJoined, setHideJoined] = useState(false)
   const [hidePosted, setHidePosted] = useState(false)
+  // Surface your outreach: show only campaigns you've already messaged.
+  const [messagedOnly, setMessagedOnly] = useState(false)
   // "Joined only" — inverse of Hide joined: surface only accepted campaigns.
   // Mutually exclusive with the hide filters.
   const [joinedOnly, setJoinedOnly] = useState(false)
@@ -769,6 +771,9 @@ export default function CcCampaignsPage() {
         <button onClick={() => setHidePosted((v) => { const nv = !v; if (nv) setJoinedOnly(false); return nv })} title="Hide campaigns you've already made a post for" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hidePosted ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Hide posted
         </button>
+        <button onClick={() => setMessagedOnly((v) => !v)} title="Show only the brands you've already messaged — your outreach list" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${messagedOnly ? 'border-[#8a6d00] text-[#8a6d00] bg-[#ffcc00]/15' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
+          Messaged
+        </button>
         {!joinedOnly && (
           <button onClick={() => syncJoined()} disabled={syncingJoined} title="Save the campaigns you've joined on Amazon (via SCOUT) so Hide joined works across Browse all" className="px-3 py-2 rounded-lg border border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors">
             {syncingJoined ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />}
@@ -820,6 +825,7 @@ export default function CcCampaignsPage() {
           // Days-left filter applies in every mode — a campaign with no known end
           // date is excluded once a minimum is set (can't confirm it qualifies).
           if (minDaysLeft && (c.daysLeft == null || c.daysLeft < minDaysLeft)) return false
+          if (messagedOnly && !(c.repAsin && statusByAsin[c.repAsin]?.messaged)) return false
           if (!hideJoined && !hidePosted) return true
           const st = c.repAsin ? statusByAsin[c.repAsin] : undefined
           if (hideJoined && st?.accepted) return false
