@@ -25,6 +25,7 @@ import { type Tier } from '@/lib/tier'
 import { campaignRules } from '@/lib/cc-smart-rules'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import BulkMessageBrandModal, { type BulkCampaign } from '@/components/campaigns/BulkMessageBrandModal'
+import OutreachProfileModal from '@/components/collaborations/OutreachProfileModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 
 // Max campaigns selectable for one bulk-message run.
@@ -346,6 +347,8 @@ export default function CcCampaignsPage() {
   const [showHelp, setShowHelp] = useState(true)
   useEffect(() => { try { if (localStorage.getItem('mvp.cc.help.v1') === 'off') setShowHelp(false) } catch { /* ignore */ } }, [])
   const dismissHelp = useCallback(() => { setShowHelp(false); try { localStorage.setItem('mvp.cc.help.v1', 'off') } catch { /* ignore */ } }, [])
+  // Edit the outreach message wording in a modal (no page hop).
+  const [editWording, setEditWording] = useState(false)
   // ASINs the user has saved — drives the Save/Saved toggle on each card. Writes
   // to the shared cc_saved_finds shelf via /api/campaigns/saved (same store as
   // the dashboard digest + the Saved Campaigns page).
@@ -743,9 +746,12 @@ export default function CcCampaignsPage() {
               <ul className="space-y-1 list-disc pl-4">
                 <li><b>Message one brand:</b> the <Mail size={12} className="inline -mt-0.5" /> button on a card. MVP accepts the campaign if needed and sends the pitch through your logged-in Amazon session.</li>
                 <li><b>Message many at once:</b> tick the checkbox on up to {BULK_MAX} cards, then <b>Message N brands</b> in the bar that appears. Each is accepted and messaged in the background, one at a time.</li>
-                <li><b>Where your wording comes from:</b> every pitch is built from your <a href="/collaborations" className="font-semibold underline" style={{ color: '#7C3AED' }}>Brand Outreach Profile</a> — your greeting, credibility, offer, links and sample address. Edit it once on <a href="/collaborations" className="font-semibold underline inline-flex items-center gap-0.5" style={{ color: '#7C3AED' }}><Pencil size={11} /> Brand Deals</a> and it applies to every message.</li>
+                <li><b>Your wording:</b> every pitch is built from one saved profile — your greeting, credibility, offer, links and sample address. Edit it once and it applies to every message.</li>
                 <li><b>Edit before it sends:</b> in the message window you can rewrite each message, add or remove one, and tick what to include (product &amp; ASIN, livestream/banner offers, portfolio links, free sample, shipping address). Nothing goes out until you hit Send.</li>
               </ul>
+              <button onClick={() => setEditWording(true)} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white" style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
+                <Pencil size={13} /> Edit your brand message
+              </button>
             </div>
           </div>
         </div>
@@ -858,6 +864,8 @@ export default function CcCampaignsPage() {
           </button>
         </div>
       )}
+
+      {editWording && <OutreachProfileModal onClose={() => setEditWording(false)} />}
 
       {bulkOpen && (
         <BulkMessageBrandModal

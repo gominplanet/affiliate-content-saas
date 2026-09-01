@@ -50,9 +50,9 @@ const CATEGORIES = [
   'Automotive', 'Baby', 'Garden', 'Grocery',
 ]
 
-export default function OutreachProfileCard() {
+export default function OutreachProfileCard({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const [p, setP] = useState<Profile>(EMPTY)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 

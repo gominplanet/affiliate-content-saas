@@ -18,6 +18,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Sparkles, Send, Users, Plus, Trash2, Check, AlertTriangle, RotateCcw } from 'lucide-react'
 import { requestSendByAsin, requestAcceptCampaign, requestCcSendDebug, getScoutStatus } from '@/lib/extension-frame'
+import OutreachProfileModal from '@/components/collaborations/OutreachProfileModal'
 
 export interface BulkCampaign {
   campaignId: string
@@ -105,6 +106,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   // Set when SCOUT hasn't captured Amazon's send request yet — bulk can't run
   // silently until it has, so we ask the user to send one message by hand once.
   const [needsPrime, setNeedsPrime] = useState(false)
+  const [editWording, setEditWording] = useState(false)
   const cancelRef = useRef(false)
 
   // De-dupe by campaignId and split into "will send" vs "already messaged".
@@ -248,6 +250,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   }
 
   return (
+   <>
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={sending ? undefined : onClose}>
       <div className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col max-h-[92vh] bg-white dark:bg-[#111113]" style={{ border: '1px solid var(--border)' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 p-5 pb-3">
@@ -336,7 +339,8 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                   <button onClick={addSeg} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#7C3AED] hover:underline"><Plus size={13} /> Add a message</button>
                   <p className="text-[11px] leading-relaxed pt-1" style={{ color: 'var(--text-faint)' }}>
                     <b>[[PRODUCT]]</b> and <b>[[ASIN]]</b> get replaced with each brand&apos;s own product when it sends. Keep them in the message.
-                    {' '}Greeting, credibility, links &amp; sample address come from your <a href="/collaborations" target="_blank" rel="noreferrer" className="font-semibold underline" style={{ color: '#7C3AED' }}>Brand Outreach Profile</a>.
+                    {' '}Greeting, credibility, links &amp; sample address come from your saved profile —{' '}
+                    <button type="button" onClick={() => setEditWording(true)} className="font-semibold underline" style={{ color: '#7C3AED' }}>edit it here</button>.
                   </p>
                 </div>
               )}
@@ -414,5 +418,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
         )}
       </div>
     </div>
+    {editWording && <OutreachProfileModal onClose={() => setEditWording(false)} />}
+   </>
   )
 }
