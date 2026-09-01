@@ -927,6 +927,55 @@ function ccResolveSendInPage(opts) {
 // resolve → chat-lookup → send pipeline in the user's own session. No catalog,
 // no visible tab. campaignIdsHint (from our catalog, if any) is tried alongside
 // the ASIN-resolved ones. Needs the learned send + search recipes.
+// Read the Creator Connections brand-chat inbox. GET /connect/api/chat/get in a
+// hidden tab on the creator's affiliate-program.amazon.com session, parse the
+// address book, and flag threads with a new (unread) brand reply — i.e. the last
+// message is newer than the last one the creator read. Best-effort.
+function fetchChatInboxInPage() {
+  return (async () => {
+    try {
+      // The offsite store id is required on this call. Read it from the store
+      // switcher if present; omit it otherwise (cookie auth may still suffice).
+      let storeId = ''
+      try {
+        const m = (document.body && document.body.innerText || '').match(/Store\s*ID:\s*([a-z0-9-]+-\d{2})/i)
+        if (m) storeId = m[1]
+      } catch (e) {}
+      const r = await fetch('/connect/api/chat/get?maxSize=100', {
+        method: 'GET', credentials: 'include',
+        headers: { accept: 'application/json', 'content-type': 'application/json', 'x-request-bamf': 'T1', ...(storeId ? { storeid: storeId } : {}) },
+      })
+      if (!r.ok) return { ok: false, error: 'http ' + r.status }
+      const j = await r.json()
+      const addr = (((j.responses || [])[0] || {}).addresses || [])[0] || {}
+      const book = addr.addressBook || []
+      const chats = book.filter(b => b && b.actorType === 'BRAND' && b.actorName).map(b => ({
+        brand: String(b.actorName || '').trim(),
+        lastMsgTs: Number(b.lastMsgTimeStamp) || 0,
+        lastReadTs: Number(b.lastReadMsgTimeStamp) || 0,
+        unread: (Number(b.lastMsgTimeStamp) || 0) > (Number(b.lastReadMsgTimeStamp) || 0),
+      }))
+      return { ok: true, chats }
+    } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+  })()
+}
+async function getBrandChats() {
+  let tab = null
+  const ka = startKeepAlive()
+  try {
+    tab = await chrome.tabs.create({ url: 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus', active: false })
+    await waitForTabLoad(tab.id, 15000)
+    await _sleep(700)
+    const res = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: fetchChatInboxInPage })
+    return (res && res[0] && res[0].result) || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) }
+  } finally {
+    if (tab != null) { try { await chrome.tabs.remove(tab.id) } catch (e) {} }
+    stopKeepAlive(ka)
+  }
+}
+
 async function sendByAsinApi(asin, message, campaignIdsHint) {
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
   await ensureRecipesLoaded()
@@ -5821,6 +5870,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_CC_CHATS') {
+    // Read the creator's brand-chat inbox (Creator Connections "Messages") in a
+    // hidden tab, so MVP can flag brands that replied.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 40000)
+    getBrandChats()
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true
   }
   if (msg.type === 'MVP_CC_SEND_BY_ASIN') {
     // FULLY BACKGROUND, catalog-free: SCOUT resolves the ASIN to the creator's

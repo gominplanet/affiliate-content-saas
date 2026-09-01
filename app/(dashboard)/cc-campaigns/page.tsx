@@ -18,7 +18,7 @@ import {
   Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake, ShoppingBag,
   Bookmark, BookmarkCheck, Check, Send, Info, X, Pencil,
 } from 'lucide-react'
-import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns } from '@/lib/extension-frame'
+import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns, requestBrandChats } from '@/lib/extension-frame'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { type Tier } from '@/lib/tier'
@@ -116,7 +116,7 @@ function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void
   return { gen, postUrl, makePost }
 }
 
-function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, socialOnly = false, selected, onToggleSelect }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void; saved?: boolean; onToggleSave?: () => void; socialOnly?: boolean; selected?: boolean; onToggleSelect?: () => void }) {
+function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, socialOnly = false, selected, onToggleSelect, hasReply }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void; saved?: boolean; onToggleSave?: () => void; socialOnly?: boolean; selected?: boolean; onToggleSelect?: () => void; hasReply?: boolean }) {
   const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null, onActed)
   const endingSoon = c.daysLeft != null && c.daysLeft <= 1
 
@@ -181,6 +181,7 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
             {status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#1c7a35] bg-[#34c759]/15 inline-flex items-center gap-0.5"><CheckCircle2 size={10} /> Posted</span>}
             {isAccepted && !status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#7C3AED] bg-[#7C3AED]/12">Accepted</span>}
             {status?.messaged && !isAccepted && !status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#8a6d00] bg-[#ffcc00]/15">Messaged</span>}
+            {hasReply && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#1c7a35] bg-[#34c759]/15 inline-flex items-center gap-0.5"><Mail size={10} /> Replied</span>}
           </div>
           <p className="text-[11px] text-[var(--text-3)] truncate">{c.brand || 'Unknown brand'}</p>
           <p className="text-sm font-medium text-[var(--text)] leading-snug line-clamp-2">{c.name || c.repAsin}</p>
@@ -309,6 +310,24 @@ export default function CcCampaignsPage() {
   const [hidePosted, setHidePosted] = useState(false)
   // Surface your outreach: show only campaigns you've already messaged.
   const [messagedOnly, setMessagedOnly] = useState(false)
+  // Brands (lowercased) that have a new reply in your Amazon chat inbox, read via
+  // SCOUT. Drives the "Replied" badge and the Replies filter.
+  const [replyBrands, setReplyBrands] = useState<Set<string>>(new Set())
+  const [repliesOnly, setRepliesOnly] = useState(false)
+  const [checkingReplies, setCheckingReplies] = useState(false)
+  const checkReplies = useCallback(async () => {
+    setCheckingReplies(true)
+    try {
+      const r = await requestBrandChats()
+      if (!r.ok) {
+        toast.error(r.error === 'not-installed' ? 'Install / enable SCOUT and sign in to Amazon to check replies.' : `Couldn’t read your replies (${r.error || 'unknown'}).`)
+        return
+      }
+      const unread = new Set((r.chats || []).filter(c => c.unread).map(c => c.brand.trim().toLowerCase()))
+      setReplyBrands(unread)
+      toast.success(unread.size ? `${unread.size} brand${unread.size === 1 ? '' : 's'} replied — see the “Replied” badge.` : 'No new brand replies right now.')
+    } finally { setCheckingReplies(false) }
+  }, [])
   // "Joined only" — inverse of Hide joined: surface only accepted campaigns.
   // Mutually exclusive with the hide filters.
   const [joinedOnly, setJoinedOnly] = useState(false)
@@ -774,6 +793,14 @@ export default function CcCampaignsPage() {
         <button onClick={() => setMessagedOnly((v) => !v)} title="Show only the brands you've already messaged — your outreach list" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${messagedOnly ? 'border-[#8a6d00] text-[#8a6d00] bg-[#ffcc00]/15' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Messaged
         </button>
+        <button onClick={() => void checkReplies()} disabled={checkingReplies} title="Read your Amazon brand-chat inbox via SCOUT and flag brands that replied" className="px-3 py-2 rounded-lg border border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors">
+          {checkingReplies ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />} {checkingReplies ? 'Checking…' : 'Check replies'}
+        </button>
+        {replyBrands.size > 0 && (
+          <button onClick={() => setRepliesOnly((v) => !v)} title="Show only campaigns whose brand replied" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${repliesOnly ? 'border-[#10B981] text-[#1c7a35] bg-[#34c759]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
+            Replies ({replyBrands.size})
+          </button>
+        )}
         {!joinedOnly && (
           <button onClick={() => syncJoined()} disabled={syncingJoined} title="Save the campaigns you've joined on Amazon (via SCOUT) so Hide joined works across Browse all" className="px-3 py-2 rounded-lg border border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors">
             {syncingJoined ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />}
@@ -826,6 +853,7 @@ export default function CcCampaignsPage() {
           // date is excluded once a minimum is set (can't confirm it qualifies).
           if (minDaysLeft && (c.daysLeft == null || c.daysLeft < minDaysLeft)) return false
           if (messagedOnly && !(c.repAsin && statusByAsin[c.repAsin]?.messaged)) return false
+          if (repliesOnly && !(c.brand && replyBrands.has(c.brand.trim().toLowerCase()))) return false
           if (!hideJoined && !hidePosted) return true
           const st = c.repAsin ? statusByAsin[c.repAsin] : undefined
           if (hideJoined && st?.accepted) return false
@@ -870,6 +898,7 @@ export default function CcCampaignsPage() {
                 socialOnly={tier === 'amazon'}
                 selected={selected.has(c.campaignId)}
                 onToggleSelect={() => toggleSelect(c)}
+                hasReply={!!(c.brand && replyBrands.has(c.brand.trim().toLowerCase()))}
                 onMessage={(cc) => {
                   if (!cc.repAsin) { toast.error('No product ASIN on this campaign yet.'); return }
                   setMsgModal({ product: cc.name || cc.repAsin, asin: cc.repAsin, commissionPct: cc.commissionPct ?? 0, detailsUrl: cc.detailsUrl, brandLabel: cc.brand || undefined })

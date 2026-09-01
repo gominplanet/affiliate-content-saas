@@ -251,6 +251,21 @@ export async function requestSendByAsin(asin: string, message: string, campaignI
   return { ok: !!resp.ok, error: resp.error, reason: resp.reason, groups: resp.groups, campaignId: resp.campaignId, brand: resp.brand }
 }
 
+export interface BrandChat { brand: string; lastMsgTs: number; lastReadTs: number; unread: boolean }
+export interface BrandChatsResult { ok: boolean; chats?: BrandChat[]; error?: string }
+
+/**
+ * Read the creator's Creator Connections brand-chat inbox via SCOUT (a hidden
+ * background tab), so MVP can flag brands that replied. `unread` = the brand's
+ * last message is newer than the last one the creator read. Best-effort.
+ */
+export async function requestBrandChats(): Promise<BrandChatsResult> {
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<BrandChatsResult>({ type: 'MVP_CC_CHATS' }, 42000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, chats: resp.chats, error: resp.error }
+}
+
 export interface CcSendDebug {
   ok: boolean
   hasRecipe?: boolean
