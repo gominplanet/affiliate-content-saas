@@ -275,6 +275,10 @@ export interface CcSendDebug {
   ring?: Array<Record<string, unknown>>
   responses?: Array<Record<string, unknown>>
   creatorId?: string | null
+  creatorName?: string | null
+  /** Diagnostic of the most recent background send (why it failed: which attempt,
+   *  the tab's final url, executeScript result shape, any thrown error). */
+  lastSend?: Record<string, unknown> | null
   error?: string
 }
 

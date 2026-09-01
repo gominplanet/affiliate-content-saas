@@ -604,6 +604,7 @@ const DEFAULT_SEARCH_BODY = JSON.stringify({
 const DEFAULT_SEND_BODY = JSON.stringify({ actorName: ACTOR_PLACEHOLDER, contextToken: CTX_PLACEHOLDER, content: MSG_PLACEHOLDER })
 let _ccNetRing = []           // recent captured request POSTs (in-memory)
 let _ccRespRing = []          // recent captured RESPONSES (in-memory, for diag)
+let _ccLastSendDiag = null    // diagnostic of the most recent background send (for MVP_CC_DEBUG)
 let _ccSendRecipe = null      // /chat/message/send template (persisted)
 let _ccSearchRecipe = null    // /chat/search template (persisted)
 // collaboration/search browse query learned from the active view — {body,headers}.
@@ -1070,7 +1071,19 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
   // navigates mid-run) the injection context is torn down and Chrome hands back
   // an empty result ("no-result"), which is transient — a fresh, longer-settled
   // tab clears it.
+  // Per-send diagnostic (exposed via MVP_CC_DEBUG.lastSend). Records WHY a send
+  // failed so a "no-result" is never opaque again — which attempt, the tab's
+  // final url, the executeScript result shape, and any thrown error.
+  const diag = {
+    asin: asin || null, ts: Date.now(),
+    usedDefaultSend: !(_ccSendRecipe && _ccSendRecipe.bodyTemplate),
+    usedDefaultSearch: !(_ccSearchRecipe && _ccSearchRecipe.bodyTemplate),
+    creatorIdAtStart: _ccCreatorId ? String(_ccCreatorId).slice(0, 22) + '…' : null,
+    creatorNameAtStart: _ccCreatorName || null,
+    attempts: [],
+  }
   const attempt = async (settleMs) => {
+    const a = { settleMs, finalUrl: null, resLen: null, hadResult: null, threw: null, reason: null }
     let tabId = null
     try {
       // Open the ACTIVE / joined view — the SAME page the (reliably working)
@@ -1086,7 +1099,11 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
       await waitForTabLoad(tabId, 15000)
       // If Amazon bounced us to sign-in, the in-page API calls would 401 — report
       // it cleanly instead of grinding.
-      try { const t = await chrome.tabs.get(tabId); if (t && t.url && /\/ap\/signin|\/gp\/sign-in/i.test(t.url)) return { ok: false, reason: 'not-signed-in' } } catch (e) {}
+      try {
+        const t = await chrome.tabs.get(tabId)
+        a.finalUrl = t && t.url ? String(t.url).slice(0, 160) : null
+        if (t && t.url && /\/ap\/signin|\/gp\/sign-in/i.test(t.url)) { a.reason = 'not-signed-in'; diag.attempts.push(a); return { ok: false, reason: 'not-signed-in' } }
+      } catch (e) {}
       await _sleep(settleMs)
       // Warm up like the list path: give Amazon's SPA a moment to fire its own
       // connect-API calls so net-hook can capture the creator id (and headers) if
@@ -1094,17 +1111,34 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
       // ASIN → campaign, so don't inject until we have it (or we've waited long
       // enough that the page must have it in its own HTML for in-page discovery).
       for (let i = 0; i < 20 && !_ccCreatorId; i++) await _sleep(500)
-      const res = await chrome.scripting.executeScript({
-        target: { tabId }, world: 'MAIN', func: ccResolveSendInPage,
-        args: [{
-          asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
-          creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
-          sendTemplate, searchTemplate,
-          MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
-          CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
-        }],
-      })
+      // Re-read the tab url just before injecting — the SPA often client-navigates
+      // during the settle, which is what used to tear the frame down mid-send.
+      try { const t2 = await chrome.tabs.get(tabId); if (t2 && t2.url) a.finalUrl = String(t2.url).slice(0, 160) } catch (e) {}
+      let res = null
+      try {
+        res = await chrome.scripting.executeScript({
+          target: { tabId }, world: 'MAIN', func: ccResolveSendInPage,
+          args: [{
+            asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
+            creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
+            sendTemplate, searchTemplate,
+            MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
+            CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
+          }],
+        })
+      } catch (e) {
+        // A torn-down/navigated frame makes executeScript REJECT (e.g. "Frame was
+        // removed"). Capture it as the real reason instead of a generic exception.
+        a.threw = (e && e.message) ? String(e.message).slice(0, 200) : String(e).slice(0, 200)
+        a.reason = 'exec-threw'
+        diag.attempts.push(a)
+        return { ok: false, reason: 'exec-threw', error: a.threw }
+      }
+      a.resLen = Array.isArray(res) ? res.length : (res == null ? 0 : -1)
+      a.hadResult = !!(res && res[0] && res[0].result)
       const out = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+      a.reason = out.reason || (out.ok ? 'ok' : 'unknown')
+      diag.attempts.push(a)
       // Persist a creator id the in-page step self-discovered from the page, so
       // every later send has it up front.
       try { if (out && out.creatorId && out.creatorId !== _ccCreatorId) { _ccCreatorId = out.creatorId; chrome.storage.local.set({ ccCreatorId: out.creatorId }) } } catch (e) {}
@@ -1117,12 +1151,16 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
     let out = await attempt(1500)
     // Retry an empty result once with a longer settle — it's a tab-lifecycle blip,
     // not a real send failure, so a fresh tab usually succeeds.
-    if (!out || out.reason === 'no-result') { await _sleep(1200); out = await attempt(3500) }
+    if (!out || out.reason === 'no-result' || out.reason === 'exec-threw') { await _sleep(1200); out = await attempt(3500) }
     // Cache the creator's display name the first time we learn it (from the chat
     // search reply), so every later default send fills actorName up front.
     try { if (out && out.creatorName && !_ccCreatorName) { _ccCreatorName = out.creatorName; chrome.storage.local.set({ ccCreatorName: out.creatorName }) } } catch (e) {}
+    diag.finalReason = out && out.reason ? out.reason : (out && out.ok ? 'ok' : 'unknown')
+    diag.ok = !!(out && out.ok)
+    _ccLastSendDiag = diag
     return out
   } catch (e) {
+    diag.finalReason = 'exception'; diag.error = e && e.message ? e.message : String(e); _ccLastSendDiag = diag
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {
     stopKeepAlive(keepAlive)
@@ -5766,6 +5804,8 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
         hasRecipe: !!(_ccSendRecipe && _ccSearchRecipe),
         recipe: summ(_ccSendRecipe), searchRecipe: summ(_ccSearchRecipe),
         ringCount: ring.length, ring, responses, creatorId: _ccCreatorId,
+        creatorName: _ccCreatorName || null,
+        lastSend: _ccLastSendDiag,
       })
     } catch (e) { sendResponse({ ok: false, error: e && e.message ? e.message : 'debug-failed' }) }
     return false
