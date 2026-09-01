@@ -276,23 +276,29 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
           await sleep(6000 + att * 6000) // 6s, then 12s
           r = await requestSendByAsin(c.asin, message, [c.campaignId])
         }
-        // AUTO-PRIME: the very first time SCOUT reports it hasn't learned Amazon's
-        // send yet, teach it by routing THIS brand through the on-page path
-        // (accept + fill + send in a tab), which captures the send recipe as a
-        // side effect. Every later brand then replays silently via the API — so
-        // the user never has to "message one brand by hand". One tab, once.
+        // AUTO-PRIME (one-time, first hard failure): route THIS brand through the
+        // on-page path (accept + fill + send in a tab). That path does two things
+        // the background API can't when it's stuck: it JOINS the brand for real
+        // (so the chat actually exists), and its real send TEACHES SCOUT Amazon's
+        // exact send/search shape via the net-hook. Every later brand then replays
+        // silently via the learned recipe. We trigger it on BOTH "not learned" and
+        // "no chat / no-context-token": the built-in default shape can be slightly
+        // off on a fresh install (→ no-context-token forever), and a real send is
+        // the only thing that corrects it. One tab, once per batch.
         const notLearned = (rr: { reason?: string; error?: string } | undefined) =>
           /not[-_]?learned|no[-_]?recipe|no[-_]?send[-_]?recipe|no[-_]?search[-_]?recipe/.test(String((rr && (rr.reason || rr.error)) || ''))
-        if (!r.ok && notLearned(r) && !primedRef.current) {
+        const needsPrime = (rr: { reason?: string; error?: string } | undefined) =>
+          notLearned(rr) || chatNotReady(rr) || /send[-_]?rejected|no[-_]?campaign/.test(String((rr && (rr.reason || rr.error)) || ''))
+        if (!r.ok && needsPrime(r) && !primedRef.current) {
           primedRef.current = true
-          setRows(rs => rs.map(row => (row.campaign.campaignId === c.campaignId ? { ...row, note: 'Teaching SCOUT your send (one-time)…' } : row)))
+          setRows(rs => rs.map(row => (row.campaign.campaignId === c.campaignId ? { ...row, note: 'Setting SCOUT up on this brand (one-time)…' } : row)))
           try {
             const pr = await requestSendByCampaign([c.campaignId], message, c.asin)
             if (pr.ok) r = { ok: true }
             else {
-              // The recipe may now be learned even if this attempt didn't confirm
-              // delivery — give it a beat and try the fast API path once more.
-              await sleep(1500)
+              // The recipe/chat may now be in place even if this attempt didn't
+              // confirm delivery — give it a beat and try the fast API path again.
+              await sleep(2000)
               const r2 = await requestSendByAsin(c.asin, message, [c.campaignId])
               r = r2.ok ? r2 : (pr as typeof r)
             }
