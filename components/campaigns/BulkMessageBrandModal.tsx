@@ -262,12 +262,20 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
           } catch { /* accept is best-effort */ }
         }
         // Give Amazon a moment to index a fresh acceptance before the chat lookup.
-        if (justAccepted) await sleep(2500)
-        // Fully background: hidden-tab replay of Amazon's own search → chat/send
-        // API (no visible tab, no on-page button). Retry once if a just-accepted
-        // campaign hasn't propagated to the collaboration search yet.
+        if (justAccepted) await sleep(4000)
+        // Fully background: hidden-tab replay of Amazon's own search → chat/send API.
         let r = await requestSendByAsin(c.asin, message, [c.campaignId])
-        if (!r.ok && justAccepted) { await sleep(3500); r = await requestSendByAsin(c.asin, message, [c.campaignId]) }
+        // A brand's chat often lags behind the acceptance — Amazon opens the chat a
+        // bit AFTER you join, so the first lookup can come back "no chat yet"
+        // (no-context-token). Retry that case (and a just-accepted miss) a couple
+        // more times with growing waits before giving up. This is the #1 cause of a
+        // just-joined brand failing when the rest succeed.
+        const chatNotReady = (rr: { reason?: string; error?: string } | undefined) =>
+          /no[-_]?context[-_]?token|no[-_]?chat|open a chat/i.test(String((rr && (rr.reason || rr.error)) || ''))
+        for (let att = 0; att < 2 && !r.ok && (justAccepted || chatNotReady(r)); att++) {
+          await sleep(6000 + att * 6000) // 6s, then 12s
+          r = await requestSendByAsin(c.asin, message, [c.campaignId])
+        }
         // AUTO-PRIME: the very first time SCOUT reports it hasn't learned Amazon's
         // send yet, teach it by routing THIS brand through the on-page path
         // (accept + fill + send in a tab), which captures the send recipe as a
