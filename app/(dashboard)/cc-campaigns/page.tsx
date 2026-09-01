@@ -297,6 +297,9 @@ export default function CcCampaignsPage() {
     return new URLSearchParams(window.location.search).get('q') || ''
   })
   const [minCommission, setMinCommission] = useState(0)
+  // Only campaigns with at least this many days left (0 = any). Client-side over
+  // the loaded pages, so it narrows to long-running campaigns instantly.
+  const [minDaysLeft, setMinDaysLeft] = useState(0)
   const [payingOnly, setPayingOnly] = useState(false)
   const [hasSpots, setHasSpots] = useState(true)
   // Hide campaigns the user has already acted on (client-side, over the loaded
@@ -697,6 +700,12 @@ export default function CcCampaignsPage() {
           <option value={15}>15%+</option>
           <option value={20}>20%+</option>
         </select>
+        <select value={minDaysLeft} onChange={(e) => setMinDaysLeft(Number(e.target.value))} className="input-field text-sm w-auto" title="Only campaigns with at least this long left to run">
+          <option value={0}>Any length</option>
+          <option value={60}>60+ days left</option>
+          <option value={90}>90+ days left</option>
+          <option value={180}>180+ days left</option>
+        </select>
         <button onClick={() => setPayingOnly((v) => !v)} disabled={joinedOnly} title={joinedOnly ? 'Payout history isn’t returned for your joined campaigns, so this filter only applies to Browse all.' : undefined} className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${payingOnly && !joinedOnly ? 'border-[#34c759] text-[#1c7a35] bg-[#34c759]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Paying brands only
         </button>
@@ -739,6 +748,9 @@ export default function CcCampaignsPage() {
         // filter is honored here instead, instantly and without another Amazon tab.
         const visible = campaigns.filter((c) => {
           if (joinedOnly && minCommission && (c.commissionPct == null || c.commissionPct < minCommission)) return false
+          // Days-left filter applies in every mode — a campaign with no known end
+          // date is excluded once a minimum is set (can't confirm it qualifies).
+          if (minDaysLeft && (c.daysLeft == null || c.daysLeft < minDaysLeft)) return false
           if (!hideJoined && !hidePosted) return true
           const st = c.repAsin ? statusByAsin[c.repAsin] : undefined
           if (hideJoined && st?.accepted) return false
@@ -749,7 +761,9 @@ export default function CcCampaignsPage() {
         if (visible.length === 0) {
           return (
             <div className="card p-8 text-center text-sm text-[var(--text-3)]">
-              {joinedOnly && minCommission
+              {minDaysLeft
+                ? `No loaded campaigns have ${minDaysLeft}+ days left. Lower the “days left” filter, or Load more.`
+                : joinedOnly && minCommission
                 ? `None of the loaded joined campaigns are at ${minCommission}%+ commission. Lower the commission filter, or Load more.`
                 : 'Every loaded campaign is hidden by your “Hide joined / Hide posted” filters. Turn one off, or Load more.'}
             </div>
