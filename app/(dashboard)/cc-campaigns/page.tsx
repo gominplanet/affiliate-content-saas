@@ -315,6 +315,11 @@ export default function CcCampaignsPage() {
   const [replyBrands, setReplyBrands] = useState<Set<string>>(new Set())
   const [repliesOnly, setRepliesOnly] = useState(false)
   const [checkingReplies, setCheckingReplies] = useState(false)
+  // How many matching cards to actually render. We show the first 100 and reveal
+  // 100 more per "Load more" so a big result set doesn't paint hundreds of cards
+  // at once (jank + slow). Resets to 100 whenever the filters change (below).
+  const RENDER_STEP = 100
+  const [renderLimit, setRenderLimit] = useState(RENDER_STEP)
   const checkReplies = useCallback(async () => {
     setCheckingReplies(true)
     try {
@@ -331,6 +336,10 @@ export default function CcCampaignsPage() {
   // "Joined only" — inverse of Hide joined: surface only accepted campaigns.
   // Mutually exclusive with the hide filters.
   const [joinedOnly, setJoinedOnly] = useState(false)
+  // Reset the render cap to the first 100 whenever the filters/search change, so a
+  // new query starts at the top (server load-more, which only grows `campaigns`,
+  // does NOT reset it, so freshly loaded cards stay visible).
+  useEffect(() => { setRenderLimit(RENDER_STEP) }, [q, sort, minCommission, minDaysLeft, payingOnly, hasSpots, hideJoined, hidePosted, messagedOnly, repliesOnly, joinedOnly])
   const [syncingJoined, setSyncingJoined] = useState(false)
   // Joined-only is a LIVE view backed by SCOUT (queries the creator's real Amazon
   // joined list on demand), so it scales to accounts with 100k+ joins instead of
@@ -877,6 +886,11 @@ export default function CcCampaignsPage() {
           return true
         })
         const hiddenCount = campaigns.length - visible.length
+        // Only paint the first `renderLimit` cards; "Load more" reveals the next
+        // batch (and, once every loaded card is shown, falls through to the server
+        // load-more below).
+        const shown = visible.slice(0, renderLimit)
+        const moreToReveal = visible.length > shown.length
         if (visible.length === 0) {
           return (
             <div className="card p-8 text-center text-sm text-[var(--text-3)]">
@@ -900,6 +914,7 @@ export default function CcCampaignsPage() {
                 ? <>{total.toLocaleString()} joined campaign{total === 1 ? '' : 's'}{joinedHasMore && <span> · showing first {visible.length.toLocaleString()} — narrow your keyword or Load more</span>}</>
                 : <>{total.toLocaleString()} live campaign{total === 1 ? '' : 's'}</>}
               {hiddenCount > 0 && <span> · {hiddenCount.toLocaleString()} hidden</span>}
+              {shown.length < visible.length && <span> · showing {shown.length.toLocaleString()}</span>}
             </p>
             <div className="flex items-center gap-2 text-[11px]">
               <span style={{ color: 'var(--text-3)' }}>Quick select:</span>
@@ -909,7 +924,7 @@ export default function CcCampaignsPage() {
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {visible.map((c) => (
+            {shown.map((c) => (
               <CampaignCard key={c.campaignId} c={c}
                 status={c.repAsin ? statusByAsin[c.repAsin] : undefined}
                 onActed={loadStatus}
@@ -925,7 +940,14 @@ export default function CcCampaignsPage() {
                 }} />
             ))}
           </div>
-          {joinedOnly ? (joinedHasMore && (
+          {moreToReveal ? (
+            // First reveal more of what's already loaded, in 100-card steps.
+            <div className="flex justify-center mt-6">
+              <button onClick={() => setRenderLimit((l) => l + RENDER_STEP)} className="btn-secondary flex items-center gap-2">
+                Load more <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>({(visible.length - shown.length).toLocaleString()} more)</span>
+              </button>
+            </div>
+          ) : joinedOnly ? (joinedHasMore && (
             <div className="flex justify-center mt-6">
               <button onClick={() => { const p = joinedPages + 12; setJoinedPages(p); void fetchJoinedLive(p, true) }} disabled={loadingMore} className="btn-secondary flex items-center gap-2">
                 {loadingMore ? <Loader2 size={14} className="animate-spin" /> : null} Load more
