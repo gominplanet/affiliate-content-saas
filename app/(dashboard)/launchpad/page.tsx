@@ -13,6 +13,7 @@ import { Loader2, Check, Youtube, Sparkles, Globe } from 'lucide-react'
 import { toast } from 'sonner'
 import UploadStage from '@/components/launchpad/UploadStage'
 import StorefrontStage from '@/components/launchpad/StorefrontStage'
+import { requestYtInjectDisclosures } from '@/lib/extension-frame'
 
 const label = { color: 'var(--fg)' } as const
 const muted = { color: 'var(--fg-muted)' } as const
@@ -52,6 +53,10 @@ export default function LaunchpadPage() {
   const [notifySubs, setNotifySubs] = useState(false)   // never spam the bell by default
   const [madeForKids, setMadeForKids] = useState(false)
   const [embeddable, setEmbeddable] = useState(true)
+  // Studio-injection extras (SCOUT drives Studio's signed save — the only path
+  // YouTube honors for these). Same opt-ins the Co-Pilot offers.
+  const [finishDetails, setFinishDetails] = useState(true)   // paid promotion + AI disclosure
+  const [finishMonetize, setFinishMonetize] = useState(true) // monetization + ad rating
 
   // Amazon — the uploaded file becomes the master (no picker).
   const [creatingMaster, setCreatingMaster] = useState(false)
@@ -134,6 +139,26 @@ export default function LaunchpadPage() {
         const aj = await ap.json().catch(() => ({}))
         if (Array.isArray(aj?.warnings) && aj.warnings.length > 0) toast.warning(aj.warnings.join(' '), { duration: 9000 })
       } catch { /* finishing pass is best-effort — the video is already published */ }
+
+      // 3) Studio-injection extras — paid promotion + AI disclosure + monetization
+      //    + ad rating. YouTube's Data API silently drops these, so SCOUT injects
+      //    them into Studio's own signed save (same as the Co-Pilot). Best-effort:
+      //    needs SCOUT installed and a YouTube Studio session.
+      if (finishDetails || finishMonetize) {
+        try {
+          const inj = await requestYtInjectDisclosures(j.videoId, {
+            paidPromotion: finishDetails,
+            aiDisclosure: finishDetails,
+            hasAlteredContent: false,
+            monetize: finishMonetize,
+            notify: notifySubs,
+          })
+          if (inj.ok) toast.success('Studio details set (paid promotion, AI disclosure' + (finishMonetize ? ', monetization + ad rating' : '') + ').')
+          else if (inj.uncertain) toast.message('Studio save fired — confirm the details in YouTube Studio.', { duration: 9000 })
+          else if (inj.error === 'not-installed') toast.warning('SCOUT isn’t installed, so the Studio details (paid promotion / monetization) were skipped. Install SCOUT and re-run, or set them by hand in Studio.', { duration: 10000 })
+          else toast.warning('Couldn’t set the Studio details automatically: ' + (inj.detail || inj.error || 'unknown') + '. Set them by hand in YouTube Studio.', { duration: 10000 })
+        } catch { /* injection is best-effort — the video is already published */ }
+      }
 
       toast.success(privacy === 'public' ? 'Published to YouTube.' : 'Saved to YouTube as a private draft.')
     } catch (e) {
@@ -253,6 +278,18 @@ export default function LaunchpadPage() {
                           <label className="flex items-center gap-2 text-[13px] cursor-pointer" style={label}>
                             <input type="checkbox" checked={madeForKids} onChange={e => setMadeForKids(e.target.checked)} className="accent-[#7C3AED] w-4 h-4" /> Made for kids
                           </label>
+                        </div>
+                        {/* Studio-injection extras — the same finish the Co-Pilot runs (via SCOUT). */}
+                        <div className="mt-2 pt-2 space-y-1.5 border-t" style={{ borderColor: 'var(--border)' }}>
+                          <label className="flex items-start gap-2 text-[13px] cursor-pointer" style={label}>
+                            <input type="checkbox" checked={finishDetails} onChange={e => setFinishDetails(e.target.checked)} className="mt-0.5 accent-[#7C3AED] w-4 h-4 flex-shrink-0" />
+                            <span>Set <strong>paid promotion</strong> + <strong>AI-use disclosure</strong> in Studio</span>
+                          </label>
+                          <label className="flex items-start gap-2 text-[13px] cursor-pointer" style={label}>
+                            <input type="checkbox" checked={finishMonetize} onChange={e => setFinishMonetize(e.target.checked)} className="mt-0.5 accent-[#7C3AED] w-4 h-4 flex-shrink-0" />
+                            <span>Turn on <strong>monetization</strong> + submit the <strong>ad-suitability rating</strong> <span style={muted}>(uncheck if this channel isn&apos;t monetized)</span></span>
+                          </label>
+                          <p className="text-[11px]" style={muted}>SCOUT drives these through YouTube Studio&apos;s own save (the only path YouTube honors); it needs SCOUT installed and a Studio session. End screens can&apos;t be automated, add one by hand in Studio.</p>
                         </div>
                       </div>
 
