@@ -202,6 +202,34 @@ export async function passportLinkForUser(
   }
 }
 
+/**
+ * Passport for ANY affiliate destination that ISN'T an Amazon ASIN — a non-Amazon
+ * store/brand link, or a geni.us/short link already resolved to its underlying
+ * store page. Passport cloaks + tracks it and 302s the visitor straight through
+ * (forwarded as-is, so the destination must already carry the creator's own
+ * affiliate params). Same gate as passportLinkForUser: returns the Passport URL
+ * when Passport Links is ON (and the tier allows it) and the destination passes
+ * the open-redirect guard, else null so the caller keeps its existing behavior.
+ */
+export async function passportLinkForDestination(
+  db: Db, userId: string, destinationUrl: string, opts?: { source?: string | null; title?: string | null },
+): Promise<string | null> {
+  const dest = (destinationUrl || '').trim()
+  if (!isSafePassportDestination(dest)) return null
+  try {
+    const { data: ig } = await db.from('integrations').select('passport_links_enabled, tier').eq('user_id', userId).maybeSingle()
+    if (!ig?.passport_links_enabled) return null
+    if (!canUsePassport(normalizeTier(ig?.tier))) return null
+    const { data: site } = await db.from('wordpress_sites').select('id').eq('user_id', userId).eq('is_default', true).maybeSingle()
+    const siteId = (site?.id as string | undefined) ?? null
+    const code = await getOrCreatePassportLink(db, userId, siteId, { destinationUrl: dest, label: opts?.title ?? null, source: opts?.source ?? null })
+    if (!code) return null
+    return passportLinkUrl(code)
+  } catch {
+    return null
+  }
+}
+
 const CODE_ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789' // no look-alikes (0/o/1/l)
 function randomCode(len = 7): string {
   let s = ''

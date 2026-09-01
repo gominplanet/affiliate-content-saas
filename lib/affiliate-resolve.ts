@@ -15,7 +15,7 @@ import { discoverProductForVideo } from '@/lib/product-detect'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { appendAmazonSubtag } from '@/lib/geniuslink-group'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { passportLinkForUser } from '@/lib/passport-links'
+import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { shortenBitly } from '@/lib/bitly'
 
@@ -176,6 +176,13 @@ export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<A
     // Geo-routing link; if minting fails, fall back to the plain tagged link
     // (never Geniuslink — the creator didn't pick it).
     const passport = await passportLinkForUser(createAdminClient(), userId, asin, { source: videoId || 'video', title })
+    affiliateUrl = passport || tagFallback()
+  } else if (cfg.style === 'passport' && destination && !/amazon\.[a-z.]+/i.test(destination) && isSafePassportDestination(subtaggedDestination)) {
+    // Passport cloaks ANY affiliate link, not just Amazon ASINs — a non-Amazon
+    // store/brand destination gets a tracked Passport redirect too (forwarded
+    // as-is, so it keeps the creator's own affiliate params). Falls back to the
+    // plain destination if minting fails.
+    const passport = await passportLinkForDestination(createAdminClient(), userId, subtaggedDestination, { source: videoId || 'video', title })
     affiliateUrl = passport || tagFallback()
   } else if (cfg.style === 'bitly') {
     const base = tagFallback()

@@ -20,7 +20,7 @@ import { selfCheckBlogPost, selfCritiqueBlogPost } from '@/lib/blog-self-check'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl, isAmazonNonProductUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
-import { passportLinkForUser } from '@/lib/passport-links'
+import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { shortenBitly } from '@/lib/bitly'
 import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
@@ -686,21 +686,35 @@ async function handleGenerate(request: Request) {
     const blogAsin = destination.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
     const blogLinkStyle = await getLinkStyle(supabase, ownerId)
     if (blogLinkStyle.style === 'passport') {
-      // Passport needs an ASIN to mint. If the source was a geni.us / short link we
-      // couldn't unwrap earlier (no Geniuslink keys connected), resolve it now via
-      // its PUBLIC redirect — no API keys needed — so Passport can still replace it.
-      // Without this, a creator with Passport ON but no Geniuslink keys keeps
-      // shipping the original geni.us link (the exact bug this fixes).
+      // Passport cloaks ANY affiliate destination, not just Amazon ASINs.
+      //   1) Amazon: geo-route by ASIN. Recover the ASIN when it's a direct /dp
+      //      link, or by unwrapping a geni.us / short link via its PUBLIC redirect
+      //      (no API keys needed) — so a creator with Passport ON but no Geniuslink
+      //      keys stops shipping the original geni.us link.
+      //   2) Non-Amazon (a store/brand link, or a geni.us that resolves to one):
+      //      cloak the destination URL as-is (it already carries the creator's own
+      //      affiliate params). This is what makes Passport wrap EVERY link type.
       let passportAsin = blogAsin
-      if (!passportAsin && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(destination)) {
+      let passportDest: string | null = null
+      const isShortish = /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(destination)
+      if (!passportAsin && isShortish) {
         try {
           const finalUrl = await resolveTrueDestination(destination)
           passportAsin = asinFromAmazonUrl(finalUrl)
             || finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase()
             || null
+          // geni.us / short link that resolves to a NON-Amazon store → cloak that.
+          if (!passportAsin && !/amazon\.[a-z.]+/i.test(finalUrl) && isSafePassportDestination(finalUrl)) passportDest = finalUrl
         } catch { /* redirect unreachable — falls back below */ }
+      } else if (!passportAsin && !alreadyGeniuslink && !/amazon\.[a-z.]+/i.test(destination) && isSafePassportDestination(destination)) {
+        // A direct non-Amazon store link the creator used in the description.
+        passportDest = destination
       }
-      const passportBlog = passportAsin ? await passportLinkForUser(supabase, ownerId, passportAsin, { source: 'blog', title: rawTitle }) : null
+      const passportBlog = passportAsin
+        ? await passportLinkForUser(supabase, ownerId, passportAsin, { source: 'blog', title: rawTitle })
+        : passportDest
+          ? await passportLinkForDestination(supabase, ownerId, passportDest, { source: 'blog', title: rawTitle })
+          : null
       // Fallback when Passport can't mint: a tagged Amazon link if we recovered an
       // ASIN, else the tag fallback, else (last resort) the original geni.us link.
       const passportFallback = (passportAsin && wp?.amazon_associates_tag)
