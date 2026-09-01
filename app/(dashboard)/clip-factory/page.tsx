@@ -31,6 +31,8 @@ import { ShortsCreatePanel } from '@/components/vertical/ShortsCreatePanel'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
+import { requestVideoTranscriptCues } from '@/lib/extension-frame'
+import { extractYouTubeVideoId } from '@/lib/youtube-url'
 import { buildYouTubeShortTitle } from '@/lib/youtube-title'
 import { buildYouTubeTags } from '@/lib/youtube-tags'
 import {
@@ -319,9 +321,17 @@ export default function ClipFactoryPage() {
     if (!ownership) { toast.error('Confirm you own the video first.'); return }
     setGenerating(true)
     try {
+      // Grab the timestamped transcript from the creator's own browser via SCOUT
+      // (past YouTube's cloud-IP block) and pass it along, so a pasted link plans
+      // clips without depending on the flaky server-side fetch. Best-effort.
+      let cues: Array<{ text: string; offset: number; duration: number }> = []
+      const ytId = extractYouTubeVideoId(url)
+      if (ytId) {
+        try { cues = await requestVideoTranscriptCues(ytId) } catch { /* fall back to server */ }
+      }
       const res = await fetch('/api/youtube/shorts/plan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ youtubeUrl: url, ownershipConfirmed: true }),
+        body: JSON.stringify({ youtubeUrl: url, ownershipConfirmed: true, ...(cues.length ? { cues } : {}) }),
       })
       const data = await res.json()
       if (!res.ok) {

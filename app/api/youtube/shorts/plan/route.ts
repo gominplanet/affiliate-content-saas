@@ -220,7 +220,16 @@ export async function POST(request: Request) {
         recordUsage({ userId: user.id, tier, feature: 'shorts_transcribe', model: 'fal-whisper', images: 1 })
       }
     }
-    // 1b. No uploaded source, but we can fetch: pull AUDIO ONLY (tiny) and
+    // 1a. Client-supplied cues (browser IP — SCOUT reads the caption track from
+    //     the watch page in the creator's own logged-in YouTube session). Placed
+    //     BEFORE the audio-ingest path on purpose: YouTube throttles our
+    //     datacenter IP, so ingest+Whisper is slow and often blocked (that's the
+    //     "Finding moments…" hang). The browser cues are free and reliable, so
+    //     when SCOUT hands them over we use them and skip the metered fetch.
+    if (cues.length === 0 && Array.isArray(body.cues) && body.cues.length > 0) {
+      cues = normalizeCues(body.cues)
+    }
+    // 1b. No uploaded source, and no browser cues — pull AUDIO ONLY (tiny) and
     //     Whisper it. This avoids downloading the whole video through the
     //     metered residential proxy just to read what was said. The audio is
     //     deleted right after transcription.
@@ -235,10 +244,6 @@ export async function POST(request: Request) {
         const p = storagePathFromPublicUrl(audioUrl, 'instagram-videos')
         if (p) { try { await sb.storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
       }
-    }
-    // 2. Client-supplied cues (browser IP scrape).
-    if (cues.length === 0 && Array.isArray(body.cues) && body.cues.length > 0) {
-      cues = normalizeCues(body.cues)
     }
     // 3. Official YouTube Data API captions via the creator's OAuth token.
     if (cues.length === 0 && youtubeVideoId) {

@@ -700,6 +700,31 @@ export async function requestVideoTranscript(youtubeVideoId: string): Promise<st
   return resp?.ok && typeof resp.transcript === 'string' ? resp.transcript : ''
 }
 
+/** A TIMESTAMPED caption line as SCOUT reads it off YouTube's json3 track:
+ *  `offset`/`duration` are in milliseconds (the server's normalizeCues detects
+ *  the unit). This is what Clip Factory needs to cut real 15–30s windows. */
+export interface VideoTranscriptCue { text: string; offset: number; duration: number }
+
+/**
+ * Ask SCOUT for the video's TIMESTAMPED transcript from the user's own browser
+ * session. This is the reliable path for Clip Factory: YouTube throttles MVP's
+ * datacenter IP (so the server-side scraper and audio ingest fail a lot), but
+ * SCOUT reads the caption track from the watch page in the creator's logged-in
+ * session — even for private/unlisted drafts — and now keeps the per-line
+ * timings the planner needs.
+ *
+ * Returns [] on any failure (extension missing, no captions, timeout) so the
+ * caller just falls back to the server transcript pipeline — no regression.
+ */
+export async function requestVideoTranscriptCues(youtubeVideoId: string): Promise<VideoTranscriptCue[]> {
+  if (!youtubeVideoId) return []
+  const resp = await sendToExtension<{ ok?: boolean; cues?: VideoTranscriptCue[]; error?: string }>(
+    { type: 'MVP_YT_TRANSCRIPT', youtubeVideoId },
+    45000,
+  )
+  return resp?.ok && Array.isArray(resp.cues) ? resp.cues : []
+}
+
 /** One Amazon Influencer video harvested from the user's Manage Content page
  *  (their logged-in session). `asin` is the product the video is attached to,
  *  parsed from the vdp URL — lets MVP match a video to a post reliably. */

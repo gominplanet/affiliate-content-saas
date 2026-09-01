@@ -17,6 +17,7 @@ import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { InfoTip } from '@/components/ui/InfoTip'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
+import { requestVideoTranscriptCues } from '@/lib/extension-frame'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
 
 const PURPLE = '#7C3AED'
@@ -90,9 +91,20 @@ export function ShortsCreatePanel({
   const findShorts = useCallback(async () => {
     setPlanning(true); setError(null)
     try {
+      // Pull the timestamped transcript from the creator's OWN browser via SCOUT
+      // first. YouTube throttles our datacenter IP, so the server-side scraper and
+      // audio ingest fail a lot ("Finding moments…" hangs, then no transcript) —
+      // but SCOUT reads the caption track from the watch page in the creator's
+      // logged-in session and works every time, even on private/unlisted drafts.
+      // Best-effort: no extension / no captions → [] and the server pipeline runs
+      // exactly as before (no regression).
+      let cues: Array<{ text: string; offset: number; duration: number }> = []
+      if (youtubeVideoId) {
+        try { cues = await requestVideoTranscriptCues(youtubeVideoId) } catch { /* fall back to server */ }
+      }
       const res = await fetch('/api/youtube/shorts/plan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId, youtubeVideoId }),
+        body: JSON.stringify({ videoId, youtubeVideoId, ...(cues.length ? { cues } : {}) }),
       })
       const data = await safeJson(res)
       if (!res.ok) {

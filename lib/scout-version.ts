@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.23'
+export const SCOUT_LATEST_VERSION = '1.17.24'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Bulk brand messaging is fully zero-touch: the background send now opens your joined-campaigns view (a stable page that no longer tears down mid-send), warms up your creator identity, and self-discovers it from the page when needed, so a fresh install sends on the first try with no learning send, ever.'
+  'Clip Factory now reads a video’s timestamped transcript straight from your own browser session, so “Find Shorts” works even when YouTube blocks our servers — plus the zero-touch bulk brand messaging fixes from the last build.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

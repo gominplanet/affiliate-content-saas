@@ -472,14 +472,25 @@ async function grabTranscriptInPage() {
     if (!res.ok) return { ok: false, error: 'timedtext-' + res.status }
     const data = await res.json()
     const parts = []
+    // TIMESTAMPED cues — the json3 events already carry per-line timing
+    // (tStartMs / dDurationMs). We keep it so Clip Factory can cut real 15–30s
+    // windows; the flat `transcript` string is still returned for the metadata
+    // generator, which doesn't need timings.
+    const cues = []
     for (const ev of (data.events || [])) {
       if (!ev.segs) continue
-      for (const s of ev.segs) { if (s.utf8) parts.push(s.utf8) }
+      let line = ''
+      for (const s of ev.segs) { if (s.utf8) { parts.push(s.utf8); line += s.utf8 } }
+      line = line.replace(/\s+/g, ' ').trim()
+      const offset = Number(ev.tStartMs)
+      if (line && Number.isFinite(offset)) {
+        cues.push({ text: line, offset, duration: Number(ev.dDurationMs) || 0 })
+      }
     }
     let text = parts.join('').replace(/\s+/g, ' ').trim()
     if (text.length < 20) return { ok: false, error: 'empty-transcript' }
     if (text.length > 50000) text = text.slice(0, 50000)
-    return { ok: true, transcript: text, lang: (pick && pick.languageCode) || null }
+    return { ok: true, transcript: text, cues, lang: (pick && pick.languageCode) || null }
   } catch (e) {
     return { ok: false, error: (e && e.message) ? e.message : 'parse-error' }
   }
