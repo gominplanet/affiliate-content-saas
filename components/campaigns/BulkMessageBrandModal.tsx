@@ -17,7 +17,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Sparkles, Send, Users, Plus, Trash2, Check, AlertTriangle, RotateCcw } from 'lucide-react'
-import { requestSendByCampaign, getScoutStatus } from '@/lib/extension-frame'
+import { requestSendByAsin, requestSendByCampaign, getScoutStatus } from '@/lib/extension-frame'
 
 export interface BulkCampaign {
   campaignId: string
@@ -173,9 +173,16 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, onCl
       let ok = false, err = ''
       try {
         const message = fillTemplate(segments, c.product, c.asin)
-        const r = await requestSendByCampaign([c.campaignId], message, c.asin)
+        // Background-first: the hidden-tab API replay (no visible tab, nothing
+        // left open). It only works once SCOUT has learned Amazon's send and the
+        // campaign is accepted, so fall back to the accept+send path (a visible
+        // tab that ALSO teaches SCOUT the API) when it can't. After the first such
+        // send, later brands go silent via the API path.
+        let r = await requestSendByAsin(c.asin, message, [c.campaignId])
+        if (!r.ok) r = await requestSendByCampaign([c.campaignId], message, c.asin)
         ok = !!r.ok
         err = r.ok ? '' : (r.reason || r.error || 'send failed')
+        try { console.warn('[MVP bulk] send result:', c.brand || c.asin, r) } catch { /* ignore */ }
         if (ok) {
           try {
             await fetch('/api/campaigns/mark-messaged', {
@@ -304,7 +311,8 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, onCl
                   <div key={r.campaign.campaignId} className="flex items-center gap-2 rounded-lg border px-2.5 py-1.5" style={{ borderColor: 'var(--border)' }}>
                     <span className="min-w-0 flex-1">
                       <span className="text-[12px] font-medium block truncate" style={{ color: 'var(--text)' }}>{r.campaign.brand || 'Unknown brand'}</span>
-                      <span className="text-[11px] block truncate" style={{ color: 'var(--text-faint)' }}>{r.campaign.product || r.campaign.asin}{r.error ? ` · ${r.error}` : ''}</span>
+                      <span className="text-[11px] block truncate" style={{ color: 'var(--text-faint)' }}>{r.campaign.product || r.campaign.asin}</span>
+                      {r.error && <span className="text-[11px] block" style={{ color: '#b3261e' }}>{r.error}</span>}
                     </span>
                     <span className="text-[10px] font-semibold px-1.5 py-[2px] rounded flex-shrink-0 inline-flex items-center gap-1" style={{ background: chip.bg, color: chip.c }}>
                       {r.state === 'sending' && <Loader2 size={10} className="animate-spin" />}
