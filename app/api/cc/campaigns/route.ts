@@ -50,10 +50,11 @@ interface CatalogRow {
   rating: number | null
   review_count: number | null
   monthly_sold: number | null
+  sales_rank: number | null
   video_count: number | null
 }
 
-const COLS = 'campaign_id, campaign_name, brand_name, asins, rep_asin, commission_pct, starts_at, ends_at, budget, budget_remaining, available_slot, total_slot, image_url, price_now_cents, price_was_cents, discount_pct, rating, review_count, monthly_sold, video_count'
+const COLS = 'campaign_id, campaign_name, brand_name, asins, rep_asin, commission_pct, starts_at, ends_at, budget, budget_remaining, available_slot, total_slot, image_url, price_now_cents, price_was_cents, discount_pct, rating, review_count, monthly_sold, sales_rank, video_count'
 
 export async function GET(request: NextRequest) {
   try {
@@ -202,7 +203,13 @@ export async function GET(request: NextRequest) {
     query = sort === 'ending'
       ? query.order('ends_at', { ascending: true })
       : sort === 'demand'
-        ? query.order('monthly_sold', { ascending: false, nullsFirst: false })
+        // Demand = Amazon's "bought in past month" first, then FALL BACK to Keepa's
+        // sales rank (lower = stronger seller) so a product with no bought-badge
+        // still ranks by real demand instead of sinking. Two-key so the coarse
+        // window pulls strong-rank campaigns in even when they lack a badge.
+        ? query
+            .order('monthly_sold', { ascending: false, nullsFirst: false })
+            .order('sales_rank', { ascending: true, nullsFirst: false })
         : query.order('commission_pct', { ascending: false, nullsFirst: false })
 
     const { data, error } = await query
@@ -256,6 +263,7 @@ export async function GET(request: NextRequest) {
         rating: r.rating,
         reviewCount: r.review_count,
         monthlySold: r.monthly_sold,
+        salesRank: r.sales_rank,
         videoCount: r.video_count,
         endsAt: r.ends_at,
         daysLeft,
@@ -273,6 +281,17 @@ export async function GET(request: NextRequest) {
     // Final ranking (after enrichment) for the derived sorts.
     if (sort === 'score') enriched.sort((a, b) => b.score - a.score)
     else if (sort === 'perSale') enriched.sort((a, b) => (b.perSale ?? 0) - (a.perSale ?? 0))
+    else if (sort === 'demand') {
+      // Amazon's "bought in past month" first (a product WITH a badge always
+      // outranks one without), then fall back to / tie-break on Keepa's sales
+      // rank (lower number = stronger seller). Explicit re-sort so the order
+      // holds regardless of how the DB returned nulls.
+      enriched.sort((a, b) => {
+        const am = a.monthlySold ?? -1, bm = b.monthlySold ?? -1
+        if (bm !== am) return bm - am
+        return (a.salesRank ?? Infinity) - (b.salesRank ?? Infinity)
+      })
+    }
     else if (payingOnly) { /* keep DB order */ }
 
     // "Paying brands only" is STRICT: it shows ONLY brands that positively read
