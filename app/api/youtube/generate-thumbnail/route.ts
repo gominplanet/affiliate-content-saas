@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
+import { asinFromAmazonUrl } from '@/lib/product-link'
 import { createOpenAIService, normalizeToPng } from '@/services/openai'
 import { fal } from '@fal-ai/client'
 import sharp from 'sharp'
@@ -1338,13 +1339,25 @@ export async function POST(request: Request) {
       fastImage: true,
     })
     productImageUrl = refForThumbnail.productImageUrl ?? productImageUrl
+    // The resolver already scraped the product's REAL title (following the pasted
+    // link / ASIN). Use it so the Art Director knows WHAT the product is. Without
+    // this, a pasted-URL product left productTitle empty and the briefs came out
+    // generic ("SPOTLIGHT THE PRODUCT", "HERO SHOT") instead of product-specific.
+    // Guard against the resolver's fallback of echoing the caller's video title.
+    if (!productTitle && refForThumbnail.productTitle && refForThumbnail.productTitle !== (videoTitle ?? '')) {
+      productTitle = refForThumbnail.productTitle
+    }
 
-    // Fill in title / description / bullets from Amazon directly when we have
-    // the ASIN — the resolver returns the image gallery but not the structured
-    // text fields that the thumbnail prompt needs.
-    if (asin && (!productTitle || !productDescription || !productBullets.length)) {
+    // Fill in title / description / bullets from Amazon directly. Derive the ASIN
+    // from the pasted product URL too — the thumbnail form sends `productUrl`, NOT
+    // `asin`, when a link is pasted, so keying only off the body `asin` left the
+    // structured text empty and starved the Art Director of real product context.
+    const effAsin = (asin && asin.trim())
+      || (pastedProductUrl ? asinFromAmazonUrl(pastedProductUrl) : null)
+      || null
+    if (effAsin && (!productTitle || !productDescription || !productBullets.length)) {
       try {
-        const p = await fetchAmazonProduct(asin)
+        const p = await fetchAmazonProduct(effAsin)
         if (!productTitle) productTitle = p.title
         if (!productDescription) productDescription = p.description
         if (!productBullets.length) productBullets = p.bullets
@@ -1451,6 +1464,7 @@ export async function POST(request: Request) {
                 'ABSOLUTELY NO PEOPLE — HARD RULE: this is a PRODUCT-ONLY design. There must be ZERO humans anywhere in the image: no person, no face, no head, no hands, no fingers, no arms, no body parts, no silhouettes, and no reflections or shadows of a person, not even small, partial, blurred, or at the edges/background. If Image 1 (the reference) shows a model, hands, or any person holding or using the product, keep ONLY the product itself and OMIT every human element entirely.',
                 '',
                 `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes (mixed colour/size/weight, banner for a key phrase) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
+                `REAL COPY ONLY — every word on the design must be the headline above or a SPECIFIC, true detail about THIS product (its category, a real feature, a spec, a benefit). Do NOT add generic showcase or photography-direction labels such as "HERO SHOT", "FULL DETAILS", "CLOSE-UP REVEAL", "FEATURED PICK", "SPOTLIGHT", "THE PRODUCT", "PRODUCT REVIEW" — those are placeholder filler and must never appear.`,
                 `FRAMING: the canvas is a full ${isPortrait ? 'tall vertical portrait' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
               ].filter(Boolean).join('\n')
               const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
