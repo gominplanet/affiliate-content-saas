@@ -686,8 +686,27 @@ async function handleGenerate(request: Request) {
     const blogAsin = destination.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
     const blogLinkStyle = await getLinkStyle(supabase, ownerId)
     if (blogLinkStyle.style === 'passport') {
-      const passportBlog = blogAsin ? await passportLinkForUser(supabase, ownerId, blogAsin, { source: 'blog', title: rawTitle }) : null
-      affiliateUrlOverride = passportBlog || (alreadyGeniuslink ? destination : tagFallback)
+      // Passport needs an ASIN to mint. If the source was a geni.us / short link we
+      // couldn't unwrap earlier (no Geniuslink keys connected), resolve it now via
+      // its PUBLIC redirect — no API keys needed — so Passport can still replace it.
+      // Without this, a creator with Passport ON but no Geniuslink keys keeps
+      // shipping the original geni.us link (the exact bug this fixes).
+      let passportAsin = blogAsin
+      if (!passportAsin && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(destination)) {
+        try {
+          const finalUrl = await resolveTrueDestination(destination)
+          passportAsin = asinFromAmazonUrl(finalUrl)
+            || finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase()
+            || null
+        } catch { /* redirect unreachable — falls back below */ }
+      }
+      const passportBlog = passportAsin ? await passportLinkForUser(supabase, ownerId, passportAsin, { source: 'blog', title: rawTitle }) : null
+      // Fallback when Passport can't mint: a tagged Amazon link if we recovered an
+      // ASIN, else the tag fallback, else (last resort) the original geni.us link.
+      const passportFallback = (passportAsin && wp?.amazon_associates_tag)
+        ? appendAmazonSubtag(`https://www.amazon.com/dp/${passportAsin}?tag=${wp.amazon_associates_tag}`, linkVideoId)
+        : (alreadyGeniuslink ? destination : tagFallback)
+      affiliateUrlOverride = passportBlog || passportFallback
     } else if (alreadyGeniuslink) {
       // Source material already carries a geni.us link — never break it.
       affiliateUrlOverride = destination
