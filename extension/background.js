@@ -565,6 +565,20 @@ const _sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const MSG_PLACEHOLDER = '__MVP_MSG__'
 const CTX_PLACEHOLDER = '__MVP_CTX__'
 const CAMPAIGN_PLACEHOLDER = '__MVP_CAMPAIGN__'
+// BUILT-IN default body shapes for Amazon's chat/search + chat/message/send, so a
+// fresh install with NO learned recipe can still send FULLY IN THE BACKGROUND
+// (pure cookie-authed API in a hidden tab — no visible DOM, which Amazon throttles
+// in background tabs). These mirror the shapes a real send teaches: chat/search
+// takes {searchOption:{campaignId}}; chat/message/send takes {contextToken,content}
+// (the session cookie identifies the sender, so no actorName is needed). The
+// endpoints carry NO anti-CSRF header — cookies alone authorize them — so empty
+// headers + Content-Type/Accept suffice. A REAL captured recipe always overrides
+// these (ensureRecipesLoaded only fills them in when nothing was learned), so this
+// is a floor, not a ceiling: the moment the net-hook sees one real send, the
+// learned recipe takes over. If Amazon ever changes the shape, a send returns a
+// non-SUCCESS status and is reported honestly (never a false "sent").
+const DEFAULT_SEARCH_BODY = '{"searchOption":{"campaignId":"' + CAMPAIGN_PLACEHOLDER + '"}}'
+const DEFAULT_SEND_BODY = '{"contextToken":"' + CTX_PLACEHOLDER + '","content":"' + MSG_PLACEHOLDER + '"}'
 let _ccNetRing = []           // recent captured request POSTs (in-memory)
 let _ccRespRing = []          // recent captured RESPONSES (in-memory, for diag)
 let _ccSendRecipe = null      // /chat/message/send template (persisted)
@@ -979,7 +993,12 @@ async function getBrandChats() {
 async function sendByAsinApi(asin, message, campaignIdsHint) {
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
   await ensureRecipesLoaded()
-  if (!_ccSendRecipe || !_ccSearchRecipe) return { ok: false, reason: 'not-learned' }
+  // Use the learned recipe when we have one; otherwise fall back to the built-in
+  // default shapes so a fresh install still sends fully in the background (no
+  // manual "prime" send, no visible tab). Cookie auth covers the headers.
+  const sendTemplate = (_ccSendRecipe && _ccSendRecipe.bodyTemplate) || DEFAULT_SEND_BODY
+  const searchTemplate = (_ccSearchRecipe && _ccSearchRecipe.bodyTemplate) || DEFAULT_SEARCH_BODY
+  const sendHeaders = (_ccSendRecipe && _ccSendRecipe.headers) || {}
   const keepAlive = startKeepAlive()
   let tabId = null
   try {
@@ -991,8 +1010,8 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
       target: { tabId }, world: 'MAIN', func: ccResolveSendInPage,
       args: [{
         asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
-        creatorId: _ccCreatorId, headers: _ccSendRecipe.headers || {},
-        sendTemplate: _ccSendRecipe.bodyTemplate, searchTemplate: _ccSearchRecipe.bodyTemplate,
+        creatorId: _ccCreatorId, headers: sendHeaders,
+        sendTemplate, searchTemplate,
         MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
       }],
     })
