@@ -85,7 +85,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const gap = () => 4000 + Math.floor(Math.random() * 4000)
 
 type SendState = 'pending' | 'sending' | 'sent' | 'failed' | 'skipped'
-interface Row { campaign: BulkCampaign; state: SendState; error?: string }
+interface Row { campaign: BulkCampaign; state: SendState; error?: string; note?: string }
 
 export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alreadyAccepted, onClose, onDone }: {
   campaigns: BulkCampaign[]
@@ -109,10 +109,22 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   const [editWording, setEditWording] = useState(false)
   const cancelRef = useRef(false)
 
-  // De-dupe by campaignId and split into "will send" vs "already messaged".
+  // De-dupe by campaignId, then split into "will send" vs "already messaged".
   const unique = Array.from(new Map(campaigns.filter(c => c.campaignId && c.asin).map(c => [c.campaignId, c])).values())
-  const toSend = unique.filter(c => !alreadyMessaged.has((c.asin || '').toUpperCase()))
+  const notMessaged = unique.filter(c => !alreadyMessaged.has((c.asin || '').toUpperCase()))
   const skipped = unique.filter(c => alreadyMessaged.has((c.asin || '').toUpperCase()))
+  // Fold multiple products from the SAME brand into ONE message — Amazon's brand
+  // chat is per brand, so messaging each product would spam the same thread. Only
+  // fold when the brand is known; unknown-brand rows each stand on their own.
+  const seenBrand = new Set<string>()
+  const toSend: BulkCampaign[] = []
+  const folded: BulkCampaign[] = []
+  for (const c of notMessaged) {
+    const b = (c.brand || '').trim().toLowerCase()
+    if (b && seenBrand.has(b)) { folded.push(c); continue }
+    if (b) seenBrand.add(b)
+    toSend.push(c)
+  }
 
   useEffect(() => {
     try {
@@ -174,10 +186,12 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
 
     cancelRef.current = false
     setSending(true)
-    // Seed the rows: everything queued, already-messaged marked skipped.
+    // Seed the rows: queued to send, folded same-brand duplicates, and
+    // already-messaged — the last two shown as skipped with the reason.
     setRows([
       ...targets.map(c => ({ campaign: c, state: 'pending' as SendState })),
-      ...skipped.map(c => ({ campaign: c, state: 'skipped' as SendState })),
+      ...folded.map(c => ({ campaign: c, state: 'skipped' as SendState, note: `Same brand as ${c.brand || 'another'} — messaged once` })),
+      ...skipped.map(c => ({ campaign: c, state: 'skipped' as SendState, note: 'Already messaged' })),
     ])
 
     for (let i = 0; i < targets.length; i++) {
@@ -230,7 +244,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
 
     setSending(false)
     onDone?.()
-  }, [segments, cleanSegments.length, opts.shareAddress, address, skipped, alreadyAccepted, onDone])
+  }, [segments, cleanSegments.length, opts.shareAddress, address, skipped, folded, alreadyAccepted, onDone])
 
   const started = rows.length > 0
   const sentCount = rows.filter(r => r.state === 'sent').length
@@ -244,7 +258,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
       sending: { c: '#7C3AED', bg: 'rgba(124,58,237,0.12)', t: 'Sending…' },
       sent: { c: '#1c7a35', bg: 'rgba(52,199,89,0.15)', t: 'Sent' },
       failed: { c: '#b3261e', bg: 'rgba(255,59,48,0.12)', t: 'Failed' },
-      skipped: { c: '#8a6d00', bg: 'rgba(255,204,0,0.15)', t: 'Already messaged' },
+      skipped: { c: '#8a6d00', bg: 'rgba(255,204,0,0.15)', t: 'Skipped' },
     }
     return map[s]
   }
@@ -259,7 +273,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
               <Users size={17} className="text-[#7C3AED]" /> Message {toSend.length} {toSend.length === 1 ? 'brand' : 'brands'}
             </h2>
             <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
-              One message, filled with each brand&apos;s product{skipped.length > 0 ? ` · ${skipped.length} already messaged (skipped)` : ''}
+              One message, filled with each brand&apos;s product{folded.length > 0 ? ` · ${folded.length} same-brand folded` : ''}{skipped.length > 0 ? ` · ${skipped.length} already messaged` : ''}
             </p>
           </div>
           {!sending && <button onClick={onClose} aria-label="Close" className="p-1 rounded-md hover:bg-black/5" style={{ color: 'var(--text-faint)' }}><X size={18} /></button>}
@@ -355,6 +369,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                     <span className="min-w-0 flex-1">
                       <span className="text-[12px] font-medium block truncate" style={{ color: 'var(--text)' }}>{r.campaign.brand || 'Unknown brand'}</span>
                       <span className="text-[11px] block truncate" style={{ color: 'var(--text-faint)' }}>{r.campaign.product || r.campaign.asin}</span>
+                      {r.note && <span className="text-[11px] block" style={{ color: '#8a6d00' }}>{r.note}</span>}
                       {r.error && <span className="text-[11px] block" style={{ color: '#b3261e' }}>{r.error}</span>}
                     </span>
                     <span className="text-[10px] font-semibold px-1.5 py-[2px] rounded flex-shrink-0 inline-flex items-center gap-1" style={{ background: chip.bg, color: chip.c }}>
@@ -399,7 +414,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
           ) : (
             <>
               <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
-                {sentCount} sent{failedRows.length ? ` · ${failedRows.length} failed` : ''}{skipped.length ? ` · ${skipped.length} skipped` : ''}
+                {sentCount} sent{failedRows.length ? ` · ${failedRows.length} failed` : ''}{(skipped.length + folded.length) ? ` · ${skipped.length + folded.length} skipped` : ''}
               </span>
               {failedRows.length > 0 && (
                 <button onClick={() => runBatch(failedRows.map(r => r.campaign))} className="ml-auto inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
