@@ -184,6 +184,7 @@ Return ONLY the post text, nothing else.`,
         postId: post.id, link: affiliateLink, title: post.title ?? '', userId: user.id,
         apiKey: integration?.geniuslink_api_key ?? null, apiSecret: integration?.geniuslink_api_secret ?? null,
         siteId: post.wordpress_site_id ?? null, siteUrl: post.wordpress_url ?? null,
+        source: 'facebook',
       })
     }
     // Per-platform link pref: affiliate on/off × content (blog / video / none).

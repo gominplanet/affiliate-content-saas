@@ -10,6 +10,9 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { shortenBitly } from '@/lib/bitly'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
+import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
+import { resolveTrueDestination } from '@/lib/affiliate-resolve'
+import { asinFromAmazonUrl } from '@/lib/product-link'
 
 export type BlogSocialLinkMode = 'direct' | 'geniuslink' | 'bitly'
 
@@ -45,13 +48,43 @@ export async function ensureAffiliateShareLink(
     apiSecret: string | null
     siteId?: string | null
     siteUrl?: string | null
+    /** Attribution channel baked into the Passport code (e.g. 'facebook'). */
+    source?: string | null
   },
 ): Promise<string | null> {
   const { postId, link, title, userId, apiKey, apiSecret, siteId, siteUrl } = opts
   if (!link) return link
-  if (/geni\.us/i.test(link)) return link                  // already a Geniuslink
 
   const cfg = await getLinkStyle(supabase, userId)
+
+  // Passport cloaks the CTA regardless of what the stored link is — INCLUDING an
+  // existing geni.us (converting geni.us → Passport is the upgrade the creator
+  // chose). Recover an ASIN (direct, or by unwrapping a geni.us / short link via
+  // its public redirect), else cloak a non-Amazon destination as-is. This must run
+  // BEFORE the geni.us early-return below, or a stored geni.us would slip through
+  // unchanged — the exact bug where a Passport user kept posting geni.us links.
+  if (cfg.style === 'passport') {
+    try {
+      let asin = link.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || asinFromAmazonUrl(link) || null
+      let dest: string | null = null
+      if (!asin && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(link)) {
+        const finalUrl = await resolveTrueDestination(link)
+        asin = asinFromAmazonUrl(finalUrl) || finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
+        if (!asin && !/amazon\.[a-z.]+/i.test(finalUrl) && isSafePassportDestination(finalUrl)) dest = finalUrl
+      } else if (!asin && !/amazon\.[a-z.]+/i.test(link) && isSafePassportDestination(link)) {
+        dest = link
+      }
+      const src = opts.source || 'social'
+      const pass = asin
+        ? await passportLinkForUser(supabase, userId, asin, { source: src, title })
+        : dest ? await passportLinkForDestination(supabase, userId, dest, { source: src, title }) : null
+      if (pass) return pass
+    } catch { /* fall through to the stored link */ }
+    return link
+  }
+
+  if (/geni\.us/i.test(link)) return link                  // already a Geniuslink
+
   if (cfg.style === 'geniuslink' && apiKey && apiSecret && /amazon\.[a-z.]+/i.test(link)) {
     try {
       const groupId = await resolveGeniuslinkGroupId({ supabase, siteId, siteUrl, apiKey, apiSecret }).catch(() => null)

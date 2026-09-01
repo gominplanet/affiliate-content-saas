@@ -110,6 +110,7 @@ export async function POST(request: NextRequest) {
         postId: (post as any).id, link: affiliateLink, title: (post as any).title ?? '', userId: user.id,
         apiKey: integration?.geniuslink_api_key ?? null, apiSecret: integration?.geniuslink_api_secret ?? null,
         siteId: (post as any).wordpress_site_id ?? null, siteUrl: (post as any).wordpress_url ?? null,
+        source: 'bluesky',
       })
     }
     const pref = linkPrefFor(parseLinkPrefs(integration?.social_link_modes), 'bluesky')
