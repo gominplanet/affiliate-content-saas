@@ -17,7 +17,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Sparkles, Send, Users, Plus, Trash2, Check, AlertTriangle, RotateCcw } from 'lucide-react'
-import { requestSendByAsin, requestSendByCampaign, getScoutStatus } from '@/lib/extension-frame'
+import { requestSendByAsin, requestSendByCampaign, requestAcceptCampaign, getScoutStatus } from '@/lib/extension-frame'
 
 export interface BulkCampaign {
   campaignId: string
@@ -86,10 +86,12 @@ const gap = () => 4000 + Math.floor(Math.random() * 4000)
 type SendState = 'pending' | 'sending' | 'sent' | 'failed' | 'skipped'
 interface Row { campaign: BulkCampaign; state: SendState; error?: string }
 
-export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, onClose, onDone }: {
+export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alreadyAccepted, onClose, onDone }: {
   campaigns: BulkCampaign[]
   /** Uppercased ASINs the user has already messaged — skipped, not re-sent. */
   alreadyMessaged: Set<string>
+  /** Uppercased ASINs already accepted on Amazon — we skip the accept step. */
+  alreadyAccepted: Set<string>
   onClose: () => void
   onDone?: () => void
 }) {
@@ -173,6 +175,21 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, onCl
       let ok = false, err = ''
       try {
         const message = fillTemplate(segments, c.product, c.asin)
+        // Auto-accept first: Amazon opens the brand chat only after you accept the
+        // campaign, so join every brand we're about to message (skip the ones
+        // already accepted). Best-effort — if accept fails, the send below still
+        // tries and reports its own reason.
+        if (!alreadyAccepted.has((c.asin || '').toUpperCase())) {
+          try {
+            const acc = await requestAcceptCampaign(c.detailsUrl)
+            if (acc.ok && !acc.already) {
+              void fetch('/api/campaigns/mark-accepted', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ asin: c.asin, campaignId: c.campaignId, detailsUrl: c.detailsUrl, brand: c.brand, commissionPct: c.commissionPct, productTitle: c.product }),
+              }).catch(() => {})
+            }
+          } catch { /* accept is best-effort */ }
+        }
         // Background-first: the hidden-tab API replay (no visible tab, nothing
         // left open). It only works once SCOUT has learned Amazon's send and the
         // campaign is accepted, so fall back to the accept+send path (a visible
@@ -199,7 +216,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, onCl
 
     setSending(false)
     onDone?.()
-  }, [segments, cleanSegments.length, opts.shareAddress, address, skipped, onDone])
+  }, [segments, cleanSegments.length, opts.shareAddress, address, skipped, alreadyAccepted, onDone])
 
   const started = rows.length > 0
   const sentCount = rows.filter(r => r.state === 'sent').length
@@ -369,7 +386,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, onCl
         </div>
         {!started && (
           <p className="px-5 pb-4 -mt-1 text-[11px]" style={{ color: 'var(--text-faint)' }}>
-            SCOUT accepts each campaign if needed and sends from your Amazon session, one brand at a time spaced a few seconds apart so the burst isn&apos;t flagged. Keep this tab open; a failed brand won&apos;t stop the rest.
+            SCOUT joins each brand&apos;s campaign if you haven&apos;t already, then sends from your Amazon session, one brand at a time spaced a few seconds apart so the burst isn&apos;t flagged. Keep this tab open; a failed brand won&apos;t stop the rest.
             {finished ? '' : !hasPlaceholder && cleanSegments.length > 0 ? ' Add [[PRODUCT]] / [[ASIN]] back into the message so each brand is named.' : ''}
           </p>
         )}

@@ -848,6 +848,7 @@ export default function CcCampaignsPage() {
             commissionPct: c.commissionPct,
           }))}
           alreadyMessaged={new Set(Object.entries(statusByAsin).filter(([, s]) => s?.messaged).map(([a]) => a.toUpperCase()))}
+          alreadyAccepted={new Set(Object.entries(statusByAsin).filter(([, s]) => s?.accepted).map(([a]) => a.toUpperCase()))}
           onClose={() => { setBulkOpen(false); clearSelected(); loadStatus() }}
           onDone={loadStatus}
         />
