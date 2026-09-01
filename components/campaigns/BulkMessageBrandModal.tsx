@@ -321,12 +321,18 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
         <div className="px-5 overflow-y-auto">
           {!started ? (
             <>
-              <div className="rounded-lg border p-2.5 mb-3 text-[12px] leading-relaxed flex items-start gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--text-soft)' }}>
+              <div className="rounded-lg border p-2.5 mb-2 text-[12px] leading-relaxed flex items-start gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--text-soft)' }}>
                 <span aria-hidden className="mt-[1px]">🔐</span>
                 <span>
                   Make sure you&apos;re signed into{' '}
                   <a href="https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus" target="_blank" rel="noreferrer" className="font-semibold" style={{ color: '#7C3AED' }}>Amazon Creator Connections</a>{' '}
-                  in this browser with SCOUT installed, then hit send. Everything runs in the background — no tabs open.
+                  in this browser with SCOUT installed, then hit send. Everything runs in the background, no tabs open.
+                </span>
+              </div>
+              <div className="rounded-lg border p-2.5 mb-3 text-[12px] leading-relaxed flex items-start gap-2" style={{ borderColor: '#c99a2e', background: 'rgba(245,158,11,0.09)', color: 'var(--text)' }}>
+                <span aria-hidden className="mt-[1px]">🤝</span>
+                <span style={{ color: 'var(--text-soft)' }}>
+                  <b style={{ color: 'var(--text)' }}>Heads up:</b> sending also <b style={{ color: 'var(--text)' }}>accepts (joins) each brand&apos;s campaign</b> on Amazon first, since a brand&apos;s chat only opens once you&apos;ve joined. So the {toSend.length} {toSend.length === 1 ? 'brand' : 'brands'} you message here will also be joined on your account.
                 </span>
               </div>
               <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>Add to every message</p>
