@@ -503,6 +503,11 @@ async function grabTranscriptInPage() {
 const CC_BASE = 'https://affiliate-program.amazon.com/p/connect/requests'
 let _ccCreatorId = null
 try { chrome.storage.local.get(['ccCreatorId'], (o) => { if (o && o.ccCreatorId) _ccCreatorId = o.ccCreatorId }) } catch (e) {}
+// The creator's DISPLAY NAME (e.g. "Gominplanet"), needed to fill the default
+// send/search recipe on a fresh install. Learned from a chat/search response (or
+// the learned recipe's own actorName) and persisted so it survives worker cycles.
+let _ccCreatorName = null
+try { chrome.storage.local.get(['ccCreatorName'], (o) => { if (o && o.ccCreatorName) _ccCreatorName = o.ccCreatorName }) } catch (e) {}
 
 function ccOpportunitiesUrl() {
   const q = _ccCreatorId ? `creatorId=${encodeURIComponent(_ccCreatorId)}&` : ''
@@ -565,20 +570,27 @@ const _sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const MSG_PLACEHOLDER = '__MVP_MSG__'
 const CTX_PLACEHOLDER = '__MVP_CTX__'
 const CAMPAIGN_PLACEHOLDER = '__MVP_CAMPAIGN__'
+const CREATOR_PLACEHOLDER = '__MVP_CREATOR__'   // the creator's amzn1.creator id
+const ACTOR_PLACEHOLDER = '__MVP_ACTOR__'       // the creator's display name
+
 // BUILT-IN default body shapes for Amazon's chat/search + chat/message/send, so a
-// fresh install with NO learned recipe can still send FULLY IN THE BACKGROUND
-// (pure cookie-authed API in a hidden tab — no visible DOM, which Amazon throttles
-// in background tabs). These mirror the shapes a real send teaches: chat/search
-// takes {searchOption:{campaignId}}; chat/message/send takes {contextToken,content}
-// (the session cookie identifies the sender, so no actorName is needed). The
-// endpoints carry NO anti-CSRF header — cookies alone authorize them — so empty
-// headers + Content-Type/Accept suffice. A REAL captured recipe always overrides
-// these (ensureRecipesLoaded only fills them in when nothing was learned), so this
-// is a floor, not a ceiling: the moment the net-hook sees one real send, the
-// learned recipe takes over. If Amazon ever changes the shape, a send returns a
-// non-SUCCESS status and is reported honestly (never a false "sent").
-const DEFAULT_SEARCH_BODY = '{"searchOption":{"campaignId":"' + CAMPAIGN_PLACEHOLDER + '"}}'
-const DEFAULT_SEND_BODY = '{"contextToken":"' + CTX_PLACEHOLDER + '","content":"' + MSG_PLACEHOLDER + '"}'
+// fresh install with NO learned recipe can send FULLY IN THE BACKGROUND on the
+// very first try — no manual "learning" send, ever. These are the EXACT shapes a
+// real send/search uses (reverse-engineered from a live capture), with the
+// per-account bits parameterized: the creator's id + display name and the target
+// campaignId. chat/search needs the full requestingActor + filterOption.interestTags
+// allowlist + maxSize/nextToken — the minimal {searchOption:{campaignId}} we used
+// before was rejected, which is why fresh accounts got "no chat". A REAL captured
+// recipe still overrides these the moment the net-hook sees one. All cookie-authed
+// (no anti-CSRF header); a non-SUCCESS reply is reported honestly, never faked.
+const CC_INTEREST_TAGS = ['ALLOWLIST#BULK_ACTIONS_WAVE_3', 'tercero-accessories', 'tercero-automotive', 'tercero-electronics', 'tercero-garden-and-outdoor', 'tercero-handbags-and-wallets', 'tercero-health-and-wellness', 'tercero-home', 'tercero-kitchen-and-dining', 'tercero-luggage-and-travel', 'tercero-mens-fashion', 'tercero-office-products', 'tercero-outdoor-sports', 'tercero-personal-care', 'tercero-pets', 'tercero-shoes', 'tercero-sports-and-fitness', 'tercero-tools-and-home-improvement', 'tercero-videos', 'tercero-wearable-technology', 'tercero-womens-fashion']
+const DEFAULT_SEARCH_BODY = JSON.stringify({
+  requestingActor: { name: ACTOR_PLACEHOLDER, id: CREATOR_PLACEHOLDER, type: 'CREATOR' },
+  searchOption: { actorName: null, campaignId: CAMPAIGN_PLACEHOLDER },
+  filterOption: { fullyClaimed: null, providingSamples: null, interestTags: CC_INTEREST_TAGS },
+  maxSize: 1, nextToken: null,
+})
+const DEFAULT_SEND_BODY = JSON.stringify({ actorName: ACTOR_PLACEHOLDER, contextToken: CTX_PLACEHOLDER, content: MSG_PLACEHOLDER })
 let _ccNetRing = []           // recent captured request POSTs (in-memory)
 let _ccRespRing = []          // recent captured RESPONSES (in-memory, for diag)
 let _ccSendRecipe = null      // /chat/message/send template (persisted)
@@ -738,6 +750,12 @@ function learnSendRecipe(rec) {
   if (!t.includes(MSG_PLACEHOLDER) || !t.includes(CTX_PLACEHOLDER)) return false
   _ccSendRecipe = { url: rec.url, method: rec.method || 'POST', headers: rec.headers || {}, bodyTemplate: t, learnedAt: Date.now() }
   try { chrome.storage.local.set({ ccSendRecipe: _ccSendRecipe }) } catch (e) {}
+  // Capture the creator's display name from the real send's actorName — it's what
+  // the default recipe needs to fill for other/fresh installs.
+  try {
+    const m = body.match(/"actorName"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+    if (m && m[1] && !_ccCreatorName) { _ccCreatorName = m[1]; chrome.storage.local.set({ ccCreatorName: m[1] }) }
+  } catch (e) {}
   return true
 }
 
@@ -860,9 +878,30 @@ async function ccApiReplayOne(tabId, message, campaignId) {
 function ccResolveSendInPage(opts) {
   return (async () => {
     try {
-      const { asin, segments, campaignIdsHint, creatorId, headers, sendTemplate, searchTemplate, MSG, CTX, CAMP } = opts
+      const { asin, segments, campaignIdsHint, creatorId, headers, sendTemplate, searchTemplate, MSG, CTX, CAMP, CREATOR, ACTOR } = opts
       const hdr = () => { const o = Object.assign({}, headers || {}); if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'; if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'; return o }
       const jinner = (s) => { try { return JSON.stringify(String(s == null ? '' : s)).slice(1, -1) } catch (e) { return String(s || '') } }
+      // The default recipe carries __MVP_CREATOR__ / __MVP_ACTOR__ placeholders (a
+      // learned recipe has the real values baked in, so these are no-ops there).
+      // creatorName may be empty on a brand-new install; we discover it from the
+      // chat/search response below and use it for the SEND so the brand sees the
+      // creator's real name, not their id.
+      let creatorName = String(opts.creatorName || '')
+      const fillId = (tpl, nm) => String(tpl)
+        .split(CREATOR || ' ').join(jinner(creatorId || ''))
+        .split(ACTOR || ' ').join(jinner(nm || creatorName || creatorId || ''))
+      // Deep-scan a JSON reply for the creator's own display name (an actor whose
+      // type/actorType is CREATOR).
+      const findCreatorName = (obj) => {
+        const seen = []; const walk = (o) => {
+          if (!o || typeof o !== 'object') return null
+          const ty = String(o.type || o.actorType || '').toUpperCase()
+          if (ty === 'CREATOR' && typeof (o.name || o.actorName) === 'string' && (o.name || o.actorName)) return o.name || o.actorName
+          for (const k of Object.keys(o)) { const v = o[k]; if (v && typeof v === 'object') seen.push(v) }
+          return null
+        }
+        let hit = walk(obj); while (!hit && seen.length) hit = walk(seen.shift()); return hit
+      }
       const A = String(asin || '').toUpperCase()
       const campaignIds = Array.isArray(campaignIdsHint) ? campaignIdsHint.filter(Boolean).slice() : []
       let brand = null
@@ -906,16 +945,19 @@ function ccResolveSendInPage(opts) {
       let lastReason = 'no-context-token'
       for (const cid of campaignIds) {
         try {
-          const sBody = searchTemplate.split(CAMP).join(cid)
+          const sBody = fillId(searchTemplate.split(CAMP).join(cid))
           const sr = await fetch('/connect/api/chat/search', { method: 'POST', headers: hdr(), body: sBody, credentials: 'include' })
           const sj = await sr.json().catch(() => null)
           const token = findToken(sj)
           if (!token) { lastReason = 'no-context-token'; continue }
+          // Learn the creator's real display name from the reply (first time only),
+          // so the send shows it and future sends have it up front.
+          if (!creatorName) { const n = findCreatorName(sj); if (n) creatorName = n }
           let groups = 0
           for (const seg of segments) {
             // Substitute the token FIRST, then the message LAST — so a message that
             // happens to contain a placeholder token can't corrupt the body.
-            const mBody = sendTemplate.split(CTX).join(jinner(token)).split(MSG).join(jinner(seg))
+            const mBody = fillId(sendTemplate, creatorName).split(CTX).join(jinner(token)).split(MSG).join(jinner(seg))
             const mr = await fetch('/connect/api/chat/message/send', { method: 'POST', headers: hdr(), body: mBody, credentials: 'include' })
             let txt = ''
             try { txt = (await mr.text()).slice(0, 300) } catch (e) {}
@@ -927,10 +969,10 @@ function ccResolveSendInPage(opts) {
           }
           // Once ANY group has been delivered to this brand, STOP — never fan out to
           // another candidate (the next is often the same brand chat → duplicates).
-          if (groups > 0) return { ok: groups === segments.length, reason: groups === segments.length ? undefined : 'partial', groups, campaignId: cid, brand }
+          if (groups > 0) return { ok: groups === segments.length, reason: groups === segments.length ? undefined : 'partial', groups, campaignId: cid, brand, creatorName: creatorName || undefined }
         } catch (e) { lastReason = 'exception' }
       }
-      return { ok: false, reason: lastReason, campaignIds, brand, error: resolveErr || undefined }
+      return { ok: false, reason: lastReason, campaignIds, brand, error: resolveErr || undefined, creatorName: creatorName || undefined }
     } catch (e) {
       return { ok: false, reason: 'exception', error: e && e.message ? e.message : String(e) }
     }
@@ -1010,12 +1052,17 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
       target: { tabId }, world: 'MAIN', func: ccResolveSendInPage,
       args: [{
         asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
-        creatorId: _ccCreatorId, headers: sendHeaders,
+        creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
         sendTemplate, searchTemplate,
         MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
+        CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
       }],
     })
-    return (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+    const out = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+    // Cache the creator's display name the first time we learn it (from the chat
+    // search reply), so every later default send fills actorName up front.
+    try { if (out && out.creatorName && !_ccCreatorName) { _ccCreatorName = out.creatorName; chrome.storage.local.set({ ccCreatorName: out.creatorName }) } } catch (e) {}
+    return out
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {
