@@ -10,7 +10,7 @@
  * the content engine (browse → publish in one place).
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import {
@@ -364,6 +364,22 @@ export default function CcCampaignsPage() {
     })
   }, [])
   const clearSelected = useCallback(() => setSelected(new Map()), [])
+  // How many messages will ACTUALLY go out from the current selection — the modal
+  // folds multiple products from the same brand into one thread and skips brands
+  // already messaged, so the raw tick count overstates it. We compute the same
+  // number here so the floating bar and the modal agree (22 ticks → "13 brands").
+  const messageableCount = useMemo(() => {
+    const rows = Array.from(selected.values()).filter(c => c.repAsin)
+    const seenBrand = new Set<string>()
+    let n = 0
+    for (const c of rows) {
+      if (statusByAsin[c.repAsin!]?.messaged) continue
+      const b = (c.brand || '').trim().toLowerCase()
+      if (b) { if (seenBrand.has(b)) continue; seenBrand.add(b) }
+      n++
+    }
+    return n
+  }, [selected, statusByAsin])
   // One-click select the top N eligible campaigns from the current (sorted) view —
   // pairs with the "Best opportunities" sort to pitch the strongest N fast.
   const selectTop = useCallback((n: number, list: Campaign[]) => {
@@ -942,7 +958,10 @@ export default function CcCampaignsPage() {
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9998] flex items-center gap-3 rounded-full pl-4 pr-2 py-2 shadow-lg"
           style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
           <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-            {selected.size} of {BULK_MAX} selected
+            {selected.size} selected
+            {messageableCount !== selected.size && (
+              <span className="font-normal" style={{ color: 'var(--text-soft)' }}> · {messageableCount} {messageableCount === 1 ? 'brand' : 'brands'} to message</span>
+            )}
           </span>
           <button onClick={clearSelected} className="text-[12px] font-medium hover:underline" style={{ color: 'var(--text-soft)' }}>Clear</button>
           <button onClick={() => void bulkAccept()} disabled={bulkAccepting}
@@ -954,7 +973,7 @@ export default function CcCampaignsPage() {
           <button onClick={() => setBulkOpen(true)} disabled={bulkAccepting}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-semibold text-white disabled:opacity-60"
             style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
-            <Send size={14} /> Message {selected.size} {selected.size === 1 ? 'brand' : 'brands'}
+            <Send size={14} /> Message {messageableCount} {messageableCount === 1 ? 'brand' : 'brands'}
           </button>
         </div>
       )}
