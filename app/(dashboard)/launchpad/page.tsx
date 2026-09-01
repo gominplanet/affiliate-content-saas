@@ -45,6 +45,13 @@ export default function LaunchpadPage() {
   const [privacy, setPrivacy] = useState<'draft' | 'public'>('draft')
   const [publishing, setPublishing] = useState(false)
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null)
+  // Full Co-Pilot finish: an AI thumbnail + the standard publish options, applied
+  // to the uploaded video via /api/youtube/apply (same backend the Co-Pilot uses).
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null)
+  const [thumbBusy, setThumbBusy] = useState(false)
+  const [notifySubs, setNotifySubs] = useState(false)   // never spam the bell by default
+  const [madeForKids, setMadeForKids] = useState(false)
+  const [embeddable, setEmbeddable] = useState(true)
 
   // Amazon — the uploaded file becomes the master (no picker).
   const [creatingMaster, setCreatingMaster] = useState(false)
@@ -63,28 +70,71 @@ export default function LaunchpadPage() {
       const m: Meta = { title: g.title, alternatives: g.title_alternatives || [], description: g.description, tags: g.tags || [] }
       setMeta(m); setChosenTitle(m.title); setDescription(m.description); setTags(m.tags.join(', '))
       toast.success('Metadata ready.')
+      // Kick off the thumbnail right away so the YouTube step is a finished draft,
+      // not just text — the same Co-Pilot treatment. Non-blocking.
+      void genThumbnail(m.title)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not prepare the metadata')
     } finally { setPreparing(false) }
+  }
+
+  // Generate an AI thumbnail from the chosen title + product ASIN (same route the
+  // Co-Pilot uses). Non-fatal: a channel can still publish without one.
+  async function genThumbnail(titleArg?: string) {
+    const t = (titleArg || chosenTitle || workingTitle || 'My video').trim()
+    setThumbBusy(true)
+    try {
+      const r = await fetch('/api/youtube/generate-thumbnail', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoTitle: t, asin: asin.trim() || undefined }),
+      })
+      const j = await r.json().catch(() => ({}))
+      const url = j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null)
+      if (!r.ok || !url) throw new Error(j.error || 'Could not generate a thumbnail')
+      setThumbUrl(url)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Thumbnail failed')
+    } finally { setThumbBusy(false) }
   }
 
   async function publish() {
     if (!renderedUrl || !chosenTitle.trim()) return
     setPublishing(true)
     try {
+      const tagList = tags.split(',').map(t => t.trim()).filter(Boolean)
+      // 1) Upload the render as a PRIVATE draft (metadata set here).
       const r = await fetch('/api/youtube/upload-video', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoUrl: renderedUrl, title: chosenTitle.trim(), description,
-          tags: tags.split(',').map(t => t.trim()).filter(Boolean),
-          privacyStatus: privacy === 'public' ? 'public' : 'private',
+          tags: tagList, privacyStatus: 'private',
         }),
       })
       const j = await r.json().catch(() => ({}))
       if (j.notEnabled) { toast.error("Publishing to YouTube isn't switched on yet — Google is verifying our upload access."); return }
       if (j.reconnectRequired) { toast.error('Reconnect YouTube to grant upload permission, then try again.'); return }
-      if (!r.ok || !j.url) throw new Error(j.error || 'Publish failed')
+      if (!r.ok || !j.videoId || !j.url) throw new Error(j.error || 'Publish failed')
       setPublishedUrl(j.url)
+
+      // 2) Apply the finishing pass — thumbnail + publish options + final privacy —
+      //    via the same route the Co-Pilot uses. Non-fatal: the video is already up,
+      //    so any warning (e.g. thumbnail needs a verified channel) is surfaced but
+      //    doesn't undo the publish.
+      try {
+        const ap = await fetch('/api/youtube/apply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoId: j.videoId,
+            title: chosenTitle.trim(), description, tags: tagList,
+            thumbnailDataUri: thumbUrl || undefined,
+            madeForKids, notifySubscribers: notifySubs, embeddable,
+            privacyStatus: privacy === 'public' ? 'public' : 'private',
+          }),
+        })
+        const aj = await ap.json().catch(() => ({}))
+        if (Array.isArray(aj?.warnings) && aj.warnings.length > 0) toast.warning(aj.warnings.join(' '), { duration: 9000 })
+      } catch { /* finishing pass is best-effort — the video is already published */ }
+
       toast.success(privacy === 'public' ? 'Published to YouTube.' : 'Saved to YouTube as a private draft.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Publish failed')
@@ -172,6 +222,40 @@ export default function LaunchpadPage() {
                         <label className="text-[12px] font-medium" style={muted}>Description</label>
                         <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
                       </div>
+
+                      {/* Thumbnail — AI-generated, the same engine the Co-Pilot uses */}
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[12px] font-medium" style={muted}>Thumbnail</label>
+                          <button type="button" onClick={() => void genThumbnail()} disabled={thumbBusy}
+                            className="text-[11px] font-medium inline-flex items-center gap-1 disabled:opacity-50" style={{ color: '#7C3AED' }}>
+                            {thumbBusy ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} {thumbUrl ? 'Regenerate' : 'Generate'}
+                          </button>
+                        </div>
+                        <div className="mt-1 rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+                          {thumbUrl
+                            ? <img src={thumbUrl} alt="Generated thumbnail" className="w-full h-full object-cover" />
+                            : <span className="text-[12px] inline-flex items-center gap-1.5" style={muted}>{thumbBusy ? <><Loader2 size={13} className="animate-spin" /> Designing your thumbnail…</> : 'No thumbnail yet'}</span>}
+                        </div>
+                        <p className="text-[11px] mt-1" style={muted}>Custom thumbnails need a phone-verified YouTube channel; if yours isn&apos;t, the video still publishes with everything else.</p>
+                      </div>
+
+                      {/* Publish options — the Co-Pilot defaults */}
+                      <div>
+                        <label className="text-[12px] font-medium" style={muted}>Options</label>
+                        <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <label className="flex items-center gap-2 text-[13px] cursor-pointer" style={label}>
+                            <input type="checkbox" checked={notifySubs} onChange={e => setNotifySubs(e.target.checked)} className="accent-[#7C3AED] w-4 h-4" /> Notify subscribers
+                          </label>
+                          <label className="flex items-center gap-2 text-[13px] cursor-pointer" style={label}>
+                            <input type="checkbox" checked={embeddable} onChange={e => setEmbeddable(e.target.checked)} className="accent-[#7C3AED] w-4 h-4" /> Allow embedding
+                          </label>
+                          <label className="flex items-center gap-2 text-[13px] cursor-pointer" style={label}>
+                            <input type="checkbox" checked={madeForKids} onChange={e => setMadeForKids(e.target.checked)} className="accent-[#7C3AED] w-4 h-4" /> Made for kids
+                          </label>
+                        </div>
+                      </div>
+
                       <div className="flex flex-wrap items-center gap-2">
                         {(['draft', 'public'] as const).map(p => (
                           <button key={p} type="button" onClick={() => setPrivacy(p)} className="px-3 py-2 rounded-lg border text-sm font-medium" style={{ borderColor: privacy === p ? '#7C3AED' : 'var(--border)', borderWidth: privacy === p ? 2 : 1, color: 'var(--fg)' }}>{p === 'draft' ? 'Private draft' : 'Public'}</button>
