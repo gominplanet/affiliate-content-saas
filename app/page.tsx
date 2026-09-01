@@ -249,6 +249,11 @@ function FeaturesGridCondensed() {
             </div>
           ))}
         </div>
+        <div className="text-center mt-9">
+          <a href="/features" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: '#7C3AED' }}>
+            See every feature, by the MVP Loop <ArrowRight size={15} />
+          </a>
+        </div>
       </div>
     </section>
   )
