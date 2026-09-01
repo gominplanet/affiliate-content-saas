@@ -119,6 +119,7 @@
   })
 
   const uuid = () => crypto.randomUUID()
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
   // Normalize a title for duplicate comparison: lowercase, drop a trailing file
   // extension (manual uploads are named "Foo - B0XXXX.mp4"), collapse whitespace.
@@ -198,11 +199,18 @@
     // "timeout" (which is exactly what a signed-in-but-hung upload looked like).
     let step = 'session'
     try {
-      // 1. temp S3 creds
+      // 1. temp S3 creds — retry on Amazon's transient 5xx (a 503 here is just
+      //    the credential service briefly unavailable, common when several
+      //    marketplaces ask at once).
       step = 'credentials'
-      const credRes = await fetch(`https://${location.host}/create/api/path-and-credentials`, { credentials: 'include', signal: AbortSignal.timeout(30000) })
-      if (!credRes.ok) throw new Error(`path-and-credentials ${credRes.status}`)
-      const creds = await credRes.json()
+      let creds = null
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const credRes = await fetch(`https://${location.host}/create/api/path-and-credentials`, { credentials: 'include', signal: AbortSignal.timeout(30000) })
+        if (credRes.ok) { creds = await credRes.json(); break }
+        if (credRes.status >= 500 && attempt < 2) { await sleep(1500 * (attempt + 1)); continue }
+        throw new Error(`path-and-credentials ${credRes.status}`)
+      }
+      if (!creds) throw new Error('path-and-credentials unavailable')
 
       // 2. Upload media to S3 — via the BACKGROUND worker. A signed cross-origin
       //    PUT from this Amazon page triggers a CORS preflight that hangs
@@ -249,9 +257,9 @@
   }
 
   async function publish(job, ctx, videoKey, thumbKey) {
-    const pubRes = await api('shoppable-media', {
+    const body = (mediaId) => ({
       contentType: 'SHOPPABLE_POST',
-      mediaId: uuid(),
+      mediaId,
       shoppableMedias: [{
         type: 'video', uri: videoKey,
         ...(thumbKey ? { thumbnailUri: thumbKey } : {}),
@@ -264,10 +272,23 @@
       slateToken: ctx.slateToken,
       ownerAffiliateId: ctx.ownerAffiliateId || job.ownerAffiliateId || '',
       optOutForGlobalizeAsinList: [], containsSyntheticPerformer: false,
-    }, ctx.csrf)
-    const pub = await pubRes.json().catch(() => ({}))
-    if (!pubRes.ok || pub.hasError) throw new Error(pub.message || `shoppable-media ${pubRes.status}`)
-    return { ok: true, mediaAci: pub.mediaAci || null }
+    })
+    // Amazon's publish-time moderation is inconsistent: the identical title can
+    // pass on one marketplace and trip a "text moderation issue" on another, and
+    // it (plus 5xx / throttling) usually clears on a retry. Back off and retry a
+    // couple of times with a fresh mediaId each attempt (a failed publish creates
+    // nothing, so a new id avoids any "mediaId already exists" collision).
+    let last = ''
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const pubRes = await api('shoppable-media', body(uuid()), ctx.csrf)
+      const pub = await pubRes.json().catch(() => ({}))
+      if (pubRes.ok && !pub.hasError) return { ok: true, mediaAci: pub.mediaAci || null }
+      last = pub.message || `shoppable-media ${pubRes.status}`
+      const transient = pubRes.status >= 500 || /moderation|throttl|temporar|try again|timeout|rate limit|too many/i.test(last)
+      if (transient && attempt < 2) { await sleep(3000 * (attempt + 1)); continue }
+      break
+    }
+    throw new Error(last)
   }
 
   // Is this a sign-in page? Amazon bounces an unauthenticated Creator Hub to

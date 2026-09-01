@@ -5378,9 +5378,11 @@ async function deliverStorefronts(items) {
   // Deliver several marketplaces at once instead of strictly one after another.
   // Each domain uses its own tab and holds its video in that tab's memory only
   // while uploading, so a bounded pool keeps total memory in check while cutting
-  // wall-clock from the sum of every market to roughly the slowest few. Cap at 3
-  // to stay gentle on the machine and on Amazon.
-  const POOL = 3
+  // wall-clock from the sum of every market to roughly the slowest few. Cap at 2:
+  // firing 3+ at once made Amazon's credential + publish endpoints return
+  // transient 503s and moderation flags, so we trade a little speed for fewer
+  // retries (the upload itself also retries those transient errors).
+  const POOL = 2
   const results = []
   let next = 0
   const runNext = async () => {
