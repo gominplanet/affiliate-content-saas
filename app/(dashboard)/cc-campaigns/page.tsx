@@ -18,7 +18,7 @@ import {
   Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake, ShoppingBag,
   Bookmark, BookmarkCheck, Check, Send, Info, X, Pencil,
 } from 'lucide-react'
-import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns, requestBrandChats } from '@/lib/extension-frame'
+import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns, requestBrandChats, requestCcSendDebug, getScoutCcRecipe } from '@/lib/extension-frame'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { type Tier } from '@/lib/tier'
@@ -830,6 +830,23 @@ export default function CcCampaignsPage() {
           <button onClick={() => syncJoined()} disabled={syncingJoined} title="Save the campaigns you've joined on Amazon (via SCOUT) so Hide joined works across Browse all" className="px-3 py-2 rounded-lg border border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors">
             {syncingJoined ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />}
             {syncingJoined ? 'Syncing…' : 'Sync joined from Amazon'}
+          </button>
+        )}
+        {tier === 'admin' && (
+          <button
+            onClick={async () => {
+              try {
+                const full = await getScoutCcRecipe().catch(() => ({ send: null, search: null }))
+                const dbg = await requestCcSendDebug().catch(() => null)
+                const out = JSON.stringify({ full, debug: dbg }, null, 2)
+                try { await navigator.clipboard.writeText(out) } catch { /* clipboard may be blocked */ }
+                try { console.log('[MVP SCOUT recipe]', out) } catch { /* ignore */ }
+                toast.success('SCOUT recipe copied to clipboard (also logged to console).')
+              } catch { toast.error('Could not read SCOUT recipe — is SCOUT installed?') }
+            }}
+            title="Admin: copy SCOUT's learned CC send/search recipe for debugging"
+            className="px-3 py-2 rounded-lg border border-dashed border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 transition-colors">
+            Copy SCOUT recipe
           </button>
         )}
       </div>
