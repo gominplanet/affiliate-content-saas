@@ -89,11 +89,17 @@ export default function LaunchpadPage() {
     const t = (titleArg || chosenTitle || workingTitle || 'My video').trim()
     setThumbBusy(true)
     try {
-      const r = await fetch('/api/youtube/generate-thumbnail', {
+      const call = (noHuman: boolean) => fetch('/api/youtube/generate-thumbnail', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoTitle: t, asin: asin.trim() || undefined }),
+        body: JSON.stringify({ videoTitle: t, asin: asin.trim() || undefined, ...(noHuman ? { noHuman: true } : {}) }),
       })
-      const j = await r.json().catch(() => ({}))
+      // First try WITH the creator's own face (their saved selfies, if any). If
+      // they haven't added any, the route asks to set up a Face Model — but
+      // Launchpad shouldn't hard-block on that: retry as a clean PRODUCT-ONLY
+      // thumbnail so there's always something. Selfies added later get used.
+      let r = await call(false)
+      let j = await r.json().catch(() => ({}))
+      if (!r.ok && j?.needsFaceModel) { r = await call(true); j = await r.json().catch(() => ({})) }
       const url = j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null)
       if (!r.ok || !url) throw new Error(j.error || 'Could not generate a thumbnail')
       setThumbUrl(url)
@@ -262,7 +268,7 @@ export default function LaunchpadPage() {
                             ? <img src={thumbUrl} alt="Generated thumbnail" className="w-full h-full object-cover" />
                             : <span className="text-[12px] inline-flex items-center gap-1.5" style={muted}>{thumbBusy ? <><Loader2 size={13} className="animate-spin" /> Designing your thumbnail…</> : 'No thumbnail yet'}</span>}
                         </div>
-                        <p className="text-[11px] mt-1" style={muted}>Custom thumbnails need a phone-verified YouTube channel; if yours isn&apos;t, the video still publishes with everything else.</p>
+                        <p className="text-[11px] mt-1" style={muted}>Add a few selfies under Face Models to put yourself on the thumbnail; otherwise MVP makes a clean product-only one. Custom thumbnails need a phone-verified YouTube channel; if yours isn&apos;t, the video still publishes with everything else.</p>
                       </div>
 
                       {/* Publish options — the Co-Pilot defaults */}
