@@ -1042,23 +1042,42 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
   const searchTemplate = (_ccSearchRecipe && _ccSearchRecipe.bodyTemplate) || DEFAULT_SEARCH_BODY
   const sendHeaders = (_ccSendRecipe && _ccSendRecipe.headers) || {}
   const keepAlive = startKeepAlive()
-  let tabId = null
+  // ONE attempt: fresh hidden tab → wait for load + settle → run the in-page
+  // resolve/search/send. `settleMs` grows on retry because the connect page is a
+  // heavy SPA; if executeScript runs before it's settled (or the SPA client-
+  // navigates mid-run) the injection context is torn down and Chrome hands back
+  // an empty result ("no-result"), which is transient — a fresh, longer-settled
+  // tab clears it.
+  const attempt = async (settleMs) => {
+    let tabId = null
+    try {
+      const tab = await chrome.tabs.create({ url: 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus', active: false })
+      tabId = tab.id
+      await waitForTabLoad(tabId, 15000)
+      // If Amazon bounced us to sign-in, the in-page API calls would 401 — report
+      // it cleanly instead of grinding.
+      try { const t = await chrome.tabs.get(tabId); if (t && t.url && /\/ap\/signin|\/gp\/sign-in/i.test(t.url)) return { ok: false, reason: 'not-signed-in' } } catch (e) {}
+      await _sleep(settleMs)
+      const res = await chrome.scripting.executeScript({
+        target: { tabId }, world: 'MAIN', func: ccResolveSendInPage,
+        args: [{
+          asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
+          creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
+          sendTemplate, searchTemplate,
+          MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
+          CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
+        }],
+      })
+      return (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+    } finally {
+      if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    }
+  }
   try {
-    const tab = await chrome.tabs.create({ url: 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus', active: false })
-    tabId = tab.id
-    await waitForTabLoad(tabId, 15000)
-    await _sleep(800)
-    const res = await chrome.scripting.executeScript({
-      target: { tabId }, world: 'MAIN', func: ccResolveSendInPage,
-      args: [{
-        asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
-        creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
-        sendTemplate, searchTemplate,
-        MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
-        CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
-      }],
-    })
-    const out = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+    let out = await attempt(1500)
+    // Retry an empty result once with a longer settle — it's a tab-lifecycle blip,
+    // not a real send failure, so a fresh tab usually succeeds.
+    if (!out || out.reason === 'no-result') { await _sleep(1200); out = await attempt(3500) }
     // Cache the creator's display name the first time we learn it (from the chat
     // search reply), so every later default send fills actorName up front.
     try { if (out && out.creatorName && !_ccCreatorName) { _ccCreatorName = out.creatorName; chrome.storage.local.set({ ccCreatorName: out.creatorName }) } } catch (e) {}
@@ -1066,7 +1085,6 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {
-    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
     stopKeepAlive(keepAlive)
   }
 }
