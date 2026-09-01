@@ -17,7 +17,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Sparkles, Send, Users, Plus, Trash2, Check, AlertTriangle, RotateCcw } from 'lucide-react'
-import { requestSendByAsin, requestAcceptCampaign, requestCcSendDebug, getScoutStatus } from '@/lib/extension-frame'
+import { requestSendByAsin, requestAcceptCampaign, getScoutStatus } from '@/lib/extension-frame'
 import OutreachProfileModal from '@/components/collaborations/OutreachProfileModal'
 
 export interface BulkCampaign {
@@ -86,6 +86,19 @@ function fillTemplate(segs: string[], product: string, asin: string): string {
     .join(`\n\n${MARK}\n\n`)
 }
 
+// Turn SCOUT's terse machine reasons into a line the creator can act on.
+function reasonText(raw: string): string {
+  const s = String(raw || '').toLowerCase()
+  if (/not-learned|no-recipe|no-send-recipe|no-search-recipe/.test(s))
+    return 'SCOUT hasn’t captured your send yet — open Creator Connections, message any one brand by hand once, then hit Retry.'
+  if (/no-creator-id/.test(s)) return 'Couldn’t read your Amazon creator profile — open Creator Connections in this browser, then Retry.'
+  if (/no-campaign-for-asin/.test(s)) return 'This product isn’t in your accepted campaigns yet (accept may still be propagating) — Retry in a moment.'
+  if (/no-context-token/.test(s)) return 'Amazon didn’t open a chat for this brand yet — Retry shortly.'
+  if (/send-rejected/.test(s)) return 'Amazon rejected the message (length or content) — trim it and Retry.'
+  if (/not[_-]?signed[_-]?in|signin|401|unauth/.test(s)) return 'You’re signed out of Amazon — sign in to Creator Connections, then Retry.'
+  return raw || 'send failed'
+}
+
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 // 4–8s between sends: spaces the burst out so Amazon doesn't rate-limit / flag it.
 const gap = () => 4000 + Math.floor(Math.random() * 4000)
@@ -109,9 +122,6 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   const [drafting, setDrafting] = useState(false)
   const [sending, setSending] = useState(false)
   const [rows, setRows] = useState<Row[]>([])
-  // Set when SCOUT hasn't captured Amazon's send request yet — bulk can't run
-  // silently until it has, so we ask the user to send one message by hand once.
-  const [needsPrime, setNeedsPrime] = useState(false)
   const [editWording, setEditWording] = useState(false)
   const [templates, setTemplates] = useState<SavedTemplate[]>([])
   useEffect(() => { setTemplates(loadTemplates()) }, [])
@@ -205,13 +215,12 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
     // One SCOUT presence check up front, so we don't hammer 100 sends at a wall.
     const scout = await getScoutStatus().catch(() => ({ installed: false, version: null as string | null }))
     if (!scout.installed) { toast.error('Install / enable SCOUT and sign in to Amazon, then try again.'); return }
-    // The background send replays Amazon's own send API, which SCOUT can only do
-    // AFTER it has captured that request once from a real send. Without it, the
-    // only alternative is the flaky on-page button flow — so stop cleanly and ask
-    // the user to prime it once, rather than opening tabs that fail.
-    const dbg = await requestCcSendDebug().catch(() => ({ ok: false, hasRecipe: false }))
-    if (!dbg.hasRecipe) { setNeedsPrime(true); return }
-    setNeedsPrime(false)
+    // We DON'T pre-gate on a recipe probe anymore. The old probe blocked the whole
+    // batch (and dead-ended the Send button) whenever it was slow, timed out, or a
+    // fresh SCOUT install had lost the learned send — even when a real recipe was
+    // present. The send itself is the source of truth: a learned recipe goes
+    // through, and a genuinely missing one surfaces as an honest per-brand reason
+    // (handled below), so the only real requirement is SCOUT installed + logged in.
     if (opts.shareAddress && address.trim()) { try { localStorage.setItem(ADDR_KEY, address.trim()) } catch { /* ignore */ } }
 
     cancelRef.current = false
@@ -256,7 +265,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
         let r = await requestSendByAsin(c.asin, message, [c.campaignId])
         if (!r.ok && justAccepted) { await sleep(3500); r = await requestSendByAsin(c.asin, message, [c.campaignId]) }
         ok = !!r.ok
-        err = r.ok ? '' : (r.reason || r.error || 'send failed')
+        err = r.ok ? '' : reasonText(r.reason || r.error || 'send failed')
         try { console.warn('[MVP bulk] send result:', c.brand || c.asin, r) } catch { /* ignore */ }
         if (ok) {
           try {
@@ -312,15 +321,14 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
         <div className="px-5 overflow-y-auto">
           {!started ? (
             <>
-              {needsPrime && (
-                <div className="rounded-lg border p-3 mb-3 text-[12px] leading-relaxed" style={{ borderColor: '#f0b429', background: 'rgba(245,158,11,0.08)', color: 'var(--text)' }}>
-                  <p className="font-semibold mb-1" style={{ color: '#8a6d00' }}>One-time setup so bulk can run silently</p>
-                  <p style={{ color: 'var(--text-soft)' }}>
-                    SCOUT sends in the background by replaying Amazon&apos;s own send, which it can only do after it has seen one real send. Send <b>one</b> message by hand on Amazon Creator Connections (open a brand, type anything, hit Send) with SCOUT installed, then come back and hit send again — the whole batch will run in the background from then on.
-                  </p>
-                  <a href="https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus" target="_blank" rel="noreferrer" className="inline-block mt-1.5 font-semibold" style={{ color: '#7C3AED' }}>Open Creator Connections →</a>
-                </div>
-              )}
+              <div className="rounded-lg border p-2.5 mb-3 text-[12px] leading-relaxed flex items-start gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--text-soft)' }}>
+                <span aria-hidden className="mt-[1px]">🔐</span>
+                <span>
+                  Make sure you&apos;re signed into{' '}
+                  <a href="https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus" target="_blank" rel="noreferrer" className="font-semibold" style={{ color: '#7C3AED' }}>Amazon Creator Connections</a>{' '}
+                  in this browser with SCOUT installed, then hit send. Everything runs in the background — no tabs open.
+                </span>
+              </div>
               <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>Add to every message</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
                 {CHECKS.map(c => (
