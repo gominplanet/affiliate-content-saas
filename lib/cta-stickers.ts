@@ -78,6 +78,11 @@ export function platformBadges(destination: CtaDestination, mode: CtaMode): CtaS
 // (01–05, 500×500) sit ~half-width; the wide banners (06–017, 1536×1024 with
 // transparent margins) read best a bit larger.
 export const CTA_STICKERS: CtaSticker[] = [
+  // Newest hand-added designs, pinned to the very top of the gallery. Wide
+  // banners (transparent PNGs) — "Link in the description" in three colorways.
+  { id: 'link-in-desc-1', label: 'Link in description — 1', file: 'link-in-description-1.png', widthPct: 0.78 },
+  { id: 'link-in-desc-2', label: 'Link in description — 2', file: 'link-in-description-2.png', widthPct: 0.78 },
+  { id: 'link-in-desc-3', label: 'Link in description — 3', file: 'link-in-description-3.png', widthPct: 0.78 },
   // Finalized platform badges first — the best-looking, on-brand picks.
   ...PLATFORM_BADGES,
   // Square badges
