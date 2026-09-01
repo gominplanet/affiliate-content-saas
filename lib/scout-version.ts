@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.22'
+export const SCOUT_LATEST_VERSION = '1.17.23'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Bulk brand messaging now works on a brand-new install with zero setup — SCOUT ships with Amazon’s real chat send/search shapes built in and fills your own creator identity automatically, so there’s no manual “learning” send, ever.'
+  'Bulk brand messaging is fully zero-touch: the background send now opens your joined-campaigns view (a stable page that no longer tears down mid-send), warms up your creator identity, and self-discovers it from the page when needed, so a fresh install sends on the first try with no learning send, ever.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

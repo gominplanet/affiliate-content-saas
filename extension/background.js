@@ -878,7 +878,18 @@ async function ccApiReplayOne(tabId, message, campaignId) {
 function ccResolveSendInPage(opts) {
   return (async () => {
     try {
-      const { asin, segments, campaignIdsHint, creatorId, headers, sendTemplate, searchTemplate, MSG, CTX, CAMP, CREATOR, ACTOR } = opts
+      const { asin, segments, campaignIdsHint, headers, sendTemplate, searchTemplate, MSG, CTX, CAMP, CREATOR, ACTOR } = opts
+      // creatorId may arrive empty on a brand-new install; self-discover it from the
+      // open affiliate-program page (same trick the campaign-list step uses) so the
+      // ASIN → campaign resolve still works with zero prior setup.
+      let creatorId = opts.creatorId
+      if (!creatorId) {
+        try {
+          const html = (document.documentElement && document.documentElement.innerHTML) || ''
+          const m = html.match(/amzn1\.creator\.[a-z0-9-]+/i)
+          if (m) creatorId = m[0]
+        } catch (e) {}
+      }
       const hdr = () => { const o = Object.assign({}, headers || {}); if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'; if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'; return o }
       const jinner = (s) => { try { return JSON.stringify(String(s == null ? '' : s)).slice(1, -1) } catch (e) { return String(s || '') } }
       // The default recipe carries __MVP_CREATOR__ / __MVP_ACTOR__ placeholders (a
@@ -930,7 +941,7 @@ function ccResolveSendInPage(opts) {
           for (const a of chosen) { if (a.campaignId && !campaignIds.includes(a.campaignId)) campaignIds.push(a.campaignId); if (!brand && a.brandName) brand = a.brandName }
         } catch (e) { resolveErr = e && e.message ? e.message : String(e) }
       }
-      if (!campaignIds.length) return { ok: false, reason: (A && !creatorId) ? 'no-creator-id' : 'no-campaign-for-asin', error: resolveErr || undefined }
+      if (!campaignIds.length) return { ok: false, reason: (A && !creatorId) ? 'no-creator-id' : 'no-campaign-for-asin', error: resolveErr || undefined, creatorId: creatorId || undefined }
 
       // token finder (contextValidatorToken in the reply, or contextToken).
       const findToken = (j) => {
@@ -969,10 +980,10 @@ function ccResolveSendInPage(opts) {
           }
           // Once ANY group has been delivered to this brand, STOP — never fan out to
           // another candidate (the next is often the same brand chat → duplicates).
-          if (groups > 0) return { ok: groups === segments.length, reason: groups === segments.length ? undefined : 'partial', groups, campaignId: cid, brand, creatorName: creatorName || undefined }
+          if (groups > 0) return { ok: groups === segments.length, reason: groups === segments.length ? undefined : 'partial', groups, campaignId: cid, brand, creatorName: creatorName || undefined, creatorId: creatorId || undefined }
         } catch (e) { lastReason = 'exception' }
       }
-      return { ok: false, reason: lastReason, campaignIds, brand, error: resolveErr || undefined, creatorName: creatorName || undefined }
+      return { ok: false, reason: lastReason, campaignIds, brand, error: resolveErr || undefined, creatorName: creatorName || undefined, creatorId: creatorId || undefined }
     } catch (e) {
       return { ok: false, reason: 'exception', error: e && e.message ? e.message : String(e) }
     }
@@ -1051,13 +1062,27 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
   const attempt = async (settleMs) => {
     let tabId = null
     try {
-      const tab = await chrome.tabs.create({ url: 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus', active: false })
+      // Open the ACTIVE / joined view — the SAME page the (reliably working)
+      // campaign-list path uses. The old opportunity grid
+      // (?status=opportunity&type=affiliate-plus) client-navigates to a default
+      // sub-view on load, which tore down the MAIN-world injection frame right as
+      // we ran the send — Chrome then handed back an empty result ("no-result")
+      // every time. The active view loads to a stable frame, so the injection
+      // survives; it's also the correct session state for sending to campaigns the
+      // creator has already joined (statuses SCHEDULED/DELIVERING).
+      const tab = await chrome.tabs.create({ url: ccActiveUrl(), active: false })
       tabId = tab.id
       await waitForTabLoad(tabId, 15000)
       // If Amazon bounced us to sign-in, the in-page API calls would 401 — report
       // it cleanly instead of grinding.
       try { const t = await chrome.tabs.get(tabId); if (t && t.url && /\/ap\/signin|\/gp\/sign-in/i.test(t.url)) return { ok: false, reason: 'not-signed-in' } } catch (e) {}
       await _sleep(settleMs)
+      // Warm up like the list path: give Amazon's SPA a moment to fire its own
+      // connect-API calls so net-hook can capture the creator id (and headers) if
+      // we don't already have them. The send needs the creator id to resolve the
+      // ASIN → campaign, so don't inject until we have it (or we've waited long
+      // enough that the page must have it in its own HTML for in-page discovery).
+      for (let i = 0; i < 20 && !_ccCreatorId; i++) await _sleep(500)
       const res = await chrome.scripting.executeScript({
         target: { tabId }, world: 'MAIN', func: ccResolveSendInPage,
         args: [{
@@ -1068,7 +1093,11 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
           CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
         }],
       })
-      return (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+      const out = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+      // Persist a creator id the in-page step self-discovered from the page, so
+      // every later send has it up front.
+      try { if (out && out.creatorId && out.creatorId !== _ccCreatorId) { _ccCreatorId = out.creatorId; chrome.storage.local.set({ ccCreatorId: out.creatorId }) } } catch (e) {}
+      return out
     } finally {
       if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
     }
