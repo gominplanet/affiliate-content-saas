@@ -9,11 +9,13 @@
 
 import { useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, Check, Youtube, Sparkles, Globe } from 'lucide-react'
+import { Loader2, Check, Youtube, Sparkles, Globe, Rocket } from 'lucide-react'
 import { toast } from 'sonner'
 import UploadStage from '@/components/launchpad/UploadStage'
 import StorefrontStage from '@/components/launchpad/StorefrontStage'
 import { requestYtInjectDisclosures } from '@/lib/extension-frame'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
 const label = { color: 'var(--fg)' } as const
 const muted = { color: 'var(--fg-muted)' } as const
@@ -28,6 +30,12 @@ function Num({ n, done }: { n: number | string; done?: boolean }) {
 }
 
 export default function LaunchpadPage() {
+  // Launchpad (the upload-a-new-video origin pipeline) is Pro-only. Gate the whole
+  // page up front so a lower tier sees the upgrade card instead of doing the work
+  // and hitting a 403 at publish / storefronts. (YouTube publishing itself is NOT
+  // Pro-only elsewhere — the Co-Pilot offers it to other tiers via a different
+  // path — this gate is specifically the Launchpad flow.)
+  const gateTier = useEffectiveTier()
   const [renderedUrl, setRenderedUrl] = useState<string | null>(null)
   // The CLEAN uploaded video (no CTA). YouTube gets the CTA-burned render;
   // Amazon storefronts get this instead — the CTA is a YouTube-only overlay.
@@ -192,6 +200,25 @@ export default function LaunchpadPage() {
   }
 
   const asinOk = asin.trim().length > 0
+
+  // ── Tier gate ──────────────────────────────────────────────────────────────
+  if (gateTier !== null && !['pro', 'admin'].includes(gateTier)) {
+    return (
+      <FeatureLockedCard
+        icon={<Rocket size={28} strokeWidth={1.8} />}
+        feature="Launchpad"
+        description="Start with a video that isn't on YouTube yet. Upload it once, add a CTA, and MVP takes it everywhere — YouTube (optional, with the full Co-Pilot finish), then every Amazon storefront, with each market's title localized and the video dubbed for non-English shoppers."
+        bullets={[
+          'One upload → YouTube + every Amazon geo',
+          'AI thumbnail, metadata and the Co-Pilot publish finish',
+          'Localized titles + a dub per non-English market',
+          'Delivered through your own logged-in Amazon Creator account',
+        ]}
+        requiredTier="pro"
+        currentTier={gateTier}
+      />
+    )
+  }
 
   return (
     <>
