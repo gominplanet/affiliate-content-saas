@@ -864,7 +864,11 @@ export default function CcCampaignsPage() {
         if (visible.length === 0) {
           return (
             <div className="card p-8 text-center text-sm text-[var(--text-3)]">
-              {minDaysLeft
+              {messagedOnly
+                ? 'None of the loaded campaigns are ones you’ve messaged. The brands you messaged may not be on this page — turn “Messaged” off, or Load more.'
+                : repliesOnly
+                ? 'None of the loaded campaigns are from a brand that replied. Turn “Replies” off, or Load more.'
+                : minDaysLeft
                 ? `No loaded campaigns have ${minDaysLeft}+ days left. Lower the “days left” filter, or Load more.`
                 : joinedOnly && minCommission
                 ? `None of the loaded joined campaigns are at ${minCommission}%+ commission. Lower the commission filter, or Load more.`
