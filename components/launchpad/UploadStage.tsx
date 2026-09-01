@@ -452,6 +452,10 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
           </button>
         </div>
         <p className="text-[12px] mt-2" style={muted}>The CTA is optional. Skip it to use your video exactly as uploaded.</p>
+        <div className="mt-2 rounded-lg border p-2.5 text-[12px] leading-relaxed flex items-start gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--fg-muted)' }}>
+          <span aria-hidden className="mt-[1px]">ℹ️</span>
+          <span>The designed CTA is burned into the <strong>YouTube</strong> upload only. Your Amazon storefronts always get the <strong>clean</strong> video with no overlay, since Amazon adds its own shoppable links.</span>
+        </div>
       </div>
 
       {/* 3. Result */}
