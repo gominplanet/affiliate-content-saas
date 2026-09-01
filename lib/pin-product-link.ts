@@ -10,7 +10,8 @@
 // Returns null when there's no product to link to (the modal then disables the
 // Product option and the pin stays on the blog link).
 import { asinFromAmazonUrl, firstProductUrl } from '@/lib/product-link'
-import { passportLinkForUser } from '@/lib/passport-links'
+import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
+import { resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { shortenBitly } from '@/lib/bitly'
 import { extractAsin } from '@/services/amazon'
@@ -49,15 +50,36 @@ export async function resolvePinProductLink(
     }
   }
 
-  const asin = (productUrl ? asinFromAmazonUrl(productUrl) : null)
+  let asin = (productUrl ? asinFromAmazonUrl(productUrl) : null)
     || extractAsin(`${productUrl || ''} ${title}`)
 
-  // Passport Links (geo-routing) wins WHEN ON. Off → null and we fall through to
-  // the Geniuslink / tagged-direct link below unchanged.
+  // A stored geni.us / short link carries no ASIN in the string, so the above
+  // finds nothing and Passport would be skipped — leaving the pin on the geni.us.
+  // Unwrap it via its PUBLIC redirect to recover the real product, so Passport
+  // (and the tagged fallback) can use it.
+  let unwrapped: string | null = null
+  if (!asin && productUrl && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(productUrl)) {
+    try {
+      const finalUrl = await resolveTrueDestination(productUrl)
+      asin = asinFromAmazonUrl(finalUrl) || finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
+      if (!asin && !/amazon\.[a-z.]+/i.test(finalUrl) && isSafePassportDestination(finalUrl)) unwrapped = finalUrl
+    } catch { /* redirect unreachable — keep the original link */ }
+  }
+  // Once unwrapped to a real non-Amazon store page, use THAT as the destination
+  // (never the geni.us) for the fallback below too.
+  if (unwrapped) productUrl = unwrapped
+
+  // Passport Links (geo-routing / cloaking) wins WHEN ON. Off → null and we fall
+  // through to the Geniuslink / tagged-direct link below unchanged.
   if (asin) {
     try {
-      const p = await passportLinkForUser(supabase, userId, asin, { source: 'pinterest', title })
-      if (p) return p
+      const pl = await passportLinkForUser(supabase, userId, asin, { source: 'pinterest', title })
+      if (pl) return pl
+    } catch { /* fall through */ }
+  } else if (unwrapped) {
+    try {
+      const pl = await passportLinkForDestination(supabase, userId, unwrapped, { source: 'pinterest', title })
+      if (pl) return pl
     } catch { /* fall through */ }
   }
   const tag = ((ig?.amazon_associates_tag as string) || '').trim()
