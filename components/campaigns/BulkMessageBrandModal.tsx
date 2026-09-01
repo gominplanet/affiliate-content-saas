@@ -17,7 +17,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Sparkles, Send, Users, Plus, Trash2, Check, AlertTriangle, RotateCcw } from 'lucide-react'
-import { requestSendByAsin, requestSendByCampaign, requestAcceptCampaign, getScoutStatus } from '@/lib/extension-frame'
+import { requestSendByAsin, requestAcceptCampaign, getScoutStatus } from '@/lib/extension-frame'
 import OutreachProfileModal from '@/components/collaborations/OutreachProfileModal'
 
 export interface BulkCampaign {
@@ -89,11 +89,10 @@ function fillTemplate(segs: string[], product: string, asin: string): string {
 // Turn SCOUT's terse machine reasons into a line the creator can act on.
 function reasonText(raw: string): string {
   const s = String(raw || '').toLowerCase()
-  if (/not-learned|no-recipe|no-send-recipe|no-search-recipe/.test(s))
-    return 'SCOUT hasn’t captured your send yet — open Creator Connections, message any one brand by hand once, then hit Retry.'
+  if (/not-learned|no-recipe|no-send-recipe|no-search-recipe|no-context-token|no-chat/.test(s))
+    return 'Background sending isn’t switched on yet — message any one brand by hand once on Creator Connections, then hit Retry. It stays on after that.'
   if (/no-creator-id/.test(s)) return 'Couldn’t read your Amazon creator profile — open Creator Connections in this browser, then Retry.'
   if (/no-campaign-for-asin/.test(s)) return 'This product isn’t in your accepted campaigns yet (accept may still be propagating) — Retry in a moment.'
-  if (/no-context-token/.test(s)) return 'Amazon didn’t open a chat for this brand yet — Retry shortly.'
   if (/send-rejected/.test(s)) return 'Amazon rejected the message (length or content) — trim it and Retry.'
   if (/not[_-]?signed[_-]?in|signin|401|unauth/.test(s)) return 'You’re signed out of Amazon — sign in to Creator Connections, then Retry.'
   return raw || 'send failed'
@@ -123,9 +122,10 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   const [sending, setSending] = useState(false)
   const [rows, setRows] = useState<Row[]>([])
   const [editWording, setEditWording] = useState(false)
-  // Flips true once we've taught SCOUT the send by routing ONE brand through the
-  // on-page path — after that every brand replays silently via the API.
-  const primedRef = useRef(false)
+  // Flips true when any brand failed because SCOUT hasn't learned the send yet, so
+  // we can show a single "activate with one manual send" hint after the run.
+  const sawNotLearnedRef = useRef(false)
+  const [needsActivation, setNeedsActivation] = useState(false)
   const [templates, setTemplates] = useState<SavedTemplate[]>([])
   useEffect(() => { setTemplates(loadTemplates()) }, [])
   const cancelRef = useRef(false)
@@ -227,7 +227,8 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
     if (opts.shareAddress && address.trim()) { try { localStorage.setItem(ADDR_KEY, address.trim()) } catch { /* ignore */ } }
 
     cancelRef.current = false
-    primedRef.current = false
+    sawNotLearnedRef.current = false
+    setNeedsActivation(false)
     setSending(true)
     // Seed the rows: queued to send, folded same-brand duplicates, and
     // already-messaged — the last two shown as skipped with the reason.
@@ -276,34 +277,17 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
           await sleep(6000 + att * 6000) // 6s, then 12s
           r = await requestSendByAsin(c.asin, message, [c.campaignId])
         }
-        // AUTO-PRIME (one-time, first hard failure): route THIS brand through the
-        // on-page path (accept + fill + send in a tab). That path does two things
-        // the background API can't when it's stuck: it JOINS the brand for real
-        // (so the chat actually exists), and its real send TEACHES SCOUT Amazon's
-        // exact send/search shape via the net-hook. Every later brand then replays
-        // silently via the learned recipe. We trigger it on BOTH "not learned" and
-        // "no chat / no-context-token": the built-in default shape can be slightly
-        // off on a fresh install (→ no-context-token forever), and a real send is
-        // the only thing that corrects it. One tab, once per batch.
+        // NOTE: we deliberately do NOT fall back to an on-page (visible-tab) send
+        // here. Amazon throttles background tabs and renders the message button
+        // late, so that path was unreliable and, worse, broke the "everything runs
+        // in the background" promise by popping tabs that landed on the wrong page.
+        // The reliable model is the pure background API with a learned recipe; when
+        // SCOUT hasn't learned it yet, we report it cleanly (below) and the creator
+        // activates it with ONE manual send — which then backs up to their account
+        // and is restored on every future install. No tabs, ever.
         const notLearned = (rr: { reason?: string; error?: string } | undefined) =>
-          /not[-_]?learned|no[-_]?recipe|no[-_]?send[-_]?recipe|no[-_]?search[-_]?recipe/.test(String((rr && (rr.reason || rr.error)) || ''))
-        const needsPrime = (rr: { reason?: string; error?: string } | undefined) =>
-          notLearned(rr) || chatNotReady(rr) || /send[-_]?rejected|no[-_]?campaign/.test(String((rr && (rr.reason || rr.error)) || ''))
-        if (!r.ok && needsPrime(r) && !primedRef.current) {
-          primedRef.current = true
-          setRows(rs => rs.map(row => (row.campaign.campaignId === c.campaignId ? { ...row, note: 'Setting SCOUT up on this brand (one-time)…' } : row)))
-          try {
-            const pr = await requestSendByCampaign([c.campaignId], message, c.asin)
-            if (pr.ok) r = { ok: true }
-            else {
-              // The recipe/chat may now be in place even if this attempt didn't
-              // confirm delivery — give it a beat and try the fast API path again.
-              await sleep(2000)
-              const r2 = await requestSendByAsin(c.asin, message, [c.campaignId])
-              r = r2.ok ? r2 : (pr as typeof r)
-            }
-          } catch { /* keep the original result */ }
-        }
+          /not[-_]?learned|no[-_]?recipe|no[-_]?send[-_]?recipe|no[-_]?search[-_]?recipe|no[-_]?context[-_]?token|no[-_]?chat/.test(String((rr && (rr.reason || rr.error)) || ''))
+        if (!r.ok && notLearned(r)) sawNotLearnedRef.current = true
         ok = !!r.ok
         err = r.ok ? '' : reasonText(r.reason || r.error || 'send failed')
         try { console.warn('[MVP bulk] send result:', c.brand || c.asin, r) } catch { /* ignore */ }
@@ -322,6 +306,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
     }
 
     setSending(false)
+    setNeedsActivation(sawNotLearnedRef.current)
     onDone?.()
   }, [segments, cleanSegments.length, opts.shareAddress, address, skipped, folded, alreadyAccepted, onDone])
 
@@ -459,6 +444,15 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
           ) : (
             // Sending / results view.
             <div className="space-y-1.5 pb-1">
+              {needsActivation && !sending && (
+                <div className="rounded-lg border p-2.5 mb-2 text-[12px] leading-relaxed flex items-start gap-2" style={{ borderColor: '#c99a2e', background: 'rgba(245,158,11,0.10)', color: 'var(--text)' }}>
+                  <span aria-hidden className="mt-[1px]">⚡</span>
+                  <span style={{ color: 'var(--text-soft)' }}>
+                    <b style={{ color: 'var(--text)' }}>Switch on background sending (one time):</b> open{' '}
+                    <a href="https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus" target="_blank" rel="noreferrer" className="font-semibold" style={{ color: '#7C3AED' }}>Creator Connections</a>, message any one brand by hand, then hit <b style={{ color: 'var(--text)' }}>Retry</b>. MVP remembers it on your account, so you won&apos;t need to do this again, even after a SCOUT update.
+                  </span>
+                </div>
+              )}
               {rows.map(r => {
                 const chip = stateChip(r.state)
                 return (
