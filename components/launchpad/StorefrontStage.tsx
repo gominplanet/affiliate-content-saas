@@ -37,7 +37,7 @@ const muted = { color: 'var(--text-2)' } as const
 
 /** presetVideoId: when set, the stage syncs THAT video and hides its own picker
  *  (Launchpad passes the already-picked video). */
-export default function StorefrontStage({ presetVideoId, presetAsin, allowedDomains, defaultChosen, geoBadges }: {
+export default function StorefrontStage({ presetVideoId, presetAsin, allowedDomains, defaultChosen, geoBadges, marketAsins }: {
   presetVideoId?: string | null
   presetAsin?: string | null
   /** Video Launchpad restricts to a subset of marketplaces (Phase 1: the English
@@ -49,6 +49,10 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   /** Optional per-domain status label ("Product found" / "Not confirmed"), shown
    *  as a small badge so the creator can decide. */
   geoBadges?: Record<string, string> | null
+  /** Per-domain LOCAL ASIN override (Video Launchpad resolves a different ASIN in
+   *  a market where the source one isn't listed). Merged with any the creator
+   *  pastes by hand; sent to /start so each market delivers against its own code. */
+  marketAsins?: Record<string, string> | null
 }) {
   const [videos, setVideos] = useState<Vid[]>([])
   const [markets, setMarkets] = useState<Market[]>([])
@@ -56,6 +60,9 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   const [picked, setPicked] = useState<string | null>(presetVideoId || null)
   const [chosen, setChosen] = useState<Set<string>>(new Set())
   const [asin, setAsin] = useState(presetAsin || '')
+  // ASINs the creator pasted by hand for a market where the source ASIN isn't
+  // listed and SCOUT found no confident local match. Merged over `marketAsins`.
+  const [manualAsins, setManualAsins] = useState<Record<string, string>>({})
   const [running, setRunning] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [targets, setTargets] = useState<Target[]>([])
@@ -128,15 +135,29 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     const next = new Set(prev); next.has(domain) ? next.delete(domain) : next.add(domain); return next
   })
 
+  // The ASIN a given market delivers against: a hand-pasted one wins, else the
+  // page-resolved local ASIN, else the base (US) ASIN.
+  const asinFor = (domain: string) => (manualAsins[domain] || (marketAsins && marketAsins[domain]) || asin).trim().toUpperCase()
+  // A chosen market that isn't confirmed under the base ASIN and has no resolved
+  // or pasted local ASIN yet — the creator can paste one.
+  const needsLocalAsin = (domain: string) =>
+    geoBadges?.[domain] === 'Not listed here' && !(marketAsins && marketAsins[domain]) && !manualAsins[domain]
+
   async function start() {
     if (!picked) { toast.error('Pick a master video first'); return }
     if (chosen.size === 0) { toast.error('Pick at least one marketplace'); return }
     if (!asin.trim()) { toast.error('Enter the product ASIN — MVP needs it to build each market’s title and thumbnail'); return }
     setRunning(true); setTargets([]); setJobId(null)
     try {
+      // Per-market ASIN overrides for the chosen markets that differ from the base.
+      const overrides: Record<string, string> = {}
+      for (const domain of chosen) {
+        const a = asinFor(domain)
+        if (a && a !== asin.trim().toUpperCase()) overrides[domain] = a
+      }
       const r = await fetch('/api/global-sync/start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId: picked, markets: Array.from(chosen), asin: asin.trim() || undefined }),
+        body: JSON.stringify({ videoId: picked, markets: Array.from(chosen), asin: asin.trim() || undefined, marketAsins: Object.keys(overrides).length ? overrides : undefined }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.jobId) throw new Error(j.error || 'Could not start the sync')
@@ -475,27 +496,45 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
           {markets.map(m => {
             const on = chosen.has(m.domain)
             const status = signin[m.domain]
+            // A resolved/pasted local ASIN (product listed abroad under a different code).
+            const localAsin = (marketAsins && marketAsins[m.domain]) || manualAsins[m.domain] || null
+            const showLocal = !!localAsin && localAsin.toUpperCase() !== asin.trim().toUpperCase()
             return (
-              <div key={m.domain} className="flex items-center gap-2 p-2.5 rounded-lg border text-sm"
+              <div key={m.domain} className="flex flex-col gap-2 p-2.5 rounded-lg border text-sm"
                 style={{ borderColor: on ? '#0EA5A4' : 'var(--border)', background: on ? 'rgba(14,165,164,0.05)' : 'transparent', color: 'var(--text)' }}>
-                <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
-                  <input type="checkbox" checked={on} onChange={() => toggleMarket(m.domain)} disabled={running} className="accent-[#0EA5A4]" />
-                  <span className="flex-1 min-w-0">
-                    <span className="font-medium">{m.code}</span>
-                    <span className="text-[11px] ml-1" style={muted}>{m.needsTranslation ? m.langName : 'English'}</span>
-                    {geoBadges && geoBadges[m.domain] && (
-                      <span className="block text-[10px]" style={{ color: geoBadges[m.domain] === 'Product found' ? '#10B981' : 'var(--text-3)' }}>{geoBadges[m.domain]}</span>
-                    )}
-                  </span>
-                </label>
-                {status === 'ready' ? (
-                  <span className="text-[11px] inline-flex items-center gap-0.5 whitespace-nowrap" style={{ color: '#10B981' }} title="Signed in on this marketplace"><Check size={11} /> in</span>
-                ) : (
-                  <button type="button" onClick={() => void signInMarket(m.domain, m.country)}
-                    className="text-[11px] underline whitespace-nowrap inline-flex items-center gap-0.5" style={muted}
-                    title={`Open ${m.country} on Amazon to sign in`}>
-                    <LogIn size={11} /> Log in
-                  </button>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                    <input type="checkbox" checked={on} onChange={() => toggleMarket(m.domain)} disabled={running} className="accent-[#0EA5A4]" />
+                    <span className="flex-1 min-w-0">
+                      <span className="font-medium">{m.code}</span>
+                      <span className="text-[11px] ml-1" style={muted}>{m.needsTranslation ? m.langName : 'English'}</span>
+                      {showLocal ? (
+                        <span className="block text-[10px]" style={{ color: '#10B981' }}>Local ASIN {localAsin}</span>
+                      ) : geoBadges && geoBadges[m.domain] ? (
+                        <span className="block text-[10px]" style={{ color: geoBadges[m.domain] === 'Product found' ? '#10B981' : 'var(--text-3)' }}>{geoBadges[m.domain]}</span>
+                      ) : null}
+                    </span>
+                  </label>
+                  {status === 'ready' ? (
+                    <span className="text-[11px] inline-flex items-center gap-0.5 whitespace-nowrap" style={{ color: '#10B981' }} title="Signed in on this marketplace"><Check size={11} /> in</span>
+                  ) : (
+                    <button type="button" onClick={() => void signInMarket(m.domain, m.country)}
+                      className="text-[11px] underline whitespace-nowrap inline-flex items-center gap-0.5" style={muted}
+                      title={`Open ${m.country} on Amazon to sign in`}>
+                      <LogIn size={11} /> Log in
+                    </button>
+                  )}
+                </div>
+                {/* No confident local match for a not-listed market → let the creator paste it. */}
+                {on && needsLocalAsin(m.domain) && (
+                  <input
+                    defaultValue=""
+                    onBlur={e => { const v = e.target.value.trim().toUpperCase(); if (/^[A-Z0-9]{10}$/.test(v)) setManualAsins(prev => ({ ...prev, [m.domain]: v })) }}
+                    placeholder="Paste this market’s ASIN"
+                    className="w-full px-2 py-1 rounded-md border text-[11px] bg-transparent"
+                    style={{ borderColor: '#e0554b55', color: 'var(--text)' }}
+                    title="This product isn’t listed here under the US ASIN and no local match was found — paste the local ASIN to include this market."
+                  />
                 )}
               </div>
             )

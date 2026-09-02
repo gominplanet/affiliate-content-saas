@@ -38,8 +38,18 @@ export async function POST(req: Request) {
   const gate = await spendGate(user.id, tier)
   if (gate) return gate
 
-  const body = await req.json().catch(() => ({})) as { videoId?: string; markets?: string[]; asin?: string }
+  const body = await req.json().catch(() => ({})) as { videoId?: string; markets?: string[]; asin?: string; marketAsins?: Record<string, string> }
   const videoId = (body.videoId || '').trim()
+  // Optional per-market ASIN overrides (Video Launchpad's local-ASIN resolution):
+  // a product relisted abroad under a different code is delivered against THAT
+  // code in that marketplace. Normalized; anything invalid falls back to the base.
+  const marketAsins: Record<string, string> = {}
+  if (body.marketAsins && typeof body.marketAsins === 'object') {
+    for (const [dom, a] of Object.entries(body.marketAsins)) {
+      const na = asinFrom(typeof a === 'string' ? a : '')
+      if (na && marketByDomain(dom)) marketAsins[dom] = na
+    }
+  }
   const domains = Array.isArray(body.markets) ? body.markets.filter(d => !!marketByDomain(d)) : []
   if (!videoId) return NextResponse.json({ error: 'videoId is required.' }, { status: 400 })
   if (domains.length === 0) return NextResponse.json({ error: 'Pick at least one marketplace.' }, { status: 400 })
@@ -69,7 +79,9 @@ export async function POST(req: Request) {
 
   const targetRows = domains.map(domain => {
     const mkt = marketByDomain(domain)!
-    return { job_id: job.id, user_id: user.id, domain, lang: mkt.lang, dub: mkt.needsTranslation, asin, state: 'pending' as const }
+    // Per-market ASIN when the product is listed under a different local code,
+    // else the base ASIN (validated per host at delivery time regardless).
+    return { job_id: job.id, user_id: user.id, domain, lang: mkt.lang, dub: mkt.needsTranslation, asin: marketAsins[domain] || asin, state: 'pending' as const }
   })
   await sb.from('global_sync_targets').insert(targetRows)
 

@@ -878,6 +878,50 @@ export async function requestAmazonAsinCheck(asin: string, domain: string): Prom
   return { ok: !!resp.ok, status, error: resp.error }
 }
 
+/** SCOUT's local-ASIN resolution for a marketplace where the source ASIN isn't
+ *  listed. `asin` is a confident brand+title match (or null when none cleared
+ *  the bar); `error` distinguishes not-installed / intl-permission-needed /
+ *  amazon-blocked so the UI can guide the creator. */
+export interface ResolveLocalAsinResult {
+  ok: boolean
+  asin?: string | null
+  title?: string | null
+  image?: string | null
+  confidence?: number
+  reason?: string
+  error?: string
+}
+
+/**
+ * Find a product's LOCAL ASIN in a marketplace (e.g. amazon.de) when the US ASIN
+ * isn't listed there — the same product is often relisted under a different code
+ * abroad. SCOUT searches by brand + title in the creator's own signed-in session
+ * and returns the best confident match. Best-effort: resolves { asin:null } when
+ * nothing matches confidently, so the caller can offer a manual paste field.
+ * Non-US needs the popup's "International Amazon" permission.
+ */
+export async function requestResolveLocalAsin(opts: { brand?: string | null; title: string; sourceAsin: string; domain: string }): Promise<ResolveLocalAsinResult> {
+  const title = (opts.title || '').trim()
+  const domain = String(opts.domain || '').trim()
+  if (!title) return { ok: false, error: 'no-title' }
+  if (!domain) return { ok: false, error: 'no-domain' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<ResolveLocalAsinResult>(
+    { type: 'MVP_AMZ_RESOLVE_ASIN', brand: opts.brand || '', title, sourceAsin: (opts.sourceAsin || '').toUpperCase(), domain },
+    65000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  return {
+    ok: !!resp.ok,
+    asin: resp.asin && /^[A-Z0-9]{10}$/i.test(resp.asin) ? resp.asin.toUpperCase() : null,
+    title: resp.title ?? null,
+    image: resp.image ?? null,
+    confidence: resp.confidence,
+    reason: resp.reason,
+    error: resp.error,
+  }
+}
+
 /** Product details SCOUT scraped off a NON-Amazon store page (Walmart, Target,
  *  Best Buy, …). Read from JSON-LD / Open Graph in the user's own browser, so
  *  it works where MVP's server scrape is IP-blocked. `sourceUrl` echoes the page

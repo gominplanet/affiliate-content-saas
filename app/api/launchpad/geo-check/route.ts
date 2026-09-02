@@ -15,8 +15,10 @@
 // still short-circuits AU when a prior SCOUT check was persisted; the client posts
 // its SCOUT result back here ({ cache: {...} }) to fill that cache.
 //
-//   body: { asin }             -> { ok, asin, geos: [{ domain, code, country, status, asin, browser? }] }
+//   body: { asin }             -> { ok, asin, brand, title, geos: [{ domain, code, country, status, asin, browser? }] }
 //   body: { cache: { asin, domain, status } } -> { ok } (persist a SCOUT result)
+// brand/title come from Keepa US so the client can drive SCOUT's local-ASIN
+// search for any market where the source ASIN isn't listed.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -113,6 +115,19 @@ export async function POST(req: Request) {
 
   const canKeepa = keepaConfigured()
 
+  // Pull the product's US brand + title once. The client passes these to SCOUT to
+  // search for a LOCAL ASIN in any market where the source ASIN isn't listed.
+  let brand: string | null = null
+  let title: string | null = null
+  if (canKeepa) {
+    try {
+      const us = await fetchKeepaBrandInfo([asin], 1)
+      const info = us.get(asin)
+      brand = info?.brand || null
+      title = info?.title || null
+    } catch { /* best-effort — client falls back to manual paste */ }
+  }
+
   const geos = await Promise.all(GEOS.map(async (g) => {
     // US: the source ASIN lives here by definition.
     if (g.code === 'US') return { domain: g.domain, code: g.code, country: g.country, status: 'found' as GeoStatus, asin }
@@ -134,5 +149,5 @@ export async function POST(req: Request) {
     return { domain: g.domain, code: g.code, country: g.country, status: cached, asin, browser: true, host: g.host }
   }))
 
-  return NextResponse.json({ ok: true, asin, geos })
+  return NextResponse.json({ ok: true, asin, brand, title, geos })
 }

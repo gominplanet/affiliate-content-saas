@@ -13,7 +13,7 @@ import { Loader2, Check, Youtube, Sparkles, Globe, Rocket, Handshake } from 'luc
 import { toast } from 'sonner'
 import UploadStage from '@/components/launchpad/UploadStage'
 import StorefrontStage from '@/components/launchpad/StorefrontStage'
-import { requestYtInjectDisclosures, requestFindCampaign, requestAcceptCampaign, requestAmazonAsinCheck } from '@/lib/extension-frame'
+import { requestYtInjectDisclosures, requestFindCampaign, requestAcceptCampaign, requestAmazonAsinCheck, requestResolveLocalAsin } from '@/lib/extension-frame'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
@@ -71,6 +71,9 @@ export default function LaunchpadPage() {
   const [masterId, setMasterId] = useState<string | null>(null)
   // Phase 1 geo research: where the product looks listed across the English geos.
   const [geoCheck, setGeoCheck] = useState<Array<{ domain: string; code: string; country: string; status: string; browser?: boolean; host?: string }> | null>(null)
+  // Per-market LOCAL ASIN resolved by SCOUT when the product is relisted abroad
+  // under a different code (keyed by domain). Passed to the storefront step.
+  const [marketAsins, setMarketAsins] = useState<Record<string, string>>({})
   // Post-upload Creator Connections (US) step.
   const [ccFinding, setCcFinding] = useState(false)
   const [ccAccepting, setCcAccepting] = useState(false)
@@ -216,33 +219,46 @@ export default function LaunchpadPage() {
         const gj = await gr.json().catch(() => ({}))
         if (gj?.ok && Array.isArray(gj.geos)) {
           setGeoCheck(gj.geos)
-          // Some marketplaces (e.g. Australia) aren't on Keepa, so the server
-          // can't confirm them — it flags them browser:true. Run SCOUT's real
-          // /dp check in the creator's own session for any that isn't already
-          // confirmed, then merge + persist the definitive answer.
-          const need = gj.geos.filter((g: { browser?: boolean; status: string }) => g.browser && g.status !== 'found')
-          if (need.length) {
-            void (async () => {
-              const a = asin.trim()
-              let intlPrompted = false
-              for (const g of need) {
+          setMarketAsins({})
+          const brand: string | null = gj.brand || null
+          const title: string | null = gj.title || null
+          // Background pass in the creator's own session:
+          //  1) Keepa-less markets (e.g. Australia) are flagged browser:true —
+          //     read the real /dp page to get a definitive listed/not-listed.
+          //  2) For every market the product ISN'T listed in under the US ASIN,
+          //     search that marketplace by brand+title for a confident LOCAL ASIN
+          //     (products are often relisted abroad under a different code).
+          void (async () => {
+            const a = asin.trim()
+            let intlPrompted = false
+            const promptIntl = () => { if (!intlPrompted) { intlPrompted = true; toast.message('Turn on “International Amazon” in the SCOUT popup to confirm and match listings outside the US.') } }
+            // 1) Browser existence checks. Mutate the local geo copy so step 2 sees
+            //    the resolved status.
+            for (const g of gj.geos.filter((x: { browser?: boolean; status: string }) => x.browser && x.status !== 'found')) {
+              try {
+                const chk = await requestAmazonAsinCheck(a, g.host || g.domain)
+                if (chk.status === 'found' || chk.status === 'not-listed') {
+                  g.status = chk.status
+                  setGeoCheck(prev => prev ? prev.map(x => x.domain === g.domain ? { ...x, status: chk.status } : x) : prev)
+                  fetch('/api/launchpad/geo-check', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cache: { asin: a, domain: g.domain, status: chk.status } }),
+                  }).catch(() => {})
+                } else if (chk.error === 'intl-permission-needed') promptIntl()
+              } catch { /* leave "Not confirmed" */ }
+            }
+            // 2) Local-ASIN resolution for not-listed markets (needs the product's
+            //    brand/title from Keepa; without them the creator pastes by hand).
+            if (title) {
+              for (const g of gj.geos.filter((x: { status: string }) => x.status === 'not-listed')) {
                 try {
-                  const chk = await requestAmazonAsinCheck(a, g.host || g.domain)
-                  if (chk.status === 'found' || chk.status === 'not-listed') {
-                    setGeoCheck(prev => prev ? prev.map(x => x.domain === g.domain ? { ...x, status: chk.status } : x) : prev)
-                    // Persist so the next check is instant (best-effort).
-                    fetch('/api/launchpad/geo-check', {
-                      method: 'POST', headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ cache: { asin: a, domain: g.domain, status: chk.status } }),
-                    }).catch(() => {})
-                  } else if (chk.error === 'intl-permission-needed' && !intlPrompted) {
-                    intlPrompted = true
-                    toast.message('Turn on “International Amazon” in the SCOUT popup to confirm listings outside the US (like Australia).')
-                  }
-                } catch { /* leave "Not confirmed" */ }
+                  const res = await requestResolveLocalAsin({ brand, title, sourceAsin: a, domain: g.host || g.domain })
+                  if (res.asin) setMarketAsins(prev => ({ ...prev, [g.domain]: res.asin! }))
+                  else if (res.error === 'intl-permission-needed') promptIntl()
+                } catch { /* creator can paste the local ASIN */ }
               }
-            })()
-          }
+            }
+          })()
         }
       } catch { /* non-fatal */ }
       setMasterId(j.videoId)
@@ -435,6 +451,7 @@ export default function LaunchpadPage() {
                   allowedDomains={geoCheck ? geoCheck.map(g => g.domain) : ['amazon.com']}
                   defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain) : ['amazon.com']}
                   geoBadges={geoCheck ? Object.fromEntries(geoCheck.map(g => [g.domain, g.status === 'found' ? 'Product found' : g.status === 'not-listed' ? 'Not listed here' : 'Not confirmed'])) : undefined}
+                  marketAsins={marketAsins}
                 />
               )}
             </div>

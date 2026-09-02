@@ -4079,6 +4079,86 @@ async function checkAmazonAsinListed(asin, domain, callerTabId) {
   }
 }
 
+// ── Local-ASIN resolution (MVP_AMZ_RESOLVE_ASIN) ────────────────────────────
+// Video Launchpad: when a product's US ASIN isn't listed in a marketplace, the
+// same product is often relisted there under a DIFFERENT ASIN. SCOUT searches
+// that marketplace by brand + title in the creator's own session and returns the
+// best-matching local ASIN, so the storefront upload can point at the product
+// that actually exists in that geo. Confidence-gated — a weak match returns null
+// (the app then lets the creator paste the ASIN by hand).
+
+// Word-level match score of a candidate title against the target, in the
+// background (not in-page). Returns 0..1 recall of the target's significant words.
+function _asinMatchScore(targetTitle, brand, candTitle) {
+  const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'for', 'with', 'of', 'to', 'in', 'on', 'by', 'pack', 'set', 'new', 'size', 'color', 'colour', 'pcs', 'pc', 'x'])
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  const toks = (s) => norm(s).split(' ').filter((t) => t.length >= 3 && !STOP.has(t))
+  const target = new Set(toks(targetTitle))
+  if (!target.size) return 0
+  const cand = new Set(toks(candTitle))
+  let hit = 0
+  target.forEach((t) => { if (cand.has(t)) hit++ })
+  return hit / target.size
+}
+
+async function resolveLocalAsin(brand, title, sourceAsin, domain, callerTabId) {
+  const host = String(domain || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '')
+  const t = String(title || '').trim()
+  if (!host) return { ok: false, error: 'bad-domain' }
+  if (!t) return { ok: false, error: 'no-title' }
+  // Non-US /dp + /s origins live behind the popup's "International Amazon" grant.
+  if (host !== 'amazon.com') {
+    let granted = false
+    try { granted = await chrome.permissions.contains({ origins: [`https://*.${host}/*`] }) } catch (e) {}
+    if (!granted) return { ok: false, error: 'intl-permission-needed' }
+  }
+  // Query: brand + the first significant title words (Amazon search is lenient;
+  // a tighter query beats a 200-word title that returns nothing).
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  const titleHead = norm(t).split(' ').filter((w) => w.length >= 3).slice(0, 6).join(' ')
+  const query = [String(brand || '').trim(), titleHead].filter(Boolean).join(' ').trim() || titleHead
+  const src = String(sourceAsin || '').toUpperCase()
+  const brandTok = norm(brand).split(' ').filter((w) => w.length >= 3)
+  let tabId = null
+  try {
+    const url = `https://www.${host}/s?k=${encodeURIComponent(query)}`
+    const tab = await chrome.tabs.create({ url, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 25000)
+    await _sleep(1600)
+    let list = null
+    for (let i = 0; i < 4; i++) {
+      const r = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAmazonSearchInPage })
+      list = (r && r[0] && r[0].result) || null
+      if (list && (list.ok || list.blocked)) break
+      await _sleep(1300)
+    }
+    if (list && list.blocked) return { ok: false, error: 'amazon-blocked' }
+    const products = (list && list.products) || []
+    if (!products.length) return { ok: true, asin: null, reason: 'no-results' }
+    // Score every card; require a brand-word present (when a brand is known) so a
+    // generic title match to the wrong maker is rejected.
+    let best = null
+    for (const p of products) {
+      if (!p || !p.asin) continue
+      if (p.asin.toUpperCase() === src) continue // same code isn't listed here → skip
+      const brandOk = brandTok.length === 0 || brandTok.some((b) => norm(p.title).includes(b))
+      if (!brandOk) continue
+      const score = _asinMatchScore(t, brand, p.title)
+      if (!best || score > best.score) best = { asin: p.asin.toUpperCase(), title: p.title, image: p.image || null, score }
+    }
+    // Confidence gate: at least half the target's significant words must match.
+    if (best && best.score >= 0.5) {
+      return { ok: true, asin: best.asin, title: best.title, image: best.image, confidence: Math.round(best.score * 100) }
+    }
+    return { ok: true, asin: null, reason: 'no-confident-match', bestScore: best ? Math.round(best.score * 100) : 0 }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) ? String(e.message).slice(0, 120) : 'exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 // ── Generic non-Amazon product scrape (MVP_SCRAPE_URL) ──────────────────────
 // MVP's "Post from a link" flow can't scrape most stores server-side — Walmart,
 // Target, etc. block datacenter IPs. SCOUT reads the page from the user's own
@@ -6173,6 +6253,17 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     checkAmazonAsinListed(msg.asin, msg.domain, callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, status: 'unknown', error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_AMZ_RESOLVE_ASIN') {
+    // Video Launchpad: find the product's LOCAL ASIN in a marketplace where the
+    // US ASIN isn't listed, by brand + title search in the creator's own session.
+    // One background search tab; confidence-gated.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 60000)
+    resolveLocalAsin(msg.brand, msg.title, msg.sourceAsin, msg.domain, callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
   }
   if (msg.type === 'MVP_CC_SCAN') {
