@@ -10,7 +10,7 @@ import HeroVideo from '@/components/layout/HeroVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, type StudioFinishResult, type StudioFinishStep, type YtSaveRecipe } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, requestStudioFinish, type StudioFinishResult, type StudioFinishStep, type YtSaveRecipe } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
@@ -1256,35 +1256,31 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     setFinishResult(null)
     try {
       const steps: StudioFinishStep[] = []
-      // Paid promotion + AI disclosure + monetization go through INJECTION into
-      // Studio's own signed save — the only path YouTube honors (a hand-rolled
-      // API replay 200s but silently drops these protected fields).
+      // Paid promotion, the AI-use answer and monetization are set by DRIVING the
+      // real Studio controls (requestStudioFinish): SCOUT opens the video in the
+      // creator's own Studio, ticks the boxes / flips the monetization toggle, and
+      // lets Studio run its OWN save. That's the only path YouTube reliably
+      // persists — the hook-rewrite left "sawMeta:0" and a raw API replay 200s but
+      // drops these protected fields. Notify subscribers is forced OFF.
       if (finishDoDetails || finishDoMonetize) {
-        const inj = await requestYtInjectDisclosures(video.youtubeVideoId, {
-          paidPromotion: finishDoDetails,
-          aiDisclosure: finishDoDetails,
-          hasAlteredContent: false,
+        const fin = await requestStudioFinish(video.youtubeVideoId, {
+          details: finishDoDetails,
           monetize: finishDoMonetize,
-          // Drive notify/subs-feed here too (API path is unreliable), matching
-          // the Yes/No from Studio Settings.
-          notify: proSettings.notifySubscribers,
+          selfCert: finishDoMonetize,
+          endScreen: false,
+          notifySubscribers: false,
         })
-        // `uncertain` = Studio's Save fired but SCOUT couldn't confirm our fields
-        // rode along (YouTube sent the save over a path we don't observe, or it
-        // landed just after our wait). The save itself almost always persisted —
-        // Studio shows the fields set — so treat it as a soft note, not a failure.
-        const softOk = inj.ok || inj.uncertain
-        if (finishDoDetails) steps.push({ step: 'details', ok: inj.ok, skipped: inj.uncertain, detail: inj.ok ? 'Paid promotion + AI disclosure set' : (inj.detail || inj.error || 'failed'), debug: inj.debug })
-        if (finishDoMonetize) steps.push({ step: 'monetization', ok: inj.ok, skipped: inj.uncertain, detail: inj.ok ? 'Monetization on + ad rating submitted' : (inj.detail || inj.error || 'failed') })
-        if (!softOk) {
-          setFinishError(
-            inj.error === 'not-installed'
-              ? 'SCOUT isn’t installed or didn’t respond. Reload SCOUT and try again.'
-              : inj.error === 'timeout'
-                ? 'YouTube Studio took too long to respond. Try again.'
-                : `Couldn’t finish in Studio: ${inj.detail || inj.error || 'unknown'}`,
-          )
-        }
+        const dStep = fin.steps.find(s => s.step === 'details')
+        const mStep = fin.steps.find(s => s.step === 'monetization')
+        if (finishDoDetails) steps.push(dStep
+          ? { ...dStep, detail: dStep.ok ? 'Paid promotion checked, AI-use answered, notify off' : (dStep.detail || 'couldn’t set — open the Details tab in Studio') }
+          : { step: 'details', ok: false, detail: 'couldn’t open the Details tab in Studio' })
+        if (finishDoMonetize) steps.push(mStep
+          ? { ...mStep, detail: mStep.skipped ? (mStep.detail || 'this channel isn’t monetized — nothing to turn on') : mStep.ok ? 'Monetization on + ad rating submitted' : (mStep.detail || 'couldn’t turn on — open the Monetization tab in Studio') }
+          : { step: 'monetization', ok: false, detail: 'couldn’t open the Monetization tab in Studio' })
+        if (fin.error === 'not-installed') setFinishError('SCOUT isn’t installed or didn’t respond. Reload SCOUT and try again.')
+        else if (fin.error === 'timeout') setFinishError('YouTube Studio took too long to respond. Try again.')
+        else if (fin.error) setFinishError(`Couldn’t finish in Studio: ${fin.error}`)
       }
       // End screen + product tag can't be injected (YouTube blocks automating
       // them) — always surface as the optional "do by hand" reminder.
@@ -2968,7 +2964,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                               <input type="checkbox" checked={finishDoMonetize} disabled={finishRunning || applying} onChange={e => setFinishDoMonetize(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
                               <span>Turn on <strong>Monetization</strong> + submit the <strong>ad-suitability rating</strong> <span className="text-[#86868b]">(uncheck if this channel isn&apos;t monetized)</span></span>
                             </label>
-                            <p className="text-[10px] text-[#86868b] pl-1">Notify subscribers follows your <strong>{proSettings.notifySubscribers ? 'Yes' : 'No'}</strong> choice above.</p>
+                            <p className="text-[10px] text-[#86868b] pl-1">Notify subscribers is left <strong>off</strong> so the push doesn’t hit the bell.</p>
                           </div>
 
                           {/* By-hand zone */}

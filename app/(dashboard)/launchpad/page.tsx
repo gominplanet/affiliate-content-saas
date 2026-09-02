@@ -13,7 +13,7 @@ import { Loader2, Check, Youtube, Sparkles, Globe, Rocket, Handshake, Lock, Uplo
 import { toast } from 'sonner'
 import UploadStage from '@/components/launchpad/UploadStage'
 import StorefrontStage from '@/components/launchpad/StorefrontStage'
-import { requestYtInjectDisclosures, requestFindCampaign, requestAcceptCampaign, requestAmazonAsinCheck, requestResolveLocalAsin } from '@/lib/extension-frame'
+import { requestStudioFinish, requestFindCampaign, requestAcceptCampaign, requestAmazonAsinCheck, requestResolveLocalAsin } from '@/lib/extension-frame'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
@@ -208,24 +208,27 @@ export default function LaunchpadPage() {
         if (Array.isArray(aj?.warnings) && aj.warnings.length > 0) toast.warning(aj.warnings.join(' '), { duration: 9000 })
       } catch { /* finishing pass is best-effort — the video is already published */ }
 
-      // 3) Studio-injection extras — paid promotion + AI disclosure + monetization
-      //    + ad rating. YouTube's Data API silently drops these, so SCOUT injects
-      //    them into Studio's own signed save (same as the Co-Pilot). Best-effort:
-      //    needs SCOUT installed and a YouTube Studio session.
+      // 3) Studio-only fields — paid promotion + AI-use answer + monetization +
+      //    ad rating. YouTube's Data API can't set these, so SCOUT drives the real
+      //    Studio controls in the creator's own session and lets Studio's own save
+      //    persist them (the reliable path — same as the Co-Pilot). Notify
+      //    subscribers is forced OFF. Best-effort: needs SCOUT + a Studio session.
       if (finishDetails || finishMonetize) {
         try {
-          const inj = await requestYtInjectDisclosures(j.videoId, {
-            paidPromotion: finishDetails,
-            aiDisclosure: finishDetails,
-            hasAlteredContent: false,
+          const fin = await requestStudioFinish(j.videoId, {
+            details: finishDetails,
             monetize: finishMonetize,
-            notify: notifySubs,
+            selfCert: finishMonetize,
+            endScreen: false,
+            notifySubscribers: false,
           })
-          if (inj.ok) toast.success('Studio details set (paid promotion, AI disclosure' + (finishMonetize ? ', monetization + ad rating' : '') + ').')
-          else if (inj.uncertain) toast.message('Studio save fired — confirm the details in YouTube Studio.', { duration: 9000 })
-          else if (inj.error === 'not-installed') toast.warning('SCOUT isn’t installed, so the Studio details (paid promotion / monetization) were skipped. Install SCOUT and re-run, or set them by hand in Studio.', { duration: 10000 })
-          else toast.warning('Couldn’t set the Studio details automatically: ' + (inj.detail || inj.error || 'unknown') + '. Set them by hand in YouTube Studio.', { duration: 10000 })
-        } catch { /* injection is best-effort — the video is already published */ }
+          const dOk = !finishDetails || !!fin.steps.find(s => s.step === 'details')?.ok
+          const mStep = fin.steps.find(s => s.step === 'monetization')
+          const mOk = !finishMonetize || !!mStep?.ok || !!mStep?.skipped
+          if (dOk && mOk) toast.success('Studio set: paid promotion' + (finishMonetize ? ', monetization + ad rating' : '') + '.')
+          else if (fin.error === 'not-installed') toast.warning('SCOUT isn’t installed, so the Studio fields (paid promotion / monetization) were skipped. Install SCOUT and re-run, or set them by hand in Studio.', { duration: 10000 })
+          else toast.warning('Couldn’t set every Studio field automatically. Open the video in YouTube Studio to finish paid promotion / monetization.', { duration: 10000 })
+        } catch { /* best-effort — the video is already published */ }
       }
 
       toast.success(privacy === 'public' ? 'Published to YouTube.' : 'Saved to YouTube as a private draft.')

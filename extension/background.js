@@ -5382,9 +5382,11 @@ function studioFinishDetailsInPage(notifySubscribers) {
       if (save) { click(save); await sleep(1500) }
       out.debug.controlsAfter = snapshot()
 
-      // Count it done when the critical notify-off control was found + we saved.
-      const notifyHandled = out.actions.notify && out.actions.notify !== 'not-found'
-      out.ok = !!save && !!notifyHandled
+      // Success = paid promotion was actually set (the field that matters for a
+      // review) AND we saved. Notify / embedding / AI-use are recorded in detail
+      // but a missing notify control must NOT fail the whole step.
+      const paidHandled = out.actions.paidPromotion && out.actions.paidPromotion !== 'not-found'
+      out.ok = !!save && !!paidHandled
       out.detail = `paid:${out.actions.paidPromotion || '?'} · embed:${out.actions.embedding || '?'} · notify:${out.actions.notify || '?'} · AI-use:${out.actions.aiUse || '?'}`
       if (!save) out.detail += ' · Save not found'
       return out

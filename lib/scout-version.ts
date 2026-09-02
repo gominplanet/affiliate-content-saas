@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.37'
+export const SCOUT_LATEST_VERSION = '1.17.38'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Video Launchpad can now find a product’s local ASIN in a marketplace where it’s relisted under a different code, by searching that store by brand and title in your own signed-in browser — so more geos deliver automatically instead of being skipped.'
+  'Finish on YouTube now reliably sets paid promotion, the AI-use answer and monetization by driving the real Studio controls (notify subscribers left off), instead of the old injection that often left them unset.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
