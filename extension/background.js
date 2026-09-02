@@ -605,6 +605,8 @@ const DEFAULT_SEND_BODY = JSON.stringify({ actorName: ACTOR_PLACEHOLDER, context
 let _ccNetRing = []           // recent captured request POSTs (in-memory)
 let _ccRespRing = []          // recent captured RESPONSES (in-memory, for diag)
 let _ccLastSendDiag = null    // diagnostic of the most recent background send (for MVP_CC_DEBUG)
+let _ccSendTabId = null       // ONE reused hidden tab for the whole bulk run (no open/close churn)
+let _ccSendTabCloseTimer = null // closes the reused send tab after a spell of inactivity
 let _ccSendRecipe = null      // /chat/message/send template (persisted)
 let _ccSearchRecipe = null    // /chat/search template (persisted)
 // collaboration/search browse query learned from the active view — {body,headers}.
@@ -1075,6 +1077,58 @@ async function getBrandChats() {
   }
 }
 
+// Acquire the shared hidden send tab — REUSED across every brand + retry in a
+// bulk run so we don't open/close a tab per message (the visible churn). Creates
+// it (and waits for the connect SPA to boot + go quiet) only when there isn't one
+// alive already; otherwise hands back the existing warm tab instantly.
+async function acquireSendTab() {
+  if (_ccSendTabCloseTimer) { clearTimeout(_ccSendTabCloseTimer); _ccSendTabCloseTimer = null }
+  // Hydrate from storage — the MV3 worker can sleep between brands in a run and
+  // lose the in-memory id; reuse the same tab instead of opening a fresh one.
+  if (_ccSendTabId == null) { try { const st = await chrome.storage.local.get('ccSendTabId'); if (st && st.ccSendTabId != null) _ccSendTabId = st.ccSendTabId } catch (e) {} }
+  if (_ccSendTabId != null) {
+    try {
+      const t = await chrome.tabs.get(_ccSendTabId)
+      if (t && /affiliate-program\.amazon\.com/i.test(t.url || '')) {
+        if (/\/ap\/signin|\/gp\/sign-in/i.test(t.url || '')) return { tabId: _ccSendTabId, fresh: false, signIn: true, finalUrl: t.url }
+        return { tabId: _ccSendTabId, fresh: false, finalUrl: t.url }
+      }
+    } catch (e) { /* tab gone */ }
+    _ccSendTabId = null
+  }
+  const openedAt = Date.now()
+  const tab = await chrome.tabs.create({ url: ccActiveUrl(), active: false })
+  _ccSendTabId = tab.id
+  try { chrome.storage.local.set({ ccSendTabId: tab.id }) } catch (e) {}
+  await waitForTabLoad(tab.id, 15000)
+  // Wait for the SPA to boot (net-hook saw a connect call after we opened) AND the
+  // URL to stop changing for two reads, or ~15s — so content.js is mounted and the
+  // page is quiet before the first send.
+  let lastUrl = '', stable = 0, booted = false, signIn = false
+  for (let i = 0; i < 25; i++) {
+    let u = ''
+    try { const t = await chrome.tabs.get(tab.id); u = (t && t.url) || '' } catch (e) {}
+    if (u && /\/ap\/signin|\/gp\/sign-in/i.test(u)) { signIn = true; lastUrl = u; break }
+    if (!booted) { try { booted = (_ccNetRing || []).some((r) => r && r.ts >= openedAt) } catch (e) {} }
+    if (u && u === lastUrl) stable++; else { stable = 0; lastUrl = u }
+    if (booted && stable >= 2 && _ccCreatorId) break
+    await _sleep(600)
+  }
+  return { tabId: tab.id, fresh: true, booted, signIn, finalUrl: lastUrl }
+}
+
+// Close the shared send tab after a spell of no sends (the bulk run has finished).
+// Each send pushes this out, so the tab lives for the whole run and then goes away.
+function releaseSendTabSoon(ms) {
+  if (_ccSendTabCloseTimer) clearTimeout(_ccSendTabCloseTimer)
+  _ccSendTabCloseTimer = setTimeout(async () => {
+    _ccSendTabCloseTimer = null
+    const id = _ccSendTabId; _ccSendTabId = null
+    try { chrome.storage.local.remove('ccSendTabId') } catch (e) {}
+    if (id != null) { try { await chrome.tabs.remove(id) } catch (e) {} }
+  }, ms || 45000)
+}
+
 async function sendByAsinApi(asin, message, campaignIdsHint) {
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
   await ensureRecipesLoaded()
@@ -1103,89 +1157,43 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
     attempts: [],
   }
   const attempt = async (settleMs) => {
-    const a = { settleMs, finalUrl: null, resLen: null, hadResult: null, threw: null, reason: null }
-    let tabId = null
-    try {
-      // Open the ACTIVE / joined view — the SAME page the (reliably working)
-      // campaign-list path uses. The old opportunity grid
-      // (?status=opportunity&type=affiliate-plus) client-navigates to a default
-      // sub-view on load, which tore down the MAIN-world injection frame right as
-      // we ran the send — Chrome then handed back an empty result ("no-result")
-      // every time. The active view loads to a stable frame, so the injection
-      // survives; it's also the correct session state for sending to campaigns the
-      // creator has already joined (statuses SCHEDULED/DELIVERING).
-      const openedAt = Date.now()
-      const tab = await chrome.tabs.create({ url: ccActiveUrl(), active: false })
-      tabId = tab.id
-      await waitForTabLoad(tabId, 15000)
-      // WAIT FOR THE SPA TO GO QUIET BEFORE INJECTING. The diagnostic showed the
-      // send injecting while the connect page was still client-navigating (the tab
-      // drifted status=active → status=opportunity&type=spcc after load): the frame
-      // gets replaced mid-fetch, so executeScript resolves with an EMPTY result
-      // (resLen 1, hadResult false, no throw). The reliably-working campaign-list
-      // path avoids this by waiting until the SPA has booted and settled. Mirror it:
-      // poll until net-hook has seen the page fire its own connect API call after we
-      // opened the tab (booted) AND the URL has stopped changing for two reads (or
-      // we hit the cap ~15s).
-      let lastUrl = '', stable = 0, booted = false
-      for (let i = 0; i < 25; i++) {
-        let u = ''
-        try { const t = await chrome.tabs.get(tabId); u = (t && t.url) || '' } catch (e) {}
-        if (u && /\/ap\/signin|\/gp\/sign-in/i.test(u)) { a.finalUrl = u.slice(0, 160); a.reason = 'not-signed-in'; diag.attempts.push(a); return { ok: false, reason: 'not-signed-in' } }
-        if (!booted) { try { booted = (_ccNetRing || []).some((r) => r && r.ts >= openedAt) } catch (e) {} }
-        if (u && u === lastUrl) stable++; else { stable = 0; lastUrl = u }
-        if (booted && stable >= 2 && _ccCreatorId) break
-        await _sleep(600)
-      }
-      a.finalUrl = lastUrl ? lastUrl.slice(0, 160) : a.finalUrl
-      a.booted = booted
-      // Final settle once the page is quiet, then inject.
-      await _sleep(settleMs)
-      // Sync probe: proves the frame can return a result at all AND that fetch +
-      // cookies are present — isolates "SPA tore the frame down" from "the send
-      // logic failed". Recorded in the diagnostic.
-      try {
-        const pr = await chrome.scripting.executeScript({
-          target: { tabId }, world: 'ISOLATED',
-          func: () => ({ href: location.href, ready: document.readyState, cookieLen: (document.cookie || '').length, hasFetch: typeof fetch === 'function' }),
-        })
-        a.probe = pr && pr[0] ? pr[0].result : null
-      } catch (e) { a.probeErr = String(e && e.message || e).slice(0, 160) }
-      // SEND VIA THE PERSISTENT CONTENT SCRIPT, not chrome.scripting.executeScript.
-      // The diagnostics proved an executeScript-injected function on this page can
-      // neither return its async result nor message back (no return, no message, no
-      // throw). content.js is a manifest-declared content script whose chrome.runtime
-      // + first-party fetch actually work here. Message it and await sendResponse,
-      // retrying while the content script is still mounting on the fresh tab.
-      const payload = {
-        asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
-        creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
-        sendTemplate, searchTemplate,
-        MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
-        CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
-      }
-      let out = null
-      a.viaContent = true
-      for (let i = 0; i < 12 && !out; i++) {
-        try {
-          out = await chrome.tabs.sendMessage(tabId, { type: 'MVP_CC_SEND_INPAGE', payload })
-        } catch (e) {
-          // "Receiving end does not exist" = content.js not injected/ready yet.
-          a.contentErr = String(e && e.message || e).slice(0, 160)
-          await _sleep(700)
-        }
-      }
-      a.contentReplied = !!out
-      out = out || { ok: false, reason: 'no-content-reply' }
-      a.reason = out.reason || (out.ok ? 'ok' : 'unknown')
-      diag.attempts.push(a)
-      // Persist a creator id the in-page step self-discovered from the page, so
-      // every later send has it up front.
-      try { if (out && out.creatorId && out.creatorId !== _ccCreatorId) { _ccCreatorId = out.creatorId; chrome.storage.local.set({ ccCreatorId: out.creatorId }) } } catch (e) {}
-      return out
-    } finally {
-      if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    const a = { settleMs, finalUrl: null, reason: null }
+    // Reuse the shared warm tab (created once per bulk run). No per-send open/close.
+    const tab = await acquireSendTab()
+    const tabId = tab.tabId
+    a.finalUrl = tab.finalUrl ? String(tab.finalUrl).slice(0, 160) : null
+    a.fresh = tab.fresh
+    a.booted = tab.booted
+    if (tab.signIn) { a.reason = 'not-signed-in'; diag.attempts.push(a); return { ok: false, reason: 'not-signed-in' } }
+    // A short settle only matters the first time (fresh tab still warming); a reused
+    // tab is already quiet.
+    if (tab.fresh) await _sleep(settleMs)
+    // SEND VIA THE PERSISTENT CONTENT SCRIPT (content.js) — an executeScript-injected
+    // function on this page can neither return nor message back (proven). Message the
+    // tab and await sendResponse, retrying briefly while content.js mounts.
+    const payload = {
+      asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
+      creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
+      sendTemplate, searchTemplate,
+      MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
+      CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
     }
+    let out = null
+    a.viaContent = true
+    for (let i = 0; i < 12 && !out; i++) {
+      try {
+        out = await chrome.tabs.sendMessage(tabId, { type: 'MVP_CC_SEND_INPAGE', payload })
+      } catch (e) {
+        a.contentErr = String(e && e.message || e).slice(0, 160)
+        await _sleep(700)
+      }
+    }
+    a.contentReplied = !!out
+    out = out || { ok: false, reason: 'no-content-reply' }
+    a.reason = out.reason || (out.ok ? 'ok' : 'unknown')
+    diag.attempts.push(a)
+    try { if (out && out.creatorId && out.creatorId !== _ccCreatorId) { _ccCreatorId = out.creatorId; chrome.storage.local.set({ ccCreatorId: out.creatorId }) } } catch (e) {}
+    return out
   }
   try {
     // Only retry a plumbing failure (tab/content not ready). A real reason from the
@@ -1211,6 +1219,10 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {
     stopKeepAlive(keepAlive)
+    // Keep the shared tab alive a bit for the next brand in the run; close it once
+    // the run has clearly gone quiet. This is what stops the open/close-per-brand
+    // churn — one tab serves the whole bulk send.
+    releaseSendTabSoon(45000)
   }
 }
 

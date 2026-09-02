@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.32'
+export const SCOUT_LATEST_VERSION = '1.17.33'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Bulk brand messaging now polls for the brand chat after accepting a campaign (Amazon provisions it a few seconds later), so a fresh accept no longer fails with “no chat/token”, and learns your creator display name from the reply.'
+  'Bulk brand messaging now reuses ONE hidden tab for the whole run instead of opening and closing a tab for every brand — no more tab flicker — and closes it once the run is done.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
