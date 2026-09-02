@@ -888,7 +888,7 @@ async function ccApiReplayOne(tabId, message, campaignId) {
 //      responses[0].addressBook[0].contextValidatorToken.
 //   3) POST /connect/api/chat/message/send {actorName, contextToken, content}.
 function ccResolveSendInPage(opts) {
-  return (async () => {
+  const __p = (async () => {
     try {
       const { asin, segments, campaignIdsHint, headers, sendTemplate, searchTemplate, MSG, CTX, CAMP, CREATOR, ACTOR } = opts
       // creatorId may arrive empty on a brand-new install; self-discover it from the
@@ -1000,6 +1000,13 @@ function ccResolveSendInPage(opts) {
       return { ok: false, reason: 'exception', error: e && e.message ? e.message : String(e) }
     }
   })()
+  // executeScript on this page hands back an EMPTY result for a promise-returning
+  // injected function (proven: a sync probe returns fine, this async one comes back
+  // with result:undefined, no throw). So don't rely on the executeScript return —
+  // ALSO deliver the result to the background over the runtime message channel,
+  // keyed by nonce. The background takes whichever arrives first.
+  try { __p.then((r) => { try { chrome.runtime.sendMessage({ __mvpCcSendResult: true, nonce: opts && opts.nonce, result: r }) } catch (e) {} }).catch(() => {}) } catch (e) {}
+  return __p
 }
 
 // Full background send by ASIN: open a hidden affiliate-program tab and run the
@@ -1131,30 +1138,30 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
         })
         a.probe = pr && pr[0] ? pr[0].result : null
       } catch (e) { a.probeErr = String(e && e.message || e).slice(0, 160) }
+      // RESULT OVER A MESSAGE CHANNEL — not the executeScript return. The
+      // diagnostic proved executeScript hands back an empty result slot for this
+      // promise-returning function on this page (sync probe returns fine, async
+      // does not, no throw). So the injected function ALSO posts its result via
+      // chrome.runtime.sendMessage keyed by this nonce; we take whichever arrives.
+      const nonce = 'mvpcc_' + Date.now() + '_' + Math.random().toString(36).slice(2)
+      let resolveMsg = null
+      const msgP = new Promise((resolve) => { resolveMsg = resolve })
+      const onMsg = (m) => { if (m && m.__mvpCcSendResult && m.nonce === nonce) { try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e) {} resolveMsg(m.result) } }
+      try { chrome.runtime.onMessage.addListener(onMsg) } catch (e) {}
       let res = null
       try {
-        // ISOLATED world (the extension's own realm) — NOT MAIN. The connect page
-        // is a heavy SPA that client-navigates and re-renders after load (the
-        // diagnostic caught the tab drifting status=active → status=opportunity
-        // mid-send). That churn tears down / replaces the MAIN-world realm while
-        // our async fetches are in flight, so the returned promise is silently
-        // lost and Chrome hands back a result slot with `result: undefined`
-        // (resLen 1, hadResult false, no throw — exactly what we saw). The
-        // isolated realm survives the page's own JS churn, so the promise resolves
-        // and the result comes back. Same-origin fetch here still carries the
-        // creator's Amazon cookies (host_permissions), and the function uses no
-        // MAIN-only page globals.
         res = await chrome.scripting.executeScript({
           target: { tabId }, world: 'ISOLATED', func: ccResolveSendInPage,
           args: [{
             asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
             creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
-            sendTemplate, searchTemplate,
+            sendTemplate, searchTemplate, nonce,
             MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
             CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
           }],
         })
       } catch (e) {
+        try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e2) {}
         // A torn-down/navigated frame makes executeScript REJECT (e.g. "Frame was
         // removed"). Capture it as the real reason instead of a generic exception.
         a.threw = (e && e.message) ? String(e.message).slice(0, 200) : String(e).slice(0, 200)
@@ -1164,11 +1171,19 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
       }
       a.resLen = Array.isArray(res) ? res.length : (res == null ? 0 : -1)
       a.hadResult = !!(res && res[0] && res[0].result)
-      // Capture the per-frame slot shape so a lingering empty result is diagnosable:
-      // its keys and any `error` Chrome attached (a swallowed in-page throw).
       try { a.resultKeys = res && res[0] ? Object.keys(res[0]) : null } catch (e) {}
       try { a.frameErr = res && res[0] && res[0].error ? String(res[0].error).slice(0, 200) : null } catch (e) {}
-      const out = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+      // Prefer the executeScript return if it actually carried a result; otherwise
+      // wait for the in-page message (the work is still running), capped so a truly
+      // dead injection can't hang the send.
+      let out = (res && res[0] && res[0].result) || null
+      if (!out) {
+        a.viaMessage = true
+        out = await Promise.race([msgP, new Promise((r) => setTimeout(() => r(null), 30000))])
+        a.msgArrived = !!out
+      }
+      try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e) {}
+      out = out || { ok: false, reason: 'no-result' }
       a.reason = out.reason || (out.ok ? 'ok' : 'unknown')
       diag.attempts.push(a)
       // Persist a creator id the in-page step self-discovered from the page, so
