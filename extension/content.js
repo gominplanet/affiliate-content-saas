@@ -443,10 +443,19 @@ async function ccSendInPage(opts) {
     let lastReason = 'no-context-token'
     for (const cid of campaignIds) {
       try {
-        const sBody = fillId(searchTemplate.split(CAMP).join(cid))
-        const sr = await fetchT('/connect/api/chat/search', { method: 'POST', headers: hdr(), body: sBody, credentials: 'include' }, 12000)
-        const sj = await sr.json().catch(() => null)
-        const token = findToken(sj)
+        // The brand chat is provisioned a few seconds AFTER a campaign is accepted,
+        // so the token isn't there on the first look right after the bulk auto-accept
+        // (this is the "message button takes ~4s to appear" lag). Poll chat/search a
+        // few times with a backoff before giving up with no-context-token.
+        let token = null, sj = null
+        for (let tryN = 0; tryN < 5 && !token; tryN++) {
+          if (tryN > 0) await new Promise((r) => setTimeout(r, 2500))
+          const sBody = fillId(searchTemplate.split(CAMP).join(cid))
+          const sr = await fetchT('/connect/api/chat/search', { method: 'POST', headers: hdr(), body: sBody, credentials: 'include' }, 12000)
+          sj = await sr.json().catch(() => null)
+          token = findToken(sj)
+          if (!token && !creatorName) { const n = findCreatorName(sj); if (n) creatorName = n }
+        }
         if (!token) { lastReason = 'no-context-token'; continue }
         if (!creatorName) { const n = findCreatorName(sj); if (n) creatorName = n }
         let groups = 0
