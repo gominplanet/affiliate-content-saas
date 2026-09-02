@@ -612,7 +612,7 @@ export default function DashboardShellV2({
         // Sync) as stages, so we don't split one feature across three nav items.
         // Those two still have their own routes (/cta-studio, /global-sync) for
         // granular use; they're just not promoted as separate nav entries.
-        { href: '/launchpad', icon: <Rocket size={15} />, label: 'Launchpad', gate: isPro, badge: 'New' },
+        { href: '/launchpad', icon: <Rocket size={15} />, label: 'Video Launchpad', gate: isPro, badge: 'New' },
         // AMZ Storefront — SCOUT-synced Amazon earnings + full-catalog analytics.
         // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
         // finished; graduates back to "Grow" (gate: isPaid) when it's ready.

@@ -37,7 +37,19 @@ const muted = { color: 'var(--fg-muted)' } as const
 
 /** presetVideoId: when set, the stage syncs THAT video and hides its own picker
  *  (Launchpad passes the already-picked video). */
-export default function StorefrontStage({ presetVideoId, presetAsin }: { presetVideoId?: string | null; presetAsin?: string | null }) {
+export default function StorefrontStage({ presetVideoId, presetAsin, allowedDomains, defaultChosen, geoBadges }: {
+  presetVideoId?: string | null
+  presetAsin?: string | null
+  /** Video Launchpad restricts to a subset of marketplaces (Phase 1: the English
+   *  geos). When set, only these domains are shown/selectable. */
+  allowedDomains?: string[] | null
+  /** Which of the allowed domains start checked (Phase 1: the ones the product
+   *  was found in). Omit to check all. */
+  defaultChosen?: string[] | null
+  /** Optional per-domain status label ("Product found" / "Not confirmed"), shown
+   *  as a small badge so the creator can decide. */
+  geoBadges?: Record<string, string> | null
+}) {
   const [videos, setVideos] = useState<Vid[]>([])
   const [markets, setMarkets] = useState<Market[]>([])
   const [loading, setLoading] = useState(!presetVideoId)
@@ -81,10 +93,17 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
         fetch('/api/voice-clone/status').then(r => r.json()).catch(() => ({})),
       ])
       if (Array.isArray(mr?.markets)) {
-        setMarkets(mr.markets)
-        // Auto-select EVERY storefront (US + all geos) — the whole point is to
-        // go everywhere; the creator can uncheck any they don't sell in.
-        setChosen(new Set(mr.markets.map((m: Market) => m.domain)))
+        // Video Launchpad restricts to a subset (the English geos in Phase 1).
+        const mkts = Array.isArray(allowedDomains) && allowedDomains.length
+          ? mr.markets.filter((m: Market) => allowedDomains.includes(m.domain))
+          : mr.markets
+        setMarkets(mkts)
+        // Default selection: the caller's list (Phase 1: the geos the product was
+        // found in), else every shown storefront. The creator can toggle any.
+        const initial = Array.isArray(defaultChosen)
+          ? mkts.filter((m: Market) => defaultChosen.includes(m.domain)).map((m: Market) => m.domain)
+          : mkts.map((m: Market) => m.domain)
+        setChosen(new Set(initial))
       }
       if (vr?.ok) setVoice({ enabled: !!vr.enabled, hasVoice: !!vr.hasVoice, name: vr.name || null, credits: typeof vr.credits === 'number' ? vr.credits : null })
       if (!presetVideoId) {
@@ -99,6 +118,9 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
         }
       }
     } catch { /* ignore */ } finally { setLoading(false) }
+    // allowedDomains/defaultChosen are computed once (from the geo-check) before
+    // this stage mounts, so they're read at load time without re-running the fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetVideoId])
   useEffect(() => { load() }, [load])
 
@@ -461,6 +483,9 @@ export default function StorefrontStage({ presetVideoId, presetAsin }: { presetV
                   <span className="flex-1 min-w-0">
                     <span className="font-medium">{m.code}</span>
                     <span className="text-[11px] ml-1" style={muted}>{m.needsTranslation ? m.langName : 'English'}</span>
+                    {geoBadges && geoBadges[m.domain] && (
+                      <span className="block text-[10px]" style={{ color: geoBadges[m.domain] === 'Product found' ? '#10B981' : 'var(--text-3)' }}>{geoBadges[m.domain]}</span>
+                    )}
                   </span>
                 </label>
                 {status === 'ready' ? (

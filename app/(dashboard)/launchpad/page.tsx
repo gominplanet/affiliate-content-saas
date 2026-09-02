@@ -9,11 +9,11 @@
 
 import { useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, Check, Youtube, Sparkles, Globe, Rocket } from 'lucide-react'
+import { Loader2, Check, Youtube, Sparkles, Globe, Rocket, Handshake } from 'lucide-react'
 import { toast } from 'sonner'
 import UploadStage from '@/components/launchpad/UploadStage'
 import StorefrontStage from '@/components/launchpad/StorefrontStage'
-import { requestYtInjectDisclosures } from '@/lib/extension-frame'
+import { requestYtInjectDisclosures, requestFindCampaign, requestAcceptCampaign } from '@/lib/extension-frame'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
@@ -69,6 +69,13 @@ export default function LaunchpadPage() {
   // Amazon — the uploaded file becomes the master (no picker).
   const [creatingMaster, setCreatingMaster] = useState(false)
   const [masterId, setMasterId] = useState<string | null>(null)
+  // Phase 1 geo research: where the product looks listed across the English geos.
+  const [geoCheck, setGeoCheck] = useState<Array<{ domain: string; code: string; country: string; status: string }> | null>(null)
+  // Post-upload Creator Connections (US) step.
+  const [ccFinding, setCcFinding] = useState(false)
+  const [ccAccepting, setCcAccepting] = useState(false)
+  const [ccAccepted, setCcAccepted] = useState(false)
+  const [ccCampaign, setCcCampaign] = useState<{ found: boolean; detailsUrl: string | null; name: string | null; brand: string | null; commissionPct: number | null; status: string | null } | null>(null)
 
   async function prepare() {
     setPreparing(true)
@@ -197,10 +204,48 @@ export default function LaunchpadPage() {
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.videoId) throw new Error(j.error || 'Could not set up the storefront sync')
+      // Phase 1: research the four English marketplaces for this product BEFORE we
+      // reveal the storefront step, so it opens pre-configured (found geos checked,
+      // a badge on each). Best-effort — a blocked check just shows "Not confirmed"
+      // and the creator decides.
+      try {
+        const gr = await fetch('/api/launchpad/geo-check', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ asin: asin.trim() }),
+        })
+        const gj = await gr.json().catch(() => ({}))
+        if (gj?.ok && Array.isArray(gj.geos)) setGeoCheck(gj.geos)
+      } catch { /* non-fatal */ }
       setMasterId(j.videoId)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not set up the storefront sync')
     } finally { setCreatingMaster(false) }
+  }
+
+  // Look up a live US Creator Connections campaign for this product (SCOUT resolves
+  // the ASIN → campaign in the creator's own session). Accept-only, no message.
+  async function findCc() {
+    setCcFinding(true)
+    try {
+      const r = await requestFindCampaign('', asin.trim(), null)
+      if (!r.ok) {
+        toast.error(r.error === 'not-installed' ? 'Install SCOUT to check Creator Connections.' : 'Could not check Creator Connections.')
+        return
+      }
+      setCcCampaign({ found: !!r.found, detailsUrl: r.detailsUrl ?? null, name: r.campaignName ?? null, brand: r.brand ?? null, commissionPct: r.commissionPct ?? null, status: r.status ?? null })
+      if (r.status === 'active') setCcAccepted(true) // already joined
+    } catch { toast.error('Could not check Creator Connections.') }
+    finally { setCcFinding(false) }
+  }
+  async function acceptCc() {
+    if (!ccCampaign?.detailsUrl) return
+    setCcAccepting(true)
+    try {
+      const r = await requestAcceptCampaign(ccCampaign.detailsUrl)
+      if (r.ok || r.already) { setCcAccepted(true); toast.success(r.already ? 'Already accepted.' : 'Campaign accepted.') }
+      else toast.error('Could not accept the campaign.')
+    } catch { toast.error('Could not accept the campaign.') }
+    finally { setCcAccepting(false) }
   }
 
   const asinOk = asin.trim().length > 0
@@ -210,7 +255,7 @@ export default function LaunchpadPage() {
     return (
       <FeatureLockedCard
         icon={<Rocket size={28} strokeWidth={1.8} />}
-        feature="Launchpad"
+        feature="Video Launchpad"
         description="Start with a video that isn't on YouTube yet. Upload it once, add a CTA, and MVP takes it everywhere — YouTube (optional, with the full Co-Pilot finish), then every Amazon storefront, with each market's title localized and the video dubbed for non-English shoppers."
         bullets={[
           'One upload → YouTube + every Amazon geo',
@@ -227,8 +272,8 @@ export default function LaunchpadPage() {
   return (
     <>
       <PageHero
-        title="Launchpad"
-        subtitle="Start with a video that isn't on YouTube yet. Upload it, add a CTA, and MVP takes it everywhere — YouTube (optional), then every Amazon storefront, dubbed for each market."
+        title="Video Launchpad"
+        subtitle="Upload your edited video once. MVP finishes it with the Co-Pilot, publishes to YouTube (optional, CTA burned in), then takes the clean copy to your Amazon storefronts across the English markets."
       />
 
       <div className="max-w-3xl space-y-5 pb-28">
@@ -347,17 +392,55 @@ export default function LaunchpadPage() {
 
             {/* 4. Amazon storefronts — the uploaded file is the master */}
             <div className="card p-5">
-              <div className="flex items-center gap-2 mb-1"><Num n={4} done={!!masterId} /><h2 className="text-sm font-semibold inline-flex items-center gap-1.5" style={label}><Globe size={15} style={{ color: '#0EA5A4' }} /> Amazon storefronts — US + every geo</h2></div>
-              <p className="text-[12px] mb-3" style={muted}>Take the same video to Amazon. MVP matches the ASIN in each geo, writes titles in the local language, and dubs the video for non-English markets. Upload happens through your logged-in Amazon Creator account.</p>
+              <div className="flex items-center gap-2 mb-1"><Num n={4} done={!!masterId} /><h2 className="text-sm font-semibold inline-flex items-center gap-1.5" style={label}><Globe size={15} style={{ color: '#0EA5A4' }} /> Amazon storefronts — English markets</h2></div>
+              <p className="text-[12px] mb-3" style={muted}>Take the same video (clean, no CTA) to Amazon. MVP checks where the product is listed across the US, Canada, UK and Australia; you pick which stores to upload to. Upload happens through your logged-in Amazon Creator account for each store.</p>
               {!masterId ? (
                 <button onClick={() => void toStorefronts()} disabled={creatingMaster || !asinOk}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
-                  {creatingMaster ? <><Loader2 size={15} className="animate-spin" /> Setting up…</> : <><Sparkles size={15} /> Continue to storefronts</>}
+                  {creatingMaster ? <><Loader2 size={15} className="animate-spin" /> Checking markets…</> : <><Sparkles size={15} /> Continue to storefronts</>}
                 </button>
               ) : (
-                <StorefrontStage presetVideoId={masterId} presetAsin={asin.trim()} />
+                <StorefrontStage
+                  presetVideoId={masterId}
+                  presetAsin={asin.trim()}
+                  allowedDomains={['amazon.com', 'amazon.ca', 'amazon.co.uk', 'amazon.com.au']}
+                  defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain) : ['amazon.com']}
+                  geoBadges={geoCheck ? Object.fromEntries(geoCheck.map(g => [g.domain, g.status === 'found' ? 'Product found' : g.status === 'not-listed' ? 'Not listed here' : 'Not confirmed'])) : undefined}
+                />
               )}
             </div>
+
+            {/* 5. Creator Connections (US) — after the uploads, offer to accept a
+                live US campaign for this product right here. */}
+            {masterId && (
+              <div className="card p-5">
+                <div className="flex items-center gap-2 mb-1"><Num n={5} done={ccAccepted} /><h2 className="text-sm font-semibold inline-flex items-center gap-1.5" style={label}><Handshake size={15} style={{ color: '#7C3AED' }} /> Creator Connections (US)</h2></div>
+                <p className="text-[12px] mb-3" style={muted}>See if this product has a live US Creator Connections campaign, and accept it right here to start earning the commission.</p>
+                {!ccCampaign ? (
+                  <button onClick={() => void findCc()} disabled={ccFinding}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+                    {ccFinding ? <><Loader2 size={15} className="animate-spin" /> Checking…</> : <><Handshake size={15} /> Check Creator Connections</>}
+                  </button>
+                ) : ccCampaign.found ? (
+                  <div className="rounded-xl border p-3.5" style={{ borderColor: 'var(--border)' }}>
+                    <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{ccCampaign.brand || ccCampaign.name || 'Live campaign'}</p>
+                    {ccCampaign.commissionPct != null && <p className="text-[12px]" style={muted}>{ccCampaign.commissionPct}% commission{ccCampaign.status === 'active' ? ' · already accepted' : ''}</p>}
+                    <div className="mt-2.5">
+                      {ccAccepted ? (
+                        <span className="inline-flex items-center gap-1 text-[13px] font-medium" style={{ color: '#10B981' }}><Check size={14} /> Accepted</span>
+                      ) : (
+                        <button onClick={() => void acceptCc()} disabled={ccAccepting || !ccCampaign.detailsUrl}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+                          {ccAccepting ? <><Loader2 size={15} className="animate-spin" /> Accepting…</> : <><Handshake size={15} /> Accept campaign</>}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[13px]" style={muted}>No live US Creator Connections campaign found for this product.</p>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
