@@ -107,9 +107,15 @@ export class OpenAIService {
       } catch (err) {
         lastErr = err
         const status = (err as { status?: number })?.status
+        const code = (err as { code?: string })?.code || ''
         const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
-        const transient = status === 429 || (typeof status === 'number' && status >= 500)
+        // Billing / quota 429s are PERMANENT (no credits) — retrying just wastes
+        // time and money-less calls. Only rate-limit / overload / 5xx are transient.
+        const isBilling = code === 'insufficient_quota' || /no credits|insufficient_quota|billing|quota/.test(msg)
+        const transient = !isBilling && (
+          status === 429 || (typeof status === 'number' && status >= 500)
           || /rate limit|overloaded|timeout|temporarily|try again/.test(msg)
+        )
         if (!transient || attempt === 3) throw err
         await new Promise(r => setTimeout(r, attempt * 2000))
       }
