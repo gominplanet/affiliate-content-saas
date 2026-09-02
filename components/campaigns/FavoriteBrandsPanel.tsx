@@ -112,10 +112,15 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
       for (const c of list) {
         try {
           const r = await requestAcceptCampaign(c.detailsUrl)
-          if (r.ok && r.already) already++
-          else if (r.ok) {
-            joined++
-            void fetch('/api/campaigns/mark-accepted', {
+          if (r.ok) {
+            if (r.already) already++
+            else joined++
+            // Record it locally whether it was a fresh join OR already joined on
+            // Amazon. An already-joined campaign MVP hadn't tracked (joined direct on
+            // Amazon) was still counted "open", so Accept all kept returning
+            // "already joined" and the count never dropped. Marking it here lets the
+            // recount exclude it.
+            await fetch('/api/campaigns/mark-accepted', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ asin: c.repAsin, campaignId: c.campaignId, detailsUrl: c.detailsUrl, brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name }),
             }).catch(() => {})
