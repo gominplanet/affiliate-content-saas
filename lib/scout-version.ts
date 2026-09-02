@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.26'
+export const SCOUT_LATEST_VERSION = '1.17.27'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Bulk brand messaging no longer fails with “no-result”: the send now runs in the extension’s own isolated realm, which survives Amazon’s heavy connect page re-rendering mid-send (that page churn was silently discarding the send). Plus per-send diagnostics and the Clip Factory browser-transcript path.'
+  'Bulk brand messaging waits for Amazon’s connect page to fully settle before sending, instead of firing while it is still loading (which was silently discarding the send). Three settle-and-retry passes, plus deeper per-send diagnostics.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

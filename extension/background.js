@@ -1094,26 +1094,43 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
       // every time. The active view loads to a stable frame, so the injection
       // survives; it's also the correct session state for sending to campaigns the
       // creator has already joined (statuses SCHEDULED/DELIVERING).
+      const openedAt = Date.now()
       const tab = await chrome.tabs.create({ url: ccActiveUrl(), active: false })
       tabId = tab.id
       await waitForTabLoad(tabId, 15000)
-      // If Amazon bounced us to sign-in, the in-page API calls would 401 — report
-      // it cleanly instead of grinding.
-      try {
-        const t = await chrome.tabs.get(tabId)
-        a.finalUrl = t && t.url ? String(t.url).slice(0, 160) : null
-        if (t && t.url && /\/ap\/signin|\/gp\/sign-in/i.test(t.url)) { a.reason = 'not-signed-in'; diag.attempts.push(a); return { ok: false, reason: 'not-signed-in' } }
-      } catch (e) {}
+      // WAIT FOR THE SPA TO GO QUIET BEFORE INJECTING. The diagnostic showed the
+      // send injecting while the connect page was still client-navigating (the tab
+      // drifted status=active → status=opportunity&type=spcc after load): the frame
+      // gets replaced mid-fetch, so executeScript resolves with an EMPTY result
+      // (resLen 1, hadResult false, no throw). The reliably-working campaign-list
+      // path avoids this by waiting until the SPA has booted and settled. Mirror it:
+      // poll until net-hook has seen the page fire its own connect API call after we
+      // opened the tab (booted) AND the URL has stopped changing for two reads (or
+      // we hit the cap ~15s).
+      let lastUrl = '', stable = 0, booted = false
+      for (let i = 0; i < 25; i++) {
+        let u = ''
+        try { const t = await chrome.tabs.get(tabId); u = (t && t.url) || '' } catch (e) {}
+        if (u && /\/ap\/signin|\/gp\/sign-in/i.test(u)) { a.finalUrl = u.slice(0, 160); a.reason = 'not-signed-in'; diag.attempts.push(a); return { ok: false, reason: 'not-signed-in' } }
+        if (!booted) { try { booted = (_ccNetRing || []).some((r) => r && r.ts >= openedAt) } catch (e) {} }
+        if (u && u === lastUrl) stable++; else { stable = 0; lastUrl = u }
+        if (booted && stable >= 2 && _ccCreatorId) break
+        await _sleep(600)
+      }
+      a.finalUrl = lastUrl ? lastUrl.slice(0, 160) : a.finalUrl
+      a.booted = booted
+      // Final settle once the page is quiet, then inject.
       await _sleep(settleMs)
-      // Warm up like the list path: give Amazon's SPA a moment to fire its own
-      // connect-API calls so net-hook can capture the creator id (and headers) if
-      // we don't already have them. The send needs the creator id to resolve the
-      // ASIN → campaign, so don't inject until we have it (or we've waited long
-      // enough that the page must have it in its own HTML for in-page discovery).
-      for (let i = 0; i < 20 && !_ccCreatorId; i++) await _sleep(500)
-      // Re-read the tab url just before injecting — the SPA often client-navigates
-      // during the settle, which is what used to tear the frame down mid-send.
-      try { const t2 = await chrome.tabs.get(tabId); if (t2 && t2.url) a.finalUrl = String(t2.url).slice(0, 160) } catch (e) {}
+      // Sync probe: proves the frame can return a result at all AND that fetch +
+      // cookies are present — isolates "SPA tore the frame down" from "the send
+      // logic failed". Recorded in the diagnostic.
+      try {
+        const pr = await chrome.scripting.executeScript({
+          target: { tabId }, world: 'ISOLATED',
+          func: () => ({ href: location.href, ready: document.readyState, cookieLen: (document.cookie || '').length, hasFetch: typeof fetch === 'function' }),
+        })
+        a.probe = pr && pr[0] ? pr[0].result : null
+      } catch (e) { a.probeErr = String(e && e.message || e).slice(0, 160) }
       let res = null
       try {
         // ISOLATED world (the extension's own realm) — NOT MAIN. The connect page
@@ -1147,6 +1164,10 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
       }
       a.resLen = Array.isArray(res) ? res.length : (res == null ? 0 : -1)
       a.hadResult = !!(res && res[0] && res[0].result)
+      // Capture the per-frame slot shape so a lingering empty result is diagnosable:
+      // its keys and any `error` Chrome attached (a swallowed in-page throw).
+      try { a.resultKeys = res && res[0] ? Object.keys(res[0]) : null } catch (e) {}
+      try { a.frameErr = res && res[0] && res[0].error ? String(res[0].error).slice(0, 200) : null } catch (e) {}
       const out = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
       a.reason = out.reason || (out.ok ? 'ok' : 'unknown')
       diag.attempts.push(a)
@@ -1159,10 +1180,12 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
     }
   }
   try {
+    const empty = (o) => !o || o.reason === 'no-result' || o.reason === 'exec-threw'
+    // A fresh tab per attempt with a growing settle — each one waits for the SPA to
+    // go quiet before injecting, so a retry lands on a calmer page.
     let out = await attempt(1500)
-    // Retry an empty result once with a longer settle — it's a tab-lifecycle blip,
-    // not a real send failure, so a fresh tab usually succeeds.
-    if (!out || out.reason === 'no-result' || out.reason === 'exec-threw') { await _sleep(1200); out = await attempt(3500) }
+    if (empty(out)) { await _sleep(1200); out = await attempt(3500) }
+    if (empty(out)) { await _sleep(1500); out = await attempt(6000) }
     // Cache the creator's display name the first time we learn it (from the chat
     // search reply), so every later default send fills actorName up front.
     try { if (out && out.creatorName && !_ccCreatorName) { _ccCreatorName = out.creatorName; chrome.storage.local.set({ ccCreatorName: out.creatorName }) } } catch (e) {}
