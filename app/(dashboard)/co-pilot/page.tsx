@@ -689,7 +689,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   /** User's READY face models — pulled from /api/face-models on mount.
    *  When the user picks one, faceModelId gets passed to the generate
    *  request and the server routes through the LoRA-capable Flux endpoint. */
-  const [faceModels, setFaceModels] = useState<Array<{ id: string; name: string; trigger_token: string }>>([])
+  const [faceModels, setFaceModels] = useState<Array<{ id: string; name: string; trigger_token: string; outfit_pref?: string | null }>>([])
   // Live thumbnail-style controls (the single block) — drive every generation.
   const [borderIndex, setBorderIndex] = useState<number | null>(null) // null = keep borders varied
   const [accentColor, setAccentColor] = useState<string>('#FFE034')   // title emphasis colour
@@ -744,10 +744,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    *  never show up until a hard reload. */
   const loadFaceModels = useCallback(async () => {
     try {
-      const d = await cachedGet<{ models?: Array<{ id: string; name: string; trigger_token: string; status: string }> }>('/api/face-models')
-      const ready = ((d.models as Array<{ id: string; name: string; trigger_token: string; status: string }>) || [])
+      const d = await cachedGet<{ models?: Array<{ id: string; name: string; trigger_token: string; status: string; outfit_pref?: string | null }> }>('/api/face-models')
+      const ready = ((d.models as Array<{ id: string; name: string; trigger_token: string; status: string; outfit_pref?: string | null }>) || [])
         .filter(m => m.status === 'ready')
-        .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
+        .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token, outfit_pref: m.outfit_pref ?? null }))
       setFaceModels(ready)
       setSelectedFaceModelId(prev => prev ?? (ready.length ? ready[0].id : null))
       // Always default to an EXPLICIT person (the first ready face), never silent
@@ -758,6 +758,25 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       setScoutFaceSelection(prev => prev !== 'auto' ? prev : ready.length ? ready[0].id : 'auto')
     } catch { setFaceModels([]) }
   }, [])
+
+  // Per-face wardrobe: pin an outfit (e.g. "a white lab coat") so thumbnails keep
+  // that look. Saved to the face, shared with the standalone generator + Photobooth.
+  const [outfitDraft, setOutfitDraft] = useState<Record<string, string>>({})
+  const [savingOutfit, setSavingOutfit] = useState<string | null>(null)
+  const saveFaceOutfit = useCallback(async (faceId: string, value: string) => {
+    const face = faceModels.find(f => f.id === faceId)
+    const next = (value || '').trim()
+    if (!face || next === (face.outfit_pref || '')) return
+    setSavingOutfit(faceId)
+    try {
+      await fetch(`/api/face-models/${faceId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outfitPref: next }),
+      })
+      setFaceModels(prev => prev.map(f => f.id === faceId ? { ...f, outfit_pref: next || null } : f))
+    } catch { /* best-effort */ }
+    finally { setSavingOutfit(null) }
+  }, [faceModels])
 
   // ── Saved thumbnail style presets ─────────────────────────────────────────
   const loadSavedStyles = useCallback(async () => {
@@ -2404,6 +2423,36 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         No trained face yet — <a href="/photobooth" className="text-[#7C3AED] hover:underline font-medium">add your face</a> to put yourself on the thumbnail, or use <strong>Product Only</strong> below for a product-only scene.
                       </p>
                     )}
+
+                    {/* Outfit — pin the wardrobe for the selected face so every
+                        thumbnail keeps the same look. Saved to the face. */}
+                    {faceModels.length > 0 && scoutFaceSelection !== 'no-human' && (() => {
+                      const activeId = (scoutFaceSelection !== 'auto' && faceModels.some(f => f.id === scoutFaceSelection))
+                        ? scoutFaceSelection
+                        : (faceModels[0]?.id || '')
+                      const face = faceModels.find(f => f.id === activeId)
+                      if (!face) return null
+                      const draft = outfitDraft[activeId] ?? (face.outfit_pref || '')
+                      return (
+                        <div className="flex flex-col gap-1 mt-1">
+                          <span className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Outfit <span className="normal-case font-normal">(optional)</span></span>
+                          <div className="flex items-center gap-2">
+                            <input
+                              value={draft}
+                              onChange={e => setOutfitDraft(prev => ({ ...prev, [activeId]: e.target.value }))}
+                              onBlur={() => { void saveFaceOutfit(activeId, draft) }}
+                              placeholder="e.g. a white lab coat"
+                              maxLength={120}
+                              className="flex-1 h-8 px-2.5 text-[12px] rounded-lg border bg-white dark:bg-[#1c1c1e] border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#FF9500]"
+                            />
+                            {savingOutfit === activeId && <Loader2 size={13} className="animate-spin text-[#86868b]" />}
+                          </div>
+                          <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
+                            {face.outfit_pref ? `${face.name} stays in ${face.outfit_pref}.` : 'Leave blank to vary it. Saved to this face and used everywhere.'}
+                          </span>
+                        </div>
+                      )
+                    })()}
                   </div>
 
                   {/* Headline style toggle — Polished (default) vs Question hook.
