@@ -254,7 +254,9 @@ export default function LaunchpadPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         // Storefronts get the CLEAN upload (no CTA). Fall back to the render
         // only if the clean URL is somehow missing, so the flow never blocks.
-        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asin.trim(), durationSec }),
+        // Seed the thumbnail we already generated so the storefront step doesn't
+        // stall on "waiting for thumbnail".
+        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asin.trim(), durationSec, thumbnailUrl: thumbUrl || undefined }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.videoId) throw new Error(j.error || 'Could not set up the storefront sync')
@@ -521,6 +523,7 @@ export default function LaunchpadPage() {
                 defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain) : ['amazon.com']}
                 geoBadges={geoCheck ? Object.fromEntries(geoCheck.map(g => [g.domain, g.status === 'found' ? 'Product found' : g.status === 'not-listed' ? 'Not listed here' : 'Not confirmed'])) : undefined}
                 marketAsins={marketAsins}
+                presetThumbnailUrl={thumbUrl}
               />
             )}
           </>

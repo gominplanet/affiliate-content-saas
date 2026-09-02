@@ -37,7 +37,7 @@ const muted = { color: 'var(--text-2)' } as const
 
 /** presetVideoId: when set, the stage syncs THAT video and hides its own picker
  *  (Launchpad passes the already-picked video). */
-export default function StorefrontStage({ presetVideoId, presetAsin, allowedDomains, defaultChosen, geoBadges, marketAsins }: {
+export default function StorefrontStage({ presetVideoId, presetAsin, allowedDomains, defaultChosen, geoBadges, marketAsins, presetThumbnailUrl }: {
   presetVideoId?: string | null
   presetAsin?: string | null
   /** Video Launchpad restricts to a subset of marketplaces (Phase 1: the English
@@ -53,6 +53,10 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
    *  a market where the source one isn't listed). Merged with any the creator
    *  pastes by hand; sent to /start so each market delivers against its own code. */
   marketAsins?: Record<string, string> | null
+  /** A thumbnail the caller already generated (Launchpad's YouTube step). Used so
+   *  the upload's thumbnail gate passes immediately and each storefront gets it,
+   *  instead of waiting on the background render. */
+  presetThumbnailUrl?: string | null
 }) {
   const [videos, setVideos] = useState<Vid[]>([])
   const [markets, setMarkets] = useState<Market[]>([])
@@ -290,8 +294,15 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       // after the master is created. If we upload before it's ready, Amazon
       // attaches its own video-frame thumbnail instead. Wait for it (up to ~2 min),
       // and only then let the user choose to go with Amazon's auto thumbnail.
+      // A thumbnail the caller already made (Launchpad's YouTube step) counts —
+      // fill it into any item the server queue didn't have one for, and let the
+      // gate pass immediately instead of waiting on the background render.
+      if (presetThumbnailUrl) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        items = items.map((i: any) => i.thumbnailUrl ? i : { ...i, thumbnailUrl: presetThumbnailUrl })
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const hasThumb = (arr: any[]) => arr.some((i: { thumbnailUrl?: string | null }) => !!i.thumbnailUrl)
+      const hasThumb = (arr: any[]) => !!presetThumbnailUrl || arr.some((i: { thumbnailUrl?: string | null }) => !!i.thumbnailUrl)
       if (!hasThumb(items)) {
         setThumbWaiting(true)
         try {
@@ -580,17 +591,24 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
               : <p className="text-[11px] mb-3" style={{ color: '#e0554b' }}>SCOUT not detected. Install it and sign in to Amazon to upload.</p>
           )}
           <div className="space-y-3">
-            {targets.map(t => (
-              <div key={t.domain} className="rounded-xl border p-3" style={
-                t.state === 'delivered' ? { borderColor: 'rgba(16,185,129,0.5)', background: 'rgba(16,185,129,0.08)' }
-                  : t.state === 'failed' ? { borderColor: 'rgba(224,85,75,0.45)', background: 'rgba(224,85,75,0.06)' }
+            {targets.map(t => {
+              const uploading = delivering && t.state !== 'delivered' && t.state !== 'failed'
+              return (
+              <div key={t.domain} className="rounded-xl border-2 p-3 transition-colors" style={
+                t.state === 'delivered' ? { borderColor: '#10B981', background: 'rgba(16,185,129,0.14)' }
+                  : t.state === 'failed' ? { borderColor: 'rgba(224,85,75,0.6)', background: 'rgba(224,85,75,0.07)' }
+                  : uploading ? { borderColor: 'rgba(14,165,164,0.6)', background: 'rgba(14,165,164,0.06)' }
                   : { borderColor: 'var(--border)' }
               }>
                 <div className="flex items-center gap-2 mb-1">
-                  {t.state === 'localized' || t.state === 'delivered' ? <Check size={14} style={{ color: '#10B981' }} /> : <Circle size={13} style={muted} />}
+                  {t.state === 'delivered' ? <Check size={15} style={{ color: '#10B981' }} />
+                    : uploading ? <Loader2 size={14} className="animate-spin" style={{ color: '#0EA5A4' }} />
+                    : t.state === 'localized' ? <Check size={14} style={{ color: '#10B981' }} />
+                    : <Circle size={13} style={muted} />}
                   <span className="text-sm font-medium" style={label}>{t.country}</span>
                   <span className="text-[11px]" style={muted}>{t.lang}{t.dub ? ' · dub' : ''}</span>
-                  {t.state === 'delivered' && <span className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: '#10B981' }}><Check size={12} /> on storefront</span>}
+                  {t.state === 'delivered' && <span className="text-[11px] font-bold inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ color: '#fff', background: '#10B981' }}><Check size={12} /> Uploaded</span>}
+                  {uploading && <span className="text-[11px] font-medium" style={{ color: '#0EA5A4' }}>Uploading…</span>}
                   {t.state === 'failed' && <span className="text-[11px] font-medium" style={{ color: '#e0554b' }}>upload failed</span>}
                   {/* Sign-in / enrollment status from the pre-flight. */}
                   {signin[t.domain] === 'ready' && <span className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: '#10B981' }}><Check size={12} /> signed in</span>}
@@ -651,7 +669,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                   </div>
                 )}
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

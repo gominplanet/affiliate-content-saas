@@ -93,7 +93,9 @@ export async function GET(req: Request) {
       masterUrl: masterSrc,
       // Video length, for SCOUT's duplicate check against the storefront.
       durationSeconds: durByVideo.get(vidId) || 0,
-      thumbnailUrl: thumbByVideo.get(videoIdByJob.get(r.job_id) || '') || null,
+      // Per-market thumbnail (clean/text-free for non-English, branded for
+      // English), computed above — NOT the raw text thumbnail.
+      thumbnailUrl: thumb,
     }
   }).filter(i => !!i.videoUrl && !!i.title)
 

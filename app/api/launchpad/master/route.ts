@@ -34,11 +34,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Launchpad is a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
-  const body = await req.json().catch(() => ({})) as { title?: string; videoUrl?: string; asin?: string; durationSec?: number }
+  const body = await req.json().catch(() => ({})) as { title?: string; videoUrl?: string; asin?: string; durationSec?: number; thumbnailUrl?: string }
   const title = (body.title || 'My video').trim().slice(0, 200)
   const videoUrl = (body.videoUrl || '').trim()
   const asin = asinFrom(body.asin || '')
   const durationSec = Math.max(0, Math.round(Number(body.durationSec) || 0))
+  // The Launchpad already generated a thumbnail (the YouTube step). Store it on
+  // the master up front so the storefront upload's thumbnail gate passes
+  // immediately instead of waiting on the background render.
+  const seedThumb = /^https:\/\//i.test((body.thumbnailUrl || '').trim()) ? body.thumbnailUrl!.trim() : null
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A hosted video URL is required.' }, { status: 400 })
   if (!asin) return NextResponse.json({ error: 'A valid product ASIN is required.' }, { status: 400 })
 
@@ -68,6 +72,10 @@ export async function POST(req: Request) {
       // on a marketplace (same product + same duration = almost certainly the
       // same upload).
       ...(durationSec > 0 ? { duration_seconds: durationSec } : {}),
+      // Seed the storefront thumbnail from the Launchpad's own render so the
+      // upload never stalls on "waiting for thumbnail". The background job below
+      // still produces the branded/clean variants and overwrites when ready.
+      ...(seedThumb ? { thumbnail_url: seedThumb } : {}),
       published_at: new Date().toISOString(),
     })
     .select('id').single()
