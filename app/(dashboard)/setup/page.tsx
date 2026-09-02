@@ -274,7 +274,7 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
       </div>
 
       {/* Bottom clarification */}
-      <div className="rounded-xl bg-[var(--surface-2)] border border-[var(--border-1)] px-4 py-3 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+      <div className="rounded-xl bg-[var(--surface-2)] border border-[var(--border)] px-4 py-3 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
         <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not sure which to pick?</strong> If you already have posts, subscribers, or a design you care about — choose <strong>existing site</strong>. The setup wizard is only for blank new installs and will overwrite default WordPress content.
       </div>
     </div>

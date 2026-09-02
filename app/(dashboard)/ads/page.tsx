@@ -461,7 +461,7 @@ export default function AdsPage() {
               <div className="flex flex-wrap items-center gap-4 mb-4 p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
                 <button
                   onClick={() => setData(d => ({ ...d, sidebarRotate: !d.sidebarRotate }))}
-                  className="flex items-center gap-2 text-sm text-[var(--text-1)]"
+                  className="flex items-center gap-2 text-sm text-[var(--text)]"
                 >
                   {data.sidebarRotate ? <ToggleRight size={20} className="text-[#7C3AED]" /> : <ToggleLeft size={20} className="text-[var(--text-3)]" />}
                   <span className="font-medium">Rotate order (random)</span>
@@ -516,7 +516,7 @@ export default function AdsPage() {
                 onChange={(e) => setData(d => ({ ...d, homepageAdsEnabled: e.target.checked }))}
                 className="w-4 h-4 rounded accent-[#7C3AED]"
               />
-              <span className="text-sm font-medium text-[var(--text-1)]">Show this strip on the homepage</span>
+              <span className="text-sm font-medium text-[var(--text)]">Show this strip on the homepage</span>
               <span className="text-xs text-[var(--text-3)]">
                 {data.homepageAdsEnabled
                   ? 'On — empty slots will show an "Advertise here" placeholder.'

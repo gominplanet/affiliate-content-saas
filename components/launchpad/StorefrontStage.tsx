@@ -596,7 +596,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                     {(t.state === 'localized' || t.state === 'failed') && (
                       <button type="button" onClick={() => void dubOne(t.domain)} disabled={dubbing === t.domain}
                         className="inline-flex items-center gap-1.5 text-[11px] font-medium mt-1 disabled:opacity-60"
-                        style={{ color: 'var(--muted)' }}>
+                        style={{ color: 'var(--text-2)' }}>
                         {dubbing === t.domain ? <><Loader2 size={12} className="animate-spin" /> Regenerating…</> : <><Mic size={12} /> Regenerate dub</>}
                       </button>
                     )}
