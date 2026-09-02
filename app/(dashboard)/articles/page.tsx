@@ -288,8 +288,8 @@ export default function ArticlesPage() {
               <FlaskConical className="w-6 h-6" style={{ color: '#7C3AED' }} />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Articles</h1>
-              <p className="text-sm mt-2" style={{ color: 'var(--fg-muted)' }}>
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Articles</h1>
+              <p className="text-sm mt-2" style={{ color: 'var(--text-2)' }}>
                 Articles is a Creator, Studio and Pro feature. Upgrade to publish researched
                 informational articles alongside your reviews.
               </p>
@@ -302,7 +302,7 @@ export default function ArticlesPage() {
 
   if (canUse === null) {
     return (
-      <div className="rounded-xl border p-6 text-center text-sm" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--fg-muted)' }}>
+      <div className="rounded-xl border p-6 text-center text-sm" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--text-2)' }}>
         <Loader2 className="w-4 h-4 animate-spin inline-block mr-2" /> Loading…
       </div>
     )
@@ -318,12 +318,12 @@ export default function ArticlesPage() {
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Articles</h1>
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Articles</h1>
               <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: 'rgba(124,58,237,.12)', color: '#7C3AED' }}>
                 New
               </span>
             </div>
-            <p className="text-sm mt-1.5" style={{ color: 'var(--fg-muted)' }}>
+            <p className="text-sm mt-1.5" style={{ color: 'var(--text-2)' }}>
               Generate a researched, opinionated informational article (not a product review). Give it a topic and your
               take, tick which sections to include, and MVP researches the topic on the web and writes a full article with
               facts, stats, a data table and chart, and an FAQ.
@@ -336,7 +336,7 @@ export default function ArticlesPage() {
       <form onSubmit={onSubmit} className="rounded-xl border p-6 space-y-5" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
         {/* Topic */}
         <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
             Topic <span style={{ color: '#dc2626' }}>*</span>
           </label>
           <input
@@ -347,7 +347,7 @@ export default function ArticlesPage() {
             maxLength={200}
             disabled={generating}
             className="w-full rounded-lg px-4 py-3 text-sm outline-none border"
-            style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+            style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
           />
           {/* Suggest topics tied to the creator's own reviews + niche */}
           <button
@@ -369,8 +369,8 @@ export default function ArticlesPage() {
                   className="w-full text-left rounded-lg border px-3.5 py-2.5 transition hover:border-[#7C3AED]"
                   style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
                 >
-                  <div className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{s.topic}</div>
-                  {s.angle && <div className="text-xs mt-0.5" style={{ color: 'var(--fg-muted)' }}>{s.angle}</div>}
+                  <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{s.topic}</div>
+                  {s.angle && <div className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>{s.angle}</div>}
                 </button>
               ))}
             </div>
@@ -379,8 +379,8 @@ export default function ArticlesPage() {
 
         {/* Angle */}
         <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>
-            Your angle / take <span style={{ color: 'var(--fg-muted)' }}>(optional)</span>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
+            Your angle / take <span style={{ color: 'var(--text-2)' }}>(optional)</span>
           </label>
           <textarea
             value={angle}
@@ -389,13 +389,13 @@ export default function ArticlesPage() {
             rows={2}
             disabled={generating}
             className="w-full rounded-lg px-4 py-3 text-sm outline-none border resize-y"
-            style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+            style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
           />
         </div>
 
         {/* Sections */}
         <div>
-          <label className="block text-sm font-medium mb-2" style={{ color: 'var(--fg)' }}>
+          <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text)' }}>
             Include these sections
           </label>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -420,8 +420,8 @@ export default function ArticlesPage() {
                     {on ? '✓' : ''}
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-sm font-medium" style={{ color: 'var(--fg)' }}>{s.label}</span>
-                    <span className="block text-xs mt-0.5" style={{ color: 'var(--fg-muted)' }}>{s.hint}</span>
+                    <span className="block text-sm font-medium" style={{ color: 'var(--text)' }}>{s.label}</span>
+                    <span className="block text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>{s.hint}</span>
                   </span>
                 </button>
               )
@@ -439,7 +439,7 @@ export default function ArticlesPage() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>Write in my trained voice</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Write in my trained voice</span>
                 <button
                   type="button"
                   role="switch"
@@ -452,7 +452,7 @@ export default function ArticlesPage() {
                   <span className="inline-block h-5 w-5 transform rounded-full bg-white transition" style={{ transform: useMyVoice ? 'translateX(22px)' : 'translateX(2px)' }} />
                 </button>
               </div>
-              <p className="text-xs mt-1 leading-snug" style={{ color: 'var(--fg-muted)' }}>
+              <p className="text-xs mt-1 leading-snug" style={{ color: 'var(--text-2)' }}>
                 {useMyVoice
                   ? 'Uses your Voice Training (writing sample, taste and style) so the article sounds like you, not a generic AI blog.'
                   : 'Off — the article uses the plain tone preset below instead of your trained voice.'}
@@ -470,22 +470,22 @@ export default function ArticlesPage() {
         {/* Tone + Length */}
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>Tone</label>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>Tone</label>
             <select
               value={tone}
               onChange={e => setTone(e.target.value)}
               disabled={generating || useMyVoice}
               className="w-full rounded-lg px-3 py-2.5 text-sm outline-none border disabled:opacity-50"
-              style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+              style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
             >
               {TONES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
             {useMyVoice && (
-              <p className="text-[11px] mt-1" style={{ color: 'var(--fg-muted)' }}>Your trained voice is on, so the tone preset is set aside.</p>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--text-2)' }}>Your trained voice is on, so the tone preset is set aside.</p>
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>Length</label>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>Length</label>
             <div className="inline-flex items-center rounded-lg border p-1 w-full" style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}>
               {LENGTHS.map(l => (
                 <button
@@ -497,7 +497,7 @@ export default function ArticlesPage() {
                   className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition"
                   style={{
                     background: length === l.key ? '#7C3AED' : 'transparent',
-                    color: length === l.key ? '#fff' : 'var(--fg-muted)',
+                    color: length === l.key ? '#fff' : 'var(--text-2)',
                   }}
                 >
                   {l.label}
@@ -509,8 +509,8 @@ export default function ArticlesPage() {
 
         {/* Keywords */}
         <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>
-            Keywords <span style={{ color: 'var(--fg-muted)' }}>(optional, comma-separated)</span>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
+            Keywords <span style={{ color: 'var(--text-2)' }}>(optional, comma-separated)</span>
           </label>
           <input
             type="text"
@@ -519,14 +519,14 @@ export default function ArticlesPage() {
             placeholder="e.g. olive oil, heart health, longevity, blue zones"
             disabled={generating}
             className="w-full rounded-lg px-4 py-3 text-sm outline-none border"
-            style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+            style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
           />
         </div>
 
         {/* Notes */}
         <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>
-            Notes <span style={{ color: 'var(--fg-muted)' }}>(optional)</span>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
+            Notes <span style={{ color: 'var(--text-2)' }}>(optional)</span>
           </label>
           <textarea
             value={notes}
@@ -535,13 +535,13 @@ export default function ArticlesPage() {
             rows={2}
             disabled={generating}
             className="w-full rounded-lg px-4 py-3 text-sm outline-none border resize-y"
-            style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+            style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
           />
         </div>
 
         {/* Products / monetization mode */}
         <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>Your products</label>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>Your products</label>
           <div className="inline-flex items-center rounded-lg border p-1 w-full max-w-md" style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}>
             {([
               { key: 'end', label: 'Only at the end' },
@@ -553,13 +553,13 @@ export default function ArticlesPage() {
                 onClick={() => setProductMode(m.key)}
                 disabled={generating}
                 className="flex-1 inline-flex items-center justify-center px-3 py-1.5 rounded-md text-xs font-semibold transition"
-                style={{ background: productMode === m.key ? '#7C3AED' : 'transparent', color: productMode === m.key ? '#fff' : 'var(--fg-muted)' }}
+                style={{ background: productMode === m.key ? '#7C3AED' : 'transparent', color: productMode === m.key ? '#fff' : 'var(--text-2)' }}
               >
                 {m.label}
               </button>
             ))}
           </div>
-          <p className="text-[11px] mt-1.5" style={{ color: 'var(--fg-muted)' }}>
+          <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-2)' }}>
             {productMode === 'throughout'
               ? 'MVP links your most relevant reviews inline where they fit the article.'
               : 'Keeps the article informational; your related reviews appear in a block at the end.'}
@@ -568,7 +568,7 @@ export default function ArticlesPage() {
 
         {/* Hero image style */}
         <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>Hero image</label>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>Hero image</label>
           <div className="inline-flex items-center rounded-lg border p-1 w-full max-w-md" style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}>
             {([
               { key: 'generic', label: 'Generic' },
@@ -581,14 +581,14 @@ export default function ArticlesPage() {
                 onClick={() => setHeroStyle(h.key)}
                 disabled={generating}
                 className="flex-1 inline-flex items-center justify-center px-3 py-1.5 rounded-md text-xs font-semibold transition"
-                style={{ background: heroStyle === h.key ? '#7C3AED' : 'transparent', color: heroStyle === h.key ? '#fff' : 'var(--fg-muted)' }}
+                style={{ background: heroStyle === h.key ? '#7C3AED' : 'transparent', color: heroStyle === h.key ? '#fff' : 'var(--text-2)' }}
               >
                 {h.label}
               </button>
             ))}
           </div>
           {heroStyle === 'face' && (
-            <p className="text-[11px] mt-1.5" style={{ color: 'var(--fg-muted)' }}>Uses your Face Model. If you haven&rsquo;t set one up, it falls back to a generic image.</p>
+            <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-2)' }}>Uses your Face Model. If you haven&rsquo;t set one up, it falls back to a generic image.</p>
           )}
           {heroStyle === 'product' && (
             <input
@@ -598,7 +598,7 @@ export default function ArticlesPage() {
               placeholder="Paste a product image URL (used as the hero subject)"
               disabled={generating}
               className="w-full rounded-lg px-4 py-2.5 text-sm outline-none border mt-2"
-              style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+              style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
             />
           )}
 
@@ -611,8 +611,8 @@ export default function ArticlesPage() {
               disabled={generating}
               className="mt-0.5 w-4 h-4 rounded accent-[#7C3AED] flex-shrink-0"
             />
-            <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>
-              <b style={{ color: 'var(--fg)' }}>Add images inside the article</b> &mdash; puts the hero photo at the top of the body and adds one more editorial image partway down, both with alt text. Adds one extra image to the render.
+            <span className="text-xs" style={{ color: 'var(--text-2)' }}>
+              <b style={{ color: 'var(--text)' }}>Add images inside the article</b> &mdash; puts the hero photo at the top of the body and adds one more editorial image partway down, both with alt text. Adds one extra image to the render.
             </span>
           </label>
         </div>
@@ -634,7 +634,7 @@ export default function ArticlesPage() {
             onClick={() => void run(true)}
             disabled={generating || !topic.trim()}
             className="px-5"
-            style={{ background: 'var(--bg)', color: 'var(--fg)', border: '1px solid var(--border)' }}
+            style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
           >
             {busy === 'publish'
               ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Publishing…</>
@@ -642,7 +642,7 @@ export default function ArticlesPage() {
           </Button>
         </div>
         {generating && (
-          <p className="text-xs" style={{ color: 'var(--fg-muted)' }}>
+          <p className="text-xs" style={{ color: 'var(--text-2)' }}>
             Researching the topic and writing the article. This usually takes 30 to 90 seconds.
           </p>
         )}
@@ -653,10 +653,10 @@ export default function ArticlesPage() {
         <button onClick={() => setBulkOpen(o => !o)} className="w-full flex items-center justify-between gap-2 p-4 text-left">
           <span className="inline-flex items-center gap-2 min-w-0">
             <Layers className="w-4 h-4" style={{ color: '#7C3AED' }} />
-            <span className="font-semibold" style={{ color: 'var(--fg)' }}>Bulk generate</span>
-            <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>Publish many articles from a list of topics</span>
+            <span className="font-semibold" style={{ color: 'var(--text)' }}>Bulk generate</span>
+            <span className="text-xs" style={{ color: 'var(--text-2)' }}>Publish many articles from a list of topics</span>
           </span>
-          <ChevronDown className="w-4 h-4" style={{ color: 'var(--fg-muted)', transform: bulkOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+          <ChevronDown className="w-4 h-4" style={{ color: 'var(--text-2)', transform: bulkOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
         </button>
         {bulkOpen && (
           <div className="px-4 pb-4">
@@ -666,13 +666,13 @@ export default function ArticlesPage() {
               rows={5}
               placeholder={'One topic per line, e.g.\nHow to pack a carry-on without wrinkles\nWhy your lumbar pillow isn’t working\nEmergency food storage: what lasts vs. what spoils'}
               className="w-full rounded-lg border px-3 py-2 text-sm"
-              style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+              style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
             />
             <div className="flex items-center gap-3 mt-2 flex-wrap">
               <Button onClick={() => void runBulk()} disabled={bulkRunning || !bulkTopics.trim()} className="px-5" style={{ background: '#7C3AED', color: '#fff' }}>
                 {bulkRunning ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Publishing…</> : <><UploadCloud className="w-4 h-4 mr-2" /> Publish all</>}
               </Button>
-              <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>Uses your current sections, tone and length. Up to 25 at a time; each takes ~1 minute.</span>
+              <span className="text-xs" style={{ color: 'var(--text-2)' }}>Uses your current sections, tone and length. Up to 25 at a time; each takes ~1 minute.</span>
             </div>
             {bulkResults.length > 0 && (
               <ul className="mt-3 flex flex-col gap-1.5 text-sm">
@@ -682,7 +682,7 @@ export default function ArticlesPage() {
                       : r.status === 'error' ? <AlertCircle className="w-3.5 h-3.5" style={{ color: '#c0392b' }} />
                       : r.status === 'writing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#7C3AED' }} />
                       : <span className="w-3.5 h-3.5 rounded-full border" style={{ borderColor: 'var(--border)' }} />}
-                    <span className="flex-1 truncate" style={{ color: 'var(--fg)' }}>{r.topic}</span>
+                    <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>{r.topic}</span>
                     {r.status === 'done' && r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium inline-flex items-center gap-0.5" style={{ color: '#7C3AED' }}>View <ExternalLink className="w-3 h-3" /></a>}
                     {r.status === 'error' && <span className="text-xs" style={{ color: '#c0392b' }}>{r.error}</span>}
                   </li>
@@ -698,23 +698,23 @@ export default function ArticlesPage() {
         <button onClick={() => setRefreshOpen(o => !o)} className="w-full flex items-center justify-between gap-2 p-4 text-left">
           <span className="inline-flex items-center gap-2 min-w-0">
             <RefreshCw className="w-4 h-4" style={{ color: '#7C3AED' }} />
-            <span className="font-semibold" style={{ color: 'var(--fg)' }}>Refresh a published article</span>
-            <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>Re-research and update the facts, in place</span>
+            <span className="font-semibold" style={{ color: 'var(--text)' }}>Refresh a published article</span>
+            <span className="text-xs" style={{ color: 'var(--text-2)' }}>Re-research and update the facts, in place</span>
           </span>
-          <ChevronDown className="w-4 h-4" style={{ color: 'var(--fg-muted)', transform: refreshOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+          <ChevronDown className="w-4 h-4" style={{ color: 'var(--text-2)', transform: refreshOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
         </button>
         {refreshOpen && (
           <div className="px-4 pb-4">
             {articlesLoading ? (
-              <p className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--fg-muted)' }}><Loader2 className="w-4 h-4 animate-spin" /> Loading your articles…</p>
+              <p className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--text-2)' }}><Loader2 className="w-4 h-4 animate-spin" /> Loading your articles…</p>
             ) : articles.length === 0 ? (
-              <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>No published articles yet. Publish one above and it will show here to refresh later.</p>
+              <p className="text-sm" style={{ color: 'var(--text-2)' }}>No published articles yet. Publish one above and it will show here to refresh later.</p>
             ) : (
               <ul className="flex flex-col gap-1.5 text-sm">
                 {articles.map(a => (
                   <li key={a.id} className="flex items-center gap-2">
-                    <span className="flex-1 truncate" style={{ color: 'var(--fg)' }}>{a.title}</span>
-                    {a.updatedAt && <span className="text-[11px] shrink-0" style={{ color: 'var(--fg-muted)' }}>updated {new Date(a.updatedAt).toLocaleDateString()}</span>}
+                    <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>{a.title}</span>
+                    {a.updatedAt && <span className="text-[11px] shrink-0" style={{ color: 'var(--text-2)' }}>updated {new Date(a.updatedAt).toLocaleDateString()}</span>}
                     <button onClick={() => void refreshArticle(a.id)} disabled={!!refreshingId} className="text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50" style={{ color: '#7C3AED' }}>
                       {refreshingId === a.id ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Refreshing…</> : <><RefreshCw className="w-3.5 h-3.5" /> Refresh</>}
                     </button>
@@ -732,7 +732,7 @@ export default function ArticlesPage() {
           <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-xl font-bold" style={{ color: 'var(--fg)' }}>{preview.title}</h2>
+                <h2 className="text-xl font-bold" style={{ color: 'var(--text)' }}>{preview.title}</h2>
                 {typeof preview.seoScore === 'number' && (
                   <span
                     className="text-[11px] font-bold px-2 py-0.5 rounded-full"
@@ -771,10 +771,10 @@ export default function ArticlesPage() {
                 )}
               </div>
               {preview.voiceUsed && voiceWhyOpen && (
-                <div className="mt-2 rounded-lg border p-3 text-xs" style={{ borderColor: 'rgba(124,58,237,0.25)', background: 'rgba(124,58,237,0.05)', color: 'var(--fg)' }}>
+                <div className="mt-2 rounded-lg border p-3 text-xs" style={{ borderColor: 'rgba(124,58,237,0.25)', background: 'rgba(124,58,237,0.05)', color: 'var(--text)' }}>
                   <p className="font-semibold mb-1" style={{ color: '#6d28d9' }}>Why this sounds like you</p>
                   {preview.voiceWhy?.fingerprint && (
-                    <p className="leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--fg-muted)' }}>{preview.voiceWhy.fingerprint}</p>
+                    <p className="leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-2)' }}>{preview.voiceWhy.fingerprint}</p>
                   )}
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {preview.voiceWhy?.fingerprint && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>Learned from your videos</span>}
@@ -782,18 +782,18 @@ export default function ArticlesPage() {
                     {preview.voiceWhy?.usedSample && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>Your writing sample</span>}
                     {!!preview.voiceWhy?.usedAvoid && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>{preview.voiceWhy.usedAvoid} words you avoid</span>}
                   </div>
-                  <p className="mt-2" style={{ color: 'var(--fg-muted)' }}>
+                  <p className="mt-2" style={{ color: 'var(--text-2)' }}>
                     Want to shape this? <a href="/learn" className="underline font-medium" style={{ color: '#7C3AED' }}>Edit your Voice Training</a>.
                   </p>
                 </div>
               )}
               {preview.termCoverage && preview.termCoverage.missing.length > 0 && (
-                <p className="text-[11px] mt-1" style={{ color: 'var(--fg-muted)' }}>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-2)' }}>
                   Competitors also cover: {preview.termCoverage.missing.slice(0, 8).join(', ')}. Add a line on the relevant ones to rank fuller.
                 </p>
               )}
-              {preview.meta && <p className="text-xs mt-1 italic" style={{ color: 'var(--fg-muted)' }}>{preview.meta}</p>}
-              <p className="text-xs mt-1" style={{ color: 'var(--fg-muted)' }}>Preview — nothing has been published yet.</p>
+              {preview.meta && <p className="text-xs mt-1 italic" style={{ color: 'var(--text-2)' }}>{preview.meta}</p>}
+              <p className="text-xs mt-1" style={{ color: 'var(--text-2)' }}>Preview — nothing has been published yet.</p>
             </div>
             <Button
               onClick={() => void publishPreview()}
@@ -817,7 +817,7 @@ export default function ArticlesPage() {
           )}
           <div
             className="mvp-article-preview rounded-lg border p-5 overflow-x-auto"
-            style={{ background: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--fg)', lineHeight: 1.7 }}
+            style={{ background: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)', lineHeight: 1.7 }}
             dangerouslySetInnerHTML={{ __html: preview.html }}
           />
         </div>

@@ -394,16 +394,16 @@ export default function BuyingGuidesPage() {
               <Lock className="w-6 h-6" style={{ color: '#7C3AED' }} />
             </div>
             <div className="flex-1">
-              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Auto-curate is locked</h1>
-              <p className="text-sm mt-2" style={{ color: 'var(--fg-muted)' }}>
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Auto-curate is locked</h1>
+              <p className="text-sm mt-2" style={{ color: 'var(--text-2)' }}>
                 The catalogue round-up format needs a wide library to produce diverse picks. Unlocks automatically
                 once your live blog has <strong>{locked.threshold} published posts</strong>. Or skip the wait
                 and pick the products yourself below.
               </p>
               <div className="mt-4 rounded-lg border p-4" style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}>
                 <div className="flex items-baseline gap-2">
-                  <div className="text-3xl font-bold" style={{ color: 'var(--fg)' }}>{locked.current}</div>
-                  <div className="text-sm" style={{ color: 'var(--fg-muted)' }}>/ {locked.threshold} posts</div>
+                  <div className="text-3xl font-bold" style={{ color: 'var(--text)' }}>{locked.current}</div>
+                  <div className="text-sm" style={{ color: 'var(--text-2)' }}>/ {locked.threshold} posts</div>
                 </div>
                 <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
                   <div className="h-full rounded-full" style={{
@@ -411,7 +411,7 @@ export default function BuyingGuidesPage() {
                     background: '#7C3AED',
                   }} />
                 </div>
-                <p className="text-xs mt-2" style={{ color: 'var(--fg-muted)' }}>
+                <p className="text-xs mt-2" style={{ color: 'var(--text-2)' }}>
                   {remaining > 0 ? `${remaining} more to unlock.` : 'Refresh — you should be unlocked.'}
                 </p>
               </div>
@@ -449,7 +449,7 @@ export default function BuyingGuidesPage() {
           className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md transition"
           style={{
             background: source === 'catalogue' ? '#7C3AED' : 'transparent',
-            color: source === 'catalogue' ? '#fff' : 'var(--fg-muted)',
+            color: source === 'catalogue' ? '#fff' : 'var(--text-2)',
           }}
         >
           <Library className="w-3.5 h-3.5" /> Pick from my catalogue
@@ -462,7 +462,7 @@ export default function BuyingGuidesPage() {
           className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md transition"
           style={{
             background: source === 'manual' ? '#7C3AED' : 'transparent',
-            color: source === 'manual' ? '#fff' : 'var(--fg-muted)',
+            color: source === 'manual' ? '#fff' : 'var(--text-2)',
           }}
         >
           <ListChecks className="w-3.5 h-3.5" /> Pick my own
@@ -479,20 +479,20 @@ export default function BuyingGuidesPage() {
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
                 <div className="flex items-center gap-2.5 flex-wrap">
-                  <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Buying Guides</h1>
+                  <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Buying Guides</h1>
                   <BuyingGuidesGuide />
                 </div>
-                <p className="text-sm mt-1.5" style={{ color: 'var(--fg-muted)' }}>
+                <p className="text-sm mt-1.5" style={{ color: 'var(--text-2)' }}>
                   {source === 'catalogue' ? (
                     <>
                       Generate a long-form &ldquo;Best [topic] for {new Date().getUTCFullYear()}&rdquo; round-up from your published reviews.
                       The AI picks 5–7 best-fit reviews, slots them as Best Overall / Best Budget / Best for X, writes the guide, and publishes to your blog tagged{' '}
-                      <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>buying-guide</span>.
+                      <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--text)' }}>buying-guide</span>.
                     </>
                   ) : (
                     <>
                       Paste 2–10 YouTube URLs (one product per video). MVP ranks them, writes a &ldquo;best for ___&rdquo; guide, generates images, and publishes to your blog tagged{' '}
-                      <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>buying-guide</span>. No catalogue threshold — works from day one.
+                      <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--text)' }}>buying-guide</span>. No catalogue threshold — works from day one.
                     </>
                   )}
                 </p>
@@ -517,7 +517,7 @@ export default function BuyingGuidesPage() {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition"
                     style={{
                       background: mode === 'auto' ? '#7C3AED' : 'transparent',
-                      color: mode === 'auto' ? '#fff' : 'var(--fg-muted)',
+                      color: mode === 'auto' ? '#fff' : 'var(--text-2)',
                     }}
                   >
                     <Zap className="w-3.5 h-3.5" /> Full auto
@@ -530,7 +530,7 @@ export default function BuyingGuidesPage() {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition"
                     style={{
                       background: mode === 'review' ? '#7C3AED' : 'transparent',
-                      color: mode === 'review' ? '#fff' : 'var(--fg-muted)',
+                      color: mode === 'review' ? '#fff' : 'var(--text-2)',
                     }}
                   >
                     <Eye className="w-3.5 h-3.5" /> Let me see
@@ -553,7 +553,7 @@ export default function BuyingGuidesPage() {
                 maxLength={200}
                 disabled={generating}
                 className="flex-1 rounded-lg px-4 py-3 text-sm outline-none border"
-                style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+                style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
               />
               <Button
                 type="submit"
@@ -569,7 +569,7 @@ export default function BuyingGuidesPage() {
               </Button>
             </form>
 
-            <p className="text-xs mt-3" style={{ color: 'var(--fg-muted)' }}>
+            <p className="text-xs mt-3" style={{ color: 'var(--text-2)' }}>
               {loading ? 'Scanning your library…' : `${reviewCount} published reviews in your catalogue.`}
               {mode === 'auto' && <span className="ml-2" style={{ color: '#dc2626' }}>· Full auto mode publishes immediately.</span>}
             </p>
@@ -581,8 +581,8 @@ export default function BuyingGuidesPage() {
         {source === 'manual' && (
           <form onSubmit={generateManual} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>
-                Topic / title <span style={{ color: 'var(--fg-muted)' }}>(optional — MVP infers it from your videos)</span>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
+                Topic / title <span style={{ color: 'var(--text-2)' }}>(optional — MVP infers it from your videos)</span>
               </label>
               <input
                 type="text"
@@ -592,18 +592,18 @@ export default function BuyingGuidesPage() {
                 maxLength={200}
                 disabled={generating}
                 className="w-full rounded-lg px-4 py-3 text-sm outline-none border"
-                style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+                style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>
-                YouTube video URLs <span style={{ color: 'var(--fg-muted)' }}>({manualValidCount}/{MAX_MANUAL_URLS} — one product per video)</span>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
+                YouTube video URLs <span style={{ color: 'var(--text-2)' }}>({manualValidCount}/{MAX_MANUAL_URLS} — one product per video)</span>
               </label>
               <div className="flex flex-col gap-2">
                 {manualUrls.map((u, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <span className="text-xs w-5 text-right" style={{ color: 'var(--fg-muted)' }}>{i + 1}.</span>
+                    <span className="text-xs w-5 text-right" style={{ color: 'var(--text-2)' }}>{i + 1}.</span>
                     <input
                       type="url"
                       value={u}
@@ -611,7 +611,7 @@ export default function BuyingGuidesPage() {
                       placeholder="https://www.youtube.com/watch?v=…"
                       disabled={generating}
                       className="flex-1 rounded-lg px-3 py-2 text-sm outline-none border"
-                      style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+                      style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
                     />
                     {manualUrls.length > 2 && (
                       <button
@@ -619,7 +619,7 @@ export default function BuyingGuidesPage() {
                         onClick={() => removeManualUrl(i)}
                         disabled={generating}
                         className="p-1.5 rounded-md transition"
-                        style={{ color: 'var(--fg-muted)' }}
+                        style={{ color: 'var(--text-2)' }}
                         title="Remove"
                       >
                         <X size={14} />
@@ -654,7 +654,7 @@ export default function BuyingGuidesPage() {
               )}
             </Button>
             {generating && (
-              <p className="text-xs" style={{ color: 'var(--fg-muted)' }}>
+              <p className="text-xs" style={{ color: 'var(--text-2)' }}>
                 Resolving each product, ranking, generating images, and publishing. Usually a minute or two.
               </p>
             )}
@@ -667,10 +667,10 @@ export default function BuyingGuidesPage() {
         <div className="rounded-xl border p-6" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
           <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
             <div>
-              <h2 className="text-lg font-bold" style={{ color: 'var(--fg)' }}>
+              <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>
                 Review the AI&rsquo;s picks
               </h2>
-              <p className="text-sm mt-1" style={{ color: 'var(--fg-muted)' }}>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
                 Topic: <strong>&ldquo;{previewTopic}&rdquo;</strong> · {previewPicks.length} pick{previewPicks.length === 1 ? '' : 's'} · edit labels or remove any you don&rsquo;t want before publishing.
               </p>
             </div>
@@ -679,7 +679,7 @@ export default function BuyingGuidesPage() {
                 onClick={discardPreview}
                 disabled={generating}
                 className="px-4"
-                style={{ background: 'var(--bg)', color: 'var(--fg)', border: '1px solid var(--border)' }}
+                style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
               >
                 Discard
               </Button>
@@ -728,9 +728,9 @@ export default function BuyingGuidesPage() {
                       style={{ background: 'var(--panel)', color: '#7C3AED', borderColor: 'var(--border)' }}
                     />
                   </div>
-                  <div className="font-medium text-sm truncate" style={{ color: 'var(--fg)' }} title={p.title}>{p.title}</div>
+                  <div className="font-medium text-sm truncate" style={{ color: 'var(--text)' }} title={p.title}>{p.title}</div>
                   {p.excerpt && (
-                    <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--fg-muted)' }}>{p.excerpt}</p>
+                    <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-2)' }}>{p.excerpt}</p>
                   )}
                 </div>
                 <button
@@ -751,15 +751,15 @@ export default function BuyingGuidesPage() {
 
       {/* ── Suggested topics (from clustering) ─────────────────────── */}
       <div>
-        <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--fg-muted)' }}>
+        <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-2)' }}>
           Suggested topics from your library
         </h2>
         {loading ? (
-          <div className="rounded-xl border p-6 text-center text-sm" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--fg-muted)' }}>
+          <div className="rounded-xl border p-6 text-center text-sm" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--text-2)' }}>
             <Loader2 className="w-4 h-4 animate-spin inline-block mr-2" /> Loading…
           </div>
         ) : suggestions.length === 0 ? (
-          <div className="rounded-xl border p-6 text-center text-sm" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--fg-muted)' }}>
+          <div className="rounded-xl border p-6 text-center text-sm" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--text-2)' }}>
             <p>No topic clusters with 3+ reviews yet.</p>
             <p className="text-xs mt-2">You can still type any topic above — the AI will pull whatever matches.</p>
           </div>
@@ -771,7 +771,7 @@ export default function BuyingGuidesPage() {
                 onClick={() => { setTopic(s.topic); void generate(s.topic) }}
                 disabled={generating}
                 className="inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm transition hover:border-purple-400 disabled:opacity-50"
-                style={{ background: 'var(--panel)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+                style={{ background: 'var(--panel)', color: 'var(--text)', borderColor: 'var(--border)' }}
               >
                 <span className="capitalize">{s.topic}</span>
                 <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(124,58,237,.12)', color: '#7C3AED' }}>
@@ -786,11 +786,11 @@ export default function BuyingGuidesPage() {
 
       {/* ── Recent guides ──────────────────────────────────────────── */}
       <div>
-        <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--fg-muted)' }}>
+        <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-2)' }}>
           Recent guides
         </h2>
         {guides.length === 0 ? (
-          <div className="rounded-xl border p-6 text-center text-sm" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--fg-muted)' }}>
+          <div className="rounded-xl border p-6 text-center text-sm" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--text-2)' }}>
             No guides published yet.
           </div>
         ) : (
@@ -798,8 +798,8 @@ export default function BuyingGuidesPage() {
             {guides.map(g => (
               <div key={g.id} className="p-4 flex items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium truncate" style={{ color: 'var(--fg)' }} title={g.title}>{g.title}</div>
-                  <div className="text-xs mt-0.5" style={{ color: 'var(--fg-muted)' }}>
+                  <div className="font-medium truncate" style={{ color: 'var(--text)' }} title={g.title}>{g.title}</div>
+                  <div className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>
                     {g.topic && <span className="capitalize">{g.topic}</span>}
                     {g.topic && ' · '}
                     {new Date(g.created_at).toLocaleDateString()}
@@ -812,7 +812,7 @@ export default function BuyingGuidesPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg"
-                      style={{ background: 'var(--bg)', color: 'var(--fg)' }}
+                      style={{ background: 'var(--bg)', color: 'var(--text)' }}
                       title={g.title}
                     >
                       View <ExternalLink className="w-3.5 h-3.5" />
@@ -824,7 +824,7 @@ export default function BuyingGuidesPage() {
                       onClick={() => void rebuildGuide(g)}
                       disabled={rebuildingId === g.id || !!deletingId}
                       className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition hover:border-violet-300 disabled:opacity-40"
-                      style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+                      style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
                       title="Rebuild this guide in place — refresh product links, hero image & CTA (same URL, ~1-2 min)"
                     >
                       {rebuildingId === g.id

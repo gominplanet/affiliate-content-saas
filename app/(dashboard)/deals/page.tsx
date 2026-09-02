@@ -592,12 +592,12 @@ export default function DealsHubPage() {
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--fg)' }}>
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--text)' }}>
               <BadgePercent className="w-7 h-7" style={{ color: '#7C3AED' }} />
               Deals Hub
               <DealsHubGuide />
             </h1>
-            <p className="text-sm mt-1" style={{ color: 'var(--fg-muted)' }}>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
               Drop any Amazon URL, Geniuslink, amzn.to short link, or a bare ASIN. The agent writes a timely deal post with a baked thumbnail, end-date countdown, and your promo code or special link wired into every CTA.
             </p>
           </div>
@@ -616,10 +616,10 @@ export default function DealsHubPage() {
             <span className="text-base">🛒</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold mb-0.5" style={{ color: 'var(--fg)' }}>
+            <p className="text-sm font-semibold mb-0.5" style={{ color: 'var(--text)' }}>
               Amazon-only feature
             </p>
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
               Deals Hub pulls product data from Amazon. Non-Amazon links (Walmart, Shopify stores, etc.) won&apos;t work here. Find live deals you qualify for at{' '}
               <a
                 href="https://affiliate-program.amazon.com/deals-hub"
@@ -642,10 +642,10 @@ export default function DealsHubPage() {
             paste into Supabase (per the surface-migration-SQL house rule). */}
         {migrationNeeded && (
           <div className="rounded-2xl border p-4 bg-[#ff9500]/10 border-[#ff9500]/40">
-            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--fg)' }}>
+            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>
               ⚠️ Database migration needed: <code className="text-xs">{migrationNeeded}</code>
             </p>
-            <p className="text-xs mb-3" style={{ color: 'var(--fg-muted)' }}>
+            <p className="text-xs mb-3" style={{ color: 'var(--text-2)' }}>
               Run this SQL in your Supabase project (SQL editor) so deal posts can save their pricing metadata. Without it, posts publish to WordPress but don&apos;t show up in Recent deals.
             </p>
             <pre className="text-[11px] p-3 rounded-lg overflow-x-auto bg-[#1d1d1f] text-[#f5f5f7] font-mono">{`alter table public.blog_posts
@@ -654,7 +654,7 @@ export default function DealsHubPage() {
 create index if not exists blog_posts_deal_meta_gin
   on public.blog_posts using gin (deal_meta)
   where deal_meta is not null;`}</pre>
-            <p className="text-[11px] mt-2" style={{ color: 'var(--fg-muted)' }}>
+            <p className="text-[11px] mt-2" style={{ color: 'var(--text-2)' }}>
               Safe to run multiple times (uses <code>if not exists</code>). The banner disappears once the column lands.
             </p>
           </div>
@@ -693,7 +693,7 @@ create index if not exists blog_posts_deal_meta_gin
         {preview && (
           <div className="card p-6 border" style={{ borderColor: 'rgba(124,58,237,.3)' }}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--fg)' }}>
+              <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
                 <CheckCircle2 size={16} className="text-[#34c759]" />
                 Preview · ready to publish
               </h2>
@@ -720,7 +720,7 @@ create index if not exists blog_posts_deal_meta_gin
                 </div>
               )}
               <div>
-                <p className="text-sm font-semibold mb-2" style={{ color: 'var(--fg)' }}>{preview.product.title || '(no title scraped)'}</p>
+                <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>{preview.product.title || '(no title scraped)'}</p>
                 <div className="flex flex-wrap items-baseline gap-3 mb-2">
                   {preview.product.priceWas && (
                     <span className="text-sm line-through text-[#86868b]">{preview.product.priceWas}</span>
@@ -814,7 +814,7 @@ create index if not exists blog_posts_deal_meta_gin
                     </button>
                   )}
                 </div>
-                <p className="text-[11px] mt-1" style={{ color: 'var(--fg-muted)' }}>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-2)' }}>
                   Empty = publish now. Set a time and WordPress auto-publishes the post live at that moment.
                 </p>
               </div>
@@ -848,7 +848,7 @@ create index if not exists blog_posts_deal_meta_gin
                   className="w-full text-sm rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] pl-9 pr-3 py-2.5"
                 />
               </div>
-              <p className="text-[11px] mt-1.5" style={{ color: 'var(--fg-muted)' }}>
+              <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-2)' }}>
                 Paste any link, Amazon URL, Geniuslink, amzn.to / a.co short link, or a bare ASIN. The agent unwraps the link, reads the underlying Amazon listing for the current price, the strike-through &quot;was&quot; price, any deal badge (Lightning Deal, Prime Day, etc.), and the expiration date if Amazon shows one.
               </p>
             </div>
@@ -941,13 +941,13 @@ create index if not exists blog_posts_deal_meta_gin
                   </button>
                 )}
               </div>
-              <p className="text-[11px] mt-1.5" style={{ color: 'var(--fg-muted)' }}>
+              <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-2)' }}>
                 Leave empty to publish right away. Pick a date + time and MVP writes the post now but holds it back — WordPress publishes it live automatically at that moment. Ideal for prepping a Prime Day or Black Friday deal in advance.
               </p>
             </div>
 
             <div className="flex items-center justify-between flex-wrap gap-3">
-              <p className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>
+              <p className="text-[11px]" style={{ color: 'var(--text-2)' }}>
                 Promo code lands in the deal-box CTA copy. Promo URL replaces every buy-button href. Both can coexist.
               </p>
               <Button type="submit" disabled={generating || !input.trim()}>
@@ -969,7 +969,7 @@ create index if not exists blog_posts_deal_meta_gin
         {/* ── Recent deals list ──────────────────────────────────────── */}
         <div className="card p-6">
           <div className="flex items-baseline justify-between gap-3 mb-3">
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>Recent deals</h2>
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Recent deals</h2>
           </div>
 
           {/* Icon legend — what each action button on a deal row does.
@@ -978,33 +978,33 @@ create index if not exists blog_posts_deal_meta_gin
               once at the top of the list rather than labeling each
               icon on every row (keeps rows compact). */}
           {!loading && deals.length > 0 && (
-            <div className="rounded-lg border p-3 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px]" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)', color: 'var(--fg-muted)' }}>
-              <span className="font-semibold" style={{ color: 'var(--fg)' }}>What the buttons do:</span>
+            <div className="rounded-lg border p-3 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px]" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+              <span className="font-semibold" style={{ color: 'var(--text)' }}>What the buttons do:</span>
               <span className="inline-flex items-center gap-1">
                 <ExternalLink size={11} className="text-[#7C3AED]" />
-                <strong style={{ color: 'var(--fg)' }}>View</strong> — open the live post on your blog
+                <strong style={{ color: 'var(--text)' }}>View</strong> — open the live post on your blog
               </span>
               <span className="inline-flex items-center gap-1">
                 <DollarSign size={11} className="text-[#34c759]" />
-                <strong style={{ color: 'var(--fg)' }}>$</strong> — re-fetch Amazon&apos;s current price (article + images stay the same; only the numbers update)
+                <strong style={{ color: 'var(--text)' }}>$</strong> — re-fetch Amazon&apos;s current price (article + images stay the same; only the numbers update)
               </span>
               <span className="inline-flex items-center gap-1">
                 <RotateCcw size={11} className="text-[#7C3AED]" />
-                <strong style={{ color: 'var(--fg)' }}>↻</strong> — regenerate the whole post from scratch with your latest voice + layout
+                <strong style={{ color: 'var(--text)' }}>↻</strong> — regenerate the whole post from scratch with your latest voice + layout
               </span>
               <span className="inline-flex items-center gap-1">
                 <Trash2 size={11} className="text-[#ff3b30]" />
-                <strong style={{ color: 'var(--fg)' }}>🗑</strong> — delete this deal post (removes from your blog too)
+                <strong style={{ color: 'var(--text)' }}>🗑</strong> — delete this deal post (removes from your blog too)
               </span>
             </div>
           )}
 
           {loading ? (
-            <p className="text-xs flex items-center gap-2" style={{ color: 'var(--fg-muted)' }}>
+            <p className="text-xs flex items-center gap-2" style={{ color: 'var(--text-2)' }}>
               <Loader2 size={12} className="animate-spin" /> Loading...
             </p>
           ) : deals.length === 0 ? (
-            <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
+            <p className="text-sm" style={{ color: 'var(--text-2)' }}>
               No deal posts yet. Paste a product link above to ship your first one.
             </p>
           ) : (
@@ -1025,8 +1025,8 @@ create index if not exists blog_posts_deal_meta_gin
                 return (
                   <li key={d.id} className="py-3 flex items-center gap-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate" style={{ color: 'var(--fg)' }}>{d.title}</p>
-                      <div className="text-[11px] flex items-center gap-3 mt-0.5" style={{ color: 'var(--fg-muted)' }}>
+                      <p className="text-sm font-medium truncate" style={{ color: 'var(--text)' }}>{d.title}</p>
+                      <div className="text-[11px] flex items-center gap-3 mt-0.5" style={{ color: 'var(--text-2)' }}>
                         <span>{new Date(d.created_at).toLocaleDateString()}</span>
                         {/* Scheduled pill: WP will publish this row at
                             d.scheduledAt. Wins visual priority over the
