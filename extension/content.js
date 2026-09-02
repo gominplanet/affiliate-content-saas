@@ -398,7 +398,27 @@ async function ccSendInPage(opts) {
     if (!creatorId) {
       try { const html = (document.documentElement && document.documentElement.innerHTML) || ''; const m = html.match(/amzn1\.creator\.[a-z0-9-]+/i); if (m) creatorId = m[0] } catch (e) {}
     }
-    const hdr = () => { const o = Object.assign({}, headers || {}); if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'; if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'; return o }
+    // The connect chat APIs require the creator's STORE id as a header — without it
+    // they return 401 Unauthorized (that's the real cause of no-context-token).
+    // Prefer the id the background sniffed from the page's own requests; else read
+    // it from the page (the store switcher / a "Store ID: xxx-NN" label / any
+    // storeId in the page's inline JSON).
+    let storeId = opts.storeId || ''
+    if (!storeId) {
+      try {
+        const txt = (document.body && document.body.innerText) || ''
+        let m = txt.match(/Store\s*ID:\s*([a-z0-9][a-z0-9-]*-\d{2})/i)
+        if (!m) { const html = (document.documentElement && document.documentElement.innerHTML) || ''; m = html.match(/"storeId"\s*:\s*"([a-z0-9][a-z0-9-]*-\d{2})"/i) }
+        if (m) storeId = m[1]
+      } catch (e) {}
+    }
+    const hdr = () => {
+      const o = Object.assign({}, headers || {})
+      if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'
+      if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'
+      if (storeId && !o.storeId && !o.storeid) o.storeId = storeId
+      return o
+    }
     const jinner = (s) => { try { return JSON.stringify(String(s == null ? '' : s)).slice(1, -1) } catch (e) { return String(s || '') } }
     let creatorName = String(opts.creatorName || '')
     const fillId = (tpl, nm) => String(tpl)

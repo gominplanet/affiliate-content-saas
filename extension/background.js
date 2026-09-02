@@ -519,6 +519,11 @@ try { chrome.storage.local.get(['ccCreatorId'], (o) => { if (o && o.ccCreatorId)
 // the learned recipe's own actorName) and persisted so it survives worker cycles.
 let _ccCreatorName = null
 try { chrome.storage.local.get(['ccCreatorName'], (o) => { if (o && o.ccCreatorName) _ccCreatorName = o.ccCreatorName }) } catch (e) {}
+// The creator's STORE id / associate tag (e.g. "gomin0e-20") — the connect chat
+// APIs require it as a header (missing it → 401). Sniffed from the page's own
+// captured requests and persisted.
+let _ccStoreId = null
+try { chrome.storage.local.get(['ccStoreId'], (o) => { if (o && o.ccStoreId) _ccStoreId = o.ccStoreId }) } catch (e) {}
 
 function ccOpportunitiesUrl() {
   const q = _ccCreatorId ? `creatorId=${encodeURIComponent(_ccCreatorId)}&` : ''
@@ -1171,9 +1176,29 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
     // SEND VIA THE PERSISTENT CONTENT SCRIPT (content.js) — an executeScript-injected
     // function on this page can neither return nor message back (proven). Message the
     // tab and await sendResponse, retrying briefly while content.js mounts.
+    // The connect chat APIs need the creator's STORE id as a header (else 401).
+    // Sniff it from the page's OWN captured requests (net-hook stored their headers)
+    // or from a captured accept/campaign body; content.js also reads it off the page
+    // as a fallback.
+    const sniffStoreId = () => {
+      try {
+        for (let i = (_ccNetRing || []).length - 1; i >= 0; i--) {
+          const r = _ccNetRing[i]; if (!r) continue
+          const h = r.headers || {}
+          const k = Object.keys(h).find((k) => k.toLowerCase() === 'storeid')
+          if (k && h[k]) return String(h[k])
+          const bm = String(r.body || '').match(/"storeId"\s*:\s*"([^"]+)"/)
+          if (bm) return bm[1]
+        }
+      } catch (e) {}
+      return _ccStoreId || ''
+    }
+    const storeId = sniffStoreId()
+    if (storeId && storeId !== _ccStoreId) { _ccStoreId = storeId; try { chrome.storage.local.set({ ccStoreId: storeId }) } catch (e) {} }
+    a.storeId = storeId || null
     const payload = {
       asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
-      creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
+      creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders, storeId,
       sendTemplate, searchTemplate,
       MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
       CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
