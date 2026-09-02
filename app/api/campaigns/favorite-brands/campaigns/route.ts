@@ -28,6 +28,19 @@ export async function GET(req: Request) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
+
+  // The user's already-accepted ASINs — excluded so Accept all / Message all only
+  // target campaigns they haven't joined yet.
+  const accepted = new Set<string>()
+  try {
+    const { data: acc } = await sb.from('campaigns')
+      .select('asin, accepted_at, amazon_joined_at').eq('user_id', user.id).limit(4000)
+    for (const r of (acc ?? [])) {
+      const a = String(r?.asin || '').toUpperCase()
+      if (/^[A-Z0-9]{10}$/.test(a) && (r.accepted_at || r.amazon_joined_at)) accepted.add(a)
+    }
+  } catch { /* nothing excluded */ }
+
   const { data } = await sb
     .from('cc_campaign_catalog')
     .select(COLS)
@@ -50,7 +63,7 @@ export async function GET(req: Request) {
       spotsLeft: f.spotsLeft,
       detailsUrl: ccRequestUrl(r.campaign_id),
     }
-  }).filter((c) => !!c.repAsin && (!onlyOpen || !c.isFull))
+  }).filter((c) => !!c.repAsin && !accepted.has(String(c.repAsin).toUpperCase()) && (!onlyOpen || !c.isFull))
 
   return NextResponse.json({ ok: true, brand: label, campaigns })
 }

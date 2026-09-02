@@ -21,19 +21,39 @@ function normBrand(v: string): string {
   return (v || '').trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-/** Live open / total campaign counts for a brand from the shared catalog. */
+/** The user's already-accepted ASINs — so "open" means open AND not yet joined. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function brandCounts(sb: any, label: string): Promise<{ open: number; total: number }> {
+async function acceptedAsins(sb: any, userId: string): Promise<Set<string>> {
+  const set = new Set<string>()
+  try {
+    const { data } = await sb.from('campaigns')
+      .select('asin, accepted_at, amazon_joined_at')
+      .eq('user_id', userId)
+      .limit(4000)
+    for (const r of (data ?? [])) {
+      const a = String(r?.asin || '').toUpperCase()
+      if (/^[A-Z0-9]{10}$/.test(a) && (r.accepted_at || r.amazon_joined_at)) set.add(a)
+    }
+  } catch { /* no rows → nothing excluded */ }
+  return set
+}
+
+/** Live open / total campaign counts for a brand from the shared catalog.
+ *  "open" = has spots AND the creator hasn't already accepted it. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function brandCounts(sb: any, label: string, accepted: Set<string>): Promise<{ open: number; total: number }> {
   const safe = label.replace(/[%_,]/g, ' ').trim()
   if (!safe) return { open: 0, total: 0 }
   const { data } = await sb
     .from('cc_campaign_catalog')
-    .select('available_slot, total_slot')
+    .select('rep_asin, available_slot, total_slot')
     .ilike('brand_name', safe)
     .limit(500)
   const rows = Array.isArray(data) ? data : []
   let open = 0
   for (const r of rows) {
+    const asin = String(r.rep_asin || '').toUpperCase()
+    if (asin && accepted.has(asin)) continue // already joined → not "open" for you
     const f = campaignFullness(r.available_slot as number | null, r.total_slot as number | null)
     if (!f.isFull) open++
   }
@@ -53,8 +73,9 @@ export async function GET() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: true })
 
+  const accepted = await acceptedAsins(sb, user.id)
   const brands = await Promise.all(((favs ?? []) as Array<{ brand_key: string; brand_label: string; last_checked_at: string | null }>).map(async (f) => {
-    const counts = await brandCounts(sb, f.brand_label)
+    const counts = await brandCounts(sb, f.brand_label, accepted)
     return { brand: f.brand_key, label: f.brand_label, openCount: counts.open, totalCount: counts.total, lastCheckedAt: f.last_checked_at ?? null }
   }))
 
@@ -82,7 +103,7 @@ export async function POST(req: Request) {
     { onConflict: 'user_id,brand_key' },
   )
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  const counts = await brandCounts(sb, label)
+  const counts = await brandCounts(sb, label, await acceptedAsins(sb, user.id))
   return NextResponse.json({ ok: true, brand: { brand: key, label, openCount: counts.open, totalCount: counts.total, lastCheckedAt: null } })
 }
 

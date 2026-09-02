@@ -91,8 +91,10 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
       }
       toast.success(`${b.label}: accepted ${joined} · ${already} already joined${failed ? ` · ${failed} failed` : ''}`, { id: tId, duration: 7000 })
       onChanged?.()
+      // Refresh the watchlist so the open count drops by what we just joined.
+      await load()
     } finally { setBusy(null) }
-  }, [fetchOpen, onChanged])
+  }, [fetchOpen, onChanged, load])
 
   const messageAll = useCallback(async (b: FavBrand) => {
     setBusy(b.brand)
