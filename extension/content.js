@@ -441,6 +441,7 @@ async function ccSendInPage(opts) {
       return null
     }
     let lastReason = 'no-context-token'
+    let searchDbg = null
     for (const cid of campaignIds) {
       try {
         // The brand chat is provisioned a few seconds AFTER a campaign is accepted,
@@ -452,8 +453,13 @@ async function ccSendInPage(opts) {
           if (tryN > 0) await new Promise((r) => setTimeout(r, 2500))
           const sBody = fillId(searchTemplate.split(CAMP).join(cid))
           const sr = await fetchT('/connect/api/chat/search', { method: 'POST', headers: hdr(), body: sBody, credentials: 'include' }, 12000)
-          sj = await sr.json().catch(() => null)
+          const raw = await sr.text().catch(() => '')
+          try { sj = raw ? JSON.parse(raw) : null } catch (e) { sj = null }
           token = findToken(sj)
+          // Capture what Amazon actually returned for the FIRST poll, so a stubborn
+          // no-context-token is diagnosable (empty addressBook vs error vs a token
+          // field we're not reading). Also record the exact request body we sent.
+          if (!searchDbg) searchDbg = { status: sr.status, sentBody: String(sBody).slice(0, 700), respBody: String(raw).slice(0, 900) }
           if (!token && !creatorName) { const n = findCreatorName(sj); if (n) creatorName = n }
         }
         if (!token) { lastReason = 'no-context-token'; continue }
@@ -471,7 +477,7 @@ async function ccSendInPage(opts) {
         if (groups > 0) return { ok: groups === segments.length, reason: groups === segments.length ? undefined : 'partial', groups, campaignId: cid, brand, creatorName: creatorName || undefined, creatorId: creatorId || undefined, via: 'content' }
       } catch (e) { lastReason = 'exception' }
     }
-    return { ok: false, reason: lastReason, campaignIds, brand, error: resolveErr || undefined, creatorName: creatorName || undefined, creatorId: creatorId || undefined, via: 'content' }
+    return { ok: false, reason: lastReason, campaignIds, brand, error: resolveErr || undefined, creatorName: creatorName || undefined, creatorId: creatorId || undefined, via: 'content', searchDbg: searchDbg || undefined }
   } catch (e) {
     return { ok: false, reason: 'exception', error: e && e.message ? e.message : String(e), via: 'content' }
   }

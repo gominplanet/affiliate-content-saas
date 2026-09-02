@@ -89,8 +89,13 @@ function fillTemplate(segs: string[], product: string, asin: string): string {
 // Turn SCOUT's terse machine reasons into a line the creator can act on.
 function reasonText(raw: string): string {
   const s = String(raw || '').toLowerCase()
-  if (/not-learned|no-recipe|no-send-recipe|no-search-recipe|no-context-token|no-chat/.test(s))
-    return 'Background sending isn’t switched on yet — message any one brand by hand once on Creator Connections, then hit Retry. It stays on after that.'
+  // The brand chat is provisioned a few seconds after a campaign is accepted, so a
+  // just-accepted brand can briefly have no chat/token. This is NOT "background
+  // sending is off" — it's a timing/availability thing the creator can just Retry.
+  if (/no-context-token|no-chat/.test(s))
+    return 'This brand’s chat wasn’t ready yet (Amazon opens it a few seconds after accepting) — hit Retry in a moment.'
+  if (/not-learned|no-recipe|no-send-recipe|no-search-recipe/.test(s))
+    return 'SCOUT couldn’t build the message request — reload SCOUT and Retry.'
   if (/no-creator-id/.test(s)) return 'Couldn’t read your Amazon creator profile — open Creator Connections in this browser, then Retry.'
   if (/no-campaign-for-asin/.test(s)) return 'This product isn’t in your accepted campaigns yet (accept may still be propagating) — Retry in a moment.'
   if (/send-rejected/.test(s)) return 'Amazon rejected the message (length or content) — trim it and Retry.'

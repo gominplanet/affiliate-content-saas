@@ -1191,6 +1191,8 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
     a.contentReplied = !!out
     out = out || { ok: false, reason: 'no-content-reply' }
     a.reason = out.reason || (out.ok ? 'ok' : 'unknown')
+    if (out && out.searchDbg) a.searchDbg = out.searchDbg
+    if (out && out.campaignIds) a.campaignIds = out.campaignIds
     diag.attempts.push(a)
     try { if (out && out.creatorId && out.creatorId !== _ccCreatorId) { _ccCreatorId = out.creatorId; chrome.storage.local.set({ ccCreatorId: out.creatorId }) } } catch (e) {}
     return out
