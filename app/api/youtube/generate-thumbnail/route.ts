@@ -1524,10 +1524,17 @@ export async function POST(request: Request) {
         // clean, retryable error instead of handing back a worse image.
         const reason = gfxPErr instanceof Error ? gfxPErr.message : String(gfxPErr)
         console.warn('[thumb] product-only graphic failed:', reason)
+        // No product image = Amazon blocked our server (datacenter IP). Signal
+        // scrapeFailed so the client refetches the product image through SCOUT
+        // (the creator's own browser, which Amazon doesn't block) and retries.
+        const noImage = /no product image/i.test(reason)
         return NextResponse.json({
           ok: false,
-          error: 'thumbnail-generation-failed',
-          message: 'The thumbnail engine hit a snag. Please hit Generate again.',
+          error: noImage ? 'product-image-blocked' : 'thumbnail-generation-failed',
+          scrapeFailed: noImage || undefined,
+          message: noImage
+            ? 'Couldn’t load the product image from Amazon. Fetching it through SCOUT and retrying…'
+            : 'The thumbnail engine hit a snag. Please hit Generate again.',
           gfxFallbackReason: reason,
         }, { status: 502 })
       }
@@ -1950,10 +1957,14 @@ export async function POST(request: Request) {
         // clean, retryable error instead of silently handing back a worse image.
         const reason = gfxErr instanceof Error ? gfxErr.message : String(gfxErr)
         console.warn('[generate-thumbnail] graphic path failed:', reason)
+        const noImage = /no product image/i.test(reason)
         return NextResponse.json({
           ok: false,
-          error: 'thumbnail-generation-failed',
-          message: 'The thumbnail engine hit a snag. Please hit Generate again.',
+          error: noImage ? 'product-image-blocked' : 'thumbnail-generation-failed',
+          scrapeFailed: noImage || undefined,
+          message: noImage
+            ? 'Couldn’t load the product image from Amazon. Fetching it through SCOUT and retrying…'
+            : 'The thumbnail engine hit a snag. Please hit Generate again.',
           gfxFallbackReason: reason,
         }, { status: 502 })
       }

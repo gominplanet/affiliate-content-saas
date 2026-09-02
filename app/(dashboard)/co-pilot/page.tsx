@@ -1601,7 +1601,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     void loadTitleOptions()
   }
 
-  async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean' | 'graphic'; lockedHeadline?: string; noHuman?: boolean; skipFaceModel?: boolean }) {
+  async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean' | 'graphic'; lockedHeadline?: string; noHuman?: boolean; skipFaceModel?: boolean; productImageUrlsOverride?: string[] }) {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
     setThumbnailStatus('')
@@ -1699,8 +1699,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // 3C — Multi-product reference photos + optional composition note.
           // When the user uploaded their own product photos these replace the
           // single Amazon-scraped image as the references; the note (if any)
-          // tells the model how to arrange them.
-          customProductImageUrls: productImageUrls.length > 0 ? productImageUrls : undefined,
+          // tells the model how to arrange them. A SCOUT-fetched image (from the
+          // blocked-server rescue below) wins over the state-held uploads.
+          customProductImageUrls: opts?.productImageUrlsOverride?.length ? opts.productImageUrlsOverride : (productImageUrls.length > 0 ? productImageUrls : undefined),
           productCompositionNote: productCompositionNote.trim() || undefined,
           // Creator's free-text "describe your thumbnail" direction.
           scenePrompt: scenePrompt.trim() || undefined,
@@ -1730,6 +1731,26 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       // needsExtension (409): private/inaccessible video with no face identity source.
       if (!res.ok && data.needsExtension) {
         throw new Error("This video is private. Install the SCOUT extension from the Chrome Web Store to capture frames, or select a Face Model under \"Your Face\".")
+      }
+      // Amazon blocked the SERVER from fetching the product image (datacenter IP),
+      // so the render had nothing to ground on. Fetch the product through SCOUT —
+      // it runs in the creator's own browser, which Amazon doesn't block — and
+      // retry once with those images. Guard against a loop (only when we haven't
+      // already passed an override).
+      if (!res.ok && data.scrapeFailed && video.detectedAsin && !opts?.productImageUrlsOverride) {
+        try {
+          if (await isExtensionAvailable()) {
+            setThumbnailStatus('Amazon blocked our server — grabbing the product through SCOUT…')
+            const prod = await requestAmazonProduct(video.detectedAsin)
+            const imgs = prod.ok && prod.product
+              ? [prod.product.imageUrl, ...(prod.product.images || [])].filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u))
+              : []
+            if (imgs.length) {
+              await generateThumbnail({ ...opts, productImageUrlsOverride: imgs.slice(0, 5) })
+              return
+            }
+          }
+        } catch { /* fall through to the normal error below */ }
       }
       // needsFaceModel (409): the user hasn't set up a Face Model and asked for
       // a thumbnail WITH a face — surface the full guidance, not a generic error.
