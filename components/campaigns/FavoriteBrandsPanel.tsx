@@ -121,7 +121,7 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') void add() }}
-          placeholder="Add a brand, e.g. Levoit"
+          placeholder="Add a brand, e.g. Anker"
           className="flex-1 h-9 px-3 text-sm rounded-lg border bg-transparent outline-none focus:border-[#7C3AED]"
           style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
         />
