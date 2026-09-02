@@ -6,6 +6,7 @@ import PageHero from '@/components/layout/PageHero'
 import { LegacyCapsNotice } from '@/components/newsletter/LegacyCapsNotice'
 import { Zap, CheckCircle, Loader2, PartyPopper } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { trackMeta } from '@/lib/meta-pixel'
 import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
 import { effectiveTier, getViewAsTier, setViewAsTier } from '@/lib/view-as'
 
@@ -99,6 +100,10 @@ export default function BillingPage() {
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location.search.includes('upgraded=1')) {
       setUpgraded(true)
+      // Meta Pixel: this is the purchase-completion page (Stripe redirects here
+      // after a successful subscription). Fire once — the param is stripped below
+      // so a refresh won't re-fire.
+      trackMeta('Purchase', { currency: 'USD' })
       window.history.replaceState({}, '', '/billing')
     }
   }, [])

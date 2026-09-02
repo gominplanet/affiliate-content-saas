@@ -14,6 +14,7 @@
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import OnboardingFunnel from '@/components/onboarding/OnboardingFunnel'
+import MetaTrack from '@/components/analytics/MetaTrack'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,10 +62,17 @@ export default async function OnboardingPage() {
   const initialStep = Math.min(7, Math.max(0, savedStep))
 
   return (
-    <OnboardingFunnel
-      email={user.email ?? ''}
-      initialStep={initialStep}
-      status={status}
-    />
+    <>
+      {/* Meta Pixel: reaching onboarding means the account is confirmed + the free
+          trial has started. Fire once per browser (onceKey) so repeat visits don't
+          re-count. */}
+      <MetaTrack event="CompleteRegistration" onceKey="reg" />
+      <MetaTrack event="StartTrial" onceKey="trial" />
+      <OnboardingFunnel
+        email={user.email ?? ''}
+        initialStep={initialStep}
+        status={status}
+      />
+    </>
   )
 }
