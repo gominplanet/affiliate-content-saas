@@ -9,7 +9,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { Globe, Loader2, Check, Circle, Mic, Play, Upload, LogIn, ShieldCheck } from 'lucide-react'
+import { Globe, Loader2, Check, Circle, Mic, Play, Upload, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
 import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, getScoutStatus, type StorefrontMarketStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
@@ -80,7 +80,6 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   const [phase, setPhase] = useState<string | null>(null)
   // Per-marketplace sign-in / enrollment status from the SCOUT pre-flight.
   const [signin, setSignin] = useState<Record<string, StorefrontMarketStatus>>({})
-  const [checking, setChecking] = useState(false)
   // Installed SCOUT version — surfaced so a stale build (the #1 cause of a
   // repeated upload failure after a fix ships) is obvious, not a guess.
   const [scout, setScout] = useState<{ installed: boolean; version: string | null } | null>(null)
@@ -233,22 +232,11 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   }
 
   // Standalone "Check sign-in" — preflight the localized markets without uploading.
-  async function checkSignins() {
-    const domains = targets.map(t => t.domain)
-    if (domains.length === 0) { toast('Localize the markets first.'); return }
-    setChecking(true)
-    try {
-      const map = await runPreflight(domains)
-      const ready = Object.values(map).filter(s => s === 'ready').length
-      if (Object.keys(map).length > 0) toast.success(`${ready} of ${domains.length} ${domains.length === 1 ? 'storefront' : 'storefronts'} ready to upload`)
-    } finally { setChecking(false) }
-  }
-
   // Open one marketplace's Creator Hub in a new tab so the creator can sign in.
   async function signInMarket(domain: string, country: string) {
     const res = await requestStorefrontLogin(domain)
     if (!res.ok) { toast.error(res.error === 'not-installed' ? 'Install SCOUT first.' : 'Could not open the sign-in page.'); return }
-    toast(`Opened ${country} in a new tab. Sign in there, then click “Check sign-in”.`)
+    toast(`Opened ${country} in a new tab. Sign in there, then hit Upload again.`)
   }
 
   async function deliverAll() {
@@ -559,20 +547,13 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         <div className="card p-5">
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <h2 className="text-sm font-semibold" style={label}>Localized copy</h2>
-            <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={() => void checkSignins()} disabled={checking || delivering}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border disabled:opacity-60"
-                style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
-                {checking ? <><Loader2 size={14} className="animate-spin" /> Checking…</> : <><ShieldCheck size={14} /> Check sign-in</>}
-              </button>
-              <button onClick={() => void deliverAll()} disabled={delivering || checking}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
-                {delivering ? <><Loader2 size={15} className="animate-spin" /> {phase || 'Working…'}</> : <><Upload size={15} /> Upload to all storefronts</>}
-              </button>
-            </div>
+            <button onClick={() => void deliverAll()} disabled={delivering}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+              style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
+              {delivering ? <><Loader2 size={15} className="animate-spin" /> {phase || 'Working…'}</> : <><Upload size={15} /> Upload to all storefronts</>}
+            </button>
           </div>
-          <p className="text-[12px] mb-2" style={muted}>Uploads through SCOUT into your logged-in Amazon Creator account. Any non-English market without a dub yet is dubbed automatically first, so no storefront ships with English audio. You must be signed in to each marketplace and enrolled in its Creator program. Use “Check sign-in” first. Keep this tab open while it runs.</p>
+          <p className="text-[12px] mb-2" style={muted}>One click uploads through SCOUT into your logged-in Amazon Creator account. It checks your sign-in, dubs any non-English market that needs it, then uploads, so no storefront ships with English audio. You must be signed in to each marketplace and enrolled in its Creator program. Keep this tab open while it runs.</p>
           {scout && (
             scout.installed
               ? <p className="text-[11px] mb-3" style={scoutStale ? { color: '#d97706' } : muted}>
