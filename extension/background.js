@@ -4017,6 +4017,68 @@ async function scanAmazonProductForAsin(asin, callerTabId) {
   }
 }
 
+// ── Cross-marketplace ASIN existence check (MVP_AMZ_ASIN_CHECK) ──────────────
+// Video Launchpad's geo check needs to know if a product is listed on a given
+// Amazon marketplace. Keepa answers this for its supported domains, but a few
+// (e.g. amazon.com.au — Keepa dropped Australia) have no Keepa domain, so MVP's
+// server tries a /dp probe that Amazon frequently blocks from datacenter IPs.
+// SCOUT reads the real /dp page in the creator's own logged-in session on a
+// residential IP, so the answer is definitive: product page renders → 'found';
+// Amazon's "page not found" (dogs-of-amazon 404) → 'not-listed'; a captcha,
+// sign-in redirect or unreadable page → 'unknown' (the caller keeps it neutral).
+
+// Runs IN the /dp page. Three-state: is this ASIN a live listing on this domain?
+function checkAmazonAsinInPage(wantAsin) {
+  const bodyText = (document.body && document.body.innerText) || ''
+  const html = document.documentElement ? document.documentElement.innerHTML : ''
+  const title = (() => { try { const e = document.querySelector('#productTitle'); return e ? e.textContent.replace(/\s+/g, ' ').trim() : '' } catch (e) { return '' } })()
+  const captcha = /Enter the characters you see below|Robot Check|api-services-support@amazon|To discuss automated access/i.test(bodyText)
+  const signedOut = /\/ap\/signin/.test(location.href)
+  // Amazon's 404 surfaces as the "dogs of amazon" page or a localized
+  // "we couldn't find that page" — detected by the well-known asset + copy.
+  const notFound = /dogs-of-amazon|Sorry! We couldn't find that page|couldn't find that page|no longer available|currently unavailable and we don't know/i.test(bodyText)
+    || /images-na\.ssl-images-amazon\.com\/images\/G\/01\/error\//i.test(html)
+  let status = 'unknown'
+  if (title) status = 'found'
+  else if (notFound) status = 'not-listed'
+  else if (captcha || signedOut) status = 'unknown'
+  return { status: status, diag: { url: location.href.slice(0, 140), hasTitle: !!title, notFound: notFound, captcha: captcha, signedOut: signedOut } }
+}
+
+async function checkAmazonAsinListed(asin, domain, callerTabId) {
+  if (!/^[A-Za-z0-9]{10}$/.test(asin || '')) return { ok: false, status: 'unknown', error: 'bad-asin' }
+  const host = String(domain || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '')
+  if (!host) return { ok: false, status: 'unknown', error: 'bad-domain' }
+  // Non-US /dp origins live in optional_host_permissions (the popup's
+  // "International Amazon" toggle). Without the grant, executeScript on the page
+  // is denied — surface it as a distinct, actionable reason (not a silent fail).
+  if (host !== 'amazon.com') {
+    let granted = false
+    try { granted = await chrome.permissions.contains({ origins: [`https://*.${host}/*`] }) } catch (e) {}
+    if (!granted) return { ok: false, status: 'unknown', error: 'intl-permission-needed' }
+  }
+  const url = `https://www.${host}/dp/${asin}`
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 25000)
+    await _sleep(1200)
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: checkAmazonAsinInPage,
+      args: [asin],
+    })
+    const r = (results && results[0] && results[0].result) || null
+    if (!r) return { ok: false, status: 'unknown', error: 'no-result' }
+    return { ok: true, status: r.status, diag: r.diag }
+  } catch (e) {
+    return { ok: false, status: 'unknown', error: 'check-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 // ── Generic non-Amazon product scrape (MVP_SCRAPE_URL) ──────────────────────
 // MVP's "Post from a link" flow can't scrape most stores server-side — Walmart,
 // Target, etc. block datacenter IPs. SCOUT reads the page from the user's own
@@ -6100,6 +6162,17 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     scanAmazonProductForAsin(msg.asin, callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_AMZ_ASIN_CHECK') {
+    // Video Launchpad geo check: is this ASIN listed on the given marketplace?
+    // Read the real /dp page in the creator's own session (unblockable), for
+    // marketplaces Keepa can't answer (e.g. amazon.com.au). One background tab.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, status: 'unknown', error: 'timeout' }), 40000)
+    checkAmazonAsinListed(msg.asin, msg.domain, callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, status: 'unknown', error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
   }
   if (msg.type === 'MVP_CC_SCAN') {

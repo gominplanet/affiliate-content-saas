@@ -848,6 +848,36 @@ export async function requestAmazonProduct(asin: string): Promise<AmazonProductR
   return { ok: false, error: resp.error || 'scan-failed' }
 }
 
+/** Whether an ASIN is listed on a given Amazon marketplace, read by SCOUT from
+ *  the real /dp page in the creator's own session. `status`:
+ *   - 'found'      — the product page rendered (definitively listed there)
+ *   - 'not-listed' — Amazon's 404 / "couldn't find that page"
+ *   - 'unknown'    — captcha, sign-in redirect, unreadable, or SCOUT absent */
+export type AmazonAsinCheckStatus = 'found' | 'not-listed' | 'unknown'
+
+/**
+ * Video Launchpad geo check for marketplaces Keepa can't answer (e.g.
+ * amazon.com.au — Keepa dropped Australia). MVP's server-side /dp probe gets
+ * blocked from datacenter IPs; SCOUT reads the page in the creator's own
+ * logged-in browser on a residential IP, so the answer is reliable. Best-effort:
+ * resolves { status:'unknown' } when SCOUT isn't installed so the caller just
+ * leaves the geo "Not confirmed".
+ */
+export async function requestAmazonAsinCheck(asin: string, domain: string): Promise<{ ok: boolean; status: AmazonAsinCheckStatus; error?: string }> {
+  const a = (asin || '').toUpperCase()
+  const d = String(domain || '').trim()
+  if (!/^[A-Z0-9]{10}$/.test(a)) return { ok: false, status: 'unknown', error: 'no-asin' }
+  if (!d) return { ok: false, status: 'unknown', error: 'no-domain' }
+  if (!(await isExtensionAvailable())) return { ok: false, status: 'unknown', error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; status?: AmazonAsinCheckStatus; error?: string }>(
+    { type: 'MVP_AMZ_ASIN_CHECK', asin: a, domain: d },
+    45000,
+  )
+  if (!resp) return { ok: false, status: 'unknown', error: 'timeout' }
+  const status: AmazonAsinCheckStatus = resp.status === 'found' || resp.status === 'not-listed' ? resp.status : 'unknown'
+  return { ok: !!resp.ok, status, error: resp.error }
+}
+
 /** Product details SCOUT scraped off a NON-Amazon store page (Walmart, Target,
  *  Best Buy, …). Read from JSON-LD / Open Graph in the user's own browser, so
  *  it works where MVP's server scrape is IP-blocked. `sourceUrl` echoes the page

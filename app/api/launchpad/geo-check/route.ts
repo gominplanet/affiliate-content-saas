@@ -7,12 +7,16 @@
 //
 // Phase 3: the existence check runs through KEEPA per marketplace domain, which
 // is definitive and NOT bot-walled like a server-side /dp fetch. Keepa covers
-// US, UK, DE, FR, JP, CA, IT, ES; Australia has no Keepa domain, so it falls
-// back to a bounded /dp probe (3-state, since that can be blocked). Each geo
-// carries the ASIN to attach there (Phase 3 keeps the source ASIN; a future step
-// resolves a different LOCAL asin when the product is listed under another one).
+// US, UK, DE, FR, JP, CA, IT, ES. Australia has NO Keepa domain (Keepa dropped
+// amazon.com.au), so it can't be answered server-side reliably — a datacenter
+// /dp probe gets blocked. For AU we return status 'unknown' with browser:true,
+// and the CLIENT re-checks it through SCOUT, which reads the real /dp page in the
+// creator's own logged-in session on a residential IP (unblockable). A cache read
+// still short-circuits AU when a prior SCOUT check was persisted; the client posts
+// its SCOUT result back here ({ cache: {...} }) to fill that cache.
 //
-//   body: { asin }  ->  { ok, asin, geos: [{ domain, code, country, status, asin }] }
+//   body: { asin }             -> { ok, asin, geos: [{ domain, code, country, status, asin, browser? }] }
+//   body: { cache: { asin, domain, status } } -> { ok } (persist a SCOUT result)
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
@@ -23,7 +27,7 @@ export const maxDuration = 60
 
 // The marketplaces MVP delivers to. `domain` matches the global-sync /
 // storefront-upload key (no www); `keepa` is the Keepa domainId (null = not on
-// Keepa → /dp fallback); `host` is the store host for that fallback.
+// Keepa → SCOUT browser check on the client); `host` is the store host.
 const GEOS = [
   { domain: 'amazon.com', host: 'www.amazon.com', code: 'US', country: 'United States', keepa: 1 },
   { domain: 'amazon.ca', host: 'www.amazon.ca', code: 'CA', country: 'Canada', keepa: 6 },
@@ -36,8 +40,6 @@ const GEOS = [
   { domain: 'amazon.co.jp', host: 'www.amazon.co.jp', code: 'JP', country: 'Japan', keepa: 5 },
 ] as const
 
-const CHECK_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
-
 function asinFrom(v: string): string | null {
   const s = (v || '').trim()
   if (/^[A-Z0-9]{10}$/i.test(s)) return s.toUpperCase()
@@ -47,32 +49,17 @@ function asinFrom(v: string): string | null {
 
 type GeoStatus = 'found' | 'not-listed' | 'unknown'
 
-/** Australia has no Keepa domain — cache-first bounded /dp probe (3-state). */
+/** Cache-only read for a Keepa-less marketplace (Australia). A live server /dp
+ *  probe is blocked from datacenter IPs, so we NEVER fetch here — the definitive
+ *  check runs on the client through SCOUT (creator's own residential session).
+ *  Returns a prior SCOUT result if one was persisted, else 'unknown'. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function checkGeoDp(sb: any, asin: string, host: string): Promise<GeoStatus> {
+async function cachedGeoStatus(sb: any, asin: string, host: string): Promise<GeoStatus> {
   const h = host.toLowerCase()
   try {
     const { data } = await sb.from('passport_asin_market').select('available').eq('asin', asin).eq('marketplace', h).maybeSingle()
     if (data && typeof data.available === 'boolean') return data.available ? 'found' : 'not-listed'
-  } catch { /* cache miss → live check */ }
-  let status = 0
-  try {
-    const res = await fetch(`https://${h}/dp/${asin}`, {
-      method: 'GET', redirect: 'follow',
-      headers: { 'User-Agent': CHECK_UA, 'Accept-Language': 'en' },
-      signal: AbortSignal.timeout(2500),
-    })
-    status = res.status
-  } catch { return 'unknown' }
-  if (status === 200 || status === 404) {
-    try {
-      await sb.from('passport_asin_market').upsert(
-        { asin, marketplace: h, available: status === 200, checked_at: new Date().toISOString() },
-        { onConflict: 'asin,marketplace' },
-      )
-    } catch { /* best-effort */ }
-    return status === 200 ? 'found' : 'not-listed'
-  }
+  } catch { /* no cache → unknown, client re-checks via SCOUT */ }
   return 'unknown'
 }
 
@@ -87,12 +74,35 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Video Launchpad is a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
-  const body = await req.json().catch(() => ({})) as { asin?: string }
-  const asin = asinFrom(body.asin || '')
-  if (!asin) return NextResponse.json({ error: 'A valid product ASIN is required.' }, { status: 400 })
+  const body = await req.json().catch(() => ({})) as {
+    asin?: string
+    cache?: { asin?: string; domain?: string; status?: string }
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
+
+  // Cache-write path: the client posts back a SCOUT browser-check result so a
+  // Keepa-less marketplace (Australia) is instant on the next check. Only the
+  // definitive states are persisted; 'unknown' is never cached.
+  if (body.cache) {
+    const cAsin = asinFrom(body.cache.asin || '')
+    const geo = GEOS.find(g => g.domain === body.cache!.domain || g.host === body.cache!.domain)
+    const st = body.cache.status
+    if (cAsin && geo && (st === 'found' || st === 'not-listed')) {
+      try {
+        await sb.from('passport_asin_market').upsert(
+          { asin: cAsin, marketplace: geo.host.toLowerCase(), available: st === 'found', checked_at: new Date().toISOString() },
+          { onConflict: 'asin,marketplace' },
+        )
+      } catch { /* best-effort */ }
+    }
+    return NextResponse.json({ ok: true })
+  }
+
+  const asin = asinFrom(body.asin || '')
+  if (!asin) return NextResponse.json({ error: 'A valid product ASIN is required.' }, { status: 400 })
+
   const canKeepa = keepaConfigured()
 
   const geos = await Promise.all(GEOS.map(async (g) => {
@@ -110,8 +120,10 @@ export async function POST(req: Request) {
         return { domain: g.domain, code: g.code, country: g.country, status: 'unknown' as GeoStatus, asin }
       }
     }
-    // Australia — no Keepa domain, bounded /dp probe.
-    return { domain: g.domain, code: g.code, country: g.country, status: await checkGeoDp(sb, asin, g.host), asin }
+    // Australia — no Keepa domain. Serve a cached SCOUT result if we have one,
+    // else flag browser:true so the client runs the definitive SCOUT /dp check.
+    const cached = await cachedGeoStatus(sb, asin, g.host)
+    return { domain: g.domain, code: g.code, country: g.country, status: cached, asin, browser: true, host: g.host }
   }))
 
   return NextResponse.json({ ok: true, asin, geos })

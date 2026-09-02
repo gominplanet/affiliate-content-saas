@@ -13,7 +13,7 @@ import { Loader2, Check, Youtube, Sparkles, Globe, Rocket, Handshake } from 'luc
 import { toast } from 'sonner'
 import UploadStage from '@/components/launchpad/UploadStage'
 import StorefrontStage from '@/components/launchpad/StorefrontStage'
-import { requestYtInjectDisclosures, requestFindCampaign, requestAcceptCampaign } from '@/lib/extension-frame'
+import { requestYtInjectDisclosures, requestFindCampaign, requestAcceptCampaign, requestAmazonAsinCheck } from '@/lib/extension-frame'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
@@ -70,7 +70,7 @@ export default function LaunchpadPage() {
   const [creatingMaster, setCreatingMaster] = useState(false)
   const [masterId, setMasterId] = useState<string | null>(null)
   // Phase 1 geo research: where the product looks listed across the English geos.
-  const [geoCheck, setGeoCheck] = useState<Array<{ domain: string; code: string; country: string; status: string }> | null>(null)
+  const [geoCheck, setGeoCheck] = useState<Array<{ domain: string; code: string; country: string; status: string; browser?: boolean; host?: string }> | null>(null)
   // Post-upload Creator Connections (US) step.
   const [ccFinding, setCcFinding] = useState(false)
   const [ccAccepting, setCcAccepting] = useState(false)
@@ -214,7 +214,36 @@ export default function LaunchpadPage() {
           body: JSON.stringify({ asin: asin.trim() }),
         })
         const gj = await gr.json().catch(() => ({}))
-        if (gj?.ok && Array.isArray(gj.geos)) setGeoCheck(gj.geos)
+        if (gj?.ok && Array.isArray(gj.geos)) {
+          setGeoCheck(gj.geos)
+          // Some marketplaces (e.g. Australia) aren't on Keepa, so the server
+          // can't confirm them — it flags them browser:true. Run SCOUT's real
+          // /dp check in the creator's own session for any that isn't already
+          // confirmed, then merge + persist the definitive answer.
+          const need = gj.geos.filter((g: { browser?: boolean; status: string }) => g.browser && g.status !== 'found')
+          if (need.length) {
+            void (async () => {
+              const a = asin.trim()
+              let intlPrompted = false
+              for (const g of need) {
+                try {
+                  const chk = await requestAmazonAsinCheck(a, g.host || g.domain)
+                  if (chk.status === 'found' || chk.status === 'not-listed') {
+                    setGeoCheck(prev => prev ? prev.map(x => x.domain === g.domain ? { ...x, status: chk.status } : x) : prev)
+                    // Persist so the next check is instant (best-effort).
+                    fetch('/api/launchpad/geo-check', {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ cache: { asin: a, domain: g.domain, status: chk.status } }),
+                    }).catch(() => {})
+                  } else if (chk.error === 'intl-permission-needed' && !intlPrompted) {
+                    intlPrompted = true
+                    toast.message('Turn on “International Amazon” in the SCOUT popup to confirm listings outside the US (like Australia).')
+                  }
+                } catch { /* leave "Not confirmed" */ }
+              }
+            })()
+          }
+        }
       } catch { /* non-fatal */ }
       setMasterId(j.videoId)
     } catch (e) {

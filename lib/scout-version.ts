@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.35'
+export const SCOUT_LATEST_VERSION = '1.17.36'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Bulk brand messaging now sends your Amazon store id as the required header on the chat APIs — the missing header was causing a 401 and the empty chat token. This is the fix for the messages not going out.'
+  'Video Launchpad can now confirm whether a product is listed on Amazon Australia (which Keepa does not cover) by reading the real product page in your own signed-in browser, so the AU storefront check no longer comes back "not confirmed".'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
