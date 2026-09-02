@@ -30,15 +30,18 @@ export async function GET(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
 
-  // The user's already-accepted ASINs — excluded so Accept all / Message all only
-  // target campaigns they haven't joined yet.
+  // The user's already-joined campaign IDs — excluded so Accept all / Message all
+  // only target campaigns they haven't joined yet. Keyed on campaign ID, NOT ASIN:
+  // Amazon runs multiple distinct campaigns per product, so an ASIN key would hide
+  // a brand-new joinable campaign just because an earlier one for that product was
+  // joined.
   const accepted = new Set<string>()
   try {
     const { data: acc } = await sb.from('campaigns')
-      .select('asin, accepted_at, amazon_joined_at').eq('user_id', user.id).limit(4000)
+      .select('cc_campaign_id, accepted_at, amazon_joined_at').eq('user_id', user.id).limit(4000)
     for (const r of (acc ?? [])) {
-      const a = String(r?.asin || '').toUpperCase()
-      if (/^[A-Z0-9]{10}$/.test(a) && (r.accepted_at || r.amazon_joined_at)) accepted.add(a)
+      const id = String(r?.cc_campaign_id || '').trim()
+      if (id && (r.accepted_at || r.amazon_joined_at)) accepted.add(id)
     }
   } catch { /* nothing excluded */ }
 
@@ -66,7 +69,7 @@ export async function GET(req: Request) {
       spotsLeft: f.spotsLeft,
       detailsUrl: ccRequestUrl(r.campaign_id),
     }
-  }).filter((c) => !!c.repAsin && !accepted.has(String(c.repAsin).toUpperCase()) && (!onlyOpen || !c.isFull))
+  }).filter((c) => !!c.repAsin && !accepted.has(String(c.campaignId)) && (!onlyOpen || !c.isFull))
 
   return NextResponse.json({ ok: true, brand: label, campaigns })
 }

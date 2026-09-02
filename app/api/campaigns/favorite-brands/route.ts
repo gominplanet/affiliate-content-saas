@@ -22,18 +22,22 @@ function normBrand(v: string): string {
   return (v || '').trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-/** The user's already-accepted ASINs — so "open" means open AND not yet joined. */
+/** The user's already-joined campaign IDs — so "open" means open AND not yet
+ *  joined. Keyed on the campaign ID, NOT the ASIN: Amazon runs several distinct
+ *  campaigns for the same product (same ASIN, different windows), each separately
+ *  joinable, so an ASIN key would wrongly hide brand-new campaigns just because you
+ *  joined an earlier one for that product. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function acceptedAsins(sb: any, userId: string): Promise<Set<string>> {
+async function acceptedCampaignIds(sb: any, userId: string): Promise<Set<string>> {
   const set = new Set<string>()
   try {
     const { data } = await sb.from('campaigns')
-      .select('asin, accepted_at, amazon_joined_at')
+      .select('cc_campaign_id, accepted_at, amazon_joined_at')
       .eq('user_id', userId)
       .limit(4000)
     for (const r of (data ?? [])) {
-      const a = String(r?.asin || '').toUpperCase()
-      if (/^[A-Z0-9]{10}$/.test(a) && (r.accepted_at || r.amazon_joined_at)) set.add(a)
+      const id = String(r?.cc_campaign_id || '').trim()
+      if (id && (r.accepted_at || r.amazon_joined_at)) set.add(id)
     }
   } catch { /* no rows → nothing excluded */ }
   return set
@@ -53,15 +57,15 @@ async function brandCounts(sb: any, label: string, accepted: Set<string>): Promi
   // without pulling look-alikes like "Dreamegg".
   const { data } = await sb
     .from('cc_campaign_catalog')
-    .select('rep_asin, brand_name, campaign_name, available_slot, total_slot')
+    .select('campaign_id, rep_asin, brand_name, campaign_name, available_slot, total_slot')
     .or(`brand_name.ilike.%${tok}%,campaign_name.ilike.%${tok}%`)
     .limit(1000)
   const rows = (Array.isArray(data) ? data : []).filter((r: { brand_name?: string | null; campaign_name?: string | null }) =>
     brandMatches(label, r.brand_name, r.campaign_name))
   let open = 0, joined = 0
   for (const r of rows) {
-    const asin = String(r.rep_asin || '').toUpperCase()
-    if (asin && accepted.has(asin)) { joined++; continue } // already joined → not "open" for you
+    const cid = String(r.campaign_id || '')
+    if (cid && accepted.has(cid)) { joined++; continue } // you joined THIS campaign → not "open" for you
     const f = campaignFullness(r.available_slot as number | null, r.total_slot as number | null)
     if (!f.isFull) open++
   }
@@ -81,7 +85,7 @@ export async function GET() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: true })
 
-  const accepted = await acceptedAsins(sb, user.id)
+  const accepted = await acceptedCampaignIds(sb, user.id)
   const brands = await Promise.all(((favs ?? []) as Array<{ brand_key: string; brand_label: string; last_checked_at: string | null }>).map(async (f) => {
     const counts = await brandCounts(sb, f.brand_label, accepted)
     return { brand: f.brand_key, label: f.brand_label, openCount: counts.open, joinedCount: counts.joined, totalCount: counts.total, lastCheckedAt: f.last_checked_at ?? null }
@@ -111,7 +115,7 @@ export async function POST(req: Request) {
     { onConflict: 'user_id,brand_key' },
   )
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  const counts = await brandCounts(sb, label, await acceptedAsins(sb, user.id))
+  const counts = await brandCounts(sb, label, await acceptedCampaignIds(sb, user.id))
   return NextResponse.json({ ok: true, brand: { brand: key, label, openCount: counts.open, joinedCount: counts.joined, totalCount: counts.total, lastCheckedAt: null } })
 }
 
