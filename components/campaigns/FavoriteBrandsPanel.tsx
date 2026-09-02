@@ -8,11 +8,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Star, Plus, X, Loader2, Handshake, MessageCircle } from 'lucide-react'
-import { requestAcceptCampaign } from '@/lib/extension-frame'
+import { Star, Plus, X, Loader2, Handshake, MessageCircle, RefreshCw } from 'lucide-react'
+import { requestAcceptCampaign, requestCcBrandSearch } from '@/lib/extension-frame'
 import BulkMessageBrandModal, { type BulkCampaign } from '@/components/campaigns/BulkMessageBrandModal'
 
-interface FavBrand { brand: string; label: string; openCount: number; totalCount: number; lastCheckedAt: string | null }
+interface FavBrand { brand: string; label: string; openCount: number; joinedCount: number; totalCount: number; lastCheckedAt: string | null }
 
 interface BrandCampaign {
   campaignId: string
@@ -30,6 +30,7 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
   const [input, setInput] = useState('')
   const [adding, setAdding] = useState(false)
   const [busy, setBusy] = useState<string | null>(null) // brand key being accepted
+  const [refreshingLive, setRefreshingLive] = useState(false)
   const [msgCampaigns, setMsgCampaigns] = useState<BulkCampaign[] | null>(null)
 
   const load = useCallback(async () => {
@@ -59,6 +60,38 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
     setBrands(prev => prev.filter(b => b.brand !== key))
     await fetch(`/api/campaigns/favorite-brands?brand=${encodeURIComponent(key)}`, { method: 'DELETE' }).catch(() => {})
   }, [])
+
+  // Pull each favorite brand's live grid straight from Amazon (via SCOUT) and top up
+  // the shared catalog, so the counts below reflect what's actually open right now
+  // instead of the last snapshot. This is why a brand can read "all full" while a
+  // live search shows an open slot — the snapshot lagged.
+  const refreshAllLive = useCallback(async () => {
+    if (brands.length === 0) return
+    setRefreshingLive(true)
+    const tId = 'fav-live'
+    try {
+      let installed = true, totalFound = 0
+      toast.loading('Checking Amazon for open campaigns…', { id: tId, duration: Infinity })
+      for (const b of brands) {
+        const res = await requestCcBrandSearch(b.label, { maxPages: 12 })
+        if (res.error === 'not-installed') { installed = false; break }
+        const found = res.ok ? (res.campaigns || []) : []
+        if (found.length) {
+          totalFound += found.length
+          await fetch('/api/campaigns/ingest-live', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaigns: found }),
+          }).catch(() => {})
+        }
+      }
+      if (!installed) {
+        toast.error('Install SCOUT to pull live campaigns from your Amazon grid.', { id: tId })
+        return
+      }
+      await load()
+      toast.success(`Refreshed from Amazon — ${totalFound} live ${totalFound === 1 ? 'campaign' : 'campaigns'} found.`, { id: tId, duration: 5000 })
+      onChanged?.()
+    } finally { setRefreshingLive(false) }
+  }, [brands, load, onChanged])
 
   const fetchOpen = useCallback(async (label: string): Promise<BrandCampaign[]> => {
     const d = await fetch(`/api/campaigns/favorite-brands/campaigns?brand=${encodeURIComponent(label)}&onlyOpen=1`).then(r => r.json()).catch(() => ({}))
@@ -113,6 +146,14 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
       <div className="flex items-center gap-2 mb-1">
         <Star size={16} style={{ color: '#f59e0b' }} />
         <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Favorite brands</h3>
+        {brands.length > 0 && (
+          <button type="button" onClick={() => void refreshAllLive()} disabled={refreshingLive}
+            title="Pull the latest campaigns for every favorite brand straight from your Amazon grid"
+            className="ml-auto h-8 px-3 inline-flex items-center gap-1.5 rounded-lg text-[12px] font-semibold border disabled:opacity-50"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+            {refreshingLive ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh from Amazon
+          </button>
+        )}
       </div>
       <p className="text-[12px] mb-3" style={{ color: 'var(--text-2)' }}>
         Track the brands you always want in. MVP checks them for you, so you don&apos;t have to watch daily for a full campaign to reopen. Accept or message every open one in a click.
@@ -147,8 +188,15 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
                   style={b.openCount > 0
                     ? { color: '#fff', background: '#34c759' }
                     : { color: 'var(--text-3)', background: 'var(--surface-2)' }}>
-                  {b.openCount > 0 ? `${b.openCount} open` : (b.totalCount > 0 ? 'all full' : 'none found')}
+                  {b.openCount > 0
+                    ? `${b.openCount} open`
+                    : b.joinedCount > 0
+                      ? (b.totalCount > b.joinedCount ? 'all full' : `${b.joinedCount} joined`)
+                      : (b.totalCount > 0 ? 'all full' : 'none found')}
                 </span>
+                {b.openCount === 0 && b.joinedCount > 0 && b.totalCount > b.joinedCount && (
+                  <span className="text-[11px] ml-1.5" style={{ color: 'var(--text-3)' }}>{b.joinedCount} joined</span>
+                )}
               </div>
               <button type="button" onClick={() => void acceptAll(b)} disabled={busy === b.brand || b.openCount === 0}
                 className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50" style={{ background: '#34c759' }}>

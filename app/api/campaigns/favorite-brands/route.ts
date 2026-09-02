@@ -38,26 +38,29 @@ async function acceptedAsins(sb: any, userId: string): Promise<Set<string>> {
   return set
 }
 
-/** Live open / total campaign counts for a brand from the shared catalog.
- *  "open" = has spots AND the creator hasn't already accepted it. */
+/** Live open / joined / total campaign counts for a brand from the shared catalog.
+ *  "open" = has spots AND the creator hasn't already accepted it.
+ *  "joined" = you already accepted it (open or not) — tracked so the badge can say
+ *  "joined" instead of the misleading "all full" when your only open campaign is one
+ *  you already grabbed. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function brandCounts(sb: any, label: string, accepted: Set<string>): Promise<{ open: number; total: number }> {
+async function brandCounts(sb: any, label: string, accepted: Set<string>): Promise<{ open: number; joined: number; total: number }> {
   const safe = label.replace(/[%_,]/g, ' ').trim()
-  if (!safe) return { open: 0, total: 0 }
+  if (!safe) return { open: 0, joined: 0, total: 0 }
   const { data } = await sb
     .from('cc_campaign_catalog')
     .select('rep_asin, available_slot, total_slot')
     .ilike('brand_name', safe)
     .limit(500)
   const rows = Array.isArray(data) ? data : []
-  let open = 0
+  let open = 0, joined = 0
   for (const r of rows) {
     const asin = String(r.rep_asin || '').toUpperCase()
-    if (asin && accepted.has(asin)) continue // already joined → not "open" for you
+    if (asin && accepted.has(asin)) { joined++; continue } // already joined → not "open" for you
     const f = campaignFullness(r.available_slot as number | null, r.total_slot as number | null)
     if (!f.isFull) open++
   }
-  return { open, total: rows.length }
+  return { open, joined, total: rows.length }
 }
 
 export async function GET() {
@@ -76,7 +79,7 @@ export async function GET() {
   const accepted = await acceptedAsins(sb, user.id)
   const brands = await Promise.all(((favs ?? []) as Array<{ brand_key: string; brand_label: string; last_checked_at: string | null }>).map(async (f) => {
     const counts = await brandCounts(sb, f.brand_label, accepted)
-    return { brand: f.brand_key, label: f.brand_label, openCount: counts.open, totalCount: counts.total, lastCheckedAt: f.last_checked_at ?? null }
+    return { brand: f.brand_key, label: f.brand_label, openCount: counts.open, joinedCount: counts.joined, totalCount: counts.total, lastCheckedAt: f.last_checked_at ?? null }
   }))
 
   return NextResponse.json({ ok: true, brands })
@@ -104,7 +107,7 @@ export async function POST(req: Request) {
   )
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   const counts = await brandCounts(sb, label, await acceptedAsins(sb, user.id))
-  return NextResponse.json({ ok: true, brand: { brand: key, label, openCount: counts.open, totalCount: counts.total, lastCheckedAt: null } })
+  return NextResponse.json({ ok: true, brand: { brand: key, label, openCount: counts.open, joinedCount: counts.joined, totalCount: counts.total, lastCheckedAt: null } })
 }
 
 export async function DELETE(req: Request) {
