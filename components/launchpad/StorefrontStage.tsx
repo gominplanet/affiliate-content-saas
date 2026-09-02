@@ -32,8 +32,8 @@ interface Vid { id: string; title: string; thumbnail_url: string | null }
 interface Market { domain: string; code: string; country: string; langName: string; needsTranslation: boolean }
 interface Target { domain: string; market: string; country: string; lang: string; dub: boolean; title: string | null; description: string | null; state: string; detail: string | null; videoUrl: string | null }
 
-const label = { color: 'var(--fg)' } as const
-const muted = { color: 'var(--fg-muted)' } as const
+const label = { color: 'var(--text)' } as const
+const muted = { color: 'var(--text-2)' } as const
 
 /** presetVideoId: when set, the stage syncs THAT video and hides its own picker
  *  (Launchpad passes the already-picked video). */
@@ -382,12 +382,12 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
               <div className="inline-flex rounded-lg border overflow-hidden mt-2.5" style={{ borderColor: 'var(--border)' }}>
                 <button type="button" onClick={() => setUseMyVoice(true)}
                   className="px-3 py-1.5 text-[12px] font-medium"
-                  style={{ background: useMyVoice ? 'rgba(14,165,164,0.12)' : 'transparent', color: useMyVoice ? '#0EA5A4' : 'var(--fg-muted)' }}>
+                  style={{ background: useMyVoice ? 'rgba(14,165,164,0.12)' : 'transparent', color: useMyVoice ? '#0EA5A4' : 'var(--text-2)' }}>
                   My voice (1 credit)
                 </button>
                 <button type="button" onClick={() => setUseMyVoice(false)}
                   className="px-3 py-1.5 text-[12px] font-medium"
-                  style={{ background: !useMyVoice ? 'rgba(14,165,164,0.12)' : 'transparent', color: !useMyVoice ? '#0EA5A4' : 'var(--fg-muted)' }}>
+                  style={{ background: !useMyVoice ? 'rgba(14,165,164,0.12)' : 'transparent', color: !useMyVoice ? '#0EA5A4' : 'var(--text-2)' }}>
                   Generic voice (free)
                 </button>
               </div>
@@ -402,7 +402,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                   {([['50', '$29'], ['150', '$69'], ['500', '$199']] as const).map(([b, price]) => (
                     <button key={b} type="button" onClick={() => void buyCredits(b)} disabled={buying}
                       className="text-[12px] font-medium px-2.5 py-1 rounded-lg border disabled:opacity-60"
-                      style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+                      style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
                       {b} for {price}
                     </button>
                   ))}
@@ -477,7 +477,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
             const status = signin[m.domain]
             return (
               <div key={m.domain} className="flex items-center gap-2 p-2.5 rounded-lg border text-sm"
-                style={{ borderColor: on ? '#0EA5A4' : 'var(--border)', background: on ? 'rgba(14,165,164,0.05)' : 'transparent', color: 'var(--fg)' }}>
+                style={{ borderColor: on ? '#0EA5A4' : 'var(--border)', background: on ? 'rgba(14,165,164,0.05)' : 'transparent', color: 'var(--text)' }}>
                 <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
                   <input type="checkbox" checked={on} onChange={() => toggleMarket(m.domain)} disabled={running} className="accent-[#0EA5A4]" />
                   <span className="flex-1 min-w-0">
@@ -504,7 +504,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         <div className="mt-3">
           <label className="text-[12px] font-medium" style={label}>Featured ASIN <span style={{ color: '#e0554b' }}>*</span></label>
           <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX or a product link" required
-            className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: asin.trim() ? 'var(--border)' : '#e0554b55', color: 'var(--fg)' }} />
+            className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: asin.trim() ? 'var(--border)' : '#e0554b55', color: 'var(--text)' }} />
           <p className="text-[11px] mt-1" style={muted}>Required. MVP uses the product to write each market’s title and build the thumbnail.</p>
         </div>
       </div>
@@ -522,7 +522,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
             <div className="flex items-center gap-2 flex-wrap">
               <button onClick={() => void checkSignins()} disabled={checking || delivering}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border disabled:opacity-60"
-                style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+                style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
                 {checking ? <><Loader2 size={14} className="animate-spin" /> Checking…</> : <><ShieldCheck size={14} /> Check sign-in</>}
               </button>
               <button onClick={() => void deliverAll()} disabled={delivering || checking}
@@ -563,7 +563,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                   <div className="mb-1">
                     <button type="button" onClick={() => void signInMarket(t.domain, t.country)}
                       className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border"
-                      style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+                      style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
                       <LogIn size={13} /> {signin[t.domain] === 'not_enrolled' ? `Open ${t.country} Creator Hub` : `Sign in on ${t.country}`}
                     </button>
                   </div>
@@ -606,7 +606,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                   <div className="flex items-center gap-3 mt-2">
                     <button type="button" onClick={() => void dubOne(t.domain)} disabled={dubbing === t.domain}
                       className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border disabled:opacity-60"
-                      style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+                      style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
                       {dubbing === t.domain ? <><Loader2 size={13} className="animate-spin" /> Dubbing…</> : <><Mic size={13} /> Generate dub</>}
                     </button>
                   </div>

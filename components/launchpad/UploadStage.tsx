@@ -74,8 +74,8 @@ function probe(file: File): Promise<{ width: number; height: number; duration: n
   })
 }
 
-const label = { color: 'var(--fg)' } as const
-const muted = { color: 'var(--fg-muted)' } as const
+const label = { color: 'var(--text)' } as const
+const muted = { color: 'var(--text-2)' } as const
 
 // onRendered: called with the burned video URL, a working title (the filename),
 // and the CLEAN source URL (no CTA). The CTA is a YouTube-only overlay, so the
@@ -304,7 +304,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
           onChange={e => { const f = e.target.files?.[0]; if (f) void onPick(f); e.currentTarget.value = '' }} />
         <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border disabled:opacity-60"
-          style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+          style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
           {uploading ? <><Loader2 size={15} className="animate-spin" /> Uploading…</> : <><Upload size={15} /> Choose a file</>}
         </button>
         {source && <p className="text-[12px] mt-2" style={muted}>{source.name} · {source.durationSec}s</p>}
@@ -318,7 +318,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
             {(['design', 'words', 'upload'] as Source[]).map(o => (
               <button key={o} type="button" onClick={() => setCtaSource(o)}
                 className="px-3 py-1.5 text-[12px] font-medium inline-flex items-center gap-1.5"
-                style={{ background: ctaSource === o ? 'rgba(124,58,237,0.10)' : 'transparent', color: ctaSource === o ? '#7C3AED' : 'var(--fg-muted)' }}>
+                style={{ background: ctaSource === o ? 'rgba(124,58,237,0.10)' : 'transparent', color: ctaSource === o ? '#7C3AED' : 'var(--text-2)' }}>
                 {o === 'design' ? <><Wand2 size={13} /> CTA designs</> : o === 'words' ? <><Type size={13} /> Your words</> : <><Upload size={13} /> Upload</>}
               </button>
             ))}
@@ -361,7 +361,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
               onChange={e => { const f = e.target.files?.[0]; if (f) void onPickBadge(f); e.currentTarget.value = '' }} />
             <button type="button" onClick={() => badgeRef.current?.click()} disabled={badgeUploading}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border disabled:opacity-60"
-              style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
               {badgeUploading ? <><Loader2 size={15} className="animate-spin" /> Uploading…</> : <><Upload size={15} /> {uploadedBadgeUrl ? 'Replace badge' : 'Upload a PNG badge'}</>}
             </button>
             <p className="text-[12px] mt-2" style={muted}>Use a transparent PNG so only your design shows on the video.</p>
@@ -372,13 +372,13 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
               <label className="text-[12px] font-medium" style={muted}>What should it say?</label>
               <input value={words} onChange={e => setWords(e.target.value)} maxLength={40}
                 placeholder="SHOP MY STOREFRONT"
-                className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
+                className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
             </div>
             <div className="inline-flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
               {(['simple', 'designed'] as const).map(m => (
                 <button key={m} type="button" onClick={() => { setWordMode(m); setWordBadgeUrl(null) }}
                   className="px-3 py-1.5 text-[12px] font-medium"
-                  style={{ background: wordMode === m ? 'rgba(124,58,237,0.10)' : 'transparent', color: wordMode === m ? '#7C3AED' : 'var(--fg-muted)' }}>
+                  style={{ background: wordMode === m ? 'rgba(124,58,237,0.10)' : 'transparent', color: wordMode === m ? '#7C3AED' : 'var(--text-2)' }}>
                   {m === 'simple' ? 'Simple pill' : 'Designed badge'}
                 </button>
               ))}
@@ -396,7 +396,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
                 </div>
                 <button type="button" onClick={() => void makeWordBadge()} disabled={making || !words.trim()}
                   className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-2 rounded-lg border disabled:opacity-60"
-                  style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+                  style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
                   {making ? <><Loader2 size={14} className="animate-spin" /> Building…</> : <><Type size={14} /> {wordBadgeUrl ? 'Update badge' : 'Create badge'}</>}
                 </button>
               </>
@@ -407,7 +407,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
                   {BADGE_THEMES.map(th => (
                     <button key={th.key} type="button" onClick={() => setTheme(th.key)}
                       className="px-2.5 py-1.5 rounded-lg border text-[12px] font-medium"
-                      style={{ borderColor: theme === th.key ? '#7C3AED' : 'var(--border)', borderWidth: theme === th.key ? 2 : 1, color: 'var(--fg)' }}>
+                      style={{ borderColor: theme === th.key ? '#7C3AED' : 'var(--border)', borderWidth: theme === th.key ? 2 : 1, color: 'var(--text)' }}>
                       {th.label}
                     </button>
                   ))}
@@ -433,7 +433,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
           {(['lowerthird', 'endcard'] as Style[]).map(s => (
             <button key={s} type="button" onClick={() => setStyle(s)}
               className="flex-1 px-3 py-2 rounded-lg border text-sm font-medium"
-              style={{ borderColor: style === s ? '#7C3AED' : 'var(--border)', borderWidth: style === s ? 2 : 1, color: 'var(--fg)' }}>
+              style={{ borderColor: style === s ? '#7C3AED' : 'var(--border)', borderWidth: style === s ? 2 : 1, color: 'var(--text)' }}>
               {s === 'lowerthird' ? 'Show early (~10s)' : 'End card (last 8s)'}
             </button>
           ))}
@@ -447,12 +447,12 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
           </button>
           <button onClick={skipCta} disabled={rendering || !source}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border disabled:opacity-60"
-            style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
             Skip, no CTA
           </button>
         </div>
         <p className="text-[12px] mt-2" style={muted}>The CTA is optional. Skip it to use your video exactly as uploaded.</p>
-        <div className="mt-2 rounded-lg border p-2.5 text-[12px] leading-relaxed flex items-start gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--fg-muted)' }}>
+        <div className="mt-2 rounded-lg border p-2.5 text-[12px] leading-relaxed flex items-start gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--text-2)' }}>
           <span aria-hidden className="mt-[1px]">ℹ️</span>
           <span>The designed CTA is burned into the <strong>YouTube</strong> upload only. Your Amazon storefronts always get the <strong>clean</strong> video with no overlay, since Amazon adds its own shoppable links.</span>
         </div>
@@ -468,13 +468,13 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
             <div className="mt-3">
               <label className="text-[12px] font-medium" style={muted}>Video title</label>
               <input value={title} onChange={e => setTitle(e.target.value)} maxLength={100}
-                className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
+                className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
             </div>
           )}
           <div className="flex items-center gap-3 mt-3 flex-wrap">
             <a href={rendered} download
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border"
-              style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
               <Download size={15} /> Download
             </a>
             {!hidePublish && (

@@ -19,6 +19,7 @@
 //   body: { cache: { asin, domain, status } } -> { ok } (persist a SCOUT result)
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
 import { keepaConfigured, fetchKeepaBrandInfo } from '@/services/keepa'
 
@@ -52,12 +53,15 @@ type GeoStatus = 'found' | 'not-listed' | 'unknown'
 /** Cache-only read for a Keepa-less marketplace (Australia). A live server /dp
  *  probe is blocked from datacenter IPs, so we NEVER fetch here — the definitive
  *  check runs on the client through SCOUT (creator's own residential session).
- *  Returns a prior SCOUT result if one was persisted, else 'unknown'. */
+ *  Returns a prior SCOUT result if one was persisted, else 'unknown'.
+ *  `admin` is the service-role client: passport_asin_market is RLS-locked to
+ *  service role (migration 294), so the user client can't read/write it. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function cachedGeoStatus(sb: any, asin: string, host: string): Promise<GeoStatus> {
+async function cachedGeoStatus(admin: any, asin: string, host: string): Promise<GeoStatus> {
+  if (!admin) return 'unknown'
   const h = host.toLowerCase()
   try {
-    const { data } = await sb.from('passport_asin_market').select('available').eq('asin', asin).eq('marketplace', h).maybeSingle()
+    const { data } = await admin.from('passport_asin_market').select('available').eq('asin', asin).eq('marketplace', h).maybeSingle()
     if (data && typeof data.available === 'boolean') return data.available ? 'found' : 'not-listed'
   } catch { /* no cache → unknown, client re-checks via SCOUT */ }
   return 'unknown'
@@ -79,8 +83,12 @@ export async function POST(req: Request) {
     cache?: { asin?: string; domain?: string; status?: string }
   }
 
+  // passport_asin_market is RLS-locked to the service role (migration 294), so
+  // the cache read/write needs the admin client. Missing service key → no cache
+  // (the SCOUT browser check still runs), never a hard failure.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = supabase as any
+  let admin: any = null
+  try { admin = createAdminClient() } catch { admin = null }
 
   // Cache-write path: the client posts back a SCOUT browser-check result so a
   // Keepa-less marketplace (Australia) is instant on the next check. Only the
@@ -89,9 +97,9 @@ export async function POST(req: Request) {
     const cAsin = asinFrom(body.cache.asin || '')
     const geo = GEOS.find(g => g.domain === body.cache!.domain || g.host === body.cache!.domain)
     const st = body.cache.status
-    if (cAsin && geo && (st === 'found' || st === 'not-listed')) {
+    if (admin && cAsin && geo && (st === 'found' || st === 'not-listed')) {
       try {
-        await sb.from('passport_asin_market').upsert(
+        await admin.from('passport_asin_market').upsert(
           { asin: cAsin, marketplace: geo.host.toLowerCase(), available: st === 'found', checked_at: new Date().toISOString() },
           { onConflict: 'asin,marketplace' },
         )
@@ -122,7 +130,7 @@ export async function POST(req: Request) {
     }
     // Australia — no Keepa domain. Serve a cached SCOUT result if we have one,
     // else flag browser:true so the client runs the definitive SCOUT /dp check.
-    const cached = await cachedGeoStatus(sb, asin, g.host)
+    const cached = await cachedGeoStatus(admin, asin, g.host)
     return { domain: g.domain, code: g.code, country: g.country, status: cached, asin, browser: true, host: g.host }
   }))
 

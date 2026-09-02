@@ -17,8 +17,8 @@ import { requestYtInjectDisclosures, requestFindCampaign, requestAcceptCampaign,
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
-const label = { color: 'var(--fg)' } as const
-const muted = { color: 'var(--fg-muted)' } as const
+const label = { color: 'var(--text)' } as const
+const muted = { color: 'var(--text-2)' } as const
 
 interface Meta { title: string; alternatives: string[]; description: string; tags: string[] }
 
@@ -318,7 +318,7 @@ export default function LaunchpadPage() {
             <div className="card p-5">
               <div className="flex items-center gap-2 mb-3"><Num n={2} done={asinOk} /><h2 className="text-sm font-semibold" style={label}>Product ASIN</h2></div>
               <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX or a product link"
-                className="w-full px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: asinOk ? 'var(--border)' : '#e0554b55', color: 'var(--fg)' }} />
+                className="w-full px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: asinOk ? 'var(--border)' : '#e0554b55', color: 'var(--text)' }} />
               <p className="text-[12px] mt-1.5" style={muted}>Required. MVP uses the product to write every market&apos;s title and build the thumbnail, whether or not you publish to YouTube.</p>
             </div>
 
@@ -329,7 +329,7 @@ export default function LaunchpadPage() {
                 {ytOpen === 'choose' && (
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => { setYtOpen('prepare'); if (!meta) void prepare() }} className="text-[12px] font-medium px-3 py-1.5 rounded-lg text-white" style={{ background: '#7C3AED' }}>Prepare & publish</button>
-                    <button type="button" onClick={() => setYtOpen('skipped')} className="text-[12px] font-medium px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }}>Skip</button>
+                    <button type="button" onClick={() => setYtOpen('skipped')} className="text-[12px] font-medium px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Skip</button>
                   </div>
                 )}
                 {ytOpen === 'skipped' && <button type="button" onClick={() => setYtOpen('choose')} className="text-[12px] underline" style={muted}>Changed my mind</button>}
@@ -345,18 +345,18 @@ export default function LaunchpadPage() {
                     <>
                       <div>
                         <label className="text-[12px] font-medium" style={muted}>Title</label>
-                        <input value={chosenTitle} onChange={e => setChosenTitle(e.target.value)} maxLength={100} className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
+                        <input value={chosenTitle} onChange={e => setChosenTitle(e.target.value)} maxLength={100} className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
                         {meta.alternatives.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mt-2">
                             {[meta.title, ...meta.alternatives].slice(0, 5).map((t, i) => (
-                              <button key={i} type="button" onClick={() => setChosenTitle(t)} className="text-[11px] px-2 py-1 rounded-lg border text-left" style={{ borderColor: chosenTitle === t ? '#7C3AED' : 'var(--border)', color: 'var(--fg)' }}>{t.length > 48 ? `${t.slice(0, 48)}…` : t}</button>
+                              <button key={i} type="button" onClick={() => setChosenTitle(t)} className="text-[11px] px-2 py-1 rounded-lg border text-left" style={{ borderColor: chosenTitle === t ? '#7C3AED' : 'var(--border)', color: 'var(--text)' }}>{t.length > 48 ? `${t.slice(0, 48)}…` : t}</button>
                             ))}
                           </div>
                         )}
                       </div>
                       <div>
                         <label className="text-[12px] font-medium" style={muted}>Description</label>
-                        <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--fg)' }} />
+                        <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
                       </div>
 
                       {/* Thumbnail — AI-generated, the same engine the Co-Pilot uses */}
@@ -406,7 +406,7 @@ export default function LaunchpadPage() {
 
                       <div className="flex flex-wrap items-center gap-2">
                         {(['draft', 'public'] as const).map(p => (
-                          <button key={p} type="button" onClick={() => setPrivacy(p)} className="px-3 py-2 rounded-lg border text-sm font-medium" style={{ borderColor: privacy === p ? '#7C3AED' : 'var(--border)', borderWidth: privacy === p ? 2 : 1, color: 'var(--fg)' }}>{p === 'draft' ? 'Private draft' : 'Public'}</button>
+                          <button key={p} type="button" onClick={() => setPrivacy(p)} className="px-3 py-2 rounded-lg border text-sm font-medium" style={{ borderColor: privacy === p ? '#7C3AED' : 'var(--border)', borderWidth: privacy === p ? 2 : 1, color: 'var(--text)' }}>{p === 'draft' ? 'Private draft' : 'Public'}</button>
                         ))}
                         <button onClick={() => void publish()} disabled={publishing || !chosenTitle.trim()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#FF0000' }}>
                           {publishing ? <><Loader2 size={15} className="animate-spin" /> Publishing…</> : <><Youtube size={15} /> {privacy === 'public' ? 'Publish public' : 'Save as draft'}</>}
