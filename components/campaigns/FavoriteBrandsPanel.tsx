@@ -73,7 +73,7 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
       let installed = true, totalFound = 0
       toast.loading('Checking Amazon for open campaigns…', { id: tId, duration: Infinity })
       for (const b of brands) {
-        const res = await requestCcBrandSearch(b.label, { maxPages: 12 })
+        const res = await requestCcBrandSearch(b.label, { maxPages: 20 })
         if (res.error === 'not-installed') { installed = false; break }
         const found = res.ok ? (res.campaigns || []) : []
         if (found.length) {

@@ -162,7 +162,7 @@ export default function CampaignBrowsePanel({
     const tId = 'cc-live'
     try {
       toast.loading(`Searching Amazon for "${kw}"…`, { id: tId, duration: Infinity })
-      const res = await requestCcBrandSearch(kw, { maxPages: 12 })
+      const res = await requestCcBrandSearch(kw, { maxPages: 20 })
       if (res.error === 'not-installed') { toast.error('Install SCOUT to pull live results from your Amazon grid.', { id: tId }); return }
       if (!res.ok) { toast.error('Could not reach Amazon through SCOUT. Open Creator Connections in this browser and retry.', { id: tId }); return }
       const found = res.campaigns || []

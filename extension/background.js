@@ -1316,8 +1316,13 @@ function ccListMyCampaignsInPage(opts) {
         if (v.capturedBody) {
           try {
             const o = JSON.parse(v.capturedBody)
-            o.pageNumber = pageNumber
             o.nextToken = nextToken
+            // Cursor pagination: the nextToken alone fixes the position. Advancing
+            // pageNumber AND the token together confuses Amazon's server, which then
+            // replays an earlier page — so the dedup loop sees "no new" and stops
+            // early (the 45-of-133 gap). Pin pageNumber to 1 whenever a token is
+            // carried; only token-less responses use the incrementing pageNumber.
+            o.pageNumber = nextToken ? 1 : pageNumber
             if (!o.pageSize || o.pageSize < 30) o.pageSize = 30
             if (!o.creatorId && creatorId) o.creatorId = creatorId
             // Broaden the type so we get EVERY joined campaign, not just the type the
@@ -1329,7 +1334,7 @@ function ccListMyCampaignsInPage(opts) {
           } catch (e) { /* fall through to synthetic body */ }
         }
         const filterOptions = Object.assign({ campaignType: v.campaignType, statuses: v.statuses }, FILTER_BASE)
-        const b = { campaignId: null, brandId: null, filterOptions, sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }], nextToken, pageNumber, pageSize: 30, creatorId }
+        const b = { campaignId: null, brandId: null, filterOptions, sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }], nextToken, pageNumber: nextToken ? 1 : pageNumber, pageSize: 30, creatorId }
         if (!v.omitSearch) b.searchOptions = kw ? searchOptionsFor() : (v.searchOptions || [])
         return JSON.stringify(b)
       }
@@ -6411,7 +6416,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // grid, replays its collaboration/search filtered by the brand keyword, and
     // returns the campaigns. Keyword-narrowed, so a few pages ≈ one brand's set.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 95000)
-    listMyCampaignsApi({ keyword: msg.keyword || '', opportunities: true, maxPages: msg.maxPages || 12 })
+    listMyCampaignsApi({ keyword: msg.keyword || '', opportunities: true, maxPages: msg.maxPages || 20 })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
