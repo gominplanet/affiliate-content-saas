@@ -380,9 +380,108 @@ async function clickCcTab(re) {
   } catch (e) { return false }
 }
 
+// FULL background-send pipeline, run in this content script's own (persistent,
+// first-party) context. Ported from background's ccResolveSendInPage — kept here
+// because an executeScript-injected function can't reliably fetch or message back
+// on the connect page. opts carries the request templates + identity from the
+// background; returns a plain result object delivered over sendResponse.
+async function ccSendInPage(opts) {
+  const fetchT = async (url, init, ms) => {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => { try { ctrl.abort() } catch (e) {} }, ms || 12000)
+    try { return await fetch(url, Object.assign({}, init, { signal: ctrl.signal })) }
+    finally { clearTimeout(timer) }
+  }
+  try {
+    const { asin, segments, campaignIdsHint, headers, sendTemplate, searchTemplate, MSG, CTX, CAMP, CREATOR, ACTOR } = opts
+    let creatorId = opts.creatorId
+    if (!creatorId) {
+      try { const html = (document.documentElement && document.documentElement.innerHTML) || ''; const m = html.match(/amzn1\.creator\.[a-z0-9-]+/i); if (m) creatorId = m[0] } catch (e) {}
+    }
+    const hdr = () => { const o = Object.assign({}, headers || {}); if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'; if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'; return o }
+    const jinner = (s) => { try { return JSON.stringify(String(s == null ? '' : s)).slice(1, -1) } catch (e) { return String(s || '') } }
+    let creatorName = String(opts.creatorName || '')
+    const fillId = (tpl, nm) => String(tpl)
+      .split(CREATOR || ' ').join(jinner(creatorId || ''))
+      .split(ACTOR || ' ').join(jinner(nm || creatorName || creatorId || ''))
+    const findCreatorName = (obj) => {
+      const seen = []; const walk = (o) => {
+        if (!o || typeof o !== 'object') return null
+        const ty = String(o.type || o.actorType || '').toUpperCase()
+        if (ty === 'CREATOR' && typeof (o.name || o.actorName) === 'string' && (o.name || o.actorName)) return o.name || o.actorName
+        for (const k of Object.keys(o)) { const v = o[k]; if (v && typeof v === 'object') seen.push(v) }
+        return null
+      }
+      let hit = walk(obj); while (!hit && seen.length) hit = walk(seen.shift()); return hit
+    }
+    const A = String(asin || '').toUpperCase()
+    const campaignIds = Array.isArray(campaignIdsHint) ? campaignIdsHint.filter(Boolean).slice() : []
+    let brand = null
+    let resolveErr = null
+    if (A && creatorId) {
+      try {
+        const body = JSON.stringify({
+          campaignId: null, brandId: null,
+          filterOptions: { campaignType: 'BOUNTY_BOARD', availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, statuses: ['SCHEDULED', 'DELIVERING'], commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null },
+          sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }],
+          nextToken: null, pageNumber: 1, pageSize: 30, creatorId,
+          searchOptions: [{ fieldName: 'brandName', searchString: A }, { fieldName: 'campaignName', searchString: A }, { fieldName: 'asin', searchString: A }],
+        })
+        const r = await fetchT('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body, credentials: 'include' }, 12000)
+        const j = await r.json().catch(() => null)
+        const ads = (j && j.responses && j.responses[0] && j.responses[0].ads) || []
+        const hasAsin = (a) => Array.isArray(a.campaignAsins) && a.campaignAsins.map((x) => String(x).toUpperCase()).includes(A)
+        const chosen = ads.filter(hasAsin)
+        for (const a of chosen) { if (a.campaignId && !campaignIds.includes(a.campaignId)) campaignIds.push(a.campaignId); if (!brand && a.brandName) brand = a.brandName }
+      } catch (e) { resolveErr = e && e.message ? e.message : String(e) }
+    }
+    if (!campaignIds.length) return { ok: false, reason: (A && !creatorId) ? 'no-creator-id' : 'no-campaign-for-asin', error: resolveErr || undefined, creatorId: creatorId || undefined, via: 'content' }
+    const findToken = (j) => {
+      try { const abs = (j && j.responses && j.responses[0] && j.responses[0].addressBook) || []; for (const e of abs) { const t = e.contextValidatorToken || e.contextToken; if (t && t.length > 20) return t } } catch (e) {}
+      return null
+    }
+    let lastReason = 'no-context-token'
+    for (const cid of campaignIds) {
+      try {
+        const sBody = fillId(searchTemplate.split(CAMP).join(cid))
+        const sr = await fetchT('/connect/api/chat/search', { method: 'POST', headers: hdr(), body: sBody, credentials: 'include' }, 12000)
+        const sj = await sr.json().catch(() => null)
+        const token = findToken(sj)
+        if (!token) { lastReason = 'no-context-token'; continue }
+        if (!creatorName) { const n = findCreatorName(sj); if (n) creatorName = n }
+        let groups = 0
+        for (const seg of segments) {
+          const mBody = fillId(sendTemplate, creatorName).split(CTX).join(jinner(token)).split(MSG).join(jinner(seg))
+          const mr = await fetchT('/connect/api/chat/message/send', { method: 'POST', headers: hdr(), body: mBody, credentials: 'include' }, 15000)
+          let txt = ''
+          try { txt = (await mr.text()).slice(0, 300) } catch (e) {}
+          if (mr.ok && /"status"\s*:\s*"SUCCESS"/i.test(txt)) groups++
+          else { lastReason = 'send-rejected'; break }
+          await new Promise((r) => setTimeout(r, 400))
+        }
+        if (groups > 0) return { ok: groups === segments.length, reason: groups === segments.length ? undefined : 'partial', groups, campaignId: cid, brand, creatorName: creatorName || undefined, creatorId: creatorId || undefined, via: 'content' }
+      } catch (e) { lastReason = 'exception' }
+    }
+    return { ok: false, reason: lastReason, campaignIds, brand, error: resolveErr || undefined, creatorName: creatorName || undefined, creatorId: creatorId || undefined, via: 'content' }
+  } catch (e) {
+    return { ok: false, reason: 'exception', error: e && e.message ? e.message : String(e), via: 'content' }
+  }
+}
+
 if (!window.__ccScoutListener) {
   window.__ccScoutListener = true
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    // Run the FULL Creator Connections send pipeline (resolve ASIN → campaign →
+    // chat token → send) HERE, in the persistent declared content script, instead
+    // of via chrome.scripting.executeScript. On the connect page an injected
+    // function's fetch/messaging silently dies (no return, no message, no throw —
+    // proven by diagnostics); a real content script's fetch + sendResponse work.
+    if (msg?.type === 'MVP_CC_SEND_INPAGE') {
+      ccSendInPage(msg.payload || {})
+        .then((r) => { try { sendResponse(r) } catch (e) {} })
+        .catch((e) => { try { sendResponse({ ok: false, reason: 'exception', error: (e && e.message) || String(e) }) } catch (e2) {} })
+      return true // async
+    }
     if (msg?.type === 'CC_SCAN') {
       // CC_SCAN powers the EPC library scan ONLY (Affiliate+ uses CC_SMART/CC_FIND).
       // So this reads the "Sponsored Products for Creators" grid: the product, its

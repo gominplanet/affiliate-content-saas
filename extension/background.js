@@ -1151,56 +1151,32 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
         })
         a.probe = pr && pr[0] ? pr[0].result : null
       } catch (e) { a.probeErr = String(e && e.message || e).slice(0, 160) }
-      // RESULT OVER A MESSAGE CHANNEL — not the executeScript return. The
-      // diagnostic proved executeScript hands back an empty result slot for this
-      // promise-returning function on this page (sync probe returns fine, async
-      // does not, no throw). So the injected function ALSO posts its result via
-      // chrome.runtime.sendMessage keyed by this nonce; we take whichever arrives.
-      const nonce = 'mvpcc_' + Date.now() + '_' + Math.random().toString(36).slice(2)
-      let resolveMsg = null
-      const msgP = new Promise((resolve) => { resolveMsg = resolve })
-      const onMsg = (m) => {
-        if (!m || m.nonce !== nonce) return
-        if (m.__mvpCcPing) { a.pings = a.pings || []; a.pings.push(m.phase); return }
-        if (m.__mvpCcSendResult) { try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e) {} resolveMsg(m.result) }
+      // SEND VIA THE PERSISTENT CONTENT SCRIPT, not chrome.scripting.executeScript.
+      // The diagnostics proved an executeScript-injected function on this page can
+      // neither return its async result nor message back (no return, no message, no
+      // throw). content.js is a manifest-declared content script whose chrome.runtime
+      // + first-party fetch actually work here. Message it and await sendResponse,
+      // retrying while the content script is still mounting on the fresh tab.
+      const payload = {
+        asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
+        creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
+        sendTemplate, searchTemplate,
+        MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
+        CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
       }
-      try { chrome.runtime.onMessage.addListener(onMsg) } catch (e) {}
-      let res = null
-      try {
-        res = await chrome.scripting.executeScript({
-          target: { tabId }, world: 'ISOLATED', func: ccResolveSendInPage,
-          args: [{
-            asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
-            creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
-            sendTemplate, searchTemplate, nonce,
-            MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
-            CREATOR: CREATOR_PLACEHOLDER, ACTOR: ACTOR_PLACEHOLDER,
-          }],
-        })
-      } catch (e) {
-        try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e2) {}
-        // A torn-down/navigated frame makes executeScript REJECT (e.g. "Frame was
-        // removed"). Capture it as the real reason instead of a generic exception.
-        a.threw = (e && e.message) ? String(e.message).slice(0, 200) : String(e).slice(0, 200)
-        a.reason = 'exec-threw'
-        diag.attempts.push(a)
-        return { ok: false, reason: 'exec-threw', error: a.threw }
+      let out = null
+      a.viaContent = true
+      for (let i = 0; i < 12 && !out; i++) {
+        try {
+          out = await chrome.tabs.sendMessage(tabId, { type: 'MVP_CC_SEND_INPAGE', payload })
+        } catch (e) {
+          // "Receiving end does not exist" = content.js not injected/ready yet.
+          a.contentErr = String(e && e.message || e).slice(0, 160)
+          await _sleep(700)
+        }
       }
-      a.resLen = Array.isArray(res) ? res.length : (res == null ? 0 : -1)
-      a.hadResult = !!(res && res[0] && res[0].result)
-      try { a.resultKeys = res && res[0] ? Object.keys(res[0]) : null } catch (e) {}
-      try { a.frameErr = res && res[0] && res[0].error ? String(res[0].error).slice(0, 200) : null } catch (e) {}
-      // Prefer the executeScript return if it actually carried a result; otherwise
-      // wait for the in-page message (the work is still running), capped so a truly
-      // dead injection can't hang the send.
-      let out = (res && res[0] && res[0].result) || null
-      if (!out) {
-        a.viaMessage = true
-        out = await Promise.race([msgP, new Promise((r) => setTimeout(() => r(null), 30000))])
-        a.msgArrived = !!out
-      }
-      try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e) {}
-      out = out || { ok: false, reason: 'no-result' }
+      a.contentReplied = !!out
+      out = out || { ok: false, reason: 'no-content-reply' }
       a.reason = out.reason || (out.ok ? 'ok' : 'unknown')
       diag.attempts.push(a)
       // Persist a creator id the in-page step self-discovered from the page, so
@@ -1212,9 +1188,10 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
     }
   }
   try {
-    const empty = (o) => !o || o.reason === 'no-result' || o.reason === 'exec-threw'
-    // A fresh tab per attempt with a growing settle — each one waits for the SPA to
-    // go quiet before injecting, so a retry lands on a calmer page.
+    // Only retry a plumbing failure (tab/content not ready). A real reason from the
+    // send pipeline (no-campaign-for-asin, no-context-token, send-rejected, ok) is
+    // authoritative and must NOT be retried.
+    const empty = (o) => !o || o.reason === 'no-result' || o.reason === 'exec-threw' || o.reason === 'no-content-reply'
     let out = await attempt(1500)
     if (empty(out)) { await _sleep(1200); out = await attempt(3500) }
     if (empty(out)) { await _sleep(1500); out = await attempt(6000) }
