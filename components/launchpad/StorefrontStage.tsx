@@ -76,8 +76,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   // the master video.
   const [skipDub, setSkipDub] = useState<Set<string>>(new Set())
   const [delivering, setDelivering] = useState(false)
-  // True while we hold the upload waiting for the branded thumbnail to render.
-  const [thumbWaiting, setThumbWaiting] = useState(false)
+  // Current phase label for the one-click Upload flow (sign-in → dub → thumbnail → upload).
+  const [phase, setPhase] = useState<string | null>(null)
   // Per-marketplace sign-in / enrollment status from the SCOUT pre-flight.
   const [signin, setSignin] = useState<Record<string, StorefrontMarketStatus>>({})
   const [checking, setChecking] = useState(false)
@@ -255,15 +255,33 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     if (!jobId) return
     setDelivering(true)
     try {
-      // Auto-dub first: generate a voiceover in each non-English market's language
-      // for any market that doesn't already have one, so no storefront ships with
-      // English audio under a translated title. Sequential (each dub is a heavy
-      // translate + TTS + render) and best-effort — a market whose dub fails just
-      // falls back to the master video. Uses the voice you picked (your cloned
-      // voice spends 1 credit per market; the standard voice is free).
-      const needDub = targets.filter(t => t.dub && !t.videoUrl && !skipDub.has(t.domain))
+      // ── 1) SIGN-IN CHECK FIRST ────────────────────────────────────────────
+      // Confirm which marketplaces the creator is signed in + enrolled on before
+      // anything else, so we never spend minutes dubbing a market we can't reach.
+      setPhase('Checking sign-in…')
+      const preMap = await runPreflight(targets.map(t => t.domain))
+      const preKnown = Object.keys(preMap).length > 0
+      const readyDomains = new Set(
+        preKnown ? targets.filter(t => preMap[t.domain] === 'ready').map(t => t.domain) : targets.map(t => t.domain),
+      )
+      // Blocked markets are flagged on their own cards by the sign-in badge that
+      // runPreflight just set (not signed in / not enrolled / unconfirmed).
+      const blocked = preKnown ? targets.filter(t => preMap[t.domain] !== 'ready') : []
+      if (readyDomains.size === 0) {
+        await refreshTargets()
+        toast.error('You’re not signed in to any of these marketplaces yet. Use “Sign in” on each, then retry.')
+        return
+      }
+
+      // ── 2) DUB the ready markets that still need it ───────────────────────
+      // A non-English market with no dub yet is voiced in its own language first,
+      // so no storefront ships English audio under a translated title. Only dub
+      // markets we'll actually upload to. Best-effort: a failed dub falls back to
+      // the master video.
+      const needDub = targets.filter(t => t.dub && !t.videoUrl && !skipDub.has(t.domain) && readyDomains.has(t.domain))
       if (needDub.length > 0) {
         const useClone = !!(voice?.hasVoice && useMyVoice)
+        setPhase(`Dubbing ${needDub.length} ${needDub.length === 1 ? 'market' : 'markets'}…`)
         toast(`Preparing ${needDub.length} ${needDub.length === 1 ? 'dub' : 'dubs'} first — this can take a couple of minutes each.`)
         for (const t of needDub) {
           setDubbing(t.domain)
@@ -279,24 +297,22 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         if (useClone) void refreshVoice()
       }
 
+      // ── 3) THUMBNAIL — make sure one can be ported ────────────────────────
+      setPhase('Getting the thumbnail…')
       const loadQueue = async () => {
         const q = await fetch(`/api/global-sync/deliver/queue?jobId=${jobId}`).then(r => r.json()).catch(() => ({}))
         const arr = Array.isArray(q?.items) ? q.items : []
         // Honor "skip dub": deliver the English master to those markets even if a
-        // dub was generated earlier.
+        // dub was generated earlier. Only keep markets we're signed in on.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return arr.map((i: any) => (skipDub.has(i.domain) && i.masterUrl) ? { ...i, videoUrl: i.masterUrl } : i)
+          .filter((i: { domain: string }) => readyDomains.has(i.domain))
       }
       let items = await loadQueue()
       if (items.length === 0) { toast('Nothing to upload yet — localize the markets first.'); return }
-
-      // Thumbnail gate: MVP renders a branded product thumbnail in the background
-      // after the master is created. If we upload before it's ready, Amazon
-      // attaches its own video-frame thumbnail instead. Wait for it (up to ~2 min),
-      // and only then let the user choose to go with Amazon's auto thumbnail.
       // A thumbnail the caller already made (Launchpad's YouTube step) counts —
-      // fill it into any item the server queue didn't have one for, and let the
-      // gate pass immediately instead of waiting on the background render.
+      // fill it into any item the server queue didn't have one for so the gate
+      // passes immediately instead of waiting on the background render.
       if (presetThumbnailUrl) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         items = items.map((i: any) => i.thumbnailUrl ? i : { ...i, thumbnailUrl: presetThumbnailUrl })
@@ -304,48 +320,22 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const hasThumb = (arr: any[]) => !!presetThumbnailUrl || arr.some((i: { thumbnailUrl?: string | null }) => !!i.thumbnailUrl)
       if (!hasThumb(items)) {
-        setThumbWaiting(true)
-        try {
-          for (let i = 0; i < 24 && !hasThumb(items); i++) { await sleep(5000); items = await loadQueue() }
-        } finally { setThumbWaiting(false) }
+        for (let i = 0; i < 24 && !hasThumb(items); i++) { await sleep(5000); items = await loadQueue() }
         if (!hasThumb(items)) {
           const go = typeof window !== 'undefined' && window.confirm(
             'Your branded thumbnail is still rendering. Upload now and let Amazon use a frame from the video instead?\n\nClick Cancel to wait a bit longer and try again.',
           )
           if (!go) { toast('Held off — try again once the thumbnail has finished rendering.'); return }
-        } else {
-          toast.success('Thumbnail ready — uploading with your branded thumbnail.')
         }
       }
 
-      // Pre-flight FIRST: only upload to marketplaces the creator is signed in +
-      // enrolled on, so a signed-out geo doesn't fail silently in a background tab.
-      const map = await runPreflight(items.map((i: { domain: string }) => i.domain))
-      const known = Object.keys(map).length > 0
-      const ready = known ? items.filter((i: { domain: string }) => map[i.domain] === 'ready') : items
-      const blocked = known ? items.filter((i: { domain: string }) => map[i.domain] !== 'ready') : []
-
-      // Surface the blocked markets in the per-market list so the reason is visible.
-      for (const b of blocked) {
-        const why = map[b.domain] === 'not_signed_in' ? 'Not signed in to this marketplace — sign in and retry.'
-          : map[b.domain] === 'not_enrolled' ? 'Signed in, but not enrolled in this marketplace’s Creator program.'
-          : 'Couldn’t confirm you’re signed in here — open it, sign in, and retry.'
-        await fetch('/api/global-sync/deliver/result', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetId: b.targetId, ok: false, detail: why }),
-        }).catch(() => {})
-      }
-
-      if (ready.length === 0) {
-        await refreshTargets()
-        toast.error('You’re not signed in to any of these marketplaces yet. Use “Sign in” on each, then retry.')
-        return
-      }
+      // ── 4) UPLOAD to the ready geos ───────────────────────────────────────
+      setPhase('Uploading…')
       toast(blocked.length > 0
-        ? `Uploading to ${ready.length} ready ${ready.length === 1 ? 'market' : 'markets'}. ${blocked.length} skipped (not signed in / not enrolled).`
+        ? `Uploading to ${items.length} ready ${items.length === 1 ? 'market' : 'markets'}. ${blocked.length} skipped (not signed in / not enrolled).`
         : 'Uploading to your storefronts… keep this tab open.')
 
-      const res = await requestStorefrontDelivery(ready)
+      const res = await requestStorefrontDelivery(items)
       if (!res.ok && !res.results) { toast.error(res.error || 'Could not reach SCOUT.'); return }
       // Report each outcome so the UI shows delivery state. A duplicate is not a
       // failure — the video is already on that storefront — so mark it present
@@ -368,7 +358,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       toast.success(`Uploaded to ${done} of ${results.length} storefronts${dups > 0 ? ` · ${dups} already there` : ''}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Storefront upload failed')
-    } finally { setDelivering(false) }
+    } finally { setDelivering(false); setPhase(null); setDubbing(null) }
   }
 
   async function refreshTargets() {
@@ -578,7 +568,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
               <button onClick={() => void deliverAll()} disabled={delivering || checking}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
                 style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
-                {thumbWaiting ? <><Loader2 size={15} className="animate-spin" /> Waiting for thumbnail…</> : delivering ? <><Loader2 size={15} className="animate-spin" /> Uploading…</> : <><Upload size={15} /> Upload to all storefronts</>}
+                {delivering ? <><Loader2 size={15} className="animate-spin" /> {phase || 'Working…'}</> : <><Upload size={15} /> Upload to all storefronts</>}
               </button>
             </div>
           </div>
