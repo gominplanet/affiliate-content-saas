@@ -25,6 +25,7 @@ import { type Tier } from '@/lib/tier'
 import { campaignRules } from '@/lib/cc-smart-rules'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import BulkMessageBrandModal, { type BulkCampaign } from '@/components/campaigns/BulkMessageBrandModal'
+import FavoriteBrandsPanel from '@/components/campaigns/FavoriteBrandsPanel'
 import OutreachProfileModal from '@/components/collaborations/OutreachProfileModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 
@@ -786,6 +787,12 @@ export default function CcCampaignsPage() {
           </p>
         </div>
       ) : (<>
+
+      {/* Favorite brands watchlist — track brands, MVP checks them, accept/message
+          every open campaign in a click. */}
+      <div className="mb-5 max-w-2xl">
+        <FavoriteBrandsPanel onChanged={loadStatus} />
+      </div>
 
       {/* Browse (intelligence catalog) vs Smart-Scan (live SCOUT sweep). EPC now
           has its own page in the nav, so it's no longer a tab here. */}

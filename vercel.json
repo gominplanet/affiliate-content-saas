@@ -5,6 +5,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/check-favorite-brands",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/cron/auto-blog",
       "schedule": "0 13 * * *"
     },
