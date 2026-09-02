@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { campaignFullness } from '@/lib/cc-intelligence'
+import { brandMatches, brandLikeToken } from '@/lib/brand-match'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -37,16 +38,17 @@ export async function GET(req: Request) {
 
   const openByKey = new Map<string, number>()
   for (const [key, label] of byKey) {
-    const safe = label.replace(/[%_,]/g, ' ').trim()
-    if (!safe) { openByKey.set(key, 0); continue }
+    const tok = brandLikeToken(label)
+    if (!tok) { openByKey.set(key, 0); continue }
     try {
       const { data } = await sb
         .from('cc_campaign_catalog')
-        .select('available_slot, total_slot')
-        .ilike('brand_name', safe)
-        .limit(500)
+        .select('brand_name, campaign_name, available_slot, total_slot')
+        .or(`brand_name.ilike.%${tok}%,campaign_name.ilike.%${tok}%`)
+        .limit(1000)
       let open = 0
-      for (const c of (data ?? []) as Array<{ available_slot: number | null; total_slot: number | null }>) {
+      for (const c of (data ?? []) as Array<{ brand_name: string | null; campaign_name: string | null; available_slot: number | null; total_slot: number | null }>) {
+        if (!brandMatches(label, c.brand_name, c.campaign_name)) continue
         if (!campaignFullness(c.available_slot, c.total_slot).isFull) open++
       }
       openByKey.set(key, open)

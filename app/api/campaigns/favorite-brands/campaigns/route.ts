@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { campaignFullness } from '@/lib/cc-intelligence'
 import { ccRequestUrl } from '@/lib/cc-urls'
+import { brandMatches, brandLikeToken } from '@/lib/brand-match'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,8 +24,8 @@ export async function GET(req: Request) {
   const url = new URL(req.url)
   const label = (url.searchParams.get('brand') || '').trim()
   const onlyOpen = url.searchParams.get('onlyOpen') !== '0'
-  const safe = label.replace(/[%_,]/g, ' ').trim()
-  if (!safe) return NextResponse.json({ error: 'A brand is required.' }, { status: 400 })
+  const tok = brandLikeToken(label)
+  if (!tok) return NextResponse.json({ error: 'A brand is required.' }, { status: 400 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
@@ -44,12 +45,14 @@ export async function GET(req: Request) {
   const { data } = await sb
     .from('cc_campaign_catalog')
     .select(COLS)
-    .ilike('brand_name', safe)
+    .or(`brand_name.ilike.%${tok}%,campaign_name.ilike.%${tok}%`)
     .order('monthly_sold', { ascending: false, nullsFirst: false })
-    .limit(500)
+    .limit(1000)
 
+  // Precise whole-word brand match on the returned rows (brand OR title), so a
+  // variant/null brand is caught via the title without look-alikes like "Dreamegg".
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const campaigns = ((data ?? []) as any[]).map((r) => {
+  const campaigns = ((data ?? []) as any[]).filter((r) => brandMatches(label, r.brand_name, r.campaign_name)).map((r) => {
     const f = campaignFullness(r.available_slot, r.total_slot)
     return {
       campaignId: r.campaign_id as string,

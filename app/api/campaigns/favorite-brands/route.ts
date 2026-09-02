@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { campaignFullness } from '@/lib/cc-intelligence'
+import { brandMatches, brandLikeToken } from '@/lib/brand-match'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -45,14 +46,18 @@ async function acceptedAsins(sb: any, userId: string): Promise<Set<string>> {
  *  you already grabbed. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function brandCounts(sb: any, label: string, accepted: Set<string>): Promise<{ open: number; joined: number; total: number }> {
-  const safe = label.replace(/[%_,]/g, ' ').trim()
-  if (!safe) return { open: 0, joined: 0, total: 0 }
+  const tok = brandLikeToken(label)
+  if (!tok) return { open: 0, joined: 0, total: 0 }
+  // Broad DB pre-filter (brand OR title contains the token), then a precise
+  // whole-word check in JS so "Dreame" catches variant/null brands via the title
+  // without pulling look-alikes like "Dreamegg".
   const { data } = await sb
     .from('cc_campaign_catalog')
-    .select('rep_asin, available_slot, total_slot')
-    .ilike('brand_name', safe)
-    .limit(500)
-  const rows = Array.isArray(data) ? data : []
+    .select('rep_asin, brand_name, campaign_name, available_slot, total_slot')
+    .or(`brand_name.ilike.%${tok}%,campaign_name.ilike.%${tok}%`)
+    .limit(1000)
+  const rows = (Array.isArray(data) ? data : []).filter((r: { brand_name?: string | null; campaign_name?: string | null }) =>
+    brandMatches(label, r.brand_name, r.campaign_name))
   let open = 0, joined = 0
   for (const r of rows) {
     const asin = String(r.rep_asin || '').toUpperCase()
