@@ -159,14 +159,16 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
         {brands.length > 0 && (
           <button type="button" onClick={() => void refreshAllLive()} disabled={refreshingLive}
             title="Pull the latest campaigns for every favorite brand straight from your Amazon grid"
-            className="ml-auto h-8 px-3 inline-flex items-center gap-1.5 rounded-lg text-[12px] font-semibold border disabled:opacity-50"
-            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
-            {refreshingLive ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh from Amazon
+            className="ml-auto h-9 px-3.5 inline-flex items-center gap-2 rounded-lg text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
+            style={{ background: '#7C3AED' }}>
+            {refreshingLive ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {refreshingLive ? 'Refreshing…' : 'Refresh from Amazon'}
           </button>
         )}
       </div>
       <p className="text-[12px] mb-3" style={{ color: 'var(--text-2)' }}>
         Track the brands you always want in. MVP checks them for you, so you don&apos;t have to watch daily for a full campaign to reopen. Accept or message every open one in a click.
+        {brands.length > 0 && <> Numbers look off versus Amazon? Hit <span style={{ color: 'var(--text)', fontWeight: 600 }}>Refresh from Amazon</span> to pull your live grid.</>}
       </p>
 
       <div className="flex items-center gap-2 mb-3">
