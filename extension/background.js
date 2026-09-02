@@ -888,7 +888,20 @@ async function ccApiReplayOne(tabId, message, campaignId) {
 //      responses[0].addressBook[0].contextValidatorToken.
 //   3) POST /connect/api/chat/message/send {actorName, contextToken, content}.
 function ccResolveSendInPage(opts) {
+  // Early ping so the background can confirm the message channel works AND that
+  // this function actually started — independently of whether any fetch resolves.
+  try { chrome.runtime.sendMessage({ __mvpCcPing: true, nonce: opts && opts.nonce, phase: 'start' }) } catch (e) {}
   const __p = (async () => {
+    // A fetch on this page can HANG in the isolated world (no resolve, no reject),
+    // which silently strands the whole send (no return, no message). Wrap every
+    // fetch with an abort timeout so a stuck request becomes a real, reportable
+    // error instead of an infinite hang.
+    const fetchT = async (url, init, ms) => {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => { try { ctrl.abort() } catch (e) {} }, ms || 12000)
+      try { return await fetch(url, Object.assign({}, init, { signal: ctrl.signal })) }
+      finally { clearTimeout(timer) }
+    }
     try {
       const { asin, segments, campaignIdsHint, headers, sendTemplate, searchTemplate, MSG, CTX, CAMP, CREATOR, ACTOR } = opts
       // creatorId may arrive empty on a brand-new install; self-discover it from the
@@ -942,7 +955,7 @@ function ccResolveSendInPage(opts) {
             nextToken: null, pageNumber: 1, pageSize: 30, creatorId,
             searchOptions: [{ fieldName: 'brandName', searchString: A }, { fieldName: 'campaignName', searchString: A }, { fieldName: 'asin', searchString: A }],
           })
-          const r = await fetch('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body, credentials: 'include' })
+          const r = await fetchT('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body, credentials: 'include' }, 12000)
           const j = await r.json().catch(() => null)
           const ads = (j && j.responses && j.responses[0] && j.responses[0].ads) || []
           const hasAsin = (a) => Array.isArray(a.campaignAsins) && a.campaignAsins.map((x) => String(x).toUpperCase()).includes(A)
@@ -969,7 +982,7 @@ function ccResolveSendInPage(opts) {
       for (const cid of campaignIds) {
         try {
           const sBody = fillId(searchTemplate.split(CAMP).join(cid))
-          const sr = await fetch('/connect/api/chat/search', { method: 'POST', headers: hdr(), body: sBody, credentials: 'include' })
+          const sr = await fetchT('/connect/api/chat/search', { method: 'POST', headers: hdr(), body: sBody, credentials: 'include' }, 12000)
           const sj = await sr.json().catch(() => null)
           const token = findToken(sj)
           if (!token) { lastReason = 'no-context-token'; continue }
@@ -981,7 +994,7 @@ function ccResolveSendInPage(opts) {
             // Substitute the token FIRST, then the message LAST — so a message that
             // happens to contain a placeholder token can't corrupt the body.
             const mBody = fillId(sendTemplate, creatorName).split(CTX).join(jinner(token)).split(MSG).join(jinner(seg))
-            const mr = await fetch('/connect/api/chat/message/send', { method: 'POST', headers: hdr(), body: mBody, credentials: 'include' })
+            const mr = await fetchT('/connect/api/chat/message/send', { method: 'POST', headers: hdr(), body: mBody, credentials: 'include' }, 15000)
             let txt = ''
             try { txt = (await mr.text()).slice(0, 300) } catch (e) {}
             // Only an explicit SUCCESS counts — a 2xx interstitial / throttle page
@@ -1146,7 +1159,11 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
       const nonce = 'mvpcc_' + Date.now() + '_' + Math.random().toString(36).slice(2)
       let resolveMsg = null
       const msgP = new Promise((resolve) => { resolveMsg = resolve })
-      const onMsg = (m) => { if (m && m.__mvpCcSendResult && m.nonce === nonce) { try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e) {} resolveMsg(m.result) } }
+      const onMsg = (m) => {
+        if (!m || m.nonce !== nonce) return
+        if (m.__mvpCcPing) { a.pings = a.pings || []; a.pings.push(m.phase); return }
+        if (m.__mvpCcSendResult) { try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e) {} resolveMsg(m.result) }
+      }
       try { chrome.runtime.onMessage.addListener(onMsg) } catch (e) {}
       let res = null
       try {
