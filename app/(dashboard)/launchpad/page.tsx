@@ -7,9 +7,9 @@
 // (generic voice free; the creator's own voice is the optional upgrade).
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, Check, Youtube, Sparkles, Globe, Rocket, Handshake } from 'lucide-react'
+import { Loader2, Check, Youtube, Sparkles, Globe, Rocket, Handshake, Lock, Upload, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import UploadStage from '@/components/launchpad/UploadStage'
 import StorefrontStage from '@/components/launchpad/StorefrontStage'
@@ -22,10 +22,50 @@ const muted = { color: 'var(--text-2)' } as const
 
 interface Meta { title: string; alternatives: string[]; description: string; tags: string[] }
 
-function Num({ n, done }: { n: number | string; done?: boolean }) {
+type StepState = 'done' | 'active' | 'locked'
+
+/** One row of the vertical stepper: a status node + connecting spine on the left,
+ *  a titled card on the right. Locked steps show a short "unlocks after" hint
+ *  instead of their content, so the whole flow is visible up front. */
+function StepRow({ n, title, icon, state, actions, hint, last, children }: {
+  n: number
+  title: ReactNode
+  icon?: ReactNode
+  state: StepState
+  actions?: ReactNode
+  hint?: string
+  last?: boolean
+  children?: ReactNode
+}) {
+  const done = state === 'done'
+  const active = state === 'active'
+  const locked = state === 'locked'
   return (
-    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[12px] font-bold text-white shrink-0"
-      style={{ background: done ? '#10B981' : '#7C3AED' }}>{done ? <Check size={13} /> : n}</span>
+    <div className="flex gap-3.5">
+      {/* Spine: node + connecting line */}
+      <div className="flex flex-col items-center pt-0.5">
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold shrink-0"
+          style={{
+            background: done ? '#10B981' : active ? '#7C3AED' : 'transparent',
+            color: done || active ? '#fff' : 'var(--text-3)',
+            border: locked ? '1.5px solid var(--border-2)' : 'none',
+            boxShadow: active ? '0 0 0 4px rgba(124,58,237,0.14)' : 'none',
+          }}>
+          {done ? <Check size={16} /> : locked ? <Lock size={13} /> : n}
+        </div>
+        {!last && <div className="w-px flex-1 mt-1.5" style={{ background: 'var(--border-2)', minHeight: 20 }} />}
+      </div>
+      {/* Content */}
+      <div className={`flex-1 min-w-0 ${last ? '' : 'pb-5'}`}>
+        <div className="card p-5" style={locked ? { opacity: 0.65 } : undefined}>
+          <div className="flex items-center justify-between gap-3 flex-wrap" style={{ marginBottom: locked && !hint ? 0 : 12 }}>
+            <h2 className="text-sm font-semibold inline-flex items-center gap-1.5" style={label}>{icon}{title}</h2>
+            {!locked && actions}
+          </div>
+          {locked ? (hint ? <p className="text-[12px]" style={muted}>{hint}</p> : null) : children}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -314,6 +354,14 @@ export default function LaunchpadPage() {
     )
   }
 
+  // Stepper states — every step is visible up front; locked ones show a hint so
+  // the creator sees the whole journey without getting lost.
+  const s1: StepState = renderedUrl ? 'done' : 'active'
+  const s2: StepState = !renderedUrl ? 'locked' : asinOk ? 'done' : 'active'
+  const s3: StepState = !renderedUrl ? 'locked' : (publishedUrl || ytOpen === 'skipped') ? 'done' : 'active'
+  const s4: StepState = !(renderedUrl && asinOk) ? 'locked' : masterId ? 'done' : 'active'
+  const s5: StepState = !masterId ? 'locked' : ccAccepted ? 'done' : 'active'
+
   return (
     <>
       <PageHero
@@ -321,35 +369,41 @@ export default function LaunchpadPage() {
         subtitle="Upload your edited video once. MVP finishes it with the Co-Pilot, publishes to YouTube (optional, CTA burned in), then takes the clean copy to your Amazon storefronts across every geo where the product sells, dubbed for non-English markets."
       />
 
-      <div className="max-w-3xl space-y-5 pb-28">
+      <div className="max-w-3xl pb-28">
         {/* 1. Upload + CTA */}
-        <div className="card p-5">
-          <div className="flex items-center gap-2 mb-3"><Num n={1} done={!!renderedUrl} /><h2 className="text-sm font-semibold" style={label}>Upload your video & design the CTA</h2></div>
+        <StepRow n={1} state={s1} last={false}
+          icon={<Upload size={15} style={{ color: '#7C3AED' }} />}
+          title="Upload your video & design the CTA">
           <UploadStage hidePublish onRendered={(url, title, sourceUrl, dur) => { setRenderedUrl(url); setCleanUrl(sourceUrl); setWorkingTitle(title); setDurationSec(dur || 0); if (!chosenTitle) setChosenTitle(title) }} />
-        </div>
+        </StepRow>
 
-        {renderedUrl && (
-          <>
-            {/* 2. Product ASIN — required for titles + thumbnail */}
-            <div className="card p-5">
-              <div className="flex items-center gap-2 mb-3"><Num n={2} done={asinOk} /><h2 className="text-sm font-semibold" style={label}>Product ASIN</h2></div>
-              <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX or a product link"
-                className="w-full px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: asinOk ? 'var(--border)' : '#e0554b55', color: 'var(--text)' }} />
-              <p className="text-[12px] mt-1.5" style={muted}>Required. MVP uses the product to write every market&apos;s title and build the thumbnail, whether or not you publish to YouTube.</p>
-            </div>
+        {/* 2. Product ASIN — required for titles + thumbnail */}
+        <StepRow n={2} state={s2} last={false}
+          icon={<Package size={15} style={{ color: '#7C3AED' }} />}
+          title="Product ASIN"
+          hint="Unlocks once your video is uploaded.">
+          <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX or a product link"
+            className="w-full px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: asinOk ? 'var(--border)' : '#e0554b55', color: 'var(--text)' }} />
+          <p className="text-[12px] mt-1.5" style={muted}>Required. MVP uses the product to write every market&apos;s title and build the thumbnail, whether or not you publish to YouTube.</p>
+        </StepRow>
 
-            {/* 3. YouTube — optional */}
-            <div className="card p-5">
-              <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-                <div className="flex items-center gap-2"><Num n={3} done={!!publishedUrl || ytOpen === 'skipped'} /><h2 className="text-sm font-semibold" style={label}>Publish to YouTube <span className="font-normal" style={muted}>(optional)</span></h2></div>
-                {ytOpen === 'choose' && (
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => { setYtOpen('prepare'); if (!meta) void prepare() }} className="text-[12px] font-medium px-3 py-1.5 rounded-lg text-white" style={{ background: '#7C3AED' }}>Prepare & publish</button>
-                    <button type="button" onClick={() => setYtOpen('skipped')} className="text-[12px] font-medium px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Skip</button>
-                  </div>
-                )}
-                {ytOpen === 'skipped' && <button type="button" onClick={() => setYtOpen('choose')} className="text-[12px] underline" style={muted}>Changed my mind</button>}
+        {/* 3. YouTube — optional */}
+        <StepRow n={3} state={s3} last={false}
+          icon={<Youtube size={15} style={{ color: '#FF0000' }} />}
+          title={<>Publish to YouTube <span className="font-normal" style={muted}>(optional)</span></>}
+          hint="Unlocks once your video is uploaded."
+          actions={
+            ytOpen === 'choose' ? (
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => { setYtOpen('prepare'); if (!meta) void prepare() }} className="text-[12px] font-medium px-3 py-1.5 rounded-lg text-white" style={{ background: '#7C3AED' }}>Prepare & publish</button>
+                <button type="button" onClick={() => setYtOpen('skipped')} className="text-[12px] font-medium px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Skip</button>
               </div>
+            ) : ytOpen === 'skipped' ? (
+              <button type="button" onClick={() => setYtOpen('choose')} className="text-[12px] underline" style={muted}>Changed my mind</button>
+            ) : undefined
+          }>
+          <>
+              {ytOpen === 'choose' && <p className="text-[12px]" style={muted}>Publish this video to YouTube with the CTA burned in, or skip straight to your Amazon storefronts.</p>}
 
               {ytOpen === 'skipped' && <p className="text-[12px]" style={muted}>Skipping YouTube. Your video goes straight to Amazon below.</p>}
 
@@ -433,62 +487,67 @@ export default function LaunchpadPage() {
                   )}
                 </div>
               )}
-            </div>
+          </>
+        </StepRow>
 
-            {/* 4. Amazon storefronts — the uploaded file is the master */}
-            <div className="card p-5">
-              <div className="flex items-center gap-2 mb-1"><Num n={4} done={!!masterId} /><h2 className="text-sm font-semibold inline-flex items-center gap-1.5" style={label}><Globe size={15} style={{ color: '#0EA5A4' }} /> Amazon storefronts — every geo</h2></div>
-              <p className="text-[12px] mb-3" style={muted}>Take the same video (clean, no CTA) to Amazon. MVP checks where the product is listed across the English markets first (US, Canada, UK, Australia), then the rest (Germany, France, Spain, Italy, Japan). You pick which stores to upload to, and for non-English markets choose one dub option (upload as-is, a standard AI voice, or your own cloned voice with credits). Upload happens through your logged-in Amazon Creator account for each store.</p>
-              {!masterId ? (
-                <button onClick={() => void toStorefronts()} disabled={creatingMaster || !asinOk}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
-                  {creatingMaster ? <><Loader2 size={15} className="animate-spin" /> Checking markets…</> : <><Sparkles size={15} /> Continue to storefronts</>}
-                </button>
-              ) : (
-                <StorefrontStage
-                  presetVideoId={masterId}
-                  presetAsin={asin.trim()}
-                  allowedDomains={geoCheck ? geoCheck.map(g => g.domain) : ['amazon.com']}
-                  defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain) : ['amazon.com']}
-                  geoBadges={geoCheck ? Object.fromEntries(geoCheck.map(g => [g.domain, g.status === 'found' ? 'Product found' : g.status === 'not-listed' ? 'Not listed here' : 'Not confirmed'])) : undefined}
-                  marketAsins={marketAsins}
-                />
-              )}
-            </div>
-
-            {/* 5. Creator Connections (US) — after the uploads, offer to accept a
-                live US campaign for this product right here. */}
-            {masterId && (
-              <div className="card p-5">
-                <div className="flex items-center gap-2 mb-1"><Num n={5} done={ccAccepted} /><h2 className="text-sm font-semibold inline-flex items-center gap-1.5" style={label}><Handshake size={15} style={{ color: '#7C3AED' }} /> Creator Connections (US)</h2></div>
-                <p className="text-[12px] mb-3" style={muted}>See if this product has a live US Creator Connections campaign, and accept it right here to start earning the commission.</p>
-                {!ccCampaign ? (
-                  <button onClick={() => void findCc()} disabled={ccFinding}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
-                    {ccFinding ? <><Loader2 size={15} className="animate-spin" /> Checking…</> : <><Handshake size={15} /> Check Creator Connections</>}
-                  </button>
-                ) : ccCampaign.found ? (
-                  <div className="rounded-xl border p-3.5" style={{ borderColor: 'var(--border)' }}>
-                    <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{ccCampaign.brand || ccCampaign.name || 'Live campaign'}</p>
-                    {ccCampaign.commissionPct != null && <p className="text-[12px]" style={muted}>{ccCampaign.commissionPct}% commission{ccCampaign.status === 'active' ? ' · already accepted' : ''}</p>}
-                    <div className="mt-2.5">
-                      {ccAccepted ? (
-                        <span className="inline-flex items-center gap-1 text-[13px] font-medium" style={{ color: '#10B981' }}><Check size={14} /> Accepted</span>
-                      ) : (
-                        <button onClick={() => void acceptCc()} disabled={ccAccepting || !ccCampaign.detailsUrl}
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
-                          {ccAccepting ? <><Loader2 size={15} className="animate-spin" /> Accepting…</> : <><Handshake size={15} /> Accept campaign</>}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-[13px]" style={muted}>No live US Creator Connections campaign found for this product.</p>
-                )}
-              </div>
+        {/* 4. Amazon storefronts — the uploaded file is the master */}
+        <StepRow n={4} state={s4} last={false}
+          icon={<Globe size={15} style={{ color: '#0EA5A4' }} />}
+          title="Amazon storefronts — every geo"
+          hint="Unlocks once your video is uploaded and the product ASIN is set.">
+          <>
+            <p className="text-[12px] mb-3" style={muted}>Take the same video (clean, no CTA) to Amazon. MVP checks where the product is listed across the English markets first (US, Canada, UK, Australia), then the rest (Germany, France, Spain, Italy, Japan). You pick which stores to upload to, and for non-English markets choose one dub option (upload as-is, a standard AI voice, or your own cloned voice with credits). Upload happens through your logged-in Amazon Creator account for each store.</p>
+            {!masterId ? (
+              <button onClick={() => void toStorefronts()} disabled={creatingMaster || !asinOk}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
+                {creatingMaster ? <><Loader2 size={15} className="animate-spin" /> Checking markets…</> : <><Sparkles size={15} /> Continue to storefronts</>}
+              </button>
+            ) : (
+              <StorefrontStage
+                presetVideoId={masterId}
+                presetAsin={asin.trim()}
+                allowedDomains={geoCheck ? geoCheck.map(g => g.domain) : ['amazon.com']}
+                defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain) : ['amazon.com']}
+                geoBadges={geoCheck ? Object.fromEntries(geoCheck.map(g => [g.domain, g.status === 'found' ? 'Product found' : g.status === 'not-listed' ? 'Not listed here' : 'Not confirmed'])) : undefined}
+                marketAsins={marketAsins}
+              />
             )}
           </>
-        )}
+        </StepRow>
+
+        {/* 5. Creator Connections (US) — after the uploads, offer to accept a
+            live US campaign for this product right here. */}
+        <StepRow n={5} state={s5} last={true}
+          icon={<Handshake size={15} style={{ color: '#7C3AED' }} />}
+          title="Creator Connections (US)"
+          hint="Unlocks once your video is on its way to your storefronts.">
+          <>
+            <p className="text-[12px] mb-3" style={muted}>See if this product has a live US Creator Connections campaign, and accept it right here to start earning the commission.</p>
+            {!ccCampaign ? (
+              <button onClick={() => void findCc()} disabled={ccFinding}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+                {ccFinding ? <><Loader2 size={15} className="animate-spin" /> Checking…</> : <><Handshake size={15} /> Check Creator Connections</>}
+              </button>
+            ) : ccCampaign.found ? (
+              <div className="rounded-xl border p-3.5" style={{ borderColor: 'var(--border)' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{ccCampaign.brand || ccCampaign.name || 'Live campaign'}</p>
+                {ccCampaign.commissionPct != null && <p className="text-[12px]" style={muted}>{ccCampaign.commissionPct}% commission{ccCampaign.status === 'active' ? ' · already accepted' : ''}</p>}
+                <div className="mt-2.5">
+                  {ccAccepted ? (
+                    <span className="inline-flex items-center gap-1 text-[13px] font-medium" style={{ color: '#10B981' }}><Check size={14} /> Accepted</span>
+                  ) : (
+                    <button onClick={() => void acceptCc()} disabled={ccAccepting || !ccCampaign.detailsUrl}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+                      {ccAccepting ? <><Loader2 size={15} className="animate-spin" /> Accepting…</> : <><Handshake size={15} /> Accept campaign</>}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-[13px]" style={muted}>No live US Creator Connections campaign found for this product.</p>
+            )}
+          </>
+        </StepRow>
       </div>
     </>
   )
