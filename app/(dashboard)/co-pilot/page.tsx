@@ -1754,7 +1754,13 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       }
       // needsFaceModel (409): the user hasn't set up a Face Model and asked for
       // a thumbnail WITH a face — surface the full guidance, not a generic error.
-      if (!res.ok) throw new Error((data.message as string) || (data.error as string) || 'Thumbnail generation failed')
+      if (!res.ok) {
+        // Surface the ACTUAL engine reason (gfxFallbackReason) instead of only the
+        // generic "hit a snag", so a persistent failure is diagnosable at a glance.
+        const why = typeof data.gfxFallbackReason === 'string' ? data.gfxFallbackReason.slice(0, 200) : ''
+        const base = (data.message as string) || (data.error as string) || 'Thumbnail generation failed'
+        throw new Error(why && !base.includes(why) ? `${base} (${why})` : base)
+      }
       setCapError(null)
       await applyThumbnailResult(data)
     } catch (err) {
@@ -1830,7 +1836,13 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       }
       // needsFaceModel (409): the user hasn't set up a Face Model and asked for
       // a thumbnail WITH a face — surface the full guidance, not a generic error.
-      if (!res.ok) throw new Error((data.message as string) || (data.error as string) || 'Thumbnail generation failed')
+      if (!res.ok) {
+        // Surface the ACTUAL engine reason (gfxFallbackReason) instead of only the
+        // generic "hit a snag", so a persistent failure is diagnosable at a glance.
+        const why = typeof data.gfxFallbackReason === 'string' ? data.gfxFallbackReason.slice(0, 200) : ''
+        const base = (data.message as string) || (data.error as string) || 'Thumbnail generation failed'
+        throw new Error(why && !base.includes(why) ? `${base} (${why})` : base)
+      }
       setCapError(null)
       await applyThumbnailResult(data)
     } catch (err) {
@@ -3351,6 +3363,8 @@ export default function StudioPage() {
   const [needsAuth, setNeedsAuth] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasGeniuslink, setHasGeniuslink] = useState(false)
+  // Passport (MVP's own geo-routing) makes the Geniuslink nag irrelevant.
+  const [passportEnabled, setPassportEnabled] = useState(false)
   const [userTier, setUserTier] = useState<Tier>('trial')
   const [playlists, setPlaylists] = useState<Array<{ id: string; title: string }>>([])
   // Admin-only: read back the YouTube Studio save requests SCOUT captured, to
@@ -3468,6 +3482,11 @@ export default function StudioPage() {
         setHasGeniuslink(!!intResult.data?.geniuslink_api_key)
         const tier = effectiveTier(intResult.data?.tier as string)
         setUserTier(tier)
+        // Passport on (and the tier can use it) → the creator is geo-routing with
+        // MVP's own links, so the "connect Geniuslink" nag doesn't apply. Read it
+        // from /api/passport (tier-correct) rather than the typed select, since the
+        // column isn't in the generated types yet.
+        fetch('/api/passport').then(r => r.ok ? r.json() : null).then(d => { if (d?.ok) setPassportEnabled(!!d.enabled) }).catch(() => {})
         // Fetch playlists for Pro/admin so the batch-apply panel can populate
         if (tier === 'pro' || tier === 'admin') {
           fetch('/api/youtube/playlists')
@@ -3886,7 +3905,7 @@ export default function StudioPage() {
       )}
 
       {/* Geniuslink warning */}
-      {!needsAuth && !hasGeniuslink && (
+      {!needsAuth && !hasGeniuslink && !passportEnabled && (
         <div className="card p-4 mb-6 flex items-center gap-3 border border-[#ff9500]/30 bg-[#ff9500]/5">
           <AlertCircle size={16} className="text-[#ff9500] flex-shrink-0" />
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex-1">
