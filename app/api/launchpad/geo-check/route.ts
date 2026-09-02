@@ -1,9 +1,9 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// POST /api/launchpad/geo-check — Video Launchpad, Phase 1 (English geos).
-// Given the product ASIN, report where it looks listed across the four
-// English-speaking Amazon marketplaces (US, CA, UK, AU) so the creator can
-// decide which storefronts to upload the video to.
+// POST /api/launchpad/geo-check — Video Launchpad geo research.
+// Given the product ASIN, report where it looks listed across the Amazon
+// marketplaces MVP delivers to (English first, then the non-English geos) so the
+// creator can decide which storefronts to upload the video to.
 //
 // This is a HINT, not a gate: Amazon frequently bot-walls a server-side check
 // from a datacenter IP (403), so we return a 3-state status — 'found' (a real
@@ -19,13 +19,19 @@ import { normalizeTier } from '@/lib/tier'
 export const runtime = 'nodejs'
 export const maxDuration = 30
 
-// The four English-speaking marketplaces. `domain` matches the global-sync /
+// The marketplaces MVP delivers to. `domain` matches the global-sync /
 // storefront-upload marketplace key (no www); `host` is the store host we probe.
-const ENGLISH_GEOS = [
+// English geos first, then the non-English geos (which get a dub downstream).
+const GEOS = [
   { domain: 'amazon.com', host: 'www.amazon.com', code: 'US', country: 'United States' },
   { domain: 'amazon.ca', host: 'www.amazon.ca', code: 'CA', country: 'Canada' },
   { domain: 'amazon.co.uk', host: 'www.amazon.co.uk', code: 'GB', country: 'United Kingdom' },
   { domain: 'amazon.com.au', host: 'www.amazon.com.au', code: 'AU', country: 'Australia' },
+  { domain: 'amazon.de', host: 'www.amazon.de', code: 'DE', country: 'Germany' },
+  { domain: 'amazon.fr', host: 'www.amazon.fr', code: 'FR', country: 'France' },
+  { domain: 'amazon.es', host: 'www.amazon.es', code: 'ES', country: 'Spain' },
+  { domain: 'amazon.it', host: 'www.amazon.it', code: 'IT', country: 'Italy' },
+  { domain: 'amazon.co.jp', host: 'www.amazon.co.jp', code: 'JP', country: 'Japan' },
 ] as const
 
 const CHECK_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
@@ -86,7 +92,7 @@ export async function POST(req: Request) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
-  const geos = await Promise.all(ENGLISH_GEOS.map(async (g) => ({
+  const geos = await Promise.all(GEOS.map(async (g) => ({
     domain: g.domain, code: g.code, country: g.country,
     // The US store is where the source ASIN lives — always listed there.
     status: g.code === 'US' ? 'found' as GeoStatus : await checkGeo(sb, asin, g.host),

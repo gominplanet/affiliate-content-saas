@@ -273,7 +273,7 @@ export default function LaunchpadPage() {
     <>
       <PageHero
         title="Video Launchpad"
-        subtitle="Upload your edited video once. MVP finishes it with the Co-Pilot, publishes to YouTube (optional, CTA burned in), then takes the clean copy to your Amazon storefronts across the English markets."
+        subtitle="Upload your edited video once. MVP finishes it with the Co-Pilot, publishes to YouTube (optional, CTA burned in), then takes the clean copy to your Amazon storefronts across every geo where the product sells, dubbed for non-English markets."
       />
 
       <div className="max-w-3xl space-y-5 pb-28">
@@ -392,8 +392,8 @@ export default function LaunchpadPage() {
 
             {/* 4. Amazon storefronts — the uploaded file is the master */}
             <div className="card p-5">
-              <div className="flex items-center gap-2 mb-1"><Num n={4} done={!!masterId} /><h2 className="text-sm font-semibold inline-flex items-center gap-1.5" style={label}><Globe size={15} style={{ color: '#0EA5A4' }} /> Amazon storefronts — English markets</h2></div>
-              <p className="text-[12px] mb-3" style={muted}>Take the same video (clean, no CTA) to Amazon. MVP checks where the product is listed across the US, Canada, UK and Australia; you pick which stores to upload to. Upload happens through your logged-in Amazon Creator account for each store.</p>
+              <div className="flex items-center gap-2 mb-1"><Num n={4} done={!!masterId} /><h2 className="text-sm font-semibold inline-flex items-center gap-1.5" style={label}><Globe size={15} style={{ color: '#0EA5A4' }} /> Amazon storefronts — every geo</h2></div>
+              <p className="text-[12px] mb-3" style={muted}>Take the same video (clean, no CTA) to Amazon. MVP checks where the product is listed across the English markets first (US, Canada, UK, Australia), then the rest (Germany, France, Spain, Italy, Japan). You pick which stores to upload to, and for non-English markets choose one dub option (upload as-is, a standard AI voice, or your own cloned voice with credits). Upload happens through your logged-in Amazon Creator account for each store.</p>
               {!masterId ? (
                 <button onClick={() => void toStorefronts()} disabled={creatingMaster || !asinOk}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
@@ -403,7 +403,7 @@ export default function LaunchpadPage() {
                 <StorefrontStage
                   presetVideoId={masterId}
                   presetAsin={asin.trim()}
-                  allowedDomains={['amazon.com', 'amazon.ca', 'amazon.co.uk', 'amazon.com.au']}
+                  allowedDomains={geoCheck ? geoCheck.map(g => g.domain) : ['amazon.com']}
                   defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain) : ['amazon.com']}
                   geoBadges={geoCheck ? Object.fromEntries(geoCheck.map(g => [g.domain, g.status === 'found' ? 'Product found' : g.status === 'not-listed' ? 'Not listed here' : 'Not confirmed'])) : undefined}
                 />
