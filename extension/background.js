@@ -1192,9 +1192,13 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
     diag.finalReason = out && out.reason ? out.reason : (out && out.ok ? 'ok' : 'unknown')
     diag.ok = !!(out && out.ok)
     _ccLastSendDiag = diag
+    // Persist — the MV3 service worker sleeps after ~30s idle and wipes in-memory
+    // state, so without this the diagnostic is gone by the time the app reads it.
+    try { chrome.storage.local.set({ ccLastSendDiag: diag }) } catch (e) {}
     return out
   } catch (e) {
     diag.finalReason = 'exception'; diag.error = e && e.message ? e.message : String(e); _ccLastSendDiag = diag
+    try { chrome.storage.local.set({ ccLastSendDiag: diag }) } catch (e) {}
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {
     stopKeepAlive(keepAlive)
@@ -5825,24 +5829,39 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   // Connections and whether a send recipe was learned — so a failed send can be
   // tuned against Amazon's REAL request instead of guessing. Synchronous.
   if (msg.type === 'MVP_CC_DEBUG') {
-    try {
-      const trunc = (s, n) => { const t = typeof s === 'string' ? s : ''; return t.length > n ? t.slice(0, n) + `…(+${t.length - n})` : t }
-      const ring = (_ccNetRing || []).map((r) => ({
-        via: r.via, method: r.method, url: trunc(r.url, 220),
-        headerKeys: Object.keys(r.headers || {}), body: trunc(r.body, 4000), ts: r.ts,
-      }))
-      const summ = (r) => r ? { method: r.method, url: trunc(r.url, 220), headerKeys: Object.keys(r.headers || {}), bodyTemplate: trunc(r.bodyTemplate, 900), learnedAt: r.learnedAt } : null
-      const responses = (_ccRespRing || []).map((r) => ({ url: trunc(r.url, 160), status: r.status, body: trunc(r.body, 6000), ts: r.ts }))
-      sendResponse({
-        ok: true,
-        hasRecipe: !!(_ccSendRecipe && _ccSearchRecipe),
-        recipe: summ(_ccSendRecipe), searchRecipe: summ(_ccSearchRecipe),
-        ringCount: ring.length, ring, responses, creatorId: _ccCreatorId,
-        creatorName: _ccCreatorName || null,
-        lastSend: _ccLastSendDiag,
-      })
-    } catch (e) { sendResponse({ ok: false, error: e && e.message ? e.message : 'debug-failed' }) }
-    return false
+    // The MV3 worker sleeps after ~30s idle and wipes in-memory state, so the last
+    // send's diagnostic (and creatorId) may only survive in storage by the time the
+    // app asks. Read storage as the fallback so the debug is never falsely empty.
+    ;(async () => {
+      try {
+        const trunc = (s, n) => { const t = typeof s === 'string' ? s : ''; return t.length > n ? t.slice(0, n) + `…(+${t.length - n})` : t }
+        const ring = (_ccNetRing || []).map((r) => ({
+          via: r.via, method: r.method, url: trunc(r.url, 220),
+          headerKeys: Object.keys(r.headers || {}), body: trunc(r.body, 4000), ts: r.ts,
+        }))
+        const summ = (r) => r ? { method: r.method, url: trunc(r.url, 220), headerKeys: Object.keys(r.headers || {}), bodyTemplate: trunc(r.bodyTemplate, 900), learnedAt: r.learnedAt } : null
+        const responses = (_ccRespRing || []).map((r) => ({ url: trunc(r.url, 160), status: r.status, body: trunc(r.body, 6000), ts: r.ts }))
+        let lastSend = _ccLastSendDiag
+        let creatorId = _ccCreatorId
+        if (!lastSend || !creatorId) {
+          try {
+            const st = await chrome.storage.local.get(['ccLastSendDiag', 'ccCreatorId'])
+            if (!lastSend && st && st.ccLastSendDiag) lastSend = st.ccLastSendDiag
+            if (!creatorId && st && st.ccCreatorId) creatorId = st.ccCreatorId
+          } catch (e) {}
+        }
+        sendResponse({
+          ok: true,
+          hasRecipe: !!(_ccSendRecipe && _ccSearchRecipe),
+          recipe: summ(_ccSendRecipe), searchRecipe: summ(_ccSearchRecipe),
+          ringCount: ring.length, ring, responses, creatorId,
+          creatorName: _ccCreatorName || null,
+          lastSend: lastSend || null,
+          lastSendFromStorage: (!_ccLastSendDiag && !!lastSend) || undefined,
+        })
+      } catch (e) { sendResponse({ ok: false, error: e && e.message ? e.message : 'debug-failed' }) }
+    })()
+    return true // async response
   }
   // Hand the MVP app the learned send/search recipe TEMPLATES so it can back them
   // up to the creator's account (durable across reinstalls + build switches). We

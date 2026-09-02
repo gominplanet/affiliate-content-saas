@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.27'
+export const SCOUT_LATEST_VERSION = '1.17.28'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Bulk brand messaging waits for Amazon’s connect page to fully settle before sending, instead of firing while it is still loading (which was silently discarding the send). Three settle-and-retry passes, plus deeper per-send diagnostics.'
+  'The per-send diagnostic now persists to storage, so it survives the background worker sleeping between the send and reading it (that is why the debug came back empty). Bulk messaging also waits for Amazon’s connect page to settle before sending.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
