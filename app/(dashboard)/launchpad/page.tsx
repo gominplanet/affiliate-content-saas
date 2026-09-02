@@ -183,10 +183,18 @@ export default function LaunchpadPage() {
           tags: tagList, privacyStatus: 'private',
         }),
       })
-      const j = await r.json().catch(() => ({}))
+      // Read the body as text first so a non-JSON error (a crash / 500 HTML page)
+      // still surfaces its real content instead of a bare "Publish failed".
+      const raw = await r.text().catch(() => '')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let j: any = {}
+      try { j = raw ? JSON.parse(raw) : {} } catch { /* non-JSON response */ }
       if (j.notEnabled) { toast.error("Publishing to YouTube isn't switched on yet — Google is verifying our upload access."); return }
       if (j.reconnectRequired) { toast.error('Reconnect YouTube to grant upload permission, then try again.'); return }
-      if (!r.ok || !j.videoId || !j.url) throw new Error(j.error || 'Publish failed')
+      if (!r.ok || !j.videoId || !j.url) {
+        const detail = j.error || (raw ? raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) : '') || `HTTP ${r.status}`
+        throw new Error(detail)
+      }
       setPublishedUrl(j.url)
 
       // 2) Apply the finishing pass — thumbnail + publish options + final privacy —

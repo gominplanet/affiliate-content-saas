@@ -27,6 +27,18 @@ export const maxDuration = 300
 const MAX_BYTES = 500 * 1024 * 1024
 
 export async function POST(request: Request) {
+  try {
+    return await handleUpload(request)
+  } catch (e) {
+    // Guarantee a JSON error on ANY uncaught crash so the client shows a real
+    // reason instead of a bare "Publish failed" from a 500 HTML page.
+    const msg = (e instanceof Error && e.message) ? e.message : 'Upload crashed.'
+    console.error('[upload-video] uncaught:', msg)
+    return NextResponse.json({ error: `Publish failed: ${msg}` }, { status: 500 })
+  }
+}
+
+async function handleUpload(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -86,10 +98,14 @@ export async function POST(request: Request) {
     }).catch(() => {})
     return NextResponse.json({ ok: true, videoId: id, url: `https://youtube.com/watch?v=${id}` })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'YouTube upload failed.'
+    // Never return an empty reason (a thrown Error with no message became a bare
+    // "Publish failed" on the client). Fall back to a stringified error.
+    const msg = (e instanceof Error && e.message) ? e.message
+      : (typeof e === 'string' && e) ? e
+      : (() => { try { return JSON.stringify(e) } catch { return '' } })() || 'YouTube upload failed.'
     const reconnectRequired = /403|insufficient|insufficientPermissions|scope/i.test(msg)
     return NextResponse.json({
-      error: reconnectRequired ? 'Reconnect YouTube to grant upload permission, then try again.' : msg,
+      error: reconnectRequired ? 'Reconnect YouTube to grant upload permission, then try again.' : `YouTube upload failed: ${msg}`,
       reconnectRequired,
     }, { status: reconnectRequired ? 412 : 502 })
   }
