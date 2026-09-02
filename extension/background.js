@@ -1116,8 +1116,19 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
       try { const t2 = await chrome.tabs.get(tabId); if (t2 && t2.url) a.finalUrl = String(t2.url).slice(0, 160) } catch (e) {}
       let res = null
       try {
+        // ISOLATED world (the extension's own realm) — NOT MAIN. The connect page
+        // is a heavy SPA that client-navigates and re-renders after load (the
+        // diagnostic caught the tab drifting status=active → status=opportunity
+        // mid-send). That churn tears down / replaces the MAIN-world realm while
+        // our async fetches are in flight, so the returned promise is silently
+        // lost and Chrome hands back a result slot with `result: undefined`
+        // (resLen 1, hadResult false, no throw — exactly what we saw). The
+        // isolated realm survives the page's own JS churn, so the promise resolves
+        // and the result comes back. Same-origin fetch here still carries the
+        // creator's Amazon cookies (host_permissions), and the function uses no
+        // MAIN-only page globals.
         res = await chrome.scripting.executeScript({
-          target: { tabId }, world: 'MAIN', func: ccResolveSendInPage,
+          target: { tabId }, world: 'ISOLATED', func: ccResolveSendInPage,
           args: [{
             asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
             creatorId: _ccCreatorId, creatorName: _ccCreatorName || '', headers: sendHeaders,
