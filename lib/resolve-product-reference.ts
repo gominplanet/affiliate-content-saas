@@ -32,6 +32,25 @@ import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { resolveFinalUrl, firstProductUrl } from '@/lib/product-link'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { fetchProductImageFromPage, fetchProductGalleryFromPage } from '@/services/research'
+import { passportCodeFromUrl } from '@/lib/passport-links'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+/** Resolve a Passport short link (mvpl.ink/<code> or /go/<code>) to its ASIN via
+ *  our own DB — the geo-routing redirect can't be followed server-side (it keys
+ *  off the visitor's country header), but the code maps straight to a product. */
+async function passportAsinFromUrl(url: string | null | undefined): Promise<string | null> {
+  const code = passportCodeFromUrl(url)
+  if (!code) return null
+  try {
+    const admin = createAdminClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (admin as any)
+      .from('passport_links').select('asin, destination_url').eq('code', code).maybeSingle()
+    if (data?.asin && /^[A-Z0-9]{10}$/i.test(String(data.asin))) return String(data.asin).toUpperCase()
+    if (data?.destination_url) return extractAsin(String(data.destination_url).toUpperCase())
+  } catch { /* no admin key / not found → fall through */ }
+  return null
+}
 
 /** Signals the caller already has — pass everything available; the
  *  resolver decides what to use. Missing fields are fine. */
@@ -125,7 +144,14 @@ export async function resolveProductReference(
   if (input.description) {
     pageUrl = firstProductUrl(input.description, input.wordpressUrl ?? null)
     console.log(`${tag} step:pageUrl-from-description`, { pageUrl: pageUrl?.slice(0, 200) ?? null })
-    if (pageUrl && /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
+    // Passport link (mvpl.ink/<code> or /go/<code>) → resolve code→ASIN in our DB.
+    // The redirect itself is geo-routed and can't be followed server-side, so we
+    // never reach the product page; the DB lookup gets us the ASIN directly.
+    if (!asin && pageUrl) {
+      const ppAsin = await passportAsinFromUrl(pageUrl)
+      if (ppAsin) { asin = ppAsin; console.log(`${tag} step:asin-from-passport`, { asin }) }
+    }
+    if (!asin && pageUrl && /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
       const before = pageUrl
       try {
         pageUrl = await resolveFinalUrl(pageUrl)

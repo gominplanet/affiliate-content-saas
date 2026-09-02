@@ -83,6 +83,32 @@ export function passportLinkUrl(code: string): string {
   return `${app}/go/${code}`
 }
 
+/** Extract a Passport link CODE from a URL, or null if it isn't one. Recognizes
+ *  both shapes: the branded short domain at the root (www.mvpl.ink/<code>) and
+ *  the app-origin fallback (/go/<code>). Used to resolve a pasted Passport link
+ *  back to its product without following the geo-routing redirect. */
+export function passportCodeFromUrl(raw: string | null | undefined): string | null {
+  const s = (raw || '').trim()
+  if (!s) return null
+  let u: URL
+  try { u = new URL(s) } catch { return null }
+  const host = u.hostname.toLowerCase().replace(/^www\./, '')
+  const codeRe = /^([A-Za-z0-9]{4,16})$/
+  // /go/<code> on any host (the app-origin fallback shape).
+  const go = u.pathname.match(/^\/go\/([A-Za-z0-9]{4,16})\/?$/)
+  if (go) return go[1]
+  // Branded short domain (from env, else the known mvpl.ink): code at the root.
+  let brandedHost = ''
+  try { brandedHost = new URL(passportLinkBase()).hostname.toLowerCase().replace(/^www\./, '') } catch { /* ignore */ }
+  const isBranded = host === 'mvpl.ink' || (!!brandedHost && host === brandedHost)
+  if (isBranded) {
+    const seg = u.pathname.replace(/^\/+/, '').replace(/\/+$/, '')
+    const m = seg.match(codeRe)
+    if (m) return m[1]
+  }
+  return null
+}
+
 /** Normalize a visitor country header to an alpha-2 key we map on. UK → GB. */
 export function normalizeCountry(raw: string | null | undefined): string {
   const c = (raw || '').trim().toUpperCase()
