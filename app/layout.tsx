@@ -87,6 +87,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             />
           </>
         )}
+        {/* Meta (Facebook) Pixel — for the Meta ads driving to the sales pages.
+            Production-only so dev/preview PageViews don't pollute the pixel's
+            audience + conversion data. Loads site-wide (like Rewardful above) so
+            it fires on the landing/sales pages AND captures conversion events. */}
+        {process.env.NODE_ENV === 'production' && (
+          <>
+            <Script id="meta-pixel" strategy="afterInteractive">{`
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '301488807119194');
+fbq('track', 'PageView');
+            `}</Script>
+            <noscript>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img height="1" width="1" style={{ display: 'none' }} alt="" src="https://www.facebook.com/tr?id=301488807119194&ev=PageView&noscript=1" />
+            </noscript>
+          </>
+        )}
         {/* Default theme flipped to 'dark' for the V2 dashboard chrome
             (task #143). next-themes persists the user choice in
             localStorage, so anyone who toggled to a specific theme
