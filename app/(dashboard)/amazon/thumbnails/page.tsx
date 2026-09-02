@@ -12,7 +12,7 @@ import { Sparkles, Download, Loader2, User, Package, AlertCircle, Wand2 } from '
 import PageExplainer from '@/components/amazon/PageExplainer'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 
-interface FaceModel { id: string; name: string }
+interface FaceModel { id: string; name: string; outfit_pref?: string | null }
 
 export default function AmazonThumbnailsPage() {
   const [product, setProduct] = useState('')
@@ -20,6 +20,7 @@ export default function AmazonThumbnailsPage() {
   const [mode, setMode] = useState<'face' | 'product'>('face')
   const [faces, setFaces] = useState<FaceModel[]>([])
   const [faceId, setFaceId] = useState<string>('')
+  const [outfit, setOutfit] = useState('')
   const [loadingFaces, setLoadingFaces] = useState(true)
 
   const [busy, setBusy] = useState(false)
@@ -35,9 +36,9 @@ export default function AmazonThumbnailsPage() {
         const data = await res.json().catch(() => ({}))
         const ready = (data.models || [])
           .filter((m: { status?: string }) => m.status === 'ready')
-          .map((m: { id: string; name: string }) => ({ id: m.id, name: m.name }))
+          .map((m: { id: string; name: string; outfit_pref?: string | null }) => ({ id: m.id, name: m.name, outfit_pref: m.outfit_pref ?? null }))
         setFaces(ready)
-        if (ready.length > 0) setFaceId(ready[0].id)
+        if (ready.length > 0) { setFaceId(ready[0].id); setOutfit(ready[0].outfit_pref || '') }
         else setMode('product')
       } catch { /* leave empty */ }
       finally { setLoadingFaces(false) }
@@ -53,12 +54,30 @@ export default function AmazonThumbnailsPage() {
     } catch { /* no query param */ }
   }, [])
 
+  // The outfit field is the face's saved wardrobe. Persist any edit to the face
+  // before generating, so the render (which reads the saved value) uses it and the
+  // choice sticks for next time. Best-effort — never blocks generation.
+  const saveOutfitIfDirty = useCallback(async () => {
+    if (mode !== 'face' || !faceId) return
+    const face = faces.find(f => f.id === faceId)
+    const next = outfit.trim()
+    if (!face || next === (face.outfit_pref || '')) return
+    try {
+      await fetch(`/api/face-models/${faceId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outfitPref: next }),
+      })
+      setFaces(prev => prev.map(f => f.id === faceId ? { ...f, outfit_pref: next || null } : f))
+    } catch { /* best-effort */ }
+  }, [mode, faceId, faces, outfit])
+
   const generate = useCallback(async () => {
     const raw = product.trim()
     if (!raw) { setError('Paste an Amazon product link or ASIN first.'); return }
     if (mode === 'face' && !faceId) { setError('Pick a face, or switch to Product only.'); return }
 
     setBusy(true); setError(null); setResult(null); setStatus('Designing your thumbnail…')
+    await saveOutfitIfDirty()
 
     const isUrl = /^https?:\/\//i.test(raw)
     const isAsin = /^[A-Z0-9]{10}$/i.test(raw)
@@ -94,7 +113,7 @@ export default function AmazonThumbnailsPage() {
     } finally {
       setBusy(false); setStatus('')
     }
-  }, [product, headline, mode, faceId, question])
+  }, [product, headline, mode, faceId, question, saveOutfitIfDirty])
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -164,13 +183,37 @@ export default function AmazonThumbnailsPage() {
                 No face yet. <Link href="/photobooth" className="text-[#d97706] font-semibold hover:underline">Upload your selfies</Link> to put yourself in the thumbnail, or use Product only.
               </p>
             ) : (
-              <select
-                value={faceId}
-                onChange={e => setFaceId(e.target.value)}
-                className="px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
-              >
-                {faces.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </select>
+              <div className="flex flex-col gap-2.5">
+                <select
+                  value={faceId}
+                  onChange={e => {
+                    const id = e.target.value
+                    setFaceId(id)
+                    // Load the picked face's saved wardrobe into the field.
+                    setOutfit(faces.find(f => f.id === id)?.outfit_pref || '')
+                  }}
+                  className="px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                >
+                  {faces.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+
+                {/* Wardrobe — pins the outfit so you always appear the same way.
+                    Saved to this face and reused everywhere. */}
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>Outfit <span className="font-normal" style={{ color: 'var(--text-soft)' }}>— optional, keeps you in the same clothing</span></span>
+                  <input
+                    value={outfit}
+                    onChange={e => setOutfit(e.target.value)}
+                    onBlur={() => { void saveOutfitIfDirty() }}
+                    placeholder="e.g. a white lab coat"
+                    maxLength={120}
+                    className="px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#d97706]"
+                  />
+                  <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>
+                    Leave blank to let the Art Director vary it. Saved to this face for next time.
+                  </span>
+                </label>
+              </div>
             )
           )}
         </div>
