@@ -84,20 +84,37 @@ export class OpenAIService {
     const files = await Promise.all(
       opts.images.map(i => toFile(Buffer.from(i.data), i.filename, { type: i.mime })),
     )
-    const res = await this.client.images.edit({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      model: model as any,
-      image: files,
-      prompt: opts.prompt,
-      size: opts.size ?? '1536x1024',
-      quality: opts.quality ?? 'high',
-      ...(opts.background ? { background: opts.background, output_format: 'png' } : {}),
-      n: 1,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)
-    const b64 = res.data?.[0]?.b64_json
-    if (!b64) throw new Error(`${model} returned no image data`)
-    return b64
+    // Retry transient failures (rate limit / overload / 5xx) with backoff. gpt-image
+    // gets rate-limited under load; a single try surfaced those as a hard "snag".
+    // Content-policy (400) and access (401/403) errors are NOT transient — fail fast.
+    let lastErr: unknown = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await this.client.images.edit({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          model: model as any,
+          image: files,
+          prompt: opts.prompt,
+          size: opts.size ?? '1536x1024',
+          quality: opts.quality ?? 'high',
+          ...(opts.background ? { background: opts.background, output_format: 'png' } : {}),
+          n: 1,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+        const b64 = res.data?.[0]?.b64_json
+        if (!b64) throw new Error(`${model} returned no image data`)
+        return b64
+      } catch (err) {
+        lastErr = err
+        const status = (err as { status?: number })?.status
+        const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+        const transient = status === 429 || (typeof status === 'number' && status >= 500)
+          || /rate limit|overloaded|timeout|temporarily|try again/.test(msg)
+        if (!transient || attempt === 3) throw err
+        await new Promise(r => setTimeout(r, attempt * 2000))
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(`${model} image edit failed`)
   }
 
   /** Resolve which image model is in effect (env-overridable). */

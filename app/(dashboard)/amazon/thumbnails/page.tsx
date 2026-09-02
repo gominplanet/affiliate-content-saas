@@ -80,7 +80,11 @@ export default function AmazonThumbnailsPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        throw new Error((data.message as string) || (data.error as string) || 'Generation failed. Try again.')
+        // Surface the ACTUAL engine reason so a persistent failure is diagnosable
+        // rather than a generic "snag".
+        const why = typeof data.gfxFallbackReason === 'string' ? data.gfxFallbackReason.slice(0, 220) : ''
+        const base = (data.message as string) || (data.error as string) || 'Generation failed. Try again.'
+        throw new Error(why && !base.includes(why) ? `${base} (${why})` : base)
       }
       const url = (Array.isArray(data.thumbnailUrls) && data.thumbnailUrls[0]) || data.thumbnailUrl
       if (!url) throw new Error('No thumbnail came back. Try again.')
