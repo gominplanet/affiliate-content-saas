@@ -93,8 +93,11 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
     } finally { setRefreshingLive(false) }
   }, [brands, load, onChanged])
 
-  const fetchOpen = useCallback(async (label: string): Promise<BrandCampaign[]> => {
-    const d = await fetch(`/api/campaigns/favorite-brands/campaigns?brand=${encodeURIComponent(label)}&onlyOpen=1`).then(r => r.json()).catch(() => ({}))
+  // onlyOpen=true → just the campaigns with a free slot (used for Accept all, since you
+  // can't join a full one). onlyOpen=false → every campaign for the brand you haven't
+  // already joined, full or not, so you can still message a brand whose slots are full.
+  const fetchCampaigns = useCallback(async (label: string, onlyOpen = true): Promise<BrandCampaign[]> => {
+    const d = await fetch(`/api/campaigns/favorite-brands/campaigns?brand=${encodeURIComponent(label)}&onlyOpen=${onlyOpen ? '1' : '0'}`).then(r => r.json()).catch(() => ({}))
     return Array.isArray(d?.campaigns) ? d.campaigns : []
   }, [])
 
@@ -102,7 +105,7 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
     setBusy(b.brand)
     const tId = `fav-accept-${b.brand}`
     try {
-      const list = (await fetchOpen(b.label)).filter(c => !!c.repAsin && !!c.detailsUrl)
+      const list = (await fetchCampaigns(b.label, true)).filter(c => !!c.repAsin && !!c.detailsUrl)
       if (list.length === 0) { toast(`No open ${b.label} campaigns right now.`); return }
       let joined = 0, already = 0, failed = 0, done = 0
       toast.loading(`Accepting 0 of ${list.length}…`, { id: tId, duration: Infinity })
@@ -127,19 +130,21 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
       // Refresh the watchlist so the open count drops by what we just joined.
       await load()
     } finally { setBusy(null) }
-  }, [fetchOpen, onChanged, load])
+  }, [fetchCampaigns, onChanged, load])
 
   const messageAll = useCallback(async (b: FavBrand) => {
     setBusy(b.brand)
     try {
-      const list = (await fetchOpen(b.label)).filter(c => !!c.repAsin && !!c.detailsUrl)
-      if (list.length === 0) { toast(`No open ${b.label} campaigns to message.`); return }
+      // Message every campaign for the brand you haven't already joined — full ones
+      // included, so you can get on the brand's radar before a slot reopens.
+      const list = (await fetchCampaigns(b.label, false)).filter(c => !!c.repAsin && !!c.detailsUrl)
+      if (list.length === 0) { toast(`No ${b.label} campaigns to message right now.`); return }
       setMsgCampaigns(list.map(c => ({
         campaignId: c.campaignId, product: c.name || c.repAsin || '', asin: c.repAsin || '',
         brand: c.brand, detailsUrl: c.detailsUrl, commissionPct: c.commissionPct,
       })))
     } finally { setBusy(null) }
-  }, [fetchOpen])
+  }, [fetchCampaigns])
 
   return (
     <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
@@ -202,7 +207,8 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
                 className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50" style={{ background: '#34c759' }}>
                 {busy === b.brand ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />} Accept all
               </button>
-              <button type="button" onClick={() => void messageAll(b)} disabled={busy === b.brand || b.openCount === 0}
+              <button type="button" onClick={() => void messageAll(b)} disabled={busy === b.brand || (b.totalCount - b.joinedCount) <= 0}
+                title="Message every campaign for this brand you haven't joined — full ones included, so you're on their radar when a slot reopens"
                 className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg text-[12px] font-semibold border disabled:opacity-50"
                 style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
                 <MessageCircle size={13} /> Message all
