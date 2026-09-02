@@ -18,8 +18,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage, verifyProductMatchConsensus, verifyNoBrandLeak } from '@/lib/product-image'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
-import { asinFromAmazonUrl, firstProductUrl, allProductUrls } from '@/lib/product-link'
+import { asinFromAmazonUrl, allProductUrls } from '@/lib/product-link'
 import { generateArtDirectorPin, generateArtDirectorCollagePin } from '@/lib/art-director-pin'
+import { resolveProductReference } from '@/lib/resolve-product-reference'
 
 export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
 export const COMPLIANCE_TAGS = '#ad #affiliate'
@@ -156,74 +157,50 @@ Return ONLY valid JSON with these exact keys:
   // scrape the product link → the article's own hero image. Single-product
   // scenes only; the multi-product collage stays name-grounded.
   let referenceImageUrl: string | null = null
-  if ((opts?.aiScene || opts?.artDirector) && ctx.userId && p.video_id && !useCollage) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: vid } = await (createAdminClient() as any)
-        .from('youtube_videos')
-        .select('product_image_url, product_url')
-        .eq('id', p.video_id)
-        .maybeSingle()
-      referenceImageUrl = (vid?.product_image_url as string | null)?.trim() || null
-      if (!referenceImageUrl && vid?.product_url) {
-        const url = String(vid.product_url)
-        // Try the raw link first; if it's a Geniuslink/short link (geni.us,
-        // amzn.to, a.co…) the ASIN isn't in the URL, so follow it to its true
-        // Amazon destination and read the ASIN there. resolveTrueDestination
-        // uses MVP's bot UA — this is link RESOLUTION, never a counted click.
-        let asin = asinFromAmazonUrl(url) || extractAsin(url.toUpperCase())
-        if (!asin) {
-          try {
-            const finalUrl = await resolveTrueDestination(url)
-            asin = asinFromAmazonUrl(finalUrl) || extractAsin(finalUrl.toUpperCase())
-          } catch { /* couldn't unwrap — leave asin null */ }
+  if ((opts?.aiScene || opts?.artDirector) && ctx.userId && !useCollage) {
+    // The linked video's stored product photo wins outright (already a clean real
+    // product image), else resolve through the SHARED resolver.
+    let videoProductUrl: string | null = null
+    let videoTitle: string | null = null
+    if (p.video_id) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: vid } = await (createAdminClient() as any)
+          .from('youtube_videos').select('product_image_url, product_url, title').eq('id', p.video_id).maybeSingle()
+        referenceImageUrl = (vid?.product_image_url as string | null)?.trim() || null
+        videoProductUrl = (vid?.product_url as string | null) || null
+        videoTitle = (vid?.title as string | null) || null
+      } catch { /* no video row — resolve from the post below */ }
+    }
+    // Route through resolveProductReference — the SAME resolver the thumbnail
+    // generator uses. It follows Geniuslink/short links AND our own Passport links
+    // (mvpl.ink/<code> → ASIN in the DB), retries Amazon's bot block, and
+    // vision-picks the cleanest photo. This is what makes the auto pin ground on
+    // the real product and take the designed Art Director graphic, instead of
+    // falling to the generic photo-scene + text-overlay path.
+    if (!referenceImageUrl) {
+      try {
+        let body = String(p.content || '') || String(p.excerpt || '')
+        if (!/https?:\/\//i.test(body) && p.wordpress_url) {
+          const html = await fetch(String(p.wordpress_url), {
+            headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000),
+          }).then((r) => (r.ok ? r.text() : '')).catch(() => '')
+          if (html) body = html
         }
-        if (asin) {
-          try {
-            const prod = await fetchAmazonProduct(asin)
-            const picked = await pickProductReferenceImage(prod.images, prod.title, { userId: ctx.userId })
-            referenceImageUrl = (typeof picked === 'string' ? picked : null) || prod.imageUrl || null
-          } catch { /* scrape failed — fall through */ }
-        }
-      }
-    } catch { /* no video row — fall through */ }
-  }
-
-  // Fallback: no linked video (guides, comparisons, link-only posts) OR the
-  // video row had no product. EVERY MVP post carries the reviewed product's
-  // affiliate link in its body (direct Amazon, a short link, or a Geniuslink),
-  // so read the product straight off the POST itself — no video required.
-  // Prefer the stored article HTML; fall back to fetching the live permalink.
-  // Follows short/geni.us links to their true Amazon destination to read the
-  // ASIN, then grounds the pin on the real product photo. Best-effort: any
-  // failure just leaves referenceImageUrl null (text-to-image, no QC).
-  if ((opts?.aiScene || opts?.artDirector) && ctx.userId && !referenceImageUrl && !useCollage) {
-    try {
-      let body = String(p.content || '') || String(p.excerpt || '')
-      if (!/https?:\/\//i.test(body) && p.wordpress_url) {
-        // No links in the stored body → pull the published page. WP posts
-        // linking out to the product live behind a permalink we can read.
-        const html = await fetch(String(p.wordpress_url), {
-          headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000),
-        }).then((r) => (r.ok ? r.text() : '')).catch(() => '')
-        if (html) body = html
-      }
-      const productUrl = firstProductUrl(body, (p.wordpress_url as string | null) ?? null)
-      if (productUrl) {
-        let asin = asinFromAmazonUrl(productUrl) || extractAsin(productUrl.toUpperCase())
-        if (!asin) {
-          try {
-            const finalUrl = await resolveTrueDestination(productUrl)
-            asin = asinFromAmazonUrl(finalUrl) || extractAsin(finalUrl.toUpperCase())
-          } catch { /* couldn't unwrap — leave asin null */ }
-        }
-        if (asin) {
-          const prod = await fetchAmazonProduct(asin)
-          const picked = await pickProductReferenceImage(prod.images, prod.title, { userId: ctx.userId })
-          referenceImageUrl = (typeof picked === 'string' ? picked : null) || prod.imageUrl || null
-        }
-      }
-    } catch { /* couldn't resolve from the post — fall through */ }
+        const description = [videoProductUrl, body].filter(Boolean).join('\n') || null
+        const ref = await resolveProductReference({
+          title: videoTitle || (p.title as string | null) || null,
+          description,
+          asin: null,
+          wordpressUrl: (p.wordpress_url as string | null) ?? null,
+          traceTag: `[pin:${String(p.id ?? 'nopost').slice(0, 8)}]`,
+          userId: ctx.userId,
+          tier: ctx.tier ?? null,
+          fastImage: true,
+        })
+        referenceImageUrl = ref.productImageUrl
+      } catch { /* couldn't resolve — falls to the photo scene below */ }
+    }
   }
   // IMPORTANT: do NOT fall back to the article's own featured/thumbnail image as
   // the grounding reference. For MVP those are AI-GENERATED hero scenes (not a
