@@ -83,17 +83,30 @@ export async function POST(req: Request) {
 
   // Fire-and-forget enrichment. Best-effort: the dub route re-transcribes on
   // demand if this doesn't finish, and the thumbnail isn't on the critical path.
+  //
+  // Thumbnails, per market:
+  //   • English storefronts use thumbnail_url = the creator's own YouTube-step
+  //     thumbnail (seedThumb). We NEVER overwrite it here — that was the bug where
+  //     English got a different, regenerated image. Only regenerate the with-text
+  //     one when the creator skipped the YouTube step (no seed).
+  //   • Non-English storefronts use thumbnail_clean_url — a wordless variant so no
+  //     English hook sits on the image (withText:false). deliver/queue falls back
+  //     to the with-text one if the clean variant isn't ready, so a market is
+  //     never left blank.
   void (async () => {
     try {
-      const [t, thumb] = await Promise.allSettled([
+      const [t, cleanThumb, textThumb] = await Promise.allSettled([
         (async () => transcriptionConfigured() ? cuesToText(await transcribeToCues(videoUrl)).slice(0, 20000) : '')(),
-        buildProductThumbnail(sb, { userId: user.id, tier, title, asin }),
+        buildProductThumbnail(sb, { userId: user.id, tier, title, asin, withText: false }),
+        seedThumb ? Promise.resolve(null) : buildProductThumbnail(sb, { userId: user.id, tier, title, asin }),
       ])
-      const transcript = t.status === 'fulfilled' ? t.value : ''
-      const thumbnailUrl = thumb.status === 'fulfilled' ? thumb.value : null
       const patch: Record<string, unknown> = {}
+      const transcript = t.status === 'fulfilled' ? t.value : ''
       if (transcript) patch.transcript = transcript
-      if (thumbnailUrl) patch.thumbnail_url = thumbnailUrl
+      const clean = cleanThumb.status === 'fulfilled' ? cleanThumb.value : null
+      if (clean) patch.thumbnail_clean_url = clean
+      const text = textThumb.status === 'fulfilled' ? textThumb.value : null
+      if (!seedThumb && text) patch.thumbnail_url = text // only when the creator skipped YouTube
       if (Object.keys(patch).length) await sb.from('youtube_videos').update(patch).eq('id', row.id)
     } catch { /* best-effort */ }
   })()
