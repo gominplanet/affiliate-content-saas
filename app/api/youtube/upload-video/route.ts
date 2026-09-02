@@ -23,7 +23,8 @@ import { recordReachSample } from '@/lib/reach-pulse'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-const MAX_BYTES = 300 * 1024 * 1024
+// Matches the Launchpad UI upload cap + the Supabase bucket per-file limit (500MB).
+const MAX_BYTES = 500 * 1024 * 1024
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -60,9 +61,9 @@ export async function POST(request: Request) {
     const res = await fetch(videoUrl)
     if (!res.ok) throw new Error(`fetch ${res.status}`)
     const len = Number(res.headers.get('content-length') || 0)
-    if (len && len > MAX_BYTES) return NextResponse.json({ error: 'Video is over 300MB.' }, { status: 400 })
+    if (len && len > MAX_BYTES) return NextResponse.json({ error: 'Video is over 500MB.' }, { status: 400 })
     const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.byteLength > MAX_BYTES) return NextResponse.json({ error: 'Video is over 300MB.' }, { status: 400 })
+    if (buf.byteLength > MAX_BYTES) return NextResponse.json({ error: 'Video is over 500MB.' }, { status: 400 })
     bytes = new Uint8Array(buf)
   } catch (e) {
     return NextResponse.json({ error: `Couldn't read the video: ${e instanceof Error ? e.message : 'unknown'}` }, { status: 502 })
