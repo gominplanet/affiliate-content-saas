@@ -683,6 +683,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   /** Optional creator-pasted product link — guarantees MVP renders the exact
    *  product (Amazon / geni.us / store URL). Sent on every generate path. */
   const [productUrl, setProductUrl] = useState('')
+  /** When a product is already detected for the video, the paste box is hidden
+   *  behind this toggle — the creator only reveals it to override the detection. */
+  const [overrideProduct, setOverrideProduct] = useState(false)
   /** User's READY face models — pulled from /api/face-models on mount.
    *  When the user picks one, faceModelId gets passed to the generate
    *  request and the server routes through the LoRA-capable Flux endpoint. */
@@ -2419,25 +2422,48 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     </p>
                   </div>
 
-                  {/* Optional product link — the reliable way to lock the EXACT
-                      product. Auto-detected from the video when the title/description
-                      has an ASIN; this guarantees it otherwise. */}
+                  {/* Product link. When the video already has a detected product we
+                      DON'T ask again — the detected ASIN is passed to the generator
+                      automatically. We just confirm it, and tuck the paste box behind
+                      a toggle for the rare case the creator wants a different product.
+                      When nothing was detected, the paste box is shown outright. */}
                   <div className="flex flex-col gap-1.5 px-1">
-                    <label htmlFor="product-url" className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">
-                      Product link <span className="font-normal normal-case tracking-normal text-[#a1a1a6]">(optional — recommended)</span>
-                    </label>
-                    <input
-                      id="product-url"
-                      type="url"
-                      value={productUrl}
-                      onChange={e => setProductUrl(e.target.value.slice(0, 500))}
-                      disabled={generatingThumbnail}
-                      placeholder="Paste the Amazon or product link for this video"
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6] focus:outline-none focus:border-[#7C3AED] transition"
-                    />
-                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
-                      MVP auto-detects the product from your video. Paste the link to be 100% sure it renders the exact product.
-                    </p>
+                    {video.detectedAsin && !overrideProduct ? (
+                      <>
+                        <span className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Product</span>
+                        <div className="flex items-center justify-between gap-2 text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e]">
+                          <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Using detected product <span className="font-mono">{video.detectedAsin}</span></span>
+                          <button type="button" disabled={generatingThumbnail}
+                            onClick={() => setOverrideProduct(true)}
+                            className="text-[11px] font-medium text-[#7C3AED] hover:underline whitespace-nowrap disabled:opacity-50">
+                            Use a different product
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
+                          The thumbnail renders this exact product. It came from your video, so there&apos;s nothing to paste.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <label htmlFor="product-url" className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">
+                          Product link <span className="font-normal normal-case tracking-normal text-[#a1a1a6]">{video.detectedAsin ? '(override)' : '(optional — recommended)'}</span>
+                        </label>
+                        <input
+                          id="product-url"
+                          type="url"
+                          value={productUrl}
+                          onChange={e => setProductUrl(e.target.value.slice(0, 500))}
+                          disabled={generatingThumbnail}
+                          placeholder="Paste the Amazon or product link for this video"
+                          className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6] focus:outline-none focus:border-[#7C3AED] transition"
+                        />
+                        <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
+                          {video.detectedAsin
+                            ? <>Overrides the detected product (<span className="font-mono">{video.detectedAsin}</span>). Leave blank to keep it. <button type="button" onClick={() => { setProductUrl(''); setOverrideProduct(false) }} className="text-[#7C3AED] hover:underline">Cancel</button></>
+                            : 'MVP auto-detects the product from your video. Paste the link to be 100% sure it renders the exact product.'}
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   {/* Primary CTA: Create my MVP Thumbnail — order-1 so this big
