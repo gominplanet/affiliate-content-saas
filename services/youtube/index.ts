@@ -1,6 +1,24 @@
 const BASE = 'https://www.googleapis.com/youtube/v3'
 
 /**
+ * Decode HTML entities in text the YouTube Data API returns. snippet.title and
+ * snippet.description come HTML-encoded (an apostrophe is "&#39;", "&" is
+ * "&amp;", etc.), so rendering them raw shows "I&#39;ve" instead of "I've".
+ * Handles the named entities YouTube uses plus decimal/hex numeric refs.
+ */
+export function decodeHtmlEntities(s: string): string {
+  if (!s || s.indexOf('&') === -1) return s || ''
+  const named: Record<string, string> = {
+    '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'",
+    '&apos;': "'", '&#34;': '"', '&nbsp;': ' ',
+  }
+  return s
+    .replace(/&(?:amp|lt|gt|quot|apos|nbsp|#39|#34);/g, m => named[m] ?? m)
+    .replace(/&#(\d+);/g, (_, d) => { try { return String.fromCodePoint(parseInt(d, 10)) } catch { return _ } })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => { try { return String.fromCodePoint(parseInt(h, 16)) } catch { return _ } })
+}
+
+/**
  * Probe whether a video is a YouTube Short by checking the /shorts/ URL.
  *
  * YouTube's behavior:
@@ -388,8 +406,8 @@ export class YouTubeOAuthService {
       const asinMatch = v.snippet.title.match(/\b([A-Z0-9]{10})\b/)
       return {
         youtubeVideoId: v.id,
-        title: v.snippet.title,
-        description: v.snippet.description ?? '',
+        title: decodeHtmlEntities(v.snippet.title),
+        description: decodeHtmlEntities(v.snippet.description ?? ''),
         thumbnailUrl: v.snippet.thumbnails?.high?.url ?? v.snippet.thumbnails?.default?.url ?? '',
         status: v.status?.privacyStatus ?? 'private',
         publishedAt: v.snippet.publishedAt,
@@ -434,8 +452,8 @@ export class YouTubeOAuthService {
           const asinMatch = (v.snippet?.title ?? '').match(/\b([A-Z0-9]{10})\b/)
           byId[v.id] = {
             youtubeVideoId: v.id,
-            title: v.snippet?.title ?? '',
-            description: v.snippet?.description ?? '',
+            title: decodeHtmlEntities(v.snippet?.title ?? ''),
+            description: decodeHtmlEntities(v.snippet?.description ?? ''),
             thumbnailUrl: v.snippet?.thumbnails?.high?.url ?? v.snippet?.thumbnails?.default?.url ?? '',
             status: v.status?.privacyStatus ?? 'private',
             publishedAt: v.snippet?.publishedAt,
@@ -552,8 +570,8 @@ export class YouTubeOAuthService {
       const asinMatch = v.snippet.title.match(/\b([A-Z0-9]{10})\b/)
       videos.push({
         youtubeVideoId: v.id,
-        title: v.snippet.title,
-        description: v.snippet.description ?? '',
+        title: decodeHtmlEntities(v.snippet.title),
+        description: decodeHtmlEntities(v.snippet.description ?? ''),
         thumbnailUrl: v.snippet.thumbnails?.high?.url ?? v.snippet.thumbnails?.default?.url ?? '',
         status: v.status?.privacyStatus ?? 'private',
         // Prefer the playlist add-time (reliable for drafts); fall back to the
