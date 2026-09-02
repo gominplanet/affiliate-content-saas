@@ -21,27 +21,36 @@ export const ANCHOR_EXPRESSIONS: Record<string, string> = {
 
 /** Bump when buildAnchorPrompt changes so every cached anchor regenerates with
  *  the new prompt (otherwise the old cached portrait is served forever for the
- *  same photo set). v2 = wardrobe-neutral anchor (2026-08-13). */
-const ANCHOR_PROMPT_VERSION = 'v2'
+ *  same photo set). v2 = wardrobe-neutral anchor (2026-08-13). v3 = optional
+ *  per-face wardrobe override (2026-09-02). */
+const ANCHOR_PROMPT_VERSION = 'v3'
 
-/** Stable cache key for a face's photo set + expression — changes when the
- *  photos change, so a re-uploaded "Your Face" regenerates anchors next time.
- *  The prompt-version suffix busts the cache whenever the anchor prompt changes. */
-function anchorKey(userId: string, sourceImages: string[], expression: string): string {
-  const h = createHash('sha1').update(sourceImages.join('|')).digest('hex').slice(0, 12)
+/** Stable cache key for a face's photo set + expression (+ wardrobe) — changes
+ *  when the photos, expression or chosen outfit change, so a re-uploaded "Your
+ *  Face" or a newly-set wardrobe regenerates anchors next time. The prompt-version
+ *  suffix busts the cache whenever the anchor prompt changes. */
+function anchorKey(userId: string, sourceImages: string[], expression: string, wardrobe?: string | null): string {
+  const w = (wardrobe || '').trim()
+  const h = createHash('sha1').update(sourceImages.join('|') + (w ? `|w:${w}` : '')).digest('hex').slice(0, 12)
   const suffix = expression && expression !== 'neutral' ? `-${expression}` : ''
   return `${userId}/anchors/${h}${suffix}-${ANCHOR_PROMPT_VERSION}.png`
 }
 
 // Same identity-lock discipline as the Photobooth, distilled to a clean,
 // composite-friendly reference portrait (neutral backdrop, even light, centred).
-function buildAnchorPrompt(expression: string): string {
+function buildAnchorPrompt(expression: string, wardrobe?: string | null): string {
   const expr = ANCHOR_EXPRESSIONS[expression] || ANCHOR_EXPRESSIONS.neutral
+  const w = (wardrobe || '').trim()
+  // With a chosen wardrobe, dress them in exactly that (their signature look).
+  // Without one, keep the identity reference wardrobe-neutral as before.
+  const wardrobeLine = w
+    ? `WARDROBE (required): use the reference photos ONLY for the face, hair and likeness. Dress the person in ${w}. Render that outfit cleanly and consistently; do NOT substitute a different top, colour or style.`
+    : `WARDROBE: use the reference photos ONLY for the face, hair and likeness — NOT for clothing. Dress the person in a plain, simple, solid neutral-tone crew-neck top (a muted grey, charcoal or navy). Do NOT copy the exact shirt, collar, top style or colour worn in the reference photos. This is an identity reference, so keep the clothing generic and understated.`
   return `Professional head-and-shoulders portrait, photorealistic, high resolution.
 
 REFERENCE IMAGES: use these ONLY to capture the MAIN subject's exact facial identity, hair, and likeness. The photos may also contain OTHER people — IGNORE everyone else; lock onto the single most prominent main subject (the largest, most central face).
 IDENTITY (critical): render EXACTLY that one person, completely ALONE. Do NOT blend, merge, average, or mix in any other face. ONLY ONE person in the output — no second person, partner, companion, or any extra face/head/shoulder/arm anywhere in the frame. It must be unmistakably the same individual — flattering but clearly them.
-WARDROBE: use the reference photos ONLY for the face, hair and likeness — NOT for clothing. Dress the person in a plain, simple, solid neutral-tone crew-neck top (a muted grey, charcoal or navy). Do NOT copy the exact shirt, collar, top style or colour worn in the reference photos. This is an identity reference, so keep the clothing generic and understated.
+${wardrobeLine}
 SHOT: head-and-shoulders, person centred, facing the camera, ${expr}, natural realistic skin texture (NOT plastic or over-retouched), flattering even studio lighting, sharp focus on the eyes, on a clean evenly-lit neutral light-grey backdrop.
 Do NOT render any text, captions, watermarks, or logos.`
 }
@@ -62,11 +71,12 @@ export async function getOrCreateIdentityAnchor(
   supabase: any,
   userId: string,
   sourceImages: string[],
-  ctx?: { tier?: string | null; expression?: string },
+  ctx?: { tier?: string | null; expression?: string; wardrobe?: string | null },
 ): Promise<string | null> {
   if (!userId || !Array.isArray(sourceImages) || sourceImages.length === 0) return null
   const expression = (ctx?.expression && ANCHOR_EXPRESSIONS[ctx.expression]) ? ctx.expression : 'neutral'
-  const path = anchorKey(userId, sourceImages, expression)
+  const wardrobe = (ctx?.wardrobe || '').trim() || null
+  const path = anchorKey(userId, sourceImages, expression, wardrobe)
 
   // 1. Reuse a cached anchor if we've already built one for this exact photo set.
   try {
@@ -97,7 +107,7 @@ export async function getOrCreateIdentityAnchor(
     // and cheaper than 'high', with no visible hit to the composited thumbnail,
     // and keeps the (high-quality, slow) gpt-image call from blowing the route's
     // time budget. The Photobooth headshot (its own call) stays on 'high'.
-    const b64 = await openai.generateWithReferences({ prompt: buildAnchorPrompt(expression), images: refImages, size: '1024x1024', quality: 'medium', model })
+    const b64 = await openai.generateWithReferences({ prompt: buildAnchorPrompt(expression, wardrobe), images: refImages, size: '1024x1024', quality: 'medium', model })
     recordUsage({ userId, tier: ctx?.tier ?? null, feature: 'identity_anchor_image', model, images: 1 })
 
     const bytes = Buffer.from(b64, 'base64')
@@ -161,11 +171,15 @@ export async function getThumbnailFaceRef(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   userId: string,
-  opts: { faceId?: string | null; sourceImages: string[]; expression: string; tier?: string | null },
+  opts: { faceId?: string | null; sourceImages: string[]; expression: string; tier?: string | null; wardrobe?: string | null },
 ): Promise<string | null> {
-  if (opts.faceId) {
+  const wardrobe = (opts.wardrobe || '').trim() || null
+  // When the creator pinned a wardrobe, always render the anchor so that outfit
+  // is applied. A starred Photobooth shot may be in a different outfit, so it
+  // would silently override the pinned wardrobe — skip that shortcut here.
+  if (opts.faceId && !wardrobe) {
     const own = await findPhotoboothHeadshot(supabase, userId, opts.faceId)
     if (own) return own
   }
-  return getOrCreateIdentityAnchor(supabase, userId, opts.sourceImages, { tier: opts.tier ?? null, expression: opts.expression })
+  return getOrCreateIdentityAnchor(supabase, userId, opts.sourceImages, { tier: opts.tier ?? null, expression: opts.expression, wardrobe })
 }

@@ -52,14 +52,14 @@ export async function buildProductThumbnail(
     }
 
     // Creator's face (from a ready-enough face model). Optional but preferred.
-    const { data: fms } = await sb.from('face_models').select('id,source_images,status').eq('user_id', opts.userId)
+    const { data: fms } = await sb.from('face_models').select('id,source_images,status,outfit_pref').eq('user_id', opts.userId)
     const asStrArr = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
-    const withSelfies = ((fms as Array<{ id: string; source_images: unknown; status: string }> | null) || [])
-      .map(m => ({ id: m.id, source_images: asStrArr(m.source_images), status: m.status }))
+    const withSelfies = ((fms as Array<{ id: string; source_images: unknown; status: string; outfit_pref: string | null }> | null) || [])
+      .map(m => ({ id: m.id, source_images: asStrArr(m.source_images), status: m.status, outfit_pref: m.outfit_pref ?? null }))
       .filter(m => m.source_images.length > 0)
     const face = withSelfies.find(m => m.status === 'ready') || withSelfies[0]
     const faceRef = face
-      ? await getThumbnailFaceRef(sb, opts.userId, { faceId: face.id, sourceImages: face.source_images, expression: 'excited', tier: opts.tier ?? null })
+      ? await getThumbnailFaceRef(sb, opts.userId, { faceId: face.id, sourceImages: face.source_images, expression: 'excited', tier: opts.tier ?? null, wardrobe: face.outfit_pref })
       : null
 
     const refs = await rehostAll([...(faceRef ? [faceRef] : []), ...productImgs])

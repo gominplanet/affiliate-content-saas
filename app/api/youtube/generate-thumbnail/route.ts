@@ -287,6 +287,19 @@ const ANGLE_DECORATION: Record<CtrAngle, ThumbDecoration> = {
 
 /** Flatten to a single "LINE1 LINE2" string for legacy callers (overlay
  *  draw, response payload, picker UI). Strips Gemini-style * markers. */
+/** Cap a headline line to `max` characters WITHOUT chopping a word in half.
+ *  A blind slice turned "ACTUALLY TRACK ALL THAT???" into "…ALL THA"; this trims
+ *  back to the last whole word instead (keeping any trailing ?/! on it), so the
+ *  baked headline never shows a broken word. Falls back to a hard slice only when
+ *  a single word is itself longer than the cap. */
+function clampLine(s: string, max: number): string {
+  const t = (s || '').trim()
+  if (t.length <= max) return t
+  const cut = t.slice(0, max)
+  const lastSpace = cut.lastIndexOf(' ')
+  return (lastSpace >= Math.floor(max / 2) ? cut.slice(0, lastSpace) : cut).trim()
+}
+
 function flatCopy(c: ThumbCopy | string | null | undefined): string {
   if (!c) return ''
   // Scrub here too — flatCopy feeds the overlay-text draw + response payload,
@@ -326,8 +339,8 @@ function parseOneCopy(raw: string, fallbackAngle: CtrAngle): ThumbCopy {
       const angle = (o.angle as CtrAngle) || fallbackAngle
       // Scrub banned words — this headline gets BAKED into the image, so a
       // banned word can't be fixed after render. (The "never HONEST" rule.)
-      const line1 = stripDesignBrands(scrubBanned(String(o.line1 || '').trim())).toUpperCase().slice(0, 16)
-      const line2 = stripDesignBrands(scrubBanned(String(o.line2 || '').trim())).toUpperCase().slice(0, 22)
+      const line1 = clampLine(stripDesignBrands(scrubBanned(String(o.line1 || '').trim())).toUpperCase(), 18)
+      const line2 = clampLine(stripDesignBrands(scrubBanned(String(o.line2 || '').trim())).toUpperCase(), 26)
       const emphasis = stripDesignBrands(scrubBanned(String(o.emphasisWord || '').trim())).toUpperCase()
       const VALID_DECORATIONS = new Set<ThumbDecoration>(['stars', 'check', 'arrow', 'none'])
       const decoration = VALID_DECORATIONS.has(o.decoration as ThumbDecoration) ? (o.decoration as ThumbDecoration) : undefined
@@ -541,8 +554,8 @@ async function designThumbnailBriefs(input: {
   const isQuestion = input.headlineStyle === 'question'
   const anthropic = createAnthropicClient()
   const clampBrief = (o: Record<string, unknown>, i: number): ThumbBrief => {
-    let l1 = stripDesignBrands(scrubBanned(String(o.line1 || '').trim())).toUpperCase().slice(0, 16)
-    let l2 = stripDesignBrands(scrubBanned(String(o.line2 || '').trim())).toUpperCase().slice(0, 22)
+    let l1 = clampLine(stripDesignBrands(scrubBanned(String(o.line1 || '').trim())).toUpperCase(), 18)
+    let l2 = clampLine(stripDesignBrands(scrubBanned(String(o.line2 || '').trim())).toUpperCase(), 26)
     // Question mode: enforce the banned-word rule; fall back to a safe generic
     // question if the model slipped a money/buy/amazon angle in.
     if (isQuestion && BANNED_Q_THUMB.test(`${l1} ${l2}`)) { l1 = 'DOES IT'; l2 = 'ACTUALLY WORK?' }
@@ -692,6 +705,16 @@ const CUTOUT_POSES = [
 ]
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
 
+/** The WARDROBE directive for the composed-scene prompts. When the creator pinned
+ *  a wardrobe on their face (e.g. "a white lab coat"), keep that exact outfit in
+ *  every thumbnail; otherwise re-dress them in a fresh everyday outfit as before. */
+function wardrobeDirective(pinned?: string | null): string {
+  const p = (pinned || '').trim()
+  return p
+    ? `WARDROBE (required): use the reference photos for the face and identity, and dress the creator in ${p} — keep this EXACT outfit in every thumbnail; do NOT substitute a different top, colour or style.`
+    : `WARDROBE: use the reference photos ONLY for the face and identity — dress the creator in a FRESH, natural, casual everyday outfit (e.g. a plain tee, casual shirt, polo or light sweater) that suits the scene. Do NOT copy the exact clothing, top or colour shown in the reference photos; vary it.`
+}
+
 /**
  * Auto-pick the right face model for a video by vision-comparing the video
  * frame to one reference photo from each model (e.g. Seb vs Michelle). One
@@ -742,6 +765,7 @@ async function generateFaceCutout(supabase: any, opts: {
   userId: string
   sourceImages: string[]
   imageModel: string
+  outfitPref?: string | null
 }): Promise<string | null> {
   if (!opts.sourceImages.length) return null
   try {
@@ -759,7 +783,9 @@ async function generateFaceCutout(supabase: any, opts: {
       }
     }
     if (refImages.length === 0) return null
-    const outfit = pick(CUTOUT_OUTFITS)
+    // A pinned wardrobe (the creator's signature look, e.g. a white lab coat)
+    // overrides the random pool so every thumbnail keeps that outfit.
+    const outfit = (opts.outfitPref || '').trim() || pick(CUTOUT_OUTFITS)
     const expression = pick(CUTOUT_EXPRESSIONS)
     const pose = pick(CUTOUT_POSES)
     // 1. Generate a tight CLOSE-UP portrait on a plain backdrop (same call
@@ -1196,33 +1222,33 @@ export async function POST(request: Request) {
     // model is still training or failed, we silently fall back to no-face
     // generation rather than throwing — the user already chose, and the
     // worst outcome is a thumbnail without their face this time.
-    let faceModel: { id: string; name: string; source_images: string[] } | null = null
+    let faceModel: { id: string; name: string; source_images: string[]; outfit_pref?: string | null } | null = null
     // Auto-match pool: all the user's ready face models (used when faceAuto is
     // on and no specific model was picked — we vision-match the frame below).
-    let autoFaceModels: Array<{ id: string; name: string; source_images: string[] }> = []
+    let autoFaceModels: Array<{ id: string; name: string; source_images: string[]; outfit_pref?: string | null }> = []
     const asStrArr = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
     if (effectiveFaceModelId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: fm } = await supabase
+      const { data: fm } = await (supabase as any)
         .from('face_models')
-        .select('name,source_images')
+        .select('name,source_images,outfit_pref')
         .eq('id', effectiveFaceModelId)
         .eq('user_id', user.id)
         .single()
       const srcImages: string[] = fm ? asStrArr(fm.source_images) : []
       if (fm && srcImages.length > 0) {
-        faceModel = { id: effectiveFaceModelId, name: fm.name, source_images: srcImages }
+        faceModel = { id: effectiveFaceModelId, name: fm.name, source_images: srcImages, outfit_pref: fm.outfit_pref ?? null }
       }
     } else if (faceAuto || isRandomFace) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: fms } = await supabase
+      const { data: fms } = await (supabase as any)
         .from('face_models')
-        .select('id,name,source_images,status')
+        .select('id,name,source_images,status,outfit_pref')
         .eq('user_id', user.id)
-      autoFaceModels = ((fms as Array<{ id: string; name: string; source_images: unknown; status: string }>) || [])
+      autoFaceModels = ((fms as Array<{ id: string; name: string; source_images: unknown; status: string; outfit_pref: string | null }>) || [])
         .map(m => ({ ...m, source_images: asStrArr(m.source_images) }))
         .filter(m => m.status === 'ready' && m.source_images.length > 0)
-        .map(m => ({ id: m.id, name: m.name, source_images: m.source_images }))
+        .map(m => ({ id: m.id, name: m.name, source_images: m.source_images, outfit_pref: m.outfit_pref ?? null }))
       // Only one face on file → no need to match, just use it.
       if (autoFaceModels.length === 1) { faceModel = autoFaceModels[0]; autoFaceModels = [] }
       if (autoFaceModels.length > 1) {
@@ -1813,7 +1839,7 @@ export async function POST(request: Request) {
                 `★ CREATOR'S SCENE DIRECTION (highest priority — build the whole thumbnail around this): "${sceneDirection}".`,
                 "Match that direction for the SETTING / background, the creator's pose, expression and action, and any props described. The creator is the main subject of the scene.",
                 '',
-                `★ CREATOR IDENTITY (never compromise, even to fit the direction): ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy — same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY. WARDROBE: use the references for the face and identity ONLY, not the clothing — dress them in a fresh, natural everyday outfit that suits the scene, and do NOT copy the exact top, collar or colour worn in the reference photos. Show them HEAD-AND-SHOULDERS to CHEST-UP only — the references are head-and-chest selfies, so never invent their full body, legs or body build.`,
+                `★ CREATOR IDENTITY (never compromise, even to fit the direction): ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy — same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY. ${wardrobeDirective(faceModel?.outfit_pref)} Show them HEAD-AND-SHOULDERS to CHEST-UP only — the references are head-and-chest selfies, so never invent their full body, legs or body build.`,
                 '',
                 productRefNum
                   ? `PRODUCT: feature ${productLabel} (from Image ${productRefNum}) clearly and recognisably in the scene exactly as the direction implies (held, beside them, in use…). Keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or marketing text.`
@@ -1862,7 +1888,7 @@ export async function POST(request: Request) {
               '',
               'INTEGRATION (important): the person and the product must sit NATURALLY in the scene with realistic lighting and grounded shadows, like a real photo. Do NOT put a glowing outline, rim-light halo, coloured aura or cut-out edge around the person or the product — no haloing, nothing that makes them look pasted on. Keep edges clean and photographic.',
               '',
-              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MUST change their expression to fit this thumbnail (do NOT copy the reference photo's expression) and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. WARDROBE: use the references for the face and identity ONLY, not the clothing — dress them in a fresh, natural everyday outfit (a plain tee, casual shirt, polo or light sweater) that suits the scene, and do NOT copy the exact top, collar or colour worn in the reference photos. ${personAction} Place them on one side of the frame. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
+              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MUST change their expression to fit this thumbnail (do NOT copy the reference photo's expression) and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. ${wardrobeDirective(faceModel?.outfit_pref)} ${personAction} Place them on one side of the frame. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
               '',
               productRefNum
                 ? `PRODUCT: feature the product from Image ${productRefNum} accurately as the hero — its true shape, colours and its own printed branding (never invent packaging or fake logos). Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura behind it. Show it however fits the design: hero shot, in-use, or lifestyle.`
@@ -2224,7 +2250,7 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             : `★ IDENTITY LOCK (highest priority — NEVER violate): REFERENCE IMAGE 1 is a still from the creator's OWN video. The person in it IS the real host. The rendered face MUST be a PHOTO-IDENTICAL match to that exact human — same bone structure, same eye shape and colour, same nose, same mouth, same hair colour/texture/length, same ethnicity, same skin tone, same apparent age, same distinguishing features (freckles, moles, asymmetries, glasses). The viewer must INSTANTLY recognise this as the SAME PERSON from the reference. Under NO circumstances substitute, average, idealise, or invent a different person. ${skinFidelity}`
           // Vary the OUTFIT — the reference photos are for the FACE only, not the
           // wardrobe, so thumbnails don't always show the same shirt.
-          const outfitNote = `WARDROBE: use the reference photos ONLY for the face and identity — dress the creator in a FRESH, natural, casual everyday outfit (e.g. a plain tee, casual shirt, polo or light sweater) that suits the scene. Do NOT copy the exact clothing, top or colour shown in the reference photos; vary it.`
+          const outfitNote = wardrobeDirective(faceModel?.outfit_pref)
           // 3C — Multi-product reference clause. With 1 product photo we keep
           // the old single-product wording. With 2-5 we tell the model these
           // are ALL the product(s) to render (same product different angles,
@@ -2942,6 +2968,7 @@ Bright, flattering, high-contrast premium thumbnail look. Do NOT add any other p
           userId: user.id,
           sourceImages: faceModel.source_images,
           imageModel: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
+          outfitPref: faceModel.outfit_pref ?? null,
         })
       : Promise.resolve(null)
     const resolveCutout = async (): Promise<{ url: string | null; debug: string }> => {

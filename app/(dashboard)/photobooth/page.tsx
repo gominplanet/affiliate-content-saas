@@ -28,6 +28,7 @@ interface FaceModel {
   name: string
   status: 'uploading' | 'training' | 'ready' | 'failed'
   source_images: string[]
+  outfit_pref?: string | null
   failure_reason?: string | null
 }
 
@@ -250,6 +251,26 @@ export default function PhotoboothPage() {
     finally { setAddingFaceId(null) }
   }
 
+  // Per-face wardrobe: pin an outfit (e.g. "a white lab coat") so every thumbnail
+  // keeps that look instead of the generator's random outfit.
+  const [outfitDraft, setOutfitDraft] = useState<Record<string, string>>({})
+  const [savingOutfit, setSavingOutfit] = useState<string | null>(null)
+  async function saveOutfit(faceId: string) {
+    const value = (outfitDraft[faceId] ?? '').trim()
+    setSavingOutfit(faceId)
+    try {
+      const res = await fetch(`/api/face-models/${faceId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outfitPref: value }),
+      })
+      if (res.ok) {
+        setFaces(prev => prev.map(m => m.id === faceId ? { ...m, outfit_pref: value || null } : m))
+        setOutfitDraft(prev => { const n = { ...prev }; delete n[faceId]; return n })
+      }
+    } catch { /* best-effort */ }
+    finally { setSavingOutfit(null) }
+  }
+
   // On-demand preview of a face's uploaded photos (signed URLs).
   const [photoView, setPhotoView] = useState<Record<string, { original: string[] } | 'loading'>>({})
   async function viewPhotos(id: string) {
@@ -455,6 +476,36 @@ export default function PhotoboothPage() {
                     <Trash2 size={14} />
                   </button>
                  </div>
+
+                  {/* Wardrobe: pin an outfit so thumbnails keep this look. */}
+                  {m.status === 'ready' && (() => {
+                    const draft = outfitDraft[m.id] ?? (m.outfit_pref || '')
+                    const dirty = draft.trim() !== (m.outfit_pref || '').trim()
+                    return (
+                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-white/10">
+                        <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Outfit in thumbnails <span className="font-normal text-[#86868b]">(optional)</span></label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={draft}
+                            onChange={e => setOutfitDraft(prev => ({ ...prev, [m.id]: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Enter' && dirty) void saveOutfit(m.id) }}
+                            placeholder="e.g. a white lab coat"
+                            maxLength={120}
+                            className="flex-1 h-8 px-2.5 text-[12px] rounded-lg border bg-transparent outline-none focus:border-[#7C3AED] border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]"
+                          />
+                          <button type="button" onClick={() => void saveOutfit(m.id)} disabled={!dirty || savingOutfit === m.id}
+                            className="h-8 px-3 inline-flex items-center gap-1 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50" style={{ background: '#7C3AED' }}>
+                            {savingOutfit === m.id ? <Loader2 size={12} className="animate-spin" /> : 'Save'}
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-[#86868b] mt-1">
+                          {m.outfit_pref
+                            ? `Pinned: every thumbnail puts you in ${m.outfit_pref}.`
+                            : 'Leave blank to let MVP vary your outfit. Set it to always appear in the same clothing.'}
+                        </p>
+                      </div>
+                    )
+                  })()}
 
                   {/* Uploaded photo preview (on demand). */}
                   {photoView[m.id] && (

@@ -86,9 +86,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 }
 
 /**
- * PATCH /api/face-models/[id] — append more selfies to an existing face.
- * Body: { addImagePaths: string[] } (already uploaded to storage by the client).
- * Caps the face at 20 photos total.
+ * PATCH /api/face-models/[id] — update an existing face.
+ * Body (either or both):
+ *   { addImagePaths: string[] }  — append selfies (already uploaded to storage);
+ *                                  caps the face at 20 photos total.
+ *   { outfitPref: string | null } — pin a wardrobe for this face's thumbnail /
+ *                                  headshot cut-outs (e.g. "a white lab coat").
+ *                                  Empty string or null clears it (random again).
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -97,32 +101,45 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (auth.error) return auth.error
   const { ownerId } = auth
 
-  const body = await request.json().catch(() => ({})) as { addImagePaths?: string[] }
+  const body = await request.json().catch(() => ({})) as { addImagePaths?: string[]; outfitPref?: string | null }
   const add = Array.isArray(body.addImagePaths) ? body.addImagePaths.filter(p => typeof p === 'string') : []
-  if (add.length === 0) return NextResponse.json({ error: 'No photos to add.' }, { status: 400 })
+  const hasOutfit = Object.prototype.hasOwnProperty.call(body, 'outfitPref')
+  if (add.length === 0 && !hasOutfit) return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: model } = await supabase
     .from('face_models').select('source_images').eq('id', id).eq('user_id', ownerId).single()
   if (!model) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const existing = Array.isArray(model.source_images)
-    ? (model.source_images as unknown[]).filter((p): p is string => typeof p === 'string')
-    : []
-  const MAX = 20
-  if (existing.length >= MAX) {
-    return NextResponse.json({ error: `A face can hold up to ${MAX} photos. Delete some first.` }, { status: 409 })
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  let merged: string[] | null = null
+
+  if (add.length > 0) {
+    const existing = Array.isArray(model.source_images)
+      ? (model.source_images as unknown[]).filter((p): p is string => typeof p === 'string')
+      : []
+    const MAX = 20
+    if (existing.length >= MAX) {
+      return NextResponse.json({ error: `A face can hold up to ${MAX} photos. Delete some first.` }, { status: 409 })
+    }
+    merged = [...existing, ...add].slice(0, MAX)
+    patch.source_images = merged
   }
-  const merged = [...existing, ...add].slice(0, MAX)
+
+  if (hasOutfit) {
+    // Trim + cap; empty string stores NULL so it falls back to the random pool.
+    const raw = typeof body.outfitPref === 'string' ? body.outfitPref.trim().slice(0, 120) : ''
+    patch.outfit_pref = raw || null
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from('face_models')
-    .update({ source_images: merged, updated_at: new Date().toISOString() })
+    .update(patch)
     .eq('id', id).eq('user_id', ownerId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ ok: true, source_images: merged })
+  return NextResponse.json({ ok: true, ...(merged ? { source_images: merged } : {}), ...(hasOutfit ? { outfit_pref: patch.outfit_pref } : {}) })
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
