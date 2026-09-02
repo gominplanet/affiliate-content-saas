@@ -30,6 +30,20 @@ function normBrand(v: string): string {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function acceptedCampaignIds(sb: any, userId: string): Promise<Set<string>> {
   const set = new Set<string>()
+  // Authoritative: the per-campaign ledger holds every joined campaign id (many
+  // per ASIN), so a brand's count can reach zero even when campaigns share an ASIN.
+  try {
+    const { data } = await sb.from('cc_accepted_campaigns')
+      .select('campaign_id')
+      .eq('user_id', userId)
+      .limit(8000)
+    for (const r of (data ?? [])) {
+      const id = String(r?.campaign_id || '').trim()
+      if (id) set.add(id)
+    }
+  } catch { /* ledger may not exist yet — fall back below */ }
+  // Backfill: campaigns joined before the ledger existed still carry one
+  // cc_campaign_id on their ASIN-keyed row.
   try {
     const { data } = await sb.from('campaigns')
       .select('cc_campaign_id, accepted_at, amazon_joined_at')
@@ -39,7 +53,7 @@ async function acceptedCampaignIds(sb: any, userId: string): Promise<Set<string>
       const id = String(r?.cc_campaign_id || '').trim()
       if (id && (r.accepted_at || r.amazon_joined_at)) set.add(id)
     }
-  } catch { /* no rows → nothing excluded */ }
+  } catch { /* no rows → nothing extra excluded */ }
   return set
 }
 
@@ -67,7 +81,10 @@ async function brandCounts(sb: any, label: string, accepted: Set<string>): Promi
     const cid = String(r.campaign_id || '')
     if (cid && accepted.has(cid)) { joined++; continue } // you joined THIS campaign → not "open" for you
     const f = campaignFullness(r.available_slot as number | null, r.total_slot as number | null)
-    if (!f.isFull) open++
+    // Only count opens Accept all can actually act on — a catalog row with no ASIN
+    // can't be accepted, so counting it would leave a phantom that never clears.
+    const asin = String(r.rep_asin || '').trim()
+    if (!f.isFull && asin) open++
   }
   return { open, joined, total: rows.length }
 }

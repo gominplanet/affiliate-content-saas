@@ -68,6 +68,7 @@ export async function POST(request: Request) {
       if (safeBrand) patch.brand_name = safeBrand
       const { error } = await sb.from('campaigns').update(patch).eq('id', existing.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      await recordAcceptedCampaign(sb, ownerId, body.campaignId, safeBrand, asin)
       return NextResponse.json({ ok: true, created: false })
     }
 
@@ -89,8 +90,24 @@ export async function POST(request: Request) {
 
     const { error } = await sb.from('campaigns').insert(insert)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    await recordAcceptedCampaign(sb, ownerId, body.campaignId, safeBrand, asin)
     return NextResponse.json({ ok: true, created: true })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
+}
+
+/** Record the accepted campaign in the per-campaign ledger (many per ASIN), so
+ *  the favorite-brands counts can exclude EVERY joined campaign — not just the one
+ *  the ASIN-keyed campaigns row could hold. Best-effort; never fails the request. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function recordAcceptedCampaign(sb: any, userId: string, campaignId: string | undefined, brand: string | null, asin: string): Promise<void> {
+  const cid = (campaignId || '').toString().trim()
+  if (!cid) return
+  try {
+    await sb.from('cc_accepted_campaigns').upsert(
+      { user_id: userId, campaign_id: cid, brand_name: brand, asin, accepted_at: new Date().toISOString() },
+      { onConflict: 'user_id,campaign_id' },
+    )
+  } catch { /* ledger is best-effort */ }
 }

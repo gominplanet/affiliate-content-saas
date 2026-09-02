@@ -36,6 +36,16 @@ export async function GET(req: Request) {
   // a brand-new joinable campaign just because an earlier one for that product was
   // joined.
   const accepted = new Set<string>()
+  // Authoritative per-campaign ledger (many campaigns per ASIN).
+  try {
+    const { data: led } = await sb.from('cc_accepted_campaigns')
+      .select('campaign_id').eq('user_id', user.id).limit(8000)
+    for (const r of (led ?? [])) {
+      const id = String(r?.campaign_id || '').trim()
+      if (id) accepted.add(id)
+    }
+  } catch { /* ledger may not exist yet */ }
+  // Backfill from the legacy ASIN-keyed campaigns row.
   try {
     const { data: acc } = await sb.from('campaigns')
       .select('cc_campaign_id, accepted_at, amazon_joined_at').eq('user_id', user.id).limit(4000)
