@@ -2328,10 +2328,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     </ul>
                   </details>
 
-                  {/* Face picker — who's in this video? */}
-                  {extensionInstalled !== false && faceModels.length > 0 && (
-                    <div className="flex flex-col gap-2 px-1 pb-1">
-                      <p className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Who&apos;s in this video?</p>
+                  {/* Face picker — who's in this video? Always shown so it never
+                      silently disappears. It does NOT depend on SCOUT: a face model
+                      is its own identity source (SCOUT is only needed to pull frames
+                      from a PRIVATE video, not to use a saved face). With no trained
+                      face, we explain where to add one instead of hiding the slot. */}
+                  <div className="flex flex-col gap-2 px-1 pb-1">
+                    <p className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Who&apos;s in this video?</p>
+                    {faceModels.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
                         {/* Auto-detect removed: vision-matching on a video frame
                             guessed the wrong person. The creator picks explicitly;
@@ -2362,8 +2366,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                           No face
                         </button>
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                        No trained face yet — <a href="/photobooth" className="text-[#7C3AED] hover:underline font-medium">add your face</a> to put yourself on the thumbnail, or use <strong>Product Only</strong> below for a product-only scene.
+                      </p>
+                    )}
+                  </div>
 
                   {/* Headline style toggle — Polished (default) vs Question hook.
                       Question mode makes the headline a curiosity question about
