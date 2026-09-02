@@ -389,6 +389,30 @@ export async function requestMyCcCampaigns(opts?: { keyword?: string; maxPages?:
   return { ok: !!resp.ok, campaigns: Array.isArray(resp.campaigns) ? resp.campaigns : [], total: resp.total, hasMore: resp.hasMore, error: resp.error, reason: resp.reason, diag: resp.diag }
 }
 
+/**
+ * LIVE brand search of NEW Creator Connections opportunities in the creator's own
+ * grid — the top-up that makes Browse match Amazon's live count. SCOUT opens the
+ * opportunity grid and replays its search filtered by the brand keyword, so a
+ * brand search reflects what Amazon actually shows right now (not just the shared
+ * catalog snapshot). Best-effort: resolves, never throws.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function requestCcBrandSearch(keyword: string, opts?: { maxPages?: number }): Promise<{ ok: boolean; campaigns: MyCcCampaign[]; total?: number; hasMore?: boolean; error?: string; diag?: any }> {
+  const kw = (keyword || '').trim()
+  if (!kw) return { ok: false, campaigns: [], error: 'no-keyword' }
+  if (!(await isExtensionAvailable())) return { ok: false, campaigns: [], error: 'not-installed' }
+  const resp = await sendToExtension<{
+    ok?: boolean; campaigns?: MyCcCampaign[]; total?: number; hasMore?: boolean; error?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    diag?: any
+  }>(
+    { type: 'MVP_CC_BRAND_SEARCH', keyword: kw, maxPages: opts?.maxPages },
+    95000,
+  )
+  if (!resp) return { ok: false, campaigns: [], error: 'timeout' }
+  return { ok: !!resp.ok, campaigns: Array.isArray(resp.campaigns) ? resp.campaigns : [], total: resp.total, hasMore: resp.hasMore, error: resp.error, diag: resp.diag }
+}
+
 export interface EpcApiLoadProgress { loaded: number; total: number | null; pages: number; addedTotal: number }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface EpcApiLoadResult { ok: boolean; loaded: number; total: number | null; addedTotal: number; error?: string; sample?: string | null; canceled?: boolean; diag?: any }

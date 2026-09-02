@@ -16,12 +16,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, Search, Bookmark, BookmarkCheck, MessageCircle, ShoppingCart,
-  PenLine, Check, ArrowRight, Coins, Users, Video, VideoOff, BarChart3, ImageOff, Lock, ShieldCheck, Sparkles,
+  PenLine, Check, ArrowRight, Coins, Users, Video, VideoOff, BarChart3, ImageOff, Lock, ShieldCheck, Sparkles, RefreshCw,
 } from 'lucide-react'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
 import MvpPicksInfo from '@/components/campaigns/MvpPicksInfo'
-import { requestCcSmartScan } from '@/lib/extension-frame'
+import { requestCcSmartScan, requestCcBrandSearch } from '@/lib/extension-frame'
 import { campaignRules } from '@/lib/cc-smart-rules'
 import { formatSalesRank, formatAgeWithDate, formatRankTrend } from '@/lib/product-card-signals'
 
@@ -106,6 +106,7 @@ export default function CampaignBrowsePanel({
   const [locked, setLocked] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null)
+  const [liveBusy, setLiveBusy] = useState(false)
 
   const covered = new Set(coveredAsins.map(a => a.toUpperCase()))
 
@@ -149,6 +150,31 @@ export default function CampaignBrowsePanel({
       if (append) setLoadingMore(false); else setLoading(false)
     }
   }, [q, sort, minCommission, minDaysLeft, openSlotsOnly, minRating, minRecentSales, videoBand, mvpPicks])
+
+  // Live top-up: the shared catalog is a snapshot, so a brand search can lag
+  // Amazon's live grid. This asks SCOUT to search the creator's OWN opportunity
+  // grid for the current term, folds anything new into the catalog, then reloads —
+  // so the search reflects what Amazon actually shows right now.
+  const refreshLive = useCallback(async () => {
+    const kw = q.trim()
+    if (!kw) { toast('Type a brand or product name first, then refresh from Amazon.'); return }
+    setLiveBusy(true)
+    const tId = 'cc-live'
+    try {
+      toast.loading(`Searching Amazon for "${kw}"…`, { id: tId, duration: Infinity })
+      const res = await requestCcBrandSearch(kw, { maxPages: 12 })
+      if (res.error === 'not-installed') { toast.error('Install SCOUT to pull live results from your Amazon grid.', { id: tId }); return }
+      if (!res.ok) { toast.error('Could not reach Amazon through SCOUT. Open Creator Connections in this browser and retry.', { id: tId }); return }
+      const found = res.campaigns || []
+      if (found.length) {
+        await fetch('/api/campaigns/ingest-live', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaigns: found }),
+        }).catch(() => {})
+      }
+      toast.success(`Found ${found.length} live ${found.length === 1 ? 'campaign' : 'campaigns'} for “${kw}”.`, { id: tId, duration: 5000 })
+      await load(0, false)
+    } finally { setLiveBusy(false) }
+  }, [q, load])
 
   // Debounced reload on any filter change.
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -294,14 +320,25 @@ export default function CampaignBrowsePanel({
     <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.30)' }}>
       {/* Filter bar */}
       <div className="px-3.5 py-3 space-y-2.5" style={{ background: 'linear-gradient(180deg, rgba(124,58,237,0.06), transparent 85%)' }}>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px]" style={{ color: 'var(--text-faint)' }} />
-          <input
-            value={q} onChange={e => setQ(e.target.value)}
-            placeholder="Search campaigns (brand or product)…"
-            className="w-full h-11 pl-11 pr-3.5 text-sm rounded-xl border bg-white dark:bg-[#1c1c1e] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-violet-500/30 transition-shadow"
-            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px]" style={{ color: 'var(--text-faint)' }} />
+            <input
+              value={q} onChange={e => setQ(e.target.value)}
+              placeholder="Search campaigns (brand or product)…"
+              className="w-full h-11 pl-11 pr-3.5 text-sm rounded-xl border bg-white dark:bg-[#1c1c1e] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-violet-500/30 transition-shadow"
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            />
+          </div>
+          {/* Live top-up from Amazon: pulls the current search's real opportunities
+              off the creator's own grid via SCOUT, so Browse matches Amazon's count. */}
+          <button
+            type="button" onClick={() => void refreshLive()} disabled={liveBusy || !q.trim()}
+            title="Pull the latest campaigns for this search straight from your Amazon grid"
+            className="h-11 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold border whitespace-nowrap disabled:opacity-50"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+            {liveBusy ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} Refresh from Amazon
+          </button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* MVP picks — MVP's Focus rulebook over the catalog (carousel required). */}

@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.38'
+export const SCOUT_LATEST_VERSION = '1.17.39'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Finish on YouTube now reliably sets paid promotion, the AI-use answer and monetization by driving the real Studio controls (notify subscribers left off), instead of the old injection that often left them unset.'
+  'Creator Connections Browse can now top up any brand search with live opportunities pulled straight from your own Amazon grid, so a search matches what Amazon actually shows instead of only the last catalog import.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

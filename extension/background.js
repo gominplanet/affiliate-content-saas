@@ -619,6 +619,11 @@ let _ccSearchRecipe = null    // /chat/search template (persisted)
 // cache and doesn't re-fire its query (no fresh capture that run → would 401).
 let _ccListRecipe = null
 try { chrome.storage.local.get(['ccListRecipe'], (o) => { if (o && o.ccListRecipe) _ccListRecipe = o.ccListRecipe }) } catch (e) {}
+// Separate recipe for the OPPORTUNITIES grid (new campaigns to accept) — its
+// collaboration/search filter differs from the joined/active view, so a live
+// brand search of opportunities must not reuse the joined-view recipe.
+let _ccOppListRecipe = null
+try { chrome.storage.local.get(['ccOppListRecipe'], (o) => { if (o && o.ccOppListRecipe) _ccOppListRecipe = o.ccOppListRecipe }) } catch (e) {}
 try {
   chrome.storage.local.get(['ccSendRecipe', 'ccSearchRecipe'], (o) => {
     if (!o) return
@@ -1376,9 +1381,16 @@ function ccListMyCampaignsInPage(opts) {
           if (st) statusCounts[st] = (statusCounts[st] || 0) + 1
           // Map extra fields defensively (names vary across ad shapes) so the joined
           // cards can show commission / image / rating without another lookup.
+          // Slots / dates / budget vary in name across ad shapes — map defensively
+          // so an ingested opportunity carries what the catalog needs (open spots +
+          // an end date, which the catalog query filters on).
+          const availSlot = num(a.availableSlots, a.availableSlot, a.remainingSlots, a.slotsRemaining, a.openSlots)
+          const totSlot = num(a.totalSlots, a.totalSlot, a.maxSlots, a.slotCount)
+          const endsAt = a.endDate || a.endsAt || a.campaignEndDate || a.endDateTime || a.availabilityEndDate || null
           out.push({
             campaignId: a.campaignId,
             asin: asins[0] || null,
+            asins,
             asinCount: asins.length,
             brand: a.brandName || a.brand || null,
             name: a.campaignName || a.title || null,
@@ -1386,6 +1398,11 @@ function ccListMyCampaignsInPage(opts) {
             commissionPct: num(a.commissionPercentage, a.commissionPercent, a.commission),
             rating: num(a.averageRating, a.rating, a.ratingStar),
             reviewCount: num(a.reviewCount, a.totalReviews),
+            availableSlot: availSlot,
+            totalSlot: totSlot,
+            endsAt: endsAt,
+            budget: num(a.budget, a.totalBudget),
+            budgetRemaining: num(a.budgetRemaining, a.remainingBudget, a.availableBudget),
             status: st,
           })
         }
@@ -1456,6 +1473,9 @@ function ccListMyCampaignsInPage(opts) {
 async function listMyCampaignsApi(params) {
   const keyword = (params && params.keyword) || ''
   const maxPages = params && params.maxPages
+  // Opportunities mode: search NEW (un-joined) campaigns instead of the creator's
+  // joined ones — opens the opportunity grid + uses its own captured filter.
+  const opportunities = !!(params && params.opportunities)
   await ensureRecipesLoaded()
   const keepAlive = startKeepAlive()
   let tabId = null
@@ -1467,7 +1487,7 @@ async function listMyCampaignsApi(params) {
     // that lists campaigns the user has joined. Opening this (not the opportunity
     // grid) makes the page fire the exact collaboration/search query for joined
     // campaigns, which we capture and replay.
-    const tab = await chrome.tabs.create({ url: ccActiveUrl(), active: false })
+    const tab = await chrome.tabs.create({ url: opportunities ? ccOpportunitiesUrl() : ccActiveUrl(), active: false })
     tabId = tab.id
     await waitForTabLoad(tabId, 15000)
     // Give Amazon's React app a moment, then POLL for BOTH the creator id AND the
@@ -1480,13 +1500,20 @@ async function listMyCampaignsApi(params) {
     // Wait for the creator id AND a fresh capture — but if we already have a
     // persisted list recipe, don't block on a fresh capture (cached SPA loads may
     // not re-fire the query). Once creatorId is known we can proceed on the recipe.
-    for (let i = 0; i < 26 && (!_ccCreatorId || (!latestCollabSearch(openedAt) && !_ccListRecipe)); i++) await _sleep(500)
+    const existingRecipe = opportunities ? _ccOppListRecipe : _ccListRecipe
+    for (let i = 0; i < 26 && (!_ccCreatorId || (!latestCollabSearch(openedAt) && !existingRecipe)); i++) await _sleep(500)
     const captured = latestCollabSearch(openedAt)
-    // Persist a fresh capture as the reusable recipe; fall back to the persisted one
-    // when this run captured nothing (so repeat searches don't 401 on missing CSRF).
-    if (captured) { _ccListRecipe = { body: captured.body, headers: captured.headers, learnedAt: Date.now() }; try { chrome.storage.local.set({ ccListRecipe: _ccListRecipe }) } catch (e) {} }
-    const useBody = captured ? captured.body : (_ccListRecipe && _ccListRecipe.body) || null
-    const useHeaders = captured ? captured.headers : (_ccListRecipe && _ccListRecipe.headers) || null
+    // Persist a fresh capture as the reusable recipe (separate store per view); fall
+    // back to the persisted one when this run captured nothing (so repeat searches
+    // don't 401 on missing CSRF).
+    if (captured) {
+      const rec = { body: captured.body, headers: captured.headers, learnedAt: Date.now() }
+      if (opportunities) { _ccOppListRecipe = rec; try { chrome.storage.local.set({ ccOppListRecipe: rec }) } catch (e) {} }
+      else { _ccListRecipe = rec; try { chrome.storage.local.set({ ccListRecipe: rec }) } catch (e) {} }
+    }
+    const recipeNow = opportunities ? _ccOppListRecipe : _ccListRecipe
+    const useBody = captured ? captured.body : (recipeNow && recipeNow.body) || null
+    const useHeaders = captured ? captured.headers : (recipeNow && recipeNow.headers) || null
     const res = await chrome.scripting.executeScript({
       target: { tabId }, world: 'MAIN', func: ccListMyCampaignsInPage,
       args: [{
@@ -6374,6 +6401,17 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // of the creator's joined campaigns is findable — even at 100k+ — without
     // pulling them all. maxPages caps the fetch for a responsive live search.
     listMyCampaignsApi({ keyword: msg.keyword || '', maxPages: msg.maxPages })
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_CC_BRAND_SEARCH') {
+    // LIVE brand search of NEW opportunities in the creator's own grid — the
+    // top-up that makes Browse match Amazon's live count. Opens the opportunity
+    // grid, replays its collaboration/search filtered by the brand keyword, and
+    // returns the campaigns. Keyword-narrowed, so a few pages ≈ one brand's set.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 95000)
+    listMyCampaignsApi({ keyword: msg.keyword || '', opportunities: true, maxPages: msg.maxPages || 12 })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
