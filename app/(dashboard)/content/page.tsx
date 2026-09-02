@@ -40,7 +40,7 @@ import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2, Tags, Wrench, Shuffle, Pencil, Rocket,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2, Tags, Wrench, Pencil, Rocket,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -4050,10 +4050,6 @@ export default function ContentPage() {
           desc={affPreviewLoading && affMode === 'broken' ? 'Scanning links…' : 'Find & repair broken'}
           onClick={() => previewFixAffiliate('broken')} loading={affPreviewLoading && affMode === 'broken'} disabled={affPreviewLoading || affApplying}
           title="Scan published posts for broken affiliate links and repair them" />
-        <ToolButton tint="rose" icon={<Shuffle size={18} />} label="Re-route Geniuslinks"
-          desc={affPreviewLoading && affMode === 'regroup' ? 'Scanning links…' : "Route via this site's group"}
-          onClick={() => previewFixAffiliate('regroup')} loading={affPreviewLoading && affMode === 'regroup'} disabled={affPreviewLoading || affApplying}
-          title="Re-wrap every geni.us link in your published posts so it routes through the per-site Geniuslink group (e.g. gominreviews) instead of MVP-YOUTUBE. Use this once after the per-site group routing fix to clean up legacy links." />
 
         <ToolButton tint="blue" icon={<Handshake size={18} />} label="Brand message" desc="Edit the recap you send"
           onClick={() => setBrandSettingsOpen(true)}
