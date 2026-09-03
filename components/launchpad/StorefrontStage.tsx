@@ -377,86 +377,125 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         if (!goOn) { toast('Sign in on the opened tabs, then hit Upload again.'); return }
       }
 
-      // ── 2) DUB the ready markets that still need it ───────────────────────
-      // A non-English market with no dub yet is voiced in its own language first,
-      // so no storefront ships English audio under a translated title. Only dub
-      // markets we'll actually upload to. Best-effort: a failed dub falls back to
-      // the master video.
-      const needDub = targets.filter(t => t.dub && !t.videoUrl && !skipDub.has(t.domain) && readyDomains.has(t.domain))
-      if (needDub.length > 0) {
-        const useClone = !!(voice?.hasVoice && useMyVoice)
-        setPhase(`Dubbing ${needDub.length} ${needDub.length === 1 ? 'market' : 'markets'}…`)
-        toast(`Preparing ${needDub.length} ${needDub.length === 1 ? 'dub' : 'dubs'} first — this can take a couple of minutes each.`)
-        for (const t of needDub) {
-          setDubbing(t.domain)
-          try {
-            await fetch('/api/global-sync/dub', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ jobId: jid, domain: t.domain, voice: useClone ? 'cloned' : 'standard' }),
-            })
-          } catch { /* fall back to the master video for this market */ }
-        }
-        setDubbing(null)
-        await refreshTargets(jid)
-        if (useClone) void refreshVoice()
-      }
+      // ── 2) DUB AND UPLOAD, OVERLAPPED ─────────────────────────────────────
+      // Dubbing runs on our servers, uploading runs in this browser. They compete
+      // for nothing, so a market that needs no dub should never sit behind one
+      // that does. Previously every dub finished before the first byte of ANY
+      // market was uploaded, which is why one dubbed market slowed all of them.
+      // Now the English geos upload while the dubs render, and dubbed markets
+      // follow as soon as their audio is ready.
+      const readyTargets = targets.filter(t => readyDomains.has(t.domain))
+      const needDub = readyTargets.filter(t => t.dub && !t.videoUrl && !skipDub.has(t.domain))
+      const dubDomains = new Set(needDub.map(t => t.domain))
+      const uploadNow = readyTargets.filter(t => !dubDomains.has(t.domain))
+      const useClone = !!(voice?.hasVoice && useMyVoice)
 
-      // ── 3) THUMBNAIL — make sure one can be ported ────────────────────────
-      setPhase('Getting the thumbnail…')
-      const loadQueue = async () => {
+      // Start the dubs and DON'T wait. Two at a time so several non-English
+      // markets don't queue behind each other either.
+      const dubbingDone = (async () => {
+        if (needDub.length === 0) return
+        const queue = [...needDub]
+        const worker = async () => {
+          for (;;) {
+            const t = queue.shift()
+            if (!t) return
+            setDubbing(t.domain)
+            try {
+              await fetch('/api/global-sync/dub', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jobId: jid, domain: t.domain, voice: useClone ? 'cloned' : 'standard' }),
+              })
+            } catch { /* falls back to the master video for this market */ }
+          }
+        }
+        await Promise.all([worker(), worker()])
+        setDubbing(null)
+        if (useClone) void refreshVoice()
+      })()
+
+      const loadQueue = async (only: Set<string>) => {
         const q = await fetch(`/api/global-sync/deliver/queue?jobId=${jid}`).then(r => r.json()).catch(() => ({}))
         const arr = Array.isArray(q?.items) ? q.items : []
         // Honor "skip dub": deliver the English master to those markets even if a
-        // dub was generated earlier. Only keep markets we're signed in on.
+        // dub was generated earlier. Only keep markets in THIS wave.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return arr.map((i: any) => (skipDub.has(i.domain) && i.masterUrl) ? { ...i, videoUrl: i.masterUrl } : i)
-          .filter((i: { domain: string }) => readyDomains.has(i.domain))
+          .filter((i: { domain: string }) => only.has(i.domain))
       }
-      let items = await loadQueue()
-      if (items.length === 0) { toast('Nothing to upload yet — localize the markets first.'); return }
-      // A thumbnail the caller already made (Launchpad's YouTube step) counts —
-      // fill it into any item the server queue didn't have one for so the gate
-      // passes immediately instead of waiting on the background render.
-      if (presetThumbnailUrl) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        items = items.map((i: any) => i.thumbnailUrl ? i : { ...i, thumbnailUrl: presetThumbnailUrl })
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const hasThumb = (arr: any[]) => !!presetThumbnailUrl || arr.some((i: { thumbnailUrl?: string | null }) => !!i.thumbnailUrl)
-      if (!hasThumb(items)) {
-        for (let i = 0; i < 24 && !hasThumb(items); i++) { await sleep(5000); items = await loadQueue() }
-        if (!hasThumb(items)) {
-          const go = typeof window !== 'undefined' && window.confirm(
-            'Your branded thumbnail is still rendering. Upload now and let Amazon use a frame from the video instead?\n\nClick Cancel to wait a bit longer and try again.',
-          )
-          if (!go) { toast('Held off — try again once the thumbnail has finished rendering.'); return }
+
+      // Only ever ask about a still-rendering thumbnail once per run.
+      let thumbPrompted = false
+      type WaveResult = { targetId: string; ok: boolean; duplicate?: boolean; error?: string | null }
+      const deliverWave = async (only: Set<string>, phaseLabel: string): Promise<WaveResult[]> => {
+        if (only.size === 0) return []
+        setPhase('Getting the thumbnail…')
+        let items = await loadQueue(only)
+        if (items.length === 0) return []
+        // A thumbnail the caller already made (Launchpad's thumbnail step) counts:
+        // fill it into any item the server queue didn't have one for so the gate
+        // passes immediately instead of waiting on the background render.
+        if (presetThumbnailUrl) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          items = items.map((i: any) => i.thumbnailUrl ? i : { ...i, thumbnailUrl: presetThumbnailUrl })
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const hasThumb = (arr: any[]) => !!presetThumbnailUrl || arr.some((i: { thumbnailUrl?: string | null }) => !!i.thumbnailUrl)
+        if (!hasThumb(items)) {
+          for (let i = 0; i < 24 && !hasThumb(items); i++) { await sleep(5000); items = await loadQueue(only) }
+          if (!hasThumb(items) && !thumbPrompted) {
+            thumbPrompted = true
+            const go = typeof window !== 'undefined' && window.confirm(
+              'Your branded thumbnail is still rendering. Upload now and let Amazon use a frame from the video instead?\n\nClick Cancel to wait a bit longer and try again.',
+            )
+            if (!go) { toast('Held off — try again once the thumbnail has finished rendering.'); return [] }
+          }
+        }
+
+        setPhase(phaseLabel)
+        const res = await requestStorefrontDelivery(items)
+        if (!res.ok && !res.results) { toast.error(res.error || 'Could not reach SCOUT.'); return [] }
+        const rows = (res.results || []) as WaveResult[]
+        // Report each outcome so the UI shows delivery state. A duplicate is not a
+        // failure — the video is already on that storefront — so mark it present
+        // (green) with a clear note instead of an error, and don't create a copy.
+        for (const r of rows) {
+          const isDup = !r.ok && r.duplicate
+          await fetch('/api/global-sync/deliver/result', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              targetId: r.targetId,
+              ok: r.ok || isDup,
+              detail: isDup ? 'Already on this storefront — skipped duplicate' : (r.ok ? 'Uploaded to storefront' : (r.error || 'Upload failed')),
+            }),
+          }).catch(() => {})
+        }
+        await refreshTargets(jid)
+        return rows
       }
 
-      // ── 4) UPLOAD to the ready geos ───────────────────────────────────────
-      setPhase('Uploading…')
-      toast(blocked.length > 0
-        ? `Uploading to ${items.length} ready ${items.length === 1 ? 'market' : 'markets'}. ${blocked.length} skipped (not signed in / not enrolled).`
-        : 'Uploading to your storefronts… keep this tab open.')
+      const results: WaveResult[] = []
 
-      const res = await requestStorefrontDelivery(items)
-      if (!res.ok && !res.results) { toast.error(res.error || 'Could not reach SCOUT.'); return }
-      // Report each outcome so the UI shows delivery state. A duplicate is not a
-      // failure — the video is already on that storefront — so mark it present
-      // (green) with a clear note instead of an error, and don't create a copy.
-      for (const r of (res.results || [])) {
-        const isDup = !r.ok && r.duplicate
-        await fetch('/api/global-sync/deliver/result', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            targetId: r.targetId,
-            ok: r.ok || isDup,
-            detail: isDup ? 'Already on this storefront — skipped duplicate' : (r.ok ? 'Uploaded to storefront' : (r.error || 'Upload failed')),
-          }),
-        }).catch(() => {})
+      // Wave 1: everything that already has its video. Runs while dubs render.
+      if (uploadNow.length > 0) {
+        toast(needDub.length > 0
+          ? `Uploading ${uploadNow.length} ${uploadNow.length === 1 ? 'store' : 'stores'} now while ${needDub.length} ${needDub.length === 1 ? 'market is' : 'markets are'} dubbed. Keep this tab open.`
+          : 'Uploading to your storefronts… keep this tab open.')
+        results.push(...await deliverWave(new Set(uploadNow.map(t => t.domain)), 'Uploading…'))
+      } else if (needDub.length > 0) {
+        toast(`Dubbing ${needDub.length} ${needDub.length === 1 ? 'market' : 'markets'} first — this can take a couple of minutes each.`)
       }
+
+      // Wave 2: the dubbed markets, as soon as their audio exists.
+      setPhase('Finishing the dubs…')
+      await dubbingDone
       await refreshTargets(jid)
-      const results = res.results || []
+      if (needDub.length > 0) {
+        results.push(...await deliverWave(dubDomains, 'Uploading the dubbed markets…'))
+      }
+
+      if (blocked.length > 0) {
+        toast(`${blocked.length} ${blocked.length === 1 ? 'store was' : 'stores were'} skipped (not signed in / not enrolled).`)
+      }
       const done = results.filter(r => r.ok).length
       const dups = results.filter(r => !r.ok && r.duplicate).length
       toast.success(`Uploaded to ${done} of ${results.length} storefronts${dups > 0 ? ` · ${dups} already there` : ''}`)

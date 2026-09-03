@@ -5887,10 +5887,17 @@ async function deliverStorefronts(items) {
 // app can show a checklist instead of failing silently. Closes each tab after.
 async function preflightStorefronts(domains) {
   const results = []
-  for (const domain of (domains || [])) {
+  // Check several marketplaces at once. Each check opens a background tab, waits
+  // for it to hydrate and probes it, so doing them one after another added the
+  // settle time of every store to the run before a single byte was uploaded.
+  // Read-only, so a small pool is safe (unlike the upload pool, which Amazon
+  // throttles).
+  const list = (domains || []).slice()
+  const POOL = 3
+  const checkOne = async (domain) => {
     let tabId = null, status = 'unknown'
     try { tabId = await openCreateTab(domain) } catch { /* open failed */ }
-    if (!tabId) { results.push({ domain, status: 'unknown' }); continue }
+    if (!tabId) { results.push({ domain, status: 'unknown' }); return }
     try {
       try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* declared inject may already be present */ }
       const probe = await new Promise((resolve) => {
@@ -5920,6 +5927,11 @@ async function preflightStorefronts(domains) {
     try { chrome.tabs.remove(tabId) } catch { /* ignore */ }
     results.push({ domain, status })
   }
+  let next = 0
+  const runNext = async () => {
+    while (next < list.length) await checkOne(list[next++])
+  }
+  await Promise.all(Array.from({ length: Math.min(POOL, list.length) }, () => runNext()))
   return results
 }
 
