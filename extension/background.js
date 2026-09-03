@@ -5998,6 +5998,21 @@ function mainWorldS3Put(params) {
 
 // Content script → background: run one S3 PUT (video or thumbnail) by injecting
 // the upload into the SAME tab's main world.
+// Diagnostic ring: the create-API calls the REAL Creator Hub made (captured by
+// storefront-token-sniffer.js in the page's own world). One manual upload by the
+// creator gives us Amazon's exact publish body to diff ours against — the same
+// approach that fixed the Creator Connections send. Persisted, because the MV3
+// worker sleeps after ~30s and would otherwise lose it before MVP asks.
+let _sfCreateLog = []
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (!msg || msg.action !== 'MVP_STOREFRONT_CREATE_LOG' || !msg.entry) return
+  try {
+    _sfCreateLog.unshift(Object.assign({}, msg.entry, { host: msg.host || ((sender && sender.tab && sender.tab.url) || '') }))
+    if (_sfCreateLog.length > 12) _sfCreateLog.length = 12
+    chrome.storage.local.set({ mvpSfCreateLog: _sfCreateLog })
+  } catch (e) { /* diagnostics must never break an upload */ }
+})
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.action === 'MVP_STOREFRONT_S3PUT') {
     const tabId = sender && sender.tab && sender.tab.id
@@ -6040,6 +6055,18 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     preflightStorefronts(domains)
       .then((results) => sendResponse({ ok: true, results }))
       .catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'preflight-failed' }))
+    return true // async
+  }
+  // DIAGNOSTIC: hand back what the real Creator Hub sent on its own create-API
+  // calls, so a rejected publish can be compared against Amazon's own request.
+  if (msg.type === 'MVP_STOREFRONT_DEBUG') {
+    ;(async () => {
+      let log = _sfCreateLog
+      if (!log || log.length === 0) {
+        try { const s = await chrome.storage.local.get('mvpSfCreateLog'); log = (s && s.mvpSfCreateLog) || [] } catch (e) { log = [] }
+      }
+      sendResponse({ ok: true, log: log })
+    })()
     return true // async
   }
   // Open a marketplace's Creator Hub in the foreground so the user can sign in.

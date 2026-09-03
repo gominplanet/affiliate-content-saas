@@ -243,10 +243,8 @@
       // 3. validate our ASIN (non-fatal)
       if (job.asin) { try { await api('asins', { sourceType: 'REQUEST_BODY', slateToken: ctx.slateToken, asins: [job.asin] }, ctx.csrf) } catch { /* non-fatal */ } }
 
-      // 4. moderation gate (non-fatal)
-      try { await api('check-content-quality', { slateToken: ctx.slateToken, mediaUri: videoKey, mediaAci: null, mediaContentInDraft: false, contentType: 'SHOPPABLE_VIDEO' }, ctx.csrf) } catch { /* non-fatal */ }
-
-      // 5. PUBLISH
+      // 4+5. moderation gate then PUBLISH — both keyed to the SAME mediaId (see
+      //      publish(); they used to disagree, which Amazon rejects at validation).
       step = 'publish'
       return await publish(job, ctx, videoKey, thumbKey)
     } catch (e) {
@@ -280,10 +278,38 @@
     // nothing, so a new id avoids any "mediaId already exists" collision).
     let last = ''
     for (let attempt = 0; attempt < 3; attempt++) {
-      const pubRes = await api('shoppable-media', body(uuid()), ctx.csrf)
-      const pub = await pubRes.json().catch(() => ({}))
+      // ONE id per attempt, used for BOTH the quality check and the publish.
+      // Amazon validates the publish against the media it quality-checked, so a
+      // publish carrying an id Amazon has never seen fails validation — we used
+      // to check with no id at all and then publish a fresh random one.
+      const mediaId = uuid()
+
+      // Moderation / quality gate. Its verdict is the real reason a publish gets
+      // rejected, so keep it: swallowing it entirely is why a rejection surfaced
+      // as an opaque validation error with nothing to act on.
+      let qNote = ''
+      try {
+        const qRes = await api('check-content-quality', {
+          slateToken: ctx.slateToken, mediaId, mediaUri: videoKey, mediaAci: null,
+          mediaContentInDraft: false, contentType: 'SHOPPABLE_VIDEO',
+        }, ctx.csrf)
+        const qRaw = await qRes.text().catch(() => '')
+        let q = {}
+        try { q = qRaw ? JSON.parse(qRaw) : {} } catch { /* keep the raw text */ }
+        if (!qRes.ok || (q && (q.hasError || q.isViolating === true))) {
+          qNote = ` · quality(${qRes.status}): ${qRaw.slice(0, 200)}`
+        }
+      } catch { /* non-fatal — the publish below still reports what matters */ }
+
+      const pubRes = await api('shoppable-media', body(mediaId), ctx.csrf)
+      // Read the FULL answer, not just `.message`: Amazon's one-liner hides the
+      // errorCode and field-level detail that separates an account gate (e.g. a
+      // verification Amazon wants you to complete) from a bad payload.
+      const raw = await pubRes.text().catch(() => '')
+      let pub = {}
+      try { pub = raw ? JSON.parse(raw) : {} } catch { /* keep the raw text */ }
       if (pubRes.ok && !pub.hasError) return { ok: true, mediaAci: pub.mediaAci || null }
-      last = pub.message || `shoppable-media ${pubRes.status}`
+      last = `${pub.message || `shoppable-media ${pubRes.status}`}${qNote} · amazon(${pubRes.status}): ${raw.slice(0, 300)}`
       const transient = pubRes.status >= 500 || /moderation|throttl|temporar|try again|timeout|rate limit|too many/i.test(last)
       if (transient && attempt < 2) { await sleep(3000 * (attempt + 1)); continue }
       break
@@ -298,6 +324,18 @@
     return /\/ap\/signin|\/ap\/register|\/gp\/(?:sign-in|css\/homepage)/i.test(location.href) ||
       !!document.querySelector('form[name="signIn"], #ap_email, input[name="email"][type="email"]')
   }
+
+  // Relay the MAIN-world create-API capture (storefront-token-sniffer.js) to the
+  // worker, so MVP can show what Amazon's own Creator Hub sends and we can diff
+  // our publish against it. Diagnostic only.
+  try {
+    window.addEventListener('message', (ev) => {
+      if (ev.source !== window) return
+      const d = ev.data
+      if (!d || d.__mvpCreateLog !== 1 || !d.entry) return
+      try { chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_CREATE_LOG', entry: d.entry, host: location.host }) } catch (e) { /* worker asleep */ }
+    })
+  } catch (e) { /* ignore */ }
 
   chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
     // Background asks us to run a job on this page.

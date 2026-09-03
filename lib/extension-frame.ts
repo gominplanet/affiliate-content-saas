@@ -166,6 +166,22 @@ export async function requestStorefrontPreflight(domains: string[]): Promise<Sto
   return res || { ok: false, error: 'timeout' }
 }
 
+/** One captured create-API call made by Amazon's OWN Creator Hub. */
+export interface StorefrontDebugEntry {
+  url: string; method: string; status: number
+  request: string | null; response: string; ts: number; host?: string
+}
+
+/**
+ * DIAGNOSTIC: what Amazon's own Creator Hub sent on its create-API calls (captured
+ * when the creator publishes manually). When Amazon rejects OUR publish with a
+ * validation error, this is the ground truth to diff against. Best-effort.
+ */
+export async function requestStorefrontDebug(): Promise<StorefrontDebugEntry[]> {
+  const res = await sendToExtension<{ ok?: boolean; log?: StorefrontDebugEntry[] }>({ type: 'MVP_STOREFRONT_DEBUG' }, 10_000)
+  return res && Array.isArray(res.log) ? res.log : []
+}
+
 /**
  * Open ONE marketplace's Creator Hub in a FOREGROUND tab so the creator can sign
  * in (or finish enrollment), then come back and retry. Best-effort.

@@ -28,11 +28,40 @@
       return null
     }
 
+    // ── Diagnostic: record the create-API calls the REAL Creator Hub makes ─────
+    // When Amazon rejects OUR publish with a validation error, the only reliable
+    // fix is to match what the page itself sends. So when the creator publishes
+    // manually, capture the exact request body + response for the create APIs we
+    // replay, and hand it to the isolated world (which relays it to the worker).
+    // Read-only, capped, and never blocks the page.
+    const WATCHED = /\/create\/api\/(shoppable-media|check-content-quality|path-and-credentials|asins)\b/
+    const relay = (entry) => { try { window.postMessage({ __mvpCreateLog: 1, entry: entry }, '*') } catch (e) { /* ignore */ } }
+
     const origFetch = window.fetch
     if (typeof origFetch === 'function') {
       window.fetch = function (input, init) {
         try { const v = pick(init && init.headers); if (v) stash(v) } catch (e) { /* ignore */ }
-        return origFetch.apply(this, arguments)
+        const out = origFetch.apply(this, arguments)
+        try {
+          let url = ''
+          try { url = typeof input === 'string' ? input : (input && input.url) || '' } catch (e) { /* ignore */ }
+          if (url && WATCHED.test(url)) {
+            const reqBody = init && typeof init.body === 'string' ? init.body : null
+            const method = (init && init.method) || 'GET'
+            out.then(function (res) {
+              try {
+                res.clone().text().then(function (txt) {
+                  relay({
+                    url: String(url).slice(0, 220), method: method, status: res.status,
+                    request: reqBody ? reqBody.slice(0, 6000) : null,
+                    response: String(txt || '').slice(0, 4000), ts: Date.now(),
+                  })
+                }).catch(function () { /* ignore */ })
+              } catch (e) { /* ignore */ }
+            }).catch(function () { /* ignore */ })
+          }
+        } catch (e) { /* never break the page */ }
+        return out
       }
     }
 

@@ -11,7 +11,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Globe, Loader2, Check, Circle, Mic, Play, Upload, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
-import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, getScoutStatus, type StorefrontMarketStatus } from '@/lib/extension-frame'
+import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, requestStorefrontDebug, getScoutStatus, type StorefrontMarketStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 
@@ -309,6 +309,33 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
 
   // Selected stores whose sign-in isn't confirmed (only meaningful once checked).
   const notReadyChosen = markets.filter(m => chosen.has(m.domain) && signin[m.domain] !== 'ready')
+
+  // Put every failure detail AND what Amazon's own Creator Hub sends on the
+  // clipboard, so a rejected publish can be diagnosed from one paste.
+  const [copyingDiag, setCopyingDiag] = useState(false)
+  async function copyDiagnostic() {
+    setCopyingDiag(true)
+    try {
+      const log = await requestStorefrontDebug()
+      const report = [
+        `SCOUT v${scout?.version || '?'} · ${new Date().toISOString()}`,
+        '',
+        'MVP upload results:',
+        ...targets.map(t => `  ${t.country} (${t.domain}) — ${t.state}${t.detail ? `: ${t.detail}` : ''}`),
+        '',
+        log.length === 0
+          ? 'Amazon Creator Hub calls captured: none yet. Publish one video by hand in the Creator Hub, then copy this again.'
+          : `Amazon Creator Hub calls captured (${log.length}):`,
+        ...log.map(e => `\n--- ${e.method} ${e.url} → ${e.status}\nREQUEST: ${e.request || '(none)'}\nRESPONSE: ${e.response}`),
+      ].join('\n')
+      await navigator.clipboard.writeText(report)
+      toast.success(log.length === 0
+        ? 'Copied. Publish one video by hand in the Creator Hub first, then copy again so we get Amazon’s own request.'
+        : `Copied the diagnostic, including ${log.length} of Amazon’s own calls.`)
+    } catch {
+      toast.error('Could not copy the diagnostic.')
+    } finally { setCopyingDiag(false) }
+  }
 
   // `jobIdArg` lets the one-click Upload pass the job it just created, before
   // React state has caught up.
@@ -804,6 +831,22 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
               )
             })}
           </div>
+          {/* Amazon rejected the publish → give the creator something actionable
+              plus the exact request Amazon's own Creator Hub makes, so a payload
+              mismatch can be diffed instead of guessed at. */}
+          {targets.some(t => t.state === 'failed') && (
+            <div className="mt-4 rounded-lg border p-3" style={{ borderColor: '#e0554b55', background: 'rgba(224,85,75,0.05)' }}>
+              <p className="text-[12px] font-medium mb-1" style={label}>Amazon rejected the publish</p>
+              <p className="text-[12px]" style={muted}>
+                The video and thumbnail reached Amazon; it was the final publish call that was refused. First try publishing one video by hand in the Creator Hub. If Amazon asks you to verify a phone number or accept something new, that gate is on the account and MVP can’t pass it for you. Once that manual publish goes through, hit the button below and send us the result.
+              </p>
+              <button type="button" onClick={() => void copyDiagnostic()} disabled={copyingDiag}
+                className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border mt-2"
+                style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                {copyingDiag ? <><Loader2 size={13} className="animate-spin" /> Collecting…</> : 'Copy the Amazon diagnostic'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
