@@ -17,25 +17,6 @@ import { requestStudioFinish, requestFindCampaign, requestAcceptCampaign, reques
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { asinFromAmazonUrl } from '@/lib/product-link'
-import { renderThumbnailOverlay } from '@/lib/thumbnail-overlay'
-import { createBrowserClient } from '@/lib/supabase/client'
-
-/** Host a data: URL image in the creator's storage and return its https URL. The
- *  master route only seeds https thumbnails, so the composited English thumbnail
- *  (canvas → data URL) has to be uploaded before it can travel to the storefronts. */
-async function hostDataUrl(dataUrl: string): Promise<string | null> {
-  try {
-    const sb = createBrowserClient()
-    const { data: { user } } = await sb.auth.getUser()
-    if (!user) return null
-    const blob = await (await fetch(dataUrl)).blob()
-    const path = `${user.id}/launchpad-thumb-${crypto.randomUUID()}.jpg`
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (sb.storage as any).from('instagram-videos').upload(path, blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' })
-    if (error) return null
-    return sb.storage.from('instagram-videos').getPublicUrl(path).data.publicUrl
-  } catch { return null }
-}
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -128,8 +109,8 @@ export default function LaunchpadPage() {
   // Full Co-Pilot finish: an AI thumbnail + the standard publish options, applied
   // to the uploaded video via /api/youtube/apply (same backend the Co-Pilot uses).
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
-  // The text-free twin of thumbUrl — the SAME render with zero words — for
-  // non-English storefronts. Both come from one design so they always match.
+  // A text-free render (same brief, zero words) for non-English storefronts.
+  // Null → the master builds its own clean variant, so nothing blocks on it.
   const [thumbCleanUrl, setThumbCleanUrl] = useState<string | null>(null)
   // Who's on the thumbnail — the creator's saved faces (same picker as Co-Pilot).
   // 'no-human' = product-only. Defaults to the first ready face when they have one.
@@ -193,44 +174,52 @@ export default function LaunchpadPage() {
 
   // Generate an AI thumbnail from the chosen title + product ASIN (same route the
   // Co-Pilot uses). Non-fatal: a channel can still publish without one.
-  // ONE design, TWO thumbnails. Render the scene TEXT-FREE (textMode 'clean'), keep
-  // that as the zero-words twin for non-English storefronts, then draw the headline
-  // onto a copy for English storefronts + YouTube. Because both come from the same
-  // render they always match — a French shopper sees the exact same image as a US
-  // one, minus the English words.
+  // TWO thumbnails, both Art Director quality:
+  //   1) The rich BAKED design (headline, callouts, banner) for YouTube + the
+  //      English storefronts — textMode 'graphic', the same path the Co-Pilot uses.
+  //   2) A TEXT-FREE render of the same brief for non-English storefronts, run in
+  //      parallel so it adds no wait. Not pixel-identical to #1 (a separate render),
+  //      by design: the creator prefers the richer baked look for English.
+  //   If #2 fails, the master builds its own clean variant, so nothing blocks.
   async function genThumbnail(titleArg?: string) {
     const t = (titleArg || chosenTitle || workingTitle || 'My video').trim()
     setThumbBusy(true)
     try {
-      const call = (noHuman: boolean) => fetch('/api/youtube/generate-thumbnail', {
+      const call = (textMode: 'graphic' | 'clean', noHuman: boolean) => fetch('/api/youtube/generate-thumbnail', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
+        // textMode 'graphic' is REQUIRED to match Co-Pilot — the designed gpt-image
+        // path at a clean 1280×720 with safe margins. 'clean' = same engine, zero text.
         body: JSON.stringify({
-          videoTitle: t, asin: asinClean || undefined, textMode: 'clean', headlineStyle: 'question',
+          videoTitle: t, asin: asinClean || undefined, textMode, headlineStyle: 'question',
           // The creator's pick: a specific saved face, or product-only.
           ...((noHuman || facePick === 'no-human') ? { noHuman: true } : { faceModelId: facePick }),
         }),
       })
-      // First try WITH the creator's own face (their saved selfies, if any). If
-      // they haven't added any, the route asks to set up a Face Model — but
-      // Launchpad shouldn't hard-block on that: retry as a clean PRODUCT-ONLY
-      // thumbnail so there's always something. Selfies added later get used.
-      let r = await call(false)
-      let j = await r.json().catch(() => ({}))
-      if (!r.ok && j?.needsFaceModel) { r = await call(true); j = await r.json().catch(() => ({})) }
-      const cleanScene: string | null = j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null)
-      if (!r.ok || !cleanScene) throw new Error(j.error || 'Could not generate a thumbnail')
-      setThumbCleanUrl(cleanScene)
+      const pickUrl = (j: { thumbnailUrl?: string; thumbnailUrls?: string[] }): string | null =>
+        j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null) || null
 
-      // Headline onto a copy → the English / YouTube version. Hosted so the master
-      // (which only seeds https) and the storefront queue can carry it.
-      const hook = String(j.overlayHook || t).trim()
-      let withText: string | null = null
-      try {
-        const ov = await renderThumbnailOverlay(cleanScene, hook)
-        withText = await hostDataUrl(ov.url)
-      } catch { /* fall back to the clean scene below */ }
-      setThumbUrl(withText || cleanScene)
-      if (!withText) toast.warning('Couldn’t bake the headline onto the thumbnail — using the clean version for YouTube too.')
+      // Kick off the text-free twin for non-English stores right away (best-effort).
+      const cleanPromise: Promise<string | null> = (async () => {
+        try {
+          let r = await call('clean', false)
+          let j = await r.json().catch(() => ({}))
+          if (!r.ok && j?.needsFaceModel) { r = await call('clean', true); j = await r.json().catch(() => ({})) }
+          return r.ok ? pickUrl(j) : null
+        } catch { return null }
+      })()
+
+      // The main baked thumbnail. First try WITH the creator's own face; if they
+      // have no saved face the route asks for one — Launchpad shouldn't hard-block
+      // on that, so retry PRODUCT-ONLY so there's always something.
+      let r = await call('graphic', false)
+      let j = await r.json().catch(() => ({}))
+      if (!r.ok && j?.needsFaceModel) { r = await call('graphic', true); j = await r.json().catch(() => ({})) }
+      const url = pickUrl(j)
+      if (!r.ok || !url) throw new Error(j.error || 'Could not generate a thumbnail')
+      setThumbUrl(url)
+
+      const clean = await cleanPromise
+      setThumbCleanUrl(clean) // null → the master generates its own text-free variant
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Thumbnail failed')
     } finally { setThumbBusy(false) }
@@ -587,10 +576,10 @@ export default function LaunchpadPage() {
                                 ? <img src={thumbCleanUrl} alt="Thumbnail with no text" className="w-full h-full object-cover" />
                                 : <span className="text-[12px]" style={muted}>{thumbBusy ? '…' : 'No thumbnail yet'}</span>}
                             </div>
-                            <p className="text-[11px] mt-1 font-medium" style={label}>Non-English stores <span className="font-normal" style={muted}>(same image, zero text)</span></p>
+                            <p className="text-[11px] mt-1 font-medium" style={label}>Non-English stores <span className="font-normal" style={muted}>(text-free version)</span></p>
                           </div>
                         </div>
-                        <p className="text-[11px] mt-1.5" style={muted}>Both come from one design, so they always match. Add a few selfies under Face Models to put yourself on it; otherwise MVP makes a clean product-only one. Custom thumbnails need a phone-verified YouTube channel; if yours isn&apos;t, the video still publishes with everything else.</p>
+                        <p className="text-[11px] mt-1.5" style={muted}>The non-English one is a text-free render of the same design. Add a few selfies under Face Models to put yourself on it; otherwise MVP makes a clean product-only one. Custom thumbnails need a phone-verified YouTube channel; if yours isn&apos;t, the video still publishes with everything else.</p>
                       </div>
 
                       {/* Publish options — the Co-Pilot defaults */}
