@@ -1404,6 +1404,10 @@ export interface StudioFinishOpts {
   /** Whether SCOUT should leave the subscriber notification ON (true) or off
    *  (false/undefined). Mirrors the API publish path's Yes/No choice. */
   notifySubscribers?: boolean
+  /** The channel that OWNS the video. Pass it whenever you know it: Studio is
+   *  opened channel-scoped, so a creator with more than one channel doesn't land
+   *  on Studio's generic error page (which silently failed every step). */
+  channelId?: string | null
   /** Tag the reviewed product on the video via YouTube Shopping's "Tag products"
    *  flow (only works for enrolled creators). Requires `productUrl`. */
   tagProduct?: boolean

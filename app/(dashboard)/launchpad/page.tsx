@@ -105,6 +105,12 @@ export default function LaunchpadPage() {
   const [privacy, setPrivacy] = useState<'draft' | 'public'>('draft')
   const [publishing, setPublishing] = useState(false)
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null)
+  // The channel that owns the upload — needed for a Studio link that lands on the
+  // right channel instead of erroring out.
+  const [publishedChannelId, setPublishedChannelId] = useState<string | null>(null)
+  // What the Studio finish actually managed to set. null = wasn't asked for.
+  // Drives the honest "finish these by hand" checklist below the publish button.
+  const [studioDone, setStudioDone] = useState<{ details: boolean | null; monetize: boolean | null } | null>(null)
   // The YouTube video id — used for the Studio deep link (schedule / go live).
   const [publishedVideoId, setPublishedVideoId] = useState<string | null>(null)
   // Full Co-Pilot finish: an AI thumbnail + the standard publish options, applied
@@ -267,6 +273,7 @@ export default function LaunchpadPage() {
         throw new Error(detail)
       }
       setPublishedUrl(j.url); setPublishedVideoId(String(j.videoId))
+      if (typeof j.channelId === 'string' && j.channelId) setPublishedChannelId(j.channelId)
 
       // 2) Apply the finishing pass — thumbnail + publish options + final privacy —
       //    via the same route the Co-Pilot uses. Non-fatal: the video is already up,
@@ -300,10 +307,14 @@ export default function LaunchpadPage() {
             selfCert: finishMonetize,
             endScreen: false,
             notifySubscribers: false,
+            channelId: typeof j.channelId === 'string' ? j.channelId : null,
           })
           const dOk = !finishDetails || !!fin.steps.find(s => s.step === 'details')?.ok
           const mStep = fin.steps.find(s => s.step === 'monetization')
           const mOk = !finishMonetize || !!mStep?.ok || !!mStep?.skipped
+          // Record what ACTUALLY landed, so the step can show a finish-by-hand
+          // checklist instead of a toast that disappears and overstates it.
+          setStudioDone({ details: finishDetails ? dOk : null, monetize: finishMonetize ? mOk : null })
           if (dOk && mOk) toast.success('Studio set: paid promotion' + (finishMonetize ? ', monetization + ad rating' : '') + '.')
           else if (fin.error === 'not-installed') toast.warning('SCOUT isn’t installed, so the Studio fields (paid promotion / monetization) were skipped. Install SCOUT and re-run, or set them by hand in Studio.', { duration: 10000 })
           else toast.warning('Couldn’t set every Studio field automatically. Open the video in YouTube Studio to finish paid promotion / monetization.', { duration: 10000 })
@@ -428,6 +439,19 @@ export default function LaunchpadPage() {
   // Auto-start the Amazon step: the moment YouTube is resolved (published or
   // skipped) and the ASIN is valid, create the master + run the geo check so Step
   // 4 opens already populated instead of behind another button. Runs once.
+  // The thumbnail headline is written from the video's title, and the storefronts
+  // use that same title, so generate the metadata as soon as Step 3 is reachable
+  // instead of waiting for the creator to open the YouTube step. Runs once.
+  const autoPrepared = useRef(false)
+  useEffect(() => {
+    if (autoPrepared.current || meta || preparing) return
+    if (!renderedUrl || !asinClean) return
+    autoPrepared.current = true
+    void prepare()
+    // prepare is a stable function declaration in this component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderedUrl, asinClean, meta, preparing])
+
   const autoStarted = useRef(false)
   useEffect(() => {
     if (autoStarted.current) return
@@ -462,14 +486,19 @@ export default function LaunchpadPage() {
   // the creator sees the whole journey without getting lost.
   const s1: StepState = renderedUrl ? 'done' : 'active'
   const s2: StepState = !renderedUrl ? 'locked' : asinOk ? 'done' : 'active'
-  const s3: StepState = !renderedUrl ? 'locked' : (publishedUrl || ytOpen === 'skipped') ? 'done' : 'active'
+  // Thumbnails stand on their own BEFORE YouTube, because Amazon needs them too:
+  // a creator who skips YouTube still leaves this step with both images.
+  const s3: StepState = !(renderedUrl && asinOk) ? 'locked' : thumbUrl ? 'done' : 'active'
+  // YouTube opens as soon as the thumbnails are made. It never hard-blocks on
+  // them (the master builds its own if you skip), so a done Step 3 isn't required.
+  const s4: StepState = !renderedUrl ? 'locked' : (publishedUrl || ytOpen === 'skipped') ? 'done' : s3 === 'active' ? 'locked' : 'active'
   // Amazon waits for the YouTube step to be resolved (published or skipped), so
   // only ONE step is ever "active" — no more two purple nodes at once.
-  const s4: StepState = !(renderedUrl && asinOk && s3 === 'done') ? 'locked' : masterId ? 'done' : 'active'
-  const s5: StepState = !masterId ? 'locked' : ccAccepted ? 'done' : 'active'
-  // Step 6 is a handoff (blog + social), so it's "active" once the video is on
-  // its way to Amazon and never marks itself done here.
-  const s6: StepState = !masterId ? 'locked' : 'active'
+  const s5: StepState = !(renderedUrl && asinOk && s4 === 'done') ? 'locked' : masterId ? 'done' : 'active'
+  const s6: StepState = !masterId ? 'locked' : ccAccepted ? 'done' : 'active'
+  // The last step is a handoff (blog + social), so it's "active" once the video is
+  // on its way to Amazon and never marks itself done here.
+  const s7: StepState = !masterId ? 'locked' : 'active'
 
   return (
     <>
@@ -502,11 +531,102 @@ export default function LaunchpadPage() {
           </p>
         </StepRow>
 
-        {/* 3. YouTube — optional */}
+        {/* 3. Thumbnails — BOTH of them, on their own, before YouTube. Amazon needs
+            these just as much as YouTube does, so a creator who skips YouTube still
+            leaves this step with a thumbnail for every storefront. */}
         <StepRow n={3} state={s3} last={false}
+          icon={<Sparkles size={15} style={{ color: '#7C3AED' }} />}
+          title="Thumbnails"
+          hint="Unlocks once your video is uploaded and the ASIN is set."
+          actions={thumbUrl ? (
+            <button type="button" onClick={() => void genThumbnail()} disabled={thumbBusy}
+              className="text-[12px] font-medium inline-flex items-center gap-1 disabled:opacity-50" style={{ color: '#7C3AED' }}>
+              {thumbBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Regenerate
+            </button>
+          ) : undefined}>
+          <>
+            <p className="text-[12px] mb-3" style={muted}>MVP makes two: one with the headline for YouTube and the English stores, and a text-free one for the non-English stores. Both use your face and the real product. These go to Amazon whether or not you publish to YouTube.</p>
+
+            {/* Who's on the thumbnail — same picker as Co-Pilot. Changing it
+                regenerates so the choice shows up right away. */}
+            <div>
+              <label className="text-[12px] font-medium" style={muted}>Who&apos;s on the thumbnail?</label>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {faceModels.map(m => (
+                  <button key={m.id} type="button" disabled={thumbBusy}
+                    onClick={() => { if (facePick === m.id) return; setFacePick(m.id); if (thumbUrl || thumbCleanUrl) void genThumbnail() }}
+                    className="px-3 py-1 rounded-full text-[11px] font-semibold disabled:opacity-60"
+                    style={facePick === m.id ? { background: '#FF9500', color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+                    {m.name}
+                  </button>
+                ))}
+                <button type="button" disabled={thumbBusy}
+                  onClick={() => { if (facePick === 'no-human') return; setFacePick('no-human'); if (thumbUrl || thumbCleanUrl) void genThumbnail() }}
+                  className="px-3 py-1 rounded-full text-[11px] font-semibold disabled:opacity-60"
+                  style={facePick === 'no-human' ? { background: '#3a3a3c', color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+                  No face
+                </button>
+              </div>
+              {faceModels.length === 0 && (
+                <p className="text-[11px] mt-1" style={muted}>No saved face yet. <a href="/photobooth" className="underline" style={{ color: '#7C3AED' }}>Add your selfies</a> to put yourself on the thumbnail.</p>
+              )}
+            </div>
+
+            {/* Thumbnail style — the same controls as Co-Pilot (Quick style,
+                Match a look, Fine-tune), sharing its remembered preferences. */}
+            <div className="mt-3">
+              <label className="text-[12px] font-medium" style={muted}>Thumbnail style</label>
+              <div className="mt-1.5">
+                {/* Stays editable while a render runs — changes apply on the
+                    next Generate, so the creator is never locked out. */}
+                <ThumbnailBoostPanel
+                  boost={boost}
+                  face={facePick !== 'no-human' ? (faceModels.find(m => m.id === facePick) || null) : null}
+                />
+              </div>
+            </div>
+
+            {/* One design, two thumbnails: with the headline (YouTube + English
+                stores) and a text-free one (non-English stores). */}
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <div className="rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+                  {thumbUrl
+                    ? <img src={thumbUrl} alt="Thumbnail with headline" className="w-full h-full object-cover" />
+                    : thumbBusy
+                      ? <span className="text-[12px] inline-flex items-center gap-1.5" style={muted}><Loader2 size={13} className="animate-spin" /> Designing…</span>
+                      : (
+                        // Nothing yet: set the style above, then generate on purpose.
+                        <button type="button" onClick={() => void genThumbnail()} disabled={!meta && preparing}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+                          <Sparkles size={15} /> Generate both thumbnails
+                        </button>
+                      )}
+                </div>
+                <p className="text-[11px] mt-1 font-medium" style={label}>YouTube + English stores <span className="font-normal" style={muted}>(US, CA, UK, AU)</span></p>
+              </div>
+              <div>
+                <div className="rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+                  {thumbCleanUrl
+                    ? <img src={thumbCleanUrl} alt="Thumbnail with no text" className="w-full h-full object-cover" />
+                    : <span className="text-[12px]" style={muted}>{thumbBusy ? '…' : 'No thumbnail yet'}</span>}
+                </div>
+                <p className="text-[11px] mt-1 font-medium" style={label}>Non-English stores <span className="font-normal" style={muted}>(text-free version)</span></p>
+              </div>
+            </div>
+            <p className="text-[11px] mt-1.5" style={muted}>
+              {preparing && !meta
+                ? 'Writing your title first. The headline on the thumbnail comes from it.'
+                : 'Skip this if you like and MVP builds both for you when the video goes to Amazon. Custom thumbnails on YouTube need a phone-verified channel; if yours isn’t, the video still publishes with everything else.'}
+            </p>
+          </>
+        </StepRow>
+
+        {/* 4. YouTube — optional */}
+        <StepRow n={4} state={s4} last={false}
           icon={<Youtube size={15} style={{ color: '#FF0000' }} />}
           title={<>Publish to YouTube <span className="font-normal" style={muted}>(optional)</span></>}
-          hint="Unlocks once your video is uploaded."
+          hint="Unlocks once your thumbnails are made above."
           actions={
             ytOpen === 'choose' ? (
               <div className="flex items-center gap-2">
@@ -548,84 +668,14 @@ export default function LaunchpadPage() {
                         <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
                       </div>
 
-                      {/* Who's on the thumbnail — same picker as Co-Pilot. Changing it
-                          regenerates so the choice shows up right away. */}
-                      <div>
-                        <label className="text-[12px] font-medium" style={muted}>Who&apos;s on the thumbnail?</label>
-                        <div className="flex flex-wrap gap-1.5 mt-1">
-                          {faceModels.map(m => (
-                            <button key={m.id} type="button" disabled={thumbBusy}
-                              onClick={() => { if (facePick === m.id) return; setFacePick(m.id); if (thumbUrl || thumbCleanUrl) void genThumbnail() }}
-                              className="px-3 py-1 rounded-full text-[11px] font-semibold disabled:opacity-60"
-                              style={facePick === m.id ? { background: '#FF9500', color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
-                              {m.name}
-                            </button>
-                          ))}
-                          <button type="button" disabled={thumbBusy}
-                            onClick={() => { if (facePick === 'no-human') return; setFacePick('no-human'); if (thumbUrl || thumbCleanUrl) void genThumbnail() }}
-                            className="px-3 py-1 rounded-full text-[11px] font-semibold disabled:opacity-60"
-                            style={facePick === 'no-human' ? { background: '#3a3a3c', color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
-                            No face
-                          </button>
+                      {/* The thumbnail is made in Step 3 — shown here so the creator
+                          can see what YouTube will get without leaving the step. */}
+                      {thumbUrl && (
+                        <div className="flex items-center gap-2.5">
+                          <img src={thumbUrl} alt="Thumbnail" className="w-28 rounded-lg border" style={{ borderColor: 'var(--border)' }} />
+                          <p className="text-[11px]" style={muted}>Your thumbnail from Step 3. <button type="button" onClick={() => void genThumbnail()} disabled={thumbBusy} className="underline disabled:opacity-50" style={{ color: '#7C3AED' }}>Regenerate</button></p>
                         </div>
-                        {faceModels.length === 0 && (
-                          <p className="text-[11px] mt-1" style={muted}>No saved face yet. <a href="/photobooth" className="underline" style={{ color: '#7C3AED' }}>Add your selfies</a> to put yourself on the thumbnail.</p>
-                        )}
-                      </div>
-
-                      {/* Thumbnail style — the same controls as Co-Pilot (Quick style,
-                          Match a look, Fine-tune), sharing its remembered preferences. */}
-                      <div>
-                        <label className="text-[12px] font-medium" style={muted}>Thumbnail style</label>
-                        <div className="mt-1.5">
-                          {/* Stays editable while a render runs — changes apply on the
-                              next Generate, so the creator is never locked out. */}
-                          <ThumbnailBoostPanel
-                            boost={boost}
-                            face={facePick !== 'no-human' ? (faceModels.find(m => m.id === facePick) || null) : null}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Thumbnail — AI-generated, the same engine the Co-Pilot uses */}
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <label className="text-[12px] font-medium" style={muted}>Thumbnail</label>
-                          <button type="button" onClick={() => void genThumbnail()} disabled={thumbBusy}
-                            className="text-[11px] font-medium inline-flex items-center gap-1 disabled:opacity-50" style={{ color: '#7C3AED' }}>
-                            {thumbBusy ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} {thumbUrl ? 'Regenerate' : 'Generate'}
-                          </button>
-                        </div>
-                        {/* One design, two thumbnails: with the headline (YouTube + English
-                            stores) and the identical image with zero text (non-English stores). */}
-                        <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <div>
-                            <div className="rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
-                              {thumbUrl
-                                ? <img src={thumbUrl} alt="Thumbnail with headline" className="w-full h-full object-cover" />
-                                : thumbBusy
-                                  ? <span className="text-[12px] inline-flex items-center gap-1.5" style={muted}><Loader2 size={13} className="animate-spin" /> Designing…</span>
-                                  : (
-                                    // Nothing yet: set the style above, then generate on purpose.
-                                    <button type="button" onClick={() => void genThumbnail()}
-                                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: '#7C3AED' }}>
-                                      <Sparkles size={15} /> Generate thumbnail
-                                    </button>
-                                  )}
-                            </div>
-                            <p className="text-[11px] mt-1 font-medium" style={label}>YouTube + English stores <span className="font-normal" style={muted}>(US, CA, UK, AU)</span></p>
-                          </div>
-                          <div>
-                            <div className="rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
-                              {thumbCleanUrl
-                                ? <img src={thumbCleanUrl} alt="Thumbnail with no text" className="w-full h-full object-cover" />
-                                : <span className="text-[12px]" style={muted}>{thumbBusy ? '…' : 'No thumbnail yet'}</span>}
-                            </div>
-                            <p className="text-[11px] mt-1 font-medium" style={label}>Non-English stores <span className="font-normal" style={muted}>(text-free version)</span></p>
-                          </div>
-                        </div>
-                        <p className="text-[11px] mt-1.5" style={muted}>The non-English one is a text-free render of the same design. Add a few selfies under Face Models to put yourself on it; otherwise MVP makes a clean product-only one. Custom thumbnails need a phone-verified YouTube channel; if yours isn&apos;t, the video still publishes with everything else.</p>
-                      </div>
+                      )}
 
                       {/* Publish options — the Co-Pilot defaults */}
                       <div>
@@ -667,10 +717,42 @@ export default function LaunchpadPage() {
                         <p className="text-[13px] inline-flex items-center gap-1.5 flex-wrap" style={{ color: '#10B981' }}>
                           <Check size={14} /> Done.
                           {publishedVideoId && (
-                            <a href={`https://studio.youtube.com/video/${publishedVideoId}/edit`} target="_blank" rel="noreferrer" className="underline font-medium">Open in Studio to schedule or go live</a>
+                            // Scope the link to the OWNING channel. A bare
+                            // /video/<id>/edit opens under whatever channel Studio is
+                            // currently on, and Studio throws a generic "something went
+                            // wrong" until it resolves the right one.
+                            <a href={publishedChannelId
+                              ? `https://studio.youtube.com/channel/${publishedChannelId}/video/${publishedVideoId}/edit`
+                              : `https://studio.youtube.com/video/${publishedVideoId}/edit`}
+                              target="_blank" rel="noreferrer" className="underline font-medium">Open in Studio to schedule or go live</a>
                           )}
                           <a href={publishedUrl} target="_blank" rel="noreferrer" className="underline" style={muted}>watch page</a>
                         </p>
+                      )}
+                      {/* Finish in Studio. YouTube's API cannot set paid promotion or
+                          the AI-use answer at all, so those only ever happen in Studio:
+                          SCOUT drives them, and whatever it couldn't confirm is listed
+                          here to do by hand. Never claim a field we didn't verify. */}
+                      {publishedUrl && studioDone && (studioDone.details === false || studioDone.monetize === false) && (
+                        <div className="rounded-lg border p-3" style={{ borderColor: '#d9770655', background: 'rgba(217,119,6,0.06)' }}>
+                          <p className="text-[12px] font-medium mb-1" style={label}>Finish these in Studio</p>
+                          <p className="text-[12px] mb-2" style={muted}>MVP could not confirm these, so check them yourself rather than trust it. Everything else (title, description, tags, thumbnail, privacy) is already set.</p>
+                          <ul className="text-[12px] space-y-1 mb-2" style={muted}>
+                            {studioDone.details === false && (
+                              <li>Under <strong>Video details</strong>: tick <strong>Paid promotion</strong>, answer <strong>AI use</strong>, and untick <strong>Publish to subscriptions feed and notify subscribers</strong> if you don&apos;t want the bell.</li>
+                            )}
+                            {studioDone.monetize === false && (
+                              <li>Under <strong>Monetization</strong>: turn it on and submit the <strong>ad-suitability rating</strong>.</li>
+                            )}
+                          </ul>
+                          <a href={publishedChannelId
+                            ? `https://studio.youtube.com/channel/${publishedChannelId}/video/${publishedVideoId}/edit`
+                            : `https://studio.youtube.com/video/${publishedVideoId}/edit`}
+                            target="_blank" rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg text-white" style={{ background: '#d97706' }}>
+                            <Youtube size={13} /> Open the video in Studio
+                          </a>
+                        </div>
                       )}
                     </>
                   )}
@@ -680,7 +762,7 @@ export default function LaunchpadPage() {
         </StepRow>
 
         {/* 4. Amazon storefronts — the uploaded file is the master */}
-        <StepRow n={4} state={s4} last={false}
+        <StepRow n={5} state={s5} last={false}
           icon={<Globe size={15} style={{ color: '#0EA5A4' }} />}
           title="Amazon storefronts — every geo"
           hint="Unlocks after the ASIN is set and you’ve published to YouTube (or hit Skip) above.">
@@ -707,7 +789,7 @@ export default function LaunchpadPage() {
 
         {/* 5. Creator Connections (US) — after the uploads, offer to accept a
             live US campaign for this product right here. */}
-        <StepRow n={5} state={s5} last={false}
+        <StepRow n={6} state={s6} last={false}
           icon={<Handshake size={15} style={{ color: '#7C3AED' }} />}
           title="Creator Connections (US)"
           hint="Unlocks once your video is on its way to your storefronts.">
@@ -742,7 +824,7 @@ export default function LaunchpadPage() {
         {/* 6. Blog + social — the natural end of the pipeline. The master video is
             now a row in youtube_videos, so the Blog Post Generator can turn it into
             a post and push it to socials; deep-link straight to that video. */}
-        <StepRow n={6} state={s6} last={true}
+        <StepRow n={7} state={s7} last={true}
           icon={<Sparkles size={15} style={{ color: '#7C3AED' }} />}
           title="Blog post & social push"
           hint="Unlocks once your video is on its way to your storefronts.">

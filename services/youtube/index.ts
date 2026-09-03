@@ -867,7 +867,7 @@ export class YouTubeOAuthService {
   async uploadShort(
     videoBytes: Uint8Array,
     opts: { title: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private' },
-  ): Promise<{ id: string }> {
+  ): Promise<{ id: string; channelId: string | null }> {
     // YouTube caps combined tag length at ~500 chars — trim defensively.
     const tags: string[] = []
     let tagLen = 0
@@ -922,9 +922,13 @@ export class YouTubeOAuthService {
       const b = await putRes.text()
       throw new Error(`YouTube upload failed ${putRes.status}: ${b.slice(0, 400)}`)
     }
-    const json = await putRes.json() as { id?: string }
+    // part=snippet,status, so the finished resource carries the OWNING channel.
+    // Callers need it to build a Studio deep link scoped to that channel — an
+    // unscoped /video/<id>/edit opens under whatever channel Studio is currently
+    // on and errors out when that isn't the owner.
+    const json = await putRes.json() as { id?: string; snippet?: { channelId?: string } }
     if (!json.id) throw new Error('YouTube upload: no video id in response.')
-    return { id: json.id }
+    return { id: json.id, channelId: json.snippet?.channelId || null }
   }
 
   /**

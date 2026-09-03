@@ -88,7 +88,7 @@ async function handleUpload(request: Request) {
     const yt = new YouTubeOAuthService(token)
     // uploadShort is a generic resumable video upload; the only "Short" part is
     // the caller's metadata, so it publishes a full horizontal video just as well.
-    const { id } = await yt.uploadShort(bytes, { title, description, tags, privacyStatus: body.privacyStatus || 'public' })
+    const { id, channelId } = await yt.uploadShort(bytes, { title, description, tags, privacyStatus: body.privacyStatus || 'public' })
     recordUsage({ userId: user.id, tier, feature: 'youtube_video_upload', model: 'youtube-data-api', images: 1 })
     void recordReachSample({
       userId: user.id, platform: 'youtube', mediaId: id,
@@ -96,7 +96,8 @@ async function handleUpload(request: Request) {
       hashtags: tags.map(t => (t.startsWith('#') ? t : `#${t}`)),
       productText: title,
     }).catch(() => {})
-    return NextResponse.json({ ok: true, videoId: id, url: `https://youtube.com/watch?v=${id}` })
+    // channelId lets the caller build a Studio link scoped to the owning channel.
+    return NextResponse.json({ ok: true, videoId: id, channelId, url: `https://youtube.com/watch?v=${id}` })
   } catch (e) {
     // Never return an empty reason (a thrown Error with no message became a bare
     // "Publish failed" on the client). Fall back to a stringified error.

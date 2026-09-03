@@ -5002,7 +5002,15 @@ async function scanStudioVideos() {
 // The notify-subscribers bell follows the user's Yes/No choice: the API publish
 // path passes it through to the Data API, and the Details pass below sets the
 // Studio "publish to subs feed & notify" checkbox to match.
-const STUDIO_VIDEO = (id, panel) => `https://studio.youtube.com/video/${id}/${panel}`
+// Scope the URL to the OWNING channel whenever we know it. A bare
+// /video/<id>/<panel> resolves under whatever channel Studio is currently on,
+// and Studio throws a generic "something went wrong" when that isn't the owner
+// — which silently failed every finish step for creators with more than one
+// channel. The channel-scoped form lands on the right channel first time.
+let _studioChannelId = null
+const STUDIO_VIDEO = (id, panel) => _studioChannelId
+  ? `https://studio.youtube.com/channel/${_studioChannelId}/video/${id}/${panel}`
+  : `https://studio.youtube.com/video/${id}/${panel}`
 
 // Shared, self-contained in-page toolkit. Injected functions can't reference
 // outer scope, so each one rebuilds these from this source via .toString()
@@ -5713,6 +5721,8 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 async function scanStudioFinish(videoId, opts, callerTabId) {
   if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) return { ok: false, error: 'bad-video-id', steps: [] }
   const want = opts || { details: true, monetize: true, selfCert: true, endScreen: true }
+  // Opens Studio on the channel that OWNS the video (see STUDIO_VIDEO).
+  _studioChannelId = (want.channelId && /^UC[\w-]{20,}$/.test(String(want.channelId))) ? String(want.channelId) : null
   const steps = []
   let tabId = null
   // First panel we need to land on (open the tab there directly).

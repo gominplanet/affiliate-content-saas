@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.42'
+export const SCOUT_LATEST_VERSION = '1.17.43'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'A first-run page now turns on international Amazon and non-Amazon stores in one click, instead of leaving two toggles to find in the popup. Storefront uploads also run the moderation check and the publish under one media id (Amazon rejected the mismatch) and report Amazon’s full error.'
+  'YouTube Studio is now opened on the channel that owns the video. An unscoped link landed on Studio’s error page for anyone with more than one channel, which silently skipped paid promotion, the AI-use answer and monetization.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
