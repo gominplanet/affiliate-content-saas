@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.41'
+export const SCOUT_LATEST_VERSION = '1.17.42'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Storefront uploads now run the moderation check and the publish under one media id (Amazon rejected the mismatch), report Amazon’s full error instead of a one-line summary, and capture what the real Creator Hub sends so a refused publish can be diagnosed.'
+  'A first-run page now turns on international Amazon and non-Amazon stores in one click, instead of leaving two toggles to find in the popup. Storefront uploads also run the moderation check and the publish under one media id (Amazon rejected the mismatch) and report Amazon’s full error.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

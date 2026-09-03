@@ -5998,6 +5998,17 @@ function mainWorldS3Put(params) {
 
 // Content script → background: run one S3 PUT (video or thumbnail) by injecting
 // the upload into the SAME tab's main world.
+// ── First run ───────────────────────────────────────────────────────────────
+// Chrome forbids an extension from granting itself optional host permissions
+// (the grant needs a user gesture + Chrome's own dialog), so "already on at
+// install" isn't possible. Opening the welcome page once gets it down to a
+// single click instead of two toggles the creator has to find in the popup.
+// Install only — never on an update or a browser restart.
+chrome.runtime.onInstalled.addListener((details) => {
+  if (!details || details.reason !== 'install') return
+  try { chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html'), active: true }) } catch (e) { /* never block install */ }
+})
+
 // Diagnostic ring: the create-API calls the REAL Creator Hub made (captured by
 // storefront-token-sniffer.js in the page's own world). One manual upload by the
 // creator gives us Amazon's exact publish body to diff ours against — the same

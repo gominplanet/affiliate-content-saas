@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>SCOUT is installed</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  body { margin: 0; padding: 48px 20px; color: #f5f5f7; background: #0f0f14;
+         display: flex; justify-content: center; }
+  .wrap { width: 100%; max-width: 560px; }
+
+  .head { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; }
+  .head img { width: 42px; height: 42px; border-radius: 11px; flex: none; }
+  .head h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; margin: 0;
+       background: linear-gradient(90deg,#a78bfa,#60a5fa); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { font-size: 14px; color: #a1a1aa; line-height: 1.55; margin: 0 0 26px; }
+
+  .card { padding: 18px; border-radius: 14px; background: #16161c; border: 1px solid rgba(255,255,255,.07); }
+  .card .h { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #6b6b76; margin: 0 0 14px; }
+
+  .row { display: flex; align-items: flex-start; gap: 11px; padding: 9px 0; }
+  .row .ic { width: 26px; height: 26px; border-radius: 8px; flex: none; display: flex; align-items: center; justify-content: center;
+             font-size: 14px; background: linear-gradient(135deg, rgba(124,58,237,.22), rgba(37,99,235,.18)); }
+  .row .tt { font-size: 13.5px; font-weight: 700; color: #e4e4e7; }
+  .row .ts { font-size: 12px; color: #86868b; margin-top: 2px; line-height: 1.5; }
+  .row .state { margin-left: auto; flex: none; font-size: 11px; font-weight: 700; color: #6b6b76; white-space: nowrap; padding-top: 4px; }
+  .row .state.on { color: #4ade80; }
+
+  .btn { width: 100%; margin-top: 18px; padding: 14px; border: 0; border-radius: 12px; cursor: pointer;
+         font-size: 14.5px; font-weight: 800; letter-spacing: -0.01em; color: #fff;
+         background: linear-gradient(90deg,#7C3AED,#2563eb); transition: filter .15s, opacity .15s; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .note { font-size: 11.5px; color: #6b6b76; text-align: center; margin: 10px 0 0; line-height: 1.5; }
+  .done { display: none; align-items: center; gap: 9px; margin-top: 18px; padding: 13px 15px; border-radius: 12px;
+          background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.25);
+          font-size: 13px; font-weight: 700; color: #4ade80; }
+  .done.show { display: flex; }
+  .err { display: none; font-size: 12px; color: #f87171; margin-top: 12px; line-height: 1.5; }
+  .err.show { display: block; }
+
+  .foot { margin-top: 26px; font-size: 12px; color: #86868b; line-height: 1.6; }
+  .foot a { color: #a78bfa; font-weight: 700; text-decoration: none; }
+  .foot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <img src="icons/icon48.png" alt="SCOUT" />
+      <h1>SCOUT is installed</h1>
+    </div>
+    <p class="lede">One step left. SCOUT ships locked to amazon.com so it asks for as little as possible up front. Turning these on lets it work everywhere you actually sell. You can flip them back off any time from the SCOUT icon in your toolbar.</p>
+
+    <div class="card">
+      <p class="h">Recommended access</p>
+
+      <div class="row">
+        <div class="ic">🌍</div>
+        <div>
+          <div class="tt">International Amazon (CA, UK, AU)</div>
+          <div class="ts">Publishes your videos to your Canadian, UK and Australian storefronts, and lets the product finder search those marketplaces.</div>
+        </div>
+        <div class="state" id="intlState">off</div>
+      </div>
+
+      <div class="row">
+        <div class="ic">🛒</div>
+        <div>
+          <div class="tt">Non-Amazon products</div>
+          <div class="ts">Reads product details on Walmart, Target, Best Buy and other stores, so you can build content around products that are not on Amazon.</div>
+        </div>
+        <div class="state" id="retailState">off</div>
+      </div>
+
+      <button class="btn" id="grant">Turn both on</button>
+      <p class="note">Chrome will ask you to confirm. That prompt is Chrome's, and it is the only way an extension can be given access to a site.</p>
+
+      <div class="done" id="done">✓ You are all set. You can close this tab.</div>
+      <div class="err" id="err"></div>
+    </div>
+
+    <p class="foot">SCOUT works with an MVP Affiliate account. <a id="open" href="https://www.mvpaffiliate.io" target="_blank" rel="noopener">Open MVP Affiliate</a></p>
+  </div>
+  <script src="welcome.js"></script>
+</body>
+</html>
