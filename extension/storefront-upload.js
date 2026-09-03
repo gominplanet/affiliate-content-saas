@@ -100,7 +100,7 @@
       // Longer than the worker's own step timeouts (download 120s + PUT 120s) so
       // its specific error surfaces instead of this blanket one; still under the
       // 300s per-job budget in deliverStorefronts.
-      const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('no worker response (SW may have been killed)')) } }, 760000)
+      const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('no worker response (SW may have been killed)')) } }, 1300000)
       chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_S3PUT', srcUrl, creds, key, contentType }, (resp) => {
         if (settled) return
         settled = true; clearTimeout(to)
@@ -259,9 +259,27 @@
         }
       }
 
+      // Amazon's upload buckets are named per REGION, so marketplaces in the same
+      // region share one. If this video already went into THIS bucket for another
+      // market in this run, publish against that key instead of sending the whole
+      // file again. Falls back to a real upload if the reuse is rejected later.
       step = 'upload-video'
-      const videoKey = `${creds.s3Folder}/${uuid()}.mp4`
-      await bgS3Put({ srcUrl: job.videoUrl, creds, key: videoKey, contentType: 'video/mp4' })
+      let videoKey = null
+      let reusedKey = false
+      try {
+        const known = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_GETKEY', bucket: creds.s3Bucket, srcUrl: job.videoUrl }, (r) => {
+            resolve(chrome.runtime.lastError ? null : (r && r.key) || null)
+          })
+        })
+        if (known) { videoKey = known; reusedKey = true }
+      } catch { /* fall through to a normal upload */ }
+
+      if (!videoKey) {
+        videoKey = `${creds.s3Folder}/${uuid()}.mp4`
+        await bgS3Put({ srcUrl: job.videoUrl, creds, key: videoKey, contentType: 'video/mp4' })
+        try { chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_PUTKEY', bucket: creds.s3Bucket, srcUrl: job.videoUrl, key: videoKey }) } catch { /* best-effort */ }
+      }
 
       // 3. validate our ASIN (non-fatal)
       if (job.asin) { try { await api('asins', { sourceType: 'REQUEST_BODY', slateToken: ctx.slateToken, asins: [job.asin] }, ctx.csrf) } catch { /* non-fatal */ } }
@@ -269,7 +287,19 @@
       // 4+5. moderation gate then PUBLISH — both keyed to the SAME mediaId (see
       //      publish(); they used to disagree, which Amazon rejects at validation).
       step = 'publish'
-      return await publish(job, ctx, videoKey, thumbKey)
+      try {
+        return await publish(job, ctx, videoKey, thumbKey)
+      } catch (e) {
+        // Sharing a bucket doesn't guarantee Amazon accepts another marketplace's
+        // key. If a reused key was refused, upload our own copy and publish again
+        // so reuse can never make a market worse off than before.
+        if (!reusedKey) throw e
+        step = 'upload-video'
+        const ownKey = `${creds.s3Folder}/${uuid()}.mp4`
+        await bgS3Put({ srcUrl: job.videoUrl, creds, key: ownKey, contentType: 'video/mp4' })
+        step = 'publish'
+        return await publish(job, ctx, ownKey, thumbKey)
+      }
     } catch (e) {
       const msg = e && e.message ? e.message : String(e)
       const timedOut = /abort|timeout|signal/i.test(msg)

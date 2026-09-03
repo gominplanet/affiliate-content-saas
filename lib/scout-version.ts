@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.45'
+export const SCOUT_LATEST_VERSION = '1.17.46'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Records which storage bucket each Amazon marketplace asks uploads to be sent to, so a run to several storefronts can be checked for whether one upload could serve them all instead of sending the whole video to each.'
+  'Storefronts in the same Amazon region now share one upload instead of sending the whole video to each, and a slow upload to a distant region no longer times out before it finishes.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

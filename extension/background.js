@@ -5827,7 +5827,7 @@ async function deliverOneDomain(domain, jobs) {
     try { await chrome.scripting.executeScript({ target: { tabId }, files: ['storefront-upload.js'] }) } catch { /* fall through; per-job retry below still tries */ }
   }
   const sendJob = (job) => new Promise((resolve) => {
-    const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 820000)
+    const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 1500000)
     chrome.tabs.sendMessage(tabId, { action: 'MVP_STOREFRONT_UPLOAD_ONE', job }, (resp) => {
       clearTimeout(to)
       if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message, _unreachable: true })
@@ -5853,6 +5853,8 @@ async function deliverOneDomain(domain, jobs) {
 }
 
 async function deliverStorefronts(items) {
+  // Fresh run: never reuse an S3 key uploaded for a previous video.
+  _sfUploadedKeys = {}
   // Group by domain so we reuse one create tab per marketplace.
   const byDomain = {}
   for (const it of items) (byDomain[it.domain || 'amazon.com'] ||= []).push(it)
@@ -5993,7 +5995,7 @@ function mainWorldS3Put(params) {
             'x-amz-date': amzDate, 'x-amz-security-token': creds.awsSessionToken,
             'x-amz-tagging': 'temporary=true', 'Authorization': auth,
           },
-          signal: AbortSignal.timeout(420000),
+          signal: AbortSignal.timeout(900000),
         })
       } catch (e) { return { ok: false, error: `S3 PUT ${/abort|timeout/i.test(String(e && e.message)) ? 'timed out' : 'failed: ' + (e && e.message || e)}` } }
       if (!res.ok) return { ok: false, error: `S3 PUT ${res.status}: ${(await res.text().catch(() => '')).slice(0, 150)}` }
@@ -6017,6 +6019,28 @@ function mainWorldS3Put(params) {
 chrome.runtime.onInstalled.addListener((details) => {
   if (!details || details.reason !== 'install') return
   try { chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html'), active: true }) } catch (e) { /* never block install */ }
+})
+
+// ── Uploaded-key reuse across marketplaces ──────────────────────────────────
+// Amazon hands each marketplace an S3 bucket named for its REGION
+// (creator-studio-prod-us-east-1, creator-studio-prod-eu-west-1, ...), so
+// marketplaces in the same region share one bucket. When they do, the same video
+// only has to be uploaded ONCE: every market in that region can publish against
+// the key we already put there. That's the difference between a four-geo run
+// costing four full uploads and costing one per region.
+// Keyed by `${bucket}|${srcUrl}` and cleared at the start of every delivery run,
+// so nothing is ever reused across videos.
+let _sfUploadedKeys = {}
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg) return
+  if (msg.action === 'MVP_STOREFRONT_GETKEY') {
+    sendResponse({ key: _sfUploadedKeys[`${msg.bucket}|${msg.srcUrl}`] || null })
+    return false
+  }
+  if (msg.action === 'MVP_STOREFRONT_PUTKEY') {
+    try { _sfUploadedKeys[`${msg.bucket}|${msg.srcUrl}`] = msg.key } catch (e) { /* ignore */ }
+    return false
+  }
 })
 
 // Diagnostic ring: the create-API calls the REAL Creator Hub made (captured by
@@ -6053,7 +6077,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     let done = false
     const finish = (resp) => { if (done) return; done = true; clearInterval(keepAlive); clearTimeout(guard); sendResponse(resp) }
     // Never leave the content script hanging past its own 260s budget.
-    const guard = setTimeout(() => finish({ ok: false, error: 'upload timed out in worker' }), 740000)
+    const guard = setTimeout(() => finish({ ok: false, error: 'upload timed out in worker' }), 1260000)
     chrome.scripting.executeScript({
       target: { tabId }, world: 'MAIN', func: mainWorldS3Put,
       args: [{ srcUrl: msg.srcUrl, creds: msg.creds, key: msg.key, contentType: msg.contentType }],
