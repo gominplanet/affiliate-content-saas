@@ -6029,7 +6029,14 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   if (!msg || msg.action !== 'MVP_STOREFRONT_CREATE_LOG' || !msg.entry) return
   try {
     _sfCreateLog.unshift(Object.assign({}, msg.entry, { host: msg.host || ((sender && sender.tab && sender.tab.url) || '') }))
-    if (_sfCreateLog.length > 12) _sfCreateLog.length = 12
+    // Keep the globalize / cross-post calls even when routine chatter follows:
+    // they're the ones worth learning, and a small ring would evict them.
+    const isGold = (e) => /globaliz|cross-?post/i.test(String((e && e.url) || ''))
+    if (_sfCreateLog.length > 40) {
+      const gold = _sfCreateLog.filter(isGold).slice(0, 20)
+      const rest = _sfCreateLog.filter((e) => !isGold(e)).slice(0, 20)
+      _sfCreateLog = gold.concat(rest)
+    }
     chrome.storage.local.set({ mvpSfCreateLog: _sfCreateLog })
   } catch (e) { /* diagnostics must never break an upload */ }
 })

@@ -34,7 +34,12 @@
     // manually, capture the exact request body + response for the create APIs we
     // replay, and hand it to the isolated world (which relays it to the worker).
     // Read-only, capped, and never blocks the page.
-    const WATCHED = /\/create\/api\/(shoppable-media|check-content-quality|path-and-credentials|asins)\b/
+    // Anything the Creator Hub calls that we replay or want to learn. The
+    // globalize / cross-post family matters most: Amazon copies an already
+    // uploaded video to another marketplace server-side, which is why its own
+    // Cross Post finishes in seconds while re-uploading the bytes per store
+    // takes minutes. We can only replay that call once we've seen a real one.
+    const WATCHED = /\/(create|manage-content|creatorhub)\/api\/|globaliz|cross-?post|shoppable/i
     const relay = (entry) => { try { window.postMessage({ __mvpCreateLog: 1, entry: entry }, '*') } catch (e) { /* ignore */ } }
 
     const origFetch = window.fetch
@@ -70,6 +75,35 @@
       XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
         try { if (String(name).toLowerCase() === 'anti-csrftoken-a2z' && value) stash(value) } catch (e) { /* ignore */ }
         return origSet.apply(this, arguments)
+      }
+    }
+
+    // Same capture for XHR, since the Creator Hub doesn't use fetch everywhere and
+    // a cross-post fired over XHR would otherwise be invisible to us.
+    const origOpen = XMLHttpRequest && XMLHttpRequest.prototype && XMLHttpRequest.prototype.open
+    const origSend = XMLHttpRequest && XMLHttpRequest.prototype && XMLHttpRequest.prototype.send
+    if (origOpen && origSend) {
+      XMLHttpRequest.prototype.open = function (method, url) {
+        try { this.__mvpMethod = method; this.__mvpUrl = url } catch (e) { /* ignore */ }
+        return origOpen.apply(this, arguments)
+      }
+      XMLHttpRequest.prototype.send = function (bodyArg) {
+        try {
+          const url = this.__mvpUrl || ''
+          if (url && WATCHED.test(String(url))) {
+            const reqBody = typeof bodyArg === 'string' ? bodyArg : null
+            this.addEventListener('load', function () {
+              try {
+                relay({
+                  url: String(url).slice(0, 220), method: String(this.__mvpMethod || 'GET'), status: this.status,
+                  request: reqBody ? reqBody.slice(0, 6000) : null,
+                  response: String(this.responseText || '').slice(0, 4000), ts: Date.now(), via: 'xhr',
+                })
+              } catch (e) { /* ignore */ }
+            })
+          }
+        } catch (e) { /* never break the page */ }
+        return origSend.apply(this, arguments)
       }
     }
   } catch (e) { /* never break the page */ }
