@@ -990,6 +990,12 @@ export async function POST(request: Request) {
       // benefit headline. 'question' = a curiosity question about the product,
       // with a matching facial reaction. User toggle, off by default.
       headlineStyle,
+      // ── Boost controls (2026-09-03) — the levers that separate a designed
+      //    pro thumbnail from the default composite. All optional.
+      pose,
+      energyEffects,
+      badgeText,
+      accentWord,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -1091,11 +1097,43 @@ export async function POST(request: Request) {
       briefKey?: string
       ctaLinkInBio?: boolean
       headlineStyle?: 'statement' | 'question'
+      /** Creator's pose with the product. 'auto' (default) lets the angle's
+       *  framing pick; the rest force a specific interaction so the person
+       *  visibly holds / wears / uses the product instead of just standing near it. */
+      pose?: 'auto' | 'hold' | 'wear' | 'use' | 'point' | 'thumbs'
+      /** Add motion energy: speed lines, a streak on the product, a radial burst
+       *  behind the headline, a splash for drinks/food. Off by default. */
+      energyEffects?: boolean
+      /** Short starburst badge text baked beside the product (e.g. "MAX POWER!").
+       *  Only applies when the title is baked into the image (a clean/overlay
+       *  render must stay text-free). */
+      badgeText?: string
+      /** One headline word to render in bright red so it jumps out (e.g. "STRONG").
+       *  Overrides the brief's auto-picked emphasis word. */
+      accentWord?: string
     }
 
     // Headline style: 'question' composes a curiosity question + matching face;
     // anything else = the current polished statement style (default).
     const wantQuestion = headlineStyle === 'question'
+
+    // ── Boost controls: sanitize once, used by the composed-scene prompt ──
+    // Pose → a concrete interaction with the product (overrides the angle's
+    // default framing action). Anything unrecognised falls back to 'auto'.
+    const POSE_ACTIONS: Record<string, string> = {
+      hold:   'holding the product up in one hand and showing it clearly to the camera',
+      wear:   'wearing or using the product on their body exactly as it is meant to be used',
+      use:    'actively using the product as intended, caught mid-action',
+      point:  'a single decisive index finger pointing straight at the product',
+      thumbs: 'giving a big enthusiastic thumbs-up right beside the product',
+    }
+    const poseOverride: string | null = (typeof pose === 'string' && POSE_ACTIONS[pose]) ? POSE_ACTIONS[pose] : null
+    const wantEffects = energyEffects === true
+    // Badge + accent word get the same banned-word / brand scrub as the headline
+    // (they're baked into the image, so a leak can't be fixed after render), and
+    // the word-safe clamp so a badge never renders half a word.
+    const badge = clampLine(stripDesignBrands(scrubBanned(String(badgeText || '').trim())).toUpperCase(), 18)
+    const accentW = stripDesignBrands(scrubBanned(String(accentWord || '').trim())).toUpperCase().slice(0, 24)
     // Sanitize the shared-brief key (opt-in; social composers only). The style is
     // folded in so a question brief is never served from a statement cache entry
     // (or vice versa) for the same post set.
@@ -2110,7 +2148,11 @@ export async function POST(request: Request) {
           const titleOptions = copyVariants.map(flatCopy)
           // `hooks` is the per-variant ThumbCopy[] — drives the baked-text
           // prompt with full line1/line2/emphasisWord structure.
-          const hooks: ThumbCopy[] = copyVariants
+          // Boost: a creator-chosen accent word overrides the brief's auto-picked
+          // emphasis word, so both the baked prompt and the overlay colour THAT word.
+          const hooks: ThumbCopy[] = accentW
+            ? copyVariants.map(c => ({ ...c, emphasisWord: accentW }))
+            : copyVariants
           // Representative hook for the response payload + variant scoring.
           const overlayHookNB = titleOptions[0]
 
@@ -2331,7 +2373,9 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             const frame = FRAMING_MAP[variantCopy.angle] ?? FRAMING_MAP.CURIOSITY_GAP
             const palette = frame.lighting
             const expression = frame.expression
-            const action = frame.action
+            // Boost: an explicit pose (hold / wear / use / point / thumbs) beats the
+            // angle's default framing action.
+            const action = poseOverride || frame.action
             // Headline phrasing copied from the user's winning Gemini-handoff
             // prompt VERBATIM — natural-language description, not a structured
             // template. The earlier "emphasisWord must be yellow, all others
@@ -2343,7 +2387,7 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             // floating squiggle.
             const c = hooks[i % hooks.length]
             const headlineClause = withText
-              ? `At the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner of the frame, large, bold, blocky white and yellow text with heavy black outlines reads: "${c.line1}". Directly below it, smaller but still bold white and yellow text reads: "${c.line2}". A prominent yellow arrow with a thick black outline points from the text to the product. Text and graphics are baked directly into the image composition — no other text, captions, or labels anywhere in the image.`
+              ? `At the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner of the frame, large, bold, blocky white and yellow text with heavy black outlines reads: "${c.line1}". Directly below it, smaller but still bold white and yellow text reads: "${c.line2}". A prominent yellow arrow with a thick black outline points from the text to the product.${accentW ? ` Render the word "${accentW}" in bright RED (#FF2D2D) with the same thick black outline so it jumps out from the white and yellow.` : ''}${badge ? ` Beside the product, add a bold STARBURST badge — a spiky sun-burst shape filled bright yellow with a thick black outline — reading exactly "${badge}" in heavy black capitals, perfectly spelled, tilted slightly for energy.` : ''} Text and graphics are baked directly into the image composition — no other text, captions, or labels anywhere in the image.`
               : `★ ABSOLUTELY ZERO TEXT in the rendered image. NO words, NO letters, NO captions, NO headlines, NO labels, NO banner text, NO logos, NO arrows with text, NO badges with text. The image must be PURELY VISUAL — face + product + scene only. Even if the style references contain text, DO NOT REPRODUCE IT. The headline is composited as a SEPARATE LAYER afterwards — your output must be 100% clean of any glyph or character. Leave a generous uncluttered area at the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner with simple background colour where text will be added afterwards by a different system.`
             // 3C — Composition swaps between single-product (host one side,
             // product the other) and multi-product (host smaller, products
@@ -2388,9 +2432,10 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
 ${creatorDirectionClause}${userStyleClause}${humanClauses}${productRefClause}
 ${styleRefClause}
 ${compositionLine}
-${headlineClause}
+${wantEffects ? `ENERGY EFFECTS (the creator asked for these): make the image feel kinetic — bold speed lines radiating outward from the product, a subtle motion streak trailing the product (the product ITSELF stays sharp and identifiable), a radial light burst behind the headline area, and, only if the product is a drink, food or liquid, a dramatic splash frozen mid-air. High energy, still photorealistic, never cartoonish.
+` : ''}${headlineClause}
 BACKGROUND (must FIT the product's real-world use): set the scene where ${productTitle || 'this product'} is ACTUALLY used — INFER the correct environment from the product itself. Examples: a kitchen gadget → a kitchen; an OUTDOOR / patio / deck / pool / garden / lawn product → a tidy outdoor patio, deck, balcony, poolside or backyard (NOT indoors); a car/auto product → a garage or driveway; a bathroom product → a bathroom; a workshop/tool → a garage or workbench; a desk/office product → a desk. Do NOT default to a generic indoor living room unless the product is genuinely a living-room item. Grade the chosen setting as ${palette.overall} cinematic — a dramatic blend of ${palette.rim} rim-light behind the subject and ${palette.accent} glow around the product, deep contrast, soft vignette around the edges. The rim light must visibly separate the subject from the background so any cut-out edge blends cleanly with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes. Loosely fits the video "${videoTitle}" without literally illustrating the title.
-The ONLY text in the image is the headline described above (plus the arrow). HARD RULE: the word "Amazon" (and "Prime") must NEVER appear in the headline or anywhere in the image, and NEVER draw the Amazon smile / swoosh arrow logo. NO retailer logos, NO invented brand names, NO marketing copy or feature lists from product packaging, NO price tags, watermarks, ©/™/® symbols, or any extra signage anywhere in the background or on surfaces. The product's own physical branding on its body/bottle/box IS kept intact (it's the item being reviewed).
+The ONLY text in the image is the headline described above (plus the arrow${badge && withText ? ' and the starburst badge' : ''}). HARD RULE: the word "Amazon" (and "Prime") must NEVER appear in the headline or anywhere in the image, and NEVER draw the Amazon smile / swoosh arrow logo. NO retailer logos, NO invented brand names, NO marketing copy or feature lists from product packaging, NO price tags, watermarks, ©/™/® symbols, or any extra signage anywhere in the background or on surfaces. The product's own physical branding on its body/bottle/box IS kept intact (it's the item being reviewed).
 Ultra-sharp, professional, photorealistic.`
           }
 
