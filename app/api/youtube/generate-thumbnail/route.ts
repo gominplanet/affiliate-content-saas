@@ -1134,6 +1134,14 @@ export async function POST(request: Request) {
     // the word-safe clamp so a badge never renders half a word.
     const badge = clampLine(stripDesignBrands(scrubBanned(String(badgeText || '').trim())).toUpperCase(), 18)
     const accentW = stripDesignBrands(scrubBanned(String(accentWord || '').trim())).toUpperCase().slice(0, 24)
+    // The same Boost levers as prompt lines for the gpt-image "graphic" path (the
+    // co-pilot default), which builds its prompt from the art-director brief
+    // rather than buildComposed. Pose is applied separately via briefPose.
+    const gfxBoostLines: string[] = [
+      wantEffects ? 'ENERGY EFFECTS (the creator asked for these): make the design feel kinetic — bold speed lines radiating outward from the product, a subtle motion streak trailing it (the product ITSELF stays sharp and identifiable), a radial light burst behind the headline, and, only if the product is a drink, food or liquid, a dramatic splash frozen mid-air. High energy, still photorealistic, never cartoonish.' : '',
+      badge ? `STARBURST BADGE (required): beside the product add a bold STARBURST badge — a spiky sun-burst shape filled bright yellow with a thick black outline, tilted slightly for energy — reading exactly "${badge}" in heavy black capitals, perfectly spelled.` : '',
+      accentW ? `ACCENT WORD (required): render the headline word "${accentW}" in bright RED (#FF2D2D) with the same thick black outline as the rest, so it jumps out from the white and yellow.` : '',
+    ].filter(Boolean)
     // Sanitize the shared-brief key (opt-in; social composers only). The style is
     // folded in so a question brief is never served from a statement cache entry
     // (or vice versa) for the same post set.
@@ -1516,6 +1524,7 @@ export async function POST(request: Request) {
                     bannerP ? `BANNER PHRASE: render "${bannerP}" inside a hand-painted brush-stroke or torn banner (correct spelling).` : '',
                     calloutsP.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips or spec pill badges — correctly spelled, a few words each: ${calloutsP.join(' · ')}.` : '',
                     'Vibrant, modern, high-contrast, layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
+                    ...gfxBoostLines,
                   ].filter(Boolean)
                 : [
                     'Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 16:9 landscape (1536×864). NO people. Vibrant, modern, high-contrast — never flat or plain. Bold mixed-colour display type (not plain white/yellow), a themed colourful background that suits the product, and small checkmark/spec callouts.',
@@ -1797,7 +1806,9 @@ export async function POST(request: Request) {
             // Art-director-chosen reaction + gesture (varied per thumbnail). Empty
             // on the fallback path → the render falls back to a generic reaction.
             const briefExpression = (brief.expression || '').trim()
-            const briefPose = (brief.pose || '').trim()
+            // Boost: an explicit pose (hold / wear / use / point / thumbs) beats the
+            // brief's own gesture.
+            const briefPose = poseOverride || (brief.pose || '').trim()
             const personAction = briefExpression || briefPose
               ? `Give them ${briefExpression || 'a natural, content-fitting reaction'}${briefPose ? `, ${briefPose}` : ''} — make the expression genuine and specific, not a generic stock smile.`
               : 'Place them on one side reacting to the product with a genuine, content-fitting expression (not a generic smile).'
@@ -1886,7 +1897,8 @@ export async function POST(request: Request) {
                 'TEXT OVERLAY:',
                 `  Top line: "${line1}" — white bold capitals, thick black stroke outline only, NO background box.`,
                 `  Main line: "${line2}" — larger, bright yellow (#FFE034) bold capitals, thick black stroke outline — the dominant text. NO background box.`,
-                "  Place the two lines where they do NOT cover the creator's face or the product (e.g. across the top or down one side). Outlined text only — no panels or filled boxes — crisp and readable at small sizes. No other text anywhere in the image.",
+                ...gfxBoostLines,
+                `  Place the two lines where they do NOT cover the creator's face or the product (e.g. across the top or down one side). Outlined text only — no panels or filled boxes — crisp and readable at small sizes. No other text anywhere in the image${badge ? ' except the starburst badge above' : ''}.`,
                 '',
                 'STYLE: High-production YouTube creator thumbnail. Bold, punchy, cinematic depth of field (softly blurred background) so the creator and product stay sharp. No logos, no watermarks, no brand names rendered in the image itself.',
               ].join('\n')
@@ -1905,6 +1917,7 @@ export async function POST(request: Request) {
                   briefBanner ? `BANNER PHRASE: render "${briefBanner}" inside a hand-painted brush-stroke or torn banner as a secondary punch (correct spelling).` : '',
                   briefCallouts.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips, or spec pill badges — correctly spelled, a few words each: ${briefCallouts.join(' · ')}.` : '',
                   'Execute it vibrant, modern, high-contrast and layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
+                  ...gfxBoostLines,
                 ].filter(Boolean)
               : [
                   `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 16:9 landscape (1536×864) — in the style of today's top product-review creators (MrBeast-era energy). It MUST look vibrant, modern and high-contrast and make the viewer want to click. NEVER flat, dull, plain or template-like. Make this one ${gfxVibe}. YOU are the designer — own the layout, colours, fonts and effects.`,
