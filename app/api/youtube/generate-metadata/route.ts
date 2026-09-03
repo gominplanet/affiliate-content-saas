@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { clickableTitleRulesForYouTube } from '@/lib/clickable-titles'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { fetchAmazonProduct } from '@/services/amazon'
@@ -355,6 +356,8 @@ ALLOWED ANGLES (mix across the 5 — never use the same angle twice):
 - Question grounded in the pain point: ("Can a Supplement Really Fix Stress-Induced Insomnia?")
 - Story snapshot: ("The Week I Switched to Cortisol Manager — and Stopped Waking at 3 AM")
 - Skeptic-to-believer arc: ("I Didn't Buy The Hype About Cortisol Manager. Then Week 3 Happened.")
+
+${clickableTitleRulesForYouTube(5)}
 
 - Under 100 characters each
 - No ASIN, no hashtags, no emojis

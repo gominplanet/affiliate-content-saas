@@ -11,6 +11,7 @@
  * All paid tiers. Counts as ONE post against the cap (it's one blog_posts row).
  */
 import { NextResponse } from 'next/server'
+import { clickableTitleRulesForComparison } from '@/lib/clickable-titles'
 import { createServerClient } from '@/lib/supabase/server'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -597,7 +598,8 @@ export async function POST(request: Request) {
 
   const userPrompt = `Write a ${mode === 'comparison' ? 'product comparison' : 'buying guide'} blog post covering these ${resolved.length} products.
 
-${topic?.trim() ? `TOPIC (use this): ${topic.trim()}` : `Infer the shared product CATEGORY from the products and create a compelling, SEO-friendly title for the ${mode} (e.g. "The Best Wine Travel Protectors, Tested").`}
+${topic?.trim() ? `TOPIC (use this): ${topic.trim()}` : `Infer the shared product CATEGORY from the products and create a compelling, SEO-friendly title for the ${mode} (e.g. "Which Wine Travel Protector Should You Actually Buy?").`}
+${clickableTitleRulesForComparison()}
 NO YEARS: NEVER put a calendar year or date in the title, the meta description, or any heading (no "2026", no "in 2026", no "2026 Edition"). A dated title ages badly — keep it evergreen.
 
 ${formatRules}

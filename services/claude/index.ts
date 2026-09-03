@@ -1,5 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential. No copying, redistribution, reverse-engineering, or reuse. See LICENSE.
 import Anthropic from '@anthropic-ai/sdk'
+import { clickableTitleRulesForBlog } from '@/lib/clickable-titles'
 import { jsonrepair } from 'jsonrepair'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { learnProfileToPrompt } from '@/lib/learn'
@@ -1528,6 +1529,7 @@ BLOCK 1 rules:
   PRODUCT INFO. NEVER add a function, component, or "2-in-1 / combo / multi-X /
   doubles-as" framing the source doesn't state (e.g. do NOT write "Water Bottle LED
   Lantern" for a plain water bottle, or add an attached light/speaker/fan/cooler).
+  ${clickableTitleRulesForBlog()}
 
   ★ BRAND-NAME RULE (2026-06-07 fix — the WagComb incident): the product
   BRAND/MAKER name you put in the title MUST appear verbatim somewhere in

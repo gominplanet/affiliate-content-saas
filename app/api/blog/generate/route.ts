@@ -1,4 +1,5 @@
 import { NextResponse, after } from 'next/server'
+import { clickableTitleRulesForBlog } from '@/lib/clickable-titles'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -1024,7 +1025,8 @@ async function handleGenerate(request: Request) {
             `PREFERRED PRODUCT NAME (use this exact string): "${pn.canonical}"`,
             pn.brand ? `Brand: "${pn.brand}" — never write it as "${pn.brand} Store"/"${pn.brand} Shop"; "Store"/"Shop"/"Official" is Amazon storefront scaffolding, not the brand.` : '',
             'NAMING RULES:',
-            `- The blog title MUST contain "${pn.canonical}" (add a short angle after it — review, worth it?, tested — keep the whole title under ~65 chars).`,
+            `- The blog title MUST contain "${pn.canonical}" plus a clickable angle — keep the whole title under ~65 chars.`,
+            clickableTitleRulesForBlog(),
             `- The H1 and the FIRST in-body mention use the full "${pn.canonical}".`,
             pn.shortName ? `- After the first mention you may shorten to "${pn.shortName}" or the brand.` : '',
             '- Mention the full listing title verbatim at most ONCE (e.g. a specs line); never use it as the blog title or a heading.',

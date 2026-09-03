@@ -17,6 +17,7 @@
  * Available on all paid tiers; counts as ONE post (postsPerMonth) + spend gate.
  */
 import { NextResponse } from 'next/server'
+import { clickableTitleRulesForBlog } from '@/lib/clickable-titles'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { deriveProductName } from '@/lib/product-name'
@@ -333,7 +334,8 @@ PRODUCT
 - Key features: ${bullets.slice(0, 8).join(' · ') || 'n/a'}
 
 PRODUCT-NAME RULES (customers search the exact brand + product name, so match it):
-- TITLE: must contain the canonical name "${pn.canonical || productName}" plus a short angle (e.g. "Review", "Worth It?"). Keep it under ~65 characters. Do NOT stuff the long marketing tail into the title.
+- TITLE: must contain the canonical name "${pn.canonical || productName}" plus a clickable angle. Keep it under ~65 characters. Do NOT stuff the long marketing tail into the title.
+${clickableTitleRulesForBlog()}
 - H1 + first mention: use the FULL canonical name once, in the opening sentence.
 - After that: refer to it naturally with shorter forms (the brand, "this ${pn.shortName ? pn.shortName.split(' ').slice(-2).join(' ') : 'product'}") so it reads human, not keyword-stuffed.
 - Include the FULL listing title verbatim EXACTLY ONCE in the body (a specs sentence or beside the buy button) for exact-match search — never in the flowing prose.
@@ -347,7 +349,7 @@ CTA STYLE: ${ctaGuidance}
 
 Return ONLY valid JSON (no markdown fences) with this exact shape:
 {
-  "title": "<= 65 char SEO title that INCLUDES the canonical product name above + a short angle, no banned words",
+  "title": "<= 65 char SEO title that INCLUDES the canonical product name above + a clickable angle (a question, or one of the clickable framings above), no banned words, no year",
   "meta_description": "150-160 char compelling meta description that leads with the canonical product name, no banned words",
   "target_keyword": "the canonical product name (brand + short name)",
   "category": "a single concise blog category for this product/service, Title Case, 1-3 words (e.g. 'VPNs & Security', 'Headphones', 'Kitchen'); never the word 'blog'",
