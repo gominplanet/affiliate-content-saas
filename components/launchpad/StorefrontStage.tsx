@@ -13,8 +13,16 @@ import { Globe, Loader2, Check, Circle, Mic, Play, Upload, LogIn } from 'lucide-
 import { toast } from 'sonner'
 import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, getScoutStatus, type StorefrontMarketStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
+import { asinFromAmazonUrl } from '@/lib/product-link'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+/** Bare ASIN or Amazon product link → the clean 10-character code, or null. */
+function normalizeAsin(v: string): string | null {
+  const s = (v || '').trim()
+  if (/^[A-Z0-9]{10}$/i.test(s)) return s.toUpperCase()
+  return asinFromAmazonUrl(s)
+}
 
 /** -1 / 0 / 1 dotted-version compare; a null/unknown left side sorts oldest. */
 function cmpVer(a: string | null | undefined, b: string): number {
@@ -85,6 +93,21 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   const [scout, setScout] = useState<{ installed: boolean; version: string | null } | null>(null)
   useEffect(() => { getScoutStatus().then(setScout).catch(() => setScout({ installed: false, version: null })) }, [])
   const scoutStale = !!scout && scout.installed && cmpVer(scout.version, SCOUT_LATEST_VERSION) < 0
+  // Check sign-in for every shown marketplace as soon as SCOUT + the market list
+  // are known, so the badges are REAL from the start instead of every store
+  // reading "Log in" until the creator hits Upload.
+  const [signinChecked, setSigninChecked] = useState(false)
+  useEffect(() => {
+    if (signinChecked || !scout?.installed || markets.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      try { await runPreflight(markets.map(m => m.domain), true) } catch { /* badges stay neutral */ }
+      if (!cancelled) setSigninChecked(true)
+    })()
+    return () => { cancelled = true }
+    // runPreflight is a stable function declaration inside this component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scout?.installed, markets, signinChecked])
 
   const [voice, setVoice] = useState<{ enabled: boolean; hasVoice: boolean; name: string | null; credits: number | null } | null>(null)
   const [consent, setConsent] = useState(false)
@@ -140,7 +163,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
 
   // The ASIN a given market delivers against: a hand-pasted one wins, else the
   // page-resolved local ASIN, else the base (US) ASIN.
-  const asinFor = (domain: string) => (manualAsins[domain] || (marketAsins && marketAsins[domain]) || asin).trim().toUpperCase()
+  const baseAsin = normalizeAsin(asin)
+  const asinFor = (domain: string) => (manualAsins[domain] || (marketAsins && marketAsins[domain]) || baseAsin || '').trim().toUpperCase()
   // A chosen market that isn't confirmed under the base ASIN and has no resolved
   // or pasted local ASIN yet — the creator can paste one.
   const needsLocalAsin = (domain: string) =>
@@ -149,29 +173,34 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   async function start() {
     if (!picked) { toast.error('Pick a master video first'); return }
     if (chosen.size === 0) { toast.error('Pick at least one marketplace'); return }
-    if (!asin.trim()) { toast.error('Enter the product ASIN — MVP needs it to build each market’s title and thumbnail'); return }
+    if (!baseAsin) { toast.error('Enter a valid product ASIN (or paste the Amazon product link) — MVP needs it to build each market’s title and thumbnail'); return }
     setRunning(true); setTargets([]); setJobId(null)
     try {
       // Per-market ASIN overrides for the chosen markets that differ from the base.
       const overrides: Record<string, string> = {}
       for (const domain of chosen) {
         const a = asinFor(domain)
-        if (a && a !== asin.trim().toUpperCase()) overrides[domain] = a
+        if (a && a !== baseAsin) overrides[domain] = a
       }
       const r = await fetch('/api/global-sync/start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId: picked, markets: Array.from(chosen), asin: asin.trim() || undefined, marketAsins: Object.keys(overrides).length ? overrides : undefined }),
+        body: JSON.stringify({ videoId: picked, markets: Array.from(chosen), asin: baseAsin, marketAsins: Object.keys(overrides).length ? overrides : undefined }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.jobId) throw new Error(j.error || 'Could not start the sync')
       setJobId(j.jobId)
+      // Poll until the job settles. Report the REAL outcome — the old code said
+      // "localized" even when the job failed or was still running at the timeout.
+      let finalStatus: string = 'localizing'
       for (let i = 0; i < 40; i++) {
         await sleep(3000)
         const jr = await fetch(`/api/global-sync/${j.jobId}`).then(x => x.json()).catch(() => ({}))
         if (Array.isArray(jr?.targets)) setTargets(jr.targets)
-        if (jr?.status === 'done' || jr?.status === 'failed') break
+        if (jr?.status === 'done' || jr?.status === 'failed') { finalStatus = jr.status; break }
       }
-      toast.success('Storefronts localized')
+      if (finalStatus === 'done') toast.success('Storefronts localized. Review each market’s copy, then upload.')
+      else if (finalStatus === 'failed') toast.error('Localizing failed for this sync. Hit Sync again to retry.')
+      else toast('Still localizing in the background — the markets will fill in here as they finish.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not start the sync')
     } finally { setRunning(false) }
@@ -217,13 +246,18 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
 
   // Ask SCOUT which marketplaces the creator is signed in + enrolled on. Returns
   // the domain→status map (also stored in state for the per-market badges).
-  async function runPreflight(domains: string[]): Promise<Record<string, StorefrontMarketStatus>> {
+  // Returns the domain→status map; `null` when SCOUT isn't installed (so callers
+  // stop instead of proceeding and hitting a second "can't reach SCOUT" error).
+  // `quiet` suppresses the toast for the automatic background check on load.
+  async function runPreflight(domains: string[], quiet = false): Promise<Record<string, StorefrontMarketStatus> | null> {
     const res = await requestStorefrontPreflight(domains)
     if (!res.ok) {
-      toast.error(res.error === 'not-installed'
-        ? 'Install SCOUT (and sign in to Amazon) to upload to your storefronts.'
-        : (res.error || 'Could not check your sign-in status.'))
-      return {}
+      if (!quiet) {
+        toast.error(res.error === 'not-installed'
+          ? 'Install SCOUT (and sign in to Amazon) to upload to your storefronts.'
+          : (res.error || 'Could not check your sign-in status.'))
+      }
+      return res.error === 'not-installed' ? null : {}
     }
     const map: Record<string, StorefrontMarketStatus> = {}
     for (const r of (res.results || [])) map[r.domain] = r.status
@@ -248,6 +282,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       // anything else, so we never spend minutes dubbing a market we can't reach.
       setPhase('Checking sign-in…')
       const preMap = await runPreflight(targets.map(t => t.domain))
+      if (preMap === null) return // SCOUT not installed — already told the creator; don't stack a second error
       const preKnown = Object.keys(preMap).length > 0
       const readyDomains = new Set(
         preKnown ? targets.filter(t => preMap[t.domain] === 'ready').map(t => t.domain) : targets.map(t => t.domain),
@@ -505,10 +540,12 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                     </span>
                   </label>
                   {status === 'ready' ? (
-                    <span className="text-[11px] inline-flex items-center gap-0.5 whitespace-nowrap" style={{ color: '#10B981' }} title="Signed in on this marketplace"><Check size={11} /> in</span>
+                    <span className="text-[11px] inline-flex items-center gap-0.5 whitespace-nowrap" style={{ color: '#10B981' }} title="Signed in on this marketplace"><Check size={11} /> Signed in</span>
+                  ) : (!signinChecked && scout?.installed) ? (
+                    <span className="text-[11px] inline-flex items-center gap-0.5 whitespace-nowrap" style={muted} title="Checking your sign-in on this marketplace"><Loader2 size={11} className="animate-spin" /> checking</span>
                   ) : (
                     <button type="button" onClick={() => void signInMarket(m.domain, m.country)}
-                      className="text-[11px] underline whitespace-nowrap inline-flex items-center gap-0.5" style={muted}
+                      className="text-[11px] underline whitespace-nowrap inline-flex items-center gap-0.5" style={{ color: '#e0554b' }}
                       title={`Open ${m.country} on Amazon to sign in`}>
                       <LogIn size={11} /> Log in
                     </button>
@@ -529,15 +566,24 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
             )
           })}
         </div>
-        <div className="mt-3">
-          <label className="text-[12px] font-medium" style={label}>Featured ASIN <span style={{ color: '#e0554b' }}>*</span></label>
-          <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX or a product link" required
-            className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: asin.trim() ? 'var(--border)' : '#e0554b55', color: 'var(--text)' }} />
-          <p className="text-[11px] mt-1" style={muted}>Required. MVP uses the product to write each market’s title and build the thumbnail.</p>
-        </div>
+        {presetAsin ? (
+          // Launchpad already collected the ASIN in its own step — show it, don't ask twice.
+          <p className="text-[12px] mt-3" style={muted}>Product <span className="font-mono font-medium" style={label}>{baseAsin || presetAsin}</span> · set in the step above.</p>
+        ) : (
+          <div className="mt-3">
+            <label className="text-[12px] font-medium" style={label}>Featured ASIN <span style={{ color: '#e0554b' }}>*</span></label>
+            <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX or a product link" required
+              className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: baseAsin ? 'var(--border)' : '#e0554b55', color: 'var(--text)' }} />
+            <p className="text-[11px] mt-1" style={asin.trim() && !baseAsin ? { color: '#e0554b' } : muted}>
+              {asin.trim() && !baseAsin
+                ? 'That doesn’t look right — paste the 10-character ASIN or the Amazon product link.'
+                : 'Required. MVP uses the product to write each market’s title and build the thumbnail.'}
+            </p>
+          </div>
+        )}
       </div>
 
-      <button onClick={() => void start()} disabled={running || !picked || chosen.size === 0 || !asin.trim()}
+      <button onClick={() => void start()} disabled={running || !picked || chosen.size === 0 || !baseAsin}
         className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
         style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
         {running ? <><Loader2 size={16} className="animate-spin" /> Localizing…</> : <><Globe size={16} /> Sync to {chosen.size || ''} {chosen.size === 1 ? 'market' : 'markets'}</>}

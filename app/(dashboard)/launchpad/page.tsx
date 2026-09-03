@@ -16,9 +16,19 @@ import StorefrontStage from '@/components/launchpad/StorefrontStage'
 import { requestStudioFinish, requestFindCampaign, requestAcceptCampaign, requestAmazonAsinCheck, requestResolveLocalAsin } from '@/lib/extension-frame'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import { asinFromAmazonUrl } from '@/lib/product-link'
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
+
+/** Accept a bare ASIN or any Amazon product link and return the clean 10-character
+ *  code, or null. The input can hold whatever the creator pasted; everything
+ *  downstream (thumbnail, geo-check, master, storefronts) gets the clean ASIN. */
+function normalizeAsin(v: string): string | null {
+  const s = (v || '').trim()
+  if (/^[A-Z0-9]{10}$/i.test(s)) return s.toUpperCase()
+  return asinFromAmazonUrl(s)
+}
 
 interface Meta { title: string; alternatives: string[]; description: string; tags: string[] }
 
@@ -125,7 +135,7 @@ export default function LaunchpadPage() {
     try {
       const r = await fetch('/api/youtube/generate-metadata', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoTitle: workingTitle || 'My video', asin: asin.trim() || undefined, skipAsinCheck: !asin.trim() }),
+        body: JSON.stringify({ videoTitle: workingTitle || 'My video', asin: asinClean || undefined, skipAsinCheck: !asinClean }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.generated) throw new Error(j.error || 'Could not prepare the metadata')
@@ -153,7 +163,7 @@ export default function LaunchpadPage() {
         // designed gpt-image path that downscales to a clean 1280×720 with safe
         // margins. Without it the route fell into a fallback that produced the wrong
         // dimensions and let the headline bleed off the frame.
-        body: JSON.stringify({ videoTitle: t, asin: asin.trim() || undefined, textMode: 'graphic', ...(noHuman ? { noHuman: true } : {}) }),
+        body: JSON.stringify({ videoTitle: t, asin: asinClean || undefined, textMode: 'graphic', ...(noHuman ? { noHuman: true } : {}) }),
       })
       // First try WITH the creator's own face (their saved selfies, if any). If
       // they haven't added any, the route asks to set up a Face Model — but
@@ -247,7 +257,7 @@ export default function LaunchpadPage() {
 
   async function toStorefronts() {
     if (!renderedUrl) { toast.error('Render your video first'); return }
-    if (!asin.trim()) { toast.error('Enter the product ASIN first'); return }
+    if (!asinClean) { toast.error('Enter a valid product ASIN (or paste the Amazon product link) first'); return }
     setCreatingMaster(true)
     try {
       const r = await fetch('/api/launchpad/master', {
@@ -256,7 +266,7 @@ export default function LaunchpadPage() {
         // only if the clean URL is somehow missing, so the flow never blocks.
         // Seed the thumbnail we already generated so the storefront step doesn't
         // stall on "waiting for thumbnail".
-        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asin.trim(), durationSec, thumbnailUrl: thumbUrl || undefined }),
+        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asinClean, durationSec, thumbnailUrl: thumbUrl || undefined }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.videoId) throw new Error(j.error || 'Could not set up the storefront sync')
@@ -267,7 +277,7 @@ export default function LaunchpadPage() {
       try {
         const gr = await fetch('/api/launchpad/geo-check', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ asin: asin.trim() }),
+          body: JSON.stringify({ asin: asinClean }),
         })
         const gj = await gr.json().catch(() => ({}))
         if (gj?.ok && Array.isArray(gj.geos)) {
@@ -282,7 +292,7 @@ export default function LaunchpadPage() {
           //     search that marketplace by brand+title for a confident LOCAL ASIN
           //     (products are often relisted abroad under a different code).
           void (async () => {
-            const a = asin.trim()
+            const a = asinClean as string
             let intlPrompted = false
             const promptIntl = () => { if (!intlPrompted) { intlPrompted = true; toast.message('Turn on “International Amazon” in the SCOUT popup to confirm and match listings outside the US.') } }
             // 1) Browser existence checks. Mutate the local geo copy so step 2 sees
@@ -325,7 +335,7 @@ export default function LaunchpadPage() {
   async function findCc() {
     setCcFinding(true)
     try {
-      const r = await requestFindCampaign('', asin.trim(), null)
+      const r = await requestFindCampaign('', asinClean || '', null)
       if (!r.ok) {
         toast.error(r.error === 'not-installed' ? 'Install SCOUT to check Creator Connections.' : 'Could not check Creator Connections.')
         return
@@ -346,7 +356,10 @@ export default function LaunchpadPage() {
     finally { setCcAccepting(false) }
   }
 
-  const asinOk = asin.trim().length > 0
+  // The clean 10-character ASIN (from a bare code or a pasted product link).
+  // Every downstream call uses this, never the raw input.
+  const asinClean = normalizeAsin(asin)
+  const asinOk = !!asinClean
 
   // ── Tier gate ──────────────────────────────────────────────────────────────
   if (gateTier !== null && !['pro', 'admin'].includes(gateTier)) {
@@ -372,7 +385,9 @@ export default function LaunchpadPage() {
   const s1: StepState = renderedUrl ? 'done' : 'active'
   const s2: StepState = !renderedUrl ? 'locked' : asinOk ? 'done' : 'active'
   const s3: StepState = !renderedUrl ? 'locked' : (publishedUrl || ytOpen === 'skipped') ? 'done' : 'active'
-  const s4: StepState = !(renderedUrl && asinOk) ? 'locked' : masterId ? 'done' : 'active'
+  // Amazon waits for the YouTube step to be resolved (published or skipped), so
+  // only ONE step is ever "active" — no more two purple nodes at once.
+  const s4: StepState = !(renderedUrl && asinOk && s3 === 'done') ? 'locked' : masterId ? 'done' : 'active'
   const s5: StepState = !masterId ? 'locked' : ccAccepted ? 'done' : 'active'
 
   return (
@@ -397,7 +412,13 @@ export default function LaunchpadPage() {
           hint="Unlocks once your video is uploaded.">
           <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX or a product link"
             className="w-full px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: asinOk ? 'var(--border)' : '#e0554b55', color: 'var(--text)' }} />
-          <p className="text-[12px] mt-1.5" style={muted}>Required. MVP uses the product to write every market&apos;s title and build the thumbnail, whether or not you publish to YouTube.</p>
+          <p className="text-[12px] mt-1.5" style={asin.trim() && !asinOk ? { color: '#e0554b' } : asinOk ? { color: '#10B981' } : muted}>
+            {asin.trim() && !asinOk
+              ? 'That doesn’t look right. Paste the 10-character ASIN (starts with B0…) or the Amazon product link.'
+              : asinOk
+                ? `Product ${asinClean}. MVP uses it for every market’s title and the thumbnail.`
+                : 'Required. Paste the ASIN or the Amazon product link — MVP uses it for every market’s title and the thumbnail.'}
+          </p>
         </StepRow>
 
         {/* 3. YouTube — optional */}
@@ -507,9 +528,9 @@ export default function LaunchpadPage() {
         <StepRow n={4} state={s4} last={false}
           icon={<Globe size={15} style={{ color: '#0EA5A4' }} />}
           title="Amazon storefronts — every geo"
-          hint="Unlocks once your video is uploaded and the product ASIN is set.">
+          hint="Unlocks after the ASIN is set and you’ve published to YouTube (or hit Skip) above.">
           <>
-            <p className="text-[12px] mb-3" style={muted}>Take the same video (clean, no CTA) to Amazon. MVP checks where the product is listed across the English markets first (US, Canada, UK, Australia), then the rest (Germany, France, Spain, Italy, Japan). You pick which stores to upload to, and for non-English markets choose one dub option (upload as-is, a standard AI voice, or your own cloned voice with credits). Upload happens through your logged-in Amazon Creator account for each store.</p>
+            <p className="text-[12px] mb-3" style={muted}>Your clean video (no CTA) goes to Amazon. MVP checks where this product is listed and pre-selects the English stores where it&apos;s found (US, Canada, UK, Australia). Non-English stores are optional: tick one and MVP adds a free dub in that language (or your own voice, with credits). Uploads run through your logged-in Amazon Creator account, so sign in to each store first.</p>
             {!masterId ? (
               <button onClick={() => void toStorefronts()} disabled={creatingMaster || !asinOk}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
@@ -518,7 +539,7 @@ export default function LaunchpadPage() {
             ) : (
               <StorefrontStage
                 presetVideoId={masterId}
-                presetAsin={asin.trim()}
+                presetAsin={asinClean || ''}
                 allowedDomains={geoCheck ? geoCheck.map(g => g.domain) : ['amazon.com']}
                 defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain) : ['amazon.com']}
                 geoBadges={geoCheck ? Object.fromEntries(geoCheck.map(g => [g.domain, g.status === 'found' ? 'Product found' : g.status === 'not-listed' ? 'Not listed here' : 'Not confirmed'])) : undefined}

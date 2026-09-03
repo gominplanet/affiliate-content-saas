@@ -285,7 +285,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
         body: JSON.stringify({ videoUrl: rendered, title: title.trim(), privacyStatus: 'private' }),
       })
       const j = await r.json().catch(() => ({}))
-      if (j.notEnabled) { toast.error("Publishing to YouTube isn't switched on yet — it's coming soon."); return }
+      if (j.notEnabled) { toast.error("Publishing to YouTube isn't switched on yet — Google is verifying our upload access."); return }
       if (j.reconnectRequired) { toast.error('Reconnect YouTube to grant upload permission, then try again.'); return }
       if (!r.ok || !j.url) throw new Error(j.error || 'Publish failed')
       setPublished(j.url)
@@ -461,7 +461,7 @@ export default function UploadStage({ onRendered, hidePublish }: { onRendered?: 
       {/* 3. Result */}
       {rendered && (
         <div className="card p-5">
-          <h2 className="text-sm font-semibold mb-3" style={label}>Preview & publish</h2>
+          <h2 className="text-sm font-semibold mb-3" style={label}>{hidePublish ? 'Preview' : 'Preview & publish'}</h2>
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video src={rendered} controls className="w-full rounded-xl border" style={{ borderColor: 'var(--border)' }} />
           {!hidePublish && (
