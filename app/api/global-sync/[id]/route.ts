@@ -23,7 +23,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const { data: targets } = await sb
     .from('global_sync_targets')
-    .select('domain,lang,dub,title,description,state,detail,video_url,delivered_at')
+    .select('domain,lang,dub,title,description,state,detail,video_url,delivered_at,asin')
     .eq('job_id', id).eq('user_id', user.id)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

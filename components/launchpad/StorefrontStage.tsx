@@ -38,7 +38,7 @@ function cmpVer(a: string | null | undefined, b: string): number {
 
 interface Vid { id: string; title: string; thumbnail_url: string | null }
 interface Market { domain: string; code: string; country: string; langName: string; needsTranslation: boolean }
-interface Target { domain: string; market: string; country: string; lang: string; dub: boolean; title: string | null; description: string | null; state: string; detail: string | null; videoUrl: string | null }
+interface Target { domain: string; market: string; country: string; lang: string; dub: boolean; title: string | null; description: string | null; state: string; detail: string | null; videoUrl: string | null; asin: string | null }
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -784,6 +784,14 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                     </button>
                   </div>
                 )}
+                {/* The product this market will publish with. Shown BEFORE the
+                    upload because Amazon locks a pending post: an untagged or
+                    wrong-ASIN video can't be corrected until it goes live. */}
+                <p className="text-[11px] mb-0.5" style={t.asin ? muted : { color: '#e0554b' }}>
+                  {t.asin
+                    ? <>Tagging <span className="font-mono font-medium" style={label}>{t.asin}</span>{baseAsin && t.asin.toUpperCase() !== baseAsin.toUpperCase() ? ' (local ASIN)' : ''}</>
+                    : 'No product ASIN for this market. MVP will skip it rather than publish an untagged video.'}
+                </p>
                 {t.title && <p className="text-[13px] font-medium" style={label}>{t.title}</p>}
                 {t.description && <p className="text-[12px] mt-0.5 line-clamp-3" style={muted}>{t.description}</p>}
                 {t.detail && t.state !== 'delivered' && <p className="text-[11px] mt-1" style={muted}>{t.detail}</p>}

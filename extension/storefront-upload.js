@@ -281,8 +281,51 @@
         try { chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_PUTKEY', bucket: creds.s3Bucket, srcUrl: job.videoUrl, key: videoKey }) } catch { /* best-effort */ }
       }
 
-      // 3. validate our ASIN (non-fatal)
-      if (job.asin) { try { await api('asins', { sourceType: 'REQUEST_BODY', slateToken: ctx.slateToken, asins: [job.asin] }, ctx.csrf) } catch { /* non-fatal */ } }
+      // 3. The PRODUCT. A shoppable video with no product tagged earns nothing,
+      //    and Amazon won't let the creator fix it while the post is pending. So
+      //    this is a hard gate now, not a best-effort call whose answer we threw
+      //    away: no ASIN means no publish, and an ASIN this marketplace rejects
+      //    means no publish either.
+      step = 'product'
+      if (!job.asin) {
+        throw new Error('No product ASIN for this marketplace, so the video would publish with nothing tagged. Add this market’s local ASIN and retry.')
+      }
+      {
+        let asinRes = null, asinRaw = ''
+        try {
+          asinRes = await api('asins', { sourceType: 'REQUEST_BODY', slateToken: ctx.slateToken, asins: [job.asin] }, ctx.csrf)
+          asinRaw = await asinRes.text().catch(() => '')
+        } catch (e) {
+          throw new Error(`Could not check ASIN ${job.asin} on this marketplace: ${(e && e.message) || e}`)
+        }
+        // Record the answer so the exact shape can be read from a real run.
+        try {
+          chrome.runtime.sendMessage({
+            action: 'MVP_STOREFRONT_CREATE_LOG', host: location.host,
+            entry: {
+              url: `${location.host}/create/api/asins`, method: 'POST', status: asinRes.status,
+              request: JSON.stringify({ asins: [job.asin] }), response: asinRaw.slice(0, 2000),
+              ts: Date.now(), via: 'mvp',
+            },
+          })
+        } catch (e) { /* diagnostics must never block an upload */ }
+
+        if (!asinRes.ok) throw new Error(`Amazon rejected ASIN ${job.asin} on this marketplace (${asinRes.status}). Paste this market's local ASIN and retry.`)
+        let aj = null
+        try { aj = asinRaw ? JSON.parse(asinRaw) : null } catch { /* unparseable — don't block on a shape we can't read */ }
+        if (aj && aj.hasError === true) {
+          throw new Error(`Amazon rejected ASIN ${job.asin} on this marketplace: ${aj.message || 'not available here'}. Paste this market's local ASIN and retry.`)
+        }
+        // When Amazon echoes back the products it resolved, ours has to be among
+        // them. Only enforced when such a list is actually present, so an
+        // unfamiliar response shape can never block a working upload.
+        if (aj) {
+          const lists = [aj.asins, aj.products, aj.validAsins, aj.result].filter(Array.isArray)
+          if (lists.length > 0 && !JSON.stringify(lists).toUpperCase().includes(String(job.asin).toUpperCase())) {
+            throw new Error(`ASIN ${job.asin} isn’t available on this marketplace, so the video would publish untagged. Paste this market’s local ASIN and retry.`)
+          }
+        }
+      }
 
       // 4+5. moderation gate then PUBLISH — both keyed to the SAME mediaId (see
       //      publish(); they used to disagree, which Amazon rejects at validation).
@@ -308,6 +351,10 @@
   }
 
   async function publish(job, ctx, videoKey, thumbKey) {
+    // Belt and braces with the gate in uploadOne: never create a shoppable post
+    // with an empty products array. It cannot be fixed while Amazon has the post
+    // in "pending", so an untagged video is worse than a failed upload.
+    if (!job.asin) throw new Error('Refusing to publish: no product ASIN to tag on this video.')
     const body = (mediaId) => ({
       contentType: 'SHOPPABLE_POST',
       mediaId,
