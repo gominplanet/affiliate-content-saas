@@ -139,11 +139,29 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
 
   const messageAll = useCallback(async (b: FavBrand) => {
     setBusy(b.brand)
+    const tId = `fav-msg-${b.brand}`
     try {
       // Message every campaign for the brand you haven't already joined — full ones
-      // included, so you can get on the brand's radar before a slot reopens.
-      const list = (await fetchCampaigns(b.label, false)).filter(c => !!c.repAsin && !!c.detailsUrl)
-      if (list.length === 0) { toast(`No ${b.label} campaigns to message right now.`); return }
+      // included, so you can reach a brand even when it has NO open slots.
+      let list = (await fetchCampaigns(b.label, false)).filter(c => !!c.repAsin && !!c.detailsUrl)
+      // Nothing cached for this brand (or the catalog is empty). Pull the brand's
+      // live grid through SCOUT so you can still message it, slots or no slots.
+      if (list.length === 0) {
+        toast.loading(`Finding ${b.label} campaigns on Amazon…`, { id: tId, duration: Infinity })
+        const res = await requestCcBrandSearch(b.label, { maxPages: 20 })
+        if (res.error === 'not-installed') {
+          toast.error(`Install SCOUT to pull ${b.label}'s campaigns from Amazon.`, { id: tId }); return
+        }
+        const found = res.ok ? (res.campaigns || []) : []
+        if (found.length) {
+          await fetch('/api/campaigns/ingest-live', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaigns: found }),
+          }).catch(() => {})
+          list = (await fetchCampaigns(b.label, false)).filter(c => !!c.repAsin && !!c.detailsUrl)
+        }
+        toast.dismiss(tId)
+      }
+      if (list.length === 0) { toast(`No ${b.label} campaigns found to message. They may all be ones you've already joined.`); return }
       setMsgCampaigns(list.map(c => ({
         campaignId: c.campaignId, product: c.name || c.repAsin || '', asin: c.repAsin || '',
         brand: c.brand, detailsUrl: c.detailsUrl, commissionPct: c.commissionPct,
@@ -214,8 +232,8 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
                 className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50" style={{ background: '#34c759' }}>
                 {busy === b.brand ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />} Accept all
               </button>
-              <button type="button" onClick={() => void messageAll(b)} disabled={busy === b.brand || (b.totalCount - b.joinedCount) <= 0}
-                title="Message every campaign for this brand you haven't joined — full ones included, so you're on their radar when a slot reopens"
+              <button type="button" onClick={() => void messageAll(b)} disabled={busy === b.brand}
+                title="Message this brand through Creator Connections — even with no open slots. Pulls the brand's live campaigns if none are loaded."
                 className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg text-[12px] font-semibold border disabled:opacity-50"
                 style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
                 <MessageCircle size={13} /> Message all
