@@ -442,6 +442,16 @@ export default function LaunchpadPage() {
   // The thumbnail headline is written from the video's title, and the storefronts
   // use that same title, so generate the metadata as soon as Step 3 is reachable
   // instead of waiting for the creator to open the YouTube step. Runs once.
+  // Seconds spent writing the titles, so the wait after the ASIN is entered shows
+  // real progress instead of looking like nothing is happening.
+  const [prepElapsed, setPrepElapsed] = useState(0)
+  useEffect(() => {
+    if (!preparing) { setPrepElapsed(0); return }
+    setPrepElapsed(0)
+    const iv = setInterval(() => setPrepElapsed(s => s + 1), 1000)
+    return () => clearInterval(iv)
+  }, [preparing])
+
   const autoPrepared = useRef(false)
   useEffect(() => {
     if (autoPrepared.current || meta || preparing) return
@@ -529,6 +539,15 @@ export default function LaunchpadPage() {
                 ? `Product ${asinClean}. MVP uses it for every market’s title and the thumbnail.`
                 : 'Required. Paste the ASIN or the Amazon product link — MVP uses it for every market’s title and the thumbnail.'}
           </p>
+          {/* Entering the ASIN kicks off the title writing, which gates the
+              thumbnail step. Show it running with a live count so the pause reads
+              as work in progress rather than a stuck screen. */}
+          {asinOk && preparing && !meta && (
+            <p className="text-[12px] mt-1.5 inline-flex items-center gap-1.5" style={{ color: '#7C3AED' }}>
+              <Loader2 size={13} className="animate-spin" />
+              Looking up the product and writing your titles… {prepElapsed}s <span style={muted}>(usually about 10 seconds, then Thumbnails unlocks)</span>
+            </p>
+          )}
         </StepRow>
 
         {/* 3. Thumbnails — BOTH of them, on their own, before YouTube. Amazon needs
@@ -546,6 +565,14 @@ export default function LaunchpadPage() {
           ) : undefined}>
           <>
             <p className="text-[12px] mb-3" style={muted}>MVP makes two: one with the headline for YouTube and the English stores, and a text-free one for the non-English stores. Both use your face and the real product. These go to Amazon whether or not you publish to YouTube.</p>
+            {/* The headline is written from the title, so this step waits on it.
+                Say so plainly, with a count, instead of showing dead controls. */}
+            {!meta && preparing && (
+              <p className="text-[12px] mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ color: '#7C3AED', background: 'rgba(124,58,237,0.07)' }}>
+                <Loader2 size={13} className="animate-spin" />
+                Writing your title first… {prepElapsed}s <span style={muted}>Usually about 10 seconds. Pick your face and style now, they are ready to use.</span>
+              </p>
+            )}
 
             {/* Who's on the thumbnail — same picker as Co-Pilot. Changing it
                 regenerates so the choice shows up right away. */}
@@ -597,9 +624,13 @@ export default function LaunchpadPage() {
                       ? <span className="text-[12px] inline-flex items-center gap-1.5" style={muted}><Loader2 size={13} className="animate-spin" /> Designing…</span>
                       : (
                         // Nothing yet: set the style above, then generate on purpose.
+                        // While the title is still being written the button says so
+                        // and counts, rather than looking broken.
                         <button type="button" onClick={() => void genThumbnail()} disabled={!meta && preparing}
                           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
-                          <Sparkles size={15} /> Generate both thumbnails
+                          {!meta && preparing
+                            ? <><Loader2 size={15} className="animate-spin" /> Writing your title… {prepElapsed}s</>
+                            : <><Sparkles size={15} /> Generate both thumbnails</>}
                         </button>
                       )}
                 </div>
@@ -614,11 +645,7 @@ export default function LaunchpadPage() {
                 <p className="text-[11px] mt-1 font-medium" style={label}>Non-English stores <span className="font-normal" style={muted}>(text-free version)</span></p>
               </div>
             </div>
-            <p className="text-[11px] mt-1.5" style={muted}>
-              {preparing && !meta
-                ? 'Writing your title first. The headline on the thumbnail comes from it.'
-                : 'Skip this if you like and MVP builds both for you when the video goes to Amazon. Custom thumbnails on YouTube need a phone-verified channel; if yours isn’t, the video still publishes with everything else.'}
-            </p>
+            <p className="text-[11px] mt-1.5" style={muted}>Skip this if you like and MVP builds both for you when the video goes to Amazon. Custom thumbnails on YouTube need a phone-verified channel; if yours isn’t, the video still publishes with everything else.</p>
           </>
         </StepRow>
 
