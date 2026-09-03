@@ -1243,7 +1243,7 @@ const VideoCard = memo(function VideoCardImpl({
   }
 
   return (
-    <div className={`card p-4 flex gap-4 items-start transition-shadow hover:shadow-md ${hidden ? 'opacity-60' : ''}`}>
+    <div id={`video-${id}`} className={`card p-4 flex gap-4 items-start transition-shadow hover:shadow-md ${hidden ? 'opacity-60' : ''}`}>
       {(thumb || (!post && video.is_vertical !== true)) && (
         <div className="w-28 flex-shrink-0 flex flex-col items-center gap-1.5">
           {thumb && (
@@ -2473,12 +2473,34 @@ export default function ContentPage() {
   // it lives in a Suspense boundary (useSearchParams needs one on this page) and
   // fires on mount AND on every soft navigation, so clicking Social Push while
   // ALREADY on /content switches the tab (App Router soft-nav doesn't remount).
+  // ?video=<id> (from Launchpad's "Create the blog post" handoff): scroll that
+  // video's card into view and flash a highlight so the creator lands on it.
+  const [focusVideoId, setFocusVideoId] = useState<string | null>(null)
   const applyDeepLink = useCallback((params: URLSearchParams) => {
     const t = params.get('tab')
     if (t === 'vertical') { window.location.replace('/instagram-burner'); return }
     if (t === 'posts' || t === 'scheduled' || t === 'horizontal') setActiveTab(t)
     if (params.get('new') === 'link') setFromLinkOpen(true)
+    const v = params.get('video')
+    if (v) setFocusVideoId(v)
   }, [])
+  useEffect(() => {
+    if (!focusVideoId) return
+    // The list loads async — retry briefly until the card exists.
+    let tries = 0
+    const tick = () => {
+      const el = document.getElementById(`video-${focusVideoId}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el.classList.add('ring-2', 'ring-[#7C3AED]', 'ring-offset-2')
+        setTimeout(() => el.classList.remove('ring-2', 'ring-[#7C3AED]', 'ring-offset-2'), 4000)
+        setFocusVideoId(null)
+        return
+      }
+      if (++tries < 25) setTimeout(tick, 200)
+    }
+    tick()
+  }, [focusVideoId])
   useEffect(() => {
     const url = activeTab === 'horizontal' ? '/content' : `/content?tab=${activeTab}`
     window.history.replaceState(null, '', url)

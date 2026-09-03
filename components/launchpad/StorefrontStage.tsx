@@ -170,10 +170,13 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   const needsLocalAsin = (domain: string) =>
     geoBadges?.[domain] === 'Not listed here' && !(marketAsins && marketAsins[domain]) && !manualAsins[domain]
 
-  async function start() {
-    if (!picked) { toast.error('Pick a master video first'); return }
-    if (chosen.size === 0) { toast.error('Pick at least one marketplace'); return }
-    if (!baseAsin) { toast.error('Enter a valid product ASIN (or paste the Amazon product link) — MVP needs it to build each market’s title and thumbnail'); return }
+  // Localize the chosen markets. Returns the job + its settled status so the
+  // one-click Upload can chain straight into delivery. `quiet` skips the
+  // standalone toasts when running as part of that chain.
+  async function start(quiet = false): Promise<{ jobId: string; status: string } | null> {
+    if (!picked) { toast.error('Pick a master video first'); return null }
+    if (chosen.size === 0) { toast.error('Pick at least one marketplace'); return null }
+    if (!baseAsin) { toast.error('Enter a valid product ASIN (or paste the Amazon product link) — MVP needs it to build each market’s title and thumbnail'); return null }
     setRunning(true); setTargets([]); setJobId(null)
     try {
       // Per-market ASIN overrides for the chosen markets that differ from the base.
@@ -198,11 +201,15 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         if (Array.isArray(jr?.targets)) setTargets(jr.targets)
         if (jr?.status === 'done' || jr?.status === 'failed') { finalStatus = jr.status; break }
       }
-      if (finalStatus === 'done') toast.success('Storefronts localized. Review each market’s copy, then upload.')
-      else if (finalStatus === 'failed') toast.error('Localizing failed for this sync. Hit Sync again to retry.')
-      else toast('Still localizing in the background — the markets will fill in here as they finish.')
+      if (!quiet) {
+        if (finalStatus === 'done') toast.success('Storefronts localized. Review each market’s copy, then upload.')
+        else if (finalStatus === 'failed') toast.error('Localizing failed for this sync. Try again.')
+        else toast('Still localizing in the background — the markets will fill in here as they finish.')
+      }
+      return { jobId: j.jobId as string, status: finalStatus }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not start the sync')
+      return null
     } finally { setRunning(false) }
   }
 
@@ -273,8 +280,11 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     toast(`Opened ${country} in a new tab. Sign in there, then hit Upload again.`)
   }
 
-  async function deliverAll() {
-    if (!jobId) return
+  // `jobIdArg` lets the one-click Upload pass the job it just created, before
+  // React state has caught up.
+  async function deliverAll(jobIdArg?: string) {
+    const jid = jobIdArg || jobId
+    if (!jid) return
     setDelivering(true)
     try {
       // ── 1) SIGN-IN CHECK FIRST ────────────────────────────────────────────
@@ -291,7 +301,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       // runPreflight just set (not signed in / not enrolled / unconfirmed).
       const blocked = preKnown ? targets.filter(t => preMap[t.domain] !== 'ready') : []
       if (readyDomains.size === 0) {
-        await refreshTargets()
+        await refreshTargets(jid)
         toast.error('You’re not signed in to any of these marketplaces yet. Use “Sign in” on each, then retry.')
         return
       }
@@ -311,19 +321,19 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
           try {
             await fetch('/api/global-sync/dub', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ jobId, domain: t.domain, voice: useClone ? 'cloned' : 'standard' }),
+              body: JSON.stringify({ jobId: jid, domain: t.domain, voice: useClone ? 'cloned' : 'standard' }),
             })
           } catch { /* fall back to the master video for this market */ }
         }
         setDubbing(null)
-        await refreshTargets()
+        await refreshTargets(jid)
         if (useClone) void refreshVoice()
       }
 
       // ── 3) THUMBNAIL — make sure one can be ported ────────────────────────
       setPhase('Getting the thumbnail…')
       const loadQueue = async () => {
-        const q = await fetch(`/api/global-sync/deliver/queue?jobId=${jobId}`).then(r => r.json()).catch(() => ({}))
+        const q = await fetch(`/api/global-sync/deliver/queue?jobId=${jid}`).then(r => r.json()).catch(() => ({}))
         const arr = Array.isArray(q?.items) ? q.items : []
         // Honor "skip dub": deliver the English master to those markets even if a
         // dub was generated earlier. Only keep markets we're signed in on.
@@ -374,7 +384,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
           }),
         }).catch(() => {})
       }
-      await refreshTargets()
+      await refreshTargets(jid)
       const results = res.results || []
       const done = results.filter(r => r.ok).length
       const dups = results.filter(r => !r.ok && r.duplicate).length
@@ -384,11 +394,29 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     } finally { setDelivering(false); setPhase(null); setDubbing(null) }
   }
 
-  async function refreshTargets() {
-    if (!jobId) return
-    const jr = await fetch(`/api/global-sync/${jobId}`).then(x => x.json()).catch(() => ({}))
+  async function refreshTargets(jobIdArg?: string) {
+    const jid = jobIdArg || jobId
+    if (!jid) return
+    const jr = await fetch(`/api/global-sync/${jid}`).then(x => x.json()).catch(() => ({}))
     if (Array.isArray(jr?.targets)) setTargets(jr.targets)
   }
+  // ONE click: localize (title + description per market), then dub what needs it
+  // and upload — the least-friction path. Reviewing the localized copy is
+  // optional: it appears below as it lands and stays there afterwards.
+  async function uploadAll() {
+    setPhase('Localizing…')
+    const res = await start(true)
+    if (!res) { setPhase(null); return }
+    if (res.status !== 'done') {
+      setPhase(null)
+      toast.error(res.status === 'failed'
+        ? 'Localizing failed — hit Upload again to retry.'
+        : 'Still localizing — give it a moment, then hit Upload again.')
+      return
+    }
+    await deliverAll(res.jobId)
+  }
+
   async function dubOne(domain: string) {
     if (!jobId) return
     setDubbing(domain)
@@ -412,8 +440,17 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   return (
     <div className="space-y-5">
       {/* Sounds like you — cloned voice for dubs */}
+      {/* Dub voice — collapsed to one line. Free generic voice is the default; the
+          cloned-voice upgrade (credits) lives behind "change" so it never clutters
+          the fast path. */}
       {voice?.enabled && (
-        <div className="card p-4" style={{ background: 'rgba(14,165,164,0.04)' }}>
+        <details className="card p-4 group" style={{ background: 'rgba(14,165,164,0.04)' }}>
+          <summary className="flex items-center gap-2 cursor-pointer list-none text-[12px]" style={muted}>
+            <Mic size={14} style={{ color: '#0EA5A4' }} />
+            <span>Dub voice: <span className="font-medium" style={label}>{voice.hasVoice && useMyVoice ? 'your own voice (1 credit per market)' : 'free generic voice'}</span></span>
+            <span className="ml-auto underline">change</span>
+          </summary>
+          <div className="mt-3">
           {voice.hasVoice ? (
             <div>
               <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -478,7 +515,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
               </button>
             </div>
           )}
-        </div>
+          </div>
+        </details>
       )}
 
       {/* Master video picker — only when no video was passed in */}
@@ -583,11 +621,23 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         )}
       </div>
 
-      <button onClick={() => void start()} disabled={running || !picked || chosen.size === 0 || !baseAsin}
-        className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
-        style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
-        {running ? <><Loader2 size={16} className="animate-spin" /> Localizing…</> : <><Globe size={16} /> Sync to {chosen.size || ''} {chosen.size === 1 ? 'market' : 'markets'}</>}
-      </button>
+      {/* ONE click: localize → sign-in check → dub → upload. "Preview first" is the
+          optional review path (localize only, then Upload from the copy card). */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={() => void uploadAll()} disabled={running || delivering || !picked || chosen.size === 0 || !baseAsin}
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+          style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
+          {(running || delivering)
+            ? <><Loader2 size={16} className="animate-spin" /> {phase || 'Working…'}</>
+            : <><Upload size={16} /> Upload to {chosen.size || ''} {chosen.size === 1 ? 'store' : 'stores'}</>}
+        </button>
+        {!running && !delivering && (
+          <button type="button" onClick={() => void start()} disabled={!picked || chosen.size === 0 || !baseAsin}
+            className="text-[12px] underline disabled:opacity-50" style={muted}>
+            Preview the localized copy first
+          </button>
+        )}
+      </div>
 
       {targets.length > 0 && (
         <div className="card p-5">

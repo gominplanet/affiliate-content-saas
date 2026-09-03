@@ -7,7 +7,7 @@
 // (generic voice free; the creator's own voice is the optional upgrade).
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Check, Youtube, Sparkles, Globe, Rocket, Handshake, Lock, Upload, Package } from 'lucide-react'
 import { toast } from 'sonner'
@@ -104,6 +104,8 @@ export default function LaunchpadPage() {
   const [privacy, setPrivacy] = useState<'draft' | 'public'>('draft')
   const [publishing, setPublishing] = useState(false)
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null)
+  // The YouTube video id — used for the Studio deep link (schedule / go live).
+  const [publishedVideoId, setPublishedVideoId] = useState<string | null>(null)
   // Full Co-Pilot finish: an AI thumbnail + the standard publish options, applied
   // to the uploaded video via /api/youtube/apply (same backend the Co-Pilot uses).
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
@@ -205,7 +207,7 @@ export default function LaunchpadPage() {
         const detail = j.error || (raw ? raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) : '') || `HTTP ${r.status}`
         throw new Error(detail)
       }
-      setPublishedUrl(j.url)
+      setPublishedUrl(j.url); setPublishedVideoId(String(j.videoId))
 
       // 2) Apply the finishing pass — thumbnail + publish options + final privacy —
       //    via the same route the Co-Pilot uses. Non-fatal: the video is already up,
@@ -361,6 +363,20 @@ export default function LaunchpadPage() {
   const asinClean = normalizeAsin(asin)
   const asinOk = !!asinClean
 
+  // Auto-start the Amazon step: the moment YouTube is resolved (published or
+  // skipped) and the ASIN is valid, create the master + run the geo check so Step
+  // 4 opens already populated instead of behind another button. Runs once.
+  const autoStarted = useRef(false)
+  useEffect(() => {
+    if (autoStarted.current) return
+    const ytResolved = !!publishedUrl || ytOpen === 'skipped'
+    if (!renderedUrl || !asinClean || !ytResolved || masterId || creatingMaster) return
+    autoStarted.current = true
+    void toStorefronts()
+    // toStorefronts is a stable function declaration in this component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderedUrl, asinClean, publishedUrl, ytOpen, masterId, creatingMaster])
+
   // ── Tier gate ──────────────────────────────────────────────────────────────
   if (gateTier !== null && !['pro', 'admin'].includes(gateTier)) {
     return (
@@ -389,6 +405,9 @@ export default function LaunchpadPage() {
   // only ONE step is ever "active" — no more two purple nodes at once.
   const s4: StepState = !(renderedUrl && asinOk && s3 === 'done') ? 'locked' : masterId ? 'done' : 'active'
   const s5: StepState = !masterId ? 'locked' : ccAccepted ? 'done' : 'active'
+  // Step 6 is a handoff (blog + social), so it's "active" once the video is on
+  // its way to Amazon and never marks itself done here.
+  const s6: StepState = !masterId ? 'locked' : 'active'
 
   return (
     <>
@@ -430,7 +449,7 @@ export default function LaunchpadPage() {
             ytOpen === 'choose' ? (
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => { setYtOpen('prepare'); if (!meta) void prepare() }} className="text-[12px] font-medium px-3 py-1.5 rounded-lg text-white" style={{ background: '#7C3AED' }}>Prepare & publish</button>
-                <button type="button" onClick={() => setYtOpen('skipped')} className="text-[12px] font-medium px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Skip</button>
+                <button type="button" onClick={() => setYtOpen('skipped')} className="text-[12px] underline" style={muted}>Skip YouTube</button>
               </div>
             ) : ytOpen === 'skipped' ? (
               <button type="button" onClick={() => setYtOpen('choose')} className="text-[12px] underline" style={muted}>Changed my mind</button>
@@ -516,7 +535,15 @@ export default function LaunchpadPage() {
                           {publishing ? <><Loader2 size={15} className="animate-spin" /> Publishing…</> : <><Youtube size={15} /> {privacy === 'public' ? 'Publish public' : 'Save as draft'}</>}
                         </button>
                       </div>
-                      {publishedUrl && <p className="text-[13px] inline-flex items-center gap-1.5" style={{ color: '#10B981' }}><Check size={14} /> Done. <a href={publishedUrl} target="_blank" rel="noreferrer" className="underline">Open on YouTube</a></p>}
+                      {publishedUrl && (
+                        <p className="text-[13px] inline-flex items-center gap-1.5 flex-wrap" style={{ color: '#10B981' }}>
+                          <Check size={14} /> Done.
+                          {publishedVideoId && (
+                            <a href={`https://studio.youtube.com/video/${publishedVideoId}/edit`} target="_blank" rel="noreferrer" className="underline font-medium">Open in Studio to schedule or go live</a>
+                          )}
+                          <a href={publishedUrl} target="_blank" rel="noreferrer" className="underline" style={muted}>watch page</a>
+                        </p>
+                      )}
                     </>
                   )}
                 </div>
@@ -552,7 +579,7 @@ export default function LaunchpadPage() {
 
         {/* 5. Creator Connections (US) — after the uploads, offer to accept a
             live US campaign for this product right here. */}
-        <StepRow n={5} state={s5} last={true}
+        <StepRow n={5} state={s5} last={false}
           icon={<Handshake size={15} style={{ color: '#7C3AED' }} />}
           title="Creator Connections (US)"
           hint="Unlocks once your video is on its way to your storefronts.">
@@ -581,6 +608,22 @@ export default function LaunchpadPage() {
             ) : (
               <p className="text-[13px]" style={muted}>No live US Creator Connections campaign found for this product.</p>
             )}
+          </>
+        </StepRow>
+
+        {/* 6. Blog + social — the natural end of the pipeline. The master video is
+            now a row in youtube_videos, so the Blog Post Generator can turn it into
+            a post and push it to socials; deep-link straight to that video. */}
+        <StepRow n={6} state={s6} last={true}
+          icon={<Sparkles size={15} style={{ color: '#7C3AED' }} />}
+          title="Blog post & social push"
+          hint="Unlocks once your video is on its way to your storefronts.">
+          <>
+            <p className="text-[12px] mb-3" style={muted}>Your video is live on YouTube and Amazon. Now turn it into a blog post and push it to your socials from the Blog Post Generator, with this video already selected.</p>
+            <a href={`/content?tab=horizontal${masterId ? `&video=${encodeURIComponent(masterId)}` : ''}`}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: '#7C3AED' }}>
+              <Sparkles size={15} /> Create the blog post &amp; social push
+            </a>
           </>
         </StepRow>
       </div>
