@@ -499,6 +499,9 @@ interface ThumbBrief extends ThumbCopy {
   palette: string
   /** 2–3 short real-feature callouts/specs to render as badges/checklist. */
   callouts: string[]
+  /** 1–3 word starburst badge naming one real benefit ("SO SOFT"), or ''. Used
+   *  when the creator turns on the auto Badge toggle without typing one. */
+  badge: string
   /** Optional short banner phrase for a brush-stroke banner ("GAME CHANGER!"), or ''. */
   banner: string
   /** Content-fitting facial reaction for the creator (e.g. "wide-eyed shocked",
@@ -518,6 +521,7 @@ Each brief has:
 - line1 / line2: the headline, split into two short punchy lines (line1 ≤ 15 chars, line2 ≤ 20 chars), ALL CAPS. VARY the approach across briefs — product-descriptive ("KERATIN HAIR CARE", "22\" 144Hz MONITOR"), bold benefit ("SALON-SMOOTH HAIR"), curiosity, or a negation of the real problem. Do NOT make every headline a "NO MORE ___" negation — mix it up like a real designer. No brand model numbers as the whole headline.
 - emphasisWord: the ONE word in the headline to accent in a bright colour.
 - banner: a SHORT extra punch phrase for a hand-painted banner ("GAME CHANGER!", "SO POWERFUL!", "WORTH IT?!"), or "" if it doesn't need one.
+- badge: a 1–3 word starburst badge naming ONE real benefit or spec from the product details, ALL CAPS, punchy ("SO SOFT", "MAX POWER!", "400 TC", "WHISPER QUIET"). Must be DIFFERENT from the banner and from every callout. Correctly spelled.
 - palette: the colour direction, tuned to the product/brand (e.g. "deep purple gradient, hot-pink + white type" for a beauty product; "black + electric-orange, F1 energy" for a McLaren blender). Avoid defaulting to plain yellow-on-black every time.
 - callouts: 2–3 SHORT real benefit/spec callouts drawn from the product details (e.g. "SMOOTHER", "144Hz", "NOISE REDUCTION"). Correctly spelled, a few words each.
 - concept: 2–4 sentences describing the finished thumbnail — the background (vivid studio gradient, themed graphic scene, or real-life setting that suits the product), the composition, how the title is styled (which words pop, banner placement), and the mood. This is what the image model builds. Make it specific to THIS product, and make it look designed and premium, never flat.
@@ -528,7 +532,7 @@ HARD RULE (non-negotiable): NEVER put the word "Amazon" (or "Prime", "Amazon Pri
 
 ANTI-CLICHÉ (non-negotiable): do NOT default to overused, generic hype phrases for the headline OR the banner. NEVER use "HIDDEN GEM", "GAME CHANGER", "GAME-CHANGING", "MUST-HAVE", "YOU NEED THIS", "LIFE CHANGING", "OBSESSED", "VIRAL". These are banned. Every brief's headline and banner must be SPECIFIC to THIS product — its category, its standout feature, a real benefit, a number/spec, or the problem it solves — and genuinely VARIED from brief to brief. Write like a designer who never repeats themselves.
 
-OUTPUT: a strict JSON array of N_BRIEFS objects with keys line1, line2, emphasisWord, banner, palette, callouts (array of strings), concept, expression, pose. No prose, no markdown fences — just the JSON array.`
+OUTPUT: a strict JSON array of N_BRIEFS objects with keys line1, line2, emphasisWord, banner, badge, palette, callouts (array of strings), concept, expression, pose. No prose, no markdown fences — just the JSON array.`
 
 // Curiosity-question override for the art-director briefs: every headline
 // becomes a short question, with a matching facial reaction, and hard-bans the
@@ -572,6 +576,7 @@ async function designThumbnailBriefs(input: {
       palette: String(o.palette || '').trim().slice(0, 160),
       callouts: calls,
       banner: stripDesignBrands(scrubBanned(String(o.banner || '').trim())).slice(0, 40),
+      badge: clampLine(stripDesignBrands(scrubBanned(String(o.badge || '').trim())).toUpperCase(), 18),
       expression: String(o.expression || '').trim().slice(0, 60),
       pose: String(o.pose || '').trim().slice(0, 60),
     }
@@ -625,7 +630,7 @@ async function designThumbnailBriefs(input: {
       return {
         angle: ANGLE_ROTATION[i % ANGLE_ROTATION.length],
         line1: q.line1, line2: q.line2, emphasisWord: '',
-        decoration: 'none', concept: '', palette: '', callouts: [], banner: '',
+        decoration: 'none', concept: '', palette: '', callouts: [], banner: '', badge: '',
         expression: input.noHuman ? '' : q.expression, pose: '',
       }
     })
@@ -633,7 +638,7 @@ async function designThumbnailBriefs(input: {
   // Statement-mode fallback: reuse the existing headline generator so the graphic
   // path still gets valid line1/line2 and just uses the static brief.
   const copies = await generateThumbCopies(input.videoTitle, n, input.productContext, input.claimsSheet)
-  return copies.map<ThumbBrief>(c => ({ ...c, concept: '', palette: '', callouts: [], banner: '', expression: '', pose: '' }))
+  return copies.map<ThumbBrief>(c => ({ ...c, concept: '', palette: '', callouts: [], banner: '', badge: '', expression: '', pose: '' }))
 }
 
 // (generatePersonScenePrompt removed 2026-05-22 with the flux-lora retirement —
@@ -996,6 +1001,8 @@ export async function POST(request: Request) {
       energyEffects,
       badgeText,
       accentWord,
+      autoBadge,
+      autoAccent,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -1111,6 +1118,12 @@ export async function POST(request: Request) {
       /** One headline word to render in bright red so it jumps out (e.g. "STRONG").
        *  Overrides the brief's auto-picked emphasis word. */
       accentWord?: string
+      /** Zero-typing badge: when on and no badgeText was typed, use the starburst
+       *  badge the art director wrote for each brief. */
+      autoBadge?: boolean
+      /** Zero-typing accent: when on and no accentWord was typed, render each
+       *  brief's own emphasis word in red. */
+      autoAccent?: boolean
     }
 
     // Headline style: 'question' composes a curiosity question + matching face;
@@ -1137,10 +1150,14 @@ export async function POST(request: Request) {
     // The same Boost levers as prompt lines for the gpt-image "graphic" path (the
     // co-pilot default), which builds its prompt from the art-director brief
     // rather than buildComposed. Pose is applied separately via briefPose.
-    const gfxBoostLines: string[] = [
+    // Resolved per brief: a typed badge / accent word always wins; otherwise the
+    // auto toggles fall back to what the art director wrote for THAT brief.
+    const wantAutoBadge = autoBadge === true
+    const wantAutoAccent = autoAccent === true
+    const gfxBoostLinesFor = (badgeFor: string, accentFor: string): string[] => [
       wantEffects ? 'ENERGY EFFECTS (the creator asked for these): make the design feel kinetic — bold speed lines radiating outward from the product, a subtle motion streak trailing it (the product ITSELF stays sharp and identifiable), a radial light burst behind the headline, and, only if the product is a drink, food or liquid, a dramatic splash frozen mid-air. High energy, still photorealistic, never cartoonish.' : '',
-      badge ? `STARBURST BADGE (required): beside the product add a bold STARBURST badge — a spiky sun-burst shape filled bright yellow with a thick black outline, tilted slightly for energy — reading exactly "${badge}" in heavy black capitals, perfectly spelled.` : '',
-      accentW ? `ACCENT WORD (required): render the headline word "${accentW}" in bright RED (#FF2D2D) with the same thick black outline as the rest, so it jumps out from the white and yellow.` : '',
+      badgeFor ? `STARBURST BADGE (required): beside the product add a bold STARBURST badge — a spiky sun-burst shape filled bright yellow with a thick black outline, tilted slightly for energy — reading exactly "${badgeFor}" in heavy black capitals, perfectly spelled. Keep it clear of the headline.` : '',
+      accentFor ? `ACCENT WORD (required): render the headline word "${accentFor}" in bright RED (#FF2D2D) with the same thick black outline as the rest, so it jumps out from the white and yellow.` : '',
     ].filter(Boolean)
     // Sanitize the shared-brief key (opt-in; social composers only). The style is
     // folded in so a question brief is never served from a statement cache entry
@@ -1514,6 +1531,10 @@ export async function POST(request: Request) {
               const conceptP = (briefP.concept || '').trim()
               const paletteP = (briefP.palette || '').trim()
               const bannerP = (briefP.banner || '').trim()
+              // Zero-typing Boost (product-only path): typed values win, else the
+              // auto toggles use this brief's own badge / emphasis word.
+              const badgeP = badge || (wantAutoBadge ? String(briefP.badge || '') : '')
+              const accentP = accentW || (wantAutoAccent ? String(briefP.emphasisWord || '') : '')
               const calloutsP = Array.isArray(briefP.callouts) ? briefP.callouts.filter(Boolean) : []
               const headP = conceptP
                 ? [
@@ -1524,7 +1545,7 @@ export async function POST(request: Request) {
                     bannerP ? `BANNER PHRASE: render "${bannerP}" inside a hand-painted brush-stroke or torn banner (correct spelling).` : '',
                     calloutsP.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips or spec pill badges — correctly spelled, a few words each: ${calloutsP.join(' · ')}.` : '',
                     'Vibrant, modern, high-contrast, layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
-                    ...gfxBoostLines,
+                    ...gfxBoostLinesFor(badgeP, accentP),
                   ].filter(Boolean)
                 : [
                     'Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 16:9 landscape (1536×864). NO people. Vibrant, modern, high-contrast — never flat or plain. Bold mixed-colour display type (not plain white/yellow), a themed colourful background that suits the product, and small checkmark/spec callouts.',
@@ -1809,6 +1830,10 @@ export async function POST(request: Request) {
             // Boost: an explicit pose (hold / wear / use / point / thumbs) beats the
             // brief's own gesture.
             const briefPose = poseOverride || (brief.pose || '').trim()
+            // Zero-typing Boost: typed values win; else the auto toggles use what the
+            // art director wrote for THIS brief.
+            const gfxBadge = badge || (wantAutoBadge ? (brief.badge || '') : '')
+            const gfxAccent = accentW || (wantAutoAccent ? (brief.emphasisWord || '') : '')
             const personAction = briefExpression || briefPose
               ? `Give them ${briefExpression || 'a natural, content-fitting reaction'}${briefPose ? `, ${briefPose}` : ''} — make the expression genuine and specific, not a generic stock smile.`
               : 'Place them on one side reacting to the product with a genuine, content-fitting expression (not a generic smile).'
@@ -1897,8 +1922,8 @@ export async function POST(request: Request) {
                 'TEXT OVERLAY:',
                 `  Top line: "${line1}" — white bold capitals, thick black stroke outline only, NO background box.`,
                 `  Main line: "${line2}" — larger, bright yellow (#FFE034) bold capitals, thick black stroke outline — the dominant text. NO background box.`,
-                ...gfxBoostLines,
-                `  Place the two lines where they do NOT cover the creator's face or the product (e.g. across the top or down one side). Outlined text only — no panels or filled boxes — crisp and readable at small sizes. No other text anywhere in the image${badge ? ' except the starburst badge above' : ''}.`,
+                ...gfxBoostLinesFor(gfxBadge, gfxAccent),
+                `  Place the two lines where they do NOT cover the creator's face or the product (e.g. across the top or down one side). Outlined text only — no panels or filled boxes — crisp and readable at small sizes. No other text anywhere in the image${gfxBadge ? ' except the starburst badge above' : ''}.`,
                 '',
                 'STYLE: High-production YouTube creator thumbnail. Bold, punchy, cinematic depth of field (softly blurred background) so the creator and product stay sharp. No logos, no watermarks, no brand names rendered in the image itself.',
               ].join('\n')
@@ -1917,7 +1942,7 @@ export async function POST(request: Request) {
                   briefBanner ? `BANNER PHRASE: render "${briefBanner}" inside a hand-painted brush-stroke or torn banner as a secondary punch (correct spelling).` : '',
                   briefCallouts.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips, or spec pill badges — correctly spelled, a few words each: ${briefCallouts.join(' · ')}.` : '',
                   'Execute it vibrant, modern, high-contrast and layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
-                  ...gfxBoostLines,
+                  ...gfxBoostLinesFor(gfxBadge, gfxAccent),
                 ].filter(Boolean)
               : [
                   `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 16:9 landscape (1536×864) — in the style of today's top product-review creators (MrBeast-era energy). It MUST look vibrant, modern and high-contrast and make the viewer want to click. NEVER flat, dull, plain or template-like. Make this one ${gfxVibe}. YOU are the designer — own the layout, colours, fonts and effects.`,
@@ -2399,8 +2424,12 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             // gets a SPECIFIC target on the product so it doesn't render as a
             // floating squiggle.
             const c = hooks[i % hooks.length]
+            // Zero-typing Boost (composed path): typed values win, else the auto
+            // toggles use this hook's own art-director badge / emphasis word.
+            const cBadge = badge || (wantAutoBadge ? ((c as ThumbBrief).badge || '') : '')
+            const cAccent = accentW || (wantAutoAccent ? (c.emphasisWord || '') : '')
             const headlineClause = withText
-              ? `At the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner of the frame, large, bold, blocky white and yellow text with heavy black outlines reads: "${c.line1}". Directly below it, smaller but still bold white and yellow text reads: "${c.line2}". A prominent yellow arrow with a thick black outline points from the text to the product.${accentW ? ` Render the word "${accentW}" in bright RED (#FF2D2D) with the same thick black outline so it jumps out from the white and yellow.` : ''}${badge ? ` Beside the product, add a bold STARBURST badge — a spiky sun-burst shape filled bright yellow with a thick black outline — reading exactly "${badge}" in heavy black capitals, perfectly spelled, tilted slightly for energy.` : ''} Text and graphics are baked directly into the image composition — no other text, captions, or labels anywhere in the image.`
+              ? `At the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner of the frame, large, bold, blocky white and yellow text with heavy black outlines reads: "${c.line1}". Directly below it, smaller but still bold white and yellow text reads: "${c.line2}". A prominent yellow arrow with a thick black outline points from the text to the product.${cAccent ? ` Render the word "${cAccent}" in bright RED (#FF2D2D) with the same thick black outline so it jumps out from the white and yellow.` : ''}${cBadge ? ` Beside the product, add a bold STARBURST badge — a spiky sun-burst shape filled bright yellow with a thick black outline — reading exactly "${cBadge}" in heavy black capitals, perfectly spelled, tilted slightly for energy. Keep it clear of the headline.` : ''} Text and graphics are baked directly into the image composition — no other text, captions, or labels anywhere in the image.`
               : `★ ABSOLUTELY ZERO TEXT in the rendered image. NO words, NO letters, NO captions, NO headlines, NO labels, NO banner text, NO logos, NO arrows with text, NO badges with text. The image must be PURELY VISUAL — face + product + scene only. Even if the style references contain text, DO NOT REPRODUCE IT. The headline is composited as a SEPARATE LAYER afterwards — your output must be 100% clean of any glyph or character. Leave a generous uncluttered area at the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner with simple background colour where text will be added afterwards by a different system.`
             // 3C — Composition swaps between single-product (host one side,
             // product the other) and multi-product (host smaller, products
@@ -2448,7 +2477,7 @@ ${compositionLine}
 ${wantEffects ? `ENERGY EFFECTS (the creator asked for these): make the image feel kinetic — bold speed lines radiating outward from the product, a subtle motion streak trailing the product (the product ITSELF stays sharp and identifiable), a radial light burst behind the headline area, and, only if the product is a drink, food or liquid, a dramatic splash frozen mid-air. High energy, still photorealistic, never cartoonish.
 ` : ''}${headlineClause}
 BACKGROUND (must FIT the product's real-world use): set the scene where ${productTitle || 'this product'} is ACTUALLY used — INFER the correct environment from the product itself. Examples: a kitchen gadget → a kitchen; an OUTDOOR / patio / deck / pool / garden / lawn product → a tidy outdoor patio, deck, balcony, poolside or backyard (NOT indoors); a car/auto product → a garage or driveway; a bathroom product → a bathroom; a workshop/tool → a garage or workbench; a desk/office product → a desk. Do NOT default to a generic indoor living room unless the product is genuinely a living-room item. Grade the chosen setting as ${palette.overall} cinematic — a dramatic blend of ${palette.rim} rim-light behind the subject and ${palette.accent} glow around the product, deep contrast, soft vignette around the edges. The rim light must visibly separate the subject from the background so any cut-out edge blends cleanly with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes. Loosely fits the video "${videoTitle}" without literally illustrating the title.
-The ONLY text in the image is the headline described above (plus the arrow${badge && withText ? ' and the starburst badge' : ''}). HARD RULE: the word "Amazon" (and "Prime") must NEVER appear in the headline or anywhere in the image, and NEVER draw the Amazon smile / swoosh arrow logo. NO retailer logos, NO invented brand names, NO marketing copy or feature lists from product packaging, NO price tags, watermarks, ©/™/® symbols, or any extra signage anywhere in the background or on surfaces. The product's own physical branding on its body/bottle/box IS kept intact (it's the item being reviewed).
+The ONLY text in the image is the headline described above (plus the arrow${cBadge && withText ? ' and the starburst badge' : ''}). HARD RULE: the word "Amazon" (and "Prime") must NEVER appear in the headline or anywhere in the image, and NEVER draw the Amazon smile / swoosh arrow logo. NO retailer logos, NO invented brand names, NO marketing copy or feature lists from product packaging, NO price tags, watermarks, ©/™/® symbols, or any extra signage anywhere in the background or on surfaces. The product's own physical branding on its body/bottle/box IS kept intact (it's the item being reviewed).
 Ultra-sharp, professional, photorealistic.`
           }
 

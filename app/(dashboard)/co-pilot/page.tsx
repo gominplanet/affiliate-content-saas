@@ -745,6 +745,24 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     setThumbEffects(on)
     try { localStorage.setItem('mvp_thumb_effects', on ? '1' : '0') } catch { /* ignore */ }
   }
+  /** Zero-typing Boost toggles: the AI writes the starburst badge and picks the
+   *  red accent word. Typing a custom one in Fine-tune overrides. Remembered. */
+  const [thumbAutoBadge, setThumbAutoBadge] = useState(false)
+  const [thumbAutoAccent, setThumbAutoAccent] = useState(false)
+  useEffect(() => {
+    try {
+      setThumbAutoBadge(localStorage.getItem('mvp_thumb_auto_badge') === '1')
+      setThumbAutoAccent(localStorage.getItem('mvp_thumb_auto_accent') === '1')
+    } catch { /* ignore */ }
+  }, [])
+  const toggleThumbAutoBadge = (on: boolean) => {
+    setThumbAutoBadge(on)
+    try { localStorage.setItem('mvp_thumb_auto_badge', on ? '1' : '0') } catch { /* ignore */ }
+  }
+  const toggleThumbAutoAccent = (on: boolean) => {
+    setThumbAutoAccent(on)
+    try { localStorage.setItem('mvp_thumb_auto_accent', on ? '1' : '0') } catch { /* ignore */ }
+  }
   /** null = still checking (ping in progress), true/false = known state. */
   const [extensionInstalled, setExtensionInstalled] = useState<boolean | null>(null)
   /** Live status shown inside the Card 4 button while generating. */
@@ -1767,7 +1785,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           accentWord: thumbAccentWord.trim() || undefined,
           // A chosen accent word reads best in red; only force the colour when the
           // creator actually picked a word, so the default yellow emphasis is untouched.
-          ...(thumbAccentWord.trim() ? { accentColor: '#FF2D2D' } : {}),
+          ...((thumbAccentWord.trim() || thumbAutoAccent) ? { accentColor: '#FF2D2D' } : {}),
+          // Zero-typing toggles: the AI writes the badge / picks the accent word.
+          autoBadge: thumbAutoBadge || undefined,
+          autoAccent: thumbAutoAccent || undefined,
         }),
       })
       const data = await safeJson(res)
@@ -1880,6 +1901,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           energyEffects: thumbEffects || undefined,
           badgeText: thumbBadge.trim() || undefined,
           accentWord: thumbAccentWord.trim() || undefined,
+          autoBadge: thumbAutoBadge || undefined,
+          autoAccent: thumbAutoAccent || undefined,
         }),
       })
       const data = await safeJson(res)
@@ -2461,113 +2484,52 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       </p>
                     )}
 
-                    {/* Outfit — pin the wardrobe for the selected face so every
-                        thumbnail keeps the same look. Saved to the face. */}
-                    {faceModels.length > 0 && scoutFaceSelection !== 'no-human' && (() => {
-                      const activeId = (scoutFaceSelection !== 'auto' && faceModels.some(f => f.id === scoutFaceSelection))
-                        ? scoutFaceSelection
-                        : (faceModels[0]?.id || '')
-                      const face = faceModels.find(f => f.id === activeId)
-                      if (!face) return null
-                      const draft = outfitDraft[activeId] ?? (face.outfit_pref || '')
-                      return (
-                        <div className="flex flex-col gap-1 mt-1">
-                          <span className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Outfit <span className="normal-case font-normal">(optional)</span></span>
-                          <div className="flex items-center gap-2">
-                            <input
-                              value={draft}
-                              onChange={e => setOutfitDraft(prev => ({ ...prev, [activeId]: e.target.value }))}
-                              onBlur={() => { void saveFaceOutfit(activeId, draft) }}
-                              placeholder="e.g. a white lab coat"
-                              maxLength={120}
-                              className="flex-1 h-8 px-2.5 text-[12px] rounded-lg border bg-white dark:bg-[#1c1c1e] border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#FF9500]"
-                            />
-                            {savingOutfit === activeId && <Loader2 size={13} className="animate-spin text-[#86868b]" />}
-                          </div>
-                          <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
-                            {face.outfit_pref ? `${face.name} stays in ${face.outfit_pref}.` : 'Leave blank to vary it. Saved to this face and used everywhere.'}
-                          </span>
-                        </div>
-                      )
-                    })()}
+                    {/* Outfit lives in Fine-tune below (it needs typing). */}
                   </div>
 
-                  {/* Headline style toggle — Polished (default) vs Question hook.
-                      Question mode makes the headline a curiosity question about
-                      the product + a matching facial reaction. Persists per browser. */}
+                  {/* Quick style — one-tap toggles, zero typing. The AI writes the
+                      badge and picks the accent word; Fine-tune below overrides. */}
                   <div className="flex flex-col gap-1.5 px-1">
-                    <span className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Headline style</span>
-                    <div className="inline-flex rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] p-0.5 bg-white dark:bg-[#1c1c1e] w-full">
-                      <button
-                        type="button"
-                        disabled={generatingThumbnail}
-                        onClick={() => toggleThumbQuestion(false)}
-                        className={`flex-1 text-[12px] font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-60 ${!thumbQuestionMode ? 'bg-[#7C3AED] text-white' : 'text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'}`}
-                      >
-                        Polished
-                      </button>
-                      <button
-                        type="button"
-                        disabled={generatingThumbnail}
-                        onClick={() => toggleThumbQuestion(true)}
-                        className={`flex-1 text-[12px] font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-60 ${thumbQuestionMode ? 'bg-[#7C3AED] text-white' : 'text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'}`}
-                      >
-                        Question hook
-                      </button>
+                    <span className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Quick style</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {([
+                        ['question', 'Question hook', thumbQuestionMode, () => toggleThumbQuestion(!thumbQuestionMode), 'Headline becomes a curiosity question, with a matching expression'],
+                        ['energy', 'Energy', thumbEffects, () => toggleThumbEffects(!thumbEffects), 'Speed lines, a streak on the product, a burst behind the title'],
+                        ['badge', 'Badge', thumbAutoBadge, () => toggleThumbAutoBadge(!thumbAutoBadge), 'A starburst badge with a real benefit, written for you'],
+                        ['accent', 'Red accent', thumbAutoAccent, () => toggleThumbAutoAccent(!thumbAutoAccent), 'One headline word pops in red'],
+                      ] as Array<[string, string, boolean, () => void, string]>).map(([k, label, on, toggle, tip]) => (
+                        <button key={k} type="button" disabled={generatingThumbnail} onClick={toggle} title={tip}
+                          className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-all disabled:opacity-60 ${
+                            on ? 'bg-[#7C3AED] text-white shadow-sm' : 'bg-gray-100 dark:bg-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-200 dark:hover:bg-white/20'
+                          }`}>
+                          {on ? '✓ ' : ''}{label}
+                        </button>
+                      ))}
                     </div>
-                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
-                      {thumbQuestionMode
-                        ? 'MVP writes a curiosity question about the product (e.g. "Does it actually work?") and matches your expression to it.'
-                        : 'Your current polished benefit headline. Switch to Question hook for a clickier, question-style title.'}
-                    </p>
                   </div>
 
-                  {/* Match a look — the style-reference + saved presets were fully
-                      wired but never rendered, so nobody could find them. Upload a
-                      thumbnail you love (yours or anyone's) and MVP copies its
-                      palette, lighting, typography energy and composition. Save it
-                      as a preset to reuse it on every thumbnail. */}
+                  {/* Match a look — compact: saved looks as chips + one upload chip.
+                      Tap a look and MVP copies its palette, lighting and typography. */}
                   <div className="flex flex-col gap-1.5 px-1">
-                    <span className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">
-                      Match a look <span className="font-normal normal-case tracking-normal text-[#a1a1a6]">(optional)</span>
-                    </span>
-                    {savedStyles.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {savedStyles.map(s => (
-                          <span key={s.id} className="inline-flex items-center">
-                            <button
-                              type="button"
-                              disabled={generatingThumbnail}
-                              onClick={() => applyPreset(s.id, s.reference_url)}
-                              title={`Use the "${s.name}" look`}
-                              className={`px-3 py-1 rounded-l-full text-[11px] font-semibold transition-all disabled:opacity-60 ${
-                                loadedPresetId === s.id
-                                  ? 'bg-[#7C3AED] text-white shadow-sm'
-                                  : 'bg-gray-100 dark:bg-white/10 text-[#86868b] dark:text-[#8e8e93] hover:bg-gray-200 dark:hover:bg-white/20'
-                              }`}
-                            >
-                              {s.name}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={generatingThumbnail}
-                              onClick={() => void deletePreset(s.id)}
-                              title="Delete this look"
-                              className={`px-2 py-1 rounded-r-full text-[11px] leading-none transition-all disabled:opacity-60 ${
-                                loadedPresetId === s.id
-                                  ? 'bg-[#7C3AED]/80 text-white'
-                                  : 'bg-gray-100 dark:bg-white/10 text-[#86868b] hover:text-[#ff3b30]'
-                              }`}
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <label className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border border-[#7C3AED] text-[#7C3AED] transition ${(styleRefUploading || generatingThumbnail) ? 'opacity-60' : 'hover:bg-[#7C3AED] hover:text-white cursor-pointer'}`}>
-                        {styleRefUploading ? <><Loader2 size={12} className="animate-spin" /> Uploading…</> : 'Upload a thumbnail you love'}
+                    <span className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Match a look</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {savedStyles.map(s => (
+                        <span key={s.id} className="inline-flex items-center">
+                          <button type="button" disabled={generatingThumbnail} onClick={() => applyPreset(s.id, s.reference_url)} title={`Use the "${s.name}" look`}
+                            className={`px-3 py-1.5 rounded-l-full text-[12px] font-semibold transition-all disabled:opacity-60 ${
+                              loadedPresetId === s.id ? 'bg-[#7C3AED] text-white shadow-sm' : 'bg-gray-100 dark:bg-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-200 dark:hover:bg-white/20'
+                            }`}>
+                            {loadedPresetId === s.id ? '✓ ' : ''}{s.name}
+                          </button>
+                          <button type="button" disabled={generatingThumbnail} onClick={() => void deletePreset(s.id)} title="Delete this look"
+                            className={`px-2 py-1.5 rounded-r-full text-[12px] leading-none transition-all disabled:opacity-60 ${
+                              loadedPresetId === s.id ? 'bg-[#7C3AED]/80 text-white' : 'bg-gray-100 dark:bg-white/10 text-[#86868b] hover:text-[#ff3b30]'
+                            }`}>×</button>
+                        </span>
+                      ))}
+                      <label title="Upload a thumbnail you love and MVP copies its style"
+                        className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-full border border-dashed border-[#7C3AED] text-[#7C3AED] transition ${(styleRefUploading || generatingThumbnail) ? 'opacity-60' : 'hover:bg-[#7C3AED] hover:text-white cursor-pointer'}`}>
+                        {styleRefUploading ? <><Loader2 size={12} className="animate-spin" /> Uploading…</> : '+ Upload a look'}
                         <input type="file" accept="image/*" className="hidden" disabled={styleRefUploading || generatingThumbnail}
                           onChange={e => { const f = e.target.files?.[0]; if (f) void handleStyleReferenceUpload(f); e.currentTarget.value = '' }} />
                       </label>
@@ -2577,103 +2539,108 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                           <img src={styleReferenceUrl} alt="Style reference" className="h-8 w-14 object-cover rounded-md border border-gray-200 dark:border-white/10" />
                           {!loadedPresetId && (
                             <button type="button" disabled={savingPreset || generatingThumbnail} onClick={() => void saveCurrentAsPreset()}
-                              className="text-[11px] font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
-                              {savingPreset ? 'Saving…' : 'Save this look'}
+                              className="text-[12px] font-semibold px-3 py-1.5 rounded-full text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+                              {savingPreset ? 'Saving…' : 'Save look'}
                             </button>
                           )}
                           <button type="button" disabled={generatingThumbnail} onClick={() => { setStyleReferenceUrl(null); setLoadedPresetId(null) }}
-                            className="text-[11px] text-[#86868b] hover:text-[#ff3b30] underline disabled:opacity-60">
-                            Remove
-                          </button>
+                            className="text-[12px] text-[#86868b] hover:text-[#ff3b30] disabled:opacity-60">Remove</button>
                         </>
                       )}
                     </div>
-                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
-                      {styleReferenceUrl
-                        ? 'MVP will match this look: its colours, lighting, typography energy and layout. Your face and the real product stay locked.'
-                        : 'Upload one of your best thumbnails (or any you admire) and MVP copies its style. Save it as a look to reuse on every thumbnail.'}
-                    </p>
                   </div>
 
-                  {/* Boost — the four levers that separate a designed pro thumbnail
-                      from the default composite: how the creator interacts with the
-                      product, motion energy, a starburst badge, and a red accent word. */}
-                  <div className="flex flex-col gap-2 px-1">
-                    <span className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Boost</span>
+                  {/* Fine-tune — everything that needs typing lives here, collapsed
+                      by default so the fast path above stays clean. */}
+                  <details className="rounded-xl border border-gray-200 dark:border-white/10 px-3 py-2 mx-1 group">
+                    <summary className="flex items-center gap-1.5 cursor-pointer list-none text-[11px] font-semibold uppercase tracking-wide text-[#86868b] dark:text-[#8e8e93]">
+                      Fine-tune <span className="normal-case font-normal tracking-normal text-[#a1a1a6]">(optional)</span>
+                      <ChevronDown size={12} className="ml-auto text-[#86868b] transition-transform group-open:rotate-180" />
+                    </summary>
+                    <div className="mt-3 flex flex-col gap-3">
 
-                    {/* Pose */}
-                    {scoutFaceSelection !== 'no-human' && (
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">You with the product</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {([['auto', 'Auto'], ['hold', 'Hold it'], ['wear', 'Wear it'], ['use', 'Use it'], ['point', 'Point at it'], ['thumbs', 'Thumbs up']] as Array<[ThumbPose, string]>).map(([v, label]) => (
-                            <button key={v} type="button" disabled={generatingThumbnail} onClick={() => pickThumbPose(v)}
-                              className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all disabled:opacity-60 ${
-                                thumbPose === v
-                                  ? 'bg-[#FF9500] text-white shadow-sm'
-                                  : 'bg-gray-100 dark:bg-white/10 text-[#86868b] dark:text-[#8e8e93] hover:bg-gray-200 dark:hover:bg-white/20'
-                              }`}>
-                              {label}
-                            </button>
-                          ))}
+                      {/* Pose */}
+                      {scoutFaceSelection !== 'no-human' && (
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">You with the product</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {([['auto', 'Auto'], ['hold', 'Hold it'], ['wear', 'Wear it'], ['use', 'Use it'], ['point', 'Point at it'], ['thumbs', 'Thumbs up']] as Array<[ThumbPose, string]>).map(([v, label]) => (
+                              <button key={v} type="button" disabled={generatingThumbnail} onClick={() => pickThumbPose(v)}
+                                className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all disabled:opacity-60 ${
+                                  thumbPose === v
+                                    ? 'bg-[#FF9500] text-white shadow-sm'
+                                    : 'bg-gray-100 dark:bg-white/10 text-[#86868b] dark:text-[#8e8e93] hover:bg-gray-200 dark:hover:bg-white/20'
+                                }`}>
+                                {label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
+                      )}
+
+                      {/* Outfit — saved to the face, used everywhere. */}
+                      {faceModels.length > 0 && scoutFaceSelection !== 'no-human' && (() => {
+                        const activeId = (scoutFaceSelection !== 'auto' && faceModels.some(f => f.id === scoutFaceSelection))
+                          ? scoutFaceSelection
+                          : (faceModels[0]?.id || '')
+                        const face = faceModels.find(f => f.id === activeId)
+                        if (!face) return null
+                        const draft = outfitDraft[activeId] ?? (face.outfit_pref || '')
+                        return (
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Outfit <span className="font-normal text-[#a1a1a6]">— saved to {face.name}</span></span>
+                            <div className="flex items-center gap-2">
+                              <input
+                                value={draft}
+                                onChange={e => setOutfitDraft(prev => ({ ...prev, [activeId]: e.target.value }))}
+                                onBlur={() => { void saveFaceOutfit(activeId, draft) }}
+                                placeholder="e.g. a white lab coat"
+                                maxLength={120}
+                                disabled={generatingThumbnail}
+                                className="flex-1 h-8 px-2.5 text-[12px] rounded-lg border bg-white dark:bg-[#1c1c1e] border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#FF9500] disabled:opacity-60"
+                              />
+                              {savingOutfit === activeId && <Loader2 size={13} className="animate-spin text-[#86868b]" />}
+                            </div>
+                          </label>
+                        )
+                      })()}
+
+                      {/* Custom badge + accent word (override the auto toggles). */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label className="flex flex-col gap-1">
+                          <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Badge text <span className="font-normal text-[#a1a1a6]">— overrides auto</span></span>
+                          <input value={thumbBadge} onChange={e => setThumbBadge(e.target.value)} maxLength={18} disabled={generatingThumbnail}
+                            placeholder="e.g. MAX POWER!"
+                            className="h-8 px-2.5 text-[12px] rounded-lg border bg-white dark:bg-[#1c1c1e] border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED] disabled:opacity-60" />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Red word <span className="font-normal text-[#a1a1a6]">— overrides auto</span></span>
+                          <input value={thumbAccentWord} onChange={e => setThumbAccentWord(e.target.value)} maxLength={24} disabled={generatingThumbnail}
+                            placeholder="e.g. STRONG"
+                            className="h-8 px-2.5 text-[12px] rounded-lg border bg-white dark:bg-[#1c1c1e] border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED] disabled:opacity-60" />
+                        </label>
                       </div>
-                    )}
 
-                    {/* Energy effects */}
-                    <button type="button" disabled={generatingThumbnail} onClick={() => toggleThumbEffects(!thumbEffects)}
-                      className={`flex items-center justify-between w-full px-3 py-2 rounded-lg border text-left transition-all disabled:opacity-60 ${
-                        thumbEffects ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e]'
-                      }`}>
-                      <span className="flex flex-col">
-                        <span className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Energy effects</span>
-                        <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Speed lines, a motion streak on the product, a burst behind the title, a splash for drinks.</span>
-                      </span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${thumbEffects ? 'bg-[#7C3AED] text-white' : 'bg-gray-100 dark:bg-white/10 text-[#86868b]'}`}>{thumbEffects ? 'ON' : 'OFF'}</span>
-                    </button>
-
-                    {/* Starburst badge + accent word */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {/* Describe your thumbnail — free-text scene direction. */}
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Starburst badge <span className="text-[#a1a1a6]">(baked text)</span></span>
-                        <input value={thumbBadge} onChange={e => setThumbBadge(e.target.value)} maxLength={18} disabled={generatingThumbnail}
-                          placeholder="e.g. MAX POWER!"
-                          className="h-8 px-2.5 text-[12px] rounded-lg border bg-white dark:bg-[#1c1c1e] border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED] disabled:opacity-60" />
+                        <span className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93]">Describe the scene <span className="font-normal text-[#a1a1a6]">— pose, mood, background</span></span>
+                        <textarea
+                          id="scene-prompt"
+                          value={scenePrompt}
+                          onChange={e => setScenePrompt(e.target.value.slice(0, 400))}
+                          disabled={generatingThumbnail}
+                          rows={2}
+                          placeholder="e.g. me holding the bottle, shocked face, bright kitchen, big arrow at the stain"
+                          className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6] focus:outline-none focus:border-[#7C3AED] transition resize-none disabled:opacity-60"
+                        />
                       </label>
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Red accent word <span className="text-[#a1a1a6]">(from your headline)</span></span>
-                        <input value={thumbAccentWord} onChange={e => setThumbAccentWord(e.target.value)} maxLength={24} disabled={generatingThumbnail}
-                          placeholder="e.g. STRONG"
-                          className="h-8 px-2.5 text-[12px] rounded-lg border bg-white dark:bg-[#1c1c1e] border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED] disabled:opacity-60" />
-                      </label>
+                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
+                        Your face and the real product always stay accurate. Pose, Energy, Badge and Red accent are remembered for next time.
+                      </p>
                     </div>
-                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
-                      The badge is baked into the image, so it only appears on a baked-text render. Pose and effects are remembered for your next thumbnail.
-                    </p>
-                  </div>
+                  </details>
 
-                  {/* Describe your thumbnail — free-text creator direction folded
-                      into the AI prompt (route's creatorDirectionClause). Optional:
-                      SCOUT frames + the product photo are automatic, so this just
-                      steers the LOOK. Applies to both the MVP Thumbnail path and
-                      Product Only — both read scenePrompt from state. */}
-                  <div className="flex flex-col gap-1.5 px-1">
-                    <label htmlFor="scene-prompt" className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">
-                      Describe your thumbnail <span className="font-normal normal-case tracking-normal text-[#a1a1a6]">(optional)</span>
-                    </label>
-                    <textarea
-                      id="scene-prompt"
-                      value={scenePrompt}
-                      onChange={e => setScenePrompt(e.target.value.slice(0, 400))}
-                      disabled={generatingThumbnail}
-                      rows={3}
-                      placeholder="e.g. me holding the bottle with a shocked face, bright kitchen background, big arrow pointing at the stain"
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6] focus:outline-none focus:border-[#7C3AED] transition resize-none"
-                    />
-                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
-                      Steers the scene, mood, your pose &amp; background. Your face and the real product stay accurate. Leave blank and MVP picks a high-CTR scene for you.
-                    </p>
-                  </div>
+                  {/* "Describe the scene" now lives inside Fine-tune above. */}
 
                   {/* Product link. When the video already has a detected product we
                       DON'T ask again — the detected ASIN is passed to the generator
