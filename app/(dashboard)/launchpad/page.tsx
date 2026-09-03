@@ -167,10 +167,10 @@ export default function LaunchpadPage() {
       const g = j.generated as { title: string; description: string; tags: string[]; title_alternatives?: string[] }
       const m: Meta = { title: g.title, alternatives: g.title_alternatives || [], description: g.description, tags: g.tags || [] }
       setMeta(m); setChosenTitle(m.title); setDescription(m.description); setTags(m.tags.join(', '))
-      toast.success('Metadata ready.')
-      // Kick off the thumbnail right away so the YouTube step is a finished draft,
-      // not just text — the same Co-Pilot treatment. Non-blocking.
-      void genThumbnail(m.title)
+      toast.success('Metadata ready. Set your thumbnail style, then hit Generate.')
+      // Deliberately NOT auto-generating the thumbnail here: it locked the style
+      // controls before the creator could touch them. They pick face / Quick style /
+      // look first, then press Generate.
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not prepare the metadata')
     } finally { setPreparing(false) }
@@ -561,10 +561,11 @@ export default function LaunchpadPage() {
                       <div>
                         <label className="text-[12px] font-medium" style={muted}>Thumbnail style</label>
                         <div className="mt-1.5">
+                          {/* Stays editable while a render runs — changes apply on the
+                              next Generate, so the creator is never locked out. */}
                           <ThumbnailBoostPanel
                             boost={boost}
                             face={facePick !== 'no-human' ? (faceModels.find(m => m.id === facePick) || null) : null}
-                            disabled={thumbBusy}
                           />
                         </div>
                       </div>
@@ -585,7 +586,15 @@ export default function LaunchpadPage() {
                             <div className="rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
                               {thumbUrl
                                 ? <img src={thumbUrl} alt="Thumbnail with headline" className="w-full h-full object-cover" />
-                                : <span className="text-[12px] inline-flex items-center gap-1.5" style={muted}>{thumbBusy ? <><Loader2 size={13} className="animate-spin" /> Designing…</> : 'No thumbnail yet'}</span>}
+                                : thumbBusy
+                                  ? <span className="text-[12px] inline-flex items-center gap-1.5" style={muted}><Loader2 size={13} className="animate-spin" /> Designing…</span>
+                                  : (
+                                    // Nothing yet: set the style above, then generate on purpose.
+                                    <button type="button" onClick={() => void genThumbnail()}
+                                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: '#7C3AED' }}>
+                                      <Sparkles size={15} /> Generate thumbnail
+                                    </button>
+                                  )}
                             </div>
                             <p className="text-[11px] mt-1 font-medium" style={label}>YouTube + English stores <span className="font-normal" style={muted}>(US, CA, UK, AU)</span></p>
                           </div>
