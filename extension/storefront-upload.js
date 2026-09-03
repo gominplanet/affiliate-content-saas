@@ -212,6 +212,29 @@
       }
       if (!creds) throw new Error('path-and-credentials unavailable')
 
+      // Diagnostic: record WHERE this marketplace wants the bytes, so we can see
+      // whether every marketplace shares one bucket. If they do, a single upload
+      // can be referenced by every market's publish instead of re-uploading the
+      // whole video per store, which is what makes a 4-geo run take minutes.
+      // Bucket / region / folder only. The credentials themselves are secrets and
+      // are never recorded.
+      try {
+        chrome.runtime.sendMessage({
+          action: 'MVP_STOREFRONT_CREATE_LOG',
+          host: location.host,
+          entry: {
+            url: `${location.host}/create/api/path-and-credentials`, method: 'GET', status: 200,
+            request: null, via: 'mvp',
+            response: JSON.stringify({
+              s3Bucket: creds.s3Bucket || null,
+              s3BucketRegion: creds.s3BucketRegion || null,
+              s3Folder: creds.s3Folder || null,
+            }),
+            ts: Date.now(),
+          },
+        })
+      } catch (e) { /* diagnostics must never break an upload */ }
+
       // 2. Upload media to S3 — via the BACKGROUND worker. A signed cross-origin
       //    PUT from this Amazon page triggers a CORS preflight that hangs
       //    ("[upload-video] timed out"); the service worker has host_permissions
