@@ -17,6 +17,7 @@ import { requestStudioFinish, requestFindCampaign, requestAcceptCampaign, reques
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { asinFromAmazonUrl } from '@/lib/product-link'
+import ThumbnailBoostPanel, { useThumbnailBoost } from '@/components/thumbnails/ThumbnailBoostPanel'
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -116,6 +117,9 @@ export default function LaunchpadPage() {
   // 'no-human' = product-only. Defaults to the first ready face when they have one.
   const [faceModels, setFaceModels] = useState<Array<{ id: string; name: string }>>([])
   const [facePick, setFacePick] = useState<'no-human' | string>('no-human')
+  // The same thumbnail controls Co-Pilot has (Quick style, Match a look, Fine-tune),
+  // sharing its remembered preferences. Question hook defaults ON here.
+  const boost = useThumbnailBoost({ defaultQuestion: true })
   useEffect(() => {
     (async () => {
       try {
@@ -190,7 +194,9 @@ export default function LaunchpadPage() {
         // textMode 'graphic' is REQUIRED to match Co-Pilot — the designed gpt-image
         // path at a clean 1280×720 with safe margins. 'clean' = same engine, zero text.
         body: JSON.stringify({
-          videoTitle: t, asin: asinClean || undefined, textMode, headlineStyle: 'question',
+          videoTitle: t, asin: asinClean || undefined, textMode,
+          // Quick style / Match a look / Fine-tune — the same fields Co-Pilot sends.
+          ...boost.requestFields(),
           // The creator's pick: a specific saved face, or product-only.
           ...((noHuman || facePick === 'no-human') ? { noHuman: true } : { faceModelId: facePick }),
         }),
@@ -548,6 +554,19 @@ export default function LaunchpadPage() {
                         {faceModels.length === 0 && (
                           <p className="text-[11px] mt-1" style={muted}>No saved face yet. <a href="/photobooth" className="underline" style={{ color: '#7C3AED' }}>Add your selfies</a> to put yourself on the thumbnail.</p>
                         )}
+                      </div>
+
+                      {/* Thumbnail style — the same controls as Co-Pilot (Quick style,
+                          Match a look, Fine-tune), sharing its remembered preferences. */}
+                      <div>
+                        <label className="text-[12px] font-medium" style={muted}>Thumbnail style</label>
+                        <div className="mt-1.5">
+                          <ThumbnailBoostPanel
+                            boost={boost}
+                            face={facePick !== 'no-human' ? (faceModels.find(m => m.id === facePick) || null) : null}
+                            disabled={thumbBusy}
+                          />
+                        </div>
                       </div>
 
                       {/* Thumbnail — AI-generated, the same engine the Co-Pilot uses */}
