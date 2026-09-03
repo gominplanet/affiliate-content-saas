@@ -38,7 +38,7 @@ function cmpVer(a: string | null | undefined, b: string): number {
 
 interface Vid { id: string; title: string; thumbnail_url: string | null }
 interface Market { domain: string; code: string; country: string; langName: string; needsTranslation: boolean }
-interface Target { domain: string; market: string; country: string; lang: string; dub: boolean; title: string | null; description: string | null; state: string; detail: string | null; videoUrl: string | null; asin: string | null }
+interface Target { domain: string; market: string; country: string; lang: string; dub: boolean; title: string | null; description: string | null; state: string; detail: string | null; videoUrl: string | null; asin?: string | null }
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -295,10 +295,10 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
 
   // Re-run the sign-in check for the selected stores (after the creator logged in).
   const [rechecking, setRechecking] = useState(false)
-  async function recheckSignin() {
+  async function recheckSignin(domains?: string[]) {
     setRechecking(true)
     try {
-      const map = await runPreflight(markets.filter(m => chosen.has(m.domain)).map(m => m.domain))
+      const map = await runPreflight(domains && domains.length ? domains : markets.filter(m => chosen.has(m.domain)).map(m => m.domain))
       if (map) {
         const still = Object.entries(map).filter(([, s]) => s !== 'ready').length
         if (still === 0) toast.success('Signed in on every selected store.')
@@ -788,6 +788,34 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                 </p>
               : <p className="text-[11px] mb-3" style={{ color: '#e0554b' }}>SCOUT not detected. Install it and sign in to Amazon to upload.</p>
           )}
+          {/* Quick way into each store's Creator Hub. Uploads run inside your
+              logged-in Amazon session, so signing in (or switching account) is the
+              single most common thing to need from here. */}
+          {targets.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap mb-3">
+              <span className="text-[11px] mr-0.5" style={muted}>Open a store to sign in:</span>
+              {targets.map(t => (
+                <button key={t.domain} type="button" onClick={() => void signInMarket(t.domain, t.country)}
+                  className="text-[11px] font-medium px-2 py-1 rounded-lg border inline-flex items-center gap-1"
+                  style={{
+                    borderColor: signin[t.domain] === 'ready' ? 'rgba(16,185,129,0.5)' : 'var(--border)',
+                    color: signin[t.domain] === 'ready' ? '#10B981' : 'var(--text-2)',
+                  }}
+                  title={`Open ${t.country} on Amazon${signin[t.domain] === 'ready' ? ' (already signed in)' : ''}`}>
+                  <LogIn size={11} /> {t.market || t.country}
+                </button>
+              ))}
+              {targets.length > 1 && (
+                <button type="button"
+                  onClick={() => void openSignInTabs(targets.map(t => t.domain)).then(n => { if (n > 0) toast(`Opened ${n} Amazon ${n === 1 ? 'tab' : 'tabs'}.`) })}
+                  className="text-[11px] underline" style={muted}>Open all</button>
+              )}
+              <button type="button" onClick={() => void recheckSignin(targets.map(t => t.domain))} disabled={rechecking}
+                className="text-[11px] underline inline-flex items-center gap-1 disabled:opacity-60" style={muted}>
+                {rechecking ? <><Loader2 size={11} className="animate-spin" /> Checking…</> : 'Re-check sign-in'}
+              </button>
+            </div>
+          )}
           <div className="space-y-3">
             {targets.map(t => {
               const uploading = delivering && t.state !== 'delivered' && t.state !== 'failed'
@@ -825,12 +853,16 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                 )}
                 {/* The product this market will publish with. Shown BEFORE the
                     upload because Amazon locks a pending post: an untagged or
-                    wrong-ASIN video can't be corrected until it goes live. */}
-                <p className="text-[11px] mb-0.5" style={t.asin ? muted : { color: '#e0554b' }}>
-                  {t.asin
-                    ? <>Tagging <span className="font-mono font-medium" style={label}>{t.asin}</span>{baseAsin && t.asin.toUpperCase() !== baseAsin.toUpperCase() ? ' (local ASIN)' : ''}</>
-                    : 'No product ASIN for this market. MVP will skip it rather than publish an untagged video.'}
-                </p>
+                    wrong-ASIN video can't be corrected until it goes live.
+                    `undefined` means this row predates the field, which is not the
+                    same as "no ASIN" — don't cry wolf on it. */}
+                {t.asin !== undefined && (
+                  <p className="text-[11px] mb-0.5" style={t.asin ? muted : { color: '#e0554b' }}>
+                    {t.asin
+                      ? <>Tagging <span className="font-mono font-medium" style={label}>{t.asin}</span>{baseAsin && t.asin.toUpperCase() !== baseAsin.toUpperCase() ? ' (local ASIN)' : ''}</>
+                      : 'No product ASIN for this market. MVP will skip it rather than publish an untagged video.'}
+                  </p>
+                )}
                 {t.title && <p className="text-[13px] font-medium" style={label}>{t.title}</p>}
                 {t.description && <p className="text-[12px] mt-0.5 line-clamp-3" style={muted}>{t.description}</p>}
                 {t.detail && t.state !== 'delivered' && <p className="text-[11px] mt-1" style={muted}>{t.detail}</p>}

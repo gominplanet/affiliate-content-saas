@@ -39,6 +39,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     detail: (t.detail as string) || null,
     videoUrl: (t.video_url as string) || null,
     deliveredAt: (t.delivered_at as string) || null,
+    // The product this market publishes with (its local ASIN when one was
+    // resolved, otherwise the job's). Surfaced so the UI can show it before the
+    // upload — Amazon locks a pending post, so a wrong product can't be fixed.
+    asin: (t.asin as string) || null,
   }))
 
   return NextResponse.json({ ok: true, status: job.status, asin: job.asin, targets: rows })
