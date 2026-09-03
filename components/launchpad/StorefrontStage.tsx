@@ -280,6 +280,36 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     toast(`Opened ${country} in a new tab. Sign in there, then hit Upload again.`)
   }
 
+  // Open a Creator Hub tab for EVERY selected store that isn't confirmed signed in,
+  // so the creator can log in to each one and MVP can re-check before uploading.
+  // Returns how many tabs opened.
+  async function openSignInTabs(domains: string[]): Promise<number> {
+    let opened = 0
+    for (const d of domains) {
+      const res = await requestStorefrontLogin(d)
+      if (res.ok) opened++
+      else if (res.error === 'not-installed') { toast.error('Install SCOUT first.'); break }
+    }
+    return opened
+  }
+
+  // Re-run the sign-in check for the selected stores (after the creator logged in).
+  const [rechecking, setRechecking] = useState(false)
+  async function recheckSignin() {
+    setRechecking(true)
+    try {
+      const map = await runPreflight(markets.filter(m => chosen.has(m.domain)).map(m => m.domain))
+      if (map) {
+        const still = Object.entries(map).filter(([, s]) => s !== 'ready').length
+        if (still === 0) toast.success('Signed in on every selected store.')
+        else toast(`${still} ${still === 1 ? 'store still needs' : 'stores still need'} a sign-in.`)
+      }
+    } finally { setRechecking(false) }
+  }
+
+  // Selected stores whose sign-in isn't confirmed (only meaningful once checked).
+  const notReadyChosen = markets.filter(m => chosen.has(m.domain) && signin[m.domain] !== 'ready')
+
   // `jobIdArg` lets the one-click Upload pass the job it just created, before
   // React state has caught up.
   async function deliverAll(jobIdArg?: string) {
@@ -302,8 +332,22 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       const blocked = preKnown ? targets.filter(t => preMap[t.domain] !== 'ready') : []
       if (readyDomains.size === 0) {
         await refreshTargets(jid)
-        toast.error('You’re not signed in to any of these marketplaces yet. Use “Sign in” on each, then retry.')
+        // Open every store so the creator can sign in right away, not hunt for links.
+        await openSignInTabs(targets.map(t => t.domain))
+        toast.error('You’re not signed in to any of these marketplaces yet. Sign in on the tabs that just opened, then hit Upload again.')
         return
+      }
+      // Some stores aren't signed in: open a tab for each so the creator can log in
+      // now, and ask whether to upload to the ready ones in the meantime. Nothing is
+      // silently skipped.
+      if (blocked.length > 0) {
+        setPhase('Opening stores to sign in…')
+        await openSignInTabs(blocked.map(t => t.domain))
+        const names = blocked.map(t => t.country || t.domain).join(', ')
+        const goOn = typeof window !== 'undefined' && window.confirm(
+          `${blocked.length === 1 ? 'This store isn’t' : 'These stores aren’t'} signed in: ${names}.\n\nMVP opened ${blocked.length === 1 ? 'its Amazon tab' : 'a tab for each'} so you can log in. Upload to the ${readyDomains.size} signed-in ${readyDomains.size === 1 ? 'store' : 'stores'} now and come back for the rest?\n\nCancel to sign in first and upload everything together.`,
+        )
+        if (!goOn) { toast('Sign in on the opened tabs, then hit Upload again.'); return }
       }
 
       // ── 2) DUB the ready markets that still need it ───────────────────────
@@ -604,6 +648,27 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
             )
           })}
         </div>
+        {/* Sign-in gate for the SELECTED stores: once checked, any store that isn't
+            confirmed gets its Amazon tab opened in one click, then a re-check. */}
+        {scout?.installed && signinChecked && !running && !delivering && (
+          notReadyChosen.length > 0 ? (
+            <div className="mt-3 flex items-center gap-3 flex-wrap rounded-lg border px-3 py-2" style={{ borderColor: '#e0554b55', background: 'rgba(224,85,75,0.05)' }}>
+              <p className="text-[12px] flex-1 min-w-[12rem]" style={label}>
+                <span className="font-medium" style={{ color: '#e0554b' }}>{notReadyChosen.length} of {chosen.size} selected {chosen.size === 1 ? 'store isn’t' : 'stores aren’t'} signed in</span>
+                <span style={muted}> ({notReadyChosen.map(m => m.code).join(', ')}). MVP uploads only to stores you’re signed in to.</span>
+              </p>
+              <button type="button" onClick={() => void openSignInTabs(notReadyChosen.map(m => m.domain)).then(n => { if (n > 0) toast(`Opened ${n} Amazon ${n === 1 ? 'tab' : 'tabs'}. Sign in on each, then re-check.`) })}
+                className="text-[12px] font-medium px-3 py-1.5 rounded-lg text-white inline-flex items-center gap-1" style={{ background: '#e0554b' }}>
+                <LogIn size={12} /> Open {notReadyChosen.length === 1 ? 'the store' : `${notReadyChosen.length} stores`} to sign in
+              </button>
+              <button type="button" onClick={() => void recheckSignin()} disabled={rechecking} className="text-[12px] underline inline-flex items-center gap-1 disabled:opacity-60" style={muted}>
+                {rechecking ? <><Loader2 size={12} className="animate-spin" /> Checking…</> : 'Re-check sign-in'}
+              </button>
+            </div>
+          ) : chosen.size > 0 ? (
+            <p className="text-[12px] mt-3 inline-flex items-center gap-1" style={{ color: '#10B981' }}><Check size={12} /> Signed in on every selected store.</p>
+          ) : null
+        )}
         {presetAsin ? (
           // Launchpad already collected the ASIN in its own step — show it, don't ask twice.
           <p className="text-[12px] mt-3" style={muted}>Product <span className="font-mono font-medium" style={label}>{baseAsin || presetAsin}</span> · set in the step above.</p>

@@ -37,7 +37,14 @@ async function shortHook(title: string, productTitle: string): Promise<string> {
  *  for the clean, wordless variant delivered to non-English storefronts. */
 export async function buildProductThumbnail(
   sb: Sb,
-  opts: { userId: string; tier?: string | null; title: string; asin: string; withText?: boolean },
+  opts: {
+    userId: string; tier?: string | null; title: string; asin: string; withText?: boolean
+    /** Use THIS saved face (face_models.id). Falls back to the first ready face if
+     *  it isn't found. */
+    faceId?: string | null
+    /** Product only — no creator in the frame at all. */
+    noHuman?: boolean
+  },
 ): Promise<string | null> {
   const withText = opts.withText !== false
   try {
@@ -57,7 +64,13 @@ export async function buildProductThumbnail(
     const withSelfies = ((fms as Array<{ id: string; source_images: unknown; status: string; outfit_pref: string | null }> | null) || [])
       .map(m => ({ id: m.id, source_images: asStrArr(m.source_images), status: m.status, outfit_pref: m.outfit_pref ?? null }))
       .filter(m => m.source_images.length > 0)
-    const face = withSelfies.find(m => m.status === 'ready') || withSelfies[0]
+    // Honour the creator's pick: the exact face they chose, or nobody at all.
+    // Otherwise the first ready face (the original behaviour).
+    const face = opts.noHuman
+      ? undefined
+      : (opts.faceId ? withSelfies.find(m => m.id === opts.faceId) : undefined)
+        || withSelfies.find(m => m.status === 'ready')
+        || withSelfies[0]
     const faceRef = face
       ? await getThumbnailFaceRef(sb, opts.userId, { faceId: face.id, sourceImages: face.source_images, expression: 'excited', tier: opts.tier ?? null, wardrobe: face.outfit_pref })
       : null

@@ -181,20 +181,23 @@ export default function LaunchpadPage() {
   // TWO thumbnails, both Art Director quality:
   //   1) The rich BAKED design (headline, callouts, banner) for YouTube + the
   //      English storefronts — textMode 'graphic', the same path the Co-Pilot uses.
-  //   2) A TEXT-FREE render of the same brief for non-English storefronts, run in
-  //      parallel so it adds no wait. Not pixel-identical to #1 (a separate render),
-  //      by design: the creator prefers the richer baked look for English.
+  //   2) A TEXT-FREE thumbnail for non-English storefronts: the creator's SAME
+  //      picked face next to the real product, zero words. Built by the storefront
+  //      thumbnail recipe (not the text engine with the words removed, which kept
+  //      dropping the person and shipping a product-only image). Runs in parallel so
+  //      it adds no wait, and is not pixel-identical to #1 by design: the creator
+  //      prefers the richer baked look for English.
   //   If #2 fails, the master builds its own clean variant, so nothing blocks.
   async function genThumbnail(titleArg?: string) {
     const t = (titleArg || chosenTitle || workingTitle || 'My video').trim()
     setThumbBusy(true)
     try {
-      const call = (textMode: 'graphic' | 'clean', noHuman: boolean) => fetch('/api/youtube/generate-thumbnail', {
+      const call = (noHuman: boolean) => fetch('/api/youtube/generate-thumbnail', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         // textMode 'graphic' is REQUIRED to match Co-Pilot — the designed gpt-image
-        // path at a clean 1280×720 with safe margins. 'clean' = same engine, zero text.
+        // path at a clean 1280×720 with safe margins.
         body: JSON.stringify({
-          videoTitle: t, asin: asinClean || undefined, textMode,
+          videoTitle: t, asin: asinClean || undefined, textMode: 'graphic',
           // Quick style / Match a look / Fine-tune — the same fields Co-Pilot sends.
           ...boost.requestFields(),
           // The creator's pick: a specific saved face, or product-only.
@@ -204,22 +207,29 @@ export default function LaunchpadPage() {
       const pickUrl = (j: { thumbnailUrl?: string; thumbnailUrls?: string[] }): string | null =>
         j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null) || null
 
-      // Kick off the text-free twin for non-English stores right away (best-effort).
+      // Kick off the text-free version for non-English stores right away, with the
+      // same face the creator picked (best-effort).
       const cleanPromise: Promise<string | null> = (async () => {
+        if (!asinClean) return null // the recipe needs the real product photos
         try {
-          let r = await call('clean', false)
-          let j = await r.json().catch(() => ({}))
-          if (!r.ok && j?.needsFaceModel) { r = await call('clean', true); j = await r.json().catch(() => ({})) }
-          return r.ok ? pickUrl(j) : null
+          const r = await fetch('/api/launchpad/clean-thumbnail', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              asin: asinClean, title: t,
+              ...(facePick === 'no-human' ? { noHuman: true } : { faceId: facePick }),
+            }),
+          })
+          const j = await r.json().catch(() => ({}))
+          return r.ok && typeof j.url === 'string' ? j.url : null
         } catch { return null }
       })()
 
       // The main baked thumbnail. First try WITH the creator's own face; if they
       // have no saved face the route asks for one — Launchpad shouldn't hard-block
       // on that, so retry PRODUCT-ONLY so there's always something.
-      let r = await call('graphic', false)
+      let r = await call(false)
       let j = await r.json().catch(() => ({}))
-      if (!r.ok && j?.needsFaceModel) { r = await call('graphic', true); j = await r.json().catch(() => ({})) }
+      if (!r.ok && j?.needsFaceModel) { r = await call(true); j = await r.json().catch(() => ({})) }
       const url = pickUrl(j)
       if (!r.ok || !url) throw new Error(j.error || 'Could not generate a thumbnail')
       setThumbUrl(url)
@@ -317,7 +327,10 @@ export default function LaunchpadPage() {
         // only if the clean URL is somehow missing, so the flow never blocks.
         // Seed the thumbnail we already generated so the storefront step doesn't
         // stall on "waiting for thumbnail".
-        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asinClean, durationSec, thumbnailUrl: thumbUrl || undefined, thumbnailCleanUrl: thumbCleanUrl || undefined }),
+        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asinClean, durationSec, thumbnailUrl: thumbUrl || undefined, thumbnailCleanUrl: thumbCleanUrl || undefined,
+          // Same face pick as the YouTube step, so any thumbnail the master still has
+          // to render (e.g. when YouTube was skipped) features the same person.
+          ...(facePick === 'no-human' ? { noHuman: true } : facePick ? { faceId: facePick } : {}) }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.videoId) throw new Error(j.error || 'Could not set up the storefront sync')
@@ -502,6 +515,10 @@ export default function LaunchpadPage() {
               </div>
             ) : ytOpen === 'skipped' ? (
               <button type="button" onClick={() => setYtOpen('choose')} className="text-[12px] underline" style={muted}>Changed my mind</button>
+            ) : (ytOpen === 'prepare' && !publishedUrl && !publishing) ? (
+              // Still available mid-prepare: a creator who opened the YouTube step and
+              // changed their mind goes straight to Amazon (this kicks off the geo check).
+              <button type="button" onClick={() => setYtOpen('skipped')} className="text-[12px] underline whitespace-nowrap" style={muted}>Skip YouTube, go to Amazon</button>
             ) : undefined
           }>
           <>

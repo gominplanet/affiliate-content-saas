@@ -34,7 +34,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Launchpad is a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
-  const body = await req.json().catch(() => ({})) as { title?: string; videoUrl?: string; asin?: string; durationSec?: number; thumbnailUrl?: string; thumbnailCleanUrl?: string }
+  const body = await req.json().catch(() => ({})) as { title?: string; videoUrl?: string; asin?: string; durationSec?: number; thumbnailUrl?: string; thumbnailCleanUrl?: string; faceId?: string; noHuman?: boolean }
+  // The creator's face pick from the YouTube step, so any thumbnail we still
+  // have to render here features the same person (or nobody, when they chose
+  // "no human").
+  const faceId = typeof body.faceId === 'string' && body.faceId.trim() ? body.faceId.trim() : null
+  const noHuman = body.noHuman === true
   const title = (body.title || 'My video').trim().slice(0, 200)
   const videoUrl = (body.videoUrl || '').trim()
   const asin = asinFrom(body.asin || '')
@@ -101,8 +106,8 @@ export async function POST(req: Request) {
     try {
       const [t, cleanThumb, textThumb] = await Promise.allSettled([
         (async () => transcriptionConfigured() ? cuesToText(await transcribeToCues(videoUrl)).slice(0, 20000) : '')(),
-        seedClean ? Promise.resolve(null) : buildProductThumbnail(sb, { userId: user.id, tier, title, asin, withText: false }),
-        seedThumb ? Promise.resolve(null) : buildProductThumbnail(sb, { userId: user.id, tier, title, asin }),
+        seedClean ? Promise.resolve(null) : buildProductThumbnail(sb, { userId: user.id, tier, title, asin, withText: false, faceId, noHuman }),
+        seedThumb ? Promise.resolve(null) : buildProductThumbnail(sb, { userId: user.id, tier, title, asin, faceId, noHuman }),
       ])
       const patch: Record<string, unknown> = {}
       const transcript = t.status === 'fulfilled' ? t.value : ''
