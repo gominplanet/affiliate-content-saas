@@ -78,8 +78,9 @@ function list(items: readonly string[]): string {
  * titles sharing a framing family.
  */
 export function clickableTitleRulesForYouTube(count = 5): string {
-  const minQuestions = Math.max(1, Math.round(count * 0.4))
+  const minQuestions = Math.max(1, Math.ceil(count * 0.6))
   return `TITLE STYLE (required mix — questions are PROVEN to lift click-through):
+- The "best" title (the one pre-selected for the creator) MUST be a QUESTION. Questions lead; statements are the alternates.
 - At least ${minQuestions} of the ${count} titles MUST be a QUESTION the viewer wants answered, ending with "?". Ground it in a real feature, claim or pain point. Shapes to VARY (never copy verbatim): ${list(QUESTION_FRAMINGS)}.
 - EVERY title that is NOT a question MUST use one of these clickable framings — never a flat descriptive label. Vary the exact wording every time; the examples are patterns, not strings to reuse:
 ${CLICKABLE_FRAMINGS.map(f => `  • ${f.family}: ${list(f.examples)}`).join('\n')}

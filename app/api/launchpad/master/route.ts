@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Launchpad is a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
-  const body = await req.json().catch(() => ({})) as { title?: string; videoUrl?: string; asin?: string; durationSec?: number; thumbnailUrl?: string }
+  const body = await req.json().catch(() => ({})) as { title?: string; videoUrl?: string; asin?: string; durationSec?: number; thumbnailUrl?: string; thumbnailCleanUrl?: string }
   const title = (body.title || 'My video').trim().slice(0, 200)
   const videoUrl = (body.videoUrl || '').trim()
   const asin = asinFrom(body.asin || '')
@@ -43,6 +43,9 @@ export async function POST(req: Request) {
   // the master up front so the storefront upload's thumbnail gate passes
   // immediately instead of waiting on the background render.
   const seedThumb = /^https:\/\//i.test((body.thumbnailUrl || '').trim()) ? body.thumbnailUrl!.trim() : null
+  // The text-free twin of that thumbnail (same design, zero words) for non-English
+  // storefronts. When the Launchpad supplies it we never regenerate a different one.
+  const seedClean = /^https:\/\//i.test((body.thumbnailCleanUrl || '').trim()) ? body.thumbnailCleanUrl!.trim() : null
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A hosted video URL is required.' }, { status: 400 })
   if (!asin) return NextResponse.json({ error: 'A valid product ASIN is required.' }, { status: 400 })
 
@@ -76,6 +79,7 @@ export async function POST(req: Request) {
       // upload never stalls on "waiting for thumbnail". The background job below
       // still produces the branded/clean variants and overwrites when ready.
       ...(seedThumb ? { thumbnail_url: seedThumb } : {}),
+      ...(seedClean ? { thumbnail_clean_url: seedClean } : {}),
       published_at: new Date().toISOString(),
     })
     .select('id').single()
@@ -97,14 +101,14 @@ export async function POST(req: Request) {
     try {
       const [t, cleanThumb, textThumb] = await Promise.allSettled([
         (async () => transcriptionConfigured() ? cuesToText(await transcribeToCues(videoUrl)).slice(0, 20000) : '')(),
-        buildProductThumbnail(sb, { userId: user.id, tier, title, asin, withText: false }),
+        seedClean ? Promise.resolve(null) : buildProductThumbnail(sb, { userId: user.id, tier, title, asin, withText: false }),
         seedThumb ? Promise.resolve(null) : buildProductThumbnail(sb, { userId: user.id, tier, title, asin }),
       ])
       const patch: Record<string, unknown> = {}
       const transcript = t.status === 'fulfilled' ? t.value : ''
       if (transcript) patch.transcript = transcript
       const clean = cleanThumb.status === 'fulfilled' ? cleanThumb.value : null
-      if (clean) patch.thumbnail_clean_url = clean
+      if (!seedClean && clean) patch.thumbnail_clean_url = clean // only when the Launchpad didn't supply the text-free twin
       const text = textThumb.status === 'fulfilled' ? textThumb.value : null
       if (!seedThumb && text) patch.thumbnail_url = text // only when the creator skipped YouTube
       if (Object.keys(patch).length) await sb.from('youtube_videos').update(patch).eq('id', row.id)

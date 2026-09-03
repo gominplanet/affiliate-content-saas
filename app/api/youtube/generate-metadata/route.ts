@@ -364,7 +364,7 @@ ${clickableTitleRulesForYouTube(5)}
 
 Return JSON:
 {
-  "best": "the single strongest title — the one most likely to drive clicks AND rank for the product name",
+  "best": "the single strongest QUESTION title (must end with ?) — the one most likely to drive clicks AND rank for the product name",
   "alternatives": ["4 OTHER strong titles, each STRUCTURALLY DIFFERENT from each other and from 'best'"]
 }${voiceAnchor}`,
   })

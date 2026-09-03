@@ -17,6 +17,25 @@ import { requestStudioFinish, requestFindCampaign, requestAcceptCampaign, reques
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { asinFromAmazonUrl } from '@/lib/product-link'
+import { renderThumbnailOverlay } from '@/lib/thumbnail-overlay'
+import { createBrowserClient } from '@/lib/supabase/client'
+
+/** Host a data: URL image in the creator's storage and return its https URL. The
+ *  master route only seeds https thumbnails, so the composited English thumbnail
+ *  (canvas → data URL) has to be uploaded before it can travel to the storefronts. */
+async function hostDataUrl(dataUrl: string): Promise<string | null> {
+  try {
+    const sb = createBrowserClient()
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user) return null
+    const blob = await (await fetch(dataUrl)).blob()
+    const path = `${user.id}/launchpad-thumb-${crypto.randomUUID()}.jpg`
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (sb.storage as any).from('instagram-videos').upload(path, blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' })
+    if (error) return null
+    return sb.storage.from('instagram-videos').getPublicUrl(path).data.publicUrl
+  } catch { return null }
+}
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -109,6 +128,25 @@ export default function LaunchpadPage() {
   // Full Co-Pilot finish: an AI thumbnail + the standard publish options, applied
   // to the uploaded video via /api/youtube/apply (same backend the Co-Pilot uses).
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
+  // The text-free twin of thumbUrl — the SAME render with zero words — for
+  // non-English storefronts. Both come from one design so they always match.
+  const [thumbCleanUrl, setThumbCleanUrl] = useState<string | null>(null)
+  // Who's on the thumbnail — the creator's saved faces (same picker as Co-Pilot).
+  // 'no-human' = product-only. Defaults to the first ready face when they have one.
+  const [faceModels, setFaceModels] = useState<Array<{ id: string; name: string }>>([])
+  const [facePick, setFacePick] = useState<'no-human' | string>('no-human')
+  useEffect(() => {
+    (async () => {
+      try {
+        const d = await fetch('/api/face-models').then(r => r.json()).catch(() => ({}))
+        const ready = ((d?.models || []) as Array<{ id: string; name: string; status?: string }>)
+          .filter(m => m.status === 'ready')
+          .map(m => ({ id: m.id, name: m.name }))
+        setFaceModels(ready)
+        if (ready.length > 0) setFacePick(ready[0].id)
+      } catch { /* no faces → product-only */ }
+    })()
+  }, [])
   const [thumbBusy, setThumbBusy] = useState(false)
   const [notifySubs, setNotifySubs] = useState(false)   // never spam the bell by default
   const [madeForKids, setMadeForKids] = useState(false)
@@ -155,17 +193,22 @@ export default function LaunchpadPage() {
 
   // Generate an AI thumbnail from the chosen title + product ASIN (same route the
   // Co-Pilot uses). Non-fatal: a channel can still publish without one.
+  // ONE design, TWO thumbnails. Render the scene TEXT-FREE (textMode 'clean'), keep
+  // that as the zero-words twin for non-English storefronts, then draw the headline
+  // onto a copy for English storefronts + YouTube. Because both come from the same
+  // render they always match — a French shopper sees the exact same image as a US
+  // one, minus the English words.
   async function genThumbnail(titleArg?: string) {
     const t = (titleArg || chosenTitle || workingTitle || 'My video').trim()
     setThumbBusy(true)
     try {
       const call = (noHuman: boolean) => fetch('/api/youtube/generate-thumbnail', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        // textMode: 'graphic' is REQUIRED to match Co-Pilot — it routes through the
-        // designed gpt-image path that downscales to a clean 1280×720 with safe
-        // margins. Without it the route fell into a fallback that produced the wrong
-        // dimensions and let the headline bleed off the frame.
-        body: JSON.stringify({ videoTitle: t, asin: asinClean || undefined, textMode: 'graphic', ...(noHuman ? { noHuman: true } : {}) }),
+        body: JSON.stringify({
+          videoTitle: t, asin: asinClean || undefined, textMode: 'clean', headlineStyle: 'question',
+          // The creator's pick: a specific saved face, or product-only.
+          ...((noHuman || facePick === 'no-human') ? { noHuman: true } : { faceModelId: facePick }),
+        }),
       })
       // First try WITH the creator's own face (their saved selfies, if any). If
       // they haven't added any, the route asks to set up a Face Model — but
@@ -174,9 +217,20 @@ export default function LaunchpadPage() {
       let r = await call(false)
       let j = await r.json().catch(() => ({}))
       if (!r.ok && j?.needsFaceModel) { r = await call(true); j = await r.json().catch(() => ({})) }
-      const url = j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null)
-      if (!r.ok || !url) throw new Error(j.error || 'Could not generate a thumbnail')
-      setThumbUrl(url)
+      const cleanScene: string | null = j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null)
+      if (!r.ok || !cleanScene) throw new Error(j.error || 'Could not generate a thumbnail')
+      setThumbCleanUrl(cleanScene)
+
+      // Headline onto a copy → the English / YouTube version. Hosted so the master
+      // (which only seeds https) and the storefront queue can carry it.
+      const hook = String(j.overlayHook || t).trim()
+      let withText: string | null = null
+      try {
+        const ov = await renderThumbnailOverlay(cleanScene, hook)
+        withText = await hostDataUrl(ov.url)
+      } catch { /* fall back to the clean scene below */ }
+      setThumbUrl(withText || cleanScene)
+      if (!withText) toast.warning('Couldn’t bake the headline onto the thumbnail — using the clean version for YouTube too.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Thumbnail failed')
     } finally { setThumbBusy(false) }
@@ -268,7 +322,7 @@ export default function LaunchpadPage() {
         // only if the clean URL is somehow missing, so the flow never blocks.
         // Seed the thumbnail we already generated so the storefront step doesn't
         // stall on "waiting for thumbnail".
-        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asinClean, durationSec, thumbnailUrl: thumbUrl || undefined }),
+        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asinClean, durationSec, thumbnailUrl: thumbUrl || undefined, thumbnailCleanUrl: thumbCleanUrl || undefined }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.videoId) throw new Error(j.error || 'Could not set up the storefront sync')
@@ -482,6 +536,31 @@ export default function LaunchpadPage() {
                         <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
                       </div>
 
+                      {/* Who's on the thumbnail — same picker as Co-Pilot. Changing it
+                          regenerates so the choice shows up right away. */}
+                      <div>
+                        <label className="text-[12px] font-medium" style={muted}>Who&apos;s on the thumbnail?</label>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {faceModels.map(m => (
+                            <button key={m.id} type="button" disabled={thumbBusy}
+                              onClick={() => { if (facePick === m.id) return; setFacePick(m.id); if (thumbUrl || thumbCleanUrl) void genThumbnail() }}
+                              className="px-3 py-1 rounded-full text-[11px] font-semibold disabled:opacity-60"
+                              style={facePick === m.id ? { background: '#FF9500', color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+                              {m.name}
+                            </button>
+                          ))}
+                          <button type="button" disabled={thumbBusy}
+                            onClick={() => { if (facePick === 'no-human') return; setFacePick('no-human'); if (thumbUrl || thumbCleanUrl) void genThumbnail() }}
+                            className="px-3 py-1 rounded-full text-[11px] font-semibold disabled:opacity-60"
+                            style={facePick === 'no-human' ? { background: '#3a3a3c', color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+                            No face
+                          </button>
+                        </div>
+                        {faceModels.length === 0 && (
+                          <p className="text-[11px] mt-1" style={muted}>No saved face yet. <a href="/photobooth" className="underline" style={{ color: '#7C3AED' }}>Add your selfies</a> to put yourself on the thumbnail.</p>
+                        )}
+                      </div>
+
                       {/* Thumbnail — AI-generated, the same engine the Co-Pilot uses */}
                       <div>
                         <div className="flex items-center justify-between">
@@ -491,12 +570,27 @@ export default function LaunchpadPage() {
                             {thumbBusy ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} {thumbUrl ? 'Regenerate' : 'Generate'}
                           </button>
                         </div>
-                        <div className="mt-1 rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
-                          {thumbUrl
-                            ? <img src={thumbUrl} alt="Generated thumbnail" className="w-full h-full object-cover" />
-                            : <span className="text-[12px] inline-flex items-center gap-1.5" style={muted}>{thumbBusy ? <><Loader2 size={13} className="animate-spin" /> Designing your thumbnail…</> : 'No thumbnail yet'}</span>}
+                        {/* One design, two thumbnails: with the headline (YouTube + English
+                            stores) and the identical image with zero text (non-English stores). */}
+                        <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div>
+                            <div className="rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+                              {thumbUrl
+                                ? <img src={thumbUrl} alt="Thumbnail with headline" className="w-full h-full object-cover" />
+                                : <span className="text-[12px] inline-flex items-center gap-1.5" style={muted}>{thumbBusy ? <><Loader2 size={13} className="animate-spin" /> Designing…</> : 'No thumbnail yet'}</span>}
+                            </div>
+                            <p className="text-[11px] mt-1 font-medium" style={label}>YouTube + English stores <span className="font-normal" style={muted}>(US, CA, UK, AU)</span></p>
+                          </div>
+                          <div>
+                            <div className="rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+                              {thumbCleanUrl
+                                ? <img src={thumbCleanUrl} alt="Thumbnail with no text" className="w-full h-full object-cover" />
+                                : <span className="text-[12px]" style={muted}>{thumbBusy ? '…' : 'No thumbnail yet'}</span>}
+                            </div>
+                            <p className="text-[11px] mt-1 font-medium" style={label}>Non-English stores <span className="font-normal" style={muted}>(same image, zero text)</span></p>
+                          </div>
                         </div>
-                        <p className="text-[11px] mt-1" style={muted}>Add a few selfies under Face Models to put yourself on the thumbnail; otherwise MVP makes a clean product-only one. Custom thumbnails need a phone-verified YouTube channel; if yours isn&apos;t, the video still publishes with everything else.</p>
+                        <p className="text-[11px] mt-1.5" style={muted}>Both come from one design, so they always match. Add a few selfies under Face Models to put yourself on it; otherwise MVP makes a clean product-only one. Custom thumbnails need a phone-verified YouTube channel; if yours isn&apos;t, the video still publishes with everything else.</p>
                       </div>
 
                       {/* Publish options — the Co-Pilot defaults */}
