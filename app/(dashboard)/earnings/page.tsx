@@ -59,6 +59,11 @@ export default function EarningsPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [sync, setSync] = useState<EarningsSyncStatus | null>(null)
   const [starting, setStarting] = useState(false)
+  // Amazon's own header prints this as "StoreID: …". Auto-discovery reads it off
+  // the reporting page when it can, but that page is a SPA and does not always
+  // expose it, so the creator can just tell us rather than being stuck.
+  const [storeId, setStoreId] = useState('')
+  useEffect(() => { try { setStoreId(localStorage.getItem('mvp_amazon_store_id') || '') } catch { /* ignore */ } }, [])
 
   const load = useCallback(async () => {
     try {
@@ -93,7 +98,10 @@ export default function EarningsPage() {
     setStarting(true)
     try {
       const year = new Date().getUTCFullYear()
-      const res = await requestEarningsSync(`${year}-01-01`)
+      const clean = storeId.trim().toLowerCase()
+      const stores = /^(?:onamz)?[a-z0-9]{3,}-\d{2}$/.test(clean) ? [clean] : undefined
+      try { if (stores) localStorage.setItem('mvp_amazon_store_id', clean) } catch { /* ignore */ }
+      const res = await requestEarningsSync(`${year}-01-01`, undefined, stores)
       if (!res.ok) {
         toast.error(res.error === 'not-installed'
           ? 'Install SCOUT and sign in to Amazon to read your earnings.'
@@ -124,6 +132,15 @@ export default function EarningsPage() {
               SCOUT reads these figures in your own Amazon session, the same calls the reporting pages make. Amazon&apos;s CSV exports are not used, because every one we tested returned a fraction of the real numbers.
             </p>
           </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              value={storeId}
+              onChange={e => setStoreId(e.target.value)}
+              placeholder="Store ID (e.g. yourname-20)"
+              className="px-3 py-2 rounded-lg border text-sm bg-transparent w-56"
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+              title='Optional. Amazon shows this in its own header as "StoreID: …". Only needed if the sync cannot find it on its own.'
+            />
           <button type="button" onClick={() => void startSync()} disabled={starting || !!sync?.running}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
             style={{ background: 'linear-gradient(135deg,#7C3AED,#2563eb)' }}>
@@ -131,6 +148,7 @@ export default function EarningsPage() {
               ? <><Loader2 size={15} className="animate-spin" /> {sync?.months ? `Month ${sync.monthsDone ?? 0} of ${sync.months}` : 'Starting…'}</>
               : <><RefreshCw size={15} /> {rows.length ? 'Re-sync this year' : 'Sync from Amazon'}</>}
           </button>
+          </div>
         </div>
 
         {loadError && (

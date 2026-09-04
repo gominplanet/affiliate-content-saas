@@ -1760,48 +1760,76 @@ async function syncAmazonEarnings(opts) {
     const tab = await chrome.tabs.create({ url: EARN_PAGE, active: false })
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
-    await _sleep(2500)
+    await _sleep(3500)
 
     // Which stores to ask for. The offsite id is the creator's tracking id; the
     // onsite one is Amazon's `onamz` twin of it. Read from the page when possible
     // so we never invent an id, with the known pattern as the fallback.
+    // The creator can supply the id (it's printed in Amazon's own header as
+    // "StoreID: …"), and that always wins over anything we scrape.
     let stores = []
-    try {
-      const r = await chrome.scripting.executeScript({
-        target: { tabId }, world: 'MAIN',
-        func: () => {
-          // ANCHORED on the parameter name. An unanchored "word-NN" pattern
-          // matches half the stylesheet (col-12, mb-20, gap-16), and every one of
-          // those became a fake store we then fired four requests at per month.
-          const ids = new Set()
-          const add = (v) => { if (v && /^(?:onamz)?[a-z0-9]{3,}-\d{2}$/i.test(v)) ids.add(v) }
-          try {
-            const html = document.documentElement.innerHTML
-            const pats = [
-              /store_?id["'=:\s\]]{1,6}((?:onamz)?[a-z0-9]{3,}-\d{2})\b/gi,
-              /storeIds["'\s:\[]{1,8}((?:onamz)?[a-z0-9]{3,}-\d{2})\b/gi,
-              /[?&]tag=((?:onamz)?[a-z0-9]{3,}-\d{2})\b/gi,
-            ]
-            for (const re of pats) {
-              let m
-              while ((m = re.exec(html)) && ids.size < 8) add(m[1])
-            }
-          } catch (e) {}
-          return Array.from(ids)
-        },
-      })
-      const found = (r && r[0] && r[0].result) || []
-      const offsite = found.filter((s) => !/^onamz/i.test(s))
-      const onsite = found.filter((s) => /^onamz/i.test(s))
-      for (const s of offsite) stores.push({ storeId: s, scope: 'offsite' })
-      for (const s of onsite) stores.push({ storeId: s, scope: 'onsite' })
-      // Every offsite id has an onsite twin; add any that didn't appear in the DOM.
-      for (const s of offsite) {
-        const twin = `onamz${s}`
+    const given = Array.isArray(opts && opts.stores) ? opts.stores.filter((x) => /^(?:onamz)?[a-z0-9]{3,}-\d{2}$/i.test(String(x))) : []
+    if (given.length) {
+      for (const id of given) {
+        const offsite = String(id).replace(/^onamz/i, '')
+        if (!stores.some((x) => x.storeId === offsite)) stores.push({ storeId: offsite, scope: 'offsite' })
+        const twin = `onamz${offsite}`
         if (!stores.some((x) => x.storeId === twin)) stores.push({ storeId: twin, scope: 'onsite' })
       }
-    } catch (e) { /* fall through */ }
-    if (!stores.length) { job.error = 'could not read your Amazon store ids from the page'; job.done = true; return }
+    } else {
+      // This page is a SPA, so the id often isn't in the markup at the moment we
+      // first look. Retry while it hydrates, and search the places Amazon actually
+      // puts it rather than pattern-matching the whole document (which previously
+      // turned every `col-12` in the stylesheet into a fake store).
+      for (let attempt = 0; attempt < 6 && stores.length === 0; attempt++) {
+        if (attempt > 0) await _sleep(2000)
+        let found = []
+        try {
+          const r = await chrome.scripting.executeScript({
+            target: { tabId }, world: 'MAIN',
+            func: () => {
+              const ids = new Set()
+              const ok = (v) => typeof v === 'string' && /^(?:onamz)?[a-z0-9]{3,}-\d{2}$/i.test(v)
+              const add = (v) => { if (ok(v)) ids.add(v) }
+              try {
+                // 1. The address bar, which carries store_id on most of these pages.
+                const q = new URLSearchParams(location.search)
+                add(q.get('store_id')); add(q.get('storeId')); add(q.get('tag'))
+                // 2. Links the page renders that carry it.
+                document.querySelectorAll('a[href*="store_id="],a[href*="storeId="],a[href*="tag="]').forEach((a) => {
+                  try {
+                    const u = new URL(a.getAttribute('href'), location.href)
+                    const p = new URLSearchParams(u.search)
+                    add(p.get('store_id')); add(p.get('storeId')); add(p.get('tag'))
+                  } catch (e) {}
+                })
+                // 3. Amazon prints it in the header as "StoreID: gomin0e-20".
+                const text = document.body ? document.body.innerText : ''
+                const m = text.match(/store\s*id[:\s]+((?:onamz)?[a-z0-9]{3,}-\d{2})\b/i)
+                if (m) add(m[1])
+                // 4. Inline JSON state, anchored on the key name.
+                for (const sc of document.querySelectorAll('script')) {
+                  const t = sc.textContent || ''
+                  if (t.length > 400000) continue
+                  const re = /["'](?:store_?Id|trackingId|defaultStoreId)["']\s*:\s*["']((?:onamz)?[a-z0-9]{3,}-\d{2})["']/gi
+                  let mm
+                  while ((mm = re.exec(t)) && ids.size < 8) add(mm[1])
+                }
+              } catch (e) {}
+              return Array.from(ids)
+            },
+          })
+          found = (r && r[0] && r[0].result) || []
+        } catch (e) { /* try again while it hydrates */ }
+        for (const id of found) {
+          const offsite = String(id).replace(/^onamz/i, '')
+          if (!stores.some((x) => x.storeId === offsite)) stores.push({ storeId: offsite, scope: 'offsite' })
+          const twin = `onamz${offsite}`
+          if (!stores.some((x) => x.storeId === twin)) stores.push({ storeId: twin, scope: 'onsite' })
+        }
+      }
+    }
+    if (!stores.length) { job.error = 'Could not read your Amazon store id automatically. Enter it on the Earnings page (Amazon prints it in its own header as "StoreID: …") and sync again.'; job.done = true; return }
     // Cap it: a creator with several stores shouldn't fan out into hundreds of calls.
     stores = stores.slice(0, 4)
     job.diag = { stores: stores.map((s) => `${s.storeId}(${s.scope})`) }
@@ -6479,7 +6507,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   // read by replaying the reporting page's own calls in the creator's session.
   if (msg.type === 'MVP_EARNINGS_SYNC') {
     if (_earnJob && !_earnJob.done) { sendResponse({ ok: true, already: true, status: earningsJobStatus() }); return false }
-    void syncAmazonEarnings({ from: msg.from, to: msg.to })
+    void syncAmazonEarnings({ from: msg.from, to: msg.to, stores: msg.stores })
     sendResponse({ ok: true, started: true })
     return false
   }

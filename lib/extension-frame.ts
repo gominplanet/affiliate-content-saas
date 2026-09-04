@@ -184,9 +184,9 @@ export interface EarningsSyncStatus {
  * reporting pages make in their own logged-in session. Covers Creator
  * Connections and EPC, onsite and offsite, one month at a time. Best-effort.
  */
-export async function requestEarningsSync(from?: string, to?: string): Promise<{ ok: boolean; started?: boolean; already?: boolean; error?: string }> {
+export async function requestEarningsSync(from?: string, to?: string, stores?: string[]): Promise<{ ok: boolean; started?: boolean; already?: boolean; error?: string }> {
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const res = await sendToExtension<{ ok?: boolean; started?: boolean; already?: boolean }>({ type: 'MVP_EARNINGS_SYNC', from, to }, 15_000)
+  const res = await sendToExtension<{ ok?: boolean; started?: boolean; already?: boolean }>({ type: 'MVP_EARNINGS_SYNC', from, to, stores }, 15_000)
   return res ? { ok: !!res.ok, started: res.started, already: res.already } : { ok: false, error: 'timeout' }
 }
 
