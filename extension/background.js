@@ -4042,6 +4042,38 @@ function fetchContentListInPage(rec) {
     const ASIN_RE = /^[A-Z0-9]{10}$/
     // Every object anywhere in the payload that carries an ASIN under an
     // asin-named key. Shape-agnostic on purpose: we have not seen this response.
+    // The list's real payload: one record per video, with Amazon's own engagement
+    // figures. It carries contentDetail.totalProductCount but never the products
+    // themselves, so this reads what is there and the product links come from a
+    // second call per video.
+    const readVideos = (j, into) => {
+      const rows = (j && Array.isArray(j.result)) ? j.result : []
+      for (const r of rows) {
+        if (!r || typeof r !== 'object') continue
+        const d = r.contentDetail || {}
+        const m = (Array.isArray(d.mediaList) && d.mediaList[0]) || {}
+        const e = d.customerEngagementMetrics || {}
+        const aci = d.mediaACI || r.mediaACI || null
+        if (!aci || into.has(aci)) continue
+        into.set(aci, {
+          aci,
+          description: d.description || null,
+          state: d.state || null,
+          program: r.program || null,
+          marketplaceId: r.marketplaceId || null,
+          durationSec: typeof m.videoDuration === 'number' ? m.videoDuration : null,
+          mediaUrl: m.mediaCentralUrl || m.uri || null,
+          views: typeof e.totalViews === 'number' ? e.totalViews : null,
+          hearts: typeof e.hearts === 'number' ? e.hearts : null,
+          avgPctViewed: typeof e.averagePctViewed === 'number' ? e.averagePctViewed : null,
+          avgViewSec: typeof e.averageViewDuration === 'number' ? e.averageViewDuration : null,
+          productCount: typeof d.totalProductCount === 'number' ? d.totalProductCount : null,
+          publishedAtMs: d.versionCreationTimestamp || null,
+          modifiedAtMs: d.versionModificationTimestamp || null,
+        })
+      }
+    }
+
     const harvest = (root, into) => {
       const q = [root]
       let steps = 0
@@ -4075,6 +4107,7 @@ function fetchContentListInPage(rec) {
       }
     }
     const found = new Map()
+    const videos = new Map()
     let token = null
     let page = 1
     // Learned from the captured URL and the first response, never assumed.
@@ -4149,12 +4182,13 @@ function fetchContentListInPage(rec) {
           const t = j && j.metadata && j.metadata.totalResults
           if (Number.isFinite(t)) out.total = t
         } catch (e) {}
-        const before = found.size
+        const before = found.size + videos.size
         harvest(j, found)
+        readVideos(j, videos)
         out.pages = i + 1
         // Stop when a page adds nothing. With a real cursor this is the end; with
         // page numbers it means we have run past the last one.
-        if (found.size === before) break
+        if (found.size + videos.size === before) break
         let next = null
         const seek = (o, d) => {
           if (!o || typeof o !== 'object' || d > 6) return
@@ -4177,8 +4211,29 @@ function fetchContentListInPage(rec) {
       out.error = (e && e.message) || String(e)
     }
     out.items = [...found.entries()].map(([asin, title]) => ({ asin, title }))
+    out.videos = [...videos.values()]
     return out
   })()
+}
+
+
+// Push a batch of the creator's Amazon videos to MVP. Same shape as the other
+// pushers: the worker holds the mvpaffiliate.io cookie, the page does not.
+async function pushVideoLibraryToMvp(videos, products, aciDone) {
+  const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
+  for (const origin of origins) {
+    try {
+      const res = await fetch(`${origin}/api/amazon-videos/ingest`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', redirect: 'follow',
+        body: JSON.stringify({ videos: videos || [], products: products || [], aciDone: aciDone || [] }),
+      })
+      const body = await res.json().catch(() => null)
+      if (res.ok) return { ok: true, savedVideos: (body && body.savedVideos) || 0, savedProducts: (body && body.savedProducts) || 0 }
+      return { ok: false, error: (body && body.error) || `HTTP ${res.status}` }
+    } catch (e) { /* try the other origin */ }
+  }
+  return { ok: false, error: 'could not reach MVP' }
 }
 
 // Turns the per-frame probes into one sentence a person can act on, and I can
@@ -4236,6 +4291,24 @@ async function scanCreatorHubVideosBackground(userUrl) {
           args: [{ url: apiRec.url, method: apiRec.method || 'GET', headers: apiRec.headers || {}, body: apiRec.body || null }],
         })
         const a = (viaApi && viaApi[0] && viaApi[0].result) || null
+        // The video library is the answer now. The list carries every video with
+        // Amazon's own engagement on it, which is what says which video is
+        // working; the products each one sells come from a second call.
+        if (a && a.videos && a.videos.length) {
+          const pushed = await pushVideoLibraryToMvp(a.videos, [], [])
+          const short = Number.isFinite(a.total) && a.videos.length < a.total
+          return {
+            ok: !!(pushed && pushed.ok),
+            count: a.videos.length,
+            pages: a.pages || 0,
+            partial: short,
+            stopped: a.error
+              ? `list API stopped: ${a.error}`
+              : short ? `Amazon reports ${a.total.toLocaleString()} videos and we read ${a.videos.length.toLocaleString()}` : 'end',
+            source: "Amazon's own video list",
+            error: (pushed && pushed.ok) ? undefined : (pushed && pushed.error),
+          }
+        }
         if (a && a.items && a.items.length) {
           const push = await pushVideosToMvp(a.items)
           // Amazon states the library size in the response. Reporting our count
