@@ -3631,6 +3631,14 @@ async function harvestCreatorHubVideosInPage(opts) {
       const m = (a.getAttribute('href') || '').match(/\/(?:dp|product)\/([A-Z0-9]{10})/)
       if (m && !into.has(m[1].toUpperCase())) into.set(m[1].toUpperCase(), rowTitle(a))
     })
+    // Raw ASIN tokens out of the page HTML are the last resort, not the first.
+    // Structured hits (a data-asin attribute, a product link) belong to a row.
+    // A bare token in the markup belongs to anything at all, including a
+    // recommendation carousel or, as we found out, a shopping cart. So this only
+    // runs when the structured passes found almost nothing, which means the page
+    // is built in a way we do not understand rather than a page full of products
+    // we are about to mislabel.
+    if (into.size >= 5) return
     const html = document.body.innerHTML
     const re = /\b(B0[0-9A-Z]{8})\b/g; let mm
     while ((mm = re.exec(html)) !== null) { const a = mm[1].toUpperCase(); if (!into.has(a)) into.set(a, null) }
@@ -3824,16 +3832,12 @@ async function harvestCreatorHubVideosInPage(opts) {
     } catch (e) {}
     return false
   }
-  function looksLikeVideoList() {
-    try {
-      const t = (document.body ? document.body.innerText : '').toLowerCase()
-      // The video table talks about videos and their state. A product grid does
-      // not.
-      if (/\b(published|processing|under review|rejected|draft)\b/.test(t) && /\bvideo/.test(t)) return true
-      if (document.querySelector('video,[class*=video-row],[data-testid*=video]')) return true
-    } catch (e) {}
-    return false
-  }
+  // There was a looksLikeVideoList() heuristic here and it was the bug. It
+  // rejected Manage content, a page carrying 1,320 ASINs and 358 rows, because
+  // the wording did not match what I imagined a video list says. The cart guard
+  // stays: it is built from a page we actually saw and names things only a cart
+  // has. Guessing what the RIGHT page looks like is how a correct page gets
+  // thrown away, so that guess is gone.
   await sleep(1500)
   // What this page actually contains, reported whenever the harvest comes back
   // empty. "no-videos" on its own is useless: it cannot tell "your library is
@@ -3860,8 +3864,7 @@ async function harvestCreatorHubVideosInPage(opts) {
       text: ((document.body ? document.body.innerText : '') || '').replace(/\s+/g, ' ').slice(0, 300),
     }
   }
-  const trusted = !!(opts && opts.trusted)
-  if (looksLikeCart() || (!trusted && !looksLikeVideoList())) {
+  if (looksLikeCart()) {
     return {
       ok: true,
       wrongPage: true,

@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.69'
+export const SCOUT_LATEST_VERSION = '1.17.70'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Reads your video list from Creator Studio\u2019s Manage content page, looks inside its frames, and says what it saw when it finds nothing.'
+  'Stops rejecting your real video list, and reads products from the rows themselves rather than from raw page text.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
