@@ -4120,7 +4120,7 @@ async function harvestCreatorHubVideosInPage(opts) {
 // pagination key is discovered from the response.
 function fetchContentListInPage(rec) {
   return (async () => {
-    const out = { items: [], pages: 0, error: null, sample: null, total: null, pageKey: null, queryKeys: null, sizeKey: null }
+    const out = { items: [], pages: 0, error: null, sample: null, total: null, pageKey: null, queryKeys: null, sizeKey: null, bodyKeys: null }
     const ASIN_RE = /^[A-Z0-9]{10}$/
     // Every object anywhere in the payload that carries an ASIN under an
     // asin-named key. Shape-agnostic on purpose: we have not seen this response.
@@ -4198,6 +4198,13 @@ function fetchContentListInPage(rec) {
     let bodyKey = null
     let sizeKey = null
     let pageSize = 10
+    // Where to resume. A page a second against a library of thousands cannot
+    // finish in one run, so each run starts where the last one stopped rather
+    // than re-reading from the top and timing out at the same place forever.
+    const startAt = Number(rec.startAt) || 0
+    // The captured body's field names. The bigger-page probe guessed at six
+    // plausible names and none of them matched, so print what is actually there.
+    try { out.bodyKeys = Object.keys(JSON.parse(rec.body || '{}')).join(', ') } catch (e) {}
     // Declared once, here. It was previously created inside the pagination
     // experiment and then used earlier in the loop by the bigger-page probe,
     // which threw "post is not defined" and killed the whole read after one page.
@@ -4220,6 +4227,7 @@ function fetchContentListInPage(rec) {
       // page limit silently truncating the library, which is what "2,010 across
       // 200 pages" was.
       const started = Date.now()
+      if (startAt > 0) { bodyKey = 'startIndex'; page = startAt }
       for (let i = 0; i < 1500; i++) {
         if (Date.now() - started > 240000) { out.error = 'ran out of time before the end of the library'; break }
         const u = new URL(rec.url, location.href)
@@ -4245,7 +4253,7 @@ function fetchContentListInPage(rec) {
           // string: the first call goes out exactly as the page sent it, and a
           // key is only set once we have learned which one moves the window.
           let b = rec.body
-          if (i > 0 && (bodyKey || tokenKey)) {
+          if ((i > 0 || startAt > 0) && (bodyKey || tokenKey)) {
             try {
               const o = JSON.parse(rec.body)
               const set = (obj, key, val) => {
@@ -4478,7 +4486,7 @@ function describeProbe(frames) {
   return parts.slice(0, 4).join('  ||  ')
 }
 
-async function scanCreatorHubVideosBackground(userUrl) {
+async function scanCreatorHubVideosBackground(userUrl, startAt) {
   // The creator can supply the exact page. Guessing a URL and harvesting
   // whatever loads is how the cart ended up in the database.
   // Creator Studio's Manage content page is the video list. /creatorhub was my
@@ -4513,7 +4521,7 @@ async function scanCreatorHubVideosBackground(userUrl) {
       try {
         const viaApi = await chrome.scripting.executeScript({
           target: { tabId }, world: 'MAIN', func: fetchContentListInPage,
-          args: [{ url: apiRec.url, method: apiRec.method || 'GET', headers: apiRec.headers || {}, body: apiRec.body || null }],
+          args: [{ url: apiRec.url, method: apiRec.method || 'GET', headers: apiRec.headers || {}, body: apiRec.body || null, startAt: Number(startAt) || 0 }],
         })
         const a = (viaApi && viaApi[0] && viaApi[0].result) || null
         // The video library is the answer now. The list carries every video with
@@ -4528,7 +4536,7 @@ async function scanCreatorHubVideosBackground(userUrl) {
             pages: a.pages || 0,
             partial: short,
             stopped: a.error
-              ? `list API stopped: ${a.error}${a.queryKeys ? `. The captured request's parameters were: ${a.queryKeys}` : ''}`
+              ? `list API stopped: ${a.error}${a.queryKeys ? `. The captured request was ${a.queryKeys}` : ''}${a.bodyKeys ? `. Its body fields: ${a.bodyKeys}` : ''}`
               : short ? `Amazon reports ${a.total.toLocaleString()} videos and we read ${a.videos.length.toLocaleString()}` : 'end',
             source: `Amazon's own video list${a.pageKey ? ` (paging by ${a.pageKey}${a.sizeKey ? `, ${a.sizeKey} per page` : ''})` : ''}`,
             error: (pushed && pushed.ok) ? undefined : (pushed && pushed.error),
@@ -7915,7 +7923,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // against an in-page budget of 240s, a big library was cut off mid crawl and
     // reported as a timeout even though the scan was still working.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 290000)
-    scanCreatorHubVideosBackground(msg.url)
+    scanCreatorHubVideosBackground(msg.url, msg.startAt)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response

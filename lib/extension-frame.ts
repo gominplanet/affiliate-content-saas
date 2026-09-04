@@ -641,11 +641,11 @@ export async function requestStorefrontCatalogScan(url: string): Promise<IdeaSca
  * Read the creator's Creator Hub video table in a BACKGROUND SCOUT tab and
  * record which products (ASINs) they have a video for, then push to MVP.
  */
-export async function requestCreatorHubVideosScan(url?: string): Promise<IdeaScanResult> {
+export async function requestCreatorHubVideosScan(url?: string, startAt?: number): Promise<IdeaScanResult> {
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   // Longer wait than the storefront crawl: a creator can have thousands of
   // videos, so the in-page reader pages for up to ~4 min. Keep this above that.
-  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_CREATORHUB_VIDEOS', ...(url ? { url } : {}) }, 320000)
+  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_CREATORHUB_VIDEOS', ...(url ? { url } : {}), ...(startAt ? { startAt } : {}) }, 320000)
   if (!resp) return { ok: false, error: 'timeout' }
   return {
     ok: !!resp.ok, count: resp.count, partial: resp.partial, error: resp.error,

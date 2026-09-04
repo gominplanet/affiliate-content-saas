@@ -158,7 +158,23 @@ export default function EarningsPage() {
   async function loadAmazonVideos() {
     setScanningVideos(true)
     try {
-      const r = await requestCreatorHubVideosScan(hubUrl.trim() || undefined)
+      // Resume, and keep going. A library of thousands reads at about a page a
+      // second, so one run cannot finish it. Each pass starts where the stored
+      // count leaves off, and the loop continues while passes keep adding
+      // videos, which turns "run it again yourself, repeatedly" into one click.
+      let have = 0
+      try { have = (await fetch('/api/amazon-videos').then(x => x.json()))?.count || 0 } catch { /* start from zero */ }
+      let r = await requestCreatorHubVideosScan(hubUrl.trim() || undefined, have)
+      let passes = 1
+      while (r.ok && r.partial && passes < 12) {
+        const before = have
+        try { have = (await fetch('/api/amazon-videos').then(x => x.json()))?.count || have } catch { break }
+        // A pass that adds nothing is the end, whatever the totals claim.
+        if (have <= before) break
+        setVideoScan(`Reading your Amazon video library: ${have.toLocaleString()} so far.`)
+        r = await requestCreatorHubVideosScan(hubUrl.trim() || undefined, have)
+        passes++
+      }
       if (!r.ok) {
         if (r.error === 'wrong-page') {
           // Better to read nothing than to read the wrong page. The previous
