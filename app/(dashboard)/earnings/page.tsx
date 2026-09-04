@@ -139,6 +139,14 @@ export default function EarningsPage() {
     } finally { setStarting(false) }
   }
 
+  // The newest month is almost always partial, and an unlabelled partial month
+  // reads as a crash: four days of September under a full August looks like a 94%
+  // drop rather than a month that hasn't happened yet. So it gets labelled, and it
+  // is left out of any month-to-month comparison.
+  const now = new Date()
+  const currentMonthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
+  const daysSoFar = now.getUTCDate()
+
   const shown = showQuiet ? rows : rows.filter(r => !isQuiet(r))
   const quietCount = rows.length - shown.length
   const byMonth = Array.from(new Set(shown.map(r => r.period_start))).sort().reverse()
@@ -302,8 +310,17 @@ export default function EarningsPage() {
                       return [
                         ...visible.map((r, i) => (
                           <tr key={`${m}-${r.stream}-${r.store_id}`} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                            <td className="py-2 pr-3" style={label}>
-                              {i === 0 ? new Date(`${m}T00:00:00Z`).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }) : ''}
+                            <td className="py-2 pr-3 align-top" style={label}>
+                              {i === 0 ? (
+                                <>
+                                  {new Date(`${m}T00:00:00Z`).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' })}
+                                  {m === currentMonthStart && (
+                                    <span className="block text-[11px] font-normal mt-0.5" style={muted}>
+                                      in progress, {daysSoFar} day{daysSoFar === 1 ? '' : 's'} so far
+                                    </span>
+                                  )}
+                                </>
+                              ) : ''}
                             </td>
                             <td className="py-2 pr-3" style={muted}>{STREAM_LABEL[r.stream] || r.stream}</td>
                             <td className="py-2 pr-3" style={muted}>
@@ -321,7 +338,7 @@ export default function EarningsPage() {
                         <tr key={`${m}-total`} className="border-t" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
                           <td className="py-2 pr-3" />
                           <td className="py-2 pr-3 font-semibold" style={label} colSpan={2}>
-                            Month total, onsite plus offsite
+                            {m === currentMonthStart ? 'Month so far, onsite plus offsite' : 'Month total, onsite plus offsite'}
                           </td>
                           <td className="py-2 pr-3 text-right tabular-nums font-semibold" style={label}>{num(sub.clicks)}</td>
                           <td className="py-2 pr-3 text-right tabular-nums font-semibold" style={label}>{num(sub.orders)}</td>
@@ -333,7 +350,7 @@ export default function EarningsPage() {
                 </table>
               </div>
               <p className="text-[11px] mt-3" style={muted}>
-                Figures come from Amazon&apos;s own reporting calls, so they should match what you see on Amazon for the same month and store. Where a cell reads &ldquo;not reported&rdquo;, Amazon returned nothing for that metric, which is not the same as zero. Rows where Amazon answered with all zeros are folded away by the link above rather than deleted.
+                Figures come from Amazon&apos;s own reporting calls, so they should match what you see on Amazon for the same month and store. Where a cell reads &ldquo;not reported&rdquo;, Amazon returned nothing for that metric, which is not the same as zero. Rows where Amazon answered with all zeros are folded away by the link above rather than deleted. The newest month is still running, so read it as a partial month and not as a drop.
               </p>
             </div>
 
