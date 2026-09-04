@@ -117,6 +117,33 @@ export async function POST(request: Request) {
         .upsert(rows, { onConflict: 'user_id,period_start,period_type,stream,store_id,asin' })
       if (error) return NextResponse.json({ error: `Could not save products: ${error.message}` }, { status: 500 })
       savedProducts = rows.length
+
+      // Clear any row for the same window filed under a DIFFERENT store id.
+      //
+      // Product rows used to be fetched once per store, and Amazon returns the
+      // same all-store figures whichever store you ask about, so a month ended up
+      // stored twice under two ids and every total on the page came out doubled.
+      // The fetch is fixed, but the stale rows would keep doubling forever, and a
+      // re-sync is exactly when a creator expects the number to be corrected.
+      // Upsert alone cannot do this: the old rows have a different primary key.
+      const windows = new Map<string, Set<string>>()
+      for (const r of rows) {
+        const k = `${r.period_start}|${r.period_type}|${r.stream}`
+        if (!windows.has(k)) windows.set(k, new Set())
+        windows.get(k)!.add(r.store_id)
+      }
+      for (const [k, keep] of windows) {
+        const [period_start, period_type, stream] = k.split('|')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (admin as any)
+          .from('amazon_earnings_products')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('period_start', period_start)
+          .eq('period_type', period_type)
+          .eq('stream', stream)
+          .not('store_id', 'in', `(${Array.from(keep).map(s => `"${s}"`).join(',')})`)
+      }
     }
   }
 

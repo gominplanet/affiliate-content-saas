@@ -1788,132 +1788,134 @@ function earningsFetchInPage(params) {
     // while the page loads; when there is none we do not fall back to a guessed
     // URL, we report that we have no recipe. Guessing is what produced
     // "TypeError: Failed to fetch" on every month.
-    const ccProducts = async (fromMs, toMs, storeId) => {
+    // Replays the request the page itself made for its product table, with only
+    // the date window changed, and follows the pagination token to the end.
+    //
+    // The store filter is NOT set. Amazon accepts it on this report and then
+    // ignores it, returning the same all-store rows for whichever store we ask
+    // about. Asking twice and adding the answers together is what doubled every
+    // figure on the page. So it is asked once per month, and the rows are filed
+    // under store "all" with no scope, which is what they actually are.
+    const ccProducts = async (fromMs, toMs) => {
       if (!recipe || !recipe.url || !recipe.body) return { ok: false, status: 'no captured product query' }
-      let body
-      try {
-        const o = JSON.parse(recipe.body)
-        const fo = o.filterOptions && typeof o.filterOptions === 'object' ? o.filterOptions : (o.filterOptions = {})
-        fo.dateRange = { fromDate: fromMs, toDate: toMs }
-        fo.storeIds = [storeId]
-        // DATEWISE_ASIN is the report type the summary call already uses for
-        // Creator Connections, and the name says what it returns: per date, per
-        // ASIN. The captured body carries whichever type the tab the page was on
-        // asked for, which is how an empty Sponsored Products report came back.
-        o.reportType = 'DATEWISE_ASIN'
-        // aggregationOption is NOT touched. The page sends "CAMPAIGN" here; this
-        // endpoint takes a different set of values from the summary endpoint, and
-        // forcing "MONTH" into it is what produced "TypeError: Failed to fetch" on
-        // every month. Amazon drops the connection on an unacceptable enum rather
-        // than answering 400, which is why it read as a network fault for so long.
-        if (!o.pageSize) o.pageSize = 100
-        body = JSON.stringify(o)
-      } catch (e) {
-        return { ok: false, status: 'captured query was not JSON' }
-      }
-      // Second body, used only if the first is refused: the page's own request with
-      // nothing but the dates changed. The page sends storeIds null, meaning all
-      // stores, so if setting it is what Amazon objects to, this still gets the
-      // products, just without the onsite/offsite split. Which one succeeded is
-      // reported, so a fallback never passes silently as the real thing.
-      let bodyAllStores = null
-      try {
-        const o2 = JSON.parse(recipe.body)
-        const fo2 = o2.filterOptions && typeof o2.filterOptions === 'object' ? o2.filterOptions : (o2.filterOptions = {})
-        fo2.dateRange = { fromDate: fromMs, toDate: toMs }
-        o2.reportType = 'DATEWISE_ASIN'
-        if (!o2.pageSize) o2.pageSize = 100
-        bodyAllStores = JSON.stringify(o2)
-      } catch (e) { bodyAllStores = null }
-
-      // Drop the headers the browser sets itself; keep the page's own (which is
-      // where storeid and any token it does use come from).
       const DROP = { 'content-length': 1, host: 1, connection: 1, 'accept-encoding': 1 }
       const headers = {}
       for (const k in (recipe.headers || {})) { if (!DROP[String(k).toLowerCase()]) headers[k] = recipe.headers[k] }
       if (!headers['Content-Type'] && !headers['content-type']) headers['Content-Type'] = 'application/json'
       if (baseStore && !Object.keys(headers).some((k) => k.toLowerCase() === 'storeid')) headers.storeid = baseStore
 
-      let res = null
-      let lastErr = null
-      let usedAllStores = false
-      const bodies = bodyAllStores && bodyAllStores !== body ? [body, bodyAllStores] : [body]
-      outer:
-      for (let b = 0; b < bodies.length; b++) {
+      const items = []
+      let token = null
+      let pages = 0
+      // 40 pages is far past any real month and stops a bad token looping forever.
+      while (pages < 40) {
+        let body
+        try {
+          const o = JSON.parse(recipe.body)
+          const fo = o.filterOptions && typeof o.filterOptions === 'object' ? o.filterOptions : (o.filterOptions = {})
+          fo.dateRange = { fromDate: fromMs, toDate: toMs }
+          // DATEWISE_ASIN is the type the working summary call uses for Creator
+          // Connections, and its name says what it returns: per date, per ASIN.
+          o.reportType = 'DATEWISE_ASIN'
+          // aggregationOption is left exactly as the page sends it. Forcing
+          // "MONTH" here, which is the summary endpoint's vocabulary, made Amazon
+          // drop the connection rather than answer, and read as a network fault.
+          if (!o.pageSize) o.pageSize = 100
+          o.nextPageToken = token
+          o.nextToken = token
+          body = JSON.stringify(o)
+        } catch (e) {
+          return { ok: false, status: 'captured query was not JSON' }
+        }
+
+        let res = null
+        let lastErr = null
         for (let attempt = 0; attempt < 2; attempt++) {
           if (attempt > 0) await new Promise((r) => setTimeout(r, 1200))
           try {
             res = await fetch(recipe.url, {
-              method: 'POST', credentials: 'include', headers, body: bodies[b],
+              method: 'POST', credentials: 'include', headers, body,
               signal: AbortSignal.timeout(30000),
             })
             lastErr = null
-            usedAllStores = b > 0
-            break outer
+            break
           } catch (e) {
             lastErr = (e && (e.name ? `${e.name}: ${e.message}` : e.message)) || String(e)
             res = null
           }
         }
-      }
-      if (!res) return { ok: false, status: lastErr || 'no response' }
-      if (!res.ok) return { ok: false, status: res.status }
-      if (usedAllStores && !out.storeFilterRefused) out.storeFilterRefused = true
-      const j = await res.json().catch(() => null)
-      // Amazon names this list itself. Take it directly rather than making the
-      // generic walk guess at which array matters.
-      let recs = null
-      try {
-        const rs = j && Array.isArray(j.responses) ? j.responses : []
-        for (const r of rs) {
-          for (const k in r) {
-            if (Array.isArray(r[k]) && r[k].length && /report|record|detail|item|row/i.test(k)) { recs = r[k]; break }
+        if (!res) return { ok: false, status: lastErr || 'no response', items }
+        if (!res.ok) return { ok: false, status: res.status, items }
+        const j = await res.json().catch(() => null)
+
+        // Amazon names this list itself. Take it rather than making the generic
+        // walk guess which array matters.
+        let recs = null
+        let holder = null
+        try {
+          for (const r of (j && Array.isArray(j.responses) ? j.responses : [])) {
+            for (const k in r) {
+              if (Array.isArray(r[k]) && r[k].length && /report|record|detail|item|row/i.test(k)) { recs = r[k]; holder = r; break }
+            }
+            if (recs) break
           }
-          if (recs) break
+        } catch (e) {}
+        if (!recs || !recs.length) {
+          const zipped = j ? zipTable(j) : null
+          if (zipped && zipped.length && zipped.some((r) => Object.keys(r).some((k) => /asin/i.test(k)))) recs = zipped
         }
-      } catch (e) {}
-      if (!recs || !recs.length) recs = j ? findRecords(j) : null
-      if (!recs || !recs.length) {
-        const zipped = j ? zipTable(j) : null
-        if (zipped && zipped.length && zipped.some((r) => Object.keys(r).some((k) => /asin/i.test(k)))) recs = zipped
+        if (!recs || !recs.length) {
+          if (!out.sample && pages === 0) out.sample = `no ASIN records in ${recipe.url}: ${JSON.stringify(j).slice(0, 4000)}`
+          break
+        }
+
+        const first = recs.find((x) => x && typeof x === 'object') || {}
+        const K = {
+          asin: pickKey(first, /asin/i, /list|count/i),
+          title: pickKey(first, /title|productname|itemname|name$/i, /id$|store|campaign/i),
+          clicks: pickKey(first, /click/i, /percent|rate|through/i),
+          orders: pickKey(first, /order/i, /quantity|percent|rate|amount|value|id$/i),
+          quantity: pickKey(first, /quantity|shipped/i, /percent|rate/i),
+          earnings: pickKey(first, /earning|commission/i, /percent|rate|currency|id$/i),
+          revenue: pickKey(first, /revenue|sales/i, /percent|rate|currency|id$/i),
+        }
+        if (!out.sample) {
+          out.sample = JSON.stringify(first).slice(0, 1800)
+          out.mapping = { ...K, _allKeys: Object.keys(first).join(', ').slice(0, 600) }
+        }
+        if (!K.asin) break
+        for (const r of recs) {
+          if (!r || typeof r !== 'object') continue
+          const asin = String(r[K.asin] || '').toUpperCase()
+          if (!ASIN_RE.test(asin)) continue
+          items.push({
+            asin,
+            productTitle: K.title ? String(r[K.title] || '').slice(0, 300) : null,
+            clicks: K.clicks ? numOf(r[K.clicks]) : null,
+            orders: K.orders ? numOf(r[K.orders]) : null,
+            quantity: K.quantity ? numOf(r[K.quantity]) : null,
+            earnings: K.earnings ? numOf(r[K.earnings]) : null,
+            revenue: K.revenue ? numOf(r[K.revenue]) : null,
+          })
+        }
+        pages++
+        const next = holder ? (holder.nextPageToken || holder.nextToken || null) : null
+        if (!next || next === token) break
+        token = next
+        await new Promise((r) => setTimeout(r, 300))
       }
-      if (!recs || !recs.length) {
-        // Keep enough of the body to actually read the shape. 900 characters got
-        // us as far as "status: OK" and no further, which told us nothing.
-        if (!out.sample) out.sample = `no ASIN records in ${recipe.url}: ${JSON.stringify(j).slice(0, 4000)}`
-        return { ok: true, items: [] }
+      // The same ASIN appears once per day inside a month, so fold the days up.
+      const byAsin = new Map()
+      for (const it of items) {
+        const a = byAsin.get(it.asin)
+        if (!a) { byAsin.set(it.asin, { ...it }); continue }
+        if (!a.productTitle && it.productTitle) a.productTitle = it.productTitle
+        for (const f of ['clicks', 'orders', 'quantity', 'earnings', 'revenue']) {
+          if (it[f] == null) continue
+          a[f] = (a[f] == null ? 0 : a[f]) + it[f]
+        }
       }
-      const first = recs.find((x) => x && typeof x === 'object') || {}
-      const K = {
-        asin: pickKey(first, /asin/i, /list|count/i),
-        title: pickKey(first, /title|productname|itemname|name$/i, /id$|store|campaign/i),
-        clicks: pickKey(first, /click/i, /percent|rate|through/i),
-        orders: pickKey(first, /order/i, /quantity|percent|rate|amount|value|id$/i),
-        quantity: pickKey(first, /quantity|shipped/i, /percent|rate/i),
-        earnings: pickKey(first, /earning|commission/i, /percent|rate|currency|id$/i),
-        revenue: pickKey(first, /revenue|sales/i, /percent|rate|currency|id$/i),
-      }
-      if (!out.sample) {
-        out.sample = JSON.stringify(first).slice(0, 1800)
-        out.mapping = { ...K, _allKeys: Object.keys(first).join(', ').slice(0, 600) }
-      }
-      if (!K.asin) return { ok: true, items: [] }
-      const items = []
-      for (const r of recs) {
-        if (!r || typeof r !== 'object') continue
-        const asin = String(r[K.asin] || '').toUpperCase()
-        if (!ASIN_RE.test(asin)) continue
-        items.push({
-          asin,
-          productTitle: K.title ? String(r[K.title] || '').slice(0, 300) : null,
-          clicks: K.clicks ? numOf(r[K.clicks]) : null,
-          orders: K.orders ? numOf(r[K.orders]) : null,
-          quantity: K.quantity ? numOf(r[K.quantity]) : null,
-          earnings: K.earnings ? numOf(r[K.earnings]) : null,
-          revenue: K.revenue ? numOf(r[K.revenue]) : null,
-        })
-      }
-      return { ok: true, items, allStores: usedAllStores }
+      return { ok: true, items: Array.from(byAsin.values()), pages }
     }
 
     for (const mth of months) {
@@ -1941,16 +1943,19 @@ function earningsFetchInPage(params) {
           // same rows twice under a stream they didn't come from. A failure here
           // never costs us the total we already have, so it's caught separately.
           try {
-            const pr = rt[0] === 'cc' ? await ccProducts(mth.fromMs, mth.toMs, st.storeId) : { ok: true, items: [] }
+            // Once per month. The report covers every store regardless of what we
+            // ask, so running it per store returned the same rows twice and
+            // doubled every figure on the page.
+            const firstStore = st.storeId === stores[0].storeId
+            const pr = (rt[0] === 'cc' && firstStore) ? await ccProducts(mth.fromMs, mth.toMs) : { ok: true, items: [] }
             if (pr.ok) {
               for (const it of pr.items) {
                 out.products.push({
                   periodStart: mth.start, periodType: 'month', stream: rt[0],
-                  // If Amazon refused the store filter, these rows cover every
-                  // store at once. Filing them under one store's id would be a
-                  // claim the data does not make, so they are filed as "all".
-                  storeId: pr.allStores ? 'all' : st.storeId,
-                  storeScope: pr.allStores ? null : st.scope,
+                  // These rows cover every store at once. Filing them under one
+                  // store's id would be a claim the data does not make.
+                  storeId: 'all',
+                  storeScope: null,
                   ...it,
                 })
               }
@@ -2158,7 +2163,6 @@ async function syncAmazonEarnings(opts) {
         // per-ASIN mapping can be checked against Amazon's own screen instead of
         // taken on faith.
         if (r.sample && !job.diag.sample) { job.diag.sample = r.sample; job.diag.mapping = r.mapping || null }
-        if (r.storeFilterRefused) job.diag.storeFilterRefused = true
         if (r.assoc && r.assoc.length && !job.diag.assoc) job.diag.assoc = r.assoc[0]
         if (r.errors && r.errors.length) job.diag.errors = (job.diag.errors || []).concat(r.errors).slice(0, 12)
       }
