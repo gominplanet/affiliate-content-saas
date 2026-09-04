@@ -1815,8 +1815,11 @@ function earningsFetchInPage(params) {
       // ceiling I had guessed rather than measured. This clears that with room,
       // and a wall clock stops a runaway instead of a low cap silently truncating
       // the month.
+      // Their extension pulls 6,000+ rows from a single window, so a month here is
+      // roughly 60 pages at the 100 the captured body asks for. 90 seconds would
+      // have cut a big month off mid-crawl and, worse, done it quietly.
       const productsStarted = Date.now()
-      while (pages < 400 && Date.now() - productsStarted < 90000) {
+      while (pages < 400 && Date.now() - productsStarted < 200000) {
         let body
         try {
           const o = JSON.parse(recipe.body)
@@ -2012,6 +2015,11 @@ function earningsFetchInPage(params) {
             const firstStore = st.storeId === stores[0].storeId
             const pr = (rt[0] === 'cc' && firstStore) ? await ccProducts(mth.fromMs, mth.toMs) : { ok: true, items: [] }
             if (pr.ok) {
+              // Per month, so a month that returns far fewer products than its
+              // neighbours is visible rather than averaged away in a total.
+              out.productCounts = out.productCounts || {}
+              out.productCounts[mth.start] = pr.items.length
+              if (pr.paging && !out.productPagingKey) out.productPagingKey = pr.paging
               for (const it of pr.items) {
                 out.products.push({
                   periodStart: mth.start, periodType: 'month', stream: rt[0],
@@ -2226,6 +2234,8 @@ async function syncAmazonEarnings(opts) {
         // per-ASIN mapping can be checked against Amazon's own screen instead of
         // taken on faith.
         if (r.sample && !job.diag.sample) { job.diag.sample = r.sample; job.diag.mapping = r.mapping || null }
+        if (r.productCounts) job.diag.productCounts = { ...(job.diag.productCounts || {}), ...r.productCounts }
+        if (r.productPagingKey && !job.diag.productPaging) job.diag.productPaging = r.productPagingKey
         if (r.assoc && r.assoc.length && !job.diag.assoc) job.diag.assoc = r.assoc[0]
         if (r.errors && r.errors.length) job.diag.errors = (job.diag.errors || []).concat(r.errors).slice(0, 12)
       }
@@ -4188,6 +4198,10 @@ function fetchContentListInPage(rec) {
     let bodyKey = null
     let sizeKey = null
     let pageSize = 10
+    // Declared once, here. It was previously created inside the pagination
+    // experiment and then used earlier in the loop by the bigger-page probe,
+    // which threw "post is not defined" and killed the whole read after one page.
+    const post = !!(rec.body && /^post$/i.test(String(rec.method || '')))
     try {
       const qk = [...new URL(rec.url, location.href).searchParams.keys()]
       out.queryKeys = `${(rec.method || 'GET').toUpperCase()}${rec.body ? ' with a body' : ' with no body'}, query keys: ${qk.length ? qk.join(', ') : 'none'}`
@@ -4360,7 +4374,6 @@ function fetchContentListInPage(rec) {
           const isPageStyle = (k) => /^(page|pageNumber|pageIndex)$/i.test(k)
           let learned = null
           let learnedInBody = false
-          const post = !!(rec.body && /^post$/i.test(String(rec.method || '')))
           for (const key of candidates) {
             try {
               const t = new URL(rec.url, location.href)

@@ -313,6 +313,12 @@ export default function EarningsPage() {
                 {sync.diag.recipe ? `. Replaying for products: ${sync.diag.recipe}` : ''}
               </p>
             )}
+            {sync.diag?.productCounts && (
+              <p className="text-[11px]" style={muted}>
+                Products read per month: {Object.entries(sync.diag.productCounts).sort().map(([m, n]) => `${m.slice(0, 7)} ${n.toLocaleString()}`).join(', ')}
+                {sync.diag.productPaging ? `. Paging by ${sync.diag.productPaging}.` : ''}
+              </p>
+            )}
             {sync.diag?.recipeBody && (
               <details className="text-[11px]" style={muted}>
                 <summary className="cursor-pointer">The request the page made (replayed with the dates and store swapped)</summary>
