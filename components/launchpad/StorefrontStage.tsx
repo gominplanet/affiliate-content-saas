@@ -119,6 +119,28 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
 
   useEffect(() => { if (presetVideoId) setPicked(presetVideoId) }, [presetVideoId])
 
+  // Resume the localized copy after a reload. The job itself lives on the server,
+  // so only its id has to survive; the targets are re-fetched. Tied to the video
+  // it belongs to, so a different master never picks up a stale job.
+  useEffect(() => {
+    if (!presetVideoId || jobId) return
+    try {
+      const raw = localStorage.getItem('mvp_storefront_job_v1')
+      const s = raw ? JSON.parse(raw) : null
+      if (s && s.videoId === presetVideoId && typeof s.jobId === 'string' && s.jobId) {
+        setJobId(s.jobId)
+        void refreshTargets(s.jobId)
+      }
+    } catch { /* no resume is fine */ }
+    // refreshTargets is a stable function declaration in this component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetVideoId, jobId])
+
+  useEffect(() => {
+    if (!presetVideoId || !jobId) return
+    try { localStorage.setItem('mvp_storefront_job_v1', JSON.stringify({ videoId: presetVideoId, jobId })) } catch { /* ignore */ }
+  }, [presetVideoId, jobId])
+
   const load = useCallback(async () => {
     try {
       const [mr, vr] = await Promise.all([

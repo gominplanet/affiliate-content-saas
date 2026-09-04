@@ -123,6 +123,9 @@ export default function LaunchpadPage() {
   // 'no-human' = product-only. Defaults to the first ready face when they have one.
   const [faceModels, setFaceModels] = useState<Array<{ id: string; name: string }>>([])
   const [facePick, setFacePick] = useState<'no-human' | string>('no-human')
+  // Set when a resumed session supplied the face, so the async face-model load
+  // below can't land afterwards and overwrite the creator's actual choice.
+  const facePickRestored = useRef(false)
   // The same thumbnail controls Co-Pilot has (Quick style, Match a look, Fine-tune),
   // sharing its remembered preferences. Question hook defaults ON here.
   const boost = useThumbnailBoost({ defaultQuestion: true })
@@ -134,7 +137,7 @@ export default function LaunchpadPage() {
           .filter(m => m.status === 'ready')
           .map(m => ({ id: m.id, name: m.name }))
         setFaceModels(ready)
-        if (ready.length > 0) setFacePick(ready[0].id)
+        if (ready.length > 0 && !facePickRestored.current) setFacePick(ready[0].id)
       } catch { /* no faces → product-only */ }
     })()
   }, [])
@@ -160,6 +163,70 @@ export default function LaunchpadPage() {
   const [ccAccepting, setCcAccepting] = useState(false)
   const [ccAccepted, setCcAccepted] = useState(false)
   const [ccCampaign, setCcCampaign] = useState<{ found: boolean; detailsUrl: string | null; name: string | null; brand: string | null; commissionPct: number | null; status: string | null } | null>(null)
+
+  // ── Resume after a reload ───────────────────────────────────────────────────
+  // A Launchpad run spans a render, a YouTube publish and a storefront upload that
+  // asks you to keep the tab open for many minutes. Holding all of that in page
+  // memory meant one stray refresh, closed tab or crash threw the whole session
+  // away and sent the creator back to re-uploading the video. The progress is
+  // small (urls, ids and text), so it's mirrored to this browser and restored on
+  // load. Cleared by "Start over".
+  const LS_KEY = 'mvp_launchpad_session_v1'
+  const [restored, setRestored] = useState(false)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY)
+      const s = raw ? JSON.parse(raw) : null
+      // Only a run that got as far as a rendered video is worth restoring.
+      if (s && typeof s.renderedUrl === 'string' && s.renderedUrl) {
+        setRenderedUrl(s.renderedUrl)
+        if (s.cleanUrl) setCleanUrl(s.cleanUrl)
+        if (s.workingTitle) setWorkingTitle(s.workingTitle)
+        if (typeof s.durationSec === 'number') setDurationSec(s.durationSec)
+        if (s.asin) setAsin(s.asin)
+        if (s.ytOpen) setYtOpen(s.ytOpen)
+        if (s.meta) setMeta(s.meta)
+        if (s.chosenTitle) setChosenTitle(s.chosenTitle)
+        if (s.description) setDescription(s.description)
+        if (s.tags) setTags(s.tags)
+        if (s.thumbUrl) setThumbUrl(s.thumbUrl)
+        if (s.thumbCleanUrl) setThumbCleanUrl(s.thumbCleanUrl)
+        if (s.facePick) { facePickRestored.current = true; setFacePick(s.facePick) }
+        if (s.publishedUrl) setPublishedUrl(s.publishedUrl)
+        if (s.publishedVideoId) setPublishedVideoId(s.publishedVideoId)
+        if (s.publishedChannelId) setPublishedChannelId(s.publishedChannelId)
+        if (s.studioDone) setStudioDone(s.studioDone)
+        if (s.masterId) setMasterId(s.masterId)
+        if (s.geoCheck) setGeoCheck(s.geoCheck)
+        if (s.marketAsins) setMarketAsins(s.marketAsins)
+        toast('Picked up where you left off. Start over is at the top if you want a clean run.')
+      }
+    } catch { /* a corrupt or blocked store just means no resume */ }
+    setRestored(true)
+  }, [])
+
+  // Mirror progress as it changes. Never writes before the restore has run, so a
+  // fresh mount can't blank a saved session.
+  useEffect(() => {
+    if (!restored || !renderedUrl) return
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        renderedUrl, cleanUrl, workingTitle, durationSec, asin, ytOpen, meta,
+        chosenTitle, description, tags, thumbUrl, thumbCleanUrl, facePick,
+        publishedUrl, publishedVideoId, publishedChannelId, studioDone,
+        masterId, geoCheck, marketAsins, savedAt: Date.now(),
+      }))
+    } catch { /* private mode / quota — resume is a convenience, never a blocker */ }
+  }, [restored, renderedUrl, cleanUrl, workingTitle, durationSec, asin, ytOpen, meta,
+      chosenTitle, description, tags, thumbUrl, thumbCleanUrl, facePick,
+      publishedUrl, publishedVideoId, publishedChannelId, studioDone,
+      masterId, geoCheck, marketAsins])
+
+  function startOver() {
+    if (typeof window !== 'undefined' && !window.confirm('Start a new run? This clears the video, thumbnails and storefront progress on this page. Anything already published to YouTube or Amazon stays up.')) return
+    try { localStorage.removeItem(LS_KEY); localStorage.removeItem('mvp_storefront_job_v1') } catch { /* ignore */ }
+    window.location.reload()
+  }
 
   async function prepare() {
     setPreparing(true)
@@ -454,24 +521,25 @@ export default function LaunchpadPage() {
 
   const autoPrepared = useRef(false)
   useEffect(() => {
+    if (!restored) return // never act on half-restored state
     if (autoPrepared.current || meta || preparing) return
     if (!renderedUrl || !asinClean) return
     autoPrepared.current = true
     void prepare()
     // prepare is a stable function declaration in this component.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderedUrl, asinClean, meta, preparing])
+  }, [restored, renderedUrl, asinClean, meta, preparing])
 
   const autoStarted = useRef(false)
   useEffect(() => {
-    if (autoStarted.current) return
+    if (!restored || autoStarted.current) return
     const ytResolved = !!publishedUrl || ytOpen === 'skipped'
     if (!renderedUrl || !asinClean || !ytResolved || masterId || creatingMaster) return
     autoStarted.current = true
     void toStorefronts()
     // toStorefronts is a stable function declaration in this component.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderedUrl, asinClean, publishedUrl, ytOpen, masterId, creatingMaster])
+  }, [restored, renderedUrl, asinClean, publishedUrl, ytOpen, masterId, creatingMaster])
 
   // ── Tier gate ──────────────────────────────────────────────────────────────
   if (gateTier !== null && !['pro', 'admin'].includes(gateTier)) {
@@ -518,6 +586,16 @@ export default function LaunchpadPage() {
       />
 
       <div className="max-w-3xl pb-28">
+        {/* Resumed runs need an obvious way out, or a half-finished session
+            becomes a trap the creator can only escape by clearing site data. */}
+        {renderedUrl && (
+          <div className="flex justify-end mb-2">
+            <button type="button" onClick={startOver} className="text-[12px] underline" style={muted}>
+              Start over with a new video
+            </button>
+          </div>
+        )}
+
         {/* 1. Upload + CTA */}
         <StepRow n={1} state={s1} last={false}
           icon={<Upload size={15} style={{ color: '#7C3AED' }} />}
