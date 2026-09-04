@@ -44,6 +44,10 @@ import {
   Inbox, PackageSearch, Rocket, Database, History, Globe,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+// Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
+// Deal Days, Black Friday and so on) and is deliberately off between them. The
+// badge says "Seasonal", never "Paused": paused reads as broken, and this is a
+// working feature waiting for an event.
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
 import NotificationBell from './NotificationBell'
 import WpUpdateTopbarButton from './WpUpdateTopbarButton'
@@ -490,7 +494,7 @@ export default function DashboardShellV2({
         // CTA. Graduated OUT of Labs into Create (right under Buying Guides) and
         // opened to ALL PAID tiers (canUseFinders = tier !== 'trial'), 2026-07-08.
         { href: '/ltk', icon: <Sparkles size={15} />, label: 'MVP x LTK', gate: canUseFinders },
-        { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDealsEff, badge: DEALS_HUB_PAUSED ? 'Paused' : undefined },
+        { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDealsEff, badge: DEALS_HUB_PAUSED ? 'Seasonal' : undefined },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
         // Shop Burner retired 2026-08 → /instagram-burner redirects to
