@@ -4136,7 +4136,12 @@ function fetchContentListInPage(rec) {
             const first = j && Array.isArray(j.result) ? j.result[0] : j
             walkPaths(first, '', 0)
           } catch (e) {}
-          out.sample = `keys of the first record: ${paths.join(', ')}`
+          // Put anything product-shaped first. The list was printed in document
+          // order and cut off mid-word at 700 characters, so an ASIN sitting
+          // further down the record would never have been seen.
+          const hot = paths.filter((x) => /asin|product|item|catalog/i.test(x))
+          const rest = paths.filter((x) => !/asin|product|item|catalog/i.test(x))
+          out.sample = `${hot.length ? `PRODUCT FIELDS: ${hot.join(', ')} || ` : 'NO product or asin field in this record. '}all keys: ${rest.join(', ')}`
         }
         // Amazon states the library size. Reading fewer than that is a partial
         // read and must say so rather than passing as the whole library.
@@ -4249,7 +4254,7 @@ async function scanCreatorHubVideosBackground(userUrl) {
             error: (push && push.ok) ? undefined : (push && push.error),
           }
         }
-        apiNote = `list API returned nothing${a && a.error ? `: ${a.error}` : ''}${a && a.total ? `, though Amazon reports ${a.total} items` : ''}${a && a.sample ? `. ${String(a.sample).slice(0, 700)}` : ''}`
+        apiNote = `list API returned nothing${a && a.error ? `: ${a.error}` : ''}${a && a.total ? `, though Amazon reports ${a.total} items` : ''}${a && a.sample ? `. ${String(a.sample).slice(0, 1600)}` : ''}`
       } catch (e) {
         apiNote = `list API call failed: ${(e && e.message) || e}`
       }
