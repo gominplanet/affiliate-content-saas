@@ -32,13 +32,68 @@ const ENTITY_MDASH = /&(?:mdash|ndash);|&#8211;|&#8212;|&#x201[34];/gi
 // untouched instead of being shredded into ", --, --,".
 const ASCII_EMDASH = /([^\s-])[^\S\r\n]*-{2,}[^\S\r\n]*([^\s-])/g
 
+
+/**
+ * NO HEALTH OR MEDICAL CLAIMS. Hard rule (Seb, non-negotiable).
+ *
+ * Nothing MVP generates may claim, imply, or ASK whether a product treats,
+ * cures, prevents, heals or relieves any condition or symptom. The question
+ * form is not a loophole: "Do these stop cold sores fast?" makes the same claim
+ * as the statement and is the exact case this was written for. It reaches an
+ * audience the same way, and a regulator reads it the same way.
+ *
+ * This matters most on thumbnails and titles, where copy is deliberately blunt
+ * and lands with no surrounding context to soften it, but the rule is the same
+ * everywhere: thumbnails, titles, descriptions, blog copy, pins, social, ad
+ * copy, email.
+ *
+ * Detection is a claim word plus a health subject. Either alone is fine: a
+ * product can "stop wobbling", and a video can be "about eczema". Together they
+ * become a claim, so both must be present.
+ */
+const CLAIM_VERBS =
+  /\b(?:cure[sd]?|heal(?:s|ed|ing)?|treat(?:s|ed|ing|ment)?|remed(?:y|ies)|stop(?:s|ped|ping)?|prevent(?:s|ed|ing)?|reverse[sd]?|eliminat(?:e|es|ed|ing)|get\s+rid\s+of|clear(?:s|ed)?\s+up|fix(?:es|ed)?|banish(?:es|ed)?|fight(?:s|ing)?|kill(?:s|ed|ing)?|relieve[sd]?|relief|sooth(?:e|es|ed|ing)|reduc(?:e|es|ed|ing)|shrink(?:s)?|dissolve[sd]?|boost(?:s|ed|ing)?|detox(?:es|ify|ifies)?|regrow(?:s|th)?|restore[sd]?|repair(?:s|ed)?)\b/i
+
+const HEALTH_SUBJECTS =
+  /\b(?:cold\s+sores?|herpes|acne|pimples?|blackheads?|eczema|psoriasis|rosacea|dermatitis|warts?|fungus|fungal|toenail\s+fungus|dandruff|hair\s*loss|balding|alopecia|wrinkles?|cellulite|stretch\s+marks?|scars?|pain|aches?|migraines?|headaches?|arthritis|inflammation|swelling|anxiety|depression|stress|insomnia|sleep\s+apnea|snoring|adhd|autism|diabetes|blood\s+sugar|blood\s+pressure|cholesterol|cancer|tumou?rs?|covid|flu|colds?|allergies|asthma|ibs|bloating|constipation|diarrh(?:o)?ea|acid\s+reflux|heartburn|ulcers?|uti|yeast\s+infections?|menopause|cramps?|hangovers?|nausea|vertigo|tinnitus|dry\s+eyes?|varicose\s+veins?|hemorrhoids?|haemorrhoids?|immune\s+system|immunity|metabolism|libido|erectile|fertility|weight\s+loss|belly\s+fat|toxins?)\b/i
+
+/** True when a piece of copy makes, implies or asks a health claim. */
+export function hasHealthClaim(input: string | null | undefined): boolean {
+  if (!input) return false
+  const s = String(input)
+  return CLAIM_VERBS.test(s) && HEALTH_SUBJECTS.test(s)
+}
+
+/**
+ * Remove the offending sentence rather than trying to rewrite it.
+ *
+ * A claim cannot be edited into safety by deleting one word: strike "stop" from
+ * "do these stop cold sores fast?" and you get something that is still about
+ * treating cold sores and now reads as gibberish. Dropping the whole sentence is
+ * blunt, and blunt is right for a compliance rule. Callers that end up with
+ * nothing left fall back to their own default copy.
+ *
+ * Splits on sentence ends AND newlines, so a claim in one bullet or one headline
+ * line does not take the rest of the copy with it.
+ */
+export function scrubHealthClaims(input: string | null | undefined): string {
+  if (!input) return ''
+  const parts = String(input).split(/(?<=[.!?])\s+|\n/)
+  const kept = parts.filter((p) => !hasHealthClaim(p))
+  if (!kept.length) return ''
+  // Rejoin the way it came in: newlines stay newlines, sentences stay sentences.
+  return String(input).includes('\n')
+    ? kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+    : kept.join(' ').replace(/\s{2,}/g, ' ').trim()
+}
+
 /**
  * Drop-in instruction for any AI prompt. Keep the banned list here so
  * every generator enforces the same rule (prompt-side) while scrubBanned
  * enforces it again on the output (last line of defense).
  */
 export const BANNED_RULE =
-  'HARD RULES: (1) never use the word "honest" or "honestly" anywhere. Write "review" not "honest review". (2) NEVER use an em-dash (—) or en-dash (–) anywhere, ever. Body, headings, image alts. Use a comma, period, or parentheses instead. Both rules are non-negotiable.'
+  'HARD RULES: (1) never use the word "honest" or "honestly" anywhere. Write "review" not "honest review". (2) NEVER use an em-dash (—) or en-dash (–) anywhere, ever. Body, headings, image alts. Use a comma, period, or parentheses instead. (3) NEVER make a health or medical claim, in any form, anywhere. Do not say or imply that a product treats, cures, prevents, heals, relieves, reduces or gets rid of any condition or symptom. A QUESTION is not an exception: "Do these stop cold sores fast?" is a medical claim and is forbidden exactly like the statement. Describe what the product IS and what it is designed for, never what it will do to a body or a condition. All three rules are non-negotiable.'
 
 export function scrubBanned(input: string | null | undefined): string {
   if (!input) return ''
@@ -62,6 +117,11 @@ export function scrubBanned(input: string | null | undefined): string {
     comments.push(m)
     return `[[MVPCMT:${comments.length - 1}:]]`
   })
+
+  // Health claims come out FIRST, before any tidying, because the check reads
+  // whole sentences and the tidy passes reshape them. A prompt rule alone has
+  // never been enough for the other two bans and it is not enough for this one.
+  s = scrubHealthClaims(s)
 
   s = s
     .replace(BANNED, '')

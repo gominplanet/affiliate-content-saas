@@ -11,6 +11,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import type { PickedTemplate, TemplateContent, TemplatePalette } from './types'
 import { TEMPLATES } from './templates'
+import { scrubHealthClaims } from '@/lib/scrub'
 
 interface PickerInput {
   /** The raw headline to render. Typically the YouTube video title or a
@@ -130,7 +131,14 @@ function defaultContent(headline: string): TemplateContent {
  * split if the Haiku call errors. Never throws.
  */
 export async function pickTemplate(input: PickerInput): Promise<PickedTemplate> {
-  const headline = (input.headline || '').trim()
+  // Health claims are removed before the headline is decomposed, not after.
+  //
+  // Once a headline is split into punch, leading and banner parts, no check can
+  // see the claim any more: "stop" lands in one field and "cold sores" in
+  // another, and each looks harmless alone. A thumbnail is also the worst place
+  // for a claim, since it is read in a feed with no context and cannot be edited
+  // once it is baked into a PNG and published.
+  const headline = scrubHealthClaims((input.headline || '').trim()).trim()
   if (!headline) {
     return { templateId: 'block-display', content: { punch: '' }, palette: DEFAULT_PALETTE }
   }
@@ -147,6 +155,7 @@ export async function pickTemplate(input: PickerInput): Promise<PickedTemplate> 
   // The Haiku prompt: pick template id + decompose headline + propose palette.
   // Constrained JSON output so we can parse reliably.
   const prompt = `You are designing a YouTube thumbnail. ${input.preferredTemplateId ? `The template "${input.preferredTemplateId}" has been chosen — decompose the headline FOR THAT TEMPLATE.` : 'Pick the BEST text template for this headline.'} Decompose the headline into structured parts the template can render, and propose a palette that contrasts the base image (if shown).
+HARD RULE: never write or imply a health or medical claim in any field, including as a question. Nothing may say or suggest a product treats, cures, prevents, heals, relieves or gets rid of a condition or symptom. If the headline you were given implies one, decompose only the part that does not.
 
 HEADLINE: ${JSON.stringify(headline)}
 PRODUCT / TOPIC CONTEXT: ${input.productContext ? JSON.stringify(input.productContext) : '(none)'}

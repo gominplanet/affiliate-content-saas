@@ -10,6 +10,8 @@
  * is the model ADDING or INVENTING marketplace names, store logos, price tags,
  * watermarks, or any extraneous text.
  */
+import { scrubHealthClaims } from '@/lib/scrub'
+
 export const NO_BRAND_IMAGE_CLAUSE =
   'NO RETAILER LOGOS, NO INVENTED BRANDS, NO MARKETING COPY: Do NOT render, add, invent or overlay any retailer / marketplace names or logos (especially "Amazon", the Amazon smile / swoosh arrow, "Amazon Prime", "Prime", "Walmart", "eBay", "Best Buy", "Target", "AliExpress"), any store/app icons, any watermarks, any copyright (©) / trademark (™ ®) symbols, any price tags or badges, or any extraneous signage or text in the background or on surfaces. Do NOT reproduce retail PACKAGING or marketing-infographic copy — no printed feature lists, claims, percentages, ratings, warranty/award badges, or size charts. KEEP the product\'s OWN branding intact: its real brand mark, product name, and any label/text physically printed on the product itself (the bottle, the box face, the device, the cap) ARE the item being reviewed — render them faithfully so the product is recognisable. The simple rule: keep what\'s physically on the real product; add nothing else.'
 
@@ -27,9 +29,16 @@ export const NO_BRAND_IMAGE_CLAUSE =
 const DESIGN_BRAND_WORDS =
   /\b(?:amazon(?:['’]s|\.com)?|amzn|amazon\s+prime|prime\s+day|prime|the\s+smile\s+logo|smile\s+arrow)\b/gi
 
+/**
+ * Copy destined to be BAKED into an image gets the health-claim scrub too.
+ *
+ * A thumbnail is the worst place for a claim: it is blunt by design, it is read
+ * in a feed with no context, and once it is baked into a PNG it cannot be edited
+ * out of the videos and posts it has already been published to.
+ */
 export function stripDesignBrands(input: string | null | undefined): string {
   if (!input) return ''
-  let s = input.replace(DESIGN_BRAND_WORDS, ' ')
+  let s = scrubHealthClaims(input).replace(DESIGN_BRAND_WORDS, ' ')
   s = s
     .replace(/[^\S\r\n]{2,}/g, ' ')          // collapse doubled spaces
     .replace(/[^\S\r\n]+([,.!?;:])/g, '$1')  // space before punctuation
