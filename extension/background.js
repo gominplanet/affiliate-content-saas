@@ -1801,11 +1801,31 @@ function earningsFetchInPage(params) {
         // ASIN. The captured body carries whichever type the tab the page was on
         // asked for, which is how an empty Sponsored Products report came back.
         o.reportType = 'DATEWISE_ASIN'
-        if (o.aggregationOption) o.aggregationOption = 'MONTH'
+        // aggregationOption is NOT touched. The page sends "CAMPAIGN" here; this
+        // endpoint takes a different set of values from the summary endpoint, and
+        // forcing "MONTH" into it is what produced "TypeError: Failed to fetch" on
+        // every month. Amazon drops the connection on an unacceptable enum rather
+        // than answering 400, which is why it read as a network fault for so long.
+        if (!o.pageSize) o.pageSize = 100
         body = JSON.stringify(o)
       } catch (e) {
         return { ok: false, status: 'captured query was not JSON' }
       }
+      // Second body, used only if the first is refused: the page's own request with
+      // nothing but the dates changed. The page sends storeIds null, meaning all
+      // stores, so if setting it is what Amazon objects to, this still gets the
+      // products, just without the onsite/offsite split. Which one succeeded is
+      // reported, so a fallback never passes silently as the real thing.
+      let bodyAllStores = null
+      try {
+        const o2 = JSON.parse(recipe.body)
+        const fo2 = o2.filterOptions && typeof o2.filterOptions === 'object' ? o2.filterOptions : (o2.filterOptions = {})
+        fo2.dateRange = { fromDate: fromMs, toDate: toMs }
+        o2.reportType = 'DATEWISE_ASIN'
+        if (!o2.pageSize) o2.pageSize = 100
+        bodyAllStores = JSON.stringify(o2)
+      } catch (e) { bodyAllStores = null }
+
       // Drop the headers the browser sets itself; keep the page's own (which is
       // where storeid and any token it does use come from).
       const DROP = { 'content-length': 1, host: 1, connection: 1, 'accept-encoding': 1 }
@@ -1816,22 +1836,29 @@ function earningsFetchInPage(params) {
 
       let res = null
       let lastErr = null
-      for (let attempt = 0; attempt < 3; attempt++) {
-        if (attempt > 0) await new Promise((r) => setTimeout(r, 1200 * attempt))
-        try {
-          res = await fetch(recipe.url, {
-            method: 'POST', credentials: 'include', headers, body,
-            signal: AbortSignal.timeout(30000),
-          })
-          lastErr = null
-          break
-        } catch (e) {
-          lastErr = (e && (e.name ? `${e.name}: ${e.message}` : e.message)) || String(e)
-          res = null
+      let usedAllStores = false
+      const bodies = bodyAllStores && bodyAllStores !== body ? [body, bodyAllStores] : [body]
+      outer:
+      for (let b = 0; b < bodies.length; b++) {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 1200))
+          try {
+            res = await fetch(recipe.url, {
+              method: 'POST', credentials: 'include', headers, body: bodies[b],
+              signal: AbortSignal.timeout(30000),
+            })
+            lastErr = null
+            usedAllStores = b > 0
+            break outer
+          } catch (e) {
+            lastErr = (e && (e.name ? `${e.name}: ${e.message}` : e.message)) || String(e)
+            res = null
+          }
         }
       }
       if (!res) return { ok: false, status: lastErr || 'no response' }
       if (!res.ok) return { ok: false, status: res.status }
+      if (usedAllStores && !out.storeFilterRefused) out.storeFilterRefused = true
       const j = await res.json().catch(() => null)
       // Amazon names this list itself. Take it directly rather than making the
       // generic walk guess at which array matters.
@@ -1886,7 +1913,7 @@ function earningsFetchInPage(params) {
           revenue: K.revenue ? numOf(r[K.revenue]) : null,
         })
       }
-      return { ok: true, items }
+      return { ok: true, items, allStores: usedAllStores }
     }
 
     for (const mth of months) {
@@ -1919,7 +1946,12 @@ function earningsFetchInPage(params) {
               for (const it of pr.items) {
                 out.products.push({
                   periodStart: mth.start, periodType: 'month', stream: rt[0],
-                  storeId: st.storeId, storeScope: st.scope, ...it,
+                  // If Amazon refused the store filter, these rows cover every
+                  // store at once. Filing them under one store's id would be a
+                  // claim the data does not make, so they are filed as "all".
+                  storeId: pr.allStores ? 'all' : st.storeId,
+                  storeScope: pr.allStores ? null : st.scope,
+                  ...it,
                 })
               }
             } else {
@@ -2126,6 +2158,7 @@ async function syncAmazonEarnings(opts) {
         // per-ASIN mapping can be checked against Amazon's own screen instead of
         // taken on faith.
         if (r.sample && !job.diag.sample) { job.diag.sample = r.sample; job.diag.mapping = r.mapping || null }
+        if (r.storeFilterRefused) job.diag.storeFilterRefused = true
         if (r.assoc && r.assoc.length && !job.diag.assoc) job.diag.assoc = r.assoc[0]
         if (r.errors && r.errors.length) job.diag.errors = (job.diag.errors || []).concat(r.errors).slice(0, 12)
       }

@@ -224,6 +224,11 @@ export default function EarningsPage() {
                 {sync.diag.recipe ? `. Replaying for products: ${sync.diag.recipe}` : ''}
               </p>
             )}
+            {sync.diag?.storeFilterRefused && (
+              <p className="text-[11px]" style={muted}>
+                Amazon refused the per-store filter on the product report, so those rows cover onsite and offsite together and carry no split. The monthly totals above still have it.
+              </p>
+            )}
             {sync.diag?.recipeBody && (
               <details className="text-[11px]" style={muted}>
                 <summary className="cursor-pointer">The request the page made (replayed with the dates and store swapped)</summary>

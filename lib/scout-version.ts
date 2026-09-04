@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.61'
+export const SCOUT_LATEST_VERSION = '1.17.62'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Asks Amazon for the per-ASIN earnings report by name instead of clicking around its page and landing on an empty one.'
+  'Sends Amazon\u2019s per-product report request as the page sends it, which is what the repeated connection failures were about.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

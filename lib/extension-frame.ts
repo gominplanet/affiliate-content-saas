@@ -194,6 +194,9 @@ export interface EarningsSyncStatus {
     /** The page's own captured request body, so the fields steering the report
      *  are visible rather than inferred. */
     recipeBody?: string
+    /** True when Amazon refused the per-store filter and the product rows cover
+     *  every store together, so they carry no onsite/offsite split. */
+    storeFilterRefused?: boolean
     /** Product rows MVP could not file, and why. From 2026-09-09 Amazon groups
      *  low-activity products under "Others", which carries no ASIN, so this is
      *  the number that says how much of the breakdown is being lost. */
