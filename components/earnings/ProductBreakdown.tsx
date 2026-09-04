@@ -127,14 +127,32 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
     .slice(0, 5)
 
   const cov = data.coverage
-  const covPct = cov && cov.productCents != null && cov.periodCents
-    ? Math.round((cov.productCents / cov.periodCents) * 100)
+  const covRatio = cov && cov.productCents != null && cov.periodCents
+    ? cov.productCents / cov.periodCents
     : null
+  // Rounding a real fraction of a percent down to "0%" reads as "we found
+  // nothing", when the truth is "we found a sliver". Say the sliver.
+  const covLabel = covRatio == null ? null
+    : covRatio > 0 && covRatio < 0.01 ? 'under 1%'
+    : `${Math.round(covRatio * 100)}%`
+  // Below this, the three cards above would be ranking a rounding error. The
+  // breakdown is still shown, with a notice, rather than hidden: partial truth
+  // labelled as partial beats an empty panel that explains nothing.
+  const thin = covRatio != null && covRatio < 0.5
 
   const shown = products.slice(0, limit)
 
   return (
     <div className="space-y-3">
+      {thin && (
+        <div className="card p-4 border-l-4" style={{ borderLeftColor: '#d97706' }}>
+          <p className="text-[13px] font-semibold" style={label}>This breakdown is incomplete, so read it as a sample</p>
+          <p className="text-[12px] mt-1" style={muted}>
+            The products below account for {covLabel} of what the totals say you earned in the same months, so the ranking underneath is not yet a ranking of your real best sellers. Amazon returned the per-product rows for only part of the sync. The monthly totals above are unaffected and still match Amazon.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
 
         <div className="card p-4">
@@ -220,7 +238,7 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
           <h2 className="text-sm font-semibold" style={label}>Every product</h2>
           <span className="text-[11px]" style={muted}>
             {products.length.toLocaleString()} product{products.length === 1 ? '' : 's'}
-            {covPct != null ? `, covering ${covPct}% of the earnings in these months` : ''}
+            {covLabel != null ? `, covering ${covLabel} of the earnings in these months` : ''}
           </span>
         </div>
         <div className="overflow-x-auto">
@@ -279,7 +297,7 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
         )}
         <p className="text-[11px] mt-3" style={muted}>
           Trend compares {canTrend ? `${monthName(recent!)} against ${monthName(prior!)}` : 'the last two finished months'}, and reads &ldquo;not enough months&rdquo; where one of them had nothing to compare. The running month is left out on purpose: a few days against a whole month would show every product falling.
-          {covPct != null && covPct < 95 ? ` These products account for ${covPct}% of the earnings in the same months. Amazon hides low-volume rows, so the rest is money it reported in the totals but would not break down.` : ''}
+          {covLabel != null && covRatio != null && covRatio < 0.95 ? ` These products account for ${covLabel} of the earnings in the same months, so anything missing is money Amazon reported in the totals but did not break down here.` : ''}
         </p>
       </div>
     </div>

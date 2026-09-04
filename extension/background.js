@@ -1711,15 +1711,33 @@ function earningsFetchInPage(params) {
       const filterOptions = emptyFilters()
       filterOptions.dateRange = { fromDate: fromMs, toDate: toMs }
       filterOptions.storeIds = [storeId]
-      const res = await fetch(`https://${host}/connect/api/report/earnings/search`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'accept': 'application/json', ...(baseStore ? { storeid: baseStore } : {}) },
-        body: JSON.stringify({
-          aggregationOption: 'MONTH', reportType, filterOptions,
-          searchOptions: null, sortOptions: null, pageNumber: 1, pageSize: 200,
-        }),
-        signal: AbortSignal.timeout(30000),
-      })
+      // "Failed to fetch" is a dropped connection, not an answer: Amazon closes on
+      // us when this runs back to back with the summary call. So it retries with a
+      // widening gap, and a smaller page, before giving up on the month. The
+      // thrown error is kept verbatim rather than flattened, because a TypeError
+      // and a timeout call for opposite fixes.
+      let res = null
+      let lastErr = null
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 1200 * attempt))
+        try {
+          res = await fetch(`https://${host}/connect/api/report/earnings/search`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json', 'accept': 'application/json', ...(baseStore ? { storeid: baseStore } : {}) },
+            body: JSON.stringify({
+              aggregationOption: 'MONTH', reportType, filterOptions,
+              searchOptions: null, sortOptions: null, pageNumber: 1, pageSize: 50,
+            }),
+            signal: AbortSignal.timeout(30000),
+          })
+          lastErr = null
+          break
+        } catch (e) {
+          lastErr = (e && (e.name ? `${e.name}: ${e.message}` : e.message)) || String(e)
+          res = null
+        }
+      }
+      if (!res) return { ok: false, status: lastErr || 'no response' }
       if (!res.ok) return { ok: false, status: res.status }
       const j = await res.json().catch(() => null)
       const recs = j ? findRecords(j) : null
@@ -1739,7 +1757,10 @@ function earningsFetchInPage(params) {
         earnings: pickKey(first, /earning|commission/i, /percent|rate|currency|id$/i),
         revenue: pickKey(first, /revenue|sales/i, /percent|rate|currency|id$/i),
       }
-      if (!out.sample) { out.sample = JSON.stringify(first).slice(0, 1200); out.mapping = K }
+      if (!out.sample) {
+        out.sample = JSON.stringify(first).slice(0, 1800)
+        out.mapping = { ...K, _allKeys: Object.keys(first).join(', ').slice(0, 600) }
+      }
       if (!K.asin) return { ok: true, items: [] }
       const items = []
       for (const r of recs) {
