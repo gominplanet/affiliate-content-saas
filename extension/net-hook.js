@@ -32,7 +32,10 @@
       const u = new URL(url, location.href)
       if (!AMZ.test(u.hostname)) return false
       const hay = (u.pathname + ' ' + (typeof body === 'string' ? body : '')).toLowerCase()
-      return /messag|conversation|thread|spcc|creator|connect|outreach|contact/.test(hay)
+      // `video`, `media` and `content` bring in the Creator Hub video list, whose
+      // own request is the reliable way to read a 7,000 video library. Clicking
+      // Next through its grid stalls long before the end.
+      return /messag|conversation|thread|spcc|creator|connect|outreach|contact|video|media|content/.test(hay)
     } catch (e) { return false }
   }
 

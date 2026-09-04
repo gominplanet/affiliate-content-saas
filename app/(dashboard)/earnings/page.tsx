@@ -94,6 +94,7 @@ export default function EarningsPage() {
   // with them rather than showing last sync's products beside this sync's totals.
   const [dataVersion, setDataVersion] = useState(0)
   const [scanningVideos, setScanningVideos] = useState(false)
+  const [videoScan, setVideoScan] = useState<string | null>(null)
   useEffect(() => { try { setStoreId(localStorage.getItem('mvp_amazon_store_id') || '') } catch { /* ignore */ } }, [])
 
   const load = useCallback(async () => {
@@ -160,7 +161,17 @@ export default function EarningsPage() {
             : (r.error || 'Could not read your Amazon videos.'))
         return
       }
-      toast.success(`Found ${(r.count ?? 0).toLocaleString()} products with a video on Amazon${r.partial ? ', and Amazon stopped early so this may be partial' : ''}.`)
+      // Say what was actually read and whether it is all of it. A creator with
+      // 7,000 videos being told "found 259" with no more context cannot tell a
+      // complete answer from a stalled crawl, and the first reading is that MVP
+      // is wrong about their library.
+      if (r.partial || (r.stopped && r.stopped !== 'end')) {
+        setVideoScan(`Read ${(r.count ?? 0).toLocaleString()} products across ${(r.pages ?? 0).toLocaleString()} pages, then stopped: ${r.stopped || 'ran out of time'}. If your library is larger than that, run it again and the products already found are kept.${r.apiCalls?.length ? ` Amazon endpoints seen: ${r.apiCalls.join(', ')}` : ''}`)
+        toast(`Read ${(r.count ?? 0).toLocaleString()} products so far. The crawl stopped early.`)
+      } else {
+        setVideoScan(`Read ${(r.count ?? 0).toLocaleString()} products with a video on Amazon, across ${(r.pages ?? 0).toLocaleString()} pages.`)
+        toast.success(`Found ${(r.count ?? 0).toLocaleString()} products with a video on Amazon.`)
+      }
       void load()
     } finally { setScanningVideos(false) }
   }
@@ -225,6 +236,12 @@ export default function EarningsPage() {
           </button>
           </div>
         </div>
+
+        {videoScan && (
+          <div className="card p-4">
+            <p className="text-[12px]" style={muted}>{videoScan}</p>
+          </div>
+        )}
 
         {loadError && (
           <div className="card p-4" style={{ borderColor: '#e0554b55' }}>

@@ -3690,22 +3690,37 @@ async function harvestCreatorHubVideosInPage() {
   // exists; a repeated-product page no longer ends it. Bounded by a wall-clock
   // (so we always return before the message timeout) and a page cap.
   const startedAt = Date.now()
-  const MAX_MS = 240000 // ~4 min in-page; the message timeout sits above this
+  const MAX_MS = 255000 // ~4¼ min in-page; the message timeout sits above this
   let partial = false
+  let pages = 0
+  let stopped = 'end'
   for (let page = 0; page < 600; page++) {
-    if (Date.now() - startedAt > MAX_MS) { partial = true; break }
-    const next = findNext(); if (!next) break
+    if (Date.now() - startedAt > MAX_MS) { partial = true; stopped = 'out of time'; break }
+    const next = findNext()
+    if (!next) { stopped = 'no Next control'; break }
     const before = sig()
     rClick(next)
-    const changed = await waitForChange(before, 8000)
-    if (!changed) break // Next did nothing → last page
+    // A slow page turn is not the end of the list. 8 seconds was enough on a
+    // small library and not on a large one, and one unlucky click ended the
+    // whole crawl. Now a stall gets a second click and a longer wait before we
+    // conclude there is nothing after this page.
+    let changed = await waitForChange(before, 15000)
+    if (!changed) {
+      await sleep(1200)
+      rClick(next)
+      changed = await waitForChange(before, 15000)
+    }
+    if (!changed) { stopped = 'page stopped turning'; partial = true; break }
+    pages++
     // Some video grids lazy-load rows within a page; scroll to pull them in.
-    for (let i = 0; i < 3; i++) { try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {} await sleep(350) }
+    for (let i = 0; i < 4; i++) { try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {} await sleep(350) }
     collect(map)
   }
   return {
     ok: true,
     partial,
+    pages,
+    stopped,
     asins: [...map.entries()].map(([asin, title]) => ({ asin, title })),
     signedOut: /\/ap\/signin/.test(location.href),
   }
@@ -3713,6 +3728,7 @@ async function harvestCreatorHubVideosInPage() {
 
 async function scanCreatorHubVideosBackground() {
   const url = 'https://www.amazon.com/creatorhub'
+  const startedAt = Date.now()
   let tabId = null
   try {
     const tab = await chrome.tabs.create({ url, active: false })
@@ -3726,7 +3742,26 @@ async function scanCreatorHubVideosBackground() {
     const asins = (r.asins || []).filter((x) => x && /^[A-Z0-9]{10}$/.test(x.asin))
     if (!asins.length) return { ok: false, error: 'no-videos' }
     const push = await pushVideosToMvp(asins)
-    return { ok: !!(push && push.ok), count: asins.length, partial: !!r.partial, error: (push && push.ok) ? undefined : (push && push.error) }
+    // What the page's own code asked Amazon for while we were clicking. A DOM
+    // crawl of a 7,000 video grid is never going to be reliable; this is how we
+    // learn the request to replay instead, the same way the earnings sync was
+    // fixed.
+    let apiCalls = []
+    try {
+      apiCalls = Array.from(new Set((_ccNetRing || [])
+        .filter((rec) => rec && rec.ts >= startedAt && /amazon\.com/i.test(String(rec.url || '')))
+        .map((rec) => { try { return new URL(rec.url, 'https://www.amazon.com').pathname } catch (e) { return String(rec.url).slice(0, 120) } })))
+        .slice(0, 8)
+    } catch (e) {}
+    return {
+      ok: !!(push && push.ok),
+      count: asins.length,
+      partial: !!r.partial,
+      pages: r.pages || 0,
+      stopped: r.stopped || null,
+      apiCalls,
+      error: (push && push.ok) ? undefined : (push && push.error),
+    }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'scan-failed' }
   } finally {
@@ -6984,7 +7019,11 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'MVP_SCAN_CREATORHUB_VIDEOS') {
     // Read the Creator Hub video table (each row → a product ASIN) in a
     // BACKGROUND tab and record which products the creator has a video for.
-    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 175000)
+    //
+    // This wait must sit ABOVE the in-page wall clock, not below it. At 175s
+    // against an in-page budget of 240s, a big library was cut off mid crawl and
+    // reported as a timeout even though the scan was still working.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 290000)
     scanCreatorHubVideosBackground()
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
