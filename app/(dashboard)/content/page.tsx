@@ -3799,9 +3799,19 @@ export default function ContentPage() {
       // video with no channel_id (legacy sync) is always kept; if we don't know
       // the channels yet, nothing is hidden.
       const connectedIds = new Set(ytChannels.map(c => c.channelId).filter(Boolean))
+      // A Launchpad master is NOT a YouTube video: it's an uploaded file, stored
+      // with a synthetic "upload-…" id and channel_id "unknown". That literal
+      // string is not falsy and is not a connected UC… id, so the disconnected-
+      // channel filter below was hiding it — which silently broke Launchpad's
+      // final step, whose whole job is to deep-link the creator to that video.
+      // A row that never came from YouTube can't belong to a disconnected
+      // channel, so it is always in scope.
+      const notFromYouTube = (v: Record<string, unknown>) =>
+        String((v.youtube_video_id as string) || '').startsWith('upload-')
       const inScope = (v: Record<string, unknown>) => {
         if (channelFilter !== 'all') return (v.channel_id as string | null) === channelFilter
         if (connectedIds.size === 0) return true
+        if (notFromYouTube(v)) return true
         const cid = v.channel_id as string | null
         return !cid || connectedIds.has(cid)
       }

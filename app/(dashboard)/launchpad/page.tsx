@@ -162,7 +162,7 @@ export default function LaunchpadPage() {
   const [ccFinding, setCcFinding] = useState(false)
   const [ccAccepting, setCcAccepting] = useState(false)
   const [ccAccepted, setCcAccepted] = useState(false)
-  const [ccCampaign, setCcCampaign] = useState<{ found: boolean; detailsUrl: string | null; name: string | null; brand: string | null; commissionPct: number | null; status: string | null } | null>(null)
+  const [ccCampaign, setCcCampaign] = useState<{ found: boolean; campaignId: string | null; detailsUrl: string | null; name: string | null; brand: string | null; commissionPct: number | null; status: string | null } | null>(null)
 
   // ── Resume after a reload ───────────────────────────────────────────────────
   // A Launchpad run spans a render, a YouTube publish and a storefront upload that
@@ -494,7 +494,7 @@ export default function LaunchpadPage() {
         toast.error(r.error === 'not-installed' ? 'Install SCOUT to check Creator Connections.' : 'Could not check Creator Connections.')
         return
       }
-      setCcCampaign({ found: !!r.found, detailsUrl: r.detailsUrl ?? null, name: r.campaignName ?? null, brand: r.brand ?? null, commissionPct: r.commissionPct ?? null, status: r.status ?? null })
+      setCcCampaign({ found: !!r.found, campaignId: r.campaignId ?? null, detailsUrl: r.detailsUrl ?? null, name: r.campaignName ?? null, brand: r.brand ?? null, commissionPct: r.commissionPct ?? null, status: r.status ?? null })
       if (r.status === 'active') setCcAccepted(true) // already joined
     } catch { toast.error('Could not check Creator Connections.') }
     finally { setCcFinding(false) }
@@ -504,9 +504,31 @@ export default function LaunchpadPage() {
     setCcAccepting(true)
     try {
       const r = await requestAcceptCampaign(ccCampaign.detailsUrl)
-      if (r.ok || r.already) { setCcAccepted(true); toast.success(r.already ? 'Already accepted.' : 'Campaign accepted.') }
-      else toast.error('Could not accept the campaign.')
-    } catch { toast.error('Could not accept the campaign.') }
+      if (r.ok || r.already) {
+        setCcAccepted(true)
+        // Tell MVP's own ledger, exactly as the Campaigns page and Favorite Brands
+        // do. Without this the campaign is joined on Amazon but MVP never learns,
+        // so the "open campaigns" counts stay wrong and Accept all offers it again.
+        if (asinClean) {
+          void fetch('/api/campaigns/mark-accepted', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              asin: asinClean, campaignId: ccCampaign.campaignId || undefined,
+              detailsUrl: ccCampaign.detailsUrl, brand: ccCampaign.brand,
+              commissionPct: ccCampaign.commissionPct, productTitle: ccCampaign.name,
+            }),
+          }).catch(() => {})
+        }
+        toast.success(r.already ? 'Already accepted.' : 'Campaign accepted.')
+      } else {
+        // Amazon's own reason, not a generic failure. "No slots left" and "not
+        // eligible" need different actions from the creator.
+        toast.error(r.error === 'not-installed' ? 'Install SCOUT to accept campaigns.'
+          : r.error === 'timeout' ? 'SCOUT timed out. Make sure you’re signed in to Amazon, then try again.'
+          : (r.reason || r.error || 'Could not accept the campaign. Open it on Amazon and accept there.'),
+          { duration: 8000 })
+      }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not accept the campaign.') }
     finally { setCcAccepting(false) }
   }
 

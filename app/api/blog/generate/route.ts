@@ -490,7 +490,13 @@ async function handleGenerate(request: Request) {
   const videoRow = video as Record<string, unknown>
   let transcript = (videoRow.transcript as string | null) || ''
   let transcriptSource: 'cache' | 'youtube_api' | 'scraper' | 'none' = transcript ? 'cache' : 'none'
-  const youtubeVideoIdForTranscript = (videoRow.youtube_video_id as string | undefined) ?? ''
+  // Only a REAL YouTube id is worth asking YouTube about. A Launchpad master is
+  // an uploaded file stored under a synthetic "upload-…" id, so the two fetch
+  // layers below would spend a token refresh and a scrape on a video YouTube has
+  // never heard of, purely to fail. Its transcript is written to the row when the
+  // master is created, so the cache above is the real source for those.
+  const rawVideoId = (videoRow.youtube_video_id as string | undefined) ?? ''
+  const youtubeVideoIdForTranscript = /^[A-Za-z0-9_-]{11}$/.test(rawVideoId) ? rawVideoId : ''
 
   // Layer 1: official YouTube Data API.
   // Perf (audit 2026-06-02): reuses the `integration` row already
