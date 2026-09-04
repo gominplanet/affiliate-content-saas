@@ -1796,6 +1796,12 @@ function earningsFetchInPage(params) {
         const fo = o.filterOptions && typeof o.filterOptions === 'object' ? o.filterOptions : (o.filterOptions = {})
         fo.dateRange = { fromDate: fromMs, toDate: toMs }
         fo.storeIds = [storeId]
+        // DATEWISE_ASIN is the report type the summary call already uses for
+        // Creator Connections, and the name says what it returns: per date, per
+        // ASIN. The captured body carries whichever type the tab the page was on
+        // asked for, which is how an empty Sponsored Products report came back.
+        o.reportType = 'DATEWISE_ASIN'
+        if (o.aggregationOption) o.aggregationOption = 'MONTH'
         body = JSON.stringify(o)
       } catch (e) {
         return { ok: false, status: 'captured query was not JSON' }
@@ -1827,7 +1833,19 @@ function earningsFetchInPage(params) {
       if (!res) return { ok: false, status: lastErr || 'no response' }
       if (!res.ok) return { ok: false, status: res.status }
       const j = await res.json().catch(() => null)
-      let recs = j ? findRecords(j) : null
+      // Amazon names this list itself. Take it directly rather than making the
+      // generic walk guess at which array matters.
+      let recs = null
+      try {
+        const rs = j && Array.isArray(j.responses) ? j.responses : []
+        for (const r of rs) {
+          for (const k in r) {
+            if (Array.isArray(r[k]) && r[k].length && /report|record|detail|item|row/i.test(k)) { recs = r[k]; break }
+          }
+          if (recs) break
+        }
+      } catch (e) {}
+      if (!recs || !recs.length) recs = j ? findRecords(j) : null
       if (!recs || !recs.length) {
         const zipped = j ? zipTable(j) : null
         if (zipped && zipped.length && zipped.some((r) => Object.keys(r).some((k) => /asin/i.test(k)))) recs = zipped
@@ -1944,67 +1962,6 @@ function earningsFetchInPage(params) {
   })()
 }
 
-
-// Runs IN the page: switch the reporting table's "Group by" to the product/ASIN
-// option so the SPA fires that view's own request, which net-hook then captures.
-// Amazon builds these as custom widgets, not native selects, so this tries the
-// native path first and then the DOM path, and reports which one it took rather
-// than silently doing nothing.
-function groupReportByProductInPage() {
-  const seen = []
-  try {
-    for (const sel of Array.from(document.querySelectorAll('select'))) {
-      const opt = Array.from(sel.options || []).find((o) => /asin|product/i.test(o.textContent || ''))
-      if (opt) {
-        sel.value = opt.value
-        sel.dispatchEvent(new Event('change', { bubbles: true }))
-        return { how: 'select', label: opt.textContent.trim() }
-      }
-      seen.push('select:' + Array.from(sel.options || []).map((o) => o.textContent.trim()).join('|'))
-    }
-    // Custom dropdown: open whatever currently reads as the group-by value.
-    const clickable = Array.from(document.querySelectorAll('button,[role="button"],[role="combobox"],[aria-haspopup]'))
-    const trigger = clickable.find((b) => /^\s*(campaign|group\s*by)/i.test(b.textContent || ''))
-    if (trigger) { trigger.click(); return { how: 'opened', label: (trigger.textContent || '').trim().slice(0, 40) } }
-  } catch (e) {
-    return { how: 'error', label: String((e && e.message) || e) }
-  }
-  return { how: 'none', label: seen.join(' ').slice(0, 200) }
-}
-
-// Second half of the same move: pick the product option out of the menu the click
-// above opened.
-function pickProductOptionInPage() {
-  // The menu opened last time and this missed, so it now reports what it actually
-  // saw. An exact-match list of one word was too strict: Amazon labels these
-  // "Product", "ASIN", "Product (ASIN)" and similar, and the node holding the text
-  // is not always the clickable one.
-  const seen = []
-  try {
-    const nodes = Array.from(document.querySelectorAll('li,[role="option"],[role="menuitem"],[role="menuitemradio"],button,a,span,div,label'))
-    const candidates = []
-    for (const n of nodes) {
-      if (n.children.length > 2) continue
-      const t = (n.textContent || '').trim()
-      if (!t || t.length > 40) continue
-      seen.push(t)
-      if (/\b(asin|product)s?\b/i.test(t)) candidates.push(n)
-    }
-    // Deepest match wins: an outer wrapper repeating the same text swallows the
-    // click without selecting anything.
-    candidates.sort((a, b) => b.children.length - a.children.length)
-    const hit = candidates.pop()
-    if (hit) {
-      hit.click()
-      // Some menus only commit on the parent row.
-      if (hit.parentElement && hit.parentElement !== document.body) { try { hit.parentElement.click() } catch (e) {} }
-      return { picked: (hit.textContent || '').trim().slice(0, 40), options: Array.from(new Set(seen)).slice(0, 25).join(' | ').slice(0, 400) }
-    }
-  } catch (e) {
-    return { picked: null, options: `error: ${(e && e.message) || e}` }
-  }
-  return { picked: null, options: Array.from(new Set(seen)).slice(0, 25).join(' | ').slice(0, 400) }
-}
 
 // Push a batch to MVP from the worker (it holds the mvpaffiliate.io cookie).
 async function pushEarningsToMvp(periods, products) {
@@ -2124,37 +2081,25 @@ async function syncAmazonEarnings(opts) {
     stores = stores.slice(0, 4)
     job.diag = { stores: stores.map((s) => `${s.storeId}(${s.scope})`) }
 
-    // Learn the product query before backfilling. The page renders its table
-    // grouped by campaign; switching it to the product grouping makes the SPA fire
-    // the request whose response carries ASINs, and net-hook captures it. Whatever
-    // we end up with is reported, so "no recipe" is visible rather than looking
-    // like Amazon returned nothing.
+    // Learn the product query before backfilling. The page fires its own
+    // /connect/api/report/earnings/search for the table it renders, and we replay
+    // that with the window, the store and the report type swapped.
+    //
+    // We do NOT click the page any more. The last attempt scanned the whole
+    // document for an option matching /product/i, hit the "Sponsored Products for
+    // Creators" nav tab, and switched the page to a report that has no data. The
+    // request body is the thing that decides what comes back, so it is the thing
+    // to change.
     let recipe = null
     const learnFrom = Date.now()
-    try {
-      const g = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: groupReportByProductInPage })
-      const how = (g && g[0] && g[0].result) || null
-      let picked = null
-      if (how && how.how === 'opened') {
-        await _sleep(900)
-        const pr = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: pickProductOptionInPage })
-        picked = (pr && pr[0] && pr[0].result) || null
-      }
-      job.diag.groupBy = how ? `${how.how}${how.label ? ` (${how.label})` : ''}` : 'not attempted'
-      if (picked) {
-        job.diag.groupBy += picked.picked ? `, picked "${picked.picked}"` : ', picked nothing'
-        // What the menu offered. When the pick misses, this is what says why.
-        job.diag.groupByOptions = picked.options || null
-      }
-    } catch (e) {
-      job.diag.groupBy = `failed: ${(e && e.message) || e}`
-    }
     await _sleep(4000)
-    const calls = earningsReportCalls(learnFrom - 8000)
-    // Prefer a call that isn't the tiles' summary: that one we already replay.
-    recipe = calls.find((c) => !/\/summary$/i.test(c.path)) || calls[0] || null
+    const calls = earningsReportCalls(learnFrom - 12000)
+    recipe = calls.find((c) => /\/search$/i.test(c.path)) || null
     job.diag.reportCalls = calls.map((c) => c.path).slice(0, 6)
     job.diag.recipe = recipe ? recipe.path : 'none captured'
+    // The captured body, so the fields that steer this report are visible rather
+    // than inferred. It is the page's own request, not anything we composed.
+    if (recipe) job.diag.recipeBody = String(recipe.body || '').slice(0, 1200)
 
     // A month at a time, pushing as we go, so a long backfill shows progress and
     // an interrupted run keeps what it already earned.

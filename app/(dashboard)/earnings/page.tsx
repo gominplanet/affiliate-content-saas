@@ -222,9 +222,13 @@ export default function EarningsPage() {
               <p className="text-[11px]" style={muted}>
                 Reporting endpoints the page called: {sync.diag.reportCalls?.length ? sync.diag.reportCalls.join(', ') : 'none seen'}
                 {sync.diag.recipe ? `. Replaying for products: ${sync.diag.recipe}` : ''}
-                {sync.diag.groupBy ? `. Group by switch: ${sync.diag.groupBy}` : ''}
-                {sync.diag.groupByOptions ? `. Menu offered: ${sync.diag.groupByOptions}` : ''}
               </p>
+            )}
+            {sync.diag?.recipeBody && (
+              <details className="text-[11px]" style={muted}>
+                <summary className="cursor-pointer">The request the page made (replayed with the dates and store swapped)</summary>
+                <pre className="mt-1 p-2 rounded text-[10px] whitespace-pre-wrap break-all max-h-64 overflow-y-auto" style={{ background: 'var(--surface-2)' }}>{sync.diag.recipeBody}</pre>
+              </details>
             )}
             {!!sync.diag?.skipped && (
               <p className="text-[11px]" style={muted}>

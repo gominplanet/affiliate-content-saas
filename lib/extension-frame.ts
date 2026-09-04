@@ -191,8 +191,9 @@ export interface EarningsSyncStatus {
      *  something real. */
     reportCalls?: string[]
     recipe?: string
-    groupBy?: string
-    groupByOptions?: string | null
+    /** The page's own captured request body, so the fields steering the report
+     *  are visible rather than inferred. */
+    recipeBody?: string
     /** Product rows MVP could not file, and why. From 2026-09-09 Amazon groups
      *  low-activity products under "Others", which carries no ASIN, so this is
      *  the number that says how much of the breakdown is being lost. */
