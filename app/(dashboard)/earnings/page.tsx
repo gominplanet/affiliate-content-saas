@@ -50,6 +50,19 @@ const STREAM_LABEL: Record<string, string> = {
   commissions: 'Associates commissions',
   bounties: 'Bounties',
 }
+/** Postgres hands rows back in whatever order it likes, which made one month read
+ *  CC, EPC, CC, EPC and the next read EPC, EPC, CC, CC. Same figures, but the eye
+ *  can't compare months down a column when the rows move. Fixed order: stream
+ *  first, then onsite above offsite. */
+const STREAM_RANK: Record<string, number> = { cc: 0, epc: 1, commissions: 2, bounties: 3 }
+const rowRank = (r: Row) =>
+  (STREAM_RANK[r.stream] ?? 9) * 10 + (r.store_scope === 'onsite' ? 0 : 1)
+
+/** True when Amazon answered for this row but every figure in it was zero. That's
+ *  a real answer ("nothing happened here"), not a missing one, so it's hidden by
+ *  default and counted rather than dropped. */
+const isQuiet = (r: Row) =>
+  !r.clicks && !r.orders && !r.earnings_cents && !r.revenue_cents
 
 export default function EarningsPage() {
   const [rows, setRows] = useState<Row[]>([])
@@ -63,6 +76,7 @@ export default function EarningsPage() {
   // the reporting page when it can, but that page is a SPA and does not always
   // expose it, so the creator can just tell us rather than being stuck.
   const [storeId, setStoreId] = useState('')
+  const [showQuiet, setShowQuiet] = useState(false)
   useEffect(() => { try { setStoreId(localStorage.getItem('mvp_amazon_store_id') || '') } catch { /* ignore */ } }, [])
 
   const load = useCallback(async () => {
@@ -113,7 +127,9 @@ export default function EarningsPage() {
     } finally { setStarting(false) }
   }
 
-  const byMonth = Array.from(new Set(rows.map(r => r.period_start))).sort().reverse()
+  const shown = showQuiet ? rows : rows.filter(r => !isQuiet(r))
+  const quietCount = rows.length - shown.length
+  const byMonth = Array.from(new Set(shown.map(r => r.period_start))).sort().reverse()
 
   return (
     <>
@@ -214,6 +230,14 @@ export default function EarningsPage() {
               ))}
             </div>
 
+            {/* Say what the total is before someone assumes it's everything. Right
+                now it's Creator Connections plus Sponsored Products. Associates
+                commissions and bounties come from a separate endpoint that still
+                answers 401, so they are absent, and absent has to be visible. */}
+            <p className="text-[11px] -mt-1" style={muted}>
+              Counts Creator Connections and Sponsored Products, onsite and offsite. Associates commissions and bounties are not in this figure yet: Amazon serves those from a different report that SCOUT cannot read in your session, so leaving them out is more honest than guessing at them.
+            </p>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="card p-4">
                 <p className="text-[12px] font-semibold mb-2 inline-flex items-center gap-1.5" style={label}><Store size={14} /> Onsite</p>
@@ -228,7 +252,21 @@ export default function EarningsPage() {
             </div>
 
             <div className="card p-5">
-              <h2 className="text-sm font-semibold mb-3" style={label}>By month</h2>
+              <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                <h2 className="text-sm font-semibold" style={label}>By month</h2>
+                {quietCount > 0 || showQuiet ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowQuiet(v => !v)}
+                    className="text-[12px] underline underline-offset-2"
+                    style={muted}
+                  >
+                    {showQuiet
+                      ? 'Hide the rows where Amazon reported all zeros'
+                      : `Show ${quietCount} row${quietCount === 1 ? '' : 's'} where Amazon reported all zeros`}
+                  </button>
+                ) : null}
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[13px]">
                   <thead>
@@ -242,7 +280,7 @@ export default function EarningsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {byMonth.map(m => rows.filter(r => r.period_start === m).map((r, i) => (
+                    {byMonth.map(m => shown.filter(r => r.period_start === m).sort((a, b) => rowRank(a) - rowRank(b)).map((r, i) => (
                       <tr key={`${m}-${r.stream}-${r.store_id}`} className="border-t" style={{ borderColor: 'var(--border)' }}>
                         <td className="py-2 pr-3" style={label}>
                           {i === 0 ? new Date(`${m}T00:00:00Z`).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }) : ''}
@@ -260,7 +298,7 @@ export default function EarningsPage() {
                 </table>
               </div>
               <p className="text-[11px] mt-3" style={muted}>
-                Figures come from Amazon&apos;s own reporting calls, so they should match what you see on Amazon for the same month and store. Where a cell reads &ldquo;not reported&rdquo;, Amazon returned nothing for that metric, which is not the same as zero.
+                Figures come from Amazon&apos;s own reporting calls, so they should match what you see on Amazon for the same month and store. Where a cell reads &ldquo;not reported&rdquo;, Amazon returned nothing for that metric, which is not the same as zero. Rows where Amazon answered with all zeros are folded away by the link above rather than deleted.
               </p>
             </div>
 
