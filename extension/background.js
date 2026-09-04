@@ -4038,7 +4038,7 @@ async function harvestCreatorHubVideosInPage(opts) {
 // pagination key is discovered from the response.
 function fetchContentListInPage(rec) {
   return (async () => {
-    const out = { items: [], pages: 0, error: null, sample: null, total: null }
+    const out = { items: [], pages: 0, error: null, sample: null, total: null, pageKey: null, queryKeys: null }
     const ASIN_RE = /^[A-Z0-9]{10}$/
     // Every object anywhere in the payload that carries an ASIN under an
     // asin-named key. Shape-agnostic on purpose: we have not seen this response.
@@ -4113,6 +4113,7 @@ function fetchContentListInPage(rec) {
     // Learned from the captured URL and the first response, never assumed.
     let tokenKey = null
     let pageKey = null
+    try { out.queryKeys = [...new URL(rec.url, location.href).searchParams.keys()].join(', ') } catch (e) {}
     try {
       const u0 = new URL(rec.url, location.href)
       for (const k of u0.searchParams.keys()) {
@@ -4131,8 +4132,8 @@ function fetchContentListInPage(rec) {
         if (i > 0) {
           if (token) {
             u.searchParams.set(tokenKey || 'nextToken', token)
-          } else {
-            u.searchParams.set(pageKey || 'page', String(page))
+          } else if (pageKey) {
+            u.searchParams.set(pageKey, String(page))
           }
         }
         const init = {
@@ -4203,8 +4204,57 @@ function fetchContentListInPage(rec) {
         }
         seek(j, 0)
         if (next && next !== token) token = next
-        else if (pageKey) { token = null; page++ }
-        else { out.error = out.error || 'no pagination in the response'; break }
+        else if (pageKey) {
+          token = null
+          page += /^(page|pageNumber|pageIndex)$/i.test(pageKey) ? 1 : (j && Array.isArray(j.result) ? j.result.length : 10)
+        }
+        else {
+          // No cursor in the response and no page parameter in the captured URL,
+          // yet Amazon says there are thousands of records. So find the parameter
+          // by experiment rather than by another round of asking: ask for a
+          // window past the first page under each plausible name and keep
+          // whichever one actually returns different records.
+          const firstAci = (() => {
+            try { return (j.result[0].contentDetail || {}).mediaACI || null } catch (e) { return null }
+          })()
+          const size = (() => { try { return j.result.length || 10 } catch (e) { return 10 } })()
+          const candidates = ['startIndex', 'offset', 'start', 'from', 'skip', 'page', 'pageNumber', 'pageIndex']
+          let learned = null
+          for (const key of candidates) {
+            try {
+              const t = new URL(rec.url, location.href)
+              // Index-style keys take a row offset, page-style keys take 2.
+              t.searchParams.set(key, /^(page|pageNumber|pageIndex)$/i.test(key) ? '2' : String(size))
+              const probe = await fetch(t.toString(), {
+                method: rec.method || 'GET', credentials: 'include',
+                headers: rec.headers && Object.keys(rec.headers).length ? rec.headers : { accept: 'application/json' },
+                signal: AbortSignal.timeout(20000),
+              })
+              if (!probe.ok) continue
+              const pj = await probe.json().catch(() => null)
+              const a2 = (() => {
+                try { return (pj.result[0].contentDetail || {}).mediaACI || null } catch (e) { return null }
+              })()
+              // Different first record means the window moved. Same record means
+              // the parameter was ignored, which is not an error, just a no.
+              if (a2 && firstAci && a2 !== firstAci) {
+                learned = key
+                readVideos(pj, videos)
+                break
+              }
+            } catch (e) { /* try the next candidate */ }
+            await new Promise((r) => setTimeout(r, 200))
+          }
+          if (!learned) {
+            out.error = `no pagination: response carries no cursor and none of ${candidates.join(', ')} moved the window`
+            break
+          }
+          pageKey = learned
+          out.pageKey = learned
+          // Index-style keys count rows, page-style keys count pages.
+          page = /^(page|pageNumber|pageIndex)$/i.test(learned) ? 3 : size * 2
+          token = null
+        }
         await new Promise((r) => setTimeout(r, 250))
       }
     } catch (e) {
@@ -4303,9 +4353,9 @@ async function scanCreatorHubVideosBackground(userUrl) {
             pages: a.pages || 0,
             partial: short,
             stopped: a.error
-              ? `list API stopped: ${a.error}`
+              ? `list API stopped: ${a.error}${a.queryKeys ? `. The captured request's parameters were: ${a.queryKeys}` : ''}`
               : short ? `Amazon reports ${a.total.toLocaleString()} videos and we read ${a.videos.length.toLocaleString()}` : 'end',
-            source: "Amazon's own video list",
+            source: a.pageKey ? `Amazon's own video list (paging by ${a.pageKey})` : "Amazon's own video list",
             error: (pushed && pushed.ok) ? undefined : (pushed && pushed.error),
           }
         }
