@@ -3622,13 +3622,30 @@ async function harvestCreatorHubVideosInPage(opts) {
   // ASINs on the current page: data-asin attrs, /dp//product/ links, and bare
   // B0-style tokens (Creator Hub rows reference the ASIN even when they show a
   // video title). Paired with the nearest row title where we can find one.
+  // Regions that hold products the creator did not put there: the cart sidebar
+  // (ewc), the classic cart, and recommendation carousels. Their ASINs are real
+  // products and they are nothing to do with this creator's videos, which is how
+  // an ice maker and a mattress topper ended up filed as their library.
+  const CART_SKIP = '#ewc,[id^=ewc],[class*=ewc-],#sc-active-cart,[class*=sc-list-item],[data-name="Active Items"],#nav-cart,#nav-flyout-ewc,[data-testid*=recommend],[class*=recommend],[id*=similarities],[class*=carousel]'
+  const inSkippedRegion = (el) => {
+    try { return !!(el && el.closest && el.closest(CART_SKIP)) } catch (e) { return false }
+  }
+  // A cart link says so in its ref token. This is taken from the live page, not
+  // guessed: ref=ewc_pr_img_1 and ref=ewc_title_delete1 are what the sidebar
+  // renders.
+  const isCartHref = (h) => /[?&#]|\/ref=/.test(h) && /ref=ewc|sc_product|\/gp\/cart/i.test(h)
+
   function collect(into) {
     document.querySelectorAll('[data-asin]').forEach((el) => {
+      if (inSkippedRegion(el)) return
       const a = (el.getAttribute('data-asin') || '').trim().toUpperCase()
       if (/^[A-Z0-9]{10}$/.test(a)) into.set(a, into.get(a) || rowTitle(el))
     })
     document.querySelectorAll('a[href*="/dp/"], a[href*="/product/"]').forEach((a) => {
-      const m = (a.getAttribute('href') || '').match(/\/(?:dp|product)\/([A-Z0-9]{10})/)
+      if (inSkippedRegion(a)) return
+      const href = a.getAttribute('href') || ''
+      if (isCartHref(href)) return
+      const m = href.match(/\/(?:dp|product)\/([A-Z0-9]{10})/)
       if (m && !into.has(m[1].toUpperCase())) into.set(m[1].toUpperCase(), rowTitle(a))
     })
     // Raw ASIN tokens out of the page HTML are the last resort, not the first.
@@ -3639,7 +3656,16 @@ async function harvestCreatorHubVideosInPage(opts) {
     // is built in a way we do not understand rather than a page full of products
     // we are about to mislabel.
     if (into.size >= 5) return
-    const html = document.body.innerHTML
+    // Same rule for the fallback: strip the cart and carousel regions out of the
+    // HTML before scanning it, or the last resort quietly re-imports exactly what
+    // the structured passes were careful to skip.
+    let root = document.body
+    try {
+      const clone = document.body.cloneNode(true)
+      clone.querySelectorAll(CART_SKIP).forEach((n) => { try { n.remove() } catch (e) {} })
+      root = clone
+    } catch (e) {}
+    const html = root.innerHTML
     const re = /\b(B0[0-9A-Z]{8})\b/g; let mm
     while ((mm = re.exec(html)) !== null) { const a = mm[1].toUpperCase(); if (!into.has(a)) into.set(a, null) }
   }
@@ -3824,13 +3850,15 @@ async function harvestCreatorHubVideosInPage(opts) {
   // collector takes any B0 token in the page HTML, so on the wrong page it
   // returns confident nonsense that then gets written to the database as fact.
   // A scraper with no idea where it is standing is worse than no scraper.
+  // Only the cart PAGE is refused, and only by its URL, which cannot be wrong.
+  //
+  // The previous check looked for cart-like markup anywhere on the page and so
+  // refused Manage content, because Amazon renders its cart sidebar (ewc) on it.
+  // A cart widget on a page is not a cart page. The fix for a cart widget is to
+  // skip it, which is what CART_SKIP below does, not to throw away the page it
+  // sits on.
   function looksLikeCart() {
-    try {
-      const t = (document.body ? document.body.innerText : '').slice(0, 4000).toLowerCase()
-      if (/subtotal|proceed to checkout|shopping cart|added to cart/.test(t)) return true
-      if (document.querySelector('[class*=sc-product-link],[data-name="Active Items"],#sc-active-cart')) return true
-    } catch (e) {}
-    return false
+    try { return /\/(gp\/)?cart|\/gp\/aws\/cart/i.test(location.pathname) } catch (e) { return false }
   }
   // There was a looksLikeVideoList() heuristic here and it was the bug. It
   // rejected Manage content, a page carrying 1,320 ASINs and 358 rows, because
