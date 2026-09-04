@@ -202,10 +202,10 @@ export default function EarningsPage() {
       // complete answer from a stalled crawl, and the first reading is that MVP
       // is wrong about their library.
       if (r.partial || (r.stopped && r.stopped !== 'end')) {
-        setVideoScan(`Read ${(r.count ?? 0).toLocaleString()} products across ${(r.pages ?? 0).toLocaleString()} pages, then stopped: ${r.stopped || 'ran out of time'}.${r.source ? ` Read from ${r.source}.` : ''} If your library is larger than that, run it again and the products already found are kept.${r.pagerSeen?.length ? ` Pager controls seen: ${r.pagerSeen.join(' | ')}.` : ''}${r.apiCalls?.length ? ` Amazon endpoints seen: ${r.apiCalls.join(', ')}` : ''}`)
+        setVideoScan(`Read ${(r.count ?? 0).toLocaleString()} products across ${(r.pages ?? 0).toLocaleString()} pages, then stopped: ${r.stopped || 'ran out of time'}.${r.source ? ` Read from ${r.source}.` : ''}${r.scoutVersion ? ` SCOUT ${r.scoutVersion}.` : ''} If your library is larger than that, run it again and the products already found are kept.${r.pagerSeen?.length ? ` Pager controls seen: ${r.pagerSeen.join(' | ')}.` : ''}${r.apiCalls?.length ? ` Amazon endpoints seen: ${r.apiCalls.join(', ')}` : ''}`)
         toast(`Read ${(r.count ?? 0).toLocaleString()} products so far. The crawl stopped early.`)
       } else {
-        setVideoScan(`Read ${(r.count ?? 0).toLocaleString()} products with a video on Amazon, across ${(r.pages ?? 0).toLocaleString()} pages${r.source ? `, via Amazon's ${r.source}` : ''}.`)
+        setVideoScan(`Read ${(r.count ?? 0).toLocaleString()} videos across ${(r.pages ?? 0).toLocaleString()} pages${r.source ? `, via ${r.source}` : ''}.${r.scoutVersion ? ` SCOUT ${r.scoutVersion}.` : ''}`)
         toast.success(`Found ${(r.count ?? 0).toLocaleString()} products with a video on Amazon.`)
       }
       void load()

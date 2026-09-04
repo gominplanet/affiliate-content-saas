@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.85'
+export const SCOUT_LATEST_VERSION = '1.17.86'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Picks up your video library where the last run stopped and keeps going, instead of restarting and timing out in the same place.'
+  'Stamps every scan result with the SCOUT build that produced it, so a stale extension is obvious rather than confusing.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

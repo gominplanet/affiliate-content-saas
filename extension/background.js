@@ -4532,6 +4532,10 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
           const short = Number.isFinite(a.total) && a.videos.length < a.total
           return {
             ok: !!(pushed && pushed.ok),
+            // Which SCOUT produced this. Two rounds were spent reading a panel
+            // from a build that had not been reloaded, and every reported number
+            // is meaningless without knowing which code wrote it.
+            scoutVersion: (chrome.runtime.getManifest() || {}).version || null,
             count: a.videos.length,
             pages: a.pages || 0,
             partial: short,
@@ -4572,7 +4576,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
       // page yields the cart flyout and has written an ice maker into this
       // creator's video library three times today. Returning nothing is the
       // correct outcome; writing something wrong is not.
-      return { ok: false, error: 'list-api-empty', probe: apiNote, source: "Amazon's own list API" }
+      return { ok: false, error: 'list-api-empty', probe: apiNote, source: "Amazon's own list API", scoutVersion: (chrome.runtime.getManifest() || {}).version || null }
     }
 
     // allFrames, because an Amazon console panel is often an iframe and the main
@@ -4652,6 +4656,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
     } catch (e) {}
     return {
       ok: !!(push && push.ok),
+      scoutVersion: (chrome.runtime.getManifest() || {}).version || null,
       count: asins.length,
       partial: !!r.partial,
       pages: r.pages || 0,
