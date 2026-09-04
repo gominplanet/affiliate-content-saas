@@ -32,96 +32,102 @@ Two gaps, and only two. Every render is **one source in, one file out**, so ther
 is no way to join clips. And nothing looks at a video that has no speech, so
 silent B-roll is invisible to any planner.
 
-## Pipeline
+## Build on Descript's API, do not build an editor
+
+Descript exposes an API that covers the entire editing half of this, and it is
+better than anything we would write. Verified against their docs, September 2026:
+
+| Endpoint | What it gives us |
+|---|---|
+| `POST /jobs/import/project_media` | Import from a URL or upload, transcribed automatically |
+| `add_compositions` on that import | Multitrack sequences: several clips assembled into one timeline |
+| `POST /jobs/agent` | Prompt-driven editing: remove filler words, cut a named range, add captions |
+| `POST /jobs/publish` | Renders the composition and returns `share_url`, `download_url` (signed, time limited) and `download_url_expires_at` |
+| `GET /jobs/{job_id}` | Poll a background job to completion |
+
+That `download_url` is the piece that matters. It is a real rendered media file,
+which means the finished video can be stored by MVP and handed to Launchpad
+exactly like any other rendered video today.
+
+**One contradiction worth recording.** Descript's marketing page still says
+"direct media file exports are not supported yet. You'll need to do this manually
+in Descript for now." Their API reference says publish returns a signed
+`download_url`. The docs are the newer and more specific of the two, but this is
+the single assumption the whole design rests on, so **verify it with one real
+publish job before building anything on top of it.**
+
+### What this changes
+
+The two gaps in the previous version of this plan were a timeline renderer and
+multi-file assembly. Descript supplies both. We do not build `/render-timeline`,
+we do not maintain an FFmpeg filter graph for concat and overlays, and we do not
+compete on cut quality with a company that has spent years on it.
+
+### What stays ours
+
+Everything Descript has no reason to know:
+
+- **The product.** ASIN or link to title, image, price, and the commission data
+  MVP already reads. Descript does not know what the video is selling.
+- **Which B-roll goes where.** Descript can assemble a timeline we specify. It
+  cannot know that the shot at 0:14 of the second file is the product close-up
+  that belongs under the sentence about build quality. That needs the keyframe
+  description pass, and it is the one piece of understanding still worth building.
+- **The CTA and the thumbnail.** Already built, product-aware, ours.
+- **Publishing.** Launchpad, YouTube, the storefront, Creator Connections. The
+  reason a creator is here rather than in Descript alone.
+
+### Pipeline
 
 ```
 upload files + ASIN
       ↓
-understand each file        (per file, cached)
+describe each file          (keyframes → what the shot contains)   ← ours
       ↓
-agent writes an EDL         (one JSON document)
+plan the edit               (product + transcripts + descriptions)  ← ours
       ↓
-creator adjusts             (titles, keep/cut, CTA)
+import + compositions       (Descript)
       ↓
-render                      (one FFmpeg pass)
+agent: cuts, filler, captions (Descript)
       ↓
-download link + Launchpad
+publish → download_url      (Descript)
+      ↓
+store, CTA, thumbnail        ← ours
+      ↓
+download link + Launchpad    ← ours
 ```
 
-### Understand
+### Risks to settle before committing
 
-Per file, once, cached on the row.
-
-**Files with speech.** Whisper with word-level timestamps, which MVP already
-produces. That transcript is what makes cutting mistakes possible.
-
-**Files without speech, and B-roll generally.** A handful of keyframes through a
-vision model, returning one sentence of what the shot contains, whether the
-product is on screen, and whether it is usable (not a black frame, not a shaky
-pan). This is the step MVP has never had, and it is what makes "insert B-roll
-that makes sense in context" a real feature rather than random insertion.
-
-**The product.** ASIN or link resolves to title, image and price, and that goes
-into the agent's context. It is what lets a title card name the product properly
-and the agent recognise when the speaker is talking about a specific feature.
-
-### The agent
-
-Input: every transcript with timings, every B-roll description, the product.
-Output: an **edit decision list**, one JSON document. Ordered segments with the
-source file and in/out points, plus overlays with their own time windows.
-
-What it decides:
-
-**Cuts.** Retakes are the valuable one and they are findable: the same sentence
-said twice in a row means the second is the keeper. Also false starts, long
-silences, and filler runs. All of these fall out of a word-level transcript, so
-the agent is reasoning over text, not video, which keeps it cheap and reviewable.
-
-**B-roll placement.** Match a B-roll description to the moment the words are about
-that thing, and cut to it for a few seconds. The transcript gives the moment, the
-vision description gives the match.
-
-**Titles.** Optional, off by default. A title card at the opening and a lower
-third when a new point starts, worded from the transcript and the product name.
-
-Everything it proposes is in a document the creator reads before a frame is
-rendered. That is deliberate: it is what stops an "AI editor" from being a black
-box that either delights or ruins, with no middle.
-
-### Render
-
-Add `/render-timeline` to the ingest service, taking the EDL. It already has
-FFmpeg and libass, which covers concat, overlays and an audio bed. One endpoint,
-one pass. Chaining a render per overlay would multiply both cost and time.
-
-This will not fit in a 300s serverless function, so it needs the `ig_burn_jobs`
-pattern: a jobs table, a cron worker claiming one row per tick, progress on the
-row, the UI polling. That pattern is proven here and the storefront progress bars
-already show the right UX for a long job.
-
-### Output
-
-A download link, and a **Send to Launchpad** button. Launchpad is already keyed on
-a video URL plus ASIN, duration and title, all of which this pipeline has by the
-time it finishes, so the handoff is a seam that already exists rather than new
-integration work.
+1. **The export.** Run one publish job end to end and confirm a real MP4 comes
+   back. Everything depends on it, and their own marketing contradicts it.
+2. **Whose account, and what it costs.** Usage draws from AI credits and media
+   minutes on a Descript plan. Decide early whether MVP holds one account and
+   absorbs per-minute cost, or each creator connects their own. This is a pricing
+   decision, not a technical one, and it shapes the feature.
+3. **Determinism.** `/jobs/agent` is prompt driven. Prompt-driven editing is
+   convenient and it is not repeatable. Test whether the same input twice gives
+   the same cut, and design the review step assuming it might not.
+4. **Beta.** The API is in early access. Rate limits, stability and breaking
+   changes are all live risks for something a paying creator depends on.
 
 ## Build order
 
-**Phase 1: cut the mistakes.** One talking-head file, no B-roll. Upload,
-transcribe, agent proposes cuts, creator sees the list and toggles any of them,
-render the joined result. This alone is the thing creators hate doing, it needs
-only `/render-timeline` plus the agent, and it is worth shipping on its own.
+**Phase 0: prove the export.** One import, one agent call, one publish, one MP4
+downloaded. A day at most. Everything else is wasted if this does not work.
 
-**Phase 2: B-roll.** Multiple files, the vision pass, contextual insertion.
+**Phase 1: cut a single talking head.** Upload one file plus the ASIN, import to
+Descript, agent removes filler and flubs, publish, download link. No B-roll, no
+titles. Ships on its own and is the hour creators want back.
 
-**Phase 3: titles and CTA.** Title card, lower thirds, the affiliate CTA end card
-burned from the product. Most of this already exists in `renderCta` and mainly
-needs wiring into the EDL.
+**Phase 2: B-roll.** Multiple files, our keyframe description pass, our matching
+of shot to sentence, assembled via `add_compositions`.
 
-**Phase 4: Launchpad handoff.** Small, and deliberately last: it is worthless
-until the output is good.
+**Phase 3: titles and CTA.** Captions through the agent; the affiliate CTA end
+card through `renderCta`, which is already product-aware and already ours.
+
+**Phase 4: Launchpad handoff.** Small, and last: worthless until the output is
+good.
 
 ## Honest limits, to state in the product
 
