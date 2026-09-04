@@ -58,6 +58,18 @@ const STREAM_RANK: Record<string, number> = { cc: 0, epc: 1, commissions: 2, bou
 const rowRank = (r: Row) =>
   (STREAM_RANK[r.stream] ?? 9) * 10 + (r.store_scope === 'onsite' ? 0 : 1)
 
+/** Add up a month's rows the same way the page totals do: a null is skipped, and
+ *  if every value for a metric was null the sum stays null rather than becoming a
+ *  zero that Amazon never reported. */
+function sumRows(rs: Row[]) {
+  const add = (pick: (r: Row) => number | null) => {
+    let total = 0, seen = false
+    for (const r of rs) { const v = pick(r); if (v == null) continue; total += v; seen = true }
+    return seen ? total : null
+  }
+  return { clicks: add(r => r.clicks), orders: add(r => r.orders), earningsCents: add(r => r.earnings_cents) }
+}
+
 /** True when Amazon answered for this row but every figure in it was zero. That's
  *  a real answer ("nothing happened here"), not a missing one, so it's hidden by
  *  default and counted rather than dropped. */
@@ -280,20 +292,43 @@ export default function EarningsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {byMonth.map(m => shown.filter(r => r.period_start === m).sort((a, b) => rowRank(a) - rowRank(b)).map((r, i) => (
-                      <tr key={`${m}-${r.stream}-${r.store_id}`} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                        <td className="py-2 pr-3" style={label}>
-                          {i === 0 ? new Date(`${m}T00:00:00Z`).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }) : ''}
-                        </td>
-                        <td className="py-2 pr-3" style={muted}>{STREAM_LABEL[r.stream] || r.stream}</td>
-                        <td className="py-2 pr-3" style={muted}>
-                          {r.store_scope || '—'} <span className="font-mono text-[11px]">{r.store_id}</span>
-                        </td>
-                        <td className="py-2 pr-3 text-right tabular-nums" style={muted}>{num(r.clicks)}</td>
-                        <td className="py-2 pr-3 text-right tabular-nums" style={muted}>{num(r.orders)}</td>
-                        <td className="py-2 text-right tabular-nums font-medium" style={label}>{money(r.earnings_cents)}</td>
-                      </tr>
-                    )))}
+                    {byMonth.map(m => {
+                      // Every row for the month, sorted, INCLUDING the all-zero ones
+                      // even when they're folded away. The subtotal has to be the
+                      // month's real total, not the total of what's on screen.
+                      const monthRows = rows.filter(r => r.period_start === m)
+                      const visible = shown.filter(r => r.period_start === m).sort((a, b) => rowRank(a) - rowRank(b))
+                      const sub = sumRows(monthRows)
+                      return [
+                        ...visible.map((r, i) => (
+                          <tr key={`${m}-${r.stream}-${r.store_id}`} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                            <td className="py-2 pr-3" style={label}>
+                              {i === 0 ? new Date(`${m}T00:00:00Z`).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }) : ''}
+                            </td>
+                            <td className="py-2 pr-3" style={muted}>{STREAM_LABEL[r.stream] || r.stream}</td>
+                            <td className="py-2 pr-3" style={muted}>
+                              {r.store_scope || 'unknown'} <span className="font-mono text-[11px]">{r.store_id}</span>
+                            </td>
+                            <td className="py-2 pr-3 text-right tabular-nums" style={muted}>{num(r.clicks)}</td>
+                            <td className="py-2 pr-3 text-right tabular-nums" style={muted}>{num(r.orders)}</td>
+                            <td className="py-2 text-right tabular-nums font-medium" style={label}>{money(r.earnings_cents)}</td>
+                          </tr>
+                        )),
+                        // Amazon's own page shows onsite and offsite added together
+                        // whenever Store is set to All. This row is that same sum, so
+                        // the two screens can be compared without doing the addition
+                        // in your head.
+                        <tr key={`${m}-total`} className="border-t" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+                          <td className="py-2 pr-3" />
+                          <td className="py-2 pr-3 font-semibold" style={label} colSpan={2}>
+                            Month total, onsite plus offsite
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums font-semibold" style={label}>{num(sub.clicks)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums font-semibold" style={label}>{num(sub.orders)}</td>
+                          <td className="py-2 text-right tabular-nums font-bold" style={label}>{money(sub.earningsCents)}</td>
+                        </tr>,
+                      ]
+                    })}
                   </tbody>
                 </table>
               </div>
