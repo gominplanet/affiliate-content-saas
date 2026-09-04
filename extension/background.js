@@ -1968,7 +1968,7 @@ function earningsFetchInPage(params) {
         else if (!next || next === token) break
         else token = next
         if (!next && !offsetKey) break
-        await new Promise((r) => setTimeout(r, 200))
+        await new Promise((r) => setTimeout(r, 80))
       }
       // The same ASIN appears once per day inside a month, so fold the days up.
       const byAsin = new Map()
@@ -4423,7 +4423,10 @@ function fetchContentListInPage(rec) {
           pageSize = size
           token = null
         }
-        await new Promise((r) => setTimeout(r, 120))
+        // 120ms between pages was caution with no evidence behind it. Amazon
+        // answers a 100 row page in well under a second, so this is now a
+        // courtesy gap rather than a brake.
+        await new Promise((r) => setTimeout(r, 60))
       }
     } catch (e) {
       out.error = (e && e.message) || String(e)
