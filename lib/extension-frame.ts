@@ -192,6 +192,7 @@ export interface EarningsSyncStatus {
     reportCalls?: string[]
     recipe?: string
     groupBy?: string
+    groupByOptions?: string | null
     /** Product rows MVP could not file, and why. From 2026-09-09 Amazon groups
      *  low-activity products under "Others", which carries no ASIN, so this is
      *  the number that says how much of the breakdown is being lost. */

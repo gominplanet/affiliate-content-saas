@@ -223,6 +223,7 @@ export default function EarningsPage() {
                 Reporting endpoints the page called: {sync.diag.reportCalls?.length ? sync.diag.reportCalls.join(', ') : 'none seen'}
                 {sync.diag.recipe ? `. Replaying for products: ${sync.diag.recipe}` : ''}
                 {sync.diag.groupBy ? `. Group by switch: ${sync.diag.groupBy}` : ''}
+                {sync.diag.groupByOptions ? `. Menu offered: ${sync.diag.groupByOptions}` : ''}
               </p>
             )}
             {!!sync.diag?.skipped && (
@@ -239,7 +240,7 @@ export default function EarningsPage() {
                     {Object.entries(sync.diag.mapping).map(([k, v]) => `${k}: ${v || 'not found'}`).join(', ')}
                   </p>
                 )}
-                <pre className="mt-1 p-2 rounded overflow-x-auto text-[10px]" style={{ background: 'var(--surface-2)' }}>{sync.diag.sample}</pre>
+                <pre className="mt-1 p-2 rounded text-[10px] whitespace-pre-wrap break-all max-h-64 overflow-y-auto" style={{ background: 'var(--surface-2)' }}>{sync.diag.sample}</pre>
               </details>
             )}
             {sync.diag?.assoc && (

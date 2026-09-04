@@ -1709,6 +1709,47 @@ function earningsFetchInPage(params) {
     // the key mapping come back in `sample`/`mapping` so the mapping can be
     // checked against Amazon rather than believed.
     const ASIN_RE = /^[A-Z0-9]{10}$/
+    // Amazon's reporting responses are not always a list of objects. This one
+    // answered 200 with a table: a column list plus rows as bare arrays. Zip them
+    // back into objects by column name so the same field-name mapping works on
+    // either shape, rather than walking past a perfectly good answer.
+    const zipTable = (root) => {
+      const q = [root]
+      let steps = 0
+      while (q.length && steps++ < 20000) {
+        const n = q.shift()
+        if (!n || typeof n !== 'object') continue
+        if (Array.isArray(n)) { for (const x of n) q.push(x); continue }
+        let cols = null
+        let rows = null
+        for (const k in n) {
+          const v = n[k]
+          if (!Array.isArray(v) || !v.length) continue
+          // Column definitions: strings, or objects carrying a name-ish field.
+          if (!cols && v.every((x) => typeof x === 'string')) cols = v.slice()
+          else if (!cols && v.every((x) => x && typeof x === 'object' && !Array.isArray(x))) {
+            const named = v.map((x) => {
+              for (const kk of Object.keys(x)) {
+                if (/name|label|key|column|field|id$/i.test(kk) && typeof x[kk] === 'string') return x[kk]
+              }
+              return null
+            })
+            if (named.every(Boolean)) cols = named
+          }
+          if (!rows && v.every((x) => Array.isArray(x))) rows = v
+        }
+        if (cols && rows && rows.length && rows[0].length === cols.length) {
+          return rows.map((r) => {
+            const o = {}
+            for (let i = 0; i < cols.length; i++) o[cols[i]] = r[i]
+            return o
+          })
+        }
+        for (const k in n) q.push(n[k])
+      }
+      return null
+    }
+
     const findRecords = (root) => {
       const q = [root]
       let steps = 0
@@ -1786,9 +1827,15 @@ function earningsFetchInPage(params) {
       if (!res) return { ok: false, status: lastErr || 'no response' }
       if (!res.ok) return { ok: false, status: res.status }
       const j = await res.json().catch(() => null)
-      const recs = j ? findRecords(j) : null
+      let recs = j ? findRecords(j) : null
       if (!recs || !recs.length) {
-        if (!out.sample) out.sample = `no ASIN records in ${recipe.url}: ${JSON.stringify(j).slice(0, 900)}`
+        const zipped = j ? zipTable(j) : null
+        if (zipped && zipped.length && zipped.some((r) => Object.keys(r).some((k) => /asin/i.test(k)))) recs = zipped
+      }
+      if (!recs || !recs.length) {
+        // Keep enough of the body to actually read the shape. 900 characters got
+        // us as far as "status: OK" and no further, which told us nothing.
+        if (!out.sample) out.sample = `no ASIN records in ${recipe.url}: ${JSON.stringify(j).slice(0, 4000)}`
         return { ok: true, items: [] }
       }
       const first = recs.find((x) => x && typeof x === 'object') || {}
@@ -1928,12 +1975,35 @@ function groupReportByProductInPage() {
 // Second half of the same move: pick the product option out of the menu the click
 // above opened.
 function pickProductOptionInPage() {
+  // The menu opened last time and this missed, so it now reports what it actually
+  // saw. An exact-match list of one word was too strict: Amazon labels these
+  // "Product", "ASIN", "Product (ASIN)" and similar, and the node holding the text
+  // is not always the clickable one.
+  const seen = []
   try {
-    const nodes = Array.from(document.querySelectorAll('li,[role="option"],[role="menuitem"],button,a,span,div'))
-    const hit = nodes.find((n) => n.children.length === 0 && /^(asin|product|products|asins)$/i.test((n.textContent || '').trim()))
-    if (hit) { hit.click(); return true }
-  } catch (e) {}
-  return false
+    const nodes = Array.from(document.querySelectorAll('li,[role="option"],[role="menuitem"],[role="menuitemradio"],button,a,span,div,label'))
+    const candidates = []
+    for (const n of nodes) {
+      if (n.children.length > 2) continue
+      const t = (n.textContent || '').trim()
+      if (!t || t.length > 40) continue
+      seen.push(t)
+      if (/\b(asin|product)s?\b/i.test(t)) candidates.push(n)
+    }
+    // Deepest match wins: an outer wrapper repeating the same text swallows the
+    // click without selecting anything.
+    candidates.sort((a, b) => b.children.length - a.children.length)
+    const hit = candidates.pop()
+    if (hit) {
+      hit.click()
+      // Some menus only commit on the parent row.
+      if (hit.parentElement && hit.parentElement !== document.body) { try { hit.parentElement.click() } catch (e) {} }
+      return { picked: (hit.textContent || '').trim().slice(0, 40), options: Array.from(new Set(seen)).slice(0, 25).join(' | ').slice(0, 400) }
+    }
+  } catch (e) {
+    return { picked: null, options: `error: ${(e && e.message) || e}` }
+  }
+  return { picked: null, options: Array.from(new Set(seen)).slice(0, 25).join(' | ').slice(0, 400) }
 }
 
 // Push a batch to MVP from the worker (it holds the mvpaffiliate.io cookie).
@@ -2064,11 +2134,18 @@ async function syncAmazonEarnings(opts) {
     try {
       const g = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: groupReportByProductInPage })
       const how = (g && g[0] && g[0].result) || null
+      let picked = null
       if (how && how.how === 'opened') {
-        await _sleep(700)
-        await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: pickProductOptionInPage })
+        await _sleep(900)
+        const pr = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: pickProductOptionInPage })
+        picked = (pr && pr[0] && pr[0].result) || null
       }
       job.diag.groupBy = how ? `${how.how}${how.label ? ` (${how.label})` : ''}` : 'not attempted'
+      if (picked) {
+        job.diag.groupBy += picked.picked ? `, picked "${picked.picked}"` : ', picked nothing'
+        // What the menu offered. When the pick misses, this is what says why.
+        job.diag.groupByOptions = picked.options || null
+      }
     } catch (e) {
       job.diag.groupBy = `failed: ${(e && e.message) || e}`
     }
