@@ -4047,7 +4047,7 @@ async function harvestCreatorHubVideosInPage(opts) {
 // pagination key is discovered from the response.
 function fetchContentListInPage(rec) {
   return (async () => {
-    const out = { items: [], pages: 0, error: null, sample: null, total: null, pageKey: null, queryKeys: null }
+    const out = { items: [], pages: 0, error: null, sample: null, total: null, pageKey: null, queryKeys: null, sizeKey: null }
     const ASIN_RE = /^[A-Z0-9]{10}$/
     // Every object anywhere in the payload that carries an ASIN under an
     // asin-named key. Shape-agnostic on purpose: we have not seen this response.
@@ -4123,6 +4123,8 @@ function fetchContentListInPage(rec) {
     let tokenKey = null
     let pageKey = null
     let bodyKey = null
+    let sizeKey = null
+    let pageSize = 10
     try {
       const qk = [...new URL(rec.url, location.href).searchParams.keys()]
       out.queryKeys = `${(rec.method || 'GET').toUpperCase()}${rec.body ? ' with a body' : ' with no body'}, query keys: ${qk.length ? qk.join(', ') : 'none'}`
@@ -4136,7 +4138,13 @@ function fetchContentListInPage(rec) {
       if (pageKey) page = (parseInt(u0.searchParams.get(pageKey), 10) || 1) + 1
     } catch (e) {}
     try {
-      for (let i = 0; i < 200; i++) {
+      // 6,763 videos at ten a page is 677 requests. The cap has to clear that
+      // with room to spare, and a wall clock stops a runaway rather than a low
+      // page limit silently truncating the library, which is what "2,010 across
+      // 200 pages" was.
+      const started = Date.now()
+      for (let i = 0; i < 1500; i++) {
+        if (Date.now() - started > 240000) { out.error = 'ran out of time before the end of the library'; break }
         const u = new URL(rec.url, location.href)
         // The FIRST call is the page's own request, untouched. Adding parameters
         // an endpoint does not expect is how a working request becomes a 400, and
@@ -4172,6 +4180,7 @@ function fetchContentListInPage(rec) {
               }
               if (token && tokenKey) { if (!set(o, tokenKey, token)) o[tokenKey] = token }
               else if (bodyKey) { if (!set(o, bodyKey, page)) o[bodyKey] = page }
+              if (sizeKey) o[sizeKey] = pageSize
               b = JSON.stringify(o)
             } catch (e) { b = rec.body }
           }
@@ -4221,6 +4230,37 @@ function fetchContentListInPage(rec) {
         harvest(j, found)
         readVideos(j, videos)
         out.pages = i + 1
+
+        // Ten per page is Amazon's UI default, not a limit we have to accept.
+        // Try once for a bigger window: if it returns more records the whole
+        // crawl gets an order of magnitude shorter, and if it does not, nothing
+        // is lost but one request.
+        if (i === 0 && post && !sizeKey) {
+          const got = (j && Array.isArray(j.result)) ? j.result.length : 0
+          for (const k of ['pageSize', 'size', 'limit', 'count', 'maxResults', 'numberOfResults']) {
+            try {
+              const o = JSON.parse(rec.body)
+              o[k] = 100
+              const probe = await fetch(new URL(rec.url, location.href).toString(), {
+                method: rec.method || 'POST', credentials: 'include',
+                headers: rec.headers && Object.keys(rec.headers).length ? rec.headers : { accept: 'application/json' },
+                body: JSON.stringify(o),
+                signal: AbortSignal.timeout(25000),
+              })
+              if (!probe.ok) continue
+              const pj = await probe.json().catch(() => null)
+              const n = (pj && Array.isArray(pj.result)) ? pj.result.length : 0
+              if (n > got) {
+                sizeKey = k
+                pageSize = n
+                readVideos(pj, videos)
+                out.sizeKey = `${k}=${n}`
+                break
+              }
+            } catch (e) { /* try the next name */ }
+            await new Promise((r) => setTimeout(r, 150))
+          }
+        }
         // Stop when a page adds nothing. With a real cursor this is the end; with
         // page numbers it means we have run past the last one.
         if (found.size + videos.size === before) break
@@ -4241,7 +4281,7 @@ function fetchContentListInPage(rec) {
         else if (pageKey || bodyKey) {
           const k = pageKey || bodyKey
           token = null
-          page += /^(page|pageNumber|pageIndex)$/i.test(k) ? 1 : (j && Array.isArray(j.result) ? j.result.length : 10)
+          page += /^(page|pageNumber|pageIndex)$/i.test(k) ? 1 : (j && Array.isArray(j.result) ? j.result.length : pageSize)
         }
         else {
           // No cursor in the response and no page parameter in the captured URL,
@@ -4304,9 +4344,10 @@ function fetchContentListInPage(rec) {
           out.pageKey = `${learned}${learnedInBody ? ' (in the request body)' : ''}`
           // Index-style keys count rows, page-style keys count pages.
           page = isPageStyle(learned) ? 3 : size * 2
+          pageSize = size
           token = null
         }
-        await new Promise((r) => setTimeout(r, 250))
+        await new Promise((r) => setTimeout(r, 120))
       }
     } catch (e) {
       out.error = (e && e.message) || String(e)
@@ -4410,7 +4451,7 @@ async function scanCreatorHubVideosBackground(userUrl) {
             stopped: a.error
               ? `list API stopped: ${a.error}${a.queryKeys ? `. The captured request's parameters were: ${a.queryKeys}` : ''}`
               : short ? `Amazon reports ${a.total.toLocaleString()} videos and we read ${a.videos.length.toLocaleString()}` : 'end',
-            source: a.pageKey ? `Amazon's own video list (paging by ${a.pageKey})` : "Amazon's own video list",
+            source: `Amazon's own video list${a.pageKey ? ` (paging by ${a.pageKey}${a.sizeKey ? `, ${a.sizeKey} per page` : ''})` : ''}`,
             error: (pushed && pushed.ok) ? undefined : (pushed && pushed.error),
           }
         }
