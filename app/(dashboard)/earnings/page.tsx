@@ -139,6 +139,35 @@ export default function EarningsPage() {
           </div>
         )}
 
+        {/* Sync diagnostics render REGARDLESS of whether any rows landed. Putting
+            them behind "we have data" hid them at the only moment they matter. */}
+        {sync && (sync.diag?.stores?.length || sync.diag?.errors?.length || sync.error) && (
+          <div className="card p-4 space-y-2">
+            <p className="text-[12px] font-semibold" style={label}>Sync detail</p>
+            {sync.diag?.stores?.length ? (
+              <p className="text-[11px]" style={muted}>
+                Amazon stores found: {sync.diag.stores.join(', ')}
+              </p>
+            ) : sync.done ? (
+              <p className="text-[11px]" style={{ color: '#e0554b' }}>
+                No Amazon store ids could be read from the reporting page, so there was nothing to ask for.
+              </p>
+            ) : null}
+            {sync.error && <p className="text-[11px]" style={{ color: '#e0554b' }}>{sync.error}</p>}
+            {sync.diag?.errors?.length ? (
+              <ul className="text-[11px] space-y-0.5" style={muted}>
+                {sync.diag.errors.slice(0, 8).map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            ) : null}
+            {sync.diag?.assoc && (
+              <details className="text-[11px]" style={muted}>
+                <summary className="cursor-pointer">Associates response ({sync.diag.assoc.status})</summary>
+                <pre className="mt-1 p-2 rounded overflow-x-auto text-[10px]" style={{ background: 'var(--surface-2)' }}>{sync.diag.assoc.body?.slice(0, 1500)}</pre>
+              </details>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div className="card p-8 flex items-center justify-center gap-2 text-sm" style={muted}>
             <Loader2 size={16} className="animate-spin" /> Loading…
@@ -217,14 +246,6 @@ export default function EarningsPage() {
               </p>
             </div>
 
-            {sync?.diag?.errors && sync.diag.errors.length > 0 && (
-              <div className="card p-4">
-                <p className="text-[12px] font-semibold mb-1" style={label}>Some months did not come back</p>
-                <ul className="text-[11px] space-y-0.5" style={muted}>
-                  {sync.diag.errors.slice(0, 6).map((e, i) => <li key={i}>{e}</li>)}
-                </ul>
-              </div>
-            )}
           </>
         )}
       </div>

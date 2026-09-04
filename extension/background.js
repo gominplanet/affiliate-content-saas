@@ -1655,7 +1655,7 @@ function earningsFetchInPage(params) {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...(csrf ? { 'anti-csrftoken-a2z': csrf } : {}) },
         body: JSON.stringify({ aggregationOption: 'MONTH', reportType, filterOptions, searchOptions: null, sortOptions: null }),
-        signal: AbortSignal.timeout(45000),
+        signal: AbortSignal.timeout(20000),
       })
       if (!res.ok) return { ok: false, status: res.status }
       const j = await res.json().catch(() => null)
@@ -1770,12 +1770,22 @@ async function syncAmazonEarnings(opts) {
       const r = await chrome.scripting.executeScript({
         target: { tabId }, world: 'MAIN',
         func: () => {
+          // ANCHORED on the parameter name. An unanchored "word-NN" pattern
+          // matches half the stylesheet (col-12, mb-20, gap-16), and every one of
+          // those became a fake store we then fired four requests at per month.
           const ids = new Set()
+          const add = (v) => { if (v && /^(?:onamz)?[a-z0-9]{3,}-\d{2}$/i.test(v)) ids.add(v) }
           try {
             const html = document.documentElement.innerHTML
-            const re = /\b((?:onamz)?[a-z0-9]+-[0-9]{2})\b/gi
-            let m
-            while ((m = re.exec(html)) && ids.size < 12) ids.add(m[1])
+            const pats = [
+              /store_?id["'=:\s\]]{1,6}((?:onamz)?[a-z0-9]{3,}-\d{2})\b/gi,
+              /storeIds["'\s:\[]{1,8}((?:onamz)?[a-z0-9]{3,}-\d{2})\b/gi,
+              /[?&]tag=((?:onamz)?[a-z0-9]{3,}-\d{2})\b/gi,
+            ]
+            for (const re of pats) {
+              let m
+              while ((m = re.exec(html)) && ids.size < 8) add(m[1])
+            }
           } catch (e) {}
           return Array.from(ids)
         },
@@ -1793,7 +1803,7 @@ async function syncAmazonEarnings(opts) {
     } catch (e) { /* fall through */ }
     if (!stores.length) { job.error = 'could not read your Amazon store ids from the page'; job.done = true; return }
     // Cap it: a creator with several stores shouldn't fan out into hundreds of calls.
-    stores = stores.slice(0, 6)
+    stores = stores.slice(0, 4)
     job.diag = { stores: stores.map((s) => `${s.storeId}(${s.scope})`) }
 
     // A month at a time, pushing as we go, so a long backfill shows progress and
