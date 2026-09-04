@@ -1577,7 +1577,7 @@ function waitForTabLoad(tabId, ms) {
 // response shape is NOT yet known, so this fetches it and returns it RAW for
 // inspection rather than guessing at a mapping and storing invented numbers.
 const EARN_HOST = 'affiliate-program.amazon.com'
-const EARN_PAGE = `https://${EARN_HOST}/p/reporting/earnings`
+const EARN_PAGE = `https://${EARN_HOST}/p/connect/earnings`
 
 let _earnJob = null
 
@@ -1619,23 +1619,11 @@ function earningsFetchInPage(params) {
   return (async () => {
     const { months, stores, host } = params
     const out = { periods: [], assoc: [], errors: [] }
-    // Amazon's create/report APIs want the page's anti-csrftoken-a2z. Best effort:
-    // if we can't find one we still try, and the status is reported back so a 403
-    // is visible rather than silent.
-    const csrf = (() => {
-      try {
-        // First choice: the token the MAIN-world sniffer captured off the page's
-        // OWN request. Scraped tokens are a different generation and get a 401.
-        const sniffed = document.documentElement.getAttribute('data-mvp-a2z')
-        if (sniffed) return sniffed
-        const meta = document.querySelector('meta[name="anti-csrftoken-a2z"]')
-        if (meta && meta.content) return meta.content
-        const input = document.querySelector('input[name="anti-csrftoken-a2z"]')
-        if (input && input.value) return input.value
-        const m = document.documentElement.innerHTML.match(/anti-csrftoken-a2z["'\s:=]+([A-Za-z0-9+/=%-]{20,})/)
-        return m ? m[1] : null
-      } catch (e) { return null }
-    })()
+    // These endpoints carry NO csrf token. Auth is the same-origin session cookie
+    // plus a `storeid` header naming the creator's base store. The token we were
+    // guessing at was never the missing piece; the `storeid` header was, and that
+    // is what every 401 was telling us.
+    const baseStore = (stores.find((s) => s.scope === 'offsite') || stores[0] || {}).storeId || ''
 
     // The exact filterOptions shape the page sends. Sent verbatim (nulls included)
     // rather than trimmed, because an API that ignores unknown keys today can
@@ -1657,7 +1645,7 @@ function earningsFetchInPage(params) {
       filterOptions.storeIds = [storeId]
       const res = await fetch(`https://${host}/connect/api/report/earnings/summary`, {
         method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...(csrf ? { 'anti-csrftoken-a2z': csrf } : {}) },
+        headers: { 'Content-Type': 'application/json', 'accept': 'application/json', ...(baseStore ? { storeid: baseStore } : {}) },
         body: JSON.stringify({ aggregationOption: 'MONTH', reportType, filterOptions, searchOptions: null, sortOptions: null }),
         signal: AbortSignal.timeout(20000),
       })
@@ -1714,6 +1702,7 @@ function earningsFetchInPage(params) {
         q.set('store_id', st.storeId)
         const res = await fetch(`https://${host}/reporting/summary?${q.toString()}`, {
           credentials: 'include', signal: AbortSignal.timeout(45000),
+          headers: { accept: 'application/json', ...(baseStore ? { storeid: baseStore } : {}) },
         })
         const text = await res.text().catch(() => '')
         out.assoc.push({ url: `/reporting/summary?${q.toString()}`, status: res.status, body: text.slice(0, 4000) })
@@ -1765,29 +1754,6 @@ async function syncAmazonEarnings(opts) {
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     await _sleep(3500)
-    // The earnings APIs reject a request without Amazon's anti-csrftoken-a2z with
-    // a 401. The sniffer records the real one from the page's own calls, which
-    // fire on load, so wait for it rather than sending forty doomed requests.
-    let token = null
-    for (let i = 0; i < 20 && !token; i++) {
-      try {
-        const r = await chrome.scripting.executeScript({
-          target: { tabId }, world: 'MAIN',
-          func: () => document.documentElement.getAttribute('data-mvp-a2z'),
-        })
-        token = (r && r[0] && r[0].result) || null
-      } catch (e) { /* keep waiting */ }
-      if (!token) await _sleep(700)
-    }
-    if (!token) {
-      job.error = 'Amazon did not hand SCOUT a session token on the reporting page. Open affiliate-program.amazon.com in a normal tab, make sure you are signed in, then sync again.'
-      job.done = true
-      return
-    }
-
-    // Which stores to ask for. The offsite id is the creator's tracking id; the
-    // onsite one is Amazon's `onamz` twin of it. Read from the page when possible
-    // so we never invent an id, with the known pattern as the fallback.
     // The creator can supply the id (it's printed in Amazon's own header as
     // "StoreID: …"), and that always wins over anything we scrape.
     let stores = []

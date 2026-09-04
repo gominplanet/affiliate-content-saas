@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.55'
+export const SCOUT_LATEST_VERSION = '1.17.56'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Reads your real Amazon earnings, Creator Connections and Sponsored Products, onsite and offsite, month by month, straight from Amazon’s own reporting rather than its exports.'
+  'Earnings sync now loads Amazon’s Creator Connections earnings page and sends the storeid header its own calls send, which is what the 401s were about.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
