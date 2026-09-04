@@ -176,7 +176,16 @@ export interface EarningsSyncStatus {
   monthsDone?: number
   savedPeriods?: number
   savedProducts?: number
-  diag?: { stores?: string[]; errors?: string[]; assoc?: { url: string; status: number; body: string } } | null
+  diag?: {
+    stores?: string[]
+    errors?: string[]
+    assoc?: { url: string; status: number; body: string }
+    /** The first per-ASIN record Amazon returned, plus which of its keys SCOUT read
+     *  each figure from. Kept visible so the mapping can be checked against
+     *  Amazon's own screen rather than assumed correct. */
+    sample?: string
+    mapping?: Record<string, string | null> | null
+  } | null
 }
 
 /**

@@ -20,6 +20,7 @@ import PageHero from '@/components/layout/PageHero'
 import { Loader2, RefreshCw, TrendingUp, Store, Globe } from 'lucide-react'
 import { toast } from 'sonner'
 import { requestEarningsSync, requestEarningsStatus, type EarningsSyncStatus } from '@/lib/extension-frame'
+import ProductBreakdown from '@/components/earnings/ProductBreakdown'
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -89,6 +90,9 @@ export default function EarningsPage() {
   // expose it, so the creator can just tell us rather than being stuck.
   const [storeId, setStoreId] = useState('')
   const [showQuiet, setShowQuiet] = useState(false)
+  // Bumped whenever the totals reload, so the product breakdown refetches in step
+  // with them rather than showing last sync's products beside this sync's totals.
+  const [dataVersion, setDataVersion] = useState(0)
   useEffect(() => { try { setStoreId(localStorage.getItem('mvp_amazon_store_id') || '') } catch { /* ignore */ } }, [])
 
   const load = useCallback(async () => {
@@ -98,6 +102,7 @@ export default function EarningsPage() {
       setRows(Array.isArray(d?.rows) ? d.rows : [])
       setTotals(d?.totals ?? null)
       setLastSyncedAt(d?.lastSyncedAt ?? null)
+      setDataVersion(v => v + 1)
     } catch { setLoadError('Could not load your earnings.') }
     finally { setLoading(false) }
   }, [])
@@ -213,6 +218,17 @@ export default function EarningsPage() {
                 {sync.diag.errors.slice(0, 8).map((e, i) => <li key={i}>{e}</li>)}
               </ul>
             ) : null}
+            {sync.diag?.sample && (
+              <details className="text-[11px]" style={muted}>
+                <summary className="cursor-pointer">Per-product mapping (what SCOUT read, and from which of Amazon&apos;s fields)</summary>
+                {sync.diag.mapping && (
+                  <p className="mt-1">
+                    {Object.entries(sync.diag.mapping).map(([k, v]) => `${k}: ${v || 'not found'}`).join(', ')}
+                  </p>
+                )}
+                <pre className="mt-1 p-2 rounded overflow-x-auto text-[10px]" style={{ background: 'var(--surface-2)' }}>{sync.diag.sample}</pre>
+              </details>
+            )}
             {sync.diag?.assoc && (
               <details className="text-[11px]" style={muted}>
                 <summary className="cursor-pointer">Associates response ({sync.diag.assoc.status})</summary>
@@ -270,6 +286,11 @@ export default function EarningsPage() {
                 <p className="text-[11px] mt-1" style={muted}>Traffic you sent in from YouTube, your blog and socials.</p>
               </div>
             </div>
+
+            {/* Which products made the money, above the month by month audit
+                trail. The totals tell you how the year went; this is the part you
+                can do something about on Monday. */}
+            <ProductBreakdown refreshKey={dataVersion} />
 
             <div className="card p-5">
               <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">

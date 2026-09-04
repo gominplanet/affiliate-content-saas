@@ -1618,7 +1618,7 @@ const isoDay = (d) => d.toISOString().slice(0, 10)
 function earningsFetchInPage(params) {
   return (async () => {
     const { months, stores, host } = params
-    const out = { periods: [], assoc: [], errors: [] }
+    const out = { periods: [], products: [], assoc: [], errors: [], sample: null, mapping: null }
     // These endpoints carry NO csrf token. Auth is the same-origin session cookie
     // plus a `storeid` header naming the creator's base store. The token we were
     // guessing at was never the missing piece; the `storeid` header was, and that
@@ -1663,6 +1663,102 @@ function earningsFetchInPage(params) {
       }
     }
 
+    // ── per-ASIN breakdown ──────────────────────────────────────────────────
+    // The totals say how much the month made. This says WHICH products made it,
+    // which is the only version of the number a creator can act on.
+    //
+    // We have not seen this endpoint's response shape, so nothing here is
+    // hardcoded to field names we guessed. It finds the array of records by
+    // looking for objects that carry an ASIN under an asin-named key, then reads
+    // each figure from the key Amazon itself named it. The first raw record and
+    // the key mapping come back in `sample`/`mapping` so the mapping can be
+    // checked against Amazon rather than believed.
+    const ASIN_RE = /^[A-Z0-9]{10}$/
+    const findRecords = (root) => {
+      const q = [root]
+      let steps = 0
+      while (q.length && steps++ < 20000) {
+        const n = q.shift()
+        if (!n || typeof n !== 'object') continue
+        if (Array.isArray(n)) {
+          const first = n.find((x) => x && typeof x === 'object' && !Array.isArray(x))
+          if (first && Object.keys(first).some((k) => /asin/i.test(k) && typeof first[k] === 'string' && ASIN_RE.test(first[k].toUpperCase()))) return n
+          for (const x of n) q.push(x)
+        } else {
+          for (const k in n) q.push(n[k])
+        }
+      }
+      return null
+    }
+    // Pick the key holding a figure. `avoid` keeps us off the lookalikes: a
+    // percentage, a rate, a currency code or an id is never the number we want.
+    const pickKey = (obj, want, avoid) => {
+      for (const k of Object.keys(obj)) {
+        if (avoid && avoid.test(k)) continue
+        if (!want.test(k)) continue
+        const v = obj[k]
+        if (typeof v === 'number' || typeof v === 'string') return k
+      }
+      return null
+    }
+    const numOf = (v) => {
+      if (v == null) return null
+      const n = typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.\-]/g, ''))
+      return Number.isFinite(n) ? n : null
+    }
+
+    const ccProducts = async (fromMs, toMs, storeId, reportType) => {
+      const filterOptions = emptyFilters()
+      filterOptions.dateRange = { fromDate: fromMs, toDate: toMs }
+      filterOptions.storeIds = [storeId]
+      const res = await fetch(`https://${host}/connect/api/report/earnings/search`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'accept': 'application/json', ...(baseStore ? { storeid: baseStore } : {}) },
+        body: JSON.stringify({
+          aggregationOption: 'MONTH', reportType, filterOptions,
+          searchOptions: null, sortOptions: null, pageNumber: 1, pageSize: 200,
+        }),
+        signal: AbortSignal.timeout(30000),
+      })
+      if (!res.ok) return { ok: false, status: res.status }
+      const j = await res.json().catch(() => null)
+      const recs = j ? findRecords(j) : null
+      if (!recs || !recs.length) {
+        // No records is a legitimate answer for a quiet month. Keep a trimmed raw
+        // body once so a shape change is visible instead of silently empty.
+        if (!out.sample) out.sample = JSON.stringify(j).slice(0, 1200)
+        return { ok: true, items: [] }
+      }
+      const first = recs.find((x) => x && typeof x === 'object') || {}
+      const K = {
+        asin: pickKey(first, /asin/i, /list|count/i),
+        title: pickKey(first, /title|productname|itemname|name$/i, /id$|store|campaign/i),
+        clicks: pickKey(first, /click/i, /percent|rate|through/i),
+        orders: pickKey(first, /order/i, /quantity|percent|rate|amount|value|id$/i),
+        quantity: pickKey(first, /quantity|shipped/i, /percent|rate/i),
+        earnings: pickKey(first, /earning|commission/i, /percent|rate|currency|id$/i),
+        revenue: pickKey(first, /revenue|sales/i, /percent|rate|currency|id$/i),
+      }
+      if (!out.sample) { out.sample = JSON.stringify(first).slice(0, 1200); out.mapping = K }
+      if (!K.asin) return { ok: true, items: [] }
+      const items = []
+      for (const r of recs) {
+        if (!r || typeof r !== 'object') continue
+        const asin = String(r[K.asin] || '').toUpperCase()
+        if (!ASIN_RE.test(asin)) continue
+        items.push({
+          asin,
+          productTitle: K.title ? String(r[K.title] || '').slice(0, 300) : null,
+          clicks: K.clicks ? numOf(r[K.clicks]) : null,
+          orders: K.orders ? numOf(r[K.orders]) : null,
+          quantity: K.quantity ? numOf(r[K.quantity]) : null,
+          earnings: K.earnings ? numOf(r[K.earnings]) : null,
+          revenue: K.revenue ? numOf(r[K.revenue]) : null,
+        })
+      }
+      return { ok: true, items }
+    }
+
     for (const mth of months) {
       for (const st of stores) {
         for (const rt of [['cc', 'DATEWISE_ASIN'], ['epc', 'SPONSORED_PRODUCTS']]) {
@@ -1680,6 +1776,24 @@ function earningsFetchInPage(params) {
             }
           } catch (e) {
             out.errors.push(`${rt[0]} ${mth.start} ${st.storeId}: ${(e && e.message) || e}`)
+          }
+          await new Promise(r => setTimeout(r, 250))
+          // Then the per-ASIN breakdown for the same window. A failure here never
+          // costs us the total we already have, so it's caught separately.
+          try {
+            const pr = await ccProducts(mth.fromMs, mth.toMs, st.storeId, rt[1])
+            if (pr.ok) {
+              for (const it of pr.items) {
+                out.products.push({
+                  periodStart: mth.start, periodType: 'month', stream: rt[0],
+                  storeId: st.storeId, storeScope: st.scope, ...it,
+                })
+              }
+            } else {
+              out.errors.push(`${rt[0]} products ${mth.start} ${st.storeId}: HTTP ${pr.status}`)
+            }
+          } catch (e) {
+            out.errors.push(`${rt[0]} products ${mth.start} ${st.storeId}: ${(e && e.message) || e}`)
           }
           await new Promise(r => setTimeout(r, 250))
         }
@@ -1833,11 +1947,17 @@ async function syncAmazonEarnings(opts) {
       })
       const r = (res && res[0] && res[0].result) || null
       if (r) {
-        if (r.periods && r.periods.length) {
-          const pushed = await pushEarningsToMvp(r.periods, [])
-          if (pushed.ok) job.savedPeriods += pushed.savedPeriods
-          else job.error = job.error || pushed.error
+        if ((r.periods && r.periods.length) || (r.products && r.products.length)) {
+          const pushed = await pushEarningsToMvp(r.periods || [], r.products || [])
+          if (pushed.ok) {
+            job.savedPeriods += pushed.savedPeriods
+            job.savedProducts += pushed.savedProducts
+          } else job.error = job.error || pushed.error
         }
+        // The first record Amazon returned and the keys we read it by. Kept so the
+        // per-ASIN mapping can be checked against Amazon's own screen instead of
+        // taken on faith.
+        if (r.sample && !job.diag.sample) { job.diag.sample = r.sample; job.diag.mapping = r.mapping || null }
         if (r.assoc && r.assoc.length && !job.diag.assoc) job.diag.assoc = r.assoc[0]
         if (r.errors && r.errors.length) job.diag.errors = (job.diag.errors || []).concat(r.errors).slice(0, 12)
       }
