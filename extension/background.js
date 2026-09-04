@@ -4063,20 +4063,31 @@ function fetchContentListInPage(rec) {
     const found = new Map()
     let token = null
     let page = 1
+    // Learned from the captured URL and the first response, never assumed.
+    let tokenKey = null
+    let pageKey = null
+    try {
+      const u0 = new URL(rec.url, location.href)
+      for (const k of u0.searchParams.keys()) {
+        if (/token|cursor/i.test(k)) tokenKey = tokenKey || k
+        if (/^(page|pageNumber|pageIndex|offset|start)$/i.test(k)) pageKey = pageKey || k
+      }
+      if (pageKey) page = (parseInt(u0.searchParams.get(pageKey), 10) || 1) + 1
+    } catch (e) {}
     try {
       for (let i = 0; i < 200; i++) {
         const u = new URL(rec.url, location.href)
-        // Advance whichever pagination the endpoint uses. Setting all of them is
-        // harmless: an endpoint ignores parameters it does not know.
-        if (token) {
-          u.searchParams.set('nextToken', token)
-          u.searchParams.set('nextPageToken', token)
-        } else {
-          u.searchParams.set('page', String(page))
-          u.searchParams.set('pageNumber', String(page))
-          u.searchParams.set('offset', String((page - 1) * 100))
+        // The FIRST call is the page's own request, untouched. Adding parameters
+        // an endpoint does not expect is how a working request becomes a 400, and
+        // the earnings sync lost a day to exactly that. Pagination is only
+        // applied once we have seen a response and know what it uses.
+        if (i > 0) {
+          if (token) {
+            u.searchParams.set(tokenKey || 'nextToken', token)
+          } else {
+            u.searchParams.set(pageKey || 'page', String(page))
+          }
         }
-        if (!u.searchParams.get('pageSize')) u.searchParams.set('pageSize', '100')
         const init = {
           method: rec.method || 'GET',
           credentials: 'include',
@@ -4085,7 +4096,7 @@ function fetchContentListInPage(rec) {
         }
         if (rec.body && /^post$/i.test(init.method)) init.body = rec.body
         const res = await fetch(u.toString(), init)
-        if (!res.ok) { out.error = `HTTP ${res.status}`; break }
+        if (!res.ok) { out.error = `HTTP ${res.status} on page ${i + 1}`; break }
         const j = await res.json().catch(() => null)
         if (!j) { out.error = 'not JSON'; break }
         if (!out.sample) out.sample = JSON.stringify(j).slice(0, 1200)
@@ -4099,13 +4110,18 @@ function fetchContentListInPage(rec) {
         const seek = (o, d) => {
           if (!o || typeof o !== 'object' || d > 6) return
           for (const k in o) {
-            if (/nexttoken|nextpagetoken|cursor/i.test(k) && typeof o[k] === 'string' && o[k]) { next = o[k]; return }
+            if (/nexttoken|nextpagetoken|cursor/i.test(k) && typeof o[k] === 'string' && o[k]) {
+              next = o[k]
+              if (!tokenKey) tokenKey = k
+              return
+            }
             seek(o[k], d + 1)
           }
         }
         seek(j, 0)
         if (next && next !== token) token = next
-        else { token = null; page++ }
+        else if (pageKey) { token = null; page++ }
+        else { out.error = out.error || 'no pagination in the response'; break }
         await new Promise((r) => setTimeout(r, 250))
       }
     } catch (e) {
@@ -4159,6 +4175,11 @@ async function scanCreatorHubVideosBackground(userUrl) {
     // capture that request.
     const apiRec = (_ccNetRing || []).slice().reverse()
       .find((x) => x && /\/manage-content\/api\/get-content-list/i.test(String(x.url || '')))
+    // Why the API route did or did not work. The first version fell through to
+    // the DOM crawl in silence, so a failing API attempt was indistinguishable
+    // from never having tried, and the panel reported a scrape as if that were
+    // the plan.
+    let apiNote = apiRec ? 'captured the list request' : 'never saw the list request'
     if (apiRec) {
       try {
         const viaApi = await chrome.scripting.executeScript({
@@ -4173,11 +4194,14 @@ async function scanCreatorHubVideosBackground(userUrl) {
             count: a.items.length,
             pages: a.pages || 0,
             stopped: a.error ? `list API stopped: ${a.error}` : 'end',
-            source: 'list API',
+            source: "Amazon's own list API",
             error: (push && push.ok) ? undefined : (push && push.error),
           }
         }
-      } catch (e) { /* fall through to the DOM crawl */ }
+        apiNote = `list API returned nothing${a && a.error ? `: ${a.error}` : ''}${a && a.sample ? `. Response began: ${String(a.sample).slice(0, 400)}` : ''}`
+      } catch (e) {
+        apiNote = `list API call failed: ${(e && e.message) || e}`
+      }
     }
 
     // allFrames, because an Amazon console panel is often an iframe and the main
@@ -4240,7 +4264,7 @@ async function scanCreatorHubVideosBackground(userUrl) {
     if (!asins.length) {
       // Say what the page held instead of a bare code. This is the difference
       // between "your library is empty" and "the rows do not carry ASINs".
-      return { ok: false, error: 'no-videos', probe: describeProbe(frames) }
+      return { ok: false, error: 'no-videos', probe: `${apiNote}. DOM crawl: ${describeProbe(frames)}` }
     }
     if (!asins.length) return { ok: false, error: 'no-videos' }
     const push = await pushVideosToMvp(asins)
@@ -4262,6 +4286,7 @@ async function scanCreatorHubVideosBackground(userUrl) {
       pages: r.pages || 0,
       stopped: r.stopped || null,
       pagerSeen: r.pagerSeen || [],
+      source: `the page's rendered rows (${apiNote})`,
       apiCalls,
       error: (push && push.ok) ? undefined : (push && push.error),
     }
