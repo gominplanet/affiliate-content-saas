@@ -94,14 +94,14 @@
   // CORS preflight that hangs a signed PUT made from this Amazon page). The
   // worker downloads the source and PUTs it, so large bytes never cross the
   // messaging boundary. Resolves on success, throws with the reason otherwise.
-  function bgS3Put({ srcUrl, creds, key, contentType }) {
+  function bgS3Put({ srcUrl, creds, key, contentType, label }) {
     return new Promise((resolve, reject) => {
       let settled = false
       // Longer than the worker's own step timeouts (download 120s + PUT 120s) so
       // its specific error surfaces instead of this blanket one; still under the
       // 300s per-job budget in deliverStorefronts.
       const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('no worker response (SW may have been killed)')) } }, 1300000)
-      chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_S3PUT', srcUrl, creds, key, contentType }, (resp) => {
+      chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_S3PUT', srcUrl, creds, key, contentType, label }, (resp) => {
         if (settled) return
         settled = true; clearTimeout(to)
         if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message))
@@ -187,6 +187,7 @@
     // Duplicate guard: if this marketplace already has a video with the same
     // title, skip rather than create a second copy. Opt out with job.dedupe:false.
     if (job.dedupe !== false && job.title) {
+      reportStep('Checking for a duplicate', null)
       const dup = await findDuplicateOnStorefront(ctx, job)
       if (dup) return { ok: false, duplicate: true, mediaAci: dup.aci, error: 'Already on this storefront' }
     }
@@ -203,6 +204,7 @@
       //    the credential service briefly unavailable, common when several
       //    marketplaces ask at once).
       step = 'credentials'
+      reportStep('Getting upload permission', null)
       let creds = null
       for (let attempt = 0; attempt < 3; attempt++) {
         const credRes = await fetch(`https://${location.host}/create/api/path-and-credentials`, { credentials: 'include', signal: AbortSignal.timeout(30000) })
@@ -249,7 +251,7 @@
         try {
           step = 'thumbnail'
           const tKey = `${creds.s3Folder}/${uuid()}.png`
-          await bgS3Put({ srcUrl: job.thumbnailUrl, creds, key: tKey, contentType: 'image/png' })
+          await bgS3Put({ srcUrl: job.thumbnailUrl, creds, key: tKey, contentType: 'image/png', label: 'thumbnail' })
           thumbKey = tKey
         } catch (e) {
           // Non-fatal, but never silent: without this the post ships with no
@@ -277,12 +279,12 @@
             done(chrome.runtime.lastError ? null : (r && r.key) || null)
           })
         })
-        if (known) { videoKey = known; reusedKey = true }
+        if (known) { videoKey = known; reusedKey = true; reportStep('Reusing this region\u2019s upload', 100) }
       } catch { /* fall through to a normal upload */ }
 
       if (!videoKey) {
         videoKey = `${creds.s3Folder}/${uuid()}.mp4`
-        await bgS3Put({ srcUrl: job.videoUrl, creds, key: videoKey, contentType: 'video/mp4' })
+        await bgS3Put({ srcUrl: job.videoUrl, creds, key: videoKey, contentType: 'video/mp4', label: 'video' })
         try { chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_PUTKEY', bucket: creds.s3Bucket, srcUrl: job.videoUrl, key: videoKey }) } catch { /* best-effort */ }
       }
 
@@ -292,6 +294,7 @@
       //    away: no ASIN means no publish, and an ASIN this marketplace rejects
       //    means no publish either.
       step = 'product'
+      reportStep('Checking the product', null)
       if (!job.asin) {
         throw new Error('No product ASIN for this marketplace, so the video would publish with nothing tagged. Add this market’s local ASIN and retry.')
       }
@@ -335,6 +338,7 @@
       // 4+5. moderation gate then PUBLISH — both keyed to the SAME mediaId (see
       //      publish(); they used to disagree, which Amazon rejects at validation).
       step = 'publish'
+      reportStep('Publishing', null)
       try {
         return await publish(job, ctx, videoKey, thumbKey)
       } catch (e) {
@@ -344,7 +348,7 @@
         if (!reusedKey) throw e
         step = 'upload-video'
         const ownKey = `${creds.s3Folder}/${uuid()}.mp4`
-        await bgS3Put({ srcUrl: job.videoUrl, creds, key: ownKey, contentType: 'video/mp4' })
+        await bgS3Put({ srcUrl: job.videoUrl, creds, key: ownKey, contentType: 'video/mp4', label: 'video' })
         step = 'publish'
         return await publish(job, ctx, ownKey, thumbKey)
       }
@@ -429,6 +433,25 @@
     return /\/ap\/signin|\/ap\/register|\/gp\/(?:sign-in|css\/homepage)/i.test(location.href) ||
       !!document.querySelector('form[name="signIn"], #ap_email, input[name="email"][type="email"]')
   }
+
+  // Tell the worker (and through it, MVP) what this marketplace is doing, so a
+  // multi-minute upload shows a moving bar instead of an unexplained spinner.
+  // Best-effort throughout: progress must never be able to fail an upload.
+  function reportStep(step, pct) {
+    try { chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_PROGRESS', step: step, pct: typeof pct === 'number' ? pct : null }) } catch (e) { /* worker asleep */ }
+  }
+
+  // Byte progress from the MAIN-world S3 transfer. It can't reach the worker
+  // itself, so it postMessages into this same window and we forward it.
+  try {
+    window.addEventListener('message', (ev) => {
+      if (ev.source !== window) return
+      const d = ev.data
+      if (!d || d.__mvpS3 !== 1) return
+      const what = d.label === 'thumbnail' ? 'thumbnail' : 'video'
+      reportStep(d.phase === 'download' ? `Preparing the ${what}` : `Uploading the ${what}`, d.pct)
+    })
+  } catch (e) { /* ignore */ }
 
   // Relay the MAIN-world create-API capture (storefront-token-sniffer.js) to the
   // worker, so MVP can show what Amazon's own Creator Hub sends and we can diff

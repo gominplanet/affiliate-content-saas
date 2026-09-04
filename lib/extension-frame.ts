@@ -166,6 +166,22 @@ export async function requestStorefrontPreflight(domains: string[]): Promise<Sto
   return res || { ok: false, error: 'timeout' }
 }
 
+/** Where one marketplace has got to in a storefront run. `pct` is real byte
+ *  progress during a transfer and null for the steps that aren't measurable. */
+export interface StorefrontProgress {
+  [domain: string]: { step?: string; pct?: number | null; at?: number }
+}
+
+/**
+ * Poll what each marketplace is doing right now. A storefront run moves hundreds
+ * of megabytes per region and takes minutes, so the UI needs something truer than
+ * a spinner. Best-effort: an empty object simply means no bars this tick.
+ */
+export async function requestStorefrontProgress(): Promise<StorefrontProgress> {
+  const res = await sendToExtension<{ ok?: boolean; progress?: StorefrontProgress }>({ type: 'MVP_STOREFRONT_STATUS' }, 6_000)
+  return (res && res.progress) || {}
+}
+
 /** One captured create-API call made by Amazon's OWN Creator Hub. */
 export interface StorefrontDebugEntry {
   url: string; method: string; status: number

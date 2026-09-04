@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.50'
+export const SCOUT_LATEST_VERSION = '1.17.51'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'A storefront upload can no longer stall waiting on the shared-upload lookup; if that check does not answer quickly it simply uploads its own copy as before.'
+  'Storefront uploads now report real progress per marketplace, so MVP can show how far each store has actually got instead of a spinner that says nothing for minutes.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

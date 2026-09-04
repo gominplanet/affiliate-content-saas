@@ -11,7 +11,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Loader2, Check, Circle, Mic, Play, Upload, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
-import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, requestStorefrontDebug, getScoutStatus, type StorefrontMarketStatus } from '@/lib/extension-frame'
+import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, requestStorefrontDebug, requestStorefrontProgress, getScoutStatus, type StorefrontMarketStatus, type StorefrontProgress } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
 import { normalizeAsinInput } from '@/lib/asin'
 
@@ -106,6 +106,21 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     // runPreflight is a stable function declaration inside this component.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scout?.installed, markets, signinChecked])
+
+  // Live per-marketplace progress, polled from SCOUT only while a run is in
+  // flight. The extension holds the truth (it is the thing moving the bytes), so
+  // this is a read, never a source of state anything else depends on.
+  const [progress, setProgress] = useState<StorefrontProgress>({})
+  useEffect(() => {
+    if (!delivering) { setProgress({}); return }
+    let stopped = false
+    const tick = async () => {
+      try { const p = await requestStorefrontProgress(); if (!stopped) setProgress(p) } catch { /* keep the last bars */ }
+    }
+    void tick()
+    const iv = setInterval(tick, 1500)
+    return () => { stopped = true; clearInterval(iv) }
+  }, [delivering])
 
   const [voice, setVoice] = useState<{ enabled: boolean; hasVoice: boolean; name: string | null; credits: number | null } | null>(null)
   const [consent, setConsent] = useState(false)
@@ -572,6 +587,11 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
 
   return (
     <div className="space-y-5">
+      <style>{`
+        @keyframes mvpIndeterminate { 0% { transform: translateX(-100%) } 100% { transform: translateX(300%) } }
+        .mvp-indeterminate { animation: mvpIndeterminate 1.3s ease-in-out infinite }
+        @media (prefers-reduced-motion: reduce) { .mvp-indeterminate { animation: none; width: 100% } }
+      `}</style>
       {/* Sounds like you — cloned voice for dubs */}
       {/* Dub voice — collapsed to one line. Free generic voice is the default; the
           cloned-voice upgrade (credits) lives behind "change" so it never clutters
@@ -864,7 +884,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                   <span className="text-sm font-medium" style={label}>{t.country}</span>
                   <span className="text-[11px]" style={muted}>{t.lang}{t.dub ? ' · dub' : ''}</span>
                   {t.state === 'delivered' && <span className="text-[11px] font-bold inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ color: '#fff', background: '#10B981' }}><Check size={12} /> Uploaded</span>}
-                  {uploading && <span className="text-[11px] font-medium" style={{ color: '#0EA5A4' }}>Uploading…</span>}
+                  {uploading && <span className="text-[11px] font-medium" style={{ color: '#0EA5A4' }}>{progress[t.domain]?.step || 'Uploading…'}</span>}
                   {t.state === 'failed' && <span className="text-[11px] font-medium" style={{ color: '#e0554b' }}>upload failed</span>}
                   {/* Sign-in / enrollment status from the pre-flight. */}
                   {signin[t.domain] === 'ready' && <span className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: '#10B981' }}><Check size={12} /> signed in</span>}
@@ -893,6 +913,29 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                       : 'No product ASIN for this market. MVP will skip it rather than publish an untagged video.'}
                   </p>
                 )}
+                {/* Real progress while this market is moving bytes. The percentage
+                    is genuine (the browser reports what has actually gone out);
+                    steps without a measurable size show a moving stripe instead of
+                    a fake number. */}
+                {uploading && (() => {
+                  const p = progress[t.domain]
+                  const pct = typeof p?.pct === 'number' ? Math.max(0, Math.min(100, p.pct)) : null
+                  return (
+                    <div className="mb-1.5 mt-0.5">
+                      <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                        <div
+                          className={pct == null ? 'h-full w-1/3 rounded-full mvp-indeterminate' : 'h-full rounded-full'}
+                          style={{
+                            width: pct == null ? undefined : `${pct}%`,
+                            background: 'linear-gradient(90deg,#0EA5A4,#0891B2)',
+                            transition: pct == null ? undefined : 'width .35s ease',
+                          }}
+                        />
+                      </div>
+                      {pct != null && <p className="text-[10px] mt-0.5 tabular-nums" style={muted}>{pct}%</p>}
+                    </div>
+                  )
+                })()}
                 {t.title && <p className="text-[13px] font-medium" style={label}>{t.title}</p>}
                 {t.description && <p className="text-[12px] mt-0.5 line-clamp-3" style={muted}>{t.description}</p>}
                 {t.detail && t.state !== 'delivered' && <p className="text-[11px] mt-1" style={muted}>{t.detail}</p>}

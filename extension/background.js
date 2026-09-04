@@ -5820,6 +5820,7 @@ function openCreateTab(domain) {
 async function deliverOneDomain(domain, jobs) {
   const out = []
   let tabId = null
+  setSfProgress(domain, { step: 'Opening Amazon', pct: null })
   try { tabId = await openCreateTab(domain) } catch { /* tab open failed */ }
   // Make sure the storefront-upload content script is actually present in the
   // tab before we message it. The declared content_scripts injection can be
@@ -5849,6 +5850,7 @@ async function deliverOneDomain(domain, jobs) {
         r = await sendJob(job)
       }
       out.push({ targetId: job.targetId, ok: !!r.ok, duplicate: !!r.duplicate, mediaAci: r.mediaAci || null, error: r.ok ? null : (r.error || 'upload failed') })
+      setSfProgress(domain, { step: r.ok ? 'Published' : (r.duplicate ? 'Already there' : 'Failed'), pct: r.ok ? 100 : null })
     } catch (e) {
       out.push({ targetId: job.targetId, ok: false, error: String(e && e.message || e) })
     }
@@ -5860,6 +5862,8 @@ async function deliverOneDomain(domain, jobs) {
 async function deliverStorefronts(items) {
   // Fresh run: never reuse an S3 key uploaded for a previous video.
   _sfUploadedKeys = {}
+  _sfProgress = {}
+  for (const it of items) setSfProgress(it.domain || 'amazon.com', { step: 'Waiting', pct: null })
   // Group by domain so we reuse one create tab per marketplace.
   const byDomain = {}
   for (const it of items) (byDomain[it.domain || 'amazon.com'] ||= []).push(it)
@@ -5961,8 +5965,15 @@ function openStorefrontLogin(domain) {
 // function, so it can close over NOTHING — every helper is defined inside.
 function mainWorldS3Put(params) {
   return (async () => {
-    const { srcUrl, creds, key, contentType } = params
+    const { srcUrl, creds, key, contentType, label } = params
     const log = (...a) => { try { console.log('[SCOUT s3put]', ...a) } catch (e) {} }
+    // Progress leaves the page's own world by postMessage; the isolated content
+    // script in this same tab picks it up and relays it to the worker, which the
+    // app polls. executeScript serializes this function, so it can close over
+    // nothing — every helper has to live inside here.
+    const post = (phase, pct, loaded, total) => {
+      try { window.postMessage({ __mvpS3: 1, label: label || 'video', phase, pct, loaded, total }, '*') } catch (e) {}
+    }
     const enc = new TextEncoder()
     const hex = (buf) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
     const sha256 = async (s) => hex(await crypto.subtle.digest('SHA-256', typeof s === 'string' ? enc.encode(s) : s))
@@ -5980,7 +5991,28 @@ function mainWorldS3Put(params) {
         try { src = await fetch(srcUrl, { signal: AbortSignal.timeout(300000) }) }
         catch (e) { return { ok: false, error: `download ${/abort|timeout/i.test(String(e && e.message)) ? 'timed out' : 'failed: ' + (e && e.message || e)}` } }
         if (!src.ok) return { ok: false, error: `download HTTP ${src.status}` }
-        bytes = new Uint8Array(await src.arrayBuffer())
+        // Read it as a stream rather than one arrayBuffer() call, so the creator
+        // sees the first half of the wait move instead of a frozen spinner.
+        const total = Number(src.headers.get('content-length')) || 0
+        if (src.body && src.body.getReader) {
+          const reader = src.body.getReader()
+          const chunks = []
+          let got = 0, lastPct = -1
+          for (;;) {
+            const r = await reader.read()
+            if (r.done) break
+            chunks.push(r.value); got += r.value.length
+            if (total > 0) {
+              const pct = Math.floor((got / total) * 100)
+              if (pct !== lastPct) { lastPct = pct; post('download', pct, got, total) }
+            } else { post('download', null, got, 0) }
+          }
+          bytes = new Uint8Array(got)
+          let off = 0
+          for (const c of chunks) { bytes.set(c, off); off += c.length }
+        } else {
+          bytes = new Uint8Array(await src.arrayBuffer())
+        }
         try { window.__mvpS3Cache = { url: srcUrl, bytes } } catch (e) {}
       } else {
         log('reusing cached bytes for', String(srcUrl).slice(0, 80))
@@ -6003,19 +6035,36 @@ function mainWorldS3Put(params) {
       k = await hmac(k, region); k = await hmac(k, service); k = await hmac(k, 'aws4_request')
       const signature = hex(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), enc.encode(stringToSign)))
       const auth = `AWS4-HMAC-SHA256 Credential=${creds.awsAccessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
-      let res
-      try {
-        res = await fetch(url, {
-          method: 'PUT', body: bytes,
-          headers: {
-            'Content-Type': contentType, 'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
-            'x-amz-date': amzDate, 'x-amz-security-token': creds.awsSessionToken,
-            'x-amz-tagging': 'temporary=true', 'Authorization': auth,
-          },
-          signal: AbortSignal.timeout(900000),
-        })
-      } catch (e) { return { ok: false, error: `S3 PUT ${/abort|timeout/i.test(String(e && e.message)) ? 'timed out' : 'failed: ' + (e && e.message || e)}` } }
-      if (!res.ok) return { ok: false, error: `S3 PUT ${res.status}: ${(await res.text().catch(() => '')).slice(0, 150)}` }
+      // XHR, not fetch, for ONE reason: xhr.upload.onprogress is the only way a
+      // browser will tell us how much of the body has actually gone out. Same
+      // origin, same headers, same signed request — only the transport differs.
+      const headers = {
+        'Content-Type': contentType, 'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+        'x-amz-date': amzDate, 'x-amz-security-token': creds.awsSessionToken,
+        'x-amz-tagging': 'temporary=true', 'Authorization': auth,
+      }
+      const res = await new Promise((resolve) => {
+        let xhr
+        try { xhr = new XMLHttpRequest() } catch (e) { resolve({ status: 0, error: 'xhr-unavailable' }); return }
+        try {
+          xhr.open('PUT', url, true)
+          for (const k in headers) xhr.setRequestHeader(k, headers[k])
+          xhr.timeout = 900000
+          let lastPct = -1
+          xhr.upload.onprogress = (ev) => {
+            if (!ev || !ev.lengthComputable) return
+            const pct = Math.floor((ev.loaded / ev.total) * 100)
+            if (pct !== lastPct) { lastPct = pct; post('upload', pct, ev.loaded, ev.total) }
+          }
+          xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText || '' })
+          xhr.onerror = () => resolve({ status: 0, error: 'network error' })
+          xhr.ontimeout = () => resolve({ status: 0, error: 'timed out' })
+          xhr.onabort = () => resolve({ status: 0, error: 'aborted' })
+          xhr.send(bytes)
+        } catch (e) { resolve({ status: 0, error: String((e && e.message) || e) }) }
+      })
+      if (!res.status) return { ok: false, error: `S3 PUT ${res.error || 'failed'}` }
+      if (res.status < 200 || res.status >= 300) return { ok: false, error: `S3 PUT ${res.status}: ${String(res.text || '').slice(0, 150)}` }
       log('PUT ok', res.status)
       return { ok: true, key }
     } catch (e) {
@@ -6036,6 +6085,28 @@ function mainWorldS3Put(params) {
 chrome.runtime.onInstalled.addListener((details) => {
   if (!details || details.reason !== 'install') return
   try { chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html'), active: true }) } catch (e) { /* never block install */ }
+})
+
+// ── Live upload progress, per marketplace ───────────────────────────────────
+// A storefront run moves hundreds of megabytes per region and can take minutes,
+// and the app could only show a spinner because nothing reported what stage each
+// market had reached. Content scripts push a step (and, during a transfer, real
+// byte progress) in here; the app polls MVP_STOREFRONT_STATUS while delivering.
+// In-memory only and cleared at the start of every run: this is a progress
+// readout, not state anything depends on.
+let _sfProgress = {}
+const _sfHostToDomain = (u) => { try { return new URL(u).host.replace(/^www\./, '') } catch (e) { return '' } }
+function setSfProgress(domain, patch) {
+  if (!domain) return
+  _sfProgress[domain] = Object.assign({}, _sfProgress[domain] || {}, patch, { at: Date.now() })
+}
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (!msg || msg.action !== 'MVP_STOREFRONT_PROGRESS') return
+  const domain = _sfHostToDomain((sender && sender.tab && sender.tab.url) || '')
+  setSfProgress(domain, {
+    step: typeof msg.step === 'string' ? msg.step : undefined,
+    pct: typeof msg.pct === 'number' ? msg.pct : (msg.pct === null ? null : undefined),
+  })
 })
 
 // ── Uploaded-key reuse across marketplaces ──────────────────────────────────
@@ -6097,7 +6168,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const guard = setTimeout(() => finish({ ok: false, error: 'upload timed out in worker' }), 1260000)
     chrome.scripting.executeScript({
       target: { tabId }, world: 'MAIN', func: mainWorldS3Put,
-      args: [{ srcUrl: msg.srcUrl, creds: msg.creds, key: msg.key, contentType: msg.contentType }],
+      args: [{ srcUrl: msg.srcUrl, creds: msg.creds, key: msg.key, contentType: msg.contentType, label: msg.label || 'video' }],
     })
       .then((results) => finish((results && results[0] && results[0].result) || { ok: false, error: 'no-result' }))
       .catch((e) => finish({ ok: false, error: String(e && e.message || e) }))
@@ -6125,6 +6196,11 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .then((results) => sendResponse({ ok: true, results }))
       .catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'preflight-failed' }))
     return true // async
+  }
+  // Live per-marketplace progress for the app's bars. Synchronous + tiny.
+  if (msg.type === 'MVP_STOREFRONT_STATUS') {
+    sendResponse({ ok: true, progress: _sfProgress })
+    return false
   }
   // DIAGNOSTIC: hand back what the real Creator Hub sent on its own create-API
   // calls, so a rejected publish can be compared against Amazon's own request.
