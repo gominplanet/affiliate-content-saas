@@ -12,11 +12,12 @@
 import { extractAsin } from '@/services/amazon'
 import { assertPublicHttpUrlResolved } from '@/lib/ssrf-guard'
 
-/** Pull a 10-char Amazon ASIN out of an Amazon product URL path. */
-export function asinFromAmazonUrl(url: string): string | null {
-  const m = url.match(/\/(?:dp|gp\/product|gp\/aw\/d|product)\/([A-Z0-9]{10})(?:[/?]|$)/i)
-  return m ? m[1].toUpperCase() : null
-}
+// Re-exported from lib/asin.ts, which has no imports. Client components must
+// import it from THERE: pulling it through this module drags in the SSRF guard's
+// `dns/promises` and the Amazon service, neither of which belongs in a browser
+// bundle. Server callers keep importing it from here unchanged.
+export { asinFromAmazonUrl } from '@/lib/asin'
+import { asinFromAmazonUrl } from '@/lib/asin'
 
 /** True for an Amazon URL that is NOT a specific product — a creator
  *  storefront (amazon.com/shop/<name>), an Amazon-Influencer page, a brand

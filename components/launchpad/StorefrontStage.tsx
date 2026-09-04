@@ -13,15 +13,13 @@ import { Globe, Loader2, Check, Circle, Mic, Play, Upload, LogIn } from 'lucide-
 import { toast } from 'sonner'
 import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, requestStorefrontDebug, getScoutStatus, type StorefrontMarketStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
-import { asinFromAmazonUrl } from '@/lib/product-link'
+import { normalizeAsinInput } from '@/lib/asin'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /** Bare ASIN or Amazon product link → the clean 10-character code, or null. */
 function normalizeAsin(v: string): string | null {
-  const s = (v || '').trim()
-  if (/^[A-Z0-9]{10}$/i.test(s)) return s.toUpperCase()
-  return asinFromAmazonUrl(s)
+  return normalizeAsinInput(v)
 }
 
 /** -1 / 0 / 1 dotted-version compare; a null/unknown left side sorts oldest. */

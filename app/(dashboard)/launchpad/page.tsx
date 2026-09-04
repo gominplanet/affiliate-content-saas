@@ -16,20 +16,15 @@ import StorefrontStage from '@/components/launchpad/StorefrontStage'
 import { requestStudioFinish, requestFindCampaign, requestAcceptCampaign, requestAmazonAsinCheck, requestResolveLocalAsin } from '@/lib/extension-frame'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
-import { asinFromAmazonUrl } from '@/lib/product-link'
+import { normalizeAsinInput } from '@/lib/asin'
 import ThumbnailBoostPanel, { useThumbnailBoost } from '@/components/thumbnails/ThumbnailBoostPanel'
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
 
-/** Accept a bare ASIN or any Amazon product link and return the clean 10-character
- *  code, or null. The input can hold whatever the creator pasted; everything
- *  downstream (thumbnail, geo-check, master, storefronts) gets the clean ASIN. */
-function normalizeAsin(v: string): string | null {
-  const s = (v || '').trim()
-  if (/^[A-Z0-9]{10}$/i.test(s)) return s.toUpperCase()
-  return asinFromAmazonUrl(s)
-}
+/** Whatever the creator pasted (bare ASIN or product link) as a clean ASIN.
+ *  Everything downstream (thumbnail, geo-check, master, storefronts) gets it. */
+const normalizeAsin = normalizeAsinInput
 
 interface Meta { title: string; alternatives: string[]; description: string; tags: string[] }
 
