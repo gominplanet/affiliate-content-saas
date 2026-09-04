@@ -3714,17 +3714,29 @@ async function harvestCreatorHubVideosInPage() {
     const cls = (el.className && el.className.toString ? el.className.toString() : '').toLowerCase()
     return /disabled/.test(cls)
   }
-  // What the page offers, for the diagnostic. When the finder misses again, this
-  // is what says why instead of leaving us to guess a third time.
+  // A structural description of the clickable things in the BOTTOM THIRD of the
+  // page, which is where the pager lives. The label-based diagnostic was useless
+  // here: it reported "21 items in cart" and a list of video durations, because
+  // the pager carries no text at all. Tag, classes, aria-label, title and whether
+  // it holds an icon is what actually identifies it.
   function pagerLabels() {
-    const seen = []
+    const out = []
+    const cut = Math.max(0, document.body.scrollHeight - Math.max(600, window.innerHeight))
     for (const el of clickables()) {
       if (!vis(el)) continue
-      const l = labelOf(el)
-      if (!l || l.length > 30) continue
-      if (/next|prev|page|\d/.test(l)) seen.push(l)
+      let top = 0
+      try { top = el.getBoundingClientRect().top + window.scrollY } catch (e) { continue }
+      if (top < cut) continue
+      const tag = (el.tagName || '').toLowerCase()
+      if (tag !== 'button' && tag !== 'a' && !(el.getAttribute && el.getAttribute('role'))) continue
+      const cls = (el.className && el.className.toString ? el.className.toString() : '').slice(0, 40)
+      const aria = (el.getAttribute && (el.getAttribute('aria-label') || '')) || ''
+      const title = (el.getAttribute && (el.getAttribute('title') || '')) || ''
+      const txt = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 20)
+      const icon = el.querySelector && el.querySelector('svg,i,[class*=icon]') ? '+icon' : ''
+      out.push(`${tag}${cls ? '.' + cls : ''}${aria ? `[${aria}]` : ''}${title ? `{${title}}` : ''}${txt ? ` "${txt}"` : ''}${icon}`)
     }
-    return Array.from(new Set(seen)).slice(0, 20)
+    return Array.from(new Set(out)).slice(0, 25)
   }
   function findNext() {
     const all = clickables().filter((el) => vis(el) && !dead(el))
@@ -3742,7 +3754,22 @@ async function harvestCreatorHubVideosInPage() {
       const label = labelOf(el)
       if (label === '›' || label === '→' || label === '»' || label === '>' || label === '❯') return el
     }
-    // 3. Numbered pagination with no next button: find the current page and
+    // 3. A pager container. Amazon's control here carries no text, so nothing
+    //    label-based will ever find it. Take the last enabled clickable inside
+    //    anything that calls itself a pager, which is the next arrow in every
+    //    pagination widget ever built.
+    let containers = []
+    try {
+      containers = [...document.querySelectorAll('[class*=pagination i],[class*=Pagination],[class*=pager i],[data-testid*=pagination i],nav[aria-label*=pag i],[role="navigation"]')]
+    } catch (e) {}
+    for (const box of containers) {
+      if (!vis(box)) continue
+      const kids = [...box.querySelectorAll('button,a,[role="button"]')].filter((el) => vis(el) && !dead(el))
+      if (kids.length < 2) continue
+      const last = kids[kids.length - 1]
+      if (!/prev/.test(labelOf(last))) return last
+    }
+    // 4. Numbered pagination with no next button: find the current page and
     //    click the one after it.
     let current = null
     for (const el of all) {
