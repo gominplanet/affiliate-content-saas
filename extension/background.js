@@ -4209,6 +4209,7 @@ function fetchContentListInPage(rec) {
     // experiment and then used earlier in the loop by the bigger-page probe,
     // which threw "post is not defined" and killed the whole read after one page.
     const post = !!(rec.body && /^post$/i.test(String(rec.method || '')))
+    let barren = 0
     try {
       const qk = [...new URL(rec.url, location.href).searchParams.keys()]
       out.queryKeys = `${(rec.method || 'GET').toUpperCase()}${rec.body ? ' with a body' : ' with no body'}, query keys: ${qk.length ? qk.join(', ') : 'none'}`
@@ -4227,7 +4228,11 @@ function fetchContentListInPage(rec) {
       // page limit silently truncating the library, which is what "2,010 across
       // 200 pages" was.
       const started = Date.now()
-      if (startAt > 0) { bodyKey = 'startIndex'; page = startAt }
+      if (startAt > 0) {
+        bodyKey = 'startIndex'
+        page = startAt
+        out.pageKey = `startIndex (in the request body), resumed from ${startAt}`
+      }
       for (let i = 0; i < 1500; i++) {
         if (Date.now() - started > 240000) { out.error = 'ran out of time before the end of the library'; break }
         const u = new URL(rec.url, location.href)
@@ -4320,7 +4325,10 @@ function fetchContentListInPage(rec) {
         // Try once for a bigger window: if it returns more records the whole
         // crawl gets an order of magnitude shorter, and if it does not, nothing
         // is lost but one request.
-        if (i === 0 && post && !sizeKey) {
+        // Not on a resumed run: the probe replays the page's original body, which
+        // has no offset, so it would re-read the top of the library and make a
+        // resumed pass look productive when it had found nothing new.
+        if (i === 0 && post && !sizeKey && startAt === 0) {
           const got = (j && Array.isArray(j.result)) ? j.result.length : 0
           for (const k of ['pageSize', 'size', 'limit', 'count', 'maxResults', 'numberOfResults']) {
             try {
@@ -4346,9 +4354,21 @@ function fetchContentListInPage(rec) {
             await new Promise((r) => setTimeout(r, 150))
           }
         }
-        // Stop when a page adds nothing. With a real cursor this is the end; with
-        // page numbers it means we have run past the last one.
-        if (found.size + videos.size === before) break
+        // One page adding nothing is not the end of a 6,763 item list.
+        //
+        // A resumed run starts at an offset and its first page past that offset
+        // came back empty, so the crawl declared the library finished after ten
+        // videos. Amazon returns the odd empty window mid-list, and an ordering
+        // shift between runs can land an offset on rows we already have. Three
+        // barren pages in a row is an ending; one is a gap to step over.
+        if (found.size + videos.size === before) {
+          barren++
+          out.barren = barren
+          if (barren >= 3) break
+          if (bodyKey || pageKey) { page += pageSize; continue }
+          break
+        }
+        barren = 0
         let next = null
         const seek = (o, d) => {
           if (!o || typeof o !== 'object' || d > 6) return
