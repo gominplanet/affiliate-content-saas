@@ -137,6 +137,11 @@ export default function LaunchpadPage() {
     })()
   }, [])
   const [thumbBusy, setThumbBusy] = useState(false)
+  // Thumbnails are genuinely optional (the storefront master builds its own when
+  // none is supplied), so the step needs a way to be finished WITHOUT one.
+  // Without this the step stayed "active" forever, which locked YouTube and
+  // Amazon behind it and stranded any creator who took our own advice to skip.
+  const [thumbSkipped, setThumbSkipped] = useState(false)
   const [notifySubs, setNotifySubs] = useState(false)   // never spam the bell by default
   const [madeForKids, setMadeForKids] = useState(false)
   const [embeddable, setEmbeddable] = useState(true)
@@ -196,6 +201,7 @@ export default function LaunchpadPage() {
         if (s.tags) setTags(s.tags)
         if (s.thumbUrl) setThumbUrl(s.thumbUrl)
         if (s.thumbCleanUrl) setThumbCleanUrl(s.thumbCleanUrl)
+        if (s.thumbSkipped) setThumbSkipped(true)
         if (s.facePick) { facePickRestored.current = true; setFacePick(s.facePick) }
         if (s.publishedUrl) setPublishedUrl(s.publishedUrl)
         if (s.publishedVideoId) setPublishedVideoId(s.publishedVideoId)
@@ -218,13 +224,13 @@ export default function LaunchpadPage() {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({
         renderedUrl, cleanUrl, workingTitle, durationSec, asin, ytOpen, meta,
-        chosenTitle, description, tags, thumbUrl, thumbCleanUrl, facePick,
+        chosenTitle, description, tags, thumbUrl, thumbCleanUrl, thumbSkipped, facePick,
         publishedUrl, publishedVideoId, publishedChannelId, studioDone,
         masterId, geoCheck, marketAsins, savedAt: Date.now(),
       }))
     } catch { /* private mode / quota — resume is a convenience, never a blocker */ }
   }, [restored, renderedUrl, cleanUrl, workingTitle, durationSec, asin, ytOpen, meta,
-      chosenTitle, description, tags, thumbUrl, thumbCleanUrl, facePick,
+      chosenTitle, description, tags, thumbUrl, thumbCleanUrl, thumbSkipped, facePick,
       publishedUrl, publishedVideoId, publishedChannelId, studioDone,
       masterId, geoCheck, marketAsins])
 
@@ -572,7 +578,7 @@ export default function LaunchpadPage() {
   const s2: StepState = !renderedUrl ? 'locked' : asinOk ? 'done' : 'active'
   // Thumbnails stand on their own BEFORE YouTube, because Amazon needs them too:
   // a creator who skips YouTube still leaves this step with both images.
-  const s3: StepState = !(renderedUrl && asinOk) ? 'locked' : thumbUrl ? 'done' : 'active'
+  const s3: StepState = !(renderedUrl && asinOk) ? 'locked' : (thumbUrl || thumbSkipped) ? 'done' : 'active'
   // YouTube opens as soon as the thumbnails are made. It never hard-blocks on
   // them (the master builds its own if you skip), so a done Step 3 isn't required.
   const s4: StepState = !renderedUrl ? 'locked' : (publishedUrl || ytOpen === 'skipped') ? 'done' : s3 === 'active' ? 'locked' : 'active'
@@ -651,7 +657,11 @@ export default function LaunchpadPage() {
               className="text-[12px] font-medium inline-flex items-center gap-1 disabled:opacity-50" style={{ color: '#7C3AED' }}>
               {thumbBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Regenerate
             </button>
-          ) : undefined}>
+          ) : (thumbBusy || thumbSkipped) ? undefined : (
+            <button type="button" onClick={() => setThumbSkipped(true)} className="text-[12px] underline whitespace-nowrap" style={muted}>
+              Skip, let MVP build them
+            </button>
+          )}>
           <>
             <p className="text-[12px] mb-3" style={muted}>MVP makes two: one with the headline for YouTube and the English stores, and a text-free one for the non-English stores. Both use your face and the real product. These go to Amazon whether or not you publish to YouTube.</p>
             {/* The headline is written from the title, so this step waits on it.
