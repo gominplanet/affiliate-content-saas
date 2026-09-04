@@ -2884,6 +2884,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     // (so we can SEE chat/search's reply and confirm the contextToken field).
     try {
       if (msg.kind === 'send-response') recordNetResponse(msg.rec)
+      // An api-capture is a plain GET the page made. It carries no message to
+      // learn from, so it goes straight into the ring for the scanners to read.
+      else if (msg.kind === 'api-capture') recordNetCapture(msg.rec)
       else learnFromCapture(msg.rec)
     } catch (e) {}
     sendResponse({ ok: true })
@@ -3652,17 +3655,87 @@ async function harvestCreatorHubVideosInPage() {
     }
     return false
   }
-  function findNext() {
-    for (const el of document.querySelectorAll('button,a,[role="button"],li[role="button"],[aria-label]')) {
+  // A "load more" style control, which is not the same thing as pagination: it
+  // appends to the list in place rather than turning a page.
+  function findMore() {
+    for (const el of document.querySelectorAll('button,a,[role="button"]')) {
       if (!vis(el)) continue
       if (el.hasAttribute && el.hasAttribute('disabled')) continue
-      if (el.getAttribute && el.getAttribute('aria-disabled') === 'true') continue
-      const cls = (el.className && el.className.toString ? el.className.toString() : '').toLowerCase()
-      if (/disabled/.test(cls)) continue
-      const label = (((el.getAttribute && el.getAttribute('aria-label')) || '') + ' ' + (el.textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase()
+      const label = ((el.textContent || '') + ' ' + ((el.getAttribute && el.getAttribute('aria-label')) || '')).replace(/\s+/g, ' ').trim().toLowerCase()
+      if (label.length > 24) continue
+      if (/\b(load more|show more|see more|view more)\b/.test(label)) return el
+    }
+    return null
+  }
+  // Everything clickable, including inside open shadow roots. Amazon's pagination
+  // sits at the bottom right of the Creator Hub grid and the old finder walked
+  // past it, so this looks in more places and describes what it saw.
+  function clickables() {
+    const out = []
+    const walk = (root, depth) => {
+      if (!root || depth > 6) return
+      let els = []
+      try { els = [...root.querySelectorAll('button,a,[role="button"],[role="link"],li,[aria-label],[class*=pagination] *,[class*=Pagination] *')] } catch (e) { return }
+      for (const el of els) {
+        out.push(el)
+        if (el.shadowRoot) walk(el.shadowRoot, depth + 1)
+      }
+      try { for (const el of root.querySelectorAll('*')) { if (el.shadowRoot) walk(el.shadowRoot, depth + 1) } } catch (e) {}
+    }
+    walk(document, 0)
+    return out
+  }
+  const labelOf = (el) => (((el.getAttribute && el.getAttribute('aria-label')) || '') + ' ' + (el.textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase()
+  const dead = (el) => {
+    if (el.hasAttribute && el.hasAttribute('disabled')) return true
+    if (el.getAttribute && el.getAttribute('aria-disabled') === 'true') return true
+    const cls = (el.className && el.className.toString ? el.className.toString() : '').toLowerCase()
+    return /disabled/.test(cls)
+  }
+  // What the page offers, for the diagnostic. When the finder misses again, this
+  // is what says why instead of leaving us to guess a third time.
+  function pagerLabels() {
+    const seen = []
+    for (const el of clickables()) {
+      if (!vis(el)) continue
+      const l = labelOf(el)
+      if (!l || l.length > 30) continue
+      if (/next|prev|page|\d/.test(l)) seen.push(l)
+    }
+    return Array.from(new Set(seen)).slice(0, 20)
+  }
+  function findNext() {
+    const all = clickables().filter((el) => vis(el) && !dead(el))
+    // 1. An explicit next control. The old code capped the label at 20
+    //    characters, which threw away Amazon's own "next page, page 2 of 280".
+    for (const el of all) {
+      const label = labelOf(el)
+      if (!label || label.length > 60) continue
       if (/prev/.test(label)) continue
-      if (/\b(next|load more|show more|see more)\b/.test(label) && label.length <= 20) return el
-      if (label === '›' || label === '→' || label === '»' || label === '>') return el
+      if (/\bnext\b/.test(label)) return el
+      if (/\b(load more|show more|see more|view more)\b/.test(label)) return el
+    }
+    // 2. A bare arrow glyph.
+    for (const el of all) {
+      const label = labelOf(el)
+      if (label === '›' || label === '→' || label === '»' || label === '>' || label === '❯') return el
+    }
+    // 3. Numbered pagination with no next button: find the current page and
+    //    click the one after it.
+    let current = null
+    for (const el of all) {
+      const cls = (el.className && el.className.toString ? el.className.toString() : '').toLowerCase()
+      const isCurrent = (el.getAttribute && (el.getAttribute('aria-current') === 'page' || el.getAttribute('aria-current') === 'true')) || /selected|active|current/.test(cls)
+      if (!isCurrent) continue
+      const n = parseInt(labelOf(el).replace(/[^0-9]/g, ''), 10)
+      if (Number.isFinite(n)) { current = n; break }
+    }
+    if (current != null) {
+      for (const el of all) {
+        const l = labelOf(el)
+        if (!/^\d+$/.test(l)) continue
+        if (parseInt(l, 10) === current + 1) return el
+      }
     }
     return null
   }
@@ -3675,12 +3748,42 @@ async function harvestCreatorHubVideosInPage() {
     return false
   }
   const map = new Map()
-  // Let the table render, then scroll to load any lazy rows on this page.
   await sleep(1200)
-  for (let i = 0; i < 8; i++) { try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {} await sleep(500) }
-  try { window.scrollTo(0, 0) } catch (e) {}
   // Max out the page size before the first read (fewer round-trips).
   try { if (setMaxPageSize()) { const s = sig(); await waitForChange(s, 6000) } } catch (e) {}
+  collect(map)
+
+  // ── infinite scroll ────────────────────────────────────────────────────────
+  // The grid has no pagination at all: the last run reported "0 pages, no Next
+  // control" after finding 258 of a ~7,000 video library. It loads as you scroll,
+  // and it is virtualised, so rows unmount once they leave the viewport. The old
+  // code scrolled first and collected once at the end, which threw away every row
+  // that had already scrolled past. So: collect on EVERY step, and keep going
+  // while either new ASINs or new height keep arriving.
+  let scrollStalls = 0
+  let lastHeight = 0
+  const SCROLL_MAX_MS = 200000
+  const scrollStart = Date.now()
+  for (let step = 0; step < 1200; step++) {
+    if (Date.now() - scrollStart > SCROLL_MAX_MS) break
+    const before = map.size
+    try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
+    await sleep(450)
+    collect(map)
+    // Some grids need a nudge rather than a scroll.
+    const more = findMore()
+    if (more) { rClick(more); await sleep(900); collect(map) }
+    const h = document.body.scrollHeight
+    const grew = map.size > before || h > lastHeight
+    lastHeight = Math.max(lastHeight, h)
+    // Ten quiet rounds, not one. A slow fetch mid-list looks identical to the
+    // end of the list for a second or two, and calling it early is exactly the
+    // mistake that reported 258 as a final answer.
+    scrollStalls = grew ? 0 : scrollStalls + 1
+    if (scrollStalls >= 10) break
+  }
+  try { window.scrollTo(0, 0) } catch (e) {}
+  await sleep(600)
   collect(map)
 
   // Page through EVERY page. The old code stopped the moment a page added no
@@ -3697,7 +3800,14 @@ async function harvestCreatorHubVideosInPage() {
   for (let page = 0; page < 600; page++) {
     if (Date.now() - startedAt > MAX_MS) { partial = true; stopped = 'out of time'; break }
     const next = findNext()
-    if (!next) { stopped = 'no Next control'; break }
+    // No pagination is normal on this grid: it scrolls. Say that, rather than
+    // naming a missing control as though something went wrong.
+    if (!next) {
+      stopped = pages === 0
+        ? `no pagination control found. Controls on the page: ${pagerLabels().join(' | ') || 'none'}`
+        : 'end of pages'
+      break
+    }
     const before = sig()
     rClick(next)
     // A slow page turn is not the end of the list. 8 seconds was enough on a

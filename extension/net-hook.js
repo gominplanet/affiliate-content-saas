@@ -50,6 +50,22 @@
     return o
   }
 
+  // A GET worth learning: the Creator Hub video grid loads its rows this way, and
+  // a POST-only hook saw nothing but telemetry. Kept narrow (an api-ish path on
+  // an Amazon host) so the page's images, fonts and beacons stay out of it.
+  const looksLikeApiGet = (url, method) => {
+    try {
+      if (!/^get$/i.test(String(method || 'GET'))) return false
+      const u = new URL(url, location.href)
+      if (!AMZ.test(u.hostname)) return false
+      const p = u.pathname.toLowerCase()
+      if (/\.(js|css|png|jpe?g|gif|webp|svg|woff2?|ico|mp4|m3u8)$/.test(p)) return false
+      if (/\/1\/events\/|csm|telemetry|beacon|metrics/.test(p)) return false
+      if (!/\/(api|graphql|ajax)\//.test(p) && !/creatorhub|manage-content|videos?/.test(p)) return false
+      return true
+    } catch (e) { return false }
+  }
+
   const emit = (kind, rec) => {
     try { window.postMessage({ __mvpNet: true, kind, rec }, location.origin) } catch (e) {}
   }
@@ -69,6 +85,8 @@
         const body = init && init.body
         if (looksLikeSend(url, method, body)) {
           emit('send-capture', { via: 'fetch', url, method, headers: headersToObj(init && init.headers), body: typeof body === 'string' ? body : null, ts: Date.now() })
+        } else if (looksLikeApiGet(url, method)) {
+          emit('api-capture', { via: 'fetch', url, method: 'GET', headers: headersToObj(init && init.headers), body: null, ts: Date.now() })
         }
       } catch (e) {}
       const p = origFetch.apply(this, arguments)
@@ -95,6 +113,8 @@
         const m = this.__mvp
         if (m && looksLikeSend(m.url, m.method, body)) {
           emit('send-capture', { via: 'xhr', url: m.url, method: m.method, headers: m.headers, body: typeof body === 'string' ? body : null, ts: Date.now() })
+        } else if (m && looksLikeApiGet(m.url, m.method)) {
+          emit('api-capture', { via: 'xhr', url: m.url, method: 'GET', headers: m.headers, body: null, ts: Date.now() })
         }
       } catch (e) {}
       return XS.apply(this, arguments)
