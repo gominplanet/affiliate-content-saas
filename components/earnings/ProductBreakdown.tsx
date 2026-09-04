@@ -213,22 +213,26 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
 
         <div className="card p-4">
           <p className="text-[12px] font-semibold mb-2 inline-flex items-center gap-1.5" style={label}>
-            <Video size={14} style={{ color: '#7C3AED' }} /> Earning with no video
+            <Video size={14} style={{ color: '#7C3AED' }} /> Winning on Amazon, absent off it
           </p>
           {uncovered.length === 0 ? (
-            <p className="text-[12px]" style={muted}>Every product that earned has content behind it.</p>
+            <p className="text-[12px]" style={muted}>Every product that earned already has a video off Amazon.</p>
           ) : (
             <ul className="space-y-2">
               {uncovered.map(p => (
                 <li key={p.asin} className="text-[12px]">
                   <span className="block font-medium truncate" style={label}>{shortTitle(p.title, p.asin)}</span>
-                  <span style={muted}>{money(p.earningsCents)} earned, nothing published</span>
+                  <span style={muted}>{money(p.earningsCents)} earned, no video off Amazon</span>
                 </li>
               ))}
             </ul>
           )}
+          {/* The point of this card, stated plainly. Anything earning onsite is
+              already carried by a video on the storefront, by definition. What is
+              missing is the offsite half: the same product, in front of an
+              audience that is not already standing in Amazon. */}
           <p className="text-[11px] mt-2" style={muted}>
-            These earn from your storefront or old links alone. Matched against videos MVP knows it published for you, so a video posted elsewhere will not count here.
+            Money is coming in without a video anywhere but Amazon. Onsite sales already have a storefront video behind them, so these are the ones proven to sell that nobody has taken to YouTube, a blog or socials yet. Matched against videos MVP published for you, so one you posted by hand elsewhere will not count.
           </p>
         </div>
       </div>
@@ -296,6 +300,7 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
           </button>
         )}
         <p className="text-[11px] mt-3" style={muted}>
+          These rows cover onsite and offsite together. Amazon accepts a store filter on the per-product report and then ignores it, so the split that the monthly totals carry is not available here.{' '}
           Trend compares {canTrend ? `${monthName(recent!)} against ${monthName(prior!)}` : 'the last two finished months'}, and reads &ldquo;not enough months&rdquo; where one of them had nothing to compare. The running month is left out on purpose: a few days against a whole month would show every product falling.
           {covLabel != null && covRatio != null && covRatio < 0.95 ? ` These products account for ${covLabel} of the earnings in the same months, so anything missing is money Amazon reported in the totals but did not break down here.` : ''}
         </p>

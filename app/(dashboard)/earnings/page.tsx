@@ -306,12 +306,23 @@ export default function EarningsPage() {
               <div className="card p-4">
                 <p className="text-[12px] font-semibold mb-2 inline-flex items-center gap-1.5" style={label}><Store size={14} /> Onsite</p>
                 <p className="text-[20px] font-bold tabular-nums" style={label}>{money(totals?.onsiteCents)}</p>
-                <p className="text-[11px] mt-1" style={muted}>Your storefront and shoppable videos on Amazon.</p>
+                {/* The distinction is about WHERE the sale started, not which
+                    programme paid for it. Onsite is always a video of yours
+                    playing on Amazon itself, whether the commission came through
+                    Creator Connections or not. */}
+                <p className="text-[11px] mt-1" style={muted}>
+                  Earned on Amazon itself, from your videos on your storefront. Creator Connections or ordinary commission, it is the same shelf.
+                </p>
               </div>
               <div className="card p-4">
                 <p className="text-[12px] font-semibold mb-2 inline-flex items-center gap-1.5" style={label}><Globe size={14} /> Offsite</p>
                 <p className="text-[20px] font-bold tabular-nums" style={label}>{money(totals?.offsiteCents)}</p>
-                <p className="text-[11px] mt-1" style={muted}>Traffic you sent in from YouTube, your blog and socials.</p>
+                {/* Offsite is everything that started somewhere else and walked
+                    in through a link. Amazon does not say which of those places
+                    it was, so neither do we. */}
+                <p className="text-[11px] mt-1" style={muted}>
+                  Earned from links you placed elsewhere: YouTube, your blog, socials, a newsletter. Amazon does not say which of them sent the buyer.
+                </p>
               </div>
             </div>
 
