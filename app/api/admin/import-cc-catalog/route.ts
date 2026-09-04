@@ -184,11 +184,15 @@ export async function POST(request: Request) {
       if (liveCount != null && liveCount > 1000) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: sampleRows } = await (admin as any)
-            .from('cc_campaign_catalog_import').select('campaign_id').limit(400)
-          const ids = ((sampleRows ?? []) as Array<{ campaign_id: string }>)
+          const { data: overlapSample } = await (admin as any)
+            .from('cc_campaign_catalog_import').select('campaign_id').limit(120)
+          const ids = ((overlapSample ?? []) as Array<{ campaign_id: string }>)
             .map(r => r.campaign_id).filter(Boolean)
-          if (ids.length >= 100) {
+          // 120, not more: PostgREST puts an `in` list in the QUERY STRING, and a
+          // few hundred long ids overflow the URL limit. That request fails, the
+          // catch below swallows it, and the guard silently never fires — the one
+          // outcome worse than not having it. 120 is plenty for a ratio check.
+          if (ids.length >= 50) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const { count: hit } = await (admin as any)
               .from('cc_campaign_catalog').select('campaign_id', { count: 'exact', head: true })
@@ -201,6 +205,9 @@ export async function POST(request: Request) {
                 staged: stagedCount,
                 live: liveCount,
                 overlapPct: pct,
+                // The client's confirm dialog prints this, so it must be present
+                // on EVERY needsConfirm response or it renders as NaN.
+                wouldPurgeApprox: Math.round(liveCount * (1 - overlap)),
                 error: `Only about ${pct}% of the staged campaigns match ones already in the live catalog, so merging would purge most of it and every purged campaign loses its Keepa enrichment permanently. That is normal if Amazon really did reissue its campaign ids, and a sign of a wrong or malformed export if it didn't. Check a few campaign ids in your CSV against the catalog before confirming.`,
               }, { status: 409 })
             }
