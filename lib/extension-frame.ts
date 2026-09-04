@@ -569,6 +569,8 @@ export interface IdeaScanResult {
   landedOn?: string
   pageTitle?: string | null
   heading?: string | null
+  /** A readable description of what was on the page, when nothing was found. */
+  probe?: string
   /** Endpoints the page called while we crawled. The route to replacing a DOM
    *  crawl with a replayed request. */
   apiCalls?: string[]
@@ -642,7 +644,7 @@ export async function requestCreatorHubVideosScan(url?: string): Promise<IdeaSca
   return {
     ok: !!resp.ok, count: resp.count, partial: resp.partial, error: resp.error,
     pages: resp.pages, stopped: resp.stopped, apiCalls: resp.apiCalls, pagerSeen: resp.pagerSeen,
-    landedOn: resp.landedOn, pageTitle: resp.pageTitle, heading: resp.heading,
+    landedOn: resp.landedOn, pageTitle: resp.pageTitle, heading: resp.heading, probe: resp.probe,
   }
 }
 

@@ -3499,13 +3499,17 @@ async function scanIdeaListBackground(rawUrl) {
     const r = (results && results[0] && results[0].result) || null
     if (!r || !r.ok) return { ok: false, error: 'no-result' }
     if (r.signedOut) return { ok: false, error: 'signed-out' }
-    if (r.wrongPage) {
+    // Only a wrong page if EVERY frame says so. One frame being chrome while
+    // another holds the grid is normal.
+    if (frames.every((f) => f.wrongPage)) {
+      const p = (r.probe || {})
       return {
         ok: false,
         error: 'wrong-page',
-        landedOn: r.url || url,
-        pageTitle: r.title || null,
-        heading: r.heading || null,
+        landedOn: p.url || url,
+        pageTitle: p.title || null,
+        heading: p.heading || null,
+        probe: describeProbe(frames),
       }
     }
     if (!r.items || !r.items.length) return { ok: true, count: 0 }
@@ -3604,7 +3608,7 @@ async function scanStorefrontBackground(rawUrl) {
 // ── Creator Hub VIDEOS: read the creator's video table (each row is tied to a
 // product ASIN — the page fetches per-ASIN) and record which products they have
 // a video for. Self-contained: collect ASINs on the page, page through, return.
-async function harvestCreatorHubVideosInPage() {
+async function harvestCreatorHubVideosInPage(opts) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const vis = (el) => { if (!el || !el.getBoundingClientRect) return false; const r = el.getBoundingClientRect(); return (r.width > 0 || r.height > 0) }
   const rClick = (el) => {
@@ -3831,13 +3835,37 @@ async function harvestCreatorHubVideosInPage() {
     return false
   }
   await sleep(1500)
-  if (looksLikeCart() || !looksLikeVideoList()) {
+  // What this page actually contains, reported whenever the harvest comes back
+  // empty. "no-videos" on its own is useless: it cannot tell "your library is
+  // empty" from "the rows do not carry ASINs where we look" from "the grid is in
+  // an iframe we never reached".
+  function probe() {
+    const count = (sel) => { try { return document.querySelectorAll(sel).length } catch (e) { return -1 } }
+    let b0 = 0
+    try {
+      const m = (document.body ? document.body.innerHTML : '').match(/\bB0[0-9A-Z]{8}\b/g)
+      b0 = m ? m.length : 0
+    } catch (e) {}
+    let frames = []
+    try { frames = [...document.querySelectorAll('iframe')].map((f) => (f.getAttribute('src') || '(no src)').slice(0, 80)).slice(0, 5) } catch (e) {}
+    return {
+      url: location.href,
+      title: (document.title || '').slice(0, 100),
+      heading: ((document.querySelector('h1,h2') || {}).textContent || '').replace(/\s+/g, ' ').trim().slice(0, 100),
+      dataAsin: count('[data-asin]'),
+      dpLinks: count('a[href*="/dp/"], a[href*="/product/"]'),
+      b0Tokens: b0,
+      iframes: frames,
+      rows: count('tr,[role="row"],[class*=row]'),
+      text: ((document.body ? document.body.innerText : '') || '').replace(/\s+/g, ' ').slice(0, 300),
+    }
+  }
+  const trusted = !!(opts && opts.trusted)
+  if (looksLikeCart() || (!trusted && !looksLikeVideoList())) {
     return {
       ok: true,
       wrongPage: true,
-      url: location.href,
-      title: (document.title || '').slice(0, 120),
-      heading: ((document.querySelector('h1,h2') || {}).textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+      probe: probe(),
       asins: [],
     }
   }
@@ -3943,15 +3971,38 @@ async function harvestCreatorHubVideosInPage() {
     stopped,
     nextHref,
     pagerSeen: pagerLabels(),
+    probe: probe(),
     asins: [...map.entries()].map(([asin, title]) => ({ asin, title })),
     signedOut: /\/ap\/signin/.test(location.href),
   }
 }
 
+// Turns the per-frame probes into one sentence a person can act on, and I can
+// debug from, without another round of guessing.
+function describeProbe(frames) {
+  const parts = []
+  for (const f of (frames || [])) {
+    const p = f && f.probe
+    if (!p) continue
+    parts.push([
+      p.url ? p.url.slice(0, 90) : '?',
+      p.title ? `titled "${p.title}"` : null,
+      `${p.dataAsin} data-asin, ${p.dpLinks} product links, ${p.b0Tokens} ASIN tokens, ${p.rows} rows`,
+      p.iframes && p.iframes.length ? `iframes: ${p.iframes.join(' , ')}` : null,
+      p.text ? `text starts: ${p.text.slice(0, 120)}` : null,
+    ].filter(Boolean).join(' — '))
+  }
+  return parts.slice(0, 4).join('  ||  ')
+}
+
 async function scanCreatorHubVideosBackground(userUrl) {
   // The creator can supply the exact page. Guessing a URL and harvesting
   // whatever loads is how the cart ended up in the database.
-  const url = /^https:\/\/(www\.)?amazon\.com\//i.test(String(userUrl || '')) ? String(userUrl) : 'https://www.amazon.com/creatorhub'
+  // Creator Studio's Manage content page is the video list. /creatorhub was my
+  // guess and it was wrong: it is not the video table, and harvesting it picked
+  // up the shopping cart.
+  const userGave = /^https:\/\/(www\.)?amazon\.com\//i.test(String(userUrl || ''))
+  const url = userGave ? String(userUrl) : 'https://www.amazon.com/manage-content?ref=ive_cp'
   const startedAt = Date.now()
   let tabId = null
   try {
@@ -3959,8 +4010,18 @@ async function scanCreatorHubVideosBackground(userUrl) {
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     await _sleep(3000)
-    const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestCreatorHubVideosInPage })
-    let r = (results && results[0] && results[0].result) || null
+    // allFrames, because an Amazon console panel is often an iframe and the main
+    // frame then holds nothing but chrome. Prefer whichever frame actually found
+    // products; fall back to the main frame's answer for its diagnostics.
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: harvestCreatorHubVideosInPage,
+      // When the creator pasted the URL themselves, do not second-guess the page
+      // shape. Only refuse a cart, which is a mistake rather than a preference.
+      args: [{ trusted: userGave }],
+    })
+    const frames = (results || []).map((x) => x && x.result).filter(Boolean)
+    let r = frames.slice().sort((a, b) => ((b.asins || []).length - (a.asins || []).length))[0] || null
     if (!r || !r.ok) return { ok: false, error: 'no-result' }
     if (r.signedOut) return { ok: false, error: 'signed-out' }
 
@@ -3984,8 +4045,11 @@ async function scanCreatorHubVideosBackground(userUrl) {
         await chrome.tabs.update(tabId, { url: href })
         await waitForTabLoad(tabId, 30000)
         await _sleep(2500)
-        const next = await chrome.scripting.executeScript({ target: { tabId }, func: harvestCreatorHubVideosInPage })
-        const nr = (next && next[0] && next[0].result) || null
+        const next = await chrome.scripting.executeScript({
+          target: { tabId, allFrames: true }, func: harvestCreatorHubVideosInPage, args: [{ trusted: userGave }],
+        })
+        const nr = ((next || []).map((x) => x && x.result).filter(Boolean)
+          .sort((a, b) => ((b.asins || []).length - (a.asins || []).length))[0]) || null
         if (!nr || !nr.ok) { stopped = 'a page failed to load'; break }
         const before = merged.size
         take(nr)
@@ -4003,6 +4067,11 @@ async function scanCreatorHubVideosBackground(userUrl) {
     }
     r = { ...r, pages: pagesTurned, stopped, partial: r.partial || !!href, pagerSeen: r.pagerSeen }
     const asins = [...merged.entries()].map(([asin, title]) => ({ asin, title }))
+    if (!asins.length) {
+      // Say what the page held instead of a bare code. This is the difference
+      // between "your library is empty" and "the rows do not carry ASINs".
+      return { ok: false, error: 'no-videos', probe: describeProbe(frames) }
+    }
     if (!asins.length) return { ok: false, error: 'no-videos' }
     const push = await pushVideosToMvp(asins)
     // What the page's own code asked Amazon for while we were clicking. A DOM

@@ -163,15 +163,21 @@ export default function EarningsPage() {
         if (r.error === 'wrong-page') {
           // Better to read nothing than to read the wrong page. The previous
           // version harvested a shopping cart and filed it as your video library.
-          setVideoScan(`SCOUT opened ${r.landedOn || 'that page'} and it is not your video list${r.pageTitle ? ` (it says "${r.pageTitle}")` : ''}, so nothing was saved. Open your Creator Hub video list in Chrome, copy the URL from the address bar, paste it in the box and run this again.`)
+          setVideoScan(`SCOUT opened ${r.landedOn || 'that page'} and it is not your video list${r.pageTitle ? ` (it says "${r.pageTitle}")` : ''}, so nothing was saved. Open your Creator Hub video list in Chrome, copy the URL from the address bar, paste it in the box and run this again.${r.probe ? ` What was on the page: ${r.probe}` : ''}`)
           toast.error('That page is not your video list, so nothing was saved.')
           return
         }
-        toast.error(r.error === 'not-installed'
-          ? 'Install SCOUT and sign in to Amazon to read your videos.'
-          : r.error === 'timeout'
-            ? 'Amazon did not finish listing your videos in time. Try again and leave the tab alone while it runs.'
-            : (r.error || 'Could not read your Amazon videos.'))
+        // Never put a raw error code on screen. "no-videos" told you nothing
+        // about whether your library was empty or the page was unreadable.
+        const human =
+          r.error === 'not-installed' ? 'Install SCOUT and sign in to Amazon to read your videos.'
+          : r.error === 'timeout' ? 'Amazon did not finish listing your videos in time. Try again and leave the tab alone while it runs.'
+          : r.error === 'signed-out' ? 'Amazon signed SCOUT out. Sign in to Amazon in this browser and try again.'
+          : r.error === 'no-videos' ? 'That page loaded but SCOUT could not find any products on it, so nothing was saved.'
+          : r.error === 'no-result' ? 'That page did not respond in a way SCOUT could read, so nothing was saved.'
+          : 'Could not read your Amazon videos, so nothing was saved.'
+        setVideoScan(r.probe ? `${human} What was on the page: ${r.probe}` : human)
+        toast.error(human)
         return
       }
       // Say what was actually read and whether it is all of it. A creator with
@@ -242,10 +248,10 @@ export default function EarningsPage() {
           <input
             value={hubUrl}
             onChange={e => { setHubUrl(e.target.value); try { localStorage.setItem('mvp_creatorhub_url', e.target.value.trim()) } catch { /* ignore */ } }}
-            placeholder="Your Creator Hub video list URL"
+            placeholder="https://www.amazon.com/manage-content"
             className="px-3 py-2 rounded-lg border text-sm bg-transparent w-64"
             style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
-            title="Open your video list on Amazon, copy the URL from the address bar and paste it here. Without it SCOUT guesses, and a guess landed on the shopping cart."
+            title="Creator Studio, Manage content. Leave blank to use that page, or paste the exact URL of your video list if yours differs."
           />
           <button type="button" onClick={() => void loadAmazonVideos()} disabled={scanningVideos}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border disabled:opacity-60"
