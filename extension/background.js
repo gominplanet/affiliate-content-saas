@@ -4038,25 +4038,39 @@ async function harvestCreatorHubVideosInPage(opts) {
 // pagination key is discovered from the response.
 function fetchContentListInPage(rec) {
   return (async () => {
-    const out = { items: [], pages: 0, error: null, sample: null }
+    const out = { items: [], pages: 0, error: null, sample: null, total: null }
     const ASIN_RE = /^[A-Z0-9]{10}$/
     // Every object anywhere in the payload that carries an ASIN under an
     // asin-named key. Shape-agnostic on purpose: we have not seen this response.
     const harvest = (root, into) => {
       const q = [root]
       let steps = 0
-      while (q.length && steps++ < 60000) {
+      while (q.length && steps++ < 200000) {
         const n = q.shift()
         if (!n || typeof n !== 'object') continue
         if (Array.isArray(n)) { for (const x of n) q.push(x); continue }
-        let asin = null
+        // A record's title, used for whichever ASINs hang off it. Amazon's video
+        // rows carry a description rather than a title.
         let title = null
         for (const k in n) {
           const v = n[k]
-          if (typeof v === 'string' && /asin/i.test(k) && ASIN_RE.test(v.toUpperCase())) asin = v.toUpperCase()
-          else if (typeof v === 'string' && !title && /title|name/i.test(k) && v.length > 3) title = v.slice(0, 200)
+          if (typeof v === 'string' && !title && /title|description|name/i.test(k) && v.length > 3) title = v.slice(0, 200)
         }
-        if (asin && !into.has(asin)) into.set(asin, title)
+        for (const k in n) {
+          const v = n[k]
+          if (!/asin/i.test(k)) continue
+          // An ASIN under an asin-named key arrives in three shapes here: a bare
+          // string, a list of strings, or an object wrapping a value. Only the
+          // first was handled, which is why a payload full of them read as empty.
+          const take = (x) => {
+            if (typeof x !== 'string') return
+            const a = x.toUpperCase()
+            if (ASIN_RE.test(a) && !into.has(a)) into.set(a, title)
+          }
+          if (typeof v === 'string') take(v)
+          else if (Array.isArray(v)) for (const x of v) { take(x); if (x && typeof x === 'object') for (const kk in x) take(x[kk]) }
+          else if (v && typeof v === 'object') for (const kk in v) take(v[kk])
+        }
         for (const k in n) q.push(n[k])
       }
     }
@@ -4100,6 +4114,12 @@ function fetchContentListInPage(rec) {
         const j = await res.json().catch(() => null)
         if (!j) { out.error = 'not JSON'; break }
         if (!out.sample) out.sample = JSON.stringify(j).slice(0, 1200)
+        // Amazon states the library size. Reading fewer than that is a partial
+        // read and must say so rather than passing as the whole library.
+        try {
+          const t = j && j.metadata && j.metadata.totalResults
+          if (Number.isFinite(t)) out.total = t
+        } catch (e) {}
         const before = found.size
         harvest(j, found)
         out.pages = i + 1
@@ -4189,11 +4209,18 @@ async function scanCreatorHubVideosBackground(userUrl) {
         const a = (viaApi && viaApi[0] && viaApi[0].result) || null
         if (a && a.items && a.items.length) {
           const push = await pushVideosToMvp(a.items)
+          // Amazon states the library size in the response. Reporting our count
+          // without it lets a partial read pass as the whole library, which is
+          // the failure this scanner has repeated all afternoon.
+          const short = Number.isFinite(a.total) && a.items.length < a.total
           return {
             ok: !!(push && push.ok),
             count: a.items.length,
             pages: a.pages || 0,
-            stopped: a.error ? `list API stopped: ${a.error}` : 'end',
+            partial: short,
+            stopped: a.error
+              ? `list API stopped: ${a.error}`
+              : short ? `Amazon reports ${a.total.toLocaleString()} items and we read ${a.items.length.toLocaleString()}` : 'end',
             source: "Amazon's own list API",
             error: (push && push.ok) ? undefined : (push && push.error),
           }
