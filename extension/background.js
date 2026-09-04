@@ -4025,6 +4025,97 @@ async function harvestCreatorHubVideosInPage(opts) {
   }
 }
 
+
+// Replays Manage content's OWN list request, paginated, inside the page.
+//
+// Eight versions of DOM scraping produced a shopping cart and a few hundred rows
+// off a library of thousands. The page fetches /manage-content/api/get-content-list
+// and that answer is complete, ordered and free of cart widgets. This is the same
+// move that turned the earnings sync from broken into exact: read what the page
+// reads, not what it renders.
+//
+// The request shape is captured from the page rather than guessed, and the
+// pagination key is discovered from the response.
+function fetchContentListInPage(rec) {
+  return (async () => {
+    const out = { items: [], pages: 0, error: null, sample: null }
+    const ASIN_RE = /^[A-Z0-9]{10}$/
+    // Every object anywhere in the payload that carries an ASIN under an
+    // asin-named key. Shape-agnostic on purpose: we have not seen this response.
+    const harvest = (root, into) => {
+      const q = [root]
+      let steps = 0
+      while (q.length && steps++ < 60000) {
+        const n = q.shift()
+        if (!n || typeof n !== 'object') continue
+        if (Array.isArray(n)) { for (const x of n) q.push(x); continue }
+        let asin = null
+        let title = null
+        for (const k in n) {
+          const v = n[k]
+          if (typeof v === 'string' && /asin/i.test(k) && ASIN_RE.test(v.toUpperCase())) asin = v.toUpperCase()
+          else if (typeof v === 'string' && !title && /title|name/i.test(k) && v.length > 3) title = v.slice(0, 200)
+        }
+        if (asin && !into.has(asin)) into.set(asin, title)
+        for (const k in n) q.push(n[k])
+      }
+    }
+    const found = new Map()
+    let token = null
+    let page = 1
+    try {
+      for (let i = 0; i < 200; i++) {
+        const u = new URL(rec.url, location.href)
+        // Advance whichever pagination the endpoint uses. Setting all of them is
+        // harmless: an endpoint ignores parameters it does not know.
+        if (token) {
+          u.searchParams.set('nextToken', token)
+          u.searchParams.set('nextPageToken', token)
+        } else {
+          u.searchParams.set('page', String(page))
+          u.searchParams.set('pageNumber', String(page))
+          u.searchParams.set('offset', String((page - 1) * 100))
+        }
+        if (!u.searchParams.get('pageSize')) u.searchParams.set('pageSize', '100')
+        const init = {
+          method: rec.method || 'GET',
+          credentials: 'include',
+          headers: rec.headers && Object.keys(rec.headers).length ? rec.headers : { accept: 'application/json' },
+          signal: AbortSignal.timeout(30000),
+        }
+        if (rec.body && /^post$/i.test(init.method)) init.body = rec.body
+        const res = await fetch(u.toString(), init)
+        if (!res.ok) { out.error = `HTTP ${res.status}`; break }
+        const j = await res.json().catch(() => null)
+        if (!j) { out.error = 'not JSON'; break }
+        if (!out.sample) out.sample = JSON.stringify(j).slice(0, 1200)
+        const before = found.size
+        harvest(j, found)
+        out.pages = i + 1
+        // Stop when a page adds nothing. With a real cursor this is the end; with
+        // page numbers it means we have run past the last one.
+        if (found.size === before) break
+        let next = null
+        const seek = (o, d) => {
+          if (!o || typeof o !== 'object' || d > 6) return
+          for (const k in o) {
+            if (/nexttoken|nextpagetoken|cursor/i.test(k) && typeof o[k] === 'string' && o[k]) { next = o[k]; return }
+            seek(o[k], d + 1)
+          }
+        }
+        seek(j, 0)
+        if (next && next !== token) token = next
+        else { token = null; page++ }
+        await new Promise((r) => setTimeout(r, 250))
+      }
+    } catch (e) {
+      out.error = (e && e.message) || String(e)
+    }
+    out.items = [...found.entries()].map(([asin, title]) => ({ asin, title }))
+    return out
+  })()
+}
+
 // Turns the per-frame probes into one sentence a person can act on, and I can
 // debug from, without another round of guessing.
 function describeProbe(frames) {
@@ -4060,7 +4151,35 @@ async function scanCreatorHubVideosBackground(userUrl) {
     const tab = await chrome.tabs.create({ url, active: false })
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
-    await _sleep(3000)
+    // Long enough for the page to fire its own list request, which net-hook then
+    // captures. Everything good depends on catching that one call.
+    await _sleep(6000)
+    // The page's own list API first. Its answer is complete and carries no cart
+    // widgets, so the DOM crawl below is now only a fallback for when we cannot
+    // capture that request.
+    const apiRec = (_ccNetRing || []).slice().reverse()
+      .find((x) => x && /\/manage-content\/api\/get-content-list/i.test(String(x.url || '')))
+    if (apiRec) {
+      try {
+        const viaApi = await chrome.scripting.executeScript({
+          target: { tabId }, world: 'MAIN', func: fetchContentListInPage,
+          args: [{ url: apiRec.url, method: apiRec.method || 'GET', headers: apiRec.headers || {}, body: apiRec.body || null }],
+        })
+        const a = (viaApi && viaApi[0] && viaApi[0].result) || null
+        if (a && a.items && a.items.length) {
+          const push = await pushVideosToMvp(a.items)
+          return {
+            ok: !!(push && push.ok),
+            count: a.items.length,
+            pages: a.pages || 0,
+            stopped: a.error ? `list API stopped: ${a.error}` : 'end',
+            source: 'list API',
+            error: (push && push.ok) ? undefined : (push && push.error),
+          }
+        }
+      } catch (e) { /* fall through to the DOM crawl */ }
+    }
+
     // allFrames, because an Amazon console panel is often an iframe and the main
     // frame then holds nothing but chrome. Prefer whichever frame actually found
     // products; fall back to the main frame's answer for its diagnostics.
