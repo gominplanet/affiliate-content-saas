@@ -185,6 +185,18 @@ export interface EarningsSyncStatus {
      *  Amazon's own screen rather than assumed correct. */
     sample?: string
     mapping?: Record<string, string | null> | null
+    /** Which reporting endpoints the page called itself, and which of them SCOUT
+     *  replayed for the per-product rows. Endpoint paths are learned from the page
+     *  rather than guessed, so seeing them is how we know the sync is talking to
+     *  something real. */
+    reportCalls?: string[]
+    recipe?: string
+    groupBy?: string
+    /** Product rows MVP could not file, and why. From 2026-09-09 Amazon groups
+     *  low-activity products under "Others", which carries no ASIN, so this is
+     *  the number that says how much of the breakdown is being lost. */
+    skipped?: number
+    skippedReasons?: string[]
   } | null
 }
 

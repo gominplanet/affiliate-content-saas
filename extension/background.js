@@ -608,6 +608,7 @@ const DEFAULT_SEARCH_BODY = JSON.stringify({
 })
 const DEFAULT_SEND_BODY = JSON.stringify({ actorName: ACTOR_PLACEHOLDER, contextToken: CTX_PLACEHOLDER, content: MSG_PLACEHOLDER })
 let _ccNetRing = []           // recent captured request POSTs (in-memory)
+let _earnNetRing = []         // the reporting page's OWN /connect/api/report/ POSTs
 let _ccRespRing = []          // recent captured RESPONSES (in-memory, for diag)
 let _ccLastSendDiag = null    // diagnostic of the most recent background send (for MVP_CC_DEBUG)
 let _ccSendTabId = null       // ONE reused hidden tab for the whole bulk run (no open/close churn)
@@ -653,6 +654,37 @@ function recordNetCapture(rec) {
   if (!rec || !rec.url) return
   _ccNetRing.push(rec)
   if (_ccNetRing.length > 12) _ccNetRing.shift()
+  // Reporting calls get their own ring. The earnings page fires enough requests
+  // to flush a 12-slot buffer before we ever read it, and these are the ones the
+  // per-product sync replays.
+  try {
+    if (/\/connect\/api\/report\//i.test(String(rec.url))) {
+      _earnNetRing.push(rec)
+      if (_earnNetRing.length > 12) _earnNetRing.shift()
+    }
+  } catch (e) {}
+}
+
+// The reporting requests the page made itself since this run started, newest
+// first, one per distinct body. We do NOT guess these endpoints: a path invented
+// from the summary call's shape came back "TypeError: Failed to fetch" on every
+// month, which is Amazon's edge refusing a route that does not exist. So SCOUT
+// learns the real one the same way it learned the EPC grid query, by watching
+// what the page asks for.
+function earningsReportCalls(sinceTs) {
+  const out = []
+  const seen = Object.create(null)
+  for (let i = _earnNetRing.length - 1; i >= 0; i--) {
+    const rec = _earnNetRing[i]
+    if (!rec || typeof rec.body !== 'string' || !rec.body) continue
+    if (sinceTs && rec.ts && rec.ts < sinceTs) continue
+    if (seen[rec.body]) continue
+    seen[rec.body] = 1
+    let path = rec.url
+    try { path = new URL(rec.url, 'https://affiliate-program.amazon.com').pathname } catch (e) {}
+    out.push({ url: rec.url, path, body: rec.body, headers: rec.headers || {} })
+  }
+  return out
 }
 
 function recordNetResponse(rec) {
@@ -1617,7 +1649,7 @@ const isoDay = (d) => d.toISOString().slice(0, 10)
 // it closes over nothing — every helper is defined inside.
 function earningsFetchInPage(params) {
   return (async () => {
-    const { months, stores, host } = params
+    const { months, stores, host, recipe } = params
     const out = { periods: [], products: [], assoc: [], errors: [], sample: null, mapping: null }
     // These endpoints carry NO csrf token. Auth is the same-origin session cookie
     // plus a `storeid` header naming the creator's base store. The token we were
@@ -1707,27 +1739,38 @@ function earningsFetchInPage(params) {
       return Number.isFinite(n) ? n : null
     }
 
-    const ccProducts = async (fromMs, toMs, storeId, reportType) => {
-      const filterOptions = emptyFilters()
-      filterOptions.dateRange = { fromDate: fromMs, toDate: toMs }
-      filterOptions.storeIds = [storeId]
-      // "Failed to fetch" is a dropped connection, not an answer: Amazon closes on
-      // us when this runs back to back with the summary call. So it retries with a
-      // widening gap, and a smaller page, before giving up on the month. The
-      // thrown error is kept verbatim rather than flattened, because a TypeError
-      // and a timeout call for opposite fixes.
+    // Replays the request the page itself made for its product table, with only
+    // the date window and the store swapped. `recipe` is captured by net-hook
+    // while the page loads; when there is none we do not fall back to a guessed
+    // URL, we report that we have no recipe. Guessing is what produced
+    // "TypeError: Failed to fetch" on every month.
+    const ccProducts = async (fromMs, toMs, storeId) => {
+      if (!recipe || !recipe.url || !recipe.body) return { ok: false, status: 'no captured product query' }
+      let body
+      try {
+        const o = JSON.parse(recipe.body)
+        const fo = o.filterOptions && typeof o.filterOptions === 'object' ? o.filterOptions : (o.filterOptions = {})
+        fo.dateRange = { fromDate: fromMs, toDate: toMs }
+        fo.storeIds = [storeId]
+        body = JSON.stringify(o)
+      } catch (e) {
+        return { ok: false, status: 'captured query was not JSON' }
+      }
+      // Drop the headers the browser sets itself; keep the page's own (which is
+      // where storeid and any token it does use come from).
+      const DROP = { 'content-length': 1, host: 1, connection: 1, 'accept-encoding': 1 }
+      const headers = {}
+      for (const k in (recipe.headers || {})) { if (!DROP[String(k).toLowerCase()]) headers[k] = recipe.headers[k] }
+      if (!headers['Content-Type'] && !headers['content-type']) headers['Content-Type'] = 'application/json'
+      if (baseStore && !Object.keys(headers).some((k) => k.toLowerCase() === 'storeid')) headers.storeid = baseStore
+
       let res = null
       let lastErr = null
       for (let attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 1200 * attempt))
         try {
-          res = await fetch(`https://${host}/connect/api/report/earnings/search`, {
-            method: 'POST', credentials: 'include',
-            headers: { 'Content-Type': 'application/json', 'accept': 'application/json', ...(baseStore ? { storeid: baseStore } : {}) },
-            body: JSON.stringify({
-              aggregationOption: 'MONTH', reportType, filterOptions,
-              searchOptions: null, sortOptions: null, pageNumber: 1, pageSize: 50,
-            }),
+          res = await fetch(recipe.url, {
+            method: 'POST', credentials: 'include', headers, body,
             signal: AbortSignal.timeout(30000),
           })
           lastErr = null
@@ -1742,9 +1785,7 @@ function earningsFetchInPage(params) {
       const j = await res.json().catch(() => null)
       const recs = j ? findRecords(j) : null
       if (!recs || !recs.length) {
-        // No records is a legitimate answer for a quiet month. Keep a trimmed raw
-        // body once so a shape change is visible instead of silently empty.
-        if (!out.sample) out.sample = JSON.stringify(j).slice(0, 1200)
+        if (!out.sample) out.sample = `no ASIN records in ${recipe.url}: ${JSON.stringify(j).slice(0, 900)}`
         return { ok: true, items: [] }
       }
       const first = recs.find((x) => x && typeof x === 'object') || {}
@@ -1799,10 +1840,13 @@ function earningsFetchInPage(params) {
             out.errors.push(`${rt[0]} ${mth.start} ${st.storeId}: ${(e && e.message) || e}`)
           }
           await new Promise(r => setTimeout(r, 250))
-          // Then the per-ASIN breakdown for the same window. A failure here never
-          // costs us the total we already have, so it's caught separately.
+          // Then the per-ASIN breakdown for the same window. There is ONE captured
+          // recipe and it belongs to the Creator Connections table, so this runs on
+          // the cc pass only; running it again under the epc label would file the
+          // same rows twice under a stream they didn't come from. A failure here
+          // never costs us the total we already have, so it's caught separately.
           try {
-            const pr = await ccProducts(mth.fromMs, mth.toMs, st.storeId, rt[1])
+            const pr = rt[0] === 'cc' ? await ccProducts(mth.fromMs, mth.toMs, st.storeId) : { ok: true, items: [] }
             if (pr.ok) {
               for (const it of pr.items) {
                 out.products.push({
@@ -1850,6 +1894,45 @@ function earningsFetchInPage(params) {
   })()
 }
 
+
+// Runs IN the page: switch the reporting table's "Group by" to the product/ASIN
+// option so the SPA fires that view's own request, which net-hook then captures.
+// Amazon builds these as custom widgets, not native selects, so this tries the
+// native path first and then the DOM path, and reports which one it took rather
+// than silently doing nothing.
+function groupReportByProductInPage() {
+  const seen = []
+  try {
+    for (const sel of Array.from(document.querySelectorAll('select'))) {
+      const opt = Array.from(sel.options || []).find((o) => /asin|product/i.test(o.textContent || ''))
+      if (opt) {
+        sel.value = opt.value
+        sel.dispatchEvent(new Event('change', { bubbles: true }))
+        return { how: 'select', label: opt.textContent.trim() }
+      }
+      seen.push('select:' + Array.from(sel.options || []).map((o) => o.textContent.trim()).join('|'))
+    }
+    // Custom dropdown: open whatever currently reads as the group-by value.
+    const clickable = Array.from(document.querySelectorAll('button,[role="button"],[role="combobox"],[aria-haspopup]'))
+    const trigger = clickable.find((b) => /^\s*(campaign|group\s*by)/i.test(b.textContent || ''))
+    if (trigger) { trigger.click(); return { how: 'opened', label: (trigger.textContent || '').trim().slice(0, 40) } }
+  } catch (e) {
+    return { how: 'error', label: String((e && e.message) || e) }
+  }
+  return { how: 'none', label: seen.join(' ').slice(0, 200) }
+}
+
+// Second half of the same move: pick the product option out of the menu the click
+// above opened.
+function pickProductOptionInPage() {
+  try {
+    const nodes = Array.from(document.querySelectorAll('li,[role="option"],[role="menuitem"],button,a,span,div'))
+    const hit = nodes.find((n) => n.children.length === 0 && /^(asin|product|products|asins)$/i.test((n.textContent || '').trim()))
+    if (hit) { hit.click(); return true }
+  } catch (e) {}
+  return false
+}
+
 // Push a batch to MVP from the worker (it holds the mvpaffiliate.io cookie).
 async function pushEarningsToMvp(periods, products) {
   const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
@@ -1861,7 +1944,17 @@ async function pushEarningsToMvp(periods, products) {
         body: JSON.stringify({ periods: periods || [], products: products || [] }),
       })
       const body = await res.json().catch(() => null)
-      if (res.ok) return { ok: true, savedPeriods: (body && body.savedPeriods) || 0, savedProducts: (body && body.savedProducts) || 0 }
+      if (res.ok) return {
+        ok: true,
+        savedPeriods: (body && body.savedPeriods) || 0,
+        savedProducts: (body && body.savedProducts) || 0,
+        // Rows MVP refused to file. From 2026-09-09 Amazon groups low-activity
+        // products under "Others", which has no ASIN and cannot be keyed, so
+        // this count is about to mean real money that the breakdown drops. It
+        // is carried back rather than swallowed.
+        skipped: (body && body.skipped) || 0,
+        skippedReasons: (body && body.skippedReasons) || [],
+      }
       return { ok: false, error: (body && body.error) || `HTTP ${res.status}` }
     } catch (e) { /* try the other origin */ }
   }
@@ -1958,13 +2051,38 @@ async function syncAmazonEarnings(opts) {
     stores = stores.slice(0, 4)
     job.diag = { stores: stores.map((s) => `${s.storeId}(${s.scope})`) }
 
+    // Learn the product query before backfilling. The page renders its table
+    // grouped by campaign; switching it to the product grouping makes the SPA fire
+    // the request whose response carries ASINs, and net-hook captures it. Whatever
+    // we end up with is reported, so "no recipe" is visible rather than looking
+    // like Amazon returned nothing.
+    let recipe = null
+    const learnFrom = Date.now()
+    try {
+      const g = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: groupReportByProductInPage })
+      const how = (g && g[0] && g[0].result) || null
+      if (how && how.how === 'opened') {
+        await _sleep(700)
+        await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: pickProductOptionInPage })
+      }
+      job.diag.groupBy = how ? `${how.how}${how.label ? ` (${how.label})` : ''}` : 'not attempted'
+    } catch (e) {
+      job.diag.groupBy = `failed: ${(e && e.message) || e}`
+    }
+    await _sleep(4000)
+    const calls = earningsReportCalls(learnFrom - 8000)
+    // Prefer a call that isn't the tiles' summary: that one we already replay.
+    recipe = calls.find((c) => !/\/summary$/i.test(c.path)) || calls[0] || null
+    job.diag.reportCalls = calls.map((c) => c.path).slice(0, 6)
+    job.diag.recipe = recipe ? recipe.path : 'none captured'
+
     // A month at a time, pushing as we go, so a long backfill shows progress and
     // an interrupted run keeps what it already earned.
     for (let i = 0; i < months.length; i++) {
       if (job.canceled) break
       const res = await chrome.scripting.executeScript({
         target: { tabId }, world: 'MAIN', func: earningsFetchInPage,
-        args: [{ months: [months[i]], stores, host: EARN_HOST }],
+        args: [{ months: [months[i]], stores, host: EARN_HOST, recipe }],
       })
       const r = (res && res[0] && res[0].result) || null
       if (r) {
@@ -1973,6 +2091,10 @@ async function syncAmazonEarnings(opts) {
           if (pushed.ok) {
             job.savedPeriods += pushed.savedPeriods
             job.savedProducts += pushed.savedProducts
+            if (pushed.skipped) {
+              job.diag.skipped = (job.diag.skipped || 0) + pushed.skipped
+              job.diag.skippedReasons = Array.from(new Set((job.diag.skippedReasons || []).concat(pushed.skippedReasons || []))).slice(0, 5)
+            }
           } else job.error = job.error || pushed.error
         }
         // The first record Amazon returned and the keys we read it by. Kept so the

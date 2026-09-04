@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.58'
+export const SCOUT_LATEST_VERSION = '1.17.59'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Retries the per-product read when Amazon drops the connection, and reports the fields it mapped so the breakdown can be checked rather than trusted.'
+  'Learns the per-product reporting query from Amazon\u2019s own page and replays that, instead of calling a path we guessed at and got nothing from.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

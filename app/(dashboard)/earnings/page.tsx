@@ -218,6 +218,19 @@ export default function EarningsPage() {
                 {sync.diag.errors.slice(0, 8).map((e, i) => <li key={i}>{e}</li>)}
               </ul>
             ) : null}
+            {(sync.diag?.reportCalls?.length || sync.diag?.recipe) && (
+              <p className="text-[11px]" style={muted}>
+                Reporting endpoints the page called: {sync.diag.reportCalls?.length ? sync.diag.reportCalls.join(', ') : 'none seen'}
+                {sync.diag.recipe ? `. Replaying for products: ${sync.diag.recipe}` : ''}
+                {sync.diag.groupBy ? `. Group by switch: ${sync.diag.groupBy}` : ''}
+              </p>
+            )}
+            {!!sync.diag?.skipped && (
+              <p className="text-[11px]" style={muted}>
+                {sync.diag.skipped.toLocaleString()} product row{sync.diag.skipped === 1 ? '' : 's'} could not be filed
+                {sync.diag.skippedReasons?.length ? `: ${sync.diag.skippedReasons.join(', ')}` : ''}. From 9 September Amazon groups low-activity products under &ldquo;Others&rdquo;, which carries no ASIN, so expect this number to grow and the coverage figure to fall.
+              </p>
+            )}
             {sync.diag?.sample && (
               <details className="text-[11px]" style={muted}>
                 <summary className="cursor-pointer">Per-product mapping (what SCOUT read, and from which of Amazon&apos;s fields)</summary>
