@@ -814,6 +814,13 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                 className="text-[11px] underline inline-flex items-center gap-1 disabled:opacity-60" style={muted}>
                 {rechecking ? <><Loader2 size={11} className="animate-spin" /> Checking…</> : 'Re-check sign-in'}
               </button>
+              {/* Always reachable, not just after a failure. A successful run holds
+                  the most useful record of what Amazon actually replied. */}
+              <button type="button" onClick={() => void copyDiagnostic()} disabled={copyingDiag}
+                className="text-[11px] underline inline-flex items-center gap-1 disabled:opacity-60" style={muted}
+                title="Copy what Amazon replied on this run, for support">
+                {copyingDiag ? <><Loader2 size={11} className="animate-spin" /> Collecting…</> : 'Copy the Amazon diagnostic'}
+              </button>
             </div>
           )}
           <div className="space-y-3">
