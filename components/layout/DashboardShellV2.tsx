@@ -575,28 +575,12 @@ export default function DashboardShellV2({
     // commission on. Placed ABOVE Labs (user request 2026-06-23) so the
     // revenue-converting discovery links sit higher than the experimental Labs
     // zone. Each opens in a new tab via external:true. Order is intentional,
-    // NOT alphabetical: Oink first (highest revenue converter), Geniuslink
-    // second (the user's own wrapping tool), then programs in revenue-rank order.
-    {
-      // TOOLS = software the creator runs day to day (link wrapping, storefront
-      // ops, auto-syncing). Order intentional: Oink first (highest converter).
-      label: 'Recommended tools',
-      items: [
-        { href: 'https://geni.us/2y5sBo', icon: <ExternalLink size={13} />, label: 'Oink', external: true, highlight: '#E0218A' },
-        { href: 'https://geni.us/9qSLP', icon: <ExternalLink size={13} />, label: 'Cha-Ching Automate', external: true },
-      ],
-    },
-    {
-      // PROGRAMS = affiliate/collab networks the creator joins to earn (brand
-      // deals, higher commissions, gifted products). Revenue-rank order.
-      label: 'Recommended programs',
-      items: [
-        { href: 'https://geni.us/GCad5Q', icon: <ExternalLink size={13} />, label: 'Levanta', external: true },
-        { href: 'https://geni.us/Z0q3hY', icon: <ExternalLink size={13} />, label: 'PartnerBoost', external: true },
-        { href: 'https://geni.us/khuHTe', icon: <ExternalLink size={13} />, label: 'Archer Affiliate', external: true },
-        { href: 'https://jointrybe.com/r/HTLEJE47', icon: <ExternalLink size={13} />, label: 'TRYBE', external: true },
-      ],
-    },
+    // The two "Recommended tools" and four "Recommended programs" links were
+    // removed (2026-09): six permanent sidebar slots pointing away from MVP, one
+    // of them to a tool that competes with our own storefront upload, for
+    // affiliate revenue the business does not depend on. The partner pages that
+    // earn the same commissions still exist in the product (/levanta,
+    // /partnerboost, /wayward), so nothing is lost except the outbound nav.
     // LABS — experimental tools, Pro-only (gate: isPro), NOT promoted on
     // landing/pricing until they graduate out. Retired 2026-07-08 (Social Launch
     // Kit graduated to SET UP), re-opened 2026-07-11 for Instagram Auto-DM
