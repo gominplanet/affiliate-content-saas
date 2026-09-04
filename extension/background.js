@@ -1807,8 +1807,16 @@ function earningsFetchInPage(params) {
       const items = []
       let token = null
       let pages = 0
-      // 40 pages is far past any real month and stops a bad token looping forever.
-      while (pages < 40) {
+      // Body-offset pagination, learned by experiment when there is no cursor.
+      let offsetKey = null
+      let offsetStep = 0
+      let offsetValue = 0
+      // A competitor pulls 1,200 rows from this report, so 40 pages of 100 was a
+      // ceiling I had guessed rather than measured. This clears that with room,
+      // and a wall clock stops a runaway instead of a low cap silently truncating
+      // the month.
+      const productsStarted = Date.now()
+      while (pages < 400 && Date.now() - productsStarted < 90000) {
         let body
         try {
           const o = JSON.parse(recipe.body)
@@ -1821,8 +1829,8 @@ function earningsFetchInPage(params) {
           // "MONTH" here, which is the summary endpoint's vocabulary, made Amazon
           // drop the connection rather than answer, and read as a network fault.
           if (!o.pageSize) o.pageSize = 100
-          o.nextPageToken = token
-          o.nextToken = token
+          if (offsetKey) o[offsetKey] = offsetValue
+          else { o.nextPageToken = token; o.nextToken = token }
           body = JSON.stringify(o)
         } catch (e) {
           return { ok: false, status: 'captured query was not JSON' }
@@ -1899,10 +1907,65 @@ function earningsFetchInPage(params) {
           })
         }
         pages++
-        const next = holder ? (holder.nextPageToken || holder.nextToken || null) : null
-        if (!next || next === token) break
-        token = next
-        await new Promise((r) => setTimeout(r, 300))
+        let next = holder ? (holder.nextPageToken || holder.nextToken || null) : null
+        // No cursor does not mean no more rows.
+        //
+        // A competitor's extension pulls 1,200 rows out of this same report while
+        // we were stopping at ten, and the video list turned out to paginate by a
+        // startIndex field inside the request body with no cursor in sight. So
+        // when there is no cursor, look for that field the same way: ask for a
+        // window past the first page under each plausible name and keep whichever
+        // one returns different products.
+        if (!next && !offsetKey && recs.length) {
+          const firstAsin = String(recs[0][K.asin] || '').toUpperCase()
+          const size = recs.length
+          for (const key of ['startIndex', 'offset', 'from', 'skip', 'pageNumber', 'page', 'pageIndex']) {
+            try {
+              const o = JSON.parse(body)
+              o[key] = /^(page|pageNumber|pageIndex)$/i.test(key) ? 2 : size
+              const probe = await fetch(recipe.url, {
+                method: 'POST', credentials: 'include', headers, body: JSON.stringify(o),
+                signal: AbortSignal.timeout(25000),
+              })
+              if (!probe.ok) continue
+              const pj = await probe.json().catch(() => null)
+              let prs = null
+              for (const r2 of (pj && Array.isArray(pj.responses) ? pj.responses : [])) {
+                for (const k2 in r2) {
+                  if (Array.isArray(r2[k2]) && r2[k2].length && /report|record|detail|item|row/i.test(k2)) { prs = r2[k2]; break }
+                }
+                if (prs) break
+              }
+              const a2 = prs && prs[0] ? String(prs[0][K.asin] || '').toUpperCase() : null
+              if (a2 && a2 !== firstAsin) {
+                offsetKey = key
+                offsetStep = /^(page|pageNumber|pageIndex)$/i.test(key) ? 1 : size
+                offsetValue = offsetStep * 2
+                out.productPaging = key
+                for (const r of prs) {
+                  const asin = String(r[K.asin] || '').toUpperCase()
+                  if (!ASIN_RE.test(asin)) continue
+                  items.push({
+                    asin,
+                    productTitle: K.title ? String(r[K.title] || '').slice(0, 300) : null,
+                    clicks: K.clicks ? numOf(r[K.clicks]) : null,
+                    orders: K.orders ? numOf(r[K.orders]) : null,
+                    quantity: K.quantity ? numOf(r[K.quantity]) : null,
+                    earnings: K.earnings ? numOf(r[K.earnings]) : null,
+                    revenue: K.revenue ? numOf(r[K.revenue]) : null,
+                  })
+                }
+                break
+              }
+            } catch (e) { /* try the next name */ }
+            await new Promise((r) => setTimeout(r, 150))
+          }
+        }
+        if (!next && offsetKey) { offsetValue += offsetStep; next = null }
+        else if (!next || next === token) break
+        else token = next
+        if (!next && !offsetKey) break
+        await new Promise((r) => setTimeout(r, 200))
       }
       // The same ASIN appears once per day inside a month, so fold the days up.
       const byAsin = new Map()
@@ -1915,7 +1978,7 @@ function earningsFetchInPage(params) {
           a[f] = (a[f] == null ? 0 : a[f]) + it[f]
         }
       }
-      return { ok: true, items: Array.from(byAsin.values()), pages }
+      return { ok: true, items: Array.from(byAsin.values()), pages, paging: out.productPaging || null }
     }
 
     for (const mth of months) {
