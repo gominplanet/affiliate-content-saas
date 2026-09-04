@@ -1624,6 +1624,10 @@ function earningsFetchInPage(params) {
     // is visible rather than silent.
     const csrf = (() => {
       try {
+        // First choice: the token the MAIN-world sniffer captured off the page's
+        // OWN request. Scraped tokens are a different generation and get a 401.
+        const sniffed = document.documentElement.getAttribute('data-mvp-a2z')
+        if (sniffed) return sniffed
         const meta = document.querySelector('meta[name="anti-csrftoken-a2z"]')
         if (meta && meta.content) return meta.content
         const input = document.querySelector('input[name="anti-csrftoken-a2z"]')
@@ -1761,6 +1765,25 @@ async function syncAmazonEarnings(opts) {
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     await _sleep(3500)
+    // The earnings APIs reject a request without Amazon's anti-csrftoken-a2z with
+    // a 401. The sniffer records the real one from the page's own calls, which
+    // fire on load, so wait for it rather than sending forty doomed requests.
+    let token = null
+    for (let i = 0; i < 20 && !token; i++) {
+      try {
+        const r = await chrome.scripting.executeScript({
+          target: { tabId }, world: 'MAIN',
+          func: () => document.documentElement.getAttribute('data-mvp-a2z'),
+        })
+        token = (r && r[0] && r[0].result) || null
+      } catch (e) { /* keep waiting */ }
+      if (!token) await _sleep(700)
+    }
+    if (!token) {
+      job.error = 'Amazon did not hand SCOUT a session token on the reporting page. Open affiliate-program.amazon.com in a normal tab, make sure you are signed in, then sync again.'
+      job.done = true
+      return
+    }
 
     // Which stores to ask for. The offsite id is the creator's tracking id; the
     // onsite one is Amazon's `onamz` twin of it. Read from the page when possible
