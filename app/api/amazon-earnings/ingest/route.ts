@@ -107,7 +107,7 @@ export async function POST(request: Request) {
         // A product row without an ASIN cannot be keyed or joined to content, and
         // Amazon does emit campaign-level rows with none. Dropped on purpose.
         if (!/^[A-Z0-9]{10}$/.test(asin)) { skipped.push('product row without an ASIN'); return null }
-        return { ...b, asin, product_title: (r.productTitle || '').toString().slice(0, 300) || null }
+        return { ...b, asin, quantity: int(r.quantity), product_title: (r.productTitle || '').toString().slice(0, 300) || null }
       })
       .filter((r): r is NonNullable<typeof r> => r !== null)
     if (rows.length > 0) {

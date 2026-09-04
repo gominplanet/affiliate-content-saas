@@ -89,8 +89,12 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
   }
   if (!data || data.error) {
     return (
-      <div className="card p-5 text-[13px]" style={muted}>
-        {data?.error || 'Could not load the product breakdown.'}
+      <div className="card p-5">
+        <h2 className="text-sm font-semibold mb-1" style={label}>By product</h2>
+        <p className="text-[13px]" style={muted}>{data?.error || 'Could not load the product breakdown.'}</p>
+        <p className="text-[11px] mt-2" style={muted}>
+          A message about a missing column means a migration has not been run on this database yet. The monthly totals above are unaffected.
+        </p>
       </div>
     )
   }
