@@ -37,6 +37,13 @@ export interface EarningsProduct {
   deltaPct: number | null
   videoCount: number
   lastVideoAt: string | null
+  /** True when the product sits on the creator's own Amazon storefront, false
+   *  when it does not, null when they have never synced their storefront so we
+   *  genuinely do not know. */
+  onStorefront: boolean | null
+  /** True when MVP knows you have a video for this product ON Amazon, read from
+   *  your Creator Hub video table. Null until that scan has been run. */
+  amazonVideo: boolean | null
 }
 
 interface Payload {
@@ -48,6 +55,7 @@ interface Payload {
   priorMonth?: string | null
   products?: EarningsProduct[]
   coverage?: { productCents: number | null; periodCents: number | null } | null
+  shelfKnown?: boolean
 }
 
 function money(cents: number | null | undefined): string {
@@ -122,9 +130,18 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
     ? products.filter(p => p.deltaCents != null && p.deltaCents < 0)
         .sort((a, b) => (a.deltaCents ?? 0) - (b.deltaCents ?? 0)).slice(0, 5)
     : []
+  // Earning, with nothing published off Amazon. Products that sit on the
+  // creator's own storefront come first: an onsite sale is carried by a video
+  // already playing on Amazon, so those are proven sellers whose audience stops
+  // at Amazon's front door. The rest earn from links alone and are a weaker
+  // signal, so they fill the list rather than lead it.
   const uncovered = products
     .filter(p => p.videoCount === 0 && (p.earningsCents ?? 0) > 0)
+    // A video on Amazon is the strongest case: the product is proven to sell and
+    // the thing selling it exists already. On the shelf is next. Neither is last.
+    .sort((a, b) => ((b.amazonVideo ? 2 : b.onStorefront ? 1 : 0) - (a.amazonVideo ? 2 : a.onStorefront ? 1 : 0)))
     .slice(0, 5)
+  const shelfKnown = data.shelfKnown === true
 
   const cov = data.coverage
   const covRatio = cov && cov.productCents != null && cov.periodCents
@@ -222,7 +239,14 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
               {uncovered.map(p => (
                 <li key={p.asin} className="text-[12px]">
                   <span className="block font-medium truncate" style={label}>{shortTitle(p.title, p.asin)}</span>
-                  <span style={muted}>{money(p.earningsCents)} earned, no video off Amazon</span>
+                  <span style={muted}>
+                    {money(p.earningsCents)} earned, no video off Amazon
+                    {shelfKnown && p.amazonVideo ? (
+                      <span style={{ color: '#7C3AED' }}> · you have a video on Amazon</span>
+                    ) : shelfKnown && p.onStorefront ? (
+                      <span style={{ color: '#7C3AED' }}> · on your storefront</span>
+                    ) : null}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -233,6 +257,7 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
               audience that is not already standing in Amazon. */}
           <p className="text-[11px] mt-2" style={muted}>
             Money is coming in without a video anywhere but Amazon. Onsite sales already have a storefront video behind them, so these are the ones proven to sell that nobody has taken to YouTube, a blog or socials yet. Matched against videos MVP published for you, so one you posted by hand elsewhere will not count.
+            {shelfKnown ? ' The ones marked "you have a video on Amazon" are the strongest: the video exists, it is already selling, and it has never left Amazon.' : ' Load your Amazon videos above and MVP can also tell you which of these already have one.'}
           </p>
         </div>
       </div>

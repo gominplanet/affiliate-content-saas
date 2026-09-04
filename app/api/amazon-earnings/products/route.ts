@@ -137,6 +137,46 @@ export async function GET(request: Request) {
     }
   }
 
+  // Which of these products sit on the creator's own storefront. An onsite sale
+  // always comes from a video of theirs playing on Amazon, so a product that is
+  // on the shelf AND has no video off Amazon is the sharpest signal this feature
+  // can produce: already proven to sell, and nobody outside Amazon has seen it.
+  // Empty for a creator who has never run the storefront sync, in which case we
+  // claim nothing about it rather than reading absence as "not on the shelf".
+  // has_video is the precise signal: MVP records it from the creator's Creator
+  // Hub video table, so it means "there is a video of yours on Amazon for this
+  // product", not merely "it is on your shelf". That is the difference between
+  // guessing at why a product earns onsite and knowing.
+  const onShelf = new Set<string>()
+  const hasAmazonVideo = new Set<string>()
+  let shelfKnown = false
+  for (let i = 0; i < asins.length; i += 100) {
+    const chunk = asins.slice(i, i + 100)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: shelf, error: shelfErr } = await (supabase as any)
+      .from('storefront_catalog')
+      .select('asin,has_video')
+      .eq('user_id', user.id)
+      .in('asin', chunk)
+    if (!shelfErr) {
+      shelfKnown = true
+      for (const s of (shelf ?? []) as { asin: string; has_video: boolean | null }[]) {
+        onShelf.add(s.asin)
+        if (s.has_video) hasAmazonVideo.add(s.asin)
+      }
+    }
+  }
+  // One more check: a creator with rows for other products but none of these has
+  // a known, populated shelf. One with no rows at all has simply never synced it.
+  if (shelfKnown && onShelf.size === 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count } = await (supabase as any)
+      .from('storefront_catalog')
+      .select('asin', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+    if (!count) shelfKnown = false
+  }
+
   const products = Array.from(map.values()).map(a => {
     const recentCents = recent != null ? (a.months[recent] ?? null) : null
     const priorCents = prior != null ? (a.months[prior] ?? null) : null
@@ -157,6 +197,8 @@ export async function GET(request: Request) {
       recentCents, priorCents, deltaCents, deltaPct,
       videoCount: videoCount.get(a.asin) ?? 0,
       lastVideoAt: lastVideo.get(a.asin) ?? null,
+      onStorefront: shelfKnown ? onShelf.has(a.asin) : null,
+      amazonVideo: shelfKnown ? hasAmazonVideo.has(a.asin) : null,
     }
   }).sort((x, y) => (y.earningsCents ?? 0) - (x.earningsCents ?? 0))
 
@@ -187,5 +229,8 @@ export async function GET(request: Request) {
       productCents: productTotal.value,
       periodCents: periodTotal.value,
     },
+    // False when the creator has never synced their storefront, so the UI can
+    // stay quiet about the shelf rather than implying every product is off it.
+    shelfKnown,
   })
 }

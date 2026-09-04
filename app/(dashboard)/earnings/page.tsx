@@ -17,9 +17,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, RefreshCw, TrendingUp, Store, Globe } from 'lucide-react'
+import { Loader2, RefreshCw, TrendingUp, Store, Globe, Video } from 'lucide-react'
 import { toast } from 'sonner'
-import { requestEarningsSync, requestEarningsStatus, type EarningsSyncStatus } from '@/lib/extension-frame'
+import { requestEarningsSync, requestEarningsStatus, requestCreatorHubVideosScan, type EarningsSyncStatus } from '@/lib/extension-frame'
 import ProductBreakdown from '@/components/earnings/ProductBreakdown'
 
 const label = { color: 'var(--text)' } as const
@@ -93,6 +93,7 @@ export default function EarningsPage() {
   // Bumped whenever the totals reload, so the product breakdown refetches in step
   // with them rather than showing last sync's products beside this sync's totals.
   const [dataVersion, setDataVersion] = useState(0)
+  const [scanningVideos, setScanningVideos] = useState(false)
   useEffect(() => { try { setStoreId(localStorage.getItem('mvp_amazon_store_id') || '') } catch { /* ignore */ } }, [])
 
   const load = useCallback(async () => {
@@ -144,6 +145,26 @@ export default function EarningsPage() {
     } finally { setStarting(false) }
   }
 
+  // Reads the creator's Creator Hub video table into storefront_catalog, which is
+  // what lets the product cards distinguish "no video anywhere" from "the video
+  // is on Amazon and nowhere else". Long job on a big catalogue, so it says so.
+  async function loadAmazonVideos() {
+    setScanningVideos(true)
+    try {
+      const r = await requestCreatorHubVideosScan()
+      if (!r.ok) {
+        toast.error(r.error === 'not-installed'
+          ? 'Install SCOUT and sign in to Amazon to read your videos.'
+          : r.error === 'timeout'
+            ? 'Amazon did not finish listing your videos in time. Try again and leave the tab alone while it runs.'
+            : (r.error || 'Could not read your Amazon videos.'))
+        return
+      }
+      toast.success(`Found ${(r.count ?? 0).toLocaleString()} products with a video on Amazon${r.partial ? ', and Amazon stopped early so this may be partial' : ''}.`)
+      void load()
+    } finally { setScanningVideos(false) }
+  }
+
   // The newest month is almost always partial, and an unlabelled partial month
   // reads as a crash: four days of September under a full August looks like a 94%
   // drop rather than a month that hasn't happened yet. So it gets labelled, and it
@@ -188,6 +209,19 @@ export default function EarningsPage() {
             {(starting || sync?.running)
               ? <><Loader2 size={15} className="animate-spin" /> {sync?.months ? `Month ${sync.monthsDone ?? 0} of ${sync.months}` : 'Starting…'}</>
               : <><RefreshCw size={15} /> {rows.length ? 'Re-sync this year' : 'Sync from Amazon'}</>}
+          </button>
+          {/* Reads the Creator Hub video table so MVP knows which products you
+              already have a video for ON Amazon. Without it the product cards can
+              only say a product has no video off Amazon, which is the weaker half
+              of the sentence: the point is that the one on Amazon is already
+              selling and has never left. */}
+          <button type="button" onClick={() => void loadAmazonVideos()} disabled={scanningVideos}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border disabled:opacity-60"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            title="Reads your Creator Hub video list so MVP knows which products already have a video on Amazon. Takes a few minutes for a big catalogue.">
+            {scanningVideos
+              ? <><Loader2 size={15} className="animate-spin" /> Reading your Amazon videos…</>
+              : <><Video size={15} /> Load my Amazon videos</>}
           </button>
           </div>
         </div>
