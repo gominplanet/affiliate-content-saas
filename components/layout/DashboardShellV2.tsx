@@ -605,6 +605,7 @@ export default function DashboardShellV2({
         // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
         // finished; graduates back to "Grow" (gate: isPaid) when it's ready.
         { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', gate: isPro },
+        { href: '/earnings', icon: <TrendingUp size={15} />, label: 'Amazon Earnings', gate: isPro, badge: 'New' },
         // Storefront Stats (/analytics) retired 2026-08 — the SCOUT-synced AMZ
         // Storefront dashboard (/brainstorm) is the real per-product earnings
         // view now, so the Geniuslink-clicks Labs page was dropped to kill the

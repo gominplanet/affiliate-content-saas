@@ -166,6 +166,36 @@ export async function requestStorefrontPreflight(domains: string[]): Promise<Sto
   return res || { ok: false, error: 'timeout' }
 }
 
+/** Progress of an Amazon earnings sync. `diag.assoc` carries the raw Associates
+ *  response we have not mapped yet, so its shape can be read from a real run. */
+export interface EarningsSyncStatus {
+  running: boolean
+  done?: boolean
+  error?: string | null
+  months?: number
+  monthsDone?: number
+  savedPeriods?: number
+  savedProducts?: number
+  diag?: { stores?: string[]; errors?: string[]; assoc?: { url: string; status: number; body: string } } | null
+}
+
+/**
+ * Ask SCOUT to read the creator's Amazon earnings by replaying the calls the
+ * reporting pages make in their own logged-in session. Covers Creator
+ * Connections and EPC, onsite and offsite, one month at a time. Best-effort.
+ */
+export async function requestEarningsSync(from?: string, to?: string): Promise<{ ok: boolean; started?: boolean; already?: boolean; error?: string }> {
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const res = await sendToExtension<{ ok?: boolean; started?: boolean; already?: boolean }>({ type: 'MVP_EARNINGS_SYNC', from, to }, 15_000)
+  return res ? { ok: !!res.ok, started: res.started, already: res.already } : { ok: false, error: 'timeout' }
+}
+
+/** Poll the running sync. Resolves to null when SCOUT can't be reached. */
+export async function requestEarningsStatus(): Promise<EarningsSyncStatus | null> {
+  const res = await sendToExtension<{ ok?: boolean; status?: EarningsSyncStatus }>({ type: 'MVP_EARNINGS_STATUS' }, 8_000)
+  return (res && res.status) || null
+}
+
 /** Where one marketplace has got to in a storefront run. `pct` is real byte
  *  progress during a transfer and null for the steps that aren't measurable. */
 export interface StorefrontProgress {

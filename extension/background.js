@@ -1558,6 +1558,274 @@ function waitForTabLoad(tabId, ms) {
   })
 }
 
+// ── Amazon earnings sync ────────────────────────────────────────────────────
+// Nowhere in Amazon shows a creator what they actually earned. CC reporting
+// shows Creator Connections and EPC but scoped to whichever store is selected;
+// the Associates page shows commissions and bounties but only for the offsite
+// tracking id; and the same CC figure appears in both at wildly different values.
+// Every CSV export we tested came back short — one month's file held 0.4% of the
+// earnings its own dashboard showed — and Amazon's footnote says the detail is
+// not meant to reconcile to the totals.
+//
+// So we do what the pages do: replay their own calls in the creator's session.
+//   POST /connect/api/report/earnings/summary   reportType DATEWISE_ASIN  → CC
+//                                               reportType SPONSORED_PRODUCTS → EPC
+//                                               storeIds picks onsite / offsite
+//   GET  /reporting/summary                     → Associates commissions + bounties
+//
+// The CC/EPC shape is verified against the creator's own screen. The Associates
+// response shape is NOT yet known, so this fetches it and returns it RAW for
+// inspection rather than guessing at a mapping and storing invented numbers.
+const EARN_HOST = 'affiliate-program.amazon.com'
+const EARN_PAGE = `https://${EARN_HOST}/p/reporting/earnings`
+
+let _earnJob = null
+
+function earningsJobStatus() {
+  if (!_earnJob) return { running: false }
+  return {
+    running: !_earnJob.done,
+    done: !!_earnJob.done,
+    error: _earnJob.error || null,
+    months: _earnJob.months || 0,
+    monthsDone: _earnJob.monthsDone || 0,
+    savedPeriods: _earnJob.savedPeriods || 0,
+    savedProducts: _earnJob.savedProducts || 0,
+    diag: _earnJob.diag || null,
+  }
+}
+
+// First day of each month between two YYYY-MM-DD dates, inclusive.
+function monthStarts(fromIso, toIso) {
+  const out = []
+  const a = new Date(`${fromIso}T00:00:00Z`)
+  const b = new Date(`${toIso}T00:00:00Z`)
+  if (isNaN(a) || isNaN(b) || a > b) return out
+  let y = a.getUTCFullYear(), m = a.getUTCMonth()
+  for (let i = 0; i < 120; i++) {
+    const start = new Date(Date.UTC(y, m, 1))
+    if (start > b) break
+    out.push(start)
+    m++; if (m > 11) { m = 0; y++ }
+  }
+  return out
+}
+const isoDay = (d) => d.toISOString().slice(0, 10)
+
+// Runs INSIDE the page so the request carries the creator's cookies and origin,
+// exactly like the reporting page's own calls. executeScript serializes this, so
+// it closes over nothing — every helper is defined inside.
+function earningsFetchInPage(params) {
+  return (async () => {
+    const { months, stores, host } = params
+    const out = { periods: [], assoc: [], errors: [] }
+    // Amazon's create/report APIs want the page's anti-csrftoken-a2z. Best effort:
+    // if we can't find one we still try, and the status is reported back so a 403
+    // is visible rather than silent.
+    const csrf = (() => {
+      try {
+        const meta = document.querySelector('meta[name="anti-csrftoken-a2z"]')
+        if (meta && meta.content) return meta.content
+        const input = document.querySelector('input[name="anti-csrftoken-a2z"]')
+        if (input && input.value) return input.value
+        const m = document.documentElement.innerHTML.match(/anti-csrftoken-a2z["'\s:=]+([A-Za-z0-9+/=%-]{20,})/)
+        return m ? m[1] : null
+      } catch (e) { return null }
+    })()
+
+    // The exact filterOptions shape the page sends. Sent verbatim (nulls included)
+    // rather than trimmed, because an API that ignores unknown keys today can
+    // start requiring known ones tomorrow.
+    const emptyFilters = () => ({
+      campaignType: null, availableSlotsOnly: null, interestTags: null,
+      providingSamplesOnly: null, statuses: null, commissionPercentageFilters: null,
+      campaignBrowseNodes: null, earlyAccessOnly: null, dateRange: null,
+      gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null,
+      storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null,
+      socialChannels: null, premiumCreator: null, campaignId: null,
+      contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null,
+      budgetAvailabilityScoreList: null, dealMetadata: null,
+    })
+
+    const ccSummary = async (fromMs, toMs, storeId, reportType) => {
+      const filterOptions = emptyFilters()
+      filterOptions.dateRange = { fromDate: fromMs, toDate: toMs }
+      filterOptions.storeIds = [storeId]
+      const res = await fetch(`https://${host}/connect/api/report/earnings/summary`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(csrf ? { 'anti-csrftoken-a2z': csrf } : {}) },
+        body: JSON.stringify({ aggregationOption: 'MONTH', reportType, filterOptions, searchOptions: null, sortOptions: null }),
+        signal: AbortSignal.timeout(45000),
+      })
+      if (!res.ok) return { ok: false, status: res.status }
+      const j = await res.json().catch(() => null)
+      const r = j && Array.isArray(j.responses) ? j.responses[0] : null
+      if (!r) return { ok: false, status: res.status, shape: 'unexpected' }
+      return {
+        ok: true,
+        clicks: r.totalClicks ?? null,
+        orders: r.totalOrderCount ?? null,
+        quantity: r.totalOrderedQuantity ?? null,
+        earnings: r.totalEarningsAmount ?? null,
+        revenue: r.totalRevenue ?? null,
+      }
+    }
+
+    for (const mth of months) {
+      for (const st of stores) {
+        for (const rt of [['cc', 'DATEWISE_ASIN'], ['epc', 'SPONSORED_PRODUCTS']]) {
+          try {
+            const r = await ccSummary(mth.fromMs, mth.toMs, st.storeId, rt[1])
+            if (r.ok) {
+              out.periods.push({
+                periodStart: mth.start, periodType: 'month', stream: rt[0],
+                storeId: st.storeId, storeScope: st.scope,
+                clicks: r.clicks, orders: r.orders, quantity: r.quantity,
+                earnings: r.earnings, revenue: r.revenue,
+              })
+            } else {
+              out.errors.push(`${rt[0]} ${mth.start} ${st.storeId}: HTTP ${r.status}${r.shape ? ' ' + r.shape : ''}`)
+            }
+          } catch (e) {
+            out.errors.push(`${rt[0]} ${mth.start} ${st.storeId}: ${(e && e.message) || e}`)
+          }
+          await new Promise(r => setTimeout(r, 250))
+        }
+      }
+    }
+
+    // Associates commissions + bounties. We do NOT know this response's shape yet,
+    // so it is captured raw for one month and never stored as earnings. Guessing a
+    // mapping here is exactly how a dashboard ends up confidently wrong.
+    try {
+      const m0 = months[months.length - 1]
+      const st = stores.find(s => s.scope === 'offsite') || stores[0]
+      if (m0 && st) {
+        const q = new URLSearchParams()
+        q.set('query[start_date]', m0.start)
+        q.set('query[end_date]', m0.end)
+        q.set('query[type]', 'earning')
+        q.set('query[storeId]', st.storeId)
+        q.set('query[locale]', 'US')
+        q.set('store_id', st.storeId)
+        const res = await fetch(`https://${host}/reporting/summary?${q.toString()}`, {
+          credentials: 'include', signal: AbortSignal.timeout(45000),
+        })
+        const text = await res.text().catch(() => '')
+        out.assoc.push({ url: `/reporting/summary?${q.toString()}`, status: res.status, body: text.slice(0, 4000) })
+      }
+    } catch (e) {
+      out.errors.push(`assoc: ${(e && e.message) || e}`)
+    }
+
+    return out
+  })()
+}
+
+// Push a batch to MVP from the worker (it holds the mvpaffiliate.io cookie).
+async function pushEarningsToMvp(periods, products) {
+  const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
+  for (const origin of origins) {
+    try {
+      const res = await fetch(`${origin}/api/amazon-earnings/ingest`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', redirect: 'follow',
+        body: JSON.stringify({ periods: periods || [], products: products || [] }),
+      })
+      const body = await res.json().catch(() => null)
+      if (res.ok) return { ok: true, savedPeriods: (body && body.savedPeriods) || 0, savedProducts: (body && body.savedProducts) || 0 }
+      return { ok: false, error: (body && body.error) || `HTTP ${res.status}` }
+    } catch (e) { /* try the other origin */ }
+  }
+  return { ok: false, error: 'could not reach MVP' }
+}
+
+async function syncAmazonEarnings(opts) {
+  const from = (opts && opts.from) || `${new Date().getUTCFullYear()}-01-01`
+  const to = (opts && opts.to) || isoDay(new Date())
+  const job = { done: false, error: null, months: 0, monthsDone: 0, savedPeriods: 0, savedProducts: 0, diag: null }
+  _earnJob = job
+  const keepAlive = startKeepAlive()
+  let tabId = null
+  try {
+    const starts = monthStarts(from, to)
+    if (!starts.length) { job.error = 'bad date range'; job.done = true; return }
+    job.months = starts.length
+    const months = starts.map((d) => {
+      const next = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1))
+      const endMs = Math.min(next.getTime() - 1, new Date(`${to}T23:59:59Z`).getTime())
+      return { start: isoDay(d), end: isoDay(new Date(endMs)), fromMs: d.getTime(), toMs: endMs }
+    })
+
+    const tab = await chrome.tabs.create({ url: EARN_PAGE, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(2500)
+
+    // Which stores to ask for. The offsite id is the creator's tracking id; the
+    // onsite one is Amazon's `onamz` twin of it. Read from the page when possible
+    // so we never invent an id, with the known pattern as the fallback.
+    let stores = []
+    try {
+      const r = await chrome.scripting.executeScript({
+        target: { tabId }, world: 'MAIN',
+        func: () => {
+          const ids = new Set()
+          try {
+            const html = document.documentElement.innerHTML
+            const re = /\b((?:onamz)?[a-z0-9]+-[0-9]{2})\b/gi
+            let m
+            while ((m = re.exec(html)) && ids.size < 12) ids.add(m[1])
+          } catch (e) {}
+          return Array.from(ids)
+        },
+      })
+      const found = (r && r[0] && r[0].result) || []
+      const offsite = found.filter((s) => !/^onamz/i.test(s))
+      const onsite = found.filter((s) => /^onamz/i.test(s))
+      for (const s of offsite) stores.push({ storeId: s, scope: 'offsite' })
+      for (const s of onsite) stores.push({ storeId: s, scope: 'onsite' })
+      // Every offsite id has an onsite twin; add any that didn't appear in the DOM.
+      for (const s of offsite) {
+        const twin = `onamz${s}`
+        if (!stores.some((x) => x.storeId === twin)) stores.push({ storeId: twin, scope: 'onsite' })
+      }
+    } catch (e) { /* fall through */ }
+    if (!stores.length) { job.error = 'could not read your Amazon store ids from the page'; job.done = true; return }
+    // Cap it: a creator with several stores shouldn't fan out into hundreds of calls.
+    stores = stores.slice(0, 6)
+    job.diag = { stores: stores.map((s) => `${s.storeId}(${s.scope})`) }
+
+    // A month at a time, pushing as we go, so a long backfill shows progress and
+    // an interrupted run keeps what it already earned.
+    for (let i = 0; i < months.length; i++) {
+      if (job.canceled) break
+      const res = await chrome.scripting.executeScript({
+        target: { tabId }, world: 'MAIN', func: earningsFetchInPage,
+        args: [{ months: [months[i]], stores, host: EARN_HOST }],
+      })
+      const r = (res && res[0] && res[0].result) || null
+      if (r) {
+        if (r.periods && r.periods.length) {
+          const pushed = await pushEarningsToMvp(r.periods, [])
+          if (pushed.ok) job.savedPeriods += pushed.savedPeriods
+          else job.error = job.error || pushed.error
+        }
+        if (r.assoc && r.assoc.length && !job.diag.assoc) job.diag.assoc = r.assoc[0]
+        if (r.errors && r.errors.length) job.diag.errors = (job.diag.errors || []).concat(r.errors).slice(0, 12)
+      }
+      job.monthsDone = i + 1
+    }
+    job.done = true
+  } catch (e) {
+    job.error = job.error || ((e && e.message) || 'earnings sync failed')
+    job.done = true
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    stopKeepAlive(keepAlive)
+  }
+}
+
 // ── EPC API loader ──────────────────────────────────────────────────────────
 // The ViralVue-style path: instead of DOM-scraping the virtualized Sponsored
 // Products grid (partial, dupes, no trustworthy count), replay the page's OWN
@@ -6196,6 +6464,18 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .then((results) => sendResponse({ ok: true, results }))
       .catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'preflight-failed' }))
     return true // async
+  }
+  // Start (or check) the Amazon earnings sync — CC and EPC per month per store,
+  // read by replaying the reporting page's own calls in the creator's session.
+  if (msg.type === 'MVP_EARNINGS_SYNC') {
+    if (_earnJob && !_earnJob.done) { sendResponse({ ok: true, already: true, status: earningsJobStatus() }); return false }
+    void syncAmazonEarnings({ from: msg.from, to: msg.to })
+    sendResponse({ ok: true, started: true })
+    return false
+  }
+  if (msg.type === 'MVP_EARNINGS_STATUS') {
+    sendResponse({ ok: true, status: earningsJobStatus() })
+    return false
   }
   // Live per-marketplace progress for the app's bars. Synchronous + tiny.
   if (msg.type === 'MVP_STOREFRONT_STATUS') {
