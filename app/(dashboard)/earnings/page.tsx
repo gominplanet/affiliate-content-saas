@@ -203,6 +203,16 @@ export default function EarningsPage() {
         {sync && (sync.diag?.stores?.length || sync.diag?.errors?.length || sync.error) && (
           <div className="card p-4 space-y-2">
             <p className="text-[12px] font-semibold" style={label}>Sync detail</p>
+            {/* What the run actually filed. Whether the product rows landed was
+                previously only discoverable by opening a panel, or by scrolling
+                past three cards to see if a table had filled in. */}
+            <p className="text-[11px]" style={muted}>
+              {(sync.savedPeriods ?? 0).toLocaleString()} monthly total{sync.savedPeriods === 1 ? '' : 's'} and{' '}
+              <span style={{ color: (sync.savedProducts ?? 0) > 0 ? '#10B981' : '#e0554b' }}>
+                {(sync.savedProducts ?? 0).toLocaleString()} product row{sync.savedProducts === 1 ? '' : 's'}
+              </span>
+              {' '}saved{sync.months ? ` across ${sync.monthsDone ?? 0} of ${sync.months} months` : ''}.
+            </p>
             {sync.diag?.stores?.length ? (
               <p className="text-[11px]" style={muted}>
                 Amazon stores found: {sync.diag.stores.join(', ')}
