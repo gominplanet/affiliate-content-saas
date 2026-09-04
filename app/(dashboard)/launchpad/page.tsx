@@ -584,7 +584,14 @@ export default function LaunchpadPage() {
   const s4: StepState = !renderedUrl ? 'locked' : (publishedUrl || ytOpen === 'skipped') ? 'done' : s3 === 'active' ? 'locked' : 'active'
   // Amazon waits for the YouTube step to be resolved (published or skipped), so
   // only ONE step is ever "active" — no more two purple nodes at once.
-  const s5: StepState = !(renderedUrl && asinOk && s4 === 'done') ? 'locked' : masterId ? 'done' : 'active'
+  // Once the master exists this step NEVER re-locks. It used to depend on the
+  // YouTube step still reading "done", so hitting "Changed my mind" after the
+  // Amazon step had already started re-locked it, unmounted the storefront stage
+  // mid-upload and threw away the visible progress of a run still going on in the
+  // extension.
+  const s5: StepState = masterId ? 'done'
+    : !(renderedUrl && asinOk && s4 === 'done') ? 'locked'
+    : 'active'
   const s6: StepState = !masterId ? 'locked' : ccAccepted ? 'done' : 'active'
   // The last step is a handoff (blog + social), so it's "active" once the video is
   // on its way to Amazon and never marks itself done here.
