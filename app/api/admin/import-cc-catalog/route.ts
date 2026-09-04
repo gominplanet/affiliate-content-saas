@@ -170,6 +170,43 @@ export async function POST(request: Request) {
           error: `Only ~${stagedCount.toLocaleString()} campaigns are staged, but the live catalog has ~${liveCount.toLocaleString()}. Merging now would remove roughly ${Math.max(0, liveCount - stagedCount).toLocaleString()} campaigns — including still-live ones if this isn't your complete CSV. Upload ALL your CSV files first, then merge. Only confirm if you're sure staging holds every current campaign.`,
         }, { status: 409 })
       }
+
+      // OVERLAP guard. The volume check above compares row COUNTS only, so a CSV
+      // holding the right NUMBER of campaigns but largely DIFFERENT campaign ids
+      // sails through it and then purges nearly the whole catalog. That costs real
+      // money: the purge takes each row's Keepa enrichment with it, enrichment
+      // only survives an upsert on a matching campaign_id, and rebuilding it is
+      // paced at a few rows a minute.
+      //
+      // Sampling, not an exact join: a few hundred staged ids looked up against
+      // the catalog's primary key is instant, where an exact overlap over ~870k
+      // rows is the sort of full scan this route already avoids everywhere else.
+      if (liveCount != null && liveCount > 1000) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: sampleRows } = await (admin as any)
+            .from('cc_campaign_catalog_import').select('campaign_id').limit(400)
+          const ids = ((sampleRows ?? []) as Array<{ campaign_id: string }>)
+            .map(r => r.campaign_id).filter(Boolean)
+          if (ids.length >= 100) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { count: hit } = await (admin as any)
+              .from('cc_campaign_catalog').select('campaign_id', { count: 'exact', head: true })
+              .in('campaign_id', ids)
+            const overlap = hit == null ? null : hit / ids.length
+            if (overlap != null && overlap < 0.5) {
+              const pct = Math.round(overlap * 100)
+              return NextResponse.json({
+                needsConfirm: true,
+                staged: stagedCount,
+                live: liveCount,
+                overlapPct: pct,
+                error: `Only about ${pct}% of the staged campaigns match ones already in the live catalog, so merging would purge most of it and every purged campaign loses its Keepa enrichment permanently. That is normal if Amazon really did reissue its campaign ids, and a sign of a wrong or malformed export if it didn't. Check a few campaign ids in your CSV against the catalog before confirming.`,
+              }, { status: 409 })
+            }
+          }
+        } catch { /* sampling is a safety net, never a blocker */ }
+      }
     }
 
     // Background drain: instead of the tab driving the merge, arm a flag the
