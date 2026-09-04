@@ -1608,6 +1608,9 @@ function waitForTabLoad(tabId, ms) {
 // The CC/EPC shape is verified against the creator's own screen. The Associates
 // response shape is NOT yet known, so this fetches it and returns it RAW for
 // inspection rather than guessing at a mapping and storing invented numbers.
+// US only, on purpose. Other marketplaces run their own Associates portals on
+// their own hosts, and Creator Connections is a US program. Scope is the US
+// store until that changes, not an oversight to be widened casually.
 const EARN_HOST = 'affiliate-program.amazon.com'
 const EARN_PAGE = `https://${EARN_HOST}/p/connect/earnings`
 
