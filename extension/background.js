@@ -1888,7 +1888,12 @@ async function loadEpcViaApi() {
       if (job.canceled || job.error) break
       const r = await fetchPageFor(c, 1, null, null)
       const items = r && Array.isArray(r.items) ? r.items : []
-      probe.push({ try: `cap:${c.label}`, http: r ? r.status : 0, total: r ? r.total : null, items: items.length })
+      // Count how many rows in this feed are ACTUALLY opted in. The panel prints
+      // this as "Noi", and it was never populated here, so it always read 0 and
+      // made a healthy OPTED_IN feed look broken. Amazon's status enum is the
+      // label; this is the row-level truth.
+      const optedInCount = items.reduce((n, x) => n + (x && x.optedIn === true ? 1 : 0), 0)
+      probe.push({ try: `cap:${c.label}`, http: r ? r.status : 0, total: r ? r.total : null, items: items.length, optedIn: optedInCount })
       if (r && (r.status === 401 || r.status === 403)) { job.error = 'unauthorized'; break }
       if (items.length) { liveCaps.push(c); if (!job.sample) { try { job.sample = JSON.stringify(items[0]).slice(0, 1800) } catch (e) {} } }
       await _sleep(250)
