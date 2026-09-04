@@ -3861,14 +3861,31 @@ async function harvestCreatorHubVideosInPage(opts) {
       b0Tokens: b0,
       iframes: frames,
       rows: count('tr,[role="row"],[class*=row]'),
-      text: ((document.body ? document.body.innerText : '') || '').replace(/\s+/g, ' ').slice(0, 300),
+      // Counts told us the products were there and the extractor still returned
+      // nothing, which means the values themselves are not what the extractor
+      // expects. So show the values. Guessing why a regex fails, against markup
+      // nobody has looked at, is what the last four versions were.
+      sampleAsins: (() => {
+        try {
+          return [...document.querySelectorAll('[data-asin]')].slice(0, 6)
+            .map((e) => JSON.stringify(e.getAttribute('data-asin'))).join(' ')
+        } catch (e) { return '?' }
+      })(),
+      sampleHrefs: (() => {
+        try {
+          return [...document.querySelectorAll('a[href*="/dp/"], a[href*="/product/"]')].slice(0, 3)
+            .map((a) => (a.getAttribute('href') || '').slice(0, 70)).join('  ')
+        } catch (e) { return '?' }
+      })(),
+      wrongPage: false,
+      text: ((document.body ? document.body.innerText : '') || '').replace(/\s+/g, ' ').slice(0, 200),
     }
   }
   if (looksLikeCart()) {
     return {
       ok: true,
       wrongPage: true,
-      probe: probe(),
+      probe: { ...probe(), wrongPage: true },
       asins: [],
     }
   }
@@ -3974,7 +3991,7 @@ async function harvestCreatorHubVideosInPage(opts) {
     stopped,
     nextHref,
     pagerSeen: pagerLabels(),
-    probe: probe(),
+    probe: { ...probe(), collected: map.size },
     asins: [...map.entries()].map(([asin, title]) => ({ asin, title })),
     signedOut: /\/ap\/signin/.test(location.href),
   }
@@ -3990,7 +4007,10 @@ function describeProbe(frames) {
     parts.push([
       p.url ? p.url.slice(0, 90) : '?',
       p.title ? `titled "${p.title}"` : null,
+      p.wrongPage ? 'REFUSED as wrong page' : `collected ${p.collected != null ? p.collected : '?'}`,
       `${p.dataAsin} data-asin, ${p.dpLinks} product links, ${p.b0Tokens} ASIN tokens, ${p.rows} rows`,
+      p.sampleAsins ? `data-asin values: ${p.sampleAsins}` : null,
+      p.sampleHrefs ? `hrefs: ${p.sampleHrefs}` : null,
       p.iframes && p.iframes.length ? `iframes: ${p.iframes.join(' , ')}` : null,
       p.text ? `text starts: ${p.text.slice(0, 120)}` : null,
     ].filter(Boolean).join(' — '))
