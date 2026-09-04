@@ -168,12 +168,22 @@ export default function LaunchpadPage() {
   // load. Cleared by "Start over".
   const LS_KEY = 'mvp_launchpad_session_v1'
   const [restored, setRestored] = useState(false)
+  // True when this page came back from a saved session, so Step 1 can say the
+  // video is already uploaded instead of showing a fresh, empty upload widget
+  // under a green "done" step.
+  const [wasResumed, setWasResumed] = useState(false)
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY)
       const s = raw ? JSON.parse(raw) : null
+      // Don't resurrect an old run. The rendered video lives in storage that gets
+      // cleaned up, so restoring a weeks-old session hands the creator a flow
+      // pointing at files that may be gone — more confusing than starting fresh.
+      const ageMs = s && typeof s.savedAt === 'number' ? Date.now() - s.savedAt : 0
+      const tooOld = ageMs > 7 * 24 * 60 * 60 * 1000
+      if (tooOld) { try { localStorage.removeItem(LS_KEY); localStorage.removeItem('mvp_storefront_job_v1') } catch { /* ignore */ } }
       // Only a run that got as far as a rendered video is worth restoring.
-      if (s && typeof s.renderedUrl === 'string' && s.renderedUrl) {
+      if (!tooOld && s && typeof s.renderedUrl === 'string' && s.renderedUrl) {
         setRenderedUrl(s.renderedUrl)
         if (s.cleanUrl) setCleanUrl(s.cleanUrl)
         if (s.workingTitle) setWorkingTitle(s.workingTitle)
@@ -194,6 +204,7 @@ export default function LaunchpadPage() {
         if (s.masterId) setMasterId(s.masterId)
         if (s.geoCheck) setGeoCheck(s.geoCheck)
         if (s.marketAsins) setMarketAsins(s.marketAsins)
+        setWasResumed(true)
         toast('Picked up where you left off. Start over is at the top if you want a clean run.')
       }
     } catch { /* a corrupt or blocked store just means no resume */ }
@@ -595,6 +606,11 @@ export default function LaunchpadPage() {
         <StepRow n={1} state={s1} last={false}
           icon={<Upload size={15} style={{ color: '#7C3AED' }} />}
           title="Upload your video & design the CTA">
+          {wasResumed && renderedUrl && (
+            <p className="text-[12px] mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ color: '#10B981', background: 'rgba(16,185,129,0.08)' }}>
+              <Check size={13} /> Your video from the last session is still loaded. Upload another only if you want to replace it.
+            </p>
+          )}
           <UploadStage hidePublish onRendered={(url, title, sourceUrl, dur) => { setRenderedUrl(url); setCleanUrl(sourceUrl); setWorkingTitle(title); setDurationSec(dur || 0); if (!chosenTitle) setChosenTitle(title) }} />
         </StepRow>
 

@@ -267,9 +267,14 @@
       let videoKey = null
       let reusedKey = false
       try {
+        // Time-boxed: a worker that never answers must not strand the upload. No
+        // answer simply means no reuse, and we upload our own copy as before.
         const known = await new Promise((resolve) => {
+          let settled = false
+          const done = (v) => { if (!settled) { settled = true; resolve(v) } }
+          setTimeout(() => done(null), 5000)
           chrome.runtime.sendMessage({ action: 'MVP_STOREFRONT_GETKEY', bucket: creds.s3Bucket, srcUrl: job.videoUrl }, (r) => {
-            resolve(chrome.runtime.lastError ? null : (r && r.key) || null)
+            done(chrome.runtime.lastError ? null : (r && r.key) || null)
           })
         })
         if (known) { videoKey = known; reusedKey = true }

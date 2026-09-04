@@ -9,7 +9,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { Globe, Loader2, Check, Circle, Mic, Play, Upload, LogIn } from 'lucide-react'
+import { Loader2, Check, Circle, Mic, Play, Upload, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
 import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, requestStorefrontDebug, getScoutStatus, type StorefrontMarketStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
@@ -443,11 +443,14 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
           .filter((i: { domain: string }) => only.has(i.domain))
       }
 
-      // Only ever ask about a still-rendering thumbnail once per run.
-      let thumbPrompted = false
+      // The still-rendering-thumbnail question is asked at most once per run, and
+      // the ANSWER is what carries. Tracking only "have we asked" meant a creator
+      // who chose to wait in the first wave was never asked again, and the dubbed
+      // wave then uploaded thumbnail-less anyway — the exact opposite of Cancel.
+      let thumbDecision: 'unasked' | 'go' | 'stop' = 'unasked'
       type WaveResult = { targetId: string; ok: boolean; duplicate?: boolean; error?: string | null }
       const deliverWave = async (only: Set<string>, phaseLabel: string): Promise<WaveResult[]> => {
-        if (only.size === 0) return []
+        if (only.size === 0 || thumbDecision === 'stop') return []
         setPhase('Getting the thumbnail…')
         let items = await loadQueue(only)
         if (items.length === 0) return []
@@ -462,11 +465,11 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         const hasThumb = (arr: any[]) => !!presetThumbnailUrl || arr.some((i: { thumbnailUrl?: string | null }) => !!i.thumbnailUrl)
         if (!hasThumb(items)) {
           for (let i = 0; i < 24 && !hasThumb(items); i++) { await sleep(5000); items = await loadQueue(only) }
-          if (!hasThumb(items) && !thumbPrompted) {
-            thumbPrompted = true
+          if (!hasThumb(items) && thumbDecision === 'unasked') {
             const go = typeof window !== 'undefined' && window.confirm(
               'Your branded thumbnail is still rendering. Upload now and let Amazon use a frame from the video instead?\n\nClick Cancel to wait a bit longer and try again.',
             )
+            thumbDecision = go ? 'go' : 'stop'
             if (!go) { toast('Held off — try again once the thumbnail has finished rendering.'); return [] }
           }
         }
@@ -506,8 +509,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       }
 
       // Wave 2: the dubbed markets, as soon as their audio exists.
-      setPhase('Finishing the dubs…')
-      await dubbingDone
+      if (needDub.length > 0) setPhase('Finishing the dubs…')
+      await dubbingDone.catch(() => { /* a failed dub falls back to the master video */ })
       await refreshTargets(jid)
       if (needDub.length > 0) {
         results.push(...await deliverWave(dubDomains, 'Uploading the dubbed markets…'))
