@@ -3633,8 +3633,30 @@ async function harvestCreatorHubVideosInPage() {
   // innerHTML.length: ads/timers change that constantly and would make every
   // page look "changed".
   function sig() {
-    const els = [...document.querySelectorAll('[data-asin]')]
-    return els.slice(0, 8).map((e) => e.getAttribute('data-asin')).join(',') + '|' + els.length
+    // Fingerprint what COLLECT actually sees, not just [data-asin]. The Creator
+    // Hub grid does not use that attribute, so this returned the same empty
+    // string on every page, every page turn looked like nothing had happened,
+    // and the crawl reported "page stopped turning" while the page was turning
+    // perfectly well.
+    const seen = []
+    try {
+      document.querySelectorAll('[data-asin]').forEach((e) => {
+        const a = (e.getAttribute('data-asin') || '').toUpperCase()
+        if (/^[A-Z0-9]{10}$/.test(a)) seen.push(a)
+      })
+      document.querySelectorAll('a[href*="/dp/"], a[href*="/product/"]').forEach((a) => {
+        const m = (a.getAttribute('href') || '').match(/\/(?:dp|product)\/([A-Z0-9]{10})/)
+        if (m) seen.push(m[1].toUpperCase())
+      })
+      if (seen.length < 2) {
+        const re = /\b(B0[0-9A-Z]{8})\b/g
+        const html = document.body ? document.body.innerHTML : ''
+        let mm, n = 0
+        while ((mm = re.exec(html)) !== null && n++ < 400) seen.push(mm[1])
+      }
+    } catch (e) {}
+    const uniq = Array.from(new Set(seen))
+    return uniq.slice(0, 8).join(',') + '|' + uniq.length
   }
   // Bump a "results per page" dropdown to its max so a 5,000-video account
   // needs far fewer Next clicks (one reload vs. hundreds of page turns).
@@ -3797,6 +3819,7 @@ async function harvestCreatorHubVideosInPage() {
   let partial = false
   let pages = 0
   let stopped = 'end'
+  let nextHref = null
   for (let page = 0; page < 600; page++) {
     if (Date.now() - startedAt > MAX_MS) { partial = true; stopped = 'out of time'; break }
     const next = findNext()
@@ -3820,7 +3843,21 @@ async function harvestCreatorHubVideosInPage() {
       rClick(next)
       changed = await waitForChange(before, 15000)
     }
-    if (!changed) { stopped = 'page stopped turning'; partial = true; break }
+    if (!changed) {
+      // Some pagers are plain links that reload the page. Clicking one from a
+      // background tab is unreliable; navigating the tab to it is not. Hand the
+      // href back and let the worker drive.
+      try {
+        const href = next.getAttribute && next.getAttribute('href')
+        if (href) {
+          const abs = new URL(href, location.href).href
+          if (abs && abs !== location.href) nextHref = abs
+        }
+      } catch (e) {}
+      stopped = nextHref ? 'pager is a link, handing it to the worker' : 'page stopped turning'
+      partial = true
+      break
+    }
     pages++
     // Some video grids lazy-load rows within a page; scroll to pull them in.
     for (let i = 0; i < 4; i++) { try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {} await sleep(350) }
@@ -3831,6 +3868,8 @@ async function harvestCreatorHubVideosInPage() {
     partial,
     pages,
     stopped,
+    nextHref,
+    pagerSeen: pagerLabels(),
     asins: [...map.entries()].map(([asin, title]) => ({ asin, title })),
     signedOut: /\/ap\/signin/.test(location.href),
   }
@@ -3846,10 +3885,49 @@ async function scanCreatorHubVideosBackground() {
     await waitForTabLoad(tabId, 30000)
     await _sleep(3000)
     const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestCreatorHubVideosInPage })
-    const r = (results && results[0] && results[0].result) || null
+    let r = (results && results[0] && results[0].result) || null
     if (!r || !r.ok) return { ok: false, error: 'no-result' }
     if (r.signedOut) return { ok: false, error: 'signed-out' }
-    const asins = (r.asins || []).filter((x) => x && /^[A-Z0-9]{10}$/.test(x.asin))
+
+    // Merge across however many page loads it takes. Everything found so far is
+    // kept even if a later page fails, because a partial answer that says it is
+    // partial beats losing the lot.
+    const merged = new Map()
+    const take = (res) => { for (const x of (res.asins || [])) { if (x && /^[A-Z0-9]{10}$/.test(x.asin) && !merged.has(x.asin)) merged.set(x.asin, x.title || null) } }
+    take(r)
+    let pagesTurned = r.pages || 0
+    let stopped = r.stopped || null
+
+    // Link pagination: the in-page crawl cannot follow a full page load, so the
+    // worker navigates the tab and re-runs the harvest on each new page.
+    let href = r.nextHref || null
+    const navStart = Date.now()
+    const seenHrefs = new Set()
+    while (href && !seenHrefs.has(href) && Date.now() - navStart < 240000) {
+      seenHrefs.add(href)
+      try {
+        await chrome.tabs.update(tabId, { url: href })
+        await waitForTabLoad(tabId, 30000)
+        await _sleep(2500)
+        const next = await chrome.scripting.executeScript({ target: { tabId }, func: harvestCreatorHubVideosInPage })
+        const nr = (next && next[0] && next[0].result) || null
+        if (!nr || !nr.ok) { stopped = 'a page failed to load'; break }
+        const before = merged.size
+        take(nr)
+        pagesTurned += 1 + (nr.pages || 0)
+        stopped = nr.stopped || stopped
+        // A page that adds nothing new is not itself the end (a creator can
+        // re-feature the same product), but several in a row means we are going
+        // in circles.
+        if (merged.size === before && seenHrefs.size > 3) { stopped = 'pages stopped adding products'; break }
+        href = nr.nextHref || null
+      } catch (e) {
+        stopped = `navigation failed: ${(e && e.message) || e}`
+        break
+      }
+    }
+    r = { ...r, pages: pagesTurned, stopped, partial: r.partial || !!href, pagerSeen: r.pagerSeen }
+    const asins = [...merged.entries()].map(([asin, title]) => ({ asin, title }))
     if (!asins.length) return { ok: false, error: 'no-videos' }
     const push = await pushVideosToMvp(asins)
     // What the page's own code asked Amazon for while we were clicking. A DOM
@@ -3869,6 +3947,7 @@ async function scanCreatorHubVideosBackground() {
       partial: !!r.partial,
       pages: r.pages || 0,
       stopped: r.stopped || null,
+      pagerSeen: r.pagerSeen || [],
       apiCalls,
       error: (push && push.ok) ? undefined : (push && push.error),
     }

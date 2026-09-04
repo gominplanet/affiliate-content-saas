@@ -563,6 +563,8 @@ export interface IdeaScanResult {
    *  to tell "that is all of them" from "the grid stalled". */
   pages?: number
   stopped?: string | null
+  /** Pager-ish control labels the crawl could see, for when it finds none. */
+  pagerSeen?: string[]
   /** Endpoints the page called while we crawled. The route to replacing a DOM
    *  crawl with a replayed request. */
   apiCalls?: string[]
@@ -635,7 +637,7 @@ export async function requestCreatorHubVideosScan(): Promise<IdeaScanResult> {
   if (!resp) return { ok: false, error: 'timeout' }
   return {
     ok: !!resp.ok, count: resp.count, partial: resp.partial, error: resp.error,
-    pages: resp.pages, stopped: resp.stopped, apiCalls: resp.apiCalls,
+    pages: resp.pages, stopped: resp.stopped, apiCalls: resp.apiCalls, pagerSeen: resp.pagerSeen,
   }
 }
 

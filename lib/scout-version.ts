@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.17.65'
+export const SCOUT_LATEST_VERSION = '1.17.66'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Finds the Creator Hub pager, collects rows as it scrolls, and lists the controls it saw when it still cannot page.'
+  'Notices when the Creator Hub page actually turns, and follows link pagination properly instead of stopping on page one.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
