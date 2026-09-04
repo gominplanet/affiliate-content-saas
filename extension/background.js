@@ -2887,7 +2887,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       // An api-capture is a plain GET the page made. It carries no message to
       // learn from, so it goes straight into the ring for the scanners to read.
       else if (msg.kind === 'api-capture') recordNetCapture(msg.rec)
-      else learnFromCapture(msg.rec)
+      else {
+        learnFromCapture(msg.rec)
+        // A POST to a reporting or content API is ALSO a request worth replaying,
+        // and only learnFromCapture used to see it. That is why the video scan
+        // only ever found a parameterless GET: the page pages with a POST body,
+        // and the POST never reached the ring the scanner reads.
+        try {
+          if (/\/(manage-content|connect)\/api\//i.test(String(msg.rec.url || ''))) recordNetCapture(msg.rec)
+        } catch (e) {}
+      }
     } catch (e) {}
     sendResponse({ ok: true })
     return false
@@ -4113,7 +4122,11 @@ function fetchContentListInPage(rec) {
     // Learned from the captured URL and the first response, never assumed.
     let tokenKey = null
     let pageKey = null
-    try { out.queryKeys = [...new URL(rec.url, location.href).searchParams.keys()].join(', ') } catch (e) {}
+    let bodyKey = null
+    try {
+      const qk = [...new URL(rec.url, location.href).searchParams.keys()]
+      out.queryKeys = `${(rec.method || 'GET').toUpperCase()}${rec.body ? ' with a body' : ' with no body'}, query keys: ${qk.length ? qk.join(', ') : 'none'}`
+    } catch (e) {}
     try {
       const u0 = new URL(rec.url, location.href)
       for (const k of u0.searchParams.keys()) {
@@ -4142,7 +4155,28 @@ function fetchContentListInPage(rec) {
           headers: rec.headers && Object.keys(rec.headers).length ? rec.headers : { accept: 'application/json' },
           signal: AbortSignal.timeout(30000),
         }
-        if (rec.body && /^post$/i.test(init.method)) init.body = rec.body
+        if (rec.body && /^post$/i.test(init.method)) {
+          // Pagination lives in the body for a POST. Same rule as the query
+          // string: the first call goes out exactly as the page sent it, and a
+          // key is only set once we have learned which one moves the window.
+          let b = rec.body
+          if (i > 0 && (bodyKey || tokenKey)) {
+            try {
+              const o = JSON.parse(rec.body)
+              const set = (obj, key, val) => {
+                if (obj && typeof obj === 'object' && key in obj) { obj[key] = val; return true }
+                for (const k in obj) {
+                  if (obj[k] && typeof obj[k] === 'object' && set(obj[k], key, val)) return true
+                }
+                return false
+              }
+              if (token && tokenKey) { if (!set(o, tokenKey, token)) o[tokenKey] = token }
+              else if (bodyKey) { if (!set(o, bodyKey, page)) o[bodyKey] = page }
+              b = JSON.stringify(o)
+            } catch (e) { b = rec.body }
+          }
+          init.body = b
+        }
         const res = await fetch(u.toString(), init)
         if (!res.ok) { out.error = `HTTP ${res.status} on page ${i + 1}`; break }
         const j = await res.json().catch(() => null)
@@ -4204,9 +4238,10 @@ function fetchContentListInPage(rec) {
         }
         seek(j, 0)
         if (next && next !== token) token = next
-        else if (pageKey) {
+        else if (pageKey || bodyKey) {
+          const k = pageKey || bodyKey
           token = null
-          page += /^(page|pageNumber|pageIndex)$/i.test(pageKey) ? 1 : (j && Array.isArray(j.result) ? j.result.length : 10)
+          page += /^(page|pageNumber|pageIndex)$/i.test(k) ? 1 : (j && Array.isArray(j.result) ? j.result.length : 10)
         }
         else {
           // No cursor in the response and no page parameter in the captured URL,
@@ -4218,16 +4253,30 @@ function fetchContentListInPage(rec) {
             try { return (j.result[0].contentDetail || {}).mediaACI || null } catch (e) { return null }
           })()
           const size = (() => { try { return j.result.length || 10 } catch (e) { return 10 } })()
-          const candidates = ['startIndex', 'offset', 'start', 'from', 'skip', 'page', 'pageNumber', 'pageIndex']
+          const candidates = ['startIndex', 'offset', 'start', 'from', 'skip', 'page', 'pageNumber', 'pageIndex', 'nextToken', 'nextPageToken', 'paginationToken']
+          const isPageStyle = (k) => /^(page|pageNumber|pageIndex)$/i.test(k)
           let learned = null
+          let learnedInBody = false
+          const post = !!(rec.body && /^post$/i.test(String(rec.method || '')))
           for (const key of candidates) {
             try {
               const t = new URL(rec.url, location.href)
-              // Index-style keys take a row offset, page-style keys take 2.
-              t.searchParams.set(key, /^(page|pageNumber|pageIndex)$/i.test(key) ? '2' : String(size))
+              let probeBody = rec.body || null
+              if (post) {
+                // For a POST the key almost certainly belongs in the body, and
+                // the body is the page's own, so we only change the one field.
+                try {
+                  const o = JSON.parse(rec.body)
+                  o[key] = isPageStyle(key) ? 2 : size
+                  probeBody = JSON.stringify(o)
+                } catch (e) { probeBody = rec.body }
+              } else {
+                t.searchParams.set(key, isPageStyle(key) ? '2' : String(size))
+              }
               const probe = await fetch(t.toString(), {
                 method: rec.method || 'GET', credentials: 'include',
                 headers: rec.headers && Object.keys(rec.headers).length ? rec.headers : { accept: 'application/json' },
+                ...(post ? { body: probeBody } : {}),
                 signal: AbortSignal.timeout(20000),
               })
               if (!probe.ok) continue
@@ -4239,6 +4288,7 @@ function fetchContentListInPage(rec) {
               // the parameter was ignored, which is not an error, just a no.
               if (a2 && firstAci && a2 !== firstAci) {
                 learned = key
+                learnedInBody = post
                 readVideos(pj, videos)
                 break
               }
@@ -4249,10 +4299,11 @@ function fetchContentListInPage(rec) {
             out.error = `no pagination: response carries no cursor and none of ${candidates.join(', ')} moved the window`
             break
           }
-          pageKey = learned
-          out.pageKey = learned
+          if (learnedInBody) bodyKey = learned
+          else pageKey = learned
+          out.pageKey = `${learned}${learnedInBody ? ' (in the request body)' : ''}`
           // Index-style keys count rows, page-style keys count pages.
-          page = /^(page|pageNumber|pageIndex)$/i.test(learned) ? 3 : size * 2
+          page = isPageStyle(learned) ? 3 : size * 2
           token = null
         }
         await new Promise((r) => setTimeout(r, 250))
@@ -4327,8 +4378,12 @@ async function scanCreatorHubVideosBackground(userUrl) {
     // The page's own list API first. Its answer is complete and carries no cart
     // widgets, so the DOM crawl below is now only a fallback for when we cannot
     // capture that request.
-    const apiRec = (_ccNetRing || []).slice().reverse()
-      .find((x) => x && /\/manage-content\/api\/get-content-list/i.test(String(x.url || '')))
+    // Prefer a POST with a body: that is the one that can carry pagination. A
+    // parameterless GET returns the first page and nothing else, which is exactly
+    // where the last two runs stopped.
+    const listRecs = (_ccNetRing || []).slice().reverse()
+      .filter((x) => x && /\/manage-content\/api\/get-content-list/i.test(String(x.url || '')))
+    const apiRec = listRecs.find((x) => x.body && /^post$/i.test(String(x.method || ''))) || listRecs[0]
     // Why the API route did or did not work. The first version fell through to
     // the DOM crawl in silence, so a failing API attempt was indistinguishable
     // from never having tried, and the panel reported a scrape as if that were
