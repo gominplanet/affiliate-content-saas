@@ -3499,6 +3499,15 @@ async function scanIdeaListBackground(rawUrl) {
     const r = (results && results[0] && results[0].result) || null
     if (!r || !r.ok) return { ok: false, error: 'no-result' }
     if (r.signedOut) return { ok: false, error: 'signed-out' }
+    if (r.wrongPage) {
+      return {
+        ok: false,
+        error: 'wrong-page',
+        landedOn: r.url || url,
+        pageTitle: r.title || null,
+        heading: r.heading || null,
+      }
+    }
     if (!r.items || !r.items.length) return { ok: true, count: 0 }
     const cleanUrl = url.split('#')[0].split('?')[0]
     const push = await pushIdeaListToMvp({ list: {
@@ -3796,6 +3805,43 @@ async function harvestCreatorHubVideosInPage() {
     }
     return false
   }
+  // Refuse to harvest the wrong page.
+  //
+  // The last run scraped 266 "products with a video" out of the shopping cart:
+  // Delete buttons, quantity steppers and recommendation carousels. The
+  // collector takes any B0 token in the page HTML, so on the wrong page it
+  // returns confident nonsense that then gets written to the database as fact.
+  // A scraper with no idea where it is standing is worse than no scraper.
+  function looksLikeCart() {
+    try {
+      const t = (document.body ? document.body.innerText : '').slice(0, 4000).toLowerCase()
+      if (/subtotal|proceed to checkout|shopping cart|added to cart/.test(t)) return true
+      if (document.querySelector('[class*=sc-product-link],[data-name="Active Items"],#sc-active-cart')) return true
+    } catch (e) {}
+    return false
+  }
+  function looksLikeVideoList() {
+    try {
+      const t = (document.body ? document.body.innerText : '').toLowerCase()
+      // The video table talks about videos and their state. A product grid does
+      // not.
+      if (/\b(published|processing|under review|rejected|draft)\b/.test(t) && /\bvideo/.test(t)) return true
+      if (document.querySelector('video,[class*=video-row],[data-testid*=video]')) return true
+    } catch (e) {}
+    return false
+  }
+  await sleep(1500)
+  if (looksLikeCart() || !looksLikeVideoList()) {
+    return {
+      ok: true,
+      wrongPage: true,
+      url: location.href,
+      title: (document.title || '').slice(0, 120),
+      heading: ((document.querySelector('h1,h2') || {}).textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+      asins: [],
+    }
+  }
+
   const map = new Map()
   await sleep(1200)
   // Max out the page size before the first read (fewer round-trips).
@@ -3902,8 +3948,10 @@ async function harvestCreatorHubVideosInPage() {
   }
 }
 
-async function scanCreatorHubVideosBackground() {
-  const url = 'https://www.amazon.com/creatorhub'
+async function scanCreatorHubVideosBackground(userUrl) {
+  // The creator can supply the exact page. Guessing a URL and harvesting
+  // whatever loads is how the cart ended up in the database.
+  const url = /^https:\/\/(www\.)?amazon\.com\//i.test(String(userUrl || '')) ? String(userUrl) : 'https://www.amazon.com/creatorhub'
   const startedAt = Date.now()
   let tabId = null
   try {
@@ -7240,7 +7288,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // against an in-page budget of 240s, a big library was cut off mid crawl and
     // reported as a timeout even though the scan was still working.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 290000)
-    scanCreatorHubVideosBackground()
+    scanCreatorHubVideosBackground(msg.url)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response

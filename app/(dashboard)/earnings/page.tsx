@@ -95,7 +95,13 @@ export default function EarningsPage() {
   const [dataVersion, setDataVersion] = useState(0)
   const [scanningVideos, setScanningVideos] = useState(false)
   const [videoScan, setVideoScan] = useState<string | null>(null)
-  useEffect(() => { try { setStoreId(localStorage.getItem('mvp_amazon_store_id') || '') } catch { /* ignore */ } }, [])
+  const [hubUrl, setHubUrl] = useState('')
+  useEffect(() => {
+    try {
+      setStoreId(localStorage.getItem('mvp_amazon_store_id') || '')
+      setHubUrl(localStorage.getItem('mvp_creatorhub_url') || '')
+    } catch { /* ignore */ }
+  }, [])
 
   const load = useCallback(async () => {
     try {
@@ -152,8 +158,15 @@ export default function EarningsPage() {
   async function loadAmazonVideos() {
     setScanningVideos(true)
     try {
-      const r = await requestCreatorHubVideosScan()
+      const r = await requestCreatorHubVideosScan(hubUrl.trim() || undefined)
       if (!r.ok) {
+        if (r.error === 'wrong-page') {
+          // Better to read nothing than to read the wrong page. The previous
+          // version harvested a shopping cart and filed it as your video library.
+          setVideoScan(`SCOUT opened ${r.landedOn || 'that page'} and it is not your video list${r.pageTitle ? ` (it says "${r.pageTitle}")` : ''}, so nothing was saved. Open your Creator Hub video list in Chrome, copy the URL from the address bar, paste it in the box and run this again.`)
+          toast.error('That page is not your video list, so nothing was saved.')
+          return
+        }
         toast.error(r.error === 'not-installed'
           ? 'Install SCOUT and sign in to Amazon to read your videos.'
           : r.error === 'timeout'
@@ -226,6 +239,14 @@ export default function EarningsPage() {
               only say a product has no video off Amazon, which is the weaker half
               of the sentence: the point is that the one on Amazon is already
               selling and has never left. */}
+          <input
+            value={hubUrl}
+            onChange={e => { setHubUrl(e.target.value); try { localStorage.setItem('mvp_creatorhub_url', e.target.value.trim()) } catch { /* ignore */ } }}
+            placeholder="Your Creator Hub video list URL"
+            className="px-3 py-2 rounded-lg border text-sm bg-transparent w-64"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            title="Open your video list on Amazon, copy the URL from the address bar and paste it here. Without it SCOUT guesses, and a guess landed on the shopping cart."
+          />
           <button type="button" onClick={() => void loadAmazonVideos()} disabled={scanningVideos}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border disabled:opacity-60"
             style={{ borderColor: 'var(--border)', color: 'var(--text)' }}

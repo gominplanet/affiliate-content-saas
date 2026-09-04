@@ -565,6 +565,10 @@ export interface IdeaScanResult {
   stopped?: string | null
   /** Pager-ish control labels the crawl could see, for when it finds none. */
   pagerSeen?: string[]
+  /** Where the scan actually landed, when it refused to harvest. */
+  landedOn?: string
+  pageTitle?: string | null
+  heading?: string | null
   /** Endpoints the page called while we crawled. The route to replacing a DOM
    *  crawl with a replayed request. */
   apiCalls?: string[]
@@ -629,15 +633,16 @@ export async function requestStorefrontCatalogScan(url: string): Promise<IdeaSca
  * Read the creator's Creator Hub video table in a BACKGROUND SCOUT tab and
  * record which products (ASINs) they have a video for, then push to MVP.
  */
-export async function requestCreatorHubVideosScan(): Promise<IdeaScanResult> {
+export async function requestCreatorHubVideosScan(url?: string): Promise<IdeaScanResult> {
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   // Longer wait than the storefront crawl: a creator can have thousands of
   // videos, so the in-page reader pages for up to ~4 min. Keep this above that.
-  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_CREATORHUB_VIDEOS' }, 320000)
+  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_CREATORHUB_VIDEOS', ...(url ? { url } : {}) }, 320000)
   if (!resp) return { ok: false, error: 'timeout' }
   return {
     ok: !!resp.ok, count: resp.count, partial: resp.partial, error: resp.error,
     pages: resp.pages, stopped: resp.stopped, apiCalls: resp.apiCalls, pagerSeen: resp.pagerSeen,
+    landedOn: resp.landedOn, pageTitle: resp.pageTitle, heading: resp.heading,
   }
 }
 
