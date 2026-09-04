@@ -339,7 +339,7 @@ export default function LaunchpadPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let j: any = {}
       try { j = raw ? JSON.parse(raw) : {} } catch { /* non-JSON response */ }
-      if (j.notEnabled) { toast.error("Publishing to YouTube isn't switched on yet — Google is verifying our upload access."); return }
+      if (j.notEnabled) { toast.error("Publishing to YouTube isn't switched on yet. Google is verifying our upload access."); return }
       if (j.reconnectRequired) { toast.error('Reconnect YouTube to grant upload permission, then try again.'); return }
       if (!r.ok || !j.videoId || !j.url) {
         const detail = j.error || (raw ? raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) : '') || `HTTP ${r.status}`
@@ -553,7 +553,7 @@ export default function LaunchpadPage() {
       <FeatureLockedCard
         icon={<Rocket size={28} strokeWidth={1.8} />}
         feature="Video Launchpad"
-        description="Start with a video that isn't on YouTube yet. Upload it once, add a CTA, and MVP takes it everywhere — YouTube (optional, with the full Co-Pilot finish), then every Amazon storefront, with each market's title localized and the video dubbed for non-English shoppers."
+        description="Start with a video that isn't on YouTube yet. Upload it once, add a CTA, and MVP takes it everywhere: YouTube (optional, with the full Co-Pilot finish), then every Amazon storefront, with each market's title localized and the video dubbed for non-English shoppers."
         bullets={[
           'One upload → YouTube + every Amazon geo',
           'AI thumbnail, metadata and the Co-Pilot publish finish',
@@ -626,7 +626,7 @@ export default function LaunchpadPage() {
               ? 'That doesn’t look right. Paste the 10-character ASIN (starts with B0…) or the Amazon product link.'
               : asinOk
                 ? `Product ${asinClean}. MVP uses it for every market’s title and the thumbnail.`
-                : 'Required. Paste the ASIN or the Amazon product link — MVP uses it for every market’s title and the thumbnail.'}
+                : 'Required. Paste the ASIN or the Amazon product link. MVP uses it for every market’s title and the thumbnail.'}
           </p>
           {/* Entering the ASIN kicks off the title writing, which gates the
               thumbnail step. Show it running with a live count so the pause reads
@@ -880,7 +880,7 @@ export default function LaunchpadPage() {
         {/* 4. Amazon storefronts — the uploaded file is the master */}
         <StepRow n={5} state={s5} last={false}
           icon={<Globe size={15} style={{ color: '#0EA5A4' }} />}
-          title="Amazon storefronts — every geo"
+          title="Amazon storefronts, every geo"
           hint="Unlocks after the ASIN is set and you’ve published to YouTube (or hit Skip) above.">
           <>
             <p className="text-[12px] mb-3" style={muted}>Your clean video (no CTA) goes to Amazon. MVP checks where this product is listed and pre-selects the English stores where it&apos;s found (US, Canada, UK, Australia). Non-English stores are optional: tick one and MVP adds a free dub in that language (or your own voice, with credits). Uploads run through your logged-in Amazon Creator account, so sign in to each store first.</p>

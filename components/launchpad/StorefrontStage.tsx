@@ -196,7 +196,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   async function start(quiet = false): Promise<{ jobId: string; status: string } | null> {
     if (!picked) { toast.error('Pick a master video first'); return null }
     if (chosen.size === 0) { toast.error('Pick at least one marketplace'); return null }
-    if (!baseAsin) { toast.error('Enter a valid product ASIN (or paste the Amazon product link) — MVP needs it to build each market’s title and thumbnail'); return null }
+    if (!baseAsin) { toast.error('Enter a valid product ASIN, or paste the Amazon product link. MVP needs it to build each market’s title and thumbnail.'); return null }
     setRunning(true); setTargets([]); setJobId(null)
     try {
       // Per-market ASIN overrides for the chosen markets that differ from the base.
@@ -224,7 +224,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       if (!quiet) {
         if (finalStatus === 'done') toast.success('Storefronts localized. Review each market’s copy, then upload.')
         else if (finalStatus === 'failed') toast.error('Localizing failed for this sync. Try again.')
-        else toast('Still localizing in the background — the markets will fill in here as they finish.')
+        else toast('Still localizing in the background. The markets will fill in here as they finish.')
       }
       return { jobId: j.jobId as string, status: finalStatus }
     } catch (e) {
@@ -341,7 +341,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         `SCOUT v${scout?.version || '?'} · ${new Date().toISOString()}`,
         '',
         'MVP upload results:',
-        ...targets.map(t => `  ${t.country} (${t.domain}) — ${t.state}${t.detail ? `: ${t.detail}` : ''}`),
+        ...targets.map(t => `  ${t.country} (${t.domain}): ${t.state}${t.detail ? ` · ${t.detail}` : ''}`),
         '',
         log.length === 0
           ? 'Amazon Creator Hub calls captured: none yet. Publish one video by hand in the Creator Hub, then copy this again.'
@@ -470,7 +470,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
               'Your branded thumbnail is still rendering. Upload now and let Amazon use a frame from the video instead?\n\nClick Cancel to wait a bit longer and try again.',
             )
             thumbDecision = go ? 'go' : 'stop'
-            if (!go) { toast('Held off — try again once the thumbnail has finished rendering.'); return [] }
+            if (!go) { toast('Held off. Try again once the thumbnail has finished rendering.'); return [] }
           }
         }
 
@@ -488,7 +488,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
             body: JSON.stringify({
               targetId: r.targetId,
               ok: r.ok || isDup,
-              detail: isDup ? 'Already on this storefront — skipped duplicate' : (r.ok ? 'Uploaded to storefront' : (r.error || 'Upload failed')),
+              detail: isDup ? 'Already on this storefront, skipped duplicate' : (r.ok ? 'Uploaded to storefront' : (r.error || 'Upload failed')),
             }),
           }).catch(() => {})
         }
@@ -505,7 +505,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
           : 'Uploading to your storefronts… keep this tab open.')
         results.push(...await deliverWave(new Set(uploadNow.map(t => t.domain)), 'Uploading…'))
       } else if (needDub.length > 0) {
-        toast(`Dubbing ${needDub.length} ${needDub.length === 1 ? 'market' : 'markets'} first — this can take a couple of minutes each.`)
+        toast(`Dubbing ${needDub.length} ${needDub.length === 1 ? 'market' : 'markets'} first. This can take a couple of minutes each.`)
       }
 
       // Wave 2: the dubbed markets, as soon as their audio exists.
@@ -543,8 +543,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     if (res.status !== 'done') {
       setPhase(null)
       toast.error(res.status === 'failed'
-        ? 'Localizing failed — hit Upload again to retry.'
-        : 'Still localizing — give it a moment, then hit Upload again.')
+        ? 'Localizing failed. Hit Upload again to retry.'
+        : 'Still localizing. Give it a moment, then hit Upload again.')
       return
     }
     await deliverAll(res.jobId)
@@ -730,7 +730,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                     placeholder="Paste this market’s ASIN"
                     className="w-full px-2 py-1 rounded-md border text-[11px] bg-transparent"
                     style={{ borderColor: '#e0554b55', color: 'var(--text)' }}
-                    title="This product isn’t listed here under the US ASIN and no local match was found — paste the local ASIN to include this market."
+                    title="This product isn’t listed here under the US ASIN and no local match was found. Paste the local ASIN to include this market."
                   />
                 )}
               </div>
@@ -768,7 +768,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
               className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: baseAsin ? 'var(--border)' : '#e0554b55', color: 'var(--text)' }} />
             <p className="text-[11px] mt-1" style={asin.trim() && !baseAsin ? { color: '#e0554b' } : muted}>
               {asin.trim() && !baseAsin
-                ? 'That doesn’t look right — paste the 10-character ASIN or the Amazon product link.'
+                ? 'That doesn’t look right. Paste the 10-character ASIN or the Amazon product link.'
                 : 'Required. MVP uses the product to write each market’s title and build the thumbnail.'}
             </p>
           </div>
@@ -807,7 +807,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
           {scout && (
             scout.installed
               ? <p className="text-[11px] mb-3" style={scoutStale ? { color: '#d97706' } : muted}>
-                  SCOUT v{scout.version || '?'}{scoutStale ? ` — please update to ${SCOUT_LATEST_VERSION} (remove the old unpacked build in chrome://extensions and load the new one). Uploads before you update will keep failing.` : ' · up to date'}
+                  SCOUT v{scout.version || '?'}{scoutStale ? `. Please update to ${SCOUT_LATEST_VERSION} (remove the old unpacked build in chrome://extensions and load the new one). Uploads before you update will keep failing.` : ' · up to date'}
                 </p>
               : <p className="text-[11px] mb-3" style={{ color: '#e0554b' }}>SCOUT not detected. Install it and sign in to Amazon to upload.</p>
           )}
@@ -902,7 +902,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                     <input type="checkbox" checked={skipDub.has(t.domain)}
                       onChange={() => setSkipDub(prev => { const n = new Set(prev); n.has(t.domain) ? n.delete(t.domain) : n.add(t.domain); return n })}
                       className="accent-[#0EA5A4]" />
-                    Skip dub — upload with English audio
+                    Skip dub, upload with English audio
                   </label>
                 )}
                 {t.dub && !skipDub.has(t.domain) && t.videoUrl && (
