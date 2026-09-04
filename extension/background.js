@@ -4113,7 +4113,31 @@ function fetchContentListInPage(rec) {
         if (!res.ok) { out.error = `HTTP ${res.status} on page ${i + 1}`; break }
         const j = await res.json().catch(() => null)
         if (!j) { out.error = 'not JSON'; break }
-        if (!out.sample) out.sample = JSON.stringify(j).slice(0, 1200)
+        if (!out.sample) {
+          // A raw dump truncates inside the first long description and never
+          // reaches the fields that matter. A map of key paths says where an
+          // ASIN lives, or proves this response has none, in a fraction of the
+          // characters.
+          const paths = []
+          const walkPaths = (o, prefix, depth) => {
+            if (!o || typeof o !== 'object' || depth > 6 || paths.length > 120) return
+            if (Array.isArray(o)) { if (o.length) walkPaths(o[0], `${prefix}[0]`, depth + 1); return }
+            for (const k in o) {
+              const v = o[k]
+              const path = prefix ? `${prefix}.${k}` : k
+              if (v && typeof v === 'object') walkPaths(v, path, depth + 1)
+              else {
+                const isAsin = typeof v === 'string' && /^[A-Z0-9]{10}$/.test(v.toUpperCase()) && /^B0/i.test(v)
+                paths.push(isAsin ? `${path}=ASIN(${v})` : path)
+              }
+            }
+          }
+          try {
+            const first = j && Array.isArray(j.result) ? j.result[0] : j
+            walkPaths(first, '', 0)
+          } catch (e) {}
+          out.sample = `keys of the first record: ${paths.join(', ')}`
+        }
         // Amazon states the library size. Reading fewer than that is a partial
         // read and must say so rather than passing as the whole library.
         try {
@@ -4225,10 +4249,19 @@ async function scanCreatorHubVideosBackground(userUrl) {
             error: (push && push.ok) ? undefined : (push && push.error),
           }
         }
-        apiNote = `list API returned nothing${a && a.error ? `: ${a.error}` : ''}${a && a.sample ? `. Response began: ${String(a.sample).slice(0, 400)}` : ''}`
+        apiNote = `list API returned nothing${a && a.error ? `: ${a.error}` : ''}${a && a.total ? `, though Amazon reports ${a.total} items` : ''}${a && a.sample ? `. ${String(a.sample).slice(0, 700)}` : ''}`
       } catch (e) {
         apiNote = `list API call failed: ${(e && e.message) || e}`
       }
+      // Do NOT fall back to scraping this page.
+      //
+      // Capturing the list request proves we are on the right page and that
+      // Amazon serves the library properly. If reading it failed, that is a bug
+      // to fix, not a reason to go back to the rendered markup, which on this
+      // page yields the cart flyout and has written an ice maker into this
+      // creator's video library three times today. Returning nothing is the
+      // correct outcome; writing something wrong is not.
+      return { ok: false, error: 'list-api-empty', probe: apiNote, source: "Amazon's own list API" }
     }
 
     // allFrames, because an Amazon console panel is often an iframe and the main

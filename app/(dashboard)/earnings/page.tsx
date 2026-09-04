@@ -174,6 +174,7 @@ export default function EarningsPage() {
           : r.error === 'timeout' ? 'Amazon did not finish listing your videos in time. Try again and leave the tab alone while it runs.'
           : r.error === 'signed-out' ? 'Amazon signed SCOUT out. Sign in to Amazon in this browser and try again.'
           : r.error === 'no-videos' ? 'That page loaded but SCOUT could not find any products on it, so nothing was saved.'
+          : r.error === 'list-api-empty' ? 'Amazon served your video list but SCOUT could not read the products out of it, so nothing was saved rather than saving something wrong.'
           : r.error === 'no-result' ? 'That page did not respond in a way SCOUT could read, so nothing was saved.'
           : 'Could not read your Amazon videos, so nothing was saved.'
         setVideoScan(r.probe ? `${human} What was on the page: ${r.probe}` : human)
