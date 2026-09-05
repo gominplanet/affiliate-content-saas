@@ -74,12 +74,12 @@ export async function GET(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: postsRaw } = await supabase
     .from('blog_posts')
-    .select('id,title,slug,content,seo_keyword,post_type,wordpress_post_id,wordpress_site_id,published_at')
+    .select('id,title,slug,content,seo_keyword,post_type,wordpress_post_id,wordpress_site_id,published_at,wordpress_url')
     .eq('user_id', ownerId)
     .not('wordpress_post_id', 'is', null)
     .order('published_at', { ascending: false })
     .limit(POSTS_OVERVIEW_CAP)
-  type Post = { id: string; title: string; slug: string; content: string; seo_keyword: string | null; post_type: string | null; wordpress_post_id: number | null; wordpress_site_id: string | null; published_at: string | null }
+  type Post = { id: string; title: string; slug: string; content: string; seo_keyword: string | null; post_type: string | null; wordpress_post_id: number | null; wordpress_site_id: string | null; published_at: string | null; wordpress_url: string | null }
   const posts = (postsRaw as Post[] | null) ?? []
 
   // ── Lightweight path (Library Posts-tab badges) ──────────────────────────
@@ -211,6 +211,18 @@ export async function GET(request: Request) {
   const findPageForSlug = (slug: string): string | null =>
     slug ? (pageBySlug.get(slug) ?? null) : null
 
+  // Search Console reports one exact URL per page and WordPress may store the
+  // other spelling of it, so a trailing slash must not be the reason a post's
+  // clicks and impressions go missing.
+  const perfKeyByNormalised = new Map<string, string>()
+  for (const page of perfByPage.keys()) {
+    perfKeyByNormalised.set(page.replace(/\/+$/, ''), page)
+  }
+  const matchPerfPage = (u: string): string | null => {
+    const bare = u.replace(/\/+$/, '')
+    return perfKeyByNormalised.get(bare) ?? null
+  }
+
   const out: Record<string, unknown>[] = []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toUpsert: any[] = []
@@ -225,6 +237,7 @@ export async function GET(request: Request) {
     score: number
     checks: ReturnType<typeof scorePostSeo>['checks']
     url: string | null
+    urlGuessed: boolean
     perf: { clicks: number; impressions: number; position: number; ctr: number } | undefined
     cached: ReturnType<typeof cache.get>
     needsInspect: boolean
@@ -236,13 +249,32 @@ export async function GET(request: Request) {
     const { score, checks } = scorePostSeo({
       title: p.title || '', contentHtml: p.content || '', siteHost: wpBase, postType: p.post_type || 'review', seoKeyword: p.seo_keyword,
     })
-    const matchedPage = findPageForSlug(p.slug)
-    const url = matchedPage || (wpBase && p.slug ? `${wpBase}/${p.slug}` : null)
+    // The URL we ask Google about has to be the URL the post actually lives at.
+    //
+    // This used to prefer a page pulled out of Search Console's performance
+    // report and, failing that, GUESS `${wpBase}/${slug}`. That guess is wrong
+    // for most WordPress sites: the default permalink carries a trailing slash,
+    // and plenty of sites prefix a category or a date. The result was circular.
+    // A post only got its true URL if Google was already surfacing it, so every
+    // post you actually wanted to diagnose was inspected at an address that does
+    // not exist, came back "URL is unknown to Google", and was reported as not
+    // indexed. Meanwhile Search Console was reporting impressions, which only
+    // happen for pages that ARE indexed.
+    //
+    // WordPress hands back the real permalink when MVP publishes, and it is
+    // stored. Use it first, and treat a guess as a guess.
+    const stored = (p.wordpress_url || '').trim() || null
+    const matchedPage = stored ? matchPerfPage(stored) : findPageForSlug(p.slug)
+    const guessed = wpBase && p.slug ? `${wpBase}/${p.slug}` : null
+    const url = stored || matchedPage || guessed
+    // True when nothing but a guess was available, so the row can say that
+    // rather than reporting Google's answer about a made-up address as fact.
+    const urlGuessed = !stored && !matchedPage && !!guessed
     const perf = matchedPage ? perfByPage.get(matchedPage) : undefined
     const cached = cache.get(p.id)
     const stale = !cached || (Date.now() - new Date(cached.checked_at || 0).getTime()) > STALE_MS
     const needsInspect = !!(connected && token && property && url && stale)
-    return { post: p, score, checks, url, perf, cached, needsInspect, siteCtx }
+    return { post: p, score, checks, url, urlGuessed, perf, cached, needsInspect, siteCtx }
   })
 
   // Apply the INSPECT_CAP — pick the first N that need inspection.
@@ -275,7 +307,7 @@ export async function GET(request: Request) {
 
   // ── Phase 2: assemble the output rows with whatever inspection data we got
   for (const pp of pending) {
-    const { post: p, score, checks, url, perf, cached, siteCtx } = pp
+    const { post: p, score, checks, url, urlGuessed, perf, cached, siteCtx } = pp
     let indexedState: string = cached?.indexed_state || 'unknown'
     let coverageState: string | null = cached?.coverage_state || null
     let lastCrawl: string | null = cached?.last_crawl || null
@@ -284,6 +316,28 @@ export async function GET(request: Request) {
       indexedState = ins.indexed ? 'indexed' : 'not_indexed'
       coverageState = ins.coverageState
       lastCrawl = ins.lastCrawl
+    }
+
+    // Impressions settle it.
+    //
+    // Google cannot show a page in its results unless that page is in its index,
+    // so a post with impressions in the last 28 days IS indexed. That is a
+    // definition, not an inference. When URL Inspection disagrees it is
+    // answering about a different address from the one being served, and
+    // believing it produced the state this page was actually in: "Indexed by
+    // Google: 0" printed directly above "Impressions: 490", with the creator
+    // sent off to fix an indexing problem that was a measurement problem.
+    const seenInSearch = (perf?.impressions ?? 0) > 0
+    if (seenInSearch && indexedState !== 'indexed') {
+      indexedState = 'indexed'
+      coverageState = coverageState || 'Indexed, confirmed by Search Console impressions'
+    }
+    // A URL nobody has confirmed is not evidence of anything. Reporting "not
+    // indexed" for an address MVP made up is worse than admitting we do not know
+    // where the post lives.
+    if (urlGuessed && indexedState === 'not_indexed' && !seenInSearch) {
+      indexedState = 'unknown'
+      coverageState = 'MVP does not know this post’s real address yet'
     }
 
     const inSitemap = !siteCtx?.sitemapFound
@@ -304,6 +358,9 @@ export async function GET(request: Request) {
       // 422s). The UI uses this to steer those rows to Rebuild-from-video
       // instead of offering a fix that always fails.
       hasBody: !!(p.content && p.content.trim()),
+      // The address was guessed rather than known, so every Google answer about
+      // this row is about an address that may not exist.
+      urlGuessed,
       score, checks,
       indexed: indexedState === 'indexed' ? true : indexedState === 'not_indexed' ? false : null,
       inSitemap,
