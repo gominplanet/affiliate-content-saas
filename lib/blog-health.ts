@@ -43,7 +43,13 @@ export interface BlogHealthInput {
   posts: number
   /** When the blog first published, so the verdict can account for its age. */
   firstPublishedAt: string | null
-  /** Affiliate link clicks MVP can attribute to the blog, when tracked. */
+  /** Product-link clicks from the blog, through Passport.
+   *
+   *  Null and zero are different claims and must stay that way. Zero means the
+   *  creator has tracked links and readers did not take them. Null means there
+   *  are no tracked links to click, which says nothing about the readers, and
+   *  reporting it as nobody clicking would be an accusation invented out of an
+   *  absence. */
   affiliateClicks: number | null
   /** Everything Amazon paid for links placed away from the storefront. Covers
    *  the blog AND anywhere else, which is why it is never called blog revenue. */

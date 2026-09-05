@@ -23,6 +23,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { getValidGscToken, querySearchAnalytics } from '@/lib/gsc'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { passportCodeFromUrl } from '@/lib/passport-links'
 import {
   classifyPostOpportunity,
   rankOpportunities,
@@ -58,6 +59,24 @@ function gscWindow(): { startDate: string; endDate: string } {
   const start = new Date(end)
   start.setDate(start.getDate() - 28)
   return { startDate: fmt(start), endDate: fmt(end) }
+}
+
+/** Pull every Passport code out of a post body.
+ *
+ *  Passport is MVP's own link, so unlike Geniuslink there is no third-party API
+ *  to call and no key to configure: the clicks are already in our database. A
+ *  post usually carries several, one per product, and all of them count towards
+ *  whether readers of that post act on its recommendations. */
+function extractPassportCodes(html: string | null | undefined): string[] {
+  const text = html || ''
+  const out = new Set<string>()
+  const re = /https?:\/\/[^\s"'<>)]+/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const code = passportCodeFromUrl(m[0])
+    if (code) out.add(code)
+  }
+  return [...out]
 }
 
 /** Pull geni.us/CODE out of a post body (same regex as /api/analytics/clicks). */
@@ -215,16 +234,47 @@ export async function GET() {
       if (p.geniuslink_code) codeByPost.set(p.id, p.geniuslink_code)
       else needBodyIds.push(p.id)
     }
-    // Body-scrape fallback ONLY for live posts with no stored code — fetch just
-    // those bodies rather than every post's content.
-    if (needBodyIds.length > 0) {
-      const { data: bodies } = await supabase
-        .from('blog_posts')
-        .select('id,content')
-        .in('id', needBodyIds)
-      for (const b of ((bodies ?? []) as Array<{ id: string; content: string | null }>)) {
-        const code = extractCode(b.content)
-        if (code) codeByPost.set(b.id, code)
+    // Bodies are read for two reasons now: the Geniuslink shortcode fallback for
+    // posts with no stored code, and the Passport codes, which have no column
+    // and only ever appear in the body.
+    const passportByPost = new Map<string, string[]>()
+    const bodyIds = livePosts.map(p => p.id)
+    if (bodyIds.length > 0) {
+      for (let i = 0; i < bodyIds.length; i += 200) {
+        const { data: bodies } = await supabase
+          .from('blog_posts')
+          .select('id,content')
+          .in('id', bodyIds.slice(i, i + 200))
+        for (const b of ((bodies ?? []) as Array<{ id: string; content: string | null }>)) {
+          if (needBodyIds.includes(b.id)) {
+            const code = extractCode(b.content)
+            if (code) codeByPost.set(b.id, code)
+          }
+          const passport = extractPassportCodes(b.content)
+          if (passport.length) passportByPost.set(b.id, passport)
+        }
+      }
+    }
+
+    // Passport clicks for the last 28 days, straight from our own table. No API
+    // key, no third party, and it works for the creators who moved off
+    // Geniuslink, for whom this whole signal was previously just absent.
+    const passportClicksByCode = new Map<string, number>()
+    const allPassportCodes = [...new Set([...passportByPost.values()].flat())]
+    if (allPassportCodes.length) {
+      const since = new Date(); since.setDate(since.getDate() - 28)
+      for (let i = 0; i < allPassportCodes.length; i += 200) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: clicks } = await (supabase as any)
+          .from('passport_link_clicks')
+          .select('code')
+          .eq('user_id', ownerId)
+          .gte('created_at', since.toISOString())
+          .in('code', allPassportCodes.slice(i, i + 200))
+          .limit(50000)
+        for (const c of ((clicks ?? []) as Array<{ code: string }>)) {
+          passportClicksByCode.set(c.code, (passportClicksByCode.get(c.code) ?? 0) + 1)
+        }
       }
     }
 
@@ -259,9 +309,20 @@ export async function GET() {
       // affiliateClicks: a number only when we fetched it (post had traffic AND
       // a matched code); null otherwise so the classifier doesn't false-positive
       // a "no click-out" on posts we never measured.
-      const affiliateClicks = (hasGenius && code && affiliateClicksByCode.has(code))
-        ? affiliateClicksByCode.get(code)!
-        : null
+      //
+      // Passport first: it is MVP's own link, the clicks are in our database
+      // rather than behind someone else's API key, and it is what creators
+      // actually use now. Geniuslink stays as the fallback for accounts still
+      // on it. Null when neither could measure, so the classifier never reads
+      // an absence of tracking as an absence of clicks.
+      const passportCodes = passportByPost.get(p.id) ?? []
+      const passportMeasured = passportCodes.length > 0
+      const passportClicks = passportCodes.reduce((s, c) => s + (passportClicksByCode.get(c) ?? 0), 0)
+      const affiliateClicks = passportMeasured
+        ? passportClicks
+        : (hasGenius && code && affiliateClicksByCode.has(code))
+          ? affiliateClicksByCode.get(code)!
+          : null
       const storedBest = bestByPost.get(p.id) ?? null
       const livePos = stats?.position ?? null
       // Track the all-time peak: if the live position beats the stored best (or

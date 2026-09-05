@@ -123,6 +123,24 @@ const base: BlogHealthInput = {
   check('a working chain is recognised', working.stage === 'working', working.stage)
 }
 
+// ── no tracked links is not the same as nobody clicking ─────────────────────
+// This is the accusation the page must never invent. A creator who has not put
+// Passport links in their posts has told us nothing about their readers, and
+// "none of them clicked a product link" would be a failure conjured from an
+// absence of data.
+{
+  const untracked = analyseBlogHealth({ ...base, daily: series(30, 200, 8), affiliateClicks: null })
+  check('with no tracked links, readers are not accused of ignoring them',
+    untracked.stage !== 'not-following-links', untracked.stage)
+  check('and nothing in the wording claims they did',
+    !/none of them clicked|no product clicks/i.test(`${untracked.verdict} ${untracked.doThis}`),
+    `${untracked.verdict} ${untracked.doThis}`)
+
+  const tracked = analyseBlogHealth({ ...base, daily: series(30, 200, 8), affiliateClicks: 0 })
+  check('but with links in place and no clicks, it IS reported',
+    tracked.stage === 'not-following-links', tracked.stage)
+}
+
 // ── growth is stated against the period before ──────────────────────────────
 {
   const daily = [...series(28, 100, 10), ...series(28, 100, 20, 28)]

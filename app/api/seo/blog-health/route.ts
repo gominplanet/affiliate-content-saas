@@ -31,8 +31,10 @@ export async function GET() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integ } = await (supabase as any)
-    .from('integrations').select('gsc_property').eq('user_id', ownerId).maybeSingle()
+    .from('integrations').select('gsc_property,wordpress_url').eq('user_id', ownerId).maybeSingle()
   const property: string | null = integ?.gsc_property || null
+  let blogHost: string | null = null
+  try { blogHost = integ?.wordpress_url ? new URL(integ.wordpress_url).host.replace(/^www\./, '') : null } catch { blogHost = null }
 
   // How much has been published, and when it started. The age is what decides
   // whether a quiet blog is failing or simply young.
@@ -62,6 +64,36 @@ export async function GET() {
       offsiteEarningsCents = rows.reduce((a, r) => a + (r.earnings_cents ?? 0), 0)
     }
   } catch { /* no earnings synced, so no claim about them */ }
+
+  // Product-link clicks that came from the blog, through Passport.
+  //
+  // Two separate facts, and conflating them would put a false accusation in
+  // front of a creator. Zero clicks on links that exist means readers reached
+  // the recommendation and did not take it. Zero clicks because there are no
+  // tracked links at all means nothing whatsoever, and reporting that as
+  // "nobody clicked your product links" would be inventing a failure.
+  //
+  // MVP stores source: 'blog' on links it creates for posts, and otherwise logs
+  // the referring host, so a click from the creator's own domain counts too.
+  let affiliateClicks: number | null = null
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count: linkCount } = await (supabase as any)
+      .from('passport_links').select('code', { count: 'exact', head: true }).eq('user_id', ownerId)
+    if ((linkCount ?? 0) > 0) {
+      const since = new Date(); since.setDate(since.getDate() - 28)
+      const sources = ['source.eq.blog']
+      if (blogHost) sources.push(`source.eq.${blogHost}`, `source.eq.www.${blogHost}`)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { count: clickCount } = await (supabase as any)
+        .from('passport_link_clicks')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', ownerId)
+        .gte('created_at', since.toISOString())
+        .or(sources.join(','))
+      affiliateClicks = clickCount ?? 0
+    }
+  } catch { /* Passport not in use, so no claim about link clicks */ }
 
   let daily: DailyPoint[] = []
   let connected = false
@@ -105,10 +137,7 @@ export async function GET() {
     connected,
     posts: posts ?? 0,
     firstPublishedAt: firstPost?.published_at ?? null,
-    // Affiliate click-out is tracked through Geniuslink on the opportunities
-    // route and is not wired in here yet. Null rather than zero, so the chain
-    // skips that link instead of reporting that nobody clicks anything.
-    affiliateClicks: null,
+    affiliateClicks,
     offsiteEarningsCents,
   }))
 }
