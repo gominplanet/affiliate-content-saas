@@ -105,6 +105,8 @@ export default function EarningsPage() {
   const [scanningProducts, setScanningProducts] = useState(false)
   const [productScan, setProductScan] = useState<string | null>(null)
   const [videoCount, setVideoCount] = useState(0)
+  // Years of history to read, counted back from this one. Nought is this year.
+  const [yearsBack, setYearsBack] = useState(0)
   const [hubUrl, setHubUrl] = useState('')
   // How many videos are stored, which decides whether the product read is worth
   // offering at all. Re-read whenever the data version moves so the button
@@ -122,6 +124,7 @@ export default function EarningsPage() {
   useEffect(() => {
     try {
       setStoreId(localStorage.getItem('mvp_amazon_store_id') || '')
+      setYearsBack(Math.min(4, Math.max(0, Number(localStorage.getItem('mvp_amazon_years_back')) || 0)))
       setHubUrl(localStorage.getItem('mvp_creatorhub_url') || '')
     } catch { /* ignore */ }
   }, [])
@@ -163,14 +166,21 @@ export default function EarningsPage() {
       const clean = storeId.trim().toLowerCase()
       const stores = /^(?:onamz)?[a-z0-9]{3,}-\d{2}$/.test(clean) ? [clean] : undefined
       try { if (stores) localStorage.setItem('mvp_amazon_store_id', clean) } catch { /* ignore */ }
-      const res = await requestEarningsSync(`${year}-01-01`, undefined, stores)
+      try { localStorage.setItem('mvp_amazon_years_back', String(yearsBack)) } catch { /* ignore */ }
+      // How far back to read. It matters more than it looks: the video library
+      // goes back years, so with only this year's earnings the output chart
+      // shows videos published against nothing at all for most of its width,
+      // and the product breakdown can only rank what happened since January.
+      const res = await requestEarningsSync(`${year - yearsBack}-01-01`, undefined, stores)
       if (!res.ok) {
         toast.error(res.error === 'not-installed'
           ? 'Install SCOUT and sign in to Amazon to read your earnings.'
           : (res.error || 'Could not start the sync.'))
         return
       }
-      toast('Reading your Amazon earnings. This opens a background tab and takes a minute per few months.')
+      toast(yearsBack
+        ? `Reading ${yearsBack + 1} years of Amazon earnings in a background tab. Roughly a minute per few months, so give it a while.`
+        : 'Reading your Amazon earnings. This opens a background tab and takes a minute per few months.')
       setSync({ running: true })
     } finally { setStarting(false) }
   }
@@ -440,8 +450,20 @@ export default function EarningsPage() {
             style={{ background: 'linear-gradient(135deg,#7C3AED,#2563eb)' }}>
             {(starting || sync?.running)
               ? <><Loader2 size={15} className="animate-spin" /> {sync?.months ? `Month ${sync.monthsDone ?? 0} of ${sync.months}` : 'Starting…'}</>
-              : <><RefreshCw size={15} /> {rows.length ? 'Re-sync this year' : 'Sync from Amazon'}</>}
+              : <><RefreshCw size={15} /> {rows.length ? 'Re-sync' : 'Sync from Amazon'}</>}
           </button>
+          <select
+            value={yearsBack}
+            onChange={e => setYearsBack(Number(e.target.value))}
+            disabled={starting || !!sync?.running}
+            className="px-3 py-2 rounded-lg border text-sm bg-transparent"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            title="How far back to read. Your videos go back years, so a longer history is what lets the output chart and the product ranking cover the same span as your library.">
+            <option value={0}>This year</option>
+            <option value={1}>Last 2 years</option>
+            <option value={2}>Last 3 years</option>
+            <option value={4}>Last 5 years</option>
+          </select>
           {/* Reads the Creator Hub video table so MVP knows which products you
               already have a video for ON Amazon. Without it the product cards can
               only say a product has no video off Amazon, which is the weaker half

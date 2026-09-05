@@ -25,14 +25,23 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url)
   const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit')) || 200))
+  // Two orderings, for two different jobs.
+  //
+  // The crawl wants a stable order so a restart covers new ground, and ACI does
+  // that. But discovery has to find one of these videos ON THE PAGE in order to
+  // click it, and the page lists newest first, so handing it the oldest videos
+  // in the library means it almost never finds one and falls back to clicking
+  // blind. `order=recent` is for that.
+  const recent = url.searchParams.get('order') === 'recent'
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  let q = (supabase as any)
     .from('amazon_videos')
     .select('aci')
     .eq('user_id', user.id)
-    .is('products_synced_at', null)
-    .order('aci', { ascending: true })
+  if (!recent) q = q.is('products_synced_at', null)
+  const { data, error } = await q
+    .order(recent ? 'published_at' : 'aci', { ascending: !recent, nullsFirst: false })
     .limit(limit)
   if (error) return NextResponse.json({ error: error.message, acis: [] }, { status: 200 })
 

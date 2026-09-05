@@ -4414,17 +4414,26 @@ function clickFirstVideoInPage(acis) {
     if (hit) {
       seen.push(`${el.tagName.toLowerCase()} carrying ${hit}`)
       try { el.click() } catch (e) {}
-      return { clicked: true, what: seen[0] }
+      return { clicked: true, what: seen[0], aci: hit }
     }
   }
-  // Nothing carried an ACI we know. Fall back to the first thing that looks like
-  // a video tile, and say that is what happened.
+  // Nothing on the page carried an id we already know, so click whatever looks
+  // like a video and report the id it carries. Matching the traffic afterwards
+  // needs the id that was ACTUALLY opened, not the one we hoped for: the list
+  // shows the newest videos and a crawl resumes from the oldest, so the two sets
+  // often do not overlap at all.
   const tile = document.querySelector('a[href*="/manage-content"], a[href*="content"], [data-testid*="content"], [data-testid*="video"]')
   if (tile) {
+    const hay = [tile.getAttribute('href') || '', tile.getAttribute('data-testid') || '', tile.id || ''].join(' ')
+    // The longest id-shaped token on it. Amazon's own ids are long and
+    // punctuated, so anything short is a class name or a route segment.
+    const tokens = (hay.match(/[A-Za-z0-9][A-Za-z0-9._:-]{11,}/g) || [])
+      .filter((t) => !/^https?$/i.test(t))
+      .sort((a, b) => b.length - a.length)
     try { tile.click() } catch (e) {}
-    return { clicked: true, what: `a tile with no ACI in it (${(tile.getAttribute('href') || tile.getAttribute('data-testid') || '').slice(0, 80)})` }
+    return { clicked: true, what: `a tile carrying ${tokens[0] ? tokens[0].slice(0, 60) : 'no id we could read'}`, aci: tokens[0] || null }
   }
-  return { clicked: false, what: `nothing on the page carried one of the ${wanted.size} ids we looked for` }
+  return { clicked: false, what: `nothing on the page carried one of the ${wanted.size} ids we looked for, and no video tile could be found`, aci: null }
 }
 
 /** Replays the discovered detail request once per video and pulls the products
@@ -4602,6 +4611,11 @@ async function startVideoProductsJob(userUrl) {
 
       const first = await mvpJson('/api/amazon-videos/pending?limit=200')
       const firstAcis = (first && first.acis) || []
+      // The newest videos, which are the ones the page actually lists. The crawl
+      // resumes from the oldest, so without this the click almost never lands on
+      // a video we can recognise afterwards.
+      const recent = await mvpJson('/api/amazon-videos/pending?limit=200&order=recent')
+      const recentAcis = (recent && recent.acis) || firstAcis
       job.remaining = (first && first.remaining) || 0
       await save()
       if (!firstAcis.length) {
@@ -4615,16 +4629,17 @@ async function startVideoProductsJob(userUrl) {
       // ── discovery ────────────────────────────────────────────────────────
       // Anything the page has already asked for that carries one of our ids.
       const sinceTs = job.startedAt
-      const findTemplate = () => {
+      const findTemplate = (extra) => {
+        const look = extra ? [extra].concat(recentAcis) : recentAcis
         const recs = (_ccNetRing || []).filter((x) => x && x.ts >= sinceTs && /amazon\.com/i.test(String(x.url || '')))
         for (const r of recs.slice().reverse()) {
           const hay = `${r.url || ''} ${r.body || ''}`
-          for (const aci of firstAcis) {
+          for (const aci of look) {
             // The list call carries every id on the page, so it is not a detail
             // call and replaying it per video would read the same list 6,771
             // times. A detail call carries one.
             if (hay.indexOf(aci) >= 0 && !/get-content-list/i.test(String(r.url || ''))) {
-              const carried = firstAcis.filter((a) => hay.indexOf(a) >= 0).length
+              const carried = look.filter((a) => hay.indexOf(a) >= 0).length
               if (carried <= 2) return { rec: r, aci }
             }
           }
@@ -4637,15 +4652,17 @@ async function startVideoProductsJob(userUrl) {
       if (!found) {
         // Nothing yet, so make the page open one video and watch what it calls.
         const clicked = await chrome.scripting.executeScript({
-          target: { tabId }, func: clickFirstVideoInPage, args: [firstAcis.slice(0, 60)],
+          target: { tabId }, func: clickFirstVideoInPage, args: [recentAcis.slice(0, 200)],
         })
-        const c = (clicked && clicked[0] && clicked[0].result) || { clicked: false, what: 'the click could not run' }
+        const c = (clicked && clicked[0] && clicked[0].result) || { clicked: false, what: 'the click could not run', aci: null }
         clickNote = c.what
         if (c.clicked) {
           await _sleep(5000)
           try { await waitForTabLoad(tabId, 15000) } catch (e) {}
           await _sleep(2500)
-          found = findTemplate()
+          // Match on the id that was actually opened, which may be one we had
+          // never heard of.
+          found = findTemplate(c.aci)
         }
       }
 
@@ -4654,8 +4671,10 @@ async function startVideoProductsJob(userUrl) {
           .filter((x) => x && x.ts >= sinceTs && /amazon\.com/i.test(String(x.url || '')))
           .map((x) => { try { return `${x.method || 'GET'} ${new URL(x.url, 'https://www.amazon.com').pathname}` } catch (e) { return String(x.url).slice(0, 90) } })))
           .slice(0, 12)
+        let landed = ''
+        try { const t = await chrome.tabs.get(tabId); landed = String((t && t.url) || '') } catch (e) {}
         job.error = 'no-detail-call'
-        job.probe = `Opened your video list and ${clickNote}. No request carried a single video's id, so there is nothing to replay and nothing was stored. What Amazon was asked for: ${seen.join(', ') || 'nothing'}`
+        job.probe = `Opened your video list and ${clickNote}. No request carried a single video's id, so there is nothing to replay and nothing was stored.${landed ? ` The tab ended up on ${landed.slice(0, 120)}.` : ''} What Amazon was asked for: ${seen.join(', ') || 'nothing'}`
         job.done = true; job.running = false
         stopKeepAlive(keepAlive); await save()
         if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
