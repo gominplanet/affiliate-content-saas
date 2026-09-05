@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run build:extension && npm run test:thumbnails && npm run test:access && npm run test:shorts && npm run test:render-filters && npm run test:passport && npm run test:link-cloak && npm run test:video-library && npm run test:video-insights && npm run test:video-products && npm run test:cc-products && npm run test:video-product-insights && next build",
+    "build": "npm run build:extension && npm run test:thumbnails && npm run test:access && npm run test:shorts && npm run test:render-filters && npm run test:passport && npm run test:link-cloak && npm run test:video-library && npm run test:video-insights && npm run test:video-products && npm run test:cc-products && npm run test:video-product-insights && npm run test:seo-steps && next build",
     "build:extension": "bash scripts/zip-extension.sh && bash scripts/zip-extension-store.sh",
     "start": "next start",
     "lint": "next lint",
@@ -19,7 +19,8 @@
     "test:video-insights": "tsx scripts/test-video-insights.ts",
     "test:video-products": "node scripts/test-video-products-reader.mjs",
     "test:cc-products": "node scripts/test-cc-products-paging.mjs",
-    "test:video-product-insights": "tsx scripts/test-video-product-insights.ts"
+    "test:video-product-insights": "tsx scripts/test-video-product-insights.ts",
+    "test:seo-steps": "tsx scripts/test-seo-next-steps.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",

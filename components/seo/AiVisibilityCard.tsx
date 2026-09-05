@@ -16,6 +16,7 @@ interface Report { ok?: boolean; siteUrl?: string; robotsFound?: boolean; crawle
 export default function AiVisibilityCard() {
   const [data, setData] = useState<Report | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showAll, setShowAll] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -52,7 +53,7 @@ export default function AiVisibilityCard() {
               <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>AI search visibility</p>
               <p className="text-[12.5px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
                 {allGood
-                  ? 'Every major AI answer engine can read your site — your content is eligible to be quoted in ChatGPT, Perplexity, and Google AI Overviews.'
+                  ? 'ChatGPT, Perplexity, Google and Claude are all allowed to read your blog, so your posts can be quoted when someone asks one of them for a recommendation. Nothing to do here.'
                   : `${blocked} of ${crawlers.length} AI crawlers are blocked by your robots.txt. Blocked engines can't quote your content. Allow them in robots.txt (or your SEO plugin's crawler settings) to be eligible.`}
               </p>
             </div>
@@ -60,6 +61,14 @@ export default function AiVisibilityCard() {
           <button onClick={load} title="Re-check" className="p-1.5 rounded-lg flex-shrink-0" style={{ color: 'var(--text-faint)' }}><RefreshCw size={14} /></button>
         </div>
 
+        {/* The eight names only appear when they mean something.
+            Ticked green, they are eight pieces of jargon nobody outside the
+            industry recognises, filling half a screen to say "nothing to do".
+            A panel that looks identical whether it is good news or bad news
+            trains people to skim past it, which costs exactly on the day one of
+            them turns red. So when all is well this is one line, openable by
+            anyone curious; when something is blocked the list opens itself. */}
+        {(!allGood || showAll) && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3.5">
           {crawlers.map(c => (
             <div key={c.token} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }} title={`${c.label} — ${c.serves} — ${c.allowed ? 'allowed' : 'blocked'}`}>
@@ -73,6 +82,16 @@ export default function AiVisibilityCard() {
             </div>
           ))}
         </div>
+        )}
+        {allGood && (
+          <button
+            onClick={() => setShowAll(v => !v)}
+            className="text-[11.5px] mt-2 font-medium"
+            style={{ color: 'var(--text-faint)' }}
+          >
+            {showAll ? 'Hide the list' : `See which ${crawlers.length} engines were checked`}
+          </button>
+        )}
 
         {!data.robotsFound && (
           <p className="text-[11px] mt-2.5" style={{ color: 'var(--text-faint)' }}>

@@ -14,6 +14,7 @@ import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
 import SeoHubTabs from '@/components/seo/SeoHubTabs'
 import AiVisibilityCard from '@/components/seo/AiVisibilityCard'
+import StartHere from '@/components/seo/StartHere'
 import AioReadinessCard from '@/components/seo/AioReadinessCard'
 import GetFound404Upload from '@/components/seo/GetFound404Upload'
 import { SeoGuide } from '@/components/guide/tool-guides'
@@ -801,16 +802,25 @@ export default function SeoPage() {
 
       <SeoHubTabs />
 
-      {/* AI-answer visibility — can ChatGPT/Perplexity/Google-AI crawlers read the site? */}
-      <AiVisibilityCard />
-
-      {/* AIO readiness — how quotable your posts are by AI answer engines. */}
-      <AioReadinessCard />
+      {/* The plan, before any of the diagnostics.
+          Someone who does not already know SEO opened this page to eight crawler
+          names ticked green and a score of 80 with nothing to compare it to, and
+          the one button that helps was three cards down. This says what to do,
+          biggest first, and everything below it is the detail behind it. */}
+      <StartHere
+        summary={data?.summary ?? null}
+        connected={!!data?.connected}
+        onGoToGetFound={() => {
+          document.getElementById('get-found')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }}
+      />
 
       {/* Super dummy-proof hero: explains it in plain words, one button does the
           whole get-found loop, and a drop zone fixes 404s straight from a Search
-          Console export. All the links they need are right here. */}
-      <div className="rounded-2xl border border-[#34c759]/30 bg-[#34c759]/[0.06] p-4 sm:p-5 mb-5">
+          Console export. Sits directly under the plan, because most of the plan
+          points at it. */}
+
+      <div id="get-found" className="rounded-2xl border border-[#34c759]/30 bg-[#34c759]/[0.06] p-4 sm:p-5 mb-5 scroll-mt-24">
         <div className="flex items-center gap-2 mb-1">
           <Zap size={18} className="text-[#34c759]" />
           <h2 className="text-[16px] font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">Get found on Google, Bing &amp; AI</h2>
@@ -891,6 +901,13 @@ export default function SeoPage() {
           <GetFound404Upload onDone={load} />
         </div>
       </div>
+
+      {/* Detail, under the plan rather than above it. The crawler card collapses
+          to a single line when nothing is blocked, because eight green ticks
+          against names nobody recognises is a wall that teaches people to skim
+          past the one time it turns amber. */}
+      <AiVisibilityCard />
+      <AioReadinessCard />
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">

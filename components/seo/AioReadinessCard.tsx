@@ -16,7 +16,14 @@ interface Worst { id: string; title: string | null; url: string | null; score: n
 interface Summary { ok?: boolean; scored?: number; avgScore?: number; grades?: Record<string, number>; topFixes?: Fix[]; worst?: Worst[] }
 
 const AIO = '#7C3AED'
-function gradeColor(g: string) { return g === 'A' ? '#059669' : g === 'B' ? '#0d9488' : g === 'C' ? '#d97706' : '#e11d48' }
+/** What the number actually means, for someone who has never seen it before. A
+ *  bare 80 out of an unstated maximum tells nobody anything. */
+function reading(s: number): string {
+  if (s >= 85) return 'Strong. There is plenty here for an AI answer to quote.'
+  if (s >= 70) return 'Decent. One or two changes would make these a lot more quotable.'
+  if (s >= 50) return 'Thin. There is not much in these posts an AI answer can lift.'
+  return 'Not quotable yet.'
+}
 function scoreColor(s: number) { return s >= 85 ? '#059669' : s >= 70 ? '#0d9488' : s >= 50 ? '#d97706' : '#e11d48' }
 
 export default function AioReadinessCard() {
@@ -59,22 +66,26 @@ export default function AioReadinessCard() {
             {avgScore}
           </div>
           <div className="text-left">
-            <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>AI-answer readiness</p>
-            <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>Average across {scored} scored post{scored === 1 ? '' : 's'} · how quotable your content is by AI engines</p>
+            <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>How quotable your posts are</p>
+            <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
+              {avgScore} out of 100, across your {scored} scored post{scored === 1 ? '' : 's'}. {reading(avgScore)}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-1.5">
-            {gradeOrder.map(g => (grades[g] ? (
-              <span key={g} className="text-[11px] font-bold rounded-md px-1.5 py-0.5" style={{ background: `${gradeColor(g)}1a`, color: gradeColor(g) }}>{grades[g]}×{g}</span>
-            ) : null))}
-          </div>
           <ChevronDown size={16} style={{ color: 'var(--text-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
         </div>
       </button>
 
       {open && (
         <div className="px-4 sm:px-5 pb-4 flex flex-col gap-4">
+          <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            When someone asks ChatGPT or Google for a recommendation, the answer is built by lifting passages out of pages
+            it has read. This scores your posts on the eight things those engines look for before they will quote one.
+            {gradeOrder.filter(g => grades[g]).length === 1
+              ? ` All ${scored} of your posts score about the same, so anything that lifts one lifts all of them.`
+              : ''}
+          </p>
           {topFixes.length > 0 && (
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-faint)' }}>Fix these first (biggest lift)</p>
@@ -92,7 +103,7 @@ export default function AioReadinessCard() {
             </div>
           )}
 
-          {worst.length > 0 && (
+          {worst.length > 0 && worst[0].score < avgScore - 5 && (
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-faint)' }}>Lowest-scoring posts</p>
               <div className="rounded-lg border divide-y" style={{ borderColor: 'var(--border-2, var(--border))' }}>
@@ -108,7 +119,8 @@ export default function AioReadinessCard() {
           )}
 
           <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-            Every new post is scored automatically. Fixing the checks above makes your content more likely to be the answer AI engines quote — where affiliate discovery is heading.
+            Every new post MVP writes is scored automatically and already includes these. The checks above are for posts you
+            published before, and they are edits to the post itself rather than settings to change.
           </p>
         </div>
       )}
