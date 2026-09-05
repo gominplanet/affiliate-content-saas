@@ -177,16 +177,47 @@ export default function EarningsPage() {
           setVideoScan('Re-reading your library from the start, so Amazon sends the video lengths and product counts it withholds unless asked.')
         }
       } catch { /* resume as normal */ }
-      let r = await requestCreatorHubVideosScan(hubUrl.trim() || undefined, have)
+      // Where the next pass starts. It follows the scan's own reading position,
+      // not the stored row count: during a re-read the rows are upserted, the
+      // count never moves, and resuming from it sent the next pass to the end of
+      // a library that had barely been re-read.
+      let offset = have
+      let r = await requestCreatorHubVideosScan(hubUrl.trim() || undefined, offset)
       let passes = 1
-      while (r.ok && r.partial && passes < 12) {
-        const before = have
-        try { have = (await fetch('/api/amazon-videos').then(x => x.json()))?.count || have } catch { break }
-        // A pass that adds nothing is the end, whatever the totals claim.
-        if (have <= before) break
-        setVideoScan(`Reading your Amazon video library: ${have.toLocaleString()} so far.`)
-        r = await requestCreatorHubVideosScan(hubUrl.trim() || undefined, have)
+      // A pass can also end with the bridge giving up before SCOUT answers. That
+      // is not a failed run: every batch is saved to MVP as it is read, so the
+      // work is on disk and only the reply was lost. Check whether the stored
+      // count moved, and carry on from there rather than reporting nothing
+      // happened after reading thousands of videos.
+      const storedCount = async () => {
+        try { return (await fetch('/api/amazon-videos').then(x => x.json()))?.count || 0 } catch { return 0 }
+      }
+      while (passes < 12) {
+        if (r.ok && r.partial) {
+          const next = r.nextOffset ?? 0
+          // No forward movement is the end, whatever the totals claim.
+          if (next <= offset) break
+          offset = next
+        } else if (!r.ok && r.error === 'timeout') {
+          const after = await storedCount()
+          if (after <= offset) break
+          offset = after
+        } else {
+          break
+        }
+        setVideoScan(`Reading your Amazon video library: ${offset.toLocaleString()} so far.`)
+        r = await requestCreatorHubVideosScan(hubUrl.trim() || undefined, offset)
         passes++
+      }
+      // A run that timed out on its last pass but banked rows along the way has
+      // done real work. Say so, instead of the failure message below.
+      if (!r.ok && r.error === 'timeout' && offset > have) {
+        const stored = await storedCount()
+        setDataVersion(v => v + 1)
+        setVideoScan(`Read up to ${offset.toLocaleString()} videos, then Amazon stopped answering. ${stored.toLocaleString()} are stored. Run it again to carry on from there.`)
+        toast(`${stored.toLocaleString()} videos stored so far. Run it again to continue.`)
+        void load()
+        return
       }
       if (!r.ok) {
         if (r.error === 'wrong-page') {

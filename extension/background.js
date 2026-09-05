@@ -4361,9 +4361,16 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
       let lastError = null
       let done = false
       let variantUsed = null
-      const runStarted = Date.now()
+      // The budget has to be measured from when the whole job started, not from
+      // when the batches did. Opening the tab and waiting for the page to fire
+      // its list request already spends up to 36s, and one more batch can start
+      // just under the limit and run well past it, so a 260s batch budget could
+      // reply after the page had already given up at 320s and called it a
+      // timeout. The run then read thousands of videos, saved them, and told the
+      // creator nothing had happened. 200s from the top leaves room for the last
+      // batch and its upload to land inside the window.
       try {
-        for (let batch = 0; batch < 40 && Date.now() - runStarted < 260000; batch++) {
+        for (let batch = 0; batch < 40 && Date.now() - startedAt < 200000; batch++) {
           const viaApi = await chrome.scripting.executeScript({
             target: { tabId }, world: 'MAIN', func: fetchContentListInPage,
             args: [{
@@ -4399,6 +4406,11 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
           scoutVersion: (chrome.runtime.getManifest() || {}).version || null,
           count: saved,
           pages,
+          // Exactly where this run stopped reading, so the next pass resumes
+          // there. The stored row count cannot answer that during a re-read:
+          // the rows are upserted, the count never moves, and resuming from it
+          // jumps to the end of a library that has barely been re-read.
+          nextOffset: offset,
           partial: short && !done,
           stopped: done
             ? 'end of the library'

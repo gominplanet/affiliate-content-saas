@@ -583,6 +583,10 @@ export interface IdeaScanResult {
   /** Endpoints the page called while we crawled. The route to replacing a DOM
    *  crawl with a replayed request. */
   apiCalls?: string[]
+  /** Where the next pass should start. The stored row count is the wrong answer
+   *  during a re-read: the rows are upserted, so the count never moves and the
+   *  next pass would resume past the end of a library it had barely re-read. */
+  nextOffset?: number
 }
 
 /**
@@ -652,7 +656,7 @@ export async function requestCreatorHubVideosScan(url?: string, startAt?: number
   if (!resp) return { ok: false, error: 'timeout' }
   return {
     ok: !!resp.ok, count: resp.count, partial: resp.partial, error: resp.error,
-    pages: resp.pages, stopped: resp.stopped, apiCalls: resp.apiCalls, pagerSeen: resp.pagerSeen,
+    pages: resp.pages, stopped: resp.stopped, apiCalls: resp.apiCalls, pagerSeen: resp.pagerSeen, nextOffset: resp.nextOffset,
     landedOn: resp.landedOn, pageTitle: resp.pageTitle, heading: resp.heading, probe: resp.probe, source: resp.source, scoutVersion: resp.scoutVersion,
   }
 }
