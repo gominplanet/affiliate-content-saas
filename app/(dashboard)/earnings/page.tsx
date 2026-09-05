@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import { requestEarningsSync, requestEarningsStatus, startCreatorHubVideosScan, getVideoScanStatus, startVideoProductsScan, getVideoProductsStatus, type EarningsSyncStatus, type VideoScanStatus, type VideoProductsStatus } from '@/lib/extension-frame'
 import ProductBreakdown from '@/components/earnings/ProductBreakdown'
 import VideoInsights from '@/components/earnings/VideoInsights'
+import VideoProducts from '@/components/earnings/VideoProducts'
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -651,6 +652,10 @@ export default function EarningsPage() {
                 form anyone can act on, so this is the largest piece of value on
                 the page that costs the creator nothing to unlock. */}
             <VideoInsights refreshKey={dataVersion} />
+            {/* The join between the library and the money. Renders nothing until
+                there are videos, and says what it would answer until their
+                products have been read. */}
+            <VideoProducts refreshKey={dataVersion} />
 
             <div className="card p-5">
               <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
