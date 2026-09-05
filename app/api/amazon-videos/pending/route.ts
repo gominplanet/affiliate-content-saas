@@ -37,7 +37,11 @@ export async function GET(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q = (supabase as any)
     .from('amazon_videos')
-    .select('aci')
+    // Titles as well as ids. An id need not appear anywhere in the rendered
+    // page, but the title certainly does, and matching on the title is what
+    // lets discovery click one of the creator's actual videos rather than
+    // whatever else on the page happens to carry the word "content".
+    .select('aci,description')
     .eq('user_id', user.id)
   if (!recent) q = q.is('products_synced_at', null)
   const { data, error } = await q
@@ -52,9 +56,11 @@ export async function GET(request: Request) {
     .eq('user_id', user.id)
     .is('products_synced_at', null)
 
+  const rows = (data ?? []) as { aci: string; description: string | null }[]
   return NextResponse.json({
     ok: true,
-    acis: ((data ?? []) as { aci: string }[]).map(r => r.aci),
+    acis: rows.map(r => r.aci),
+    titles: rows.map(r => r.description).filter((t): t is string => !!t && t.trim().length > 8),
     remaining: count ?? 0,
   })
 }

@@ -513,6 +513,15 @@ export default function EarningsPage() {
         {productScan && (
           <div className="card p-4">
             <p className="text-[12px]" style={muted}>{productScan}</p>
+            {videoSample && (
+              // The exact row Amazon sent. Kept beside the result rather than in
+              // a separate place, so when the read cannot find products there is
+              // one thing to look at that settles what Amazon actually returns.
+              <details className="mt-2">
+                <summary className="text-[12px] cursor-pointer" style={muted}>What Amazon sent for one video</summary>
+                <pre className="mt-2 text-[11px] whitespace-pre-wrap break-all" style={muted}>{videoSample}</pre>
+              </details>
+            )}
           </div>
         )}
 

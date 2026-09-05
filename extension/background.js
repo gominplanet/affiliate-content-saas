@@ -4395,45 +4395,82 @@ async function mvpJson(path) {
  *  Amazon's own code fires the call that loads that video's products. Returns a
  *  description of what it clicked rather than a bare success, because a
  *  discovery that found nothing has to be able to say why. */
-function clickFirstVideoInPage(acis) {
-  const wanted = new Set(acis || [])
-  const seen = []
-  const all = document.querySelectorAll('a, button, [role="button"], [data-testid], li, article, div[class*="card"], div[class*="row"]')
-  for (const el of all) {
-    const hay = `${el.getAttribute('href') || ''} ${el.getAttribute('data-testid') || ''} ${el.id || ''} ${(el.getAttribute('class') || '')}`
-    let hit = null
-    for (const a of wanted) { if (hay.indexOf(a) >= 0) { hit = a; break } }
-    if (!hit) {
-      // Some grids keep the id in a data attribute rather than the href.
-      for (const attr of el.getAttributeNames ? el.getAttributeNames() : []) {
-        const v = el.getAttribute(attr) || ''
-        for (const a of wanted) { if (v.indexOf(a) >= 0) { hit = a; break } }
+function clickFirstVideoInPage(spec) {
+  // Clicks one of the creator's own videos, so Amazon's code fires whatever call
+  // loads it.
+  //
+  // The first version of this matched any element whose attributes contained the
+  // word "content" and clicked Amazon's account flyout, landing on the Kindle
+  // library. So the target is now identified by the video's TITLE, which MVP
+  // already knows and which is definitely rendered as text, and everything in
+  // the site chrome is excluded outright.
+  const titles = (spec && spec.titles) || []
+  const acis = (spec && spec.acis) || []
+  const skip = (spec && spec.skip) || 0
+
+  const inChrome = (el) => {
+    for (let n = el; n; n = n.parentElement) {
+      const id = (n.id || '').toLowerCase()
+      const cls = typeof n.className === 'string' ? n.className.toLowerCase() : ''
+      const tag = n.tagName ? n.tagName.toLowerCase() : ''
+      if (tag === 'nav' || tag === 'header' || tag === 'footer') return true
+      if (id.indexOf('nav') === 0 || id === 'navbar' || id.indexOf('nav-') === 0) return true
+      if (cls.indexOf('nav-') >= 0 || cls.indexOf('navbar') >= 0) return true
+    }
+    return false
+  }
+  const clickable = (el) => {
+    for (let n = el; n; n = n.parentElement) {
+      const tag = n.tagName ? n.tagName.toLowerCase() : ''
+      if (tag === 'a' || tag === 'button') return n
+      if (n.getAttribute && n.getAttribute('role') === 'button') return n
+      if (n.getAttribute && n.getAttribute('tabindex') != null) return n
+    }
+    return el
+  }
+
+  // Candidates, best first: an element whose own text IS one of our video
+  // titles, then an element carrying an id we know.
+  const candidates = []
+  if (titles.length) {
+    const wanted = new Map()
+    for (const t of titles) { const k = String(t || '').trim().toLowerCase(); if (k.length > 8) wanted.set(k, t) }
+    const all = document.querySelectorAll('a, button, [role="button"], span, div, p, h1, h2, h3, h4, li, td')
+    for (const el of all) {
+      if (el.children && el.children.length > 3) continue
+      const txt = (el.textContent || '').trim().toLowerCase()
+      if (txt.length < 9 || txt.length > 300) continue
+      if (!wanted.has(txt)) continue
+      if (inChrome(el)) continue
+      candidates.push({ el: clickable(el), why: `the video titled "${(el.textContent || '').trim().slice(0, 60)}"` })
+    }
+  }
+  if (acis.length) {
+    const all = document.querySelectorAll('a, button, [role="button"], [data-testid], li, article')
+    for (const el of all) {
+      if (inChrome(el)) continue
+      let hit = null
+      const names = el.getAttributeNames ? el.getAttributeNames() : []
+      for (const attr of names) {
+        const val = el.getAttribute(attr) || ''
+        for (const a of acis) { if (val.indexOf(a) >= 0) { hit = a; break } }
         if (hit) break
       }
-    }
-    if (hit) {
-      seen.push(`${el.tagName.toLowerCase()} carrying ${hit}`)
-      try { el.click() } catch (e) {}
-      return { clicked: true, what: seen[0], aci: hit }
+      if (hit) candidates.push({ el: clickable(el), why: `an element carrying ${hit}`, aci: hit })
     }
   }
-  // Nothing on the page carried an id we already know, so click whatever looks
-  // like a video and report the id it carries. Matching the traffic afterwards
-  // needs the id that was ACTUALLY opened, not the one we hoped for: the list
-  // shows the newest videos and a crawl resumes from the oldest, so the two sets
-  // often do not overlap at all.
-  const tile = document.querySelector('a[href*="/manage-content"], a[href*="content"], [data-testid*="content"], [data-testid*="video"]')
-  if (tile) {
-    const hay = [tile.getAttribute('href') || '', tile.getAttribute('data-testid') || '', tile.id || ''].join(' ')
-    // The longest id-shaped token on it. Amazon's own ids are long and
-    // punctuated, so anything short is a class name or a route segment.
-    const tokens = (hay.match(/[A-Za-z0-9][A-Za-z0-9._:-]{11,}/g) || [])
-      .filter((t) => !/^https?$/i.test(t))
-      .sort((a, b) => b.length - a.length)
-    try { tile.click() } catch (e) {}
-    return { clicked: true, what: `a tile carrying ${tokens[0] ? tokens[0].slice(0, 60) : 'no id we could read'}`, aci: tokens[0] || null }
+
+  if (!candidates.length) {
+    return {
+      clicked: false,
+      what: `nothing on the page matched any of your ${titles.length} video titles or ${acis.length} ids`,
+      aci: null,
+      candidates: 0,
+    }
   }
-  return { clicked: false, what: `nothing on the page carried one of the ${wanted.size} ids we looked for, and no video tile could be found`, aci: null }
+  const pick = candidates[Math.min(skip, candidates.length - 1)]
+  try { pick.el.click() } catch (e) {}
+  return { clicked: true, what: pick.why, aci: pick.aci || null, candidates: candidates.length }
 }
 
 /** Replays the discovered detail request once per video and pulls the products
@@ -4552,6 +4589,92 @@ function fetchVideoDetailsInPage(rec) {
   })()
 }
 
+/** Reads one page of the video LIST and pulls products out of the rows.
+ *
+ *  Before hunting for a per-video call, ask whether the list already carries
+ *  what we need. The evidence says it might: the row shape has a
+ *  totalProductCount on it, so the list does model products, and the run that
+ *  read the whole library was answered with metrics turned on. If the products
+ *  are in there, this is 68 requests instead of 6,771 and no detail endpoint is
+ *  needed at all.
+ *
+ *  Fields are found by name, exactly as in the detail read: a key called asin
+ *  holding ten characters is an ASIN wherever it sits. */
+function fetchListProductsInPage(rec) {
+  return (async () => {
+    const out = { items: [], total: null, nextOffset: rec.startAt || 0, error: null, sample: null, rows: 0 }
+    const ASIN_RE = /^[A-Z0-9]{10}$/
+    const DROP = { 'content-length': 1, host: 1, connection: 1, 'accept-encoding': 1 }
+    const headers = {}
+    for (const k in (rec.headers || {})) { if (!DROP[String(k).toLowerCase()]) headers[k] = rec.headers[k] }
+    if (!headers['Content-Type'] && !headers['content-type']) headers['Content-Type'] = 'application/json'
+
+    const harvest = (node, acc, depth) => {
+      if (depth > 8 || node == null) return
+      if (Array.isArray(node)) { for (const x of node) harvest(x, acc, depth + 1); return }
+      if (typeof node !== 'object') return
+      let asin = null
+      let title = null
+      for (const k of Object.keys(node)) {
+        const v = node[k]
+        if (typeof v === 'string' && /asin/i.test(k) && ASIN_RE.test(v)) asin = asin || v
+        if (typeof v === 'string' && /title|name|productName/i.test(k) && v.trim()) title = title || v.trim()
+        if (typeof v === 'number' && /duration/i.test(k) && acc.duration == null) {
+          const isMs = /milli|msec/i.test(k) || /(^|[^A-Za-z])ms([^A-Za-z]|$)/.test(k) || /Ms([^a-z]|$)/.test(k)
+          const secs = isMs ? v / 1000 : v
+          if (secs > 0 && secs <= 14400) acc.duration = secs
+        }
+      }
+      if (asin) acc.products.push({ asin, title: title || null })
+      for (const k of Object.keys(node)) harvest(node[k], acc, depth + 1)
+    }
+
+    try {
+      const o = JSON.parse(rec.body)
+      o.pageSize = rec.pageSize || 10
+      o.startIndex = rec.startAt || 0
+      o.retrieveMetrics = rec.metrics !== false
+      const res = await fetch(new URL(rec.url, location.href).toString(), {
+        method: rec.method || 'POST', credentials: 'include', headers,
+        body: JSON.stringify(o), signal: AbortSignal.timeout(30000),
+      })
+      if (!res.ok) { out.error = `HTTP ${res.status} at ${rec.startAt || 0}`; return out }
+      const j = await res.json().catch(() => null)
+      if (!j) { out.error = 'unreadable response'; return out }
+      try { const t = j.metadata && j.metadata.totalResults; if (Number.isFinite(t)) out.total = t } catch (e) {}
+      const rows = Array.isArray(j.result) ? j.result : []
+      out.rows = rows.length
+      for (const r of rows) {
+        const d = (r && r.contentDetail) || {}
+        const aci = d.mediaACI || r.mediaACI || null
+        if (!aci) continue
+        const acc = { products: [], duration: null }
+        harvest(r, acc, 0)
+        const byAsin = new Map()
+        for (const p of acc.products) { if (!byAsin.has(p.asin)) byAsin.set(p.asin, p) }
+        out.items.push({ aci, products: [...byAsin.values()], duration: acc.duration, failed: null })
+      }
+      out.nextOffset = (rec.startAt || 0) + (rows.length || 0)
+      if (!out.sample && rows.length) {
+        try {
+          const paths = []
+          const walk = (node, prefix, depth) => {
+            if (paths.length > 140 || depth > 5 || node == null) return
+            if (Array.isArray(node)) { if (node.length) walk(node[0], `${prefix}[0]`, depth + 1); return }
+            if (typeof node === 'object') { for (const k of Object.keys(node)) walk(node[k], prefix ? `${prefix}.${k}` : k, depth + 1); return }
+            paths.push(`${prefix}=${typeof node === 'string' ? `"${String(node).slice(0, 40)}"` : String(node)}`)
+          }
+          walk(rows[0], '', 0)
+          out.sample = paths.join(' | ').slice(0, 4000)
+        } catch (e) {}
+      }
+    } catch (e) {
+      out.error = (e && (e.name ? `${e.name}: ${e.message}` : e.message)) || String(e)
+    }
+    return out
+  })()
+}
+
 async function pushVideoProductsToMvp(items) {
   const products = []
   const videos = []
@@ -4633,6 +4756,10 @@ async function startVideoProductsJob(userUrl) {
       // a video we can recognise afterwards.
       const recent = await mvpJson('/api/amazon-videos/pending?limit=200&order=recent')
       const recentAcis = (recent && recent.acis) || firstAcis
+      // Titles, because an id need not appear anywhere in the rendered page but
+      // the title certainly does. Matching on "content" in an attribute is what
+      // clicked Amazon's account menu and landed on the Kindle library.
+      const recentTitles = (recent && recent.titles) || []
       job.remaining = (first && first.remaining) || 0
       await save()
       if (!firstAcis.length) {
@@ -4641,6 +4768,65 @@ async function startVideoProductsJob(userUrl) {
         stopKeepAlive(keepAlive); await save()
         if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
         return
+      }
+
+      // ── the cheap answer first ───────────────────────────────────────────
+      // Does the video LIST already carry the products? Its rows have a
+      // totalProductCount on them, so the list does model products, and the run
+      // that read the whole library was answered with metrics on. If the ASINs
+      // are in there this is 68 requests rather than 6,771 and no per-video
+      // endpoint is needed at all.
+      const listRecs = (_ccNetRing || []).slice().reverse()
+        .filter((x) => x && /\/manage-content\/api\/get-content-list/i.test(String(x.url || '')))
+      const listRec = listRecs.find((x) => x.body && /^post$/i.test(String(x.method || ''))) || listRecs[0]
+      if (listRec && listRec.body) {
+        const probe = await chrome.scripting.executeScript({
+          target: { tabId }, world: 'MAIN', func: fetchListProductsInPage,
+          args: [{ url: listRec.url, method: listRec.method || 'POST', headers: listRec.headers || {}, body: listRec.body, startAt: 0, pageSize: 10, metrics: true }],
+        })
+        const p = (probe && probe[0] && probe[0].result) || null
+        if (p && p.sample) { job.sample = p.sample; await save() }
+        const carriesProducts = !!(p && p.items && p.items.some((i) => i.products && i.products.length))
+        if (carriesProducts) {
+          job.endpoint = 'POST /manage-content/api/get-content-list (the list itself carries the products)'
+          job.probe = 'The video list already carries each video\'s products, so no per-video call is needed.'
+          await save()
+          let offset = 0
+          const pageSize = 100
+          for (let page = 0; page < 400 && Date.now() - job.startedAt < 1500000; page++) {
+            const res = await chrome.scripting.executeScript({
+              target: { tabId }, world: 'MAIN', func: fetchListProductsInPage,
+              args: [{ url: listRec.url, method: listRec.method || 'POST', headers: listRec.headers || {}, body: listRec.body, startAt: offset, pageSize, metrics: true }],
+            })
+            let r = (res && res[0] && res[0].result) || null
+            // A hundred a page was refused when metrics were requested during the
+            // library read, and Amazon answered ten. Fall back rather than stop.
+            if (r && r.error && !r.items.length && pageSize !== 10) {
+              const retry = await chrome.scripting.executeScript({
+                target: { tabId }, world: 'MAIN', func: fetchListProductsInPage,
+                args: [{ url: listRec.url, method: listRec.method || 'POST', headers: listRec.headers || {}, body: listRec.body, startAt: offset, pageSize: 10, metrics: true }],
+              })
+              r = (retry && retry[0] && retry[0].result) || r
+            }
+            if (!r) { job.error = 'the page returned no result'; break }
+            if (!r.items.length) { if (r.error) job.error = r.error; break }
+            const pushed = await pushVideoProductsToMvp(r.items)
+            if (!pushed.ok) { job.error = pushed.error || 'could not save'; break }
+            job.read += r.items.length
+            job.withProducts += r.items.filter((x) => x.products && x.products.length).length
+            job.durationsFound += r.items.filter((x) => x.duration != null).length
+            job.savedProducts += pushed.savedProducts || 0
+            if (r.total != null) job.remaining = Math.max(0, r.total - job.read)
+            await save()
+            if (r.nextOffset <= offset) break
+            offset = r.nextOffset
+            if (r.total != null && offset >= r.total) break
+          }
+          job.done = true; job.running = false; job.tabId = null
+          stopKeepAlive(keepAlive); await save()
+          if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+          return
+        }
       }
 
       // ── discovery ────────────────────────────────────────────────────────
@@ -4668,18 +4854,34 @@ async function startVideoProductsJob(userUrl) {
       let clickNote = 'the page asked for it on its own'
       if (!found) {
         // Nothing yet, so make the page open one video and watch what it calls.
-        const clicked = await chrome.scripting.executeScript({
-          target: { tabId }, func: clickFirstVideoInPage, args: [recentAcis.slice(0, 200)],
-        })
-        const c = (clicked && clicked[0] && clicked[0].result) || { clicked: false, what: 'the click could not run', aci: null }
-        clickNote = c.what
-        if (c.clicked) {
-          await _sleep(5000)
+        // Several attempts, because the first match on a page need not be the
+        // one that opens anything. Each attempt re-runs on whatever the tab is
+        // showing now, since a click may have navigated.
+        for (let attempt = 0; attempt < 3 && !found; attempt++) {
+          const clicked = await chrome.scripting.executeScript({
+            target: { tabId }, func: clickFirstVideoInPage,
+            args: [{ titles: recentTitles.slice(0, 120), acis: recentAcis.slice(0, 200), skip: attempt }],
+          })
+          const c = (clicked && clicked[0] && clicked[0].result) || { clicked: false, what: 'the click could not run', aci: null }
+          clickNote = c.what
+          if (!c.clicked) break
+          await _sleep(4000)
           try { await waitForTabLoad(tabId, 15000) } catch (e) {}
-          await _sleep(2500)
+          await _sleep(2000)
           // Match on the id that was actually opened, which may be one we had
           // never heard of.
           found = findTemplate(c.aci)
+          if (!found) {
+            // A click that left the video list entirely opened the wrong thing.
+            // Go back and try the next candidate rather than hunting traffic on
+            // a page that has nothing to do with videos.
+            let here = ''
+            try { const t = await chrome.tabs.get(tabId); here = String((t && t.url) || '') } catch (e) {}
+            if (here && !/\/(manage-content|creatorhub)/i.test(here)) {
+              clickNote = `${clickNote}, which navigated to ${here.slice(0, 90)} and is not your video list`
+              try { await chrome.tabs.update(tabId, { url }); await waitForTabLoad(tabId, 30000); await _sleep(4000) } catch (e) {}
+            }
+          }
         }
       }
 
