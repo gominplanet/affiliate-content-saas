@@ -743,7 +743,14 @@ export default function SeoPage() {
           loading
             ? 'Loading…'
             : data
-              ? `${data.summary.total} posts · avg score ${data.summary.avgScore}/100${data.connected ? ` · tracking ${data.property}` : ''}`
+              // The headline is what the blog is DOING, not how well it scores.
+              // "avg score 99/100" sat above a blog with zero readers for
+              // months. It measures whether a keyword sits in the right places
+              // and has almost no bearing on whether anyone ever arrives, so
+              // leading with it told a creator they were winning while nothing
+              // was happening. It is still on the page, lower down, where a
+              // number about optimisation belongs.
+              ? `${data.summary.total} posts · ${data.connected ? `${data.summary.indexed} in Google · ${data.summary.totalClicks} read in 28 days` : 'connect Search Console to see what Google does with them'}`
               : 'Make sure your posts are indexed and optimized'
         }
         actions={

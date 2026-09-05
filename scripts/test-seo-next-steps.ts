@@ -77,6 +77,29 @@ const base: SeoSignals = {
     steps.map(x => x.id).join(', '))
 }
 
+// ── unchecked posts are not silently counted as fine ────────────────────────
+// The real page showed "111 of your 279 not in Google" while only 28 were
+// confirmed indexed and 140 had never been checked. Leading on the missing count
+// implies the remainder are fine, and 140 of them were simply unknown.
+{
+  const steps = seoNextSteps({ ...base, posts: 279, indexed: 28, notIndexed: 111, unknown: 140 })
+  const idx = steps.find(x => x.id === 'not-indexed')
+  check('the headline is what is confirmed, not what is missing',
+    !!idx && /only 28 of your 279/i.test(idx.title), idx?.title)
+  check('and the unchecked posts are named rather than assumed fine',
+    !!idx && /140 have not been checked/i.test(idx.why), idx?.why)
+  check('with the reason they are unchecked, so it does not read as a fault',
+    !!idx && /normal on a blog this size/i.test(idx.why), idx?.why)
+}
+
+// A blog where everything has been checked and everything is in Google should
+// not be handed an indexing chore at all.
+{
+  const steps = seoNextSteps({ ...base, posts: 13, indexed: 13, notIndexed: 0, unknown: 0 })
+  check('a fully indexed blog gets no indexing step',
+    !steps.some(x => x.id === 'not-indexed'), steps.map(x => x.id).join(', '))
+}
+
 // ── indexing is never claimed without Search Console ────────────────────────
 // notIndexed is meaningless when we cannot ask Google, so it must not be
 // reported as fact to someone who would then go hunting for a cause.

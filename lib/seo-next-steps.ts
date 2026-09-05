@@ -125,15 +125,22 @@ export function seoNextSteps(s: SeoSignals): SeoStep[] {
   }
 
   // Google has not taken them yet.
-  if (s.connected && s.notIndexed > 0) {
-    const share = Math.round((s.notIndexed / Math.max(1, s.posts)) * 100)
+  //
+  // Led on the confirmed-missing count and it read as though everything else was
+  // fine: "111 of your 279 are not in Google" quietly implies the other 168 are,
+  // when in that same state only 28 were confirmed and 140 had not been checked
+  // at all. Checking is capped per load, so unknown is the normal state for a
+  // large blog, and the honest headline is what IS confirmed.
+  if (s.connected && (s.notIndexed > 0 || s.unknown > 0)) {
+    const share = Math.round((s.indexed / Math.max(1, s.posts)) * 100)
     steps.push({
       id: 'not-indexed',
-      title: `Google has not added ${n(s.notIndexed)} of your ${n(s.posts)} ${postWord(s.posts)} to its results`,
-      why: share >= 50
-        ? 'More than half your blog cannot be found by searching, however well written it is. Nobody lands on a page Google does not list.'
-        : 'Those posts cannot be found by searching, so the work in them is earning nothing.',
-      doThis: 'Run Get my blog found below. It refreshes your sitemap and asks Google and Bing to crawl the missing pages.',
+      title: `Only ${n(s.indexed)} of your ${n(s.posts)} ${postWord(s.posts)} are confirmed in Google`,
+      why: `${s.notIndexed > 0 ? `${n(s.notIndexed)} are definitely missing` : 'None are confirmed missing'}${s.unknown > 0 ? `, and ${n(s.unknown)} have not been checked yet, which is normal on a blog this size because MVP checks a batch at a time` : ''}. ` +
+        (share < 50
+          ? 'A post Google has not listed cannot be found by searching, so the work in it earns nothing.'
+          : 'The confirmed ones are working; the rest are the gap.'),
+      doThis: 'Run Get my blog found below. It refreshes your sitemap and asks Google and Bing to crawl the missing pages. Refresh this page a few times to check more of them.',
       action: 'get-found',
       tone: 'act',
       weight: 80,
