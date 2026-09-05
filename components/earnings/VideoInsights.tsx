@@ -37,7 +37,7 @@ interface Payload {
     views: number | null; hearts: number | null; medianViews: number | null
     avgPctViewed: number | null; reportedViews: number; reportedRetention: number
   }
-  deadWeight?: { noViews: number; noProducts: number; notLive: number }
+  deadWeight?: { noViews: number; noProducts: number; notLive: number; productCountKnown: number; durationKnown: number }
   byLength?: { label: string; videos: number; avgPctViewed: number | null; medianViews: number | null; totalViews: number | null }[]
   months?: { month: string; videos: number; views: number | null; earningsCents: number | null }[]
   topByViews?: TopVideo[]
@@ -48,7 +48,8 @@ const num = (n: number | null | undefined) => (n == null ? 'not reported' : Math
 const pct = (n: number | null | undefined) => (n == null ? 'not reported' : `${Math.round(n)}%`)
 const money = (c: number | null | undefined) =>
   c == null ? 'not reported' : (c / 100).toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
-const secs = (s: number | null | undefined) => (s == null ? '' : s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`)
+const secs = (s: number | null | undefined) =>
+  (s == null || s <= 0 ? '' : s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`)
 const shortDesc = (d: string | null, aci: string) => {
   const t = (d || '').trim()
   if (!t) return aci
@@ -92,6 +93,8 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
   // section. Only bands with enough videos to mean anything.
   const bestBand = bands.filter(b => b.videos >= 5 && b.avgPctViewed != null)
     .sort((a, b) => (b.avgPctViewed as number) - (a.avgPctViewed as number))[0]
+  const durationKnown = dead?.durationKnown ?? 0
+  const productCountKnown = dead?.productCountKnown ?? 0
   const maxVideos = Math.max(1, ...months.map(m => m.videos))
   const maxEarn = Math.max(1, ...months.map(m => m.earningsCents ?? 0))
 
@@ -120,6 +123,15 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
           <p className="text-[12px] font-semibold mb-3 inline-flex items-center gap-1.5" style={label}>
             <Clock size={14} style={{ color: '#0EA5A4' }} /> How long should the next one be
           </p>
+          {/* Amazon does not always return a duration, and without one this
+              section cannot say anything. Better an empty panel that explains
+              itself than a confident winner drawn from nothing. */}
+          {durationKnown < Math.max(20, data.videos * 0.1) ? (
+            <p className="text-[13px]" style={muted}>
+              Amazon has not reported a length for {durationKnown ? 'most of' : 'any of'} your videos yet, so there is nothing here to compare. Run the video load again and MVP will ask Amazon for the metrics it withholds by default.
+            </p>
+          ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead>
@@ -149,8 +161,10 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
             {bestBand
               ? `Your ${bestBand.label.toLowerCase()} videos hold attention best, at ${pct(bestBand.avgPctViewed)} watched across ${bestBand.videos.toLocaleString()} of them.`
               : 'Not enough videos with watch time reported to call a winner yet.'}
-            {' '}Bands with fewer than five videos are shown but never used to pick a winner.
+            {' '}Bands with fewer than five videos are shown but never used to pick a winner. Based on the {durationKnown.toLocaleString()} videos Amazon reported a length for.
           </p>
+          </>
+          )}
         </div>
 
         <div className="card p-5">
@@ -162,10 +176,16 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
               <span style={muted}>Videos with no views at all</span>
               <span className="tabular-nums font-semibold" style={label}>{dead?.noViews.toLocaleString() ?? '0'}</span>
             </li>
-            <li className="flex justify-between gap-3">
-              <span style={muted}>Videos with no product attached</span>
-              <span className="tabular-nums font-semibold" style={label}>{dead?.noProducts.toLocaleString() ?? '0'}</span>
-            </li>
+            {productCountKnown > 0 ? (
+              <li className="flex justify-between gap-3">
+                <span style={muted}>Videos with no product attached</span>
+                <span className="tabular-nums font-semibold" style={label}>{dead?.noProducts.toLocaleString() ?? '0'}</span>
+              </li>
+            ) : (
+              <li style={muted}>
+                Amazon has not reported product counts yet, so MVP will not guess at how many of your videos have no product on them.
+              </li>
+            )}
             <li className="flex justify-between gap-3">
               <span style={muted}>Videos not live on Amazon</span>
               <span className="tabular-nums font-semibold" style={label}>{dead?.notLive.toLocaleString() ?? '0'}</span>
@@ -173,6 +193,9 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
           </ul>
           <p className="text-[11px] mt-3" style={muted}>
             A video with no product attached cannot earn, whatever it does for views. One that never went live cost the same to make as one that did. Both are worth knowing the size of before shooting more.
+            {productCountKnown > 0 && productCountKnown < data.videos
+              ? ` The product figure covers the ${productCountKnown.toLocaleString()} videos Amazon reported a count for, not all ${data.videos.toLocaleString()}.`
+              : ''}
           </p>
         </div>
       </div>

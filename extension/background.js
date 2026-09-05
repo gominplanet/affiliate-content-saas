@@ -4154,7 +4154,10 @@ function fetchContentListInPage(rec) {
           state: d.state || null,
           program: r.program || null,
           marketplaceId: r.marketplaceId || null,
-          durationSec: typeof m.videoDuration === 'number' ? m.videoDuration : null,
+          // Zero is not a length. Every video came back 0s, which put the whole
+          // library in one band and produced a confident, meaningless answer
+          // about the best video length. Unknown stays unknown.
+          durationSec: (typeof m.videoDuration === 'number' && m.videoDuration > 0) ? m.videoDuration : null,
           mediaUrl: m.mediaCentralUrl || m.uri || null,
           views: typeof e.totalViews === 'number' ? e.totalViews : null,
           hearts: typeof e.hearts === 'number' ? e.hearts : null,
@@ -4183,6 +4186,12 @@ function fetchContentListInPage(rec) {
           const o = JSON.parse(rec.body)
           o.pageSize = 100
           o.startIndex = offset
+          // The page asks with retrieveMetrics false, and the reply then carries
+          // views and hearts but a zero duration and a zero product count on
+          // nearly every video. Presented as fact that read "6,700 videos have no
+          // product attached", which is a reporting gap dressed up as a finding.
+          // Ask for the metrics.
+          o.retrieveMetrics = true
           body = JSON.stringify(o)
         } catch (e) { out.error = 'captured body was not JSON'; break }
 

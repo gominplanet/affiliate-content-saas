@@ -88,8 +88,12 @@ export async function GET() {
 
   // ── retention by length ───────────────────────────────────────────────────
   // The most directly actionable thing here: how long a video should be.
+  // A duration of zero is Amazon not reporting one, not a zero-length video.
+  // Treating it as real put all 6,763 videos in the shortest band and produced a
+  // confident answer to "how long should the next one be" from no data at all.
+  const knownDuration = rows.filter(r => r.duration_sec != null && r.duration_sec > 0)
   const byLength = BANDS.map(b => {
-    const inBand = rows.filter(r => r.duration_sec != null && r.duration_sec >= b.min && r.duration_sec < b.max)
+    const inBand = knownDuration.filter(r => (r.duration_sec as number) >= b.min && (r.duration_sec as number) < b.max)
     const ret = inBand.map(r => r.avg_pct_viewed).filter((v): v is number => v != null)
     const vw = inBand.map(r => r.views).filter((v): v is number => v != null)
     return {
@@ -105,7 +109,12 @@ export async function GET() {
   // Uploads that earned nothing back. Counting them is the point: on a library
   // of thousands this is usually a number the creator has never seen.
   const noViews = withViews.filter(r => r.views === 0).length
-  const noProducts = rows.filter(r => r.product_count === 0).length
+  // Only counted where Amazon actually reported a product count. It returns zero
+  // for nearly every video unless metrics are requested, and reporting that as
+  // "6,700 videos have no product attached" states as fact something we do not
+  // know and the creator knows to be false.
+  const withProductCount = rows.filter(r => r.product_count != null)
+  const noProducts = withProductCount.filter(r => r.product_count === 0).length
   const notLive = rows.filter(r => r.state && !/live|publish/i.test(r.state)).length
 
   // ── output over time ──────────────────────────────────────────────────────
@@ -177,7 +186,13 @@ export async function GET() {
       reportedViews: withViews.length,
       reportedRetention: withRetention.length,
     },
-    deadWeight: { noViews, noProducts, notLive },
+      // Coverage travels with every count, so a figure drawn from a fraction of the
+    // library can never read as if it covered all of it.
+    deadWeight: {
+      noViews, noProducts, notLive,
+      productCountKnown: withProductCount.length,
+      durationKnown: knownDuration.length,
+    },
     byLength,
     months,
     topByViews: top(r => r.views),
