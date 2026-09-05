@@ -1811,6 +1811,7 @@ function earningsFetchInPage(params) {
       let offsetKey = null
       let offsetStep = 0
       let offsetValue = 0
+      let lastPageFirstAsin = null
       // A competitor pulls 1,200 rows from this report, so 40 pages of 100 was a
       // ceiling I had guessed rather than measured. This clears that with room,
       // and a wall clock stops a runaway instead of a low cap silently truncating
@@ -1910,6 +1911,15 @@ function earningsFetchInPage(params) {
           })
         }
         pages++
+        // Amazon accepts a parameter and then ignores it on this report: that is
+        // exactly what the store filter does here, and adding those answers up
+        // is what doubled every figure on the page once already. If a window
+        // comes back starting with the same product as the one before it, the
+        // offset is being ignored and continuing would spend four hundred
+        // requests collecting one page over and over.
+        const pageFirstAsin = String((recs[0] && recs[0][K.asin]) || '').toUpperCase()
+        if (offsetKey && pageFirstAsin && pageFirstAsin === lastPageFirstAsin) break
+        lastPageFirstAsin = pageFirstAsin
         let next = holder ? (holder.nextPageToken || holder.nextToken || null) : null
         // No cursor does not mean no more rows.
         //
@@ -1943,7 +1953,12 @@ function earningsFetchInPage(params) {
               if (a2 && a2 !== firstAsin) {
                 offsetKey = key
                 offsetStep = /^(page|pageNumber|pageIndex)$/i.test(key) ? 1 : size
-                offsetValue = offsetStep * 2
+                // The window the probe just read, NOT the one after it. The loop
+                // adds a step before its next request, so pointing two steps
+                // ahead here skipped a whole page: offsets went 0, 100, 300,
+                // 400, and a hundred products vanished from every month without
+                // anything looking wrong.
+                offsetValue = offsetStep
                 out.productPaging = key
                 for (const r of prs) {
                   const asin = String(r[K.asin] || '').toUpperCase()
