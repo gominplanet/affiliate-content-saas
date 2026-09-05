@@ -16,7 +16,7 @@ const check = (name: string, cond: boolean | undefined, detail?: string) => {
 
 const base: SeoSignals = {
   posts: 13, connected: true, indexed: 13, notIndexed: 0, unknown: 0,
-  notInSitemap: 0, recentlyDropped: 0, sitemapFound: true,
+  notInSitemap: 0, urlGuessed: 0, recentlyDropped: 0, sitemapFound: true,
   totalClicks: 40, totalImpressions: 2000,
   crawlersBlocked: 0, crawlersTotal: 8,
   aio: { scored: 13, avgScore: 80, topFix: null },
@@ -77,6 +77,57 @@ const base: SeoSignals = {
     steps.map(x => x.id).join(', '))
 }
 
+// ── every step says who does the work ───────────────────────────────────────
+// A page of problems the reader has to solve alone is a page they stop opening.
+{
+  const all = [
+    seoNextSteps(base),
+    seoNextSteps({ ...base, connected: false }),
+    seoNextSteps({ ...base, urlGuessed: 111 }),
+    seoNextSteps({ ...base, totalImpressions: 408, totalClicks: 0 }),
+    seoNextSteps({ ...base, indexed: 28, notIndexed: 111, unknown: 140 }),
+  ].flat()
+  check('every step names who performs it', all.every(x => x.who === 'mvp' || x.who === 'you'))
+  check('most of them are MVP’s job, not the creator’s',
+    all.filter(x => x.who === 'mvp').length >= all.filter(x => x.who === 'you').length,
+    `${all.filter(x => x.who === 'mvp').length} mvp vs ${all.filter(x => x.who === 'you').length} you`)
+}
+
+// ── a guessed address is not an indexing problem ────────────────────────────
+// This is why pressing the ping button for weeks changed nothing: the pages
+// were fine, MVP was asking Google about addresses it had invented.
+{
+  const steps = seoNextSteps({ ...base, urlGuessed: 111, notIndexed: 111, indexed: 28, unknown: 140 })
+  const g = steps.find(x => x.id === 'url-guessed')
+  check('guessed addresses are surfaced', !!g, steps.map(x => x.id).join(', '))
+  check('and ranked above the indexing step they were faking',
+    steps.findIndex(x => x.id === 'url-guessed') < steps.findIndex(x => x.id === 'not-indexed'),
+    steps.map(x => x.id).join(' > '))
+  check('the fix is refreshing the addresses, not another ping',
+    g?.action === 'refresh-urls', g?.action)
+  check('and it says plainly that pinging cannot help',
+    !!g && /pinging Google again cannot help/i.test(g.why), g?.why)
+  check('MVP does it', g?.who === 'mvp')
+}
+
+// ── ranking with no clicks points at a control, not an instruction ──────────
+{
+  const steps = seoNextSteps({ ...base, totalImpressions: 408, totalClicks: 0 })
+  const t = steps.find(x => x.id === 'titles')
+  check('being shown and never clicked is surfaced', !!t, steps.map(x => x.id).join(', '))
+  check('and opens Title Check rather than telling them to go find it',
+    t?.action === 'titles', t?.action)
+  check('MVP drafts the titles', t?.who === 'mvp')
+}
+
+// ── the ping step stops implying that repetition helps ──────────────────────
+{
+  const steps = seoNextSteps({ ...base, indexed: 28, notIndexed: 111, unknown: 140 })
+  const idx = steps.find(x => x.id === 'not-indexed')
+  check('running it repeatedly is called out as useless',
+    !!idx && /Running it repeatedly does nothing extra/i.test(idx.doThis), idx?.doThis)
+}
+
 // ── unchecked posts are not silently counted as fine ────────────────────────
 // The real page showed "111 of your 279 not in Google" while only 28 were
 // confirmed indexed and 140 had never been checked. Leading on the missing count
@@ -130,10 +181,10 @@ const base: SeoSignals = {
 // ── ranking without clicks is its own problem ───────────────────────────────
 {
   const steps = seoNextSteps({ ...base, totalImpressions: 4000, totalClicks: 0 })
-  const s = steps.find(x => x.id === 'impressions-no-clicks')
-  check('being seen and not clicked is surfaced', !!s, steps.map(x => x.id).join(', '))
-  check('and named as a headline problem rather than a ranking one',
-    !!s && /headline/i.test(s.why), s?.why)
+  const t = steps.find(x => x.id === 'titles')
+  check('being seen and not clicked is surfaced', !!t, steps.map(x => x.id).join(', '))
+  check('and named as the sentence they wrote, not a search problem',
+    !!t && /not about search at all/i.test(t.why), t?.why)
 }
 
 // ── the language itself ─────────────────────────────────────────────────────

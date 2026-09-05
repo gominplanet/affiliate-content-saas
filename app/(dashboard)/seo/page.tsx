@@ -46,7 +46,7 @@ interface PostRow {
 }
 interface Overview {
   connected: boolean; property: string | null
-  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; recentlyDropped: number; thumbnailBlocked: number; sitemapFound: boolean; reasons?: Array<{ reason: string; fixable: 'redirect' | 'benign' | 'wait' | 'other'; count: number }>; totalClicks: number; totalImpressions: number }
+  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; urlGuessed?: number; recentlyDropped: number; thumbnailBlocked: number; sitemapFound: boolean; reasons?: Array<{ reason: string; fixable: 'redirect' | 'benign' | 'wait' | 'other'; count: number }>; totalClicks: number; totalImpressions: number }
   posts: PostRow[]
 }
 
@@ -826,6 +826,7 @@ export default function SeoPage() {
         onGoToGetFound={() => {
           document.getElementById('get-found')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }}
+        onRefreshUrls={() => void resyncUrls()}
       />
 
       {/* Super dummy-proof hero: explains it in plain words, one button does the

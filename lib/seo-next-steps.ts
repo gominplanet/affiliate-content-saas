@@ -33,6 +33,10 @@ export interface SeoSignals {
   /** Posts Google has never told us about either way. */
   unknown: number
   notInSitemap: number
+  /** Posts whose address MVP had to guess, because WordPress never handed one
+   *  back. Google's answer about a guessed address is an answer about a page
+   *  that may not exist, so these are not an indexing problem at all. */
+  urlGuessed: number
   /** Posts that were in Google and fell out in the last week. */
   recentlyDropped: number
   sitemapFound: boolean
@@ -60,7 +64,12 @@ export interface SeoStep {
   doThis: string
   /** Which control on the page does it, so the card can point at the right one.
    *  'none' means there is nothing to click and the work is theirs. */
-  action: 'connect-gsc' | 'get-found' | 'fix-404s' | 'robots' | 'write' | 'none'
+  action: 'connect-gsc' | 'get-found' | 'fix-404s' | 'robots' | 'write' | 'refresh-urls' | 'titles' | 'none'
+  /** Who actually performs the work. A page full of problems the creator has to
+   *  solve alone is a page they stop opening, and MVP can do more of this than
+   *  it was offering: it was sending people to press the same ping button for
+   *  every cause, including causes pinging cannot touch. */
+  who: 'mvp' | 'you'
   tone: 'blocked' | 'act' | 'good'
   /** Higher goes first. Set from how much it costs to leave undone. */
   weight: number
@@ -79,6 +88,7 @@ export function seoNextSteps(s: SeoSignals): SeoStep[] {
       why: 'Google can only show pages that exist. Until there is a post on your blog there is nothing here to improve.',
       doThis: 'Write your first post. MVP can draft one from a product you already promote.',
       action: 'write',
+      who: 'you',
       tone: 'act',
       weight: 100,
     }]
@@ -92,6 +102,7 @@ export function seoNextSteps(s: SeoSignals): SeoStep[] {
       why: 'When someone asks ChatGPT or Perplexity for a recommendation, the answer is built from sites those tools are allowed to read. Yours is closed to them, so you cannot be the answer no matter how good the post is.',
       doThis: 'Open your robots.txt, or your SEO plugin’s crawler settings, and allow them.',
       action: 'robots',
+      who: 'you',
       tone: 'blocked',
       weight: 95,
     })
@@ -106,6 +117,7 @@ export function seoNextSteps(s: SeoSignals): SeoStep[] {
       why: 'It is free and it is how MVP finds out which of your posts Google is actually showing people, what they searched for, and which pages Google is refusing. Without it this page is guessing.',
       doThis: 'Connect it, then come back. It takes about a minute.',
       action: 'connect-gsc',
+      who: 'you',
       tone: 'act',
       weight: 90,
     })
@@ -119,8 +131,43 @@ export function seoNextSteps(s: SeoSignals): SeoStep[] {
       why: 'These were being shown to people and are not any more. That is traffic and commission you had and have now lost, usually from a broken link, a redirect, or a setting telling Google to hide the page.',
       doThis: 'Run Get my blog found below. It repairs the usual causes and asks Google to look again.',
       action: 'get-found',
+      who: 'you',
       tone: 'blocked',
       weight: 85,
+    })
+  }
+
+  // Posts MVP cannot locate.
+  //
+  // This is not an indexing problem and pinging cannot touch it, which is why
+  // pressing Get my blog found for weeks moved nothing. WordPress did not hand
+  // back a permalink for these, so MVP guessed the address, asked Google about
+  // the guess, and reported Google's answer about a page that may not exist.
+  // Refreshing the URLs is the actual fix and MVP performs it.
+  if (s.urlGuessed > 0) {
+    steps.push({
+      id: 'url-guessed',
+      title: `MVP does not know where ${n(s.urlGuessed)} of your ${postWord(s.urlGuessed)} actually live`,
+      why: 'For these, MVP guessed the web address from the post name. Anything Google says about a guessed address is about a page that may not exist, so their indexing status here means nothing, and pinging Google again cannot help because there is nothing wrong with the pages themselves.',
+      doThis: 'Refresh the post addresses. MVP asks your site for each post’s real link and stores it, and the indexing numbers become true on the next check.',
+      action: 'refresh-urls',
+      who: 'mvp',
+      tone: 'blocked',
+      weight: 88,
+    })
+  }
+
+  // Ranking, and never chosen. The fastest win available to anyone.
+  if (s.connected && s.totalImpressions >= 100 && s.totalClicks === 0) {
+    steps.push({
+      id: 'titles',
+      title: `Google showed your posts ${n(s.totalImpressions)} times and nobody clicked`,
+      why: 'You are already ranking. People are reading your title in the results and choosing something else, so this is not about search at all: it is the sentence you wrote. Titles built around a sale or a model number are what a product feed says, not what a person types or clicks.',
+      doThis: 'Rewrite the titles on the posts being shown most. Title Check scores every one of yours and drafts a better version you can accept or edit.',
+      action: 'titles',
+      who: 'mvp',
+      tone: 'act',
+      weight: 84,
     })
   }
 
@@ -140,8 +187,9 @@ export function seoNextSteps(s: SeoSignals): SeoStep[] {
         (share < 50
           ? 'A post Google has not listed cannot be found by searching, so the work in it earns nothing.'
           : 'The confirmed ones are working; the rest are the gap.'),
-      doThis: 'Run Get my blog found below. It refreshes your sitemap and asks Google and Bing to crawl the missing pages. Refresh this page a few times to check more of them.',
+      doThis: 'Run Get my blog found below once. It refreshes your sitemap and asks Google and Bing to crawl the missing pages. Running it repeatedly does nothing extra: Google ignores a resubmission of a page it has already seen, so if the number does not move after a week the cause is something other than not being asked.',
       action: 'get-found',
+      who: 'mvp',
       tone: 'act',
       weight: 80,
     })
@@ -158,6 +206,7 @@ export function seoNextSteps(s: SeoSignals): SeoStep[] {
       why: `${fix.label}. ${fix.hint}`,
       doThis: 'Every new post MVP writes for you includes this. For the ones already published, it is a small edit at the top of each.',
       action: 'none',
+      who: 'you',
       tone: 'act',
       weight: 70,
     })
@@ -171,21 +220,9 @@ export function seoNextSteps(s: SeoSignals): SeoStep[] {
       why: 'Your sitemap is the list of pages you hand to Google. A post left off it can still be found, but it takes far longer and often does not happen at all.',
       doThis: 'Run Get my blog found below. It rebuilds the sitemap and resubmits it.',
       action: 'get-found',
+      who: 'you',
       tone: 'act',
       weight: 60,
-    })
-  }
-
-  // Being seen, never clicked. A real and different problem from not ranking.
-  if (s.connected && s.totalImpressions >= 500 && s.totalClicks === 0) {
-    steps.push({
-      id: 'impressions-no-clicks',
-      title: `Google showed your posts ${n(s.totalImpressions)} times and nobody clicked`,
-      why: 'You are ranking. People are seeing your title and choosing something else, which makes this a headline problem rather than a search one, and it is much faster to fix than ranking.',
-      doThis: 'Use Title Check above and rewrite the titles that are being shown the most.',
-      action: 'none',
-      tone: 'act',
-      weight: 55,
     })
   }
 
@@ -200,6 +237,7 @@ export function seoNextSteps(s: SeoSignals): SeoStep[] {
         : `Your ${n(s.posts)} ${postWord(s.posts)} look healthy from everything MVP can see without Search Console.`,
       doThis: 'The thing that grows a blog from here is more posts on products people are already searching for, not more settings.',
       action: 'write',
+      who: 'you',
       tone: 'good',
       weight: 10,
     })

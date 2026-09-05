@@ -460,6 +460,11 @@ export async function GET(request: Request) {
     notIndexed: out.filter(r => r.indexed === false).length,
     unknown: out.filter(r => r.indexed === null).length,
     notInSitemap: out.filter(r => r.inSitemap === false).length,
+    // Posts whose address MVP had to guess because WordPress never handed one
+    // back. Every Google answer about these is an answer about a URL that may
+    // not exist, which is what made the whole indexing panel wrong. Counted so
+    // the page can offer the one action that fixes it rather than another ping.
+    urlGuessed: out.filter(r => r.urlGuessed === true).length,
     recentlyDropped,
     thumbnailBlocked,
     sitemapFound: anySitemapFound,

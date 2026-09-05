@@ -22,8 +22,10 @@ interface Props {
   summary: {
     total: number; indexed: number; notIndexed: number; unknown: number
     notInSitemap: number; recentlyDropped: number; sitemapFound: boolean
-    totalClicks: number; totalImpressions: number
+    totalClicks: number; totalImpressions: number; urlGuessed?: number
   } | null
+  /** Runs the Tools action that re-reads each post's real permalink. */
+  onRefreshUrls: () => void
   connected: boolean
   /** Scrolls the page to the green get-found card, which is where the buttons
    *  these steps point at actually live. */
@@ -32,7 +34,7 @@ interface Props {
 
 const toneColour = (t: SeoStep['tone']) => (t === 'blocked' ? '#e11d48' : t === 'good' ? '#059669' : '#7C3AED')
 
-export default function StartHere({ summary, connected, onGoToGetFound }: Props) {
+export default function StartHere({ summary, connected, onGoToGetFound, onRefreshUrls }: Props) {
   const [aio, setAio] = useState<{ scored: number; avgScore: number; topFixes?: { label: string; hint: string; share: number; count: number }[] } | null>(null)
   const [crawlers, setCrawlers] = useState<{ blockedCount?: number; crawlers?: unknown[] } | null>(null)
   const [ready, setReady] = useState(false)
@@ -68,6 +70,7 @@ export default function StartHere({ summary, connected, onGoToGetFound }: Props)
     notIndexed: summary.notIndexed,
     unknown: summary.unknown,
     notInSitemap: summary.notInSitemap,
+    urlGuessed: summary.urlGuessed ?? 0,
     recentlyDropped: summary.recentlyDropped,
     sitemapFound: summary.sitemapFound,
     totalClicks: summary.totalClicks,
@@ -117,7 +120,34 @@ export default function StartHere({ summary, connected, onGoToGetFound }: Props)
                 <p className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>{step.title}</p>
                 <p className="text-[12.5px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-soft)' }}>{step.why}</p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  {/* Who does the work. A page of problems the reader has to
+                      solve alone is a page they stop opening, and most of these
+                      MVP can perform itself. */}
+                  <span className="text-[10.5px] font-semibold rounded-full px-2 py-0.5 shrink-0"
+                        style={step.who === 'mvp'
+                          ? { background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }
+                          : { background: 'var(--border)', color: 'var(--text-soft)' }}>
+                    {step.who === 'mvp' ? 'MVP does this' : 'You do this'}
+                  </span>
                   <span className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text)' }}>{step.doThis}</span>
+                  {step.action === 'refresh-urls' && (
+                    <button
+                      onClick={onRefreshUrls}
+                      className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-lg px-2.5 py-1"
+                      style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}
+                    >
+                      Refresh addresses <ArrowRight size={12} />
+                    </button>
+                  )}
+                  {step.action === 'titles' && (
+                    <a
+                      href="/tools/title-audit"
+                      className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-lg px-2.5 py-1"
+                      style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}
+                    >
+                      Open Title Check <ArrowRight size={12} />
+                    </a>
+                  )}
                   {step.action === 'connect-gsc' && (
                     <a
                       href="/api/auth/gsc"
