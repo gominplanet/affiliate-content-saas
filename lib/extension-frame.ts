@@ -583,10 +583,6 @@ export interface IdeaScanResult {
   /** Endpoints the page called while we crawled. The route to replacing a DOM
    *  crawl with a replayed request. */
   apiCalls?: string[]
-  /** Where the next pass should start. The stored row count is the wrong answer
-   *  during a re-read: the rows are upserted, so the count never moves and the
-   *  next pass would resume past the end of a library it had barely re-read. */
-  nextOffset?: number
 }
 
 /**
@@ -644,21 +640,59 @@ export async function requestStorefrontCatalogScan(url: string): Promise<IdeaSca
   return { ok: !!resp.ok, count: resp.count, partial: resp.partial, error: resp.error }
 }
 
+/** Live state of the video library crawl. The crawl runs for minutes, so it is
+ *  a job that reports progress, not a call that returns an answer. */
+export interface VideoScanStatus {
+  running: boolean
+  done: boolean
+  error: string | null
+  /** How far through the library the crawl has read. */
+  offset: number
+  /** Videos saved to MVP by this run. */
+  saved: number
+  pages: number
+  /** What Amazon says the library holds, when it says. */
+  total: number | null
+  /** Which request shape Amazon accepted, so a missing metric is explainable. */
+  variant: string | null
+  partial: boolean
+  stopped: string | null
+  source: string | null
+  probe: string | null
+  landedOn?: string | null
+  pageTitle?: string | null
+  scoutVersion: string | null
+  /** The worker was reclaimed mid-crawl. Everything read so far is saved; the
+   *  run simply needs starting again from where it stopped. */
+  interrupted?: boolean
+}
+
 /**
- * Read the creator's Creator Hub video table in a BACKGROUND SCOUT tab and
- * record which products (ASINs) they have a video for, then push to MVP.
+ * Start reading the creator's Amazon video library in a BACKGROUND SCOUT tab.
+ *
+ * Returns as soon as the job is running. It does NOT wait for the crawl: a
+ * library of thousands takes minutes, and an MV3 service worker gets reclaimed
+ * while it waits between requests, which killed the reply channel and made a
+ * working run look like a timeout. Poll `getVideoScanStatus` instead.
  */
-export async function requestCreatorHubVideosScan(url?: string, startAt?: number): Promise<IdeaScanResult> {
+export async function startCreatorHubVideosScan(url?: string, startAt?: number): Promise<{ ok: boolean; started?: boolean; already?: boolean; error?: string }> {
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  // Longer wait than the storefront crawl: a creator can have thousands of
-  // videos, so the in-page reader pages for up to ~4 min. Keep this above that.
-  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_CREATORHUB_VIDEOS', ...(url ? { url } : {}), ...(startAt ? { startAt } : {}) }, 320000)
-  if (!resp) return { ok: false, error: 'timeout' }
-  return {
-    ok: !!resp.ok, count: resp.count, partial: resp.partial, error: resp.error,
-    pages: resp.pages, stopped: resp.stopped, apiCalls: resp.apiCalls, pagerSeen: resp.pagerSeen, nextOffset: resp.nextOffset,
-    landedOn: resp.landedOn, pageTitle: resp.pageTitle, heading: resp.heading, probe: resp.probe, source: resp.source, scoutVersion: resp.scoutVersion,
-  }
+  const resp = await sendToExtension<{ ok: boolean; started?: boolean; already?: boolean; error?: string }>(
+    { type: 'MVP_SCAN_CREATORHUB_VIDEOS', ...(url ? { url } : {}), ...(startAt ? { startAt } : {}) },
+    20000,
+  )
+  // A SCOUT too old to know this message never answers. That is an update, not
+  // a failure of the crawl, and saying "timeout" again would be the third
+  // different fault wearing the same word.
+  if (!resp) return { ok: false, error: 'needs-update' }
+  return { ok: !!resp.ok, started: resp.started, already: resp.already, error: resp.error }
+}
+
+/** Where the crawl has got to. Short call, safe to poll every few seconds. */
+export async function getVideoScanStatus(): Promise<VideoScanStatus | null> {
+  if (!(await isExtensionAvailable())) return null
+  const resp = await sendToExtension<{ ok: boolean; status: VideoScanStatus | null }>({ type: 'MVP_SCAN_VIDEOS_STATUS' }, 15000)
+  return (resp && resp.status) || null
 }
 
 /**

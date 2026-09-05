@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, Store, ExternalLink, Search, Video } from 'lucide-react'
-import { requestStorefrontCatalogScan, requestCreatorHubVideosScan } from '@/lib/extension-frame'
+import { requestStorefrontCatalogScan, startCreatorHubVideosScan, getVideoScanStatus, type VideoScanStatus } from '@/lib/extension-frame'
 
 const ACCENT = '#C2410C'
 const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -90,29 +90,47 @@ export default function StorefrontCatalog() {
     } finally { setImporting(false) }
   }, [url, load])
 
+  // The crawl runs as a job in SCOUT and is watched, not waited on. A library of
+  // thousands takes minutes, and Chrome reclaims the extension's worker while it
+  // waits on Amazon, which used to kill the reply and report a working run as a
+  // timeout. Each batch is saved as it is read, so the progress shown here is
+  // already on disk.
   const syncVideos = useCallback(async () => {
     setSyncingVideos(true); setMsg(null)
     try {
-      const r = await requestCreatorHubVideosScan()
-      if (r.ok) {
-        await load()
-        setMsg({
-          ok: true,
-          text: r.count
-            ? (r.partial
-                ? `Found ${r.count} products so far — Creator Hub had more than we could read in one pass. Run "Sync my videos" again to pick up the rest.`
-                : `Found ${r.count} product${r.count === 1 ? '' : 's'} you have a video for.`)
-            : 'Checked Creator Hub — no videos found.',
-        })
-      } else if (r.error === 'not-installed') {
-        setMsg({ ok: false, text: 'Install SCOUT first — it reads your Creator Hub. Then Sync videos again.' })
-      } else if (r.error === 'no-videos') {
-        setMsg({ ok: false, text: 'Opened Creator Hub but couldn’t read any videos. Open it once on Amazon, then Sync videos again.' })
+      const started = await startCreatorHubVideosScan()
+      if (!started.ok) {
+        setMsg({ ok: false, text: started.error === 'not-installed'
+          ? 'Install SCOUT first, it reads your Amazon video list. Then Sync videos again.'
+          : started.error === 'needs-update'
+            ? 'Your SCOUT is too old to run this. Reinstall it, then try again.'
+            : 'Could not start reading your Amazon videos.' })
+        return
+      }
+      let status: VideoScanStatus | null = null
+      for (let tick = 0; tick < 900; tick++) {
+        await new Promise(r => setTimeout(r, 2000))
+        status = await getVideoScanStatus()
+        if (!status) continue
+        if (status.done || status.interrupted) break
+        setMsg({ ok: true, text: `Reading your Amazon videos: ${(status.offset || 0).toLocaleString()}${status.total ? ` of ${status.total.toLocaleString()}` : ''} so far.` })
+      }
+      await load()
+      if (!status) {
+        setMsg({ ok: false, text: 'SCOUT stopped answering. Reload the page and try again.' })
+      } else if (status.interrupted) {
+        setMsg({ ok: true, text: `Chrome stopped SCOUT part way through, at ${status.offset.toLocaleString()} videos. What was read is saved. Run it again to carry on.` })
+      } else if (status.error === 'no-videos') {
+        setMsg({ ok: false, text: 'Opened your video list but couldn’t read any videos. Open it once on Amazon, then Sync videos again.' })
+      } else if (status.error) {
+        setMsg({ ok: false, text: 'Couldn’t finish reading your Amazon videos. Open your video list once on Amazon, then try again.' })
       } else {
-        setMsg({ ok: false, text: `Couldn’t read Creator Hub just now${r.error ? ` (${r.error})` : ''}. Open it once on Amazon, then try again.` })
+        setMsg({ ok: true, text: status.saved
+          ? `Read ${status.saved.toLocaleString()} video${status.saved === 1 ? '' : 's'}${status.partial ? '. There are more, run it again to carry on.' : '.'}`
+          : 'Checked your Amazon video list, nothing new to add.' })
       }
     } catch {
-      setMsg({ ok: false, text: 'Video sync failed — try again in a moment.' })
+      setMsg({ ok: false, text: 'Video sync failed, try again in a moment.' })
     } finally { setSyncingVideos(false) }
   }, [load])
 

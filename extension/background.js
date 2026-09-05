@@ -4191,7 +4191,17 @@ function fetchContentListInPage(rec) {
       { metrics: false, size: 100, label: 'no metrics, 100 a page' },
       { metrics: false, size: 10, label: 'no metrics, as the page asks' },
     ]
+    // The shape Amazon accepted on an earlier batch. Renegotiating it on every
+    // batch meant paying two rejected requests each time metrics were refused,
+    // roughly seventy wasted calls across a library of thousands, which is a
+    // good way to get throttled for no gain.
     let variant = null
+    if (rec.variant) {
+      // Prefix match, because a batch that had to fall back reports its shape as
+      // "<label> (fell back after HTTP 500)" and an exact match would miss it.
+      for (const v of VARIANTS) { if (String(rec.variant).indexOf(v.label) === 0) variant = v }
+      if (variant) out.variant = variant.label
+    }
     try {
       while (videos.size < maxRows && Date.now() - started < 100000) {
         const buildBody = (v) => {
@@ -4249,10 +4259,18 @@ function fetchContentListInPage(rec) {
         offset += rowCount > 0 ? rowCount : 100
 
         if (videos.size === before) {
-          // Amazon returns the occasional empty window mid-list, so one barren
-          // page is stepped over. Three in a row is the end of the library.
           barren++
-          if (barren >= 3 || rowCount === 0) { out.done = rowCount === 0 && barren >= 3; break }
+          const pastTotal = out.total != null && offset >= out.total
+          // An empty page is the end of the library, unless Amazon's own total
+          // says there is more, in which case it is a gap to step over rather
+          // than a finish line. The old test required an empty page AND three
+          // barren pages before it would call anything finished, so a crawl that
+          // had reached the end reported itself partial and the page told the
+          // creator to run it again, forever.
+          if (rowCount === 0 && (out.total == null || pastTotal)) { out.done = true; break }
+          // Pages that return rows we already have are stepped over, but three
+          // in a row is a stall. Only call that finished if the count agrees.
+          if (barren >= 3) { out.done = pastTotal; break }
         } else barren = 0
 
         if (out.total != null && offset >= out.total) { out.done = true; break }
@@ -4323,7 +4341,115 @@ function describeProbe(frames) {
   return parts.slice(0, 4).join('  ||  ')
 }
 
-async function scanCreatorHubVideosBackground(userUrl, startAt) {
+// ── The video library crawl, as a JOB rather than one long reply ────────────
+//
+// This kept failing as "Amazon did not finish listing your videos in time", and
+// every fix I made was to a budget: the in-page wall clock, the worker's wall
+// clock, the page's patience. None of them were the cause.
+//
+// The cause is that an MV3 service worker is reclaimed while it sits between
+// awaits, and a crawl of thousands of videos sits between awaits for minutes.
+// When the worker dies the sendResponse channel dies with it, so the page waits
+// out its full timeout and reports a failure for a run that had been reading and
+// saving videos the whole time. This file already says so about a different
+// feature: "the MV3 worker got reclaimed mid-send. No amount of budget tuning
+// fixes that."
+//
+// So the crawl no longer answers a held-open message. It runs as a job, exactly
+// like the earnings sync next to it: start it, keep the worker alive while it
+// runs, checkpoint after every batch, and let the page poll for progress over
+// short calls that cannot time out. A worker reclaimed anyway costs one restart
+// from the last checkpoint instead of the whole run.
+let _vidJob = null
+
+/** Progress for the page, from memory when the job is live and from disk when
+ *  the worker was reclaimed and the job is not. */
+async function videoJobStatus() {
+  if (_vidJob) return { ..._vidJob }
+  try {
+    const s = await chrome.storage.local.get('mvpVideoJob')
+    const saved = s && s.mvpVideoJob
+    // Reaching here means there is no job in memory. A running job cannot
+    // outlive the worker that owns it, so a stored job that never completed
+    // belongs to a worker Chrome has already reclaimed. No timeout is needed to
+    // work that out, and waiting one out is what left the page watching a crawl
+    // that had stopped minutes earlier.
+    if (saved && !saved.done) return { ...saved, running: false, interrupted: true }
+    if (saved) return { ...saved, running: false }
+  } catch (e) {}
+  return null
+}
+
+async function saveVideoJob(job) {
+  try { await chrome.storage.local.set({ mvpVideoJob: { ...job, ts: Date.now() } }) } catch (e) {}
+}
+
+/** Starts the crawl and returns at once. Everything after this point is
+ *  observed through videoJobStatus, never waited on. */
+async function startVideoLibraryJob(userUrl, startAt) {
+  if (_vidJob && _vidJob.running) return { ok: true, already: true }
+
+  // Claimed before anything is awaited. A status poll arriving during the setup
+  // below would otherwise read the PREVIOUS run's stored job, see done:true, and
+  // report a finished crawl the moment a new one was asked for.
+  const job = {
+    running: true, done: false, error: null,
+    startAt: Number(startAt) || 0,
+    offset: Number(startAt) || 0,
+    saved: 0, pages: 0, total: null, variant: null,
+    stopped: null, source: null, probe: null, partial: false,
+    tabId: null,
+    scoutVersion: (chrome.runtime.getManifest() || {}).version || null,
+    startedAt: Date.now(),
+  }
+  _vidJob = job
+
+  // A previous run whose worker was reclaimed leaves its background tab open.
+  // Close it before opening another, or a few interrupted runs leave the
+  // creator with a pile of hidden Amazon tabs.
+  try {
+    const s = await chrome.storage.local.get('mvpVideoJob')
+    const prev = s && s.mvpVideoJob
+    if (prev && prev.tabId != null) { try { await chrome.tabs.remove(prev.tabId) } catch (e) {} }
+  } catch (e) {}
+  await saveVideoJob(job)
+
+  const keepAlive = startKeepAlive()
+  void (async () => {
+    try {
+      const res = await scanCreatorHubVideosBackground(userUrl, startAt, (p) => {
+        if ('tabId' in p) job.tabId = p.tabId
+        job.offset = p.offset != null ? p.offset : job.offset
+        job.saved = p.saved || job.saved
+        job.pages = p.pages || job.pages
+        if (p.total != null) job.total = p.total
+        if (p.variant) job.variant = p.variant
+        void saveVideoJob(job)
+      })
+      job.error = res && res.ok ? null : ((res && res.error) || 'scan-failed')
+      job.saved = (res && res.count) || job.saved
+      job.pages = (res && res.pages) || job.pages
+      job.partial = !!(res && res.partial)
+      job.stopped = (res && res.stopped) || null
+      job.source = (res && res.source) || null
+      job.probe = (res && res.probe) || null
+      job.landedOn = (res && res.landedOn) || null
+      job.pageTitle = (res && res.pageTitle) || null
+    } catch (e) {
+      job.error = (e && e.message) || 'scan-failed'
+    } finally {
+      job.running = false
+      job.done = true
+      stopKeepAlive(keepAlive)
+      await saveVideoJob(job)
+    }
+  })()
+
+  return { ok: true, started: true }
+}
+
+async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
+  const report = typeof onProgress === 'function' ? onProgress : () => {}
   // The creator can supply the exact page. Guessing a URL and harvesting
   // whatever loads is how the cart ended up in the database.
   // Creator Studio's Manage content page is the video list. /creatorhub was my
@@ -4336,6 +4462,9 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
   try {
     const tab = await chrome.tabs.create({ url, active: false })
     tabId = tab.id
+    // Recorded straight away so an interrupted run can be cleaned up rather than
+    // leaving a hidden Amazon tab behind for every attempt.
+    report({ tabId })
     await waitForTabLoad(tabId, 30000)
     // Long enough for the page to fire its own list request, which net-hook then
     // captures. Everything good depends on catching that one call.
@@ -4361,28 +4490,28 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
       let lastError = null
       let done = false
       let variantUsed = null
-      // The budget has to be measured from when the whole job started, not from
-      // when the batches did. Opening the tab and waiting for the page to fire
-      // its list request already spends up to 36s, and one more batch can start
-      // just under the limit and run well past it, so a 260s batch budget could
-      // reply after the page had already given up at 320s and called it a
-      // timeout. The run then read thousands of videos, saved them, and told the
-      // creator nothing had happened. 200s from the top leaves room for the last
-      // batch and its upload to land inside the window.
+      // No deadline that has to beat the page's patience, because the page is no
+      // longer waiting on this call. It polls for progress instead, so the crawl
+      // runs to the end of the library in one go. The cap that remains is a
+      // safety net against a loop that never terminates, not a budget.
       try {
-        for (let batch = 0; batch < 40 && Date.now() - startedAt < 200000; batch++) {
+        for (let batch = 0; batch < 400 && Date.now() - startedAt < 900000; batch++) {
           const viaApi = await chrome.scripting.executeScript({
             target: { tabId }, world: 'MAIN', func: fetchContentListInPage,
             args: [{
               url: apiRec.url, method: apiRec.method || 'POST',
               headers: apiRec.headers || {}, body: apiRec.body || null,
               startAt: offset, maxRows: 400,
+              variant: variantUsed,
             }],
           })
           const a = (viaApi && viaApi[0] && viaApi[0].result) || null
           if (!a) { lastError = 'the page returned no result'; break }
           if (a.total != null) total = a.total
-          if (a.variant && !variantUsed) variantUsed = a.variant
+          // Always the latest, not the first. A batch that fell back to a
+          // simpler request has told us the earlier shape stopped working, and
+          // carrying the first one forward would keep sending the failing one.
+          if (a.variant) variantUsed = a.variant
           if (a.error) lastError = a.error
           if (a.videos && a.videos.length) {
             const pushed = await pushVideoLibraryToMvp(a.videos, [], [])
@@ -4390,6 +4519,9 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
             saved += a.videos.length
           }
           pages += a.pages || 0
+          // Checkpoint after every batch. This is what the page reads while the
+          // crawl runs, and what a reclaimed worker restarts from.
+          report({ offset: a.nextOffset || offset, saved, pages, total, variant: variantUsed })
           // No forward movement means no more to read, whatever the total says.
           if (!a.videos || !a.videos.length || a.nextOffset <= offset) { done = done || !!a.done; break }
           offset = a.nextOffset
@@ -4532,6 +4664,8 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
     return { ok: false, error: (e && e.message) || 'scan-failed' }
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    // Closed, so it is no longer an orphan the next run should clean up.
+    report({ tabId: null })
   }
 }
 
@@ -7786,13 +7920,19 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // Read the Creator Hub video table (each row → a product ASIN) in a
     // BACKGROUND tab and record which products the creator has a video for.
     //
-    // This wait must sit ABOVE the in-page wall clock, not below it. At 175s
-    // against an in-page budget of 240s, a big library was cut off mid crawl and
-    // reported as a timeout even though the scan was still working.
-    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 290000)
-    scanCreatorHubVideosBackground(msg.url, msg.startAt)
-      .then((res) => { clearTimeout(timeout); sendResponse(res) })
-      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    // Starts the job and answers immediately. Nothing waits on a crawl that
+    // takes minutes: holding this channel open across a worker reclaim is what
+    // produced the "did not finish in time" failures on runs that were working.
+    startVideoLibraryJob(msg.url, msg.startAt)
+      .then((r) => sendResponse(r))
+      .catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }))
+    return true // async response
+  }
+  // Progress for the page's poll. Short, cheap, and safe to call at any point.
+  if (msg.type === 'MVP_SCAN_VIDEOS_STATUS') {
+    videoJobStatus()
+      .then((status) => sendResponse({ ok: true, status }))
+      .catch(() => sendResponse({ ok: true, status: null }))
     return true // async response
   }
   if (msg.type === 'MVP_SCAN_STOREFRONT_CATALOG') {

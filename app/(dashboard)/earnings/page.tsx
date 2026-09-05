@@ -19,7 +19,7 @@ import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, RefreshCw, TrendingUp, Store, Globe, Video } from 'lucide-react'
 import { toast } from 'sonner'
-import { requestEarningsSync, requestEarningsStatus, requestCreatorHubVideosScan, type EarningsSyncStatus } from '@/lib/extension-frame'
+import { requestEarningsSync, requestEarningsStatus, startCreatorHubVideosScan, getVideoScanStatus, type EarningsSyncStatus, type VideoScanStatus } from '@/lib/extension-frame'
 import ProductBreakdown from '@/components/earnings/ProductBreakdown'
 import VideoInsights from '@/components/earnings/VideoInsights'
 
@@ -153,16 +153,18 @@ export default function EarningsPage() {
     } finally { setStarting(false) }
   }
 
-  // Reads the creator's Creator Hub video table into storefront_catalog, which is
+  // Reads the creator's whole Amazon video library into amazon_videos, which is
   // what lets the product cards distinguish "no video anywhere" from "the video
-  // is on Amazon and nowhere else". Long job on a big catalogue, so it says so.
+  // is on Amazon and nowhere else".
+  //
+  // This starts a job in SCOUT and watches it. It does not wait for an answer:
+  // a library of thousands takes minutes, an MV3 service worker gets reclaimed
+  // while it waits between Amazon's replies, and the dead reply channel made
+  // every working run look like a timeout. The crawl saves each batch as it
+  // reads it, so what the poll reports is what is already on disk.
   async function loadAmazonVideos() {
     setScanningVideos(true)
     try {
-      // Resume, and keep going. A library of thousands reads at about a page a
-      // second, so one run cannot finish it. Each pass starts where the stored
-      // count leaves off, and the loop continues while passes keep adding
-      // videos, which turns "run it again yourself, repeatedly" into one click.
       let have = 0
       try { have = (await fetch('/api/amazon-videos').then(x => x.json()))?.count || 0 } catch { /* start from zero */ }
       // A library stored without Amazon's metrics has no lengths and no product
@@ -177,101 +179,115 @@ export default function EarningsPage() {
           setVideoScan('Re-reading your library from the start, so Amazon sends the video lengths and product counts it withholds unless asked.')
         }
       } catch { /* resume as normal */ }
-      // Where the next pass starts. It follows the scan's own reading position,
-      // not the stored row count: during a re-read the rows are upserted, the
-      // count never moves, and resuming from it sent the next pass to the end of
-      // a library that had barely been re-read.
-      let offset = have
-      let r = await requestCreatorHubVideosScan(hubUrl.trim() || undefined, offset)
-      let passes = 1
-      // A pass can also end with the bridge giving up before SCOUT answers. That
-      // is not a failed run: every batch is saved to MVP as it is read, so the
-      // work is on disk and only the reply was lost. Check whether the stored
-      // count moved, and carry on from there rather than reporting nothing
-      // happened after reading thousands of videos.
-      const storedCount = async () => {
-        try { return (await fetch('/api/amazon-videos').then(x => x.json()))?.count || 0 } catch { return 0 }
-      }
-      while (passes < 12) {
-        if (r.ok && r.partial) {
-          const next = r.nextOffset ?? 0
-          // No forward movement is the end, whatever the totals claim.
-          if (next <= offset) break
-          offset = next
-        } else if (!r.ok && r.error === 'timeout') {
-          const after = await storedCount()
-          if (after <= offset) break
-          offset = after
-        } else {
-          break
+
+      // Start it, watch it, and restart it from its own checkpoint if Chrome
+      // reclaims the extension's worker mid-crawl. Every reply is a short call
+      // that cannot outlive the worker, so an interruption shows up as a job
+      // with its position intact rather than as silence, and the creator gets
+      // one click rather than an instruction to keep clicking.
+      let status: VideoScanStatus | null = null
+      let from = have
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const started = await startCreatorHubVideosScan(hubUrl.trim() || undefined, from)
+        if (!started.ok) {
+          const human =
+            started.error === 'not-installed' ? 'Install SCOUT and sign in to Amazon to read your videos.'
+            : started.error === 'needs-update' ? 'Your SCOUT is too old to run this. Reinstall it from the link above, then try again.'
+            : 'Could not start reading your Amazon videos.'
+          setVideoScan(human)
+          toast.error(human)
+          return
         }
-        setVideoScan(`Reading your Amazon video library: ${offset.toLocaleString()} so far.`)
-        r = await requestCreatorHubVideosScan(hubUrl.trim() || undefined, offset)
-        passes++
+        setVideoScan(from ? `Resuming from ${from.toLocaleString()} videos.` : 'Opening your Amazon video list.')
+        status = null
+        for (let tick = 0; tick < 900; tick++) {
+          await new Promise(r => setTimeout(r, 2000))
+          status = await getVideoScanStatus()
+          if (!status) continue
+          if (status.done || status.interrupted) break
+          const read = status.offset || from
+          setVideoScan(
+            `Reading your Amazon video library: ${read.toLocaleString()}` +
+            `${status.total ? ` of ${status.total.toLocaleString()}` : ''} so far` +
+            `${status.variant ? ` (${status.variant})` : ''}.`
+          )
+        }
+        if (!status?.interrupted) break
+        // Only worth restarting if it actually moved. A run interrupted at the
+        // same place it started would loop forever on whatever is blocking it.
+        if (status.offset <= from) break
+        from = status.offset
+        setVideoScan(`Chrome paused SCOUT at ${from.toLocaleString()} videos. Picking up from there.`)
       }
-      // A run that timed out on its last pass but banked rows along the way has
-      // done real work. Say so, instead of the failure message below.
-      if (!r.ok && r.error === 'timeout' && offset > have) {
-        const stored = await storedCount()
-        setDataVersion(v => v + 1)
-        setVideoScan(`Read up to ${offset.toLocaleString()} videos, then Amazon stopped answering. ${stored.toLocaleString()} are stored. Run it again to carry on from there.`)
-        toast(`${stored.toLocaleString()} videos stored so far. Run it again to continue.`)
-        void load()
+
+      const stored = await (async () => {
+        try {
+          const d = await fetch('/api/amazon-videos').then(x => x.json())
+          return { count: d?.count || 0, pending: d?.pendingProducts || 0 }
+        } catch { return { count: 0, pending: 0 } }
+      })()
+      setDataVersion(v => v + 1)
+      void load()
+
+      if (!status) {
+        setVideoScan('SCOUT stopped answering, so there is nothing to report. Reload the page and try again.')
+        toast.error('SCOUT stopped answering.')
         return
       }
-      if (!r.ok) {
-        if (r.error === 'wrong-page') {
-          // Better to read nothing than to read the wrong page. The previous
-          // version harvested a shopping cart and filed it as your video library.
-          setVideoScan(`SCOUT opened ${r.landedOn || 'that page'} and it is not your video list${r.pageTitle ? ` (it says "${r.pageTitle}")` : ''}, so nothing was saved. Open your Creator Hub video list in Chrome, copy the URL from the address bar, paste it in the box and run this again.${r.probe ? ` What was on the page: ${r.probe}` : ''}`)
+
+      // Still going when the watch ran out. Saying nothing here would let a
+      // half-read library fall through to the success message below and be
+      // reported as complete, which is the one mistake this page must not make.
+      if (!status.done && !status.interrupted) {
+        setVideoScan(`Still reading, at ${status.offset.toLocaleString()} videos, and it has taken longer than expected. ${stored.count.toLocaleString()} are stored so far and are kept. Leave this page open, or run it again later to carry on.`)
+        toast(`${stored.count.toLocaleString()} videos stored so far, still reading.`)
+        return
+      }
+
+      // A reclaimed worker is not a failed read. Everything it had reached is
+      // saved, and the only thing needed is another run from that point.
+      if (status.interrupted) {
+        setVideoScan(`Chrome stopped SCOUT part way through, at ${status.offset.toLocaleString()} videos. ${stored.count.toLocaleString()} are stored and kept. Run it again to carry on from there.`)
+        toast(`${stored.count.toLocaleString()} videos stored. Run it again to continue.`)
+        return
+      }
+
+      if (status.error) {
+        if (status.error === 'wrong-page') {
+          // Better to read nothing than to read the wrong page. An earlier
+          // version harvested a shopping cart and filed it as the video library.
+          setVideoScan(`SCOUT opened ${status.landedOn || 'that page'} and it is not your video list${status.pageTitle ? ` (it says "${status.pageTitle}")` : ''}, so nothing was saved. Open your video list in Chrome, copy the URL from the address bar, paste it in the box and run this again.${status.probe ? ` What was on the page: ${status.probe}` : ''}`)
           toast.error('That page is not your video list, so nothing was saved.')
           return
         }
         // Never put a raw error code on screen. "no-videos" told you nothing
-        // about whether your library was empty or the page was unreadable.
+        // about whether the library was empty or the page was unreadable.
         const human =
-          r.error === 'not-installed' ? 'Install SCOUT and sign in to Amazon to read your videos.'
-          : r.error === 'timeout' ? 'Amazon did not finish listing your videos in time. Try again and leave the tab alone while it runs.'
-          : r.error === 'signed-out' ? 'Amazon signed SCOUT out. Sign in to Amazon in this browser and try again.'
-          : r.error === 'no-videos' ? 'That page loaded but SCOUT could not find any products on it, so nothing was saved.'
-          : r.error === 'list-api-empty' ? 'Amazon served your video list but SCOUT could not read the products out of it, so nothing was saved rather than saving something wrong.'
-          : r.error === 'no-result' ? 'That page did not respond in a way SCOUT could read, so nothing was saved.'
-          : 'Could not read your Amazon videos, so nothing was saved.'
-        setVideoScan(r.probe ? `${human} What was on the page: ${r.probe}` : human)
+          status.error === 'signed-out' ? 'Amazon signed SCOUT out. Sign in to Amazon in this browser and try again.'
+          : status.error === 'no-videos' ? 'That page loaded but SCOUT could not find any videos on it, so nothing was saved.'
+          : status.error === 'list-api-empty' ? 'Amazon served your video list but SCOUT could not read it, so nothing was saved rather than saving something wrong.'
+          : status.error === 'no-result' ? 'That page did not respond in a way SCOUT could read, so nothing was saved.'
+          : 'Could not finish reading your Amazon videos.'
+        setVideoScan(status.probe ? `${human} What was on the page: ${status.probe}` : human)
         toast.error(human)
         return
       }
-      // Say what was actually read and whether it is all of it. A creator with
-      // 7,000 videos being told "found 259" with no more context cannot tell a
-      // complete answer from a stalled crawl, and the first reading is that MVP
-      // is wrong about their library.
-      // Only `partial` decides this. Keying off the stopped text meant any
-      // completion phrased differently from the literal word "end" was reported
-      // as a shortfall, so a run that had just said the library was fully read
-      // still told the creator to run it again.
-      if (r.partial) {
-        setVideoScan(`Read ${(r.count ?? 0).toLocaleString()} videos across ${(r.pages ?? 0).toLocaleString()} pages, then stopped: ${r.stopped || 'ran out of time'}.${r.source ? ` Read from ${r.source}.` : ''}${r.scoutVersion ? ` SCOUT ${r.scoutVersion}.` : ''} If your library is larger than that, run it again and the products already found are kept.${r.pagerSeen?.length ? ` Pager controls seen: ${r.pagerSeen.join(' | ')}.` : ''}${r.apiCalls?.length ? ` Amazon endpoints seen: ${r.apiCalls.join(', ')}` : ''}`)
-        toast(`Read ${(r.count ?? 0).toLocaleString()} products so far. The crawl stopped early.`)
+
+      // Say what is STORED, not only what this run added. A run that adds
+      // nothing because the library is already complete otherwise looks
+      // identical to a run that failed.
+      if (status.partial) {
+        setVideoScan(`Read ${status.saved.toLocaleString()} videos across ${status.pages.toLocaleString()} pages, then stopped: ${status.stopped || 'no reason given'}. ${stored.count.toLocaleString()} are stored. Run it again to carry on.${status.scoutVersion ? ` SCOUT ${status.scoutVersion}.` : ''}`)
+        toast(`${stored.count.toLocaleString()} videos stored. The crawl stopped early.`)
       } else {
-        // Always state what is STORED, not just what this pass added. A pass
-        // that adds nothing because the library is already complete looked
-        // identical to a pass that failed, which sent us round the same loop.
-        let stored = 0
-        let pending = 0
-        try {
-          const d = await fetch('/api/amazon-videos').then(x => x.json())
-          stored = d?.count || 0
-          pending = d?.pendingProducts || 0
-        } catch { /* fall back to the pass count */ }
-        setDataVersion(v => v + 1)
         setVideoScan(
-          `${stored.toLocaleString()} videos stored${r.count ? `, ${r.count.toLocaleString()} added this run` : ' (nothing new to add)'}` +
-          `${pending ? `. ${pending.toLocaleString()} still need their products read.` : '.'}` +
-          `${r.scoutVersion ? ` SCOUT ${r.scoutVersion}.` : ''}`
+          `${stored.count.toLocaleString()} videos stored${status.saved ? `, ${status.saved.toLocaleString()} read this run` : ' (nothing new to add)'}` +
+          `${stored.pending ? `. ${stored.pending.toLocaleString()} still need their products read.` : '.'}` +
+          `${status.variant ? ` Amazon answered with ${status.variant}.` : ''}` +
+          `${status.scoutVersion ? ` SCOUT ${status.scoutVersion}.` : ''}`
         )
-        toast.success(`Found ${(r.count ?? 0).toLocaleString()} products with a video on Amazon.`)
+        toast.success(`${stored.count.toLocaleString()} Amazon videos stored.`)
       }
-      void load()
     } finally { setScanningVideos(false) }
   }
 
