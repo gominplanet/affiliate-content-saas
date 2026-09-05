@@ -4253,6 +4253,33 @@ function fetchContentListInPage(rec) {
           if (Number.isFinite(t)) out.total = t
         } catch (e) {}
 
+        // What Amazon actually sent, once per run.
+        //
+        // Metrics come back (views, hearts, percent watched all populate) but
+        // videoDuration and totalProductCount do not, and there is no way to
+        // tell from here whether Amazon omits them or names them something
+        // else. Guessing at a field name is what produced every "every video is
+        // 0s" and "6,700 videos have no product" claim on the page, so instead
+        // the first row's shape is carried back and shown, and the next change
+        // is made against the real payload.
+        if (!out.sample) {
+          try {
+            const first = (j && Array.isArray(j.result) && j.result[0]) || null
+            if (first) {
+              const paths = []
+              const walk = (node, prefix, depth) => {
+                if (paths.length > 120 || depth > 4 || node == null) return
+                if (Array.isArray(node)) { if (node.length) walk(node[0], `${prefix}[0]`, depth + 1); return }
+                if (typeof node === 'object') { for (const k of Object.keys(node)) walk(node[k], prefix ? `${prefix}.${k}` : k, depth + 1); return }
+                const v = typeof node === 'string' ? `"${String(node).slice(0, 40)}"` : String(node)
+                paths.push(`${prefix}=${v}`)
+              }
+              walk(first, '', 0)
+              out.sample = paths.join(' | ').slice(0, 4000)
+            }
+          } catch (e) {}
+        }
+
         const before = videos.size
         const rowCount = readVideos(j, videos)
         out.pages++
@@ -4397,7 +4424,7 @@ async function startVideoLibraryJob(userUrl, startAt) {
     startAt: Number(startAt) || 0,
     offset: Number(startAt) || 0,
     saved: 0, pages: 0, total: null, variant: null,
-    stopped: null, source: null, probe: null, partial: false,
+    stopped: null, source: null, probe: null, partial: false, sample: null,
     tabId: null,
     scoutVersion: (chrome.runtime.getManifest() || {}).version || null,
     startedAt: Date.now(),
@@ -4424,6 +4451,7 @@ async function startVideoLibraryJob(userUrl, startAt) {
         job.pages = p.pages || job.pages
         if (p.total != null) job.total = p.total
         if (p.variant) job.variant = p.variant
+        if (p.sample && !job.sample) job.sample = p.sample
         void saveVideoJob(job)
       })
       job.error = res && res.ok ? null : ((res && res.error) || 'scan-failed')
@@ -4433,6 +4461,7 @@ async function startVideoLibraryJob(userUrl, startAt) {
       job.stopped = (res && res.stopped) || null
       job.source = (res && res.source) || null
       job.probe = (res && res.probe) || null
+      if (res && res.sample) job.sample = res.sample
       job.landedOn = (res && res.landedOn) || null
       job.pageTitle = (res && res.pageTitle) || null
     } catch (e) {
@@ -4490,6 +4519,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
       let lastError = null
       let done = false
       let variantUsed = null
+      let sample = null
       // No deadline that has to beat the page's patience, because the page is no
       // longer waiting on this call. It polls for progress instead, so the crawl
       // runs to the end of the library in one go. The cap that remains is a
@@ -4508,6 +4538,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
           const a = (viaApi && viaApi[0] && viaApi[0].result) || null
           if (!a) { lastError = 'the page returned no result'; break }
           if (a.total != null) total = a.total
+          if (a.sample && !sample) sample = a.sample
           // Always the latest, not the first. A batch that fell back to a
           // simpler request has told us the earlier shape stopped working, and
           // carrying the first one forward would keep sending the failing one.
@@ -4521,7 +4552,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
           pages += a.pages || 0
           // Checkpoint after every batch. This is what the page reads while the
           // crawl runs, and what a reclaimed worker restarts from.
-          report({ offset: a.nextOffset || offset, saved, pages, total, variant: variantUsed })
+          report({ offset: a.nextOffset || offset, saved, pages, total, variant: variantUsed, sample })
           // No forward movement means no more to read, whatever the total says.
           if (!a.videos || !a.videos.length || a.nextOffset <= offset) { done = done || !!a.done; break }
           offset = a.nextOffset
@@ -4550,6 +4581,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
               ? `stopped: ${lastError}`
               : short ? `Amazon reports ${total.toLocaleString()} videos and this run reached ${((Number(startAt) || 0) + saved).toLocaleString()}` : 'end',
           source: `Amazon's own video list${startAt ? `, resumed from ${startAt}` : ''}${variantUsed ? ` (${variantUsed})` : ''}`,
+          sample,
         }
       }
       // Nothing new is not a failure when we resumed from the end.

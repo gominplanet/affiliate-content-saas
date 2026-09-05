@@ -662,6 +662,11 @@ export interface VideoScanStatus {
   landedOn?: string | null
   pageTitle?: string | null
   scoutVersion: string | null
+  /** The field paths of one real row from Amazon's answer. Metrics come back
+   *  but length and product count do not, and this is how we find out whether
+   *  Amazon omits them or simply calls them something else, rather than
+   *  guessing at a field name for the fourth time. */
+  sample?: string | null
   /** The worker was reclaimed mid-crawl. Everything read so far is saved; the
    *  run simply needs starting again from where it stopped. */
   interrupted?: boolean

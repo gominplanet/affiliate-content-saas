@@ -96,6 +96,11 @@ export default function EarningsPage() {
   const [dataVersion, setDataVersion] = useState(0)
   const [scanningVideos, setScanningVideos] = useState(false)
   const [videoScan, setVideoScan] = useState<string | null>(null)
+  // The shape of one real row from Amazon's video list. Shown rather than acted
+  // on: length and product count are missing from the rows even though metrics
+  // are returned, and this says whether Amazon omits them or names them
+  // differently, instead of another round of guessing at a field name.
+  const [videoSample, setVideoSample] = useState<string | null>(null)
   const [hubUrl, setHubUrl] = useState('')
   useEffect(() => {
     try {
@@ -228,6 +233,7 @@ export default function EarningsPage() {
       })()
       setDataVersion(v => v + 1)
       void load()
+      if (status?.sample) setVideoSample(status.sample)
 
       if (!status) {
         setVideoScan('SCOUT stopped answering, so there is nothing to report. Reload the page and try again.')
@@ -363,6 +369,16 @@ export default function EarningsPage() {
         {videoScan && (
           <div className="card p-4">
             <p className="text-[12px]" style={muted}>{videoScan}</p>
+            {videoSample && (
+              // Collapsed, because it is for working out where a missing figure
+              // lives, not for reading. Amazon returns the engagement metrics
+              // but no length and no product count, and the answer to why is in
+              // here rather than in another guess at a field name.
+              <details className="mt-2">
+                <summary className="text-[12px] cursor-pointer" style={muted}>What Amazon sent for one video</summary>
+                <pre className="mt-2 text-[11px] whitespace-pre-wrap break-all" style={muted}>{videoSample}</pre>
+              </details>
+            )}
           </div>
         )}
 

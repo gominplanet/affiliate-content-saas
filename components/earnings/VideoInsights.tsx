@@ -128,7 +128,7 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
               itself than a confident winner drawn from nothing. */}
           {durationKnown < Math.max(20, data.videos * 0.1) ? (
             <p className="text-[13px]" style={muted}>
-              Amazon has not reported a length for {durationKnown ? 'most of' : 'any of'} your videos yet, so there is nothing here to compare. Run the video load again and MVP will ask Amazon for the metrics it withholds by default.
+              Amazon does not report a length for {durationKnown ? 'most of' : 'any of'} your videos, so there is nothing here to compare. It was asked: the same call returned your views, hearts and watch percentage, and simply carried no duration. Running the load again will not change that, and reading each video one by one is the only route left.
             </p>
           ) : (
           <>
@@ -183,7 +183,7 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
               </li>
             ) : (
               <li style={muted}>
-                Amazon has not reported product counts yet, so MVP will not guess at how many of your videos have no product on them.
+                Amazon does not report a product count on the video list, so MVP will not guess at how many of your videos have no product on them. The engagement figures above came from the same call, so this is a gap in what Amazon sends rather than something another run would fill.
               </li>
             )}
             <li className="flex justify-between gap-3">
