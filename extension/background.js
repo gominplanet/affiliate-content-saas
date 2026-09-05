@@ -2224,14 +2224,53 @@ async function syncAmazonEarnings(opts) {
     // than inferred. It is the page's own request, not anything we composed.
     if (recipe) job.diag.recipeBody = String(recipe.body || '').slice(0, 1200)
 
+    // Getting the background tab back if it disappears.
+    //
+    // A five year backfill is sixty round trips through one hidden tab, and the
+    // tab can go: Chrome reclaims things, another job closes it, the page
+    // navigates somewhere unexpected. When it went, the whole run threw "No tab
+    // with id" and ended with nothing saved across sixty months, which is the
+    // worst possible outcome for the longest job on the page. Now it is opened
+    // again and the month is retried.
+    const ensureTab = async () => {
+      if (tabId != null) {
+        try { await chrome.tabs.get(tabId); return tabId } catch (e) { tabId = null }
+      }
+      const t = await chrome.tabs.create({ url: EARN_PAGE, active: false })
+      tabId = t.id
+      await waitForTabLoad(tabId, 30000)
+      await _sleep(3500)
+      job.diag.tabReopened = (job.diag.tabReopened || 0) + 1
+      return tabId
+    }
+    const runInTab = async (args) => {
+      try {
+        return await chrome.scripting.executeScript({
+          target: { tabId }, world: 'MAIN', func: earningsFetchInPage, args,
+        })
+      } catch (e) {
+        if (!/no tab with id|frame.*removed|target closed/i.test(String((e && e.message) || ''))) throw e
+        await ensureTab()
+        return await chrome.scripting.executeScript({
+          target: { tabId }, world: 'MAIN', func: earningsFetchInPage, args,
+        })
+      }
+    }
+
     // A month at a time, pushing as we go, so a long backfill shows progress and
     // an interrupted run keeps what it already earned.
     for (let i = 0; i < months.length; i++) {
       if (job.canceled) break
-      const res = await chrome.scripting.executeScript({
-        target: { tabId }, world: 'MAIN', func: earningsFetchInPage,
-        args: [{ months: [months[i]], stores, host: EARN_HOST, recipe }],
-      })
+      let res = null
+      try {
+        res = await runInTab([{ months: [months[i]], stores, host: EARN_HOST, recipe }])
+      } catch (e) {
+        // One month failing is not the run failing. Record it and carry on, so a
+        // five year sync is not lost to a single bad month.
+        job.diag.errors = (job.diag.errors || []).concat([`${months[i].start}: ${(e && e.message) || e}`]).slice(0, 12)
+        job.monthsDone = i + 1
+        continue
+      }
       const r = (res && res[0] && res[0].result) || null
       if (r) {
         if ((r.periods && r.periods.length) || (r.products && r.products.length)) {
@@ -4728,11 +4767,7 @@ async function startVideoProductsJob(userUrl) {
     startedAt: Date.now(),
   }
   _vidProdJob = job
-  try {
-    const s = await chrome.storage.local.get('mvpVideoProductsJob')
-    const prev = s && s.mvpVideoProductsJob
-    if (prev && prev.tabId != null) { try { await chrome.tabs.remove(prev.tabId) } catch (e) {} }
-  } catch (e) {}
+  await closeIfOurs('mvpVideoProductsJob')
   const save = async () => { try { await chrome.storage.local.set({ mvpVideoProductsJob: { ...job, ts: Date.now() } }) } catch (e) {} }
   await save()
 
@@ -4764,7 +4799,7 @@ async function startVideoProductsJob(userUrl) {
       await save()
       if (!firstAcis.length) {
         job.error = job.remaining === 0 ? null : 'MVP did not hand back any videos to read'
-        job.done = true; job.running = false
+        job.done = true; job.running = false; job.tabId = null
         stopKeepAlive(keepAlive); await save()
         if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
         return
@@ -4894,7 +4929,7 @@ async function startVideoProductsJob(userUrl) {
         try { const t = await chrome.tabs.get(tabId); landed = String((t && t.url) || '') } catch (e) {}
         job.error = 'no-detail-call'
         job.probe = `Opened your video list and ${clickNote}. No request carried a single video's id, so there is nothing to replay and nothing was stored.${landed ? ` The tab ended up on ${landed.slice(0, 120)}.` : ''} What Amazon was asked for: ${seen.join(', ') || 'nothing'}`
-        job.done = true; job.running = false
+        job.done = true; job.running = false; job.tabId = null
         stopKeepAlive(keepAlive); await save()
         if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
         return
@@ -4993,6 +5028,23 @@ function describeProbe(frames) {
 // runs, checkpoint after every batch, and let the page poll for progress over
 // short calls that cannot time out. A worker reclaimed anyway costs one restart
 // from the last checkpoint instead of the whole run.
+/** Closes the background tab a previous run left behind, and ONLY if it is still
+ *  that tab. Chrome reuses tab ids across browser sessions, so a stored id is
+ *  not proof of ownership: the tab is fetched and its URL checked against the
+ *  video list before anything is closed. Without that check this closes whatever
+ *  now happens to hold that id, which on the last run was the hidden tab the
+ *  earnings sync was working in. */
+async function closeIfOurs(key) {
+  try {
+    const s = await chrome.storage.local.get(key)
+    const prev = s && s[key]
+    if (!prev || prev.tabId == null) return
+    const t = await chrome.tabs.get(prev.tabId)
+    const url = String((t && t.url) || '')
+    if (/amazon\.com\/(manage-content|creatorhub)/i.test(url)) await chrome.tabs.remove(prev.tabId)
+  } catch (e) { /* gone already, or not ours to close */ }
+}
+
 let _vidJob = null
 
 /** Progress for the page, from memory when the job is live and from disk when
@@ -5038,13 +5090,16 @@ async function startVideoLibraryJob(userUrl, startAt) {
   _vidJob = job
 
   // A previous run whose worker was reclaimed leaves its background tab open.
-  // Close it before opening another, or a few interrupted runs leave the
-  // creator with a pile of hidden Amazon tabs.
-  try {
-    const s = await chrome.storage.local.get('mvpVideoJob')
-    const prev = s && s.mvpVideoJob
-    if (prev && prev.tabId != null) { try { await chrome.tabs.remove(prev.tabId) } catch (e) {} }
-  } catch (e) {}
+  // Close it before opening another, or a few interrupted runs leave the creator
+  // with a pile of hidden Amazon tabs.
+  //
+  // But only if it is actually still OUR tab. Chrome tab ids are not stable
+  // across browser restarts, they start low again each session, so an id saved
+  // to storage days ago can name a completely different tab today. Closing that
+  // blind shuts something the creator was using, and the likeliest victim is the
+  // hidden tab the earnings sync is running in, which is exactly the failure
+  // that killed a sixty month backfill with nothing saved.
+  await closeIfOurs('mvpVideoJob')
   await saveVideoJob(job)
 
   const keepAlive = startKeepAlive()
