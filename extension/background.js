@@ -1624,6 +1624,10 @@ function earningsJobStatus() {
     error: _earnJob.error || null,
     months: _earnJob.months || 0,
     monthsDone: _earnJob.monthsDone || 0,
+    // Months that actually returned something, as against months attempted. The
+    // two are the same until Amazon starts refusing, and then the difference is
+    // the whole story.
+    monthsRead: _earnJob.monthsRead || 0,
     savedPeriods: _earnJob.savedPeriods || 0,
     savedProducts: _earnJob.savedProducts || 0,
     diag: _earnJob.diag || null,
@@ -2117,7 +2121,7 @@ async function pushEarningsToMvp(periods, products) {
 async function syncAmazonEarnings(opts) {
   const from = (opts && opts.from) || `${new Date().getUTCFullYear()}-01-01`
   const to = (opts && opts.to) || isoDay(new Date())
-  const job = { done: false, error: null, months: 0, monthsDone: 0, savedPeriods: 0, savedProducts: 0, diag: null }
+  const job = { done: false, error: null, months: 0, monthsDone: 0, monthsRead: 0, savedPeriods: 0, savedProducts: 0, diag: null }
   _earnJob = job
   const keepAlive = startKeepAlive()
   let tabId = null
@@ -2214,6 +2218,8 @@ async function syncAmazonEarnings(opts) {
     // request body is the thing that decides what comes back, so it is the thing
     // to change.
     let recipe = null
+    // Consecutive months where every call came back a server error.
+    let downMonths = 0
     const learnFrom = Date.now()
     await _sleep(4000)
     const calls = earningsReportCalls(learnFrom - 12000)
@@ -2272,8 +2278,32 @@ async function syncAmazonEarnings(opts) {
         continue
       }
       const r = (res && res[0] && res[0].result) || null
+
+      // Is Amazon simply down?
+      //
+      // Their reporting goes offline and answers every call with a 503 behind a
+      // "Website Temporarily Unavailable" page. The sync used to walk all
+      // twenty-four months anyway, firing hundreds of requests at a dead service
+      // and finishing with "0 monthly totals saved", which reads as MVP being
+      // broken when nothing is wrong with it. Two months in a row where every
+      // call failed with a server error is Amazon, not this month's data, so it
+      // stops and says so.
+      const gotNothing = !r || ((!r.periods || !r.periods.length) && (!r.products || !r.products.length))
+      const serverErrors = r && Array.isArray(r.errors)
+        ? r.errors.filter((e) => /HTTP 5\d\d/.test(String(e))).length
+        : 0
+      if (gotNothing && serverErrors > 0) {
+        downMonths++
+        if (downMonths >= 2) {
+          job.error = 'amazon-down'
+          job.monthsDone = i + 1
+          break
+        }
+      } else if (!gotNothing) downMonths = 0
+
       if (r) {
         if ((r.periods && r.periods.length) || (r.products && r.products.length)) {
+          job.monthsRead = (job.monthsRead || 0) + 1
           const pushed = await pushEarningsToMvp(r.periods || [], r.products || [])
           if (pushed.ok) {
             job.savedPeriods += pushed.savedPeriods

@@ -174,6 +174,9 @@ export interface EarningsSyncStatus {
   error?: string | null
   months?: number
   monthsDone?: number
+  /** Months that actually returned data, as against months attempted. When
+   *  Amazon's reporting is down these diverge, and the gap is the whole story. */
+  monthsRead?: number
   savedPeriods?: number
   savedProducts?: number
   diag?: {

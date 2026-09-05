@@ -155,6 +155,7 @@ export default function EarningsPage() {
       if (s && !s.running) {
         clearInterval(iv)
         if (s.error) toast.error(s.error)
+        else if (s.error === 'amazon-down') toast.error('Amazon reporting is down. Nothing was changed, try again later.')
         else toast.success(`Synced ${s.savedPeriods ?? 0} monthly totals from Amazon.`)
       }
     }, 3000)
@@ -564,8 +565,19 @@ export default function EarningsPage() {
               <span style={{ color: (sync.savedProducts ?? 0) > 0 ? '#10B981' : '#e0554b' }}>
                 {(sync.savedProducts ?? 0).toLocaleString()} product row{sync.savedProducts === 1 ? '' : 's'}
               </span>
-              {' '}saved{sync.months ? ` across ${sync.monthsDone ?? 0} of ${sync.months} months` : ''}.
+              {' '}saved{sync.months ? ` from ${(sync.monthsRead ?? 0).toLocaleString()} of the ${sync.monthsDone ?? 0} months tried, out of ${sync.months}` : ''}.
             </p>
+            {/* Amazon's reporting goes offline and answers everything with a
+                503 behind a "Website Temporarily Unavailable" page. That is not
+                a failure of this sync and it is not something to retry into, so
+                it gets said plainly rather than left as a wall of HTTP 503. */}
+            {sync.error === 'amazon-down' && (
+              <p className="text-[12px]" style={{ color: '#d97706' }}>
+                Amazon&rsquo;s reporting is down right now. Every request came back a server error, so the sync stopped
+                rather than spending another twenty months asking. Nothing was changed: the figures on this page are the
+                ones from your last good sync. Try again in an hour or two.
+              </p>
+            )}
             {sync.diag?.stores?.length ? (
               <p className="text-[11px]" style={muted}>
                 Amazon stores found: {sync.diag.stores.join(', ')}
