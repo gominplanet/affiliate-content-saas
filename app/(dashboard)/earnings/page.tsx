@@ -201,7 +201,11 @@ export default function EarningsPage() {
       // 7,000 videos being told "found 259" with no more context cannot tell a
       // complete answer from a stalled crawl, and the first reading is that MVP
       // is wrong about their library.
-      if (r.partial || (r.stopped && r.stopped !== 'end')) {
+      // Only `partial` decides this. Keying off the stopped text meant any
+      // completion phrased differently from the literal word "end" was reported
+      // as a shortfall, so a run that had just said the library was fully read
+      // still told the creator to run it again.
+      if (r.partial) {
         setVideoScan(`Read ${(r.count ?? 0).toLocaleString()} videos across ${(r.pages ?? 0).toLocaleString()} pages, then stopped: ${r.stopped || 'ran out of time'}.${r.source ? ` Read from ${r.source}.` : ''}${r.scoutVersion ? ` SCOUT ${r.scoutVersion}.` : ''} If your library is larger than that, run it again and the products already found are kept.${r.pagerSeen?.length ? ` Pager controls seen: ${r.pagerSeen.join(' | ')}.` : ''}${r.apiCalls?.length ? ` Amazon endpoints seen: ${r.apiCalls.join(', ')}` : ''}`)
         toast(`Read ${(r.count ?? 0).toLocaleString()} products so far. The crawl stopped early.`)
       } else {
