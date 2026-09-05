@@ -4204,6 +4204,10 @@ function fetchContentListInPage(rec) {
     const startAt = Number(rec.startAt) || 0
     // The captured body's field names. The bigger-page probe guessed at six
     // plausible names and none of them matched, so print what is actually there.
+    // The captured body, verbatim. Three attempts at printing "field names"
+    // produced nothing useful, and to slice this query into windows small enough
+    // to page, the filter SHAPES matter as much as their names.
+    out.requestBody = String(rec.body || '').slice(0, 900)
     try { out.bodyKeys = Object.keys(JSON.parse(rec.body || '{}')).join(', ') } catch (e) {}
     // Declared once, here. It was previously created inside the pagination
     // experiment and then used earlier in the loop by the bigger-page probe,
@@ -4364,6 +4368,11 @@ function fetchContentListInPage(rec) {
         if (found.size + videos.size === before) {
           barren++
           out.barren = barren
+          // The offset at which Amazon stopped returning rows. If this sits far
+          // below the total it reports, the endpoint caps deep paging and no
+          // amount of offsetting will reach the rest: the query has to be split
+          // into windows instead.
+          if (out.emptyFrom == null) out.emptyFrom = page
           if (barren >= 3) break
           if (bodyKey || pageKey) { page += pageSize; continue }
           break
@@ -4584,7 +4593,14 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
             error: (push && push.ok) ? undefined : (push && push.error),
           }
         }
-        apiNote = `list API returned nothing${a && a.error ? `: ${a.error}` : ''}${a && a.total ? `, though Amazon reports ${a.total} items` : ''}${a && a.sample ? `. ${String(a.sample).slice(0, 1600)}` : ''}`
+        apiNote = [
+        'list API returned nothing',
+        a && a.error ? `: ${a.error}` : '',
+        a && a.total ? `, though Amazon reports ${a.total} items` : '',
+        a && a.emptyFrom != null ? `. Rows stopped at offset ${a.emptyFrom}` : '',
+        a && a.bodyKeys ? `. Request body fields: ${a.bodyKeys}` : '',
+        a && a.requestBody ? `. The request body: ${a.requestBody}` : '',
+      ].join('')
       } catch (e) {
         apiNote = `list API call failed: ${(e && e.message) || e}`
       }
