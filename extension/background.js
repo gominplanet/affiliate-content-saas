@@ -4133,7 +4133,7 @@ function fetchContentListInPage(rec) {
     //   orderingType, retrieveMetrics, globalizeStatus
     // so pageSize is set to 100 rather than left at the UI's 10, which is ten
     // times fewer round trips for the same rows.
-    const out = { videos: [], total: null, nextOffset: 0, done: false, error: null, pages: 0, sample: null }
+    const out = { videos: [], total: null, nextOffset: 0, done: false, error: null, pages: 0, sample: null, variant: null }
     const ASIN_RE = /^[A-Z0-9]{10}$/
     const startAt = Number(rec.startAt) || 0
     const maxRows = Number(rec.maxRows) || 400
@@ -4179,27 +4179,63 @@ function fetchContentListInPage(rec) {
     const videos = new Map()
     let barren = 0
     const started = Date.now()
+    // Ask for more than the page does, but never at the cost of the read itself.
+    //
+    // retrieveMetrics true made Amazon answer 500 at offset 0, so an optional
+    // extra took down a request that had been working. Same shape of mistake as
+    // forcing an aggregation enum earlier: an enhancement must degrade, not
+    // break. These are tried in order and the first that answers is kept.
+    const VARIANTS = [
+      { metrics: true, size: 100, label: 'metrics, 100 a page' },
+      { metrics: true, size: 10, label: 'metrics, 10 a page' },
+      { metrics: false, size: 100, label: 'no metrics, 100 a page' },
+      { metrics: false, size: 10, label: 'no metrics, as the page asks' },
+    ]
+    let variant = null
     try {
       while (videos.size < maxRows && Date.now() - started < 100000) {
-        let body
-        try {
+        const buildBody = (v) => {
           const o = JSON.parse(rec.body)
-          o.pageSize = 100
+          o.pageSize = v.size
           o.startIndex = offset
-          // The page asks with retrieveMetrics false, and the reply then carries
-          // views and hearts but a zero duration and a zero product count on
-          // nearly every video. Presented as fact that read "6,700 videos have no
-          // product attached", which is a reporting gap dressed up as a finding.
-          // Ask for the metrics.
-          o.retrieveMetrics = true
-          body = JSON.stringify(o)
-        } catch (e) { out.error = 'captured body was not JSON'; break }
+          o.retrieveMetrics = v.metrics
+          return JSON.stringify(o)
+        }
 
-        const res = await fetch(new URL(rec.url, location.href).toString(), {
-          method: rec.method || 'POST', credentials: 'include', headers, body,
-          signal: AbortSignal.timeout(30000),
-        })
-        if (!res.ok) { out.error = `HTTP ${res.status} at offset ${offset}`; break }
+        let res = null
+        if (variant) {
+          try {
+            res = await fetch(new URL(rec.url, location.href).toString(), {
+              method: rec.method || 'POST', credentials: 'include', headers,
+              body: buildBody(variant), signal: AbortSignal.timeout(30000),
+            })
+          } catch (e) { res = null }
+        } else {
+          // First call of the run: find a combination Amazon accepts.
+          for (const v of VARIANTS) {
+            try {
+              const r = await fetch(new URL(rec.url, location.href).toString(), {
+                method: rec.method || 'POST', credentials: 'include', headers,
+                body: buildBody(v), signal: AbortSignal.timeout(30000),
+              })
+              if (r.ok) { res = r; variant = v; out.variant = v.label; break }
+            } catch (e) { /* try the next combination */ }
+            await new Promise((r) => setTimeout(r, 200))
+          }
+          if (!variant) { out.error = `Amazon refused every request shape at offset ${offset}`; break }
+        }
+        if (!res) { out.error = `no response at offset ${offset}`; break }
+        if (!res.ok) {
+          // A combination that worked and then stopped: drop back to the plain
+          // request rather than ending the run on one bad page.
+          if (variant && variant.metrics) {
+            variant = VARIANTS[VARIANTS.length - 1]
+            out.variant = `${variant.label} (fell back after HTTP ${res.status})`
+            continue
+          }
+          out.error = `HTTP ${res.status} at offset ${offset}`
+          break
+        }
         const j = await res.json().catch(() => null)
         if (!j) { out.error = `unreadable response at offset ${offset}`; break }
         try {
@@ -4289,6 +4325,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
       let total = null
       let lastError = null
       let done = false
+      let variantUsed = null
       const runStarted = Date.now()
       try {
         for (let batch = 0; batch < 40 && Date.now() - runStarted < 260000; batch++) {
@@ -4303,6 +4340,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
           const a = (viaApi && viaApi[0] && viaApi[0].result) || null
           if (!a) { lastError = 'the page returned no result'; break }
           if (a.total != null) total = a.total
+          if (a.variant && !variantUsed) variantUsed = a.variant
           if (a.error) lastError = a.error
           if (a.videos && a.videos.length) {
             const pushed = await pushVideoLibraryToMvp(a.videos, [], [])
@@ -4332,7 +4370,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
             : lastError
               ? `stopped: ${lastError}`
               : short ? `Amazon reports ${total.toLocaleString()} videos and this run reached ${((Number(startAt) || 0) + saved).toLocaleString()}` : 'end',
-          source: `Amazon's own video list${startAt ? `, resumed from ${startAt}` : ''}`,
+          source: `Amazon's own video list${startAt ? `, resumed from ${startAt}` : ''}${variantUsed ? ` (${variantUsed})` : ''}`,
         }
       }
       // Nothing new is not a failure when we resumed from the end.
