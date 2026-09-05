@@ -6,54 +6,23 @@
 // The earnings tables answer "how much". This answers the questions that decide
 // what to shoot next, from data Amazon already recorded and never shows back:
 //
-//   Which length holds attention?      average percent viewed, by duration
-//   Which uploads are dead weight?     videos with no views, or no products
-//   Does publishing more actually pay? videos per month against earnings
-//   What is my best work?              ranked by views and by hearts
+//   Is Amazon still showing my videos?  median views per video, by publish month
+//   Does holding attention buy reach?   views, banded by percent watched
+//   What did people actually love?      hearts per thousand views
+//   Which uploads are dead weight?      no views, never live, and when
+//   Does publishing more pay?           videos per month against earnings
+//   What is my best work?               ranked by views and by hearts
 //
-// The null rule from the earnings page carries over unchanged. Amazon not
-// reporting a metric and a video genuinely scoring zero are different claims,
-// and averages are taken only over videos that actually reported.
+// This file now only fetches. Every calculation lives in lib/video-insights.ts
+// as a pure function, because arithmetic welded to a database is arithmetic
+// nobody can test, and untested arithmetic is what put "every video is 0s long"
+// and "6,700 videos have no product" in front of a creator.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { analyseVideoLibrary, type VideoRow, type EarningRow } from '@/lib/video-insights'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-interface VideoRow {
-  aci: string
-  description: string | null
-  state: string | null
-  views: number | null
-  hearts: number | null
-  avg_pct_viewed: number | null
-  avg_view_sec: number | null
-  duration_sec: number | null
-  product_count: number | null
-  published_at: string | null
-}
-
-/** Length bands a creator actually thinks in, rather than even splits. */
-const BANDS: { label: string; min: number; max: number }[] = [
-  { label: 'Under 20s', min: 0, max: 20 },
-  { label: '20 to 45s', min: 20, max: 45 },
-  { label: '45 to 90s', min: 45, max: 90 },
-  { label: '90s to 3 min', min: 90, max: 180 },
-  { label: 'Over 3 min', min: 180, max: Number.POSITIVE_INFINITY },
-]
-
-/** Mean over the values that exist. Returns null when none did, so "Amazon did
- *  not report this" never renders as a zero average. */
-function mean(values: number[]): number | null {
-  if (!values.length) return null
-  return values.reduce((a, b) => a + b, 0) / values.length
-}
-function median(values: number[]): number | null {
-  if (!values.length) return null
-  const s = [...values].sort((a, b) => a - b)
-  const mid = Math.floor(s.length / 2)
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
-}
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -79,130 +48,13 @@ export async function GET() {
     if (page.length < 1000) break
   }
 
-  if (!rows.length) {
-    return NextResponse.json({ ok: true, videos: 0 })
-  }
+  if (!rows.length) return NextResponse.json({ ok: true, videos: 0 })
 
-  const withViews = rows.filter(r => r.views != null) as (VideoRow & { views: number })[]
-  const withRetention = rows.filter(r => r.avg_pct_viewed != null)
-
-  // ── retention by length ───────────────────────────────────────────────────
-  // The most directly actionable thing here: how long a video should be.
-  // A duration of zero is Amazon not reporting one, not a zero-length video.
-  // Treating it as real put all 6,763 videos in the shortest band and produced a
-  // confident answer to "how long should the next one be" from no data at all.
-  const knownDuration = rows.filter(r => r.duration_sec != null && r.duration_sec > 0)
-  const byLength = BANDS.map(b => {
-    const inBand = knownDuration.filter(r => (r.duration_sec as number) >= b.min && (r.duration_sec as number) < b.max)
-    const ret = inBand.map(r => r.avg_pct_viewed).filter((v): v is number => v != null)
-    const vw = inBand.map(r => r.views).filter((v): v is number => v != null)
-    return {
-      label: b.label,
-      videos: inBand.length,
-      avgPctViewed: mean(ret),
-      medianViews: median(vw),
-      totalViews: vw.length ? vw.reduce((a, c) => a + c, 0) : null,
-    }
-  }).filter(b => b.videos > 0)
-
-  // ── dead weight ───────────────────────────────────────────────────────────
-  // Uploads that earned nothing back. Counting them is the point: on a library
-  // of thousands this is usually a number the creator has never seen.
-  const noViews = withViews.filter(r => r.views === 0).length
-  // Only counted where Amazon actually reported a product count. It returns zero
-  // for nearly every video unless metrics are requested, and reporting that as
-  // "6,700 videos have no product attached" states as fact something we do not
-  // know and the creator knows to be false.
-  //
-  // A stored zero is not a null, so filtering on null alone still counted 6,700
-  // videos as having no product. The honest test is proportion: if almost none of
-  // the library has a product count above zero, the field was not reported, and
-  // no amount of type-checking makes that data real.
-  const positiveCounts = rows.filter(r => (r.product_count ?? 0) > 0).length
-  const productCountTrusted = positiveCounts >= Math.max(10, rows.length * 0.1)
-  const withProductCount = productCountTrusted ? rows.filter(r => r.product_count != null) : []
-  const noProducts = withProductCount.filter(r => r.product_count === 0).length
-  const notLive = rows.filter(r => r.state && !/live|publish/i.test(r.state)).length
-
-  // ── output over time ──────────────────────────────────────────────────────
-  // Videos published per month, so it can be set against earnings per month and
-  // answer whether publishing more actually paid.
-  const perMonth: Record<string, { videos: number; views: number | null }> = {}
-  for (const r of rows) {
-    if (!r.published_at) continue
-    const m = r.published_at.slice(0, 7)
-    if (!perMonth[m]) perMonth[m] = { videos: 0, views: null }
-    perMonth[m].videos++
-    if (r.views != null) perMonth[m].views = (perMonth[m].views ?? 0) + r.views
-  }
-
-  // Earnings for the same months, so the comparison is on one chart rather than
-  // in the creator's head across two pages.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: earn } = await (supabase as any)
     .from('amazon_earnings_periods')
-    .select('period_start,earnings_cents')
+    .select('period_start,earnings_cents,store_scope')
     .eq('user_id', user.id)
-  const earnByMonth: Record<string, number> = {}
-  for (const e of (earn ?? []) as { period_start: string; earnings_cents: number | null }[]) {
-    if (e.earnings_cents == null) continue
-    const m = e.period_start.slice(0, 7)
-    earnByMonth[m] = (earnByMonth[m] ?? 0) + e.earnings_cents
-  }
 
-  const months = Array.from(new Set([...Object.keys(perMonth), ...Object.keys(earnByMonth)]))
-    .sort()
-    .slice(-18)
-    .map(m => ({
-      month: m,
-      videos: perMonth[m]?.videos ?? 0,
-      views: perMonth[m]?.views ?? null,
-      earningsCents: earnByMonth[m] ?? null,
-    }))
-
-  const top = (pick: (r: VideoRow) => number | null, n = 8) =>
-    rows
-      .filter(r => pick(r) != null)
-      .sort((a, b) => (pick(b) as number) - (pick(a) as number))
-      .slice(0, n)
-      .map(r => ({
-        aci: r.aci,
-        description: r.description,
-        views: r.views,
-        hearts: r.hearts,
-        avgPctViewed: r.avg_pct_viewed,
-        durationSec: r.duration_sec,
-        productCount: r.product_count,
-        publishedAt: r.published_at,
-      }))
-
-  const allViews = withViews.map(r => r.views)
-  return NextResponse.json({
-    ok: true,
-    videos: rows.length,
-    totals: {
-      views: allViews.length ? allViews.reduce((a, c) => a + c, 0) : null,
-      hearts: (() => {
-        const h = rows.map(r => r.hearts).filter((v): v is number => v != null)
-        return h.length ? h.reduce((a, c) => a + c, 0) : null
-      })(),
-      medianViews: median(allViews),
-      avgPctViewed: mean(withRetention.map(r => r.avg_pct_viewed as number)),
-      // How much of the library Amazon actually reported on, so a partial
-      // picture is never presented as the whole one.
-      reportedViews: withViews.length,
-      reportedRetention: withRetention.length,
-    },
-      // Coverage travels with every count, so a figure drawn from a fraction of the
-    // library can never read as if it covered all of it.
-    deadWeight: {
-      noViews, noProducts, notLive,
-      productCountKnown: withProductCount.length,
-      durationKnown: knownDuration.length,
-    },
-    byLength,
-    months,
-    topByViews: top(r => r.views),
-    topByHearts: top(r => r.hearts),
-  })
+  return NextResponse.json(analyseVideoLibrary(rows, (earn ?? []) as EarningRow[]))
 }
