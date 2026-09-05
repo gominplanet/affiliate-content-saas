@@ -19,11 +19,11 @@ const check = (name: string, cond: boolean | undefined, detail?: string) => {
 }
 
 /** N days of steady traffic, ending `endDaysAgo` days back. */
-function series(days: number, impressions: number, clicks = 0, startDay = 0): DailyPoint[] {
+function series(days: number, impressions: number, clicks = 0, startDay = 0, position: number | null = 6): DailyPoint[] {
   const out: DailyPoint[] = []
   for (let i = 0; i < days; i++) {
     const d = new Date(Date.UTC(2026, 5, 1 + startDay + i))
-    out.push({ date: d.toISOString().slice(0, 10), impressions, clicks })
+    out.push({ date: d.toISOString().slice(0, 10), impressions, clicks, position })
   }
   return out
 }
@@ -121,6 +121,38 @@ const base: BlogHealthInput = {
     ...base, daily: series(30, 400, 40), affiliateClicks: 60, offsiteEarningsCents: 7700,
   })
   check('a working chain is recognised', working.stage === 'working', working.stage)
+}
+
+// ── buried is not the same as ignored ───────────────────────────────────────
+// The real blog: 1,480 impressions over three months, 4 clicks, average
+// position 25.8. Those look identical to a title problem in the click count and
+// have opposite fixes. Telling someone at position 26 to rewrite their titles
+// costs them weeks and changes nothing, because almost nobody reaches page three.
+{
+  const buried = analyseBlogHealth({ ...base, daily: series(30, 16, 0, 0, 25.8) })
+  check('being buried is told apart from being ignored', buried.stage === 'not-ranking', buried.stage)
+  check('the page number is stated, not the raw position',
+    /page 3 of the results/i.test(buried.verdict), buried.verdict)
+  check('and it explicitly says titles are not the fix',
+    /Rewriting them will not help/i.test(buried.doThis), buried.doThis)
+  check('the average position is reported', Math.round(buried.avgPosition ?? 0) === 26,
+    `${buried.avgPosition}`)
+
+  // On page one, the same zero IS the title's fault.
+  const ignored = analyseBlogHealth({ ...base, daily: series(30, 400, 0, 0, 4) })
+  check('on page one, zero clicks is a title problem again', ignored.stage === 'not-clicked', ignored.stage)
+  check('and there it does say to rewrite them',
+    /Rewrite the titles/i.test(ignored.doThis), ignored.doThis)
+}
+
+// ── position is weighted by how much it was actually seen ───────────────────
+// A day with two impressions must not drag the average as hard as a day with
+// two hundred, or one quiet outlier decides the whole diagnosis.
+{
+  const daily = [...series(27, 200, 0, 0, 30), ...series(1, 2, 0, 27, 1)]
+  const h = analyseBlogHealth({ ...base, daily })
+  check('a tiny day does not swing the average', (h.avgPosition ?? 0) > 25, `${h.avgPosition}`)
+  check('so the diagnosis stays buried', h.stage === 'not-ranking', h.stage)
 }
 
 // ── no tracked links is not the same as nobody clicking ─────────────────────

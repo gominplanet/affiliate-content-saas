@@ -34,6 +34,12 @@ export interface DailyPoint {
   date: string
   clicks: number
   impressions: number
+  /** Average result position that day. Without it, "shown and never clicked"
+   *  gets diagnosed as a headline problem at every position, and at position 26
+   *  that is wrong advice: almost nobody reaches page three, so a near-zero
+   *  click rate there is the position doing exactly what positions do. Sending
+   *  someone off to rewrite titles would cost them weeks and change nothing. */
+  position?: number | null
 }
 
 export interface BlogHealthInput {
@@ -56,7 +62,12 @@ export interface BlogHealthInput {
   offsiteEarningsCents: number | null
 }
 
-export type FunnelStage = 'not-shown' | 'not-clicked' | 'not-following-links' | 'not-buying' | 'working'
+export type FunnelStage = 'not-shown' | 'not-ranking' | 'not-clicked' | 'not-following-links' | 'not-buying' | 'working'
+
+/** Roughly where a result stops being seen at all. Page one ends at ten, and
+ *  click-through falls off a cliff well before the bottom of it. */
+const PAGE_ONE = 10
+const BURIED = 15
 
 export interface BlogHealth {
   connected: boolean
@@ -77,6 +88,8 @@ export interface BlogHealth {
   /** True when there is genuinely not enough here to judge yet, so the page can
    *  encourage rather than diagnose. */
   tooEarly: boolean
+  /** Impression-weighted average position, or null when nothing was shown. */
+  avgPosition: number | null
   daily: DailyPoint[]
 }
 
@@ -133,8 +146,20 @@ export function analyseBlogHealth(input: BlogHealthInput): BlogHealth {
 
   // Where the chain gives out. Each break has a different fix, and only the
   // last of them is visible from earnings alone.
+  // Impression-weighted average position over the window. A day with two
+  // impressions should not pull the average as hard as a day with two hundred.
+  const positioned = recentRows.filter(r => r.position != null && r.impressions > 0)
+  const weight = sum(positioned, r => r.impressions)
+  const avgPosition = weight > 0
+    ? positioned.reduce((a, r) => a + (r.position as number) * r.impressions, 0) / weight
+    : null
+
   let stage: FunnelStage = 'working'
   if (recent.impressions === 0) stage = 'not-shown'
+  // Buried, rather than ignored. These look identical in the click count and
+  // have opposite fixes: one is the words in the result, the other is that
+  // nobody scrolls that far.
+  else if (recent.clicks === 0 && avgPosition != null && avgPosition > BURIED) stage = 'not-ranking'
   else if (recent.clicks === 0) stage = 'not-clicked'
   else if (affiliateClicks != null && affiliateClicks === 0) stage = 'not-following-links'
   else if (offsiteEarningsCents != null && offsiteEarningsCents === 0 && (affiliateClicks ?? 0) > 0) stage = 'not-buying'
@@ -164,6 +189,9 @@ export function analyseBlogHealth(input: BlogHealthInput): BlogHealth {
     doThis = tooEarly
       ? 'Nothing is wrong. A new site usually waits weeks before Google shows it to anyone, and months before that turns into real traffic. Keep publishing.'
       : 'Nobody can click a page they are never shown, so nothing else matters until this moves. Check that your posts are actually in Google, and that they are linked from somewhere on your own site rather than sitting alone.'
+  } else if (stage === 'not-ranking') {
+    verdict = `Google showed your posts ${recent.impressions.toLocaleString()} times in the last 28 days, but at an average position of ${Math.round(avgPosition as number)}, which is page ${Math.ceil((avgPosition as number) / 10)} of the results.`
+    doThis = 'Almost nobody scrolls that far, so a near-zero click rate here is the position doing what positions do, not your titles. Rewriting them will not help until the pages move up. What moves them is fewer, better posts on questions people actually type, and links between your own posts so the strongest ones pass authority to the rest.'
   } else if (stage === 'not-clicked') {
     verdict = `Google showed your posts ${recent.impressions.toLocaleString()} times in the last 28 days and nobody clicked.`
     doThis = 'You are ranking. People are reading your title in the results and choosing something else, which makes this a headline problem, not a search one, and it is far quicker to fix than ranking. Rewrite the titles on the posts being shown most.'
@@ -183,5 +211,5 @@ export function analyseBlogHealth(input: BlogHealthInput): BlogHealth {
       : 'The chain works as far as the click. Keep publishing, and watch which posts bring the readers so you can make more like them.'
   }
 
-  return { connected, recent, previous, ageMonths, stage, collapse, verdict, doThis, tooEarly, daily }
+  return { connected, recent, previous, ageMonths, stage, collapse, verdict, doThis, tooEarly, daily, avgPosition }
 }

@@ -110,7 +110,7 @@ export async function GET() {
         startDate: ymd(start), endDate: ymd(end), dimensions: ['date'], rowLimit: 100,
       })
       daily = rows
-        .map(r => ({ date: String(r.keys?.[0] || ''), clicks: r.clicks ?? 0, impressions: r.impressions ?? 0 }))
+        .map(r => ({ date: String(r.keys?.[0] || ''), clicks: r.clicks ?? 0, impressions: r.impressions ?? 0, position: r.position ?? null }))
         .filter(r => r.date)
         .sort((a, b) => a.date.localeCompare(b.date))
       // Search Console omits days with no data entirely. Left as gaps, a week of
@@ -124,7 +124,7 @@ export async function GET() {
         const byDate = new Map(daily.map(d => [d.date, d]))
         while (cursor <= last) {
           const key = ymd(cursor)
-          filled.push(byDate.get(key) ?? { date: key, clicks: 0, impressions: 0 })
+          filled.push(byDate.get(key) ?? { date: key, clicks: 0, impressions: 0, position: null })
           cursor.setDate(cursor.getDate() + 1)
         }
         daily = filled

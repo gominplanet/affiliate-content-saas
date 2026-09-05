@@ -23,6 +23,7 @@ import type { BlogHealth } from '@/lib/blog-health'
 
 const stageLabel: Record<string, string> = {
   'not-shown': 'Google is not showing your posts',
+  'not-ranking': 'Shown, but too far down to be seen',
   'not-clicked': 'Shown, not clicked',
   'not-following-links': 'Read, no product clicks',
   'not-buying': 'Clicking through, not buying',
@@ -113,6 +114,17 @@ export default function BlogHealthCard() {
               <p className="text-[10.5px] uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Read it</p>
               <p className="text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{data.recent.clicks.toLocaleString()}</p>
             </div>
+            {data.avgPosition != null && (
+              <div>
+                <p className="text-[10.5px] uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Average position</p>
+                <p className="text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>
+                  {Math.round(data.avgPosition)}
+                  <span className="text-[11px] font-normal ml-1" style={{ color: 'var(--text-faint)' }}>
+                    page {Math.ceil(data.avgPosition / 10)}
+                  </span>
+                </p>
+              </div>
+            )}
             <div>
               <p className="text-[10.5px] uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Where the chain stops</p>
               <p className="text-[13px] font-semibold" style={{ color: accent }}>{stageLabel[data.stage] ?? data.stage}</p>
