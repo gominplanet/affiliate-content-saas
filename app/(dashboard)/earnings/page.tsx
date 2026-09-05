@@ -165,6 +165,18 @@ export default function EarningsPage() {
       // videos, which turns "run it again yourself, repeatedly" into one click.
       let have = 0
       try { have = (await fetch('/api/amazon-videos').then(x => x.json()))?.count || 0 } catch { /* start from zero */ }
+      // A library stored without Amazon's metrics has no lengths and no product
+      // counts, and resuming from its count would read nothing and change
+      // nothing. When that is the case, start again from the top so the rows are
+      // rewritten with the figures Amazon only sends when asked.
+      try {
+        const ins = await fetch('/api/amazon-videos/insights').then(x => x.json())
+        const known = ins?.deadWeight?.durationKnown ?? 0
+        if (have > 0 && known === 0) {
+          have = 0
+          setVideoScan('Re-reading your library from the start, so Amazon sends the video lengths and product counts it withholds unless asked.')
+        }
+      } catch { /* resume as normal */ }
       let r = await requestCreatorHubVideosScan(hubUrl.trim() || undefined, have)
       let passes = 1
       while (r.ok && r.partial && passes < 12) {

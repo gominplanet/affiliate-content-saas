@@ -113,7 +113,14 @@ export async function GET() {
   // for nearly every video unless metrics are requested, and reporting that as
   // "6,700 videos have no product attached" states as fact something we do not
   // know and the creator knows to be false.
-  const withProductCount = rows.filter(r => r.product_count != null)
+  //
+  // A stored zero is not a null, so filtering on null alone still counted 6,700
+  // videos as having no product. The honest test is proportion: if almost none of
+  // the library has a product count above zero, the field was not reported, and
+  // no amount of type-checking makes that data real.
+  const positiveCounts = rows.filter(r => (r.product_count ?? 0) > 0).length
+  const productCountTrusted = positiveCounts >= Math.max(10, rows.length * 0.1)
+  const withProductCount = productCountTrusted ? rows.filter(r => r.product_count != null) : []
   const noProducts = withProductCount.filter(r => r.product_count === 0).length
   const notLive = rows.filter(r => r.state && !/live|publish/i.test(r.state)).length
 
