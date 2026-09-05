@@ -4267,6 +4267,41 @@ function fetchContentListInPage(rec) {
   })()
 }
 
+// Ships one batch of the video library to MVP. The crawl reads thousands of
+// videos, far more than a scripting result can carry back, so each batch is
+// posted from the page as it is read rather than accumulated and returned.
+// Both origins are tried because the creator may be signed in on either.
+async function pushVideoLibraryToMvp(videos, products, aciDone) {
+  const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
+  for (const origin of origins) {
+    try {
+      const res = await fetch(`${origin}/api/amazon-videos/ingest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        redirect: 'follow',
+        body: JSON.stringify({
+          videos: videos || [],
+          products: products || [],
+          aciDone: aciDone || [],
+        }),
+      })
+      const body = await res.json().catch(() => null)
+      if (res.ok) {
+        return {
+          ok: true,
+          savedVideos: (body && body.savedVideos) || 0,
+          savedProducts: (body && body.savedProducts) || 0,
+        }
+      }
+      return { ok: false, error: (body && body.error) || `HTTP ${res.status}` }
+    } catch (e) {
+      // Wrong origin for this session, or the network blinked. Try the other one.
+    }
+  }
+  return { ok: false, error: 'could not reach MVP' }
+}
+
 // Turns the per-frame probes into one sentence a person can act on, and I can
 // debug from, without another round of guessing.
 function describeProbe(frames) {
