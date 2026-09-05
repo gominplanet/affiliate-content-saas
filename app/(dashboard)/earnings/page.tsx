@@ -21,6 +21,7 @@ import { Loader2, RefreshCw, TrendingUp, Store, Globe, Video } from 'lucide-reac
 import { toast } from 'sonner'
 import { requestEarningsSync, requestEarningsStatus, requestCreatorHubVideosScan, type EarningsSyncStatus } from '@/lib/extension-frame'
 import ProductBreakdown from '@/components/earnings/ProductBreakdown'
+import VideoInsights from '@/components/earnings/VideoInsights'
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -219,6 +220,7 @@ export default function EarningsPage() {
           stored = d?.count || 0
           pending = d?.pendingProducts || 0
         } catch { /* fall back to the pass count */ }
+        setDataVersion(v => v + 1)
         setVideoScan(
           `${stored.toLocaleString()} videos stored${r.count ? `, ${r.count.toLocaleString()} added this run` : ' (nothing new to add)'}` +
           `${pending ? `. ${pending.toLocaleString()} still need their products read.` : '.'}` +
@@ -449,6 +451,12 @@ export default function EarningsPage() {
                 trail. The totals tell you how the year went; this is the part you
                 can do something about on Monday. */}
             <ProductBreakdown refreshKey={dataVersion} />
+
+            {/* What the video library says. Amazon records views, hearts and
+                watch time on every video and shows almost none of it back in a
+                form anyone can act on, so this is the largest piece of value on
+                the page that costs the creator nothing to unlock. */}
+            <VideoInsights refreshKey={dataVersion} />
 
             <div className="card p-5">
               <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
