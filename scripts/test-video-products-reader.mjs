@@ -128,6 +128,32 @@ const huge = await fetchVideoDetailsInPage({
 check('an implausible length is refused rather than guessed at', huge.items[0].duration === null,
   `got ${huge.items[0].duration}`)
 
+// ── the id turns out not to change the answer ───────────────────────────────
+// If the template's id is not really a parameter, every video returns the same
+// products. Writing that would stamp one video's products across the whole
+// library, which is worse than no products at all and far harder to notice.
+globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => body('fixed') })
+const same = await fetchVideoDetailsInPage({
+  url: 'https://x/api?aci=aci-SAMPLE', method: 'GET', headers: {}, body: null,
+  sampleAci: 'aci-SAMPLE', acis: ['a', 'b', 'c', 'd', 'e', 'f'], startedAt: Date.now(),
+})
+check('identical answers for every video are caught', same.identical === true,
+  'one video\'s products would have been written against all of them')
+check('and the reason is stated', !!same.error)
+
+// A library where videos genuinely differ must NOT trip that guard.
+let n = 0
+globalThis.fetch = async () => {
+  const asin = `B0000000${String(n++).padStart(2, '0')}`.slice(0, 10)
+  return { ok: true, status: 200, json: async () => ({ w: { product: { asin, title: 'x' } } }) }
+}
+const differ = await fetchVideoDetailsInPage({
+  url: 'https://x/api?aci=aci-SAMPLE', method: 'GET', headers: {}, body: null,
+  sampleAci: 'aci-SAMPLE', acis: ['a', 'b', 'c', 'd', 'e', 'f'], startedAt: Date.now(),
+})
+check('videos with genuinely different products are not flagged', differ.identical === false,
+  'a real crawl must not be refused')
+
 // ── a POST-shaped template, where the id lives in the body ──────────────────
 seenUrls = []; seenBodies = []
 globalThis.fetch = async (url, init) => {

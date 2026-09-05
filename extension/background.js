@@ -4445,7 +4445,7 @@ function clickFirstVideoInPage(acis) {
  *  Reading by position is what produced "every video is 0s long". */
 function fetchVideoDetailsInPage(rec) {
   return (async () => {
-    const out = { items: [], error: null, sample: null, calls: 0 }
+    const out = { items: [], error: null, sample: null, calls: 0, identical: false }
     const ASIN_RE = /^[A-Z0-9]{10}$/
     const DROP = { 'content-length': 1, host: 1, connection: 1, 'accept-encoding': 1 }
     const headers = {}
@@ -4530,6 +4530,23 @@ function fetchVideoDetailsInPage(rec) {
       for (const p of acc.products) { if (!byAsin.has(p.asin)) byAsin.set(p.asin, p) }
       out.items.push({ aci, products: [...byAsin.values()], duration: acc.duration, failed: null })
       await new Promise((r) => setTimeout(r, 40))
+    }
+    // Did the id actually change the answer?
+    //
+    // The template is a request Amazon's own page made, and the video's id is
+    // substituted into it. If that id is not really a parameter (a session
+    // holds the selection, say, and the id in the URL is decoration) then every
+    // video returns the same products, and writing that would put one video's
+    // products against all 6,771 of them. Amazon does exactly this kind of thing
+    // elsewhere: it accepts the store filter on the earnings report and ignores
+    // it, which doubled every figure on this page once already. So it is checked
+    // rather than assumed.
+    const sigs = out.items
+      .filter((i) => i.products && i.products.length)
+      .map((i) => i.products.map((p) => p.asin).sort().join(','))
+    if (sigs.length >= 5 && new Set(sigs).size === 1) {
+      out.identical = true
+      out.error = 'every video came back with the same products, so the id is not changing the answer'
     }
     return out
   })()
@@ -4701,6 +4718,10 @@ async function startVideoProductsJob(userUrl) {
         const r = (res && res[0] && res[0].result) || null
         if (!r) { job.error = 'the page returned no result'; break }
         if (r.sample && !job.sample) job.sample = r.sample
+        // Nothing is written when the id turns out not to change the answer.
+        // One video's products stamped across the whole library would be worse
+        // than no products at all, and much harder to notice.
+        if (r.identical) { job.error = 'same-products-every-video'; break }
         if (!r.items.length) { job.error = r.error || 'nothing came back for this batch'; break }
         const pushed = await pushVideoProductsToMvp(r.items)
         if (!pushed.ok) { job.error = pushed.error || 'could not save'; break }

@@ -384,6 +384,14 @@ export default function EarningsPage() {
         toast(`${status.read.toLocaleString()} videos read. Run it again to continue.`)
         return
       }
+      if (status.error === 'same-products-every-video') {
+        // Nothing was stored, deliberately. One video's products written across
+        // the whole library would be worse than no products at all, and much
+        // harder to spot afterwards.
+        setProductScan(`Amazon returned the same products for every video, which means the request SCOUT found does not actually take a video id. Nothing was stored rather than putting one video's products against all of them.${status.endpoint ? ` The request tried was ${status.endpoint}.` : ''}`)
+        toast.error('That request ignores the video id, so nothing was stored.')
+        return
+      }
       if (status.error === 'no-detail-call') {
         // The honest outcome when Amazon offers no per-video call: say exactly
         // what was seen rather than storing something invented from the wrong
