@@ -4347,6 +4347,355 @@ async function pushVideoLibraryToMvp(videos, products, aciDone) {
   return { ok: false, error: 'could not reach MVP' }
 }
 
+// ── Which product does each video sell ──────────────────────────────────────
+//
+// The library read gives 6,771 videos with views, hearts and watch time, and no
+// ASIN on any of them. Earnings, the storefront and anything published off
+// Amazon all join on ASIN, so until a video carries one the library is an island
+// that can describe the content but never explain the income.
+//
+// The detail endpoint that carries a video's products is NOT guessed at here.
+// Guessing at Amazon's shapes is what produced every wrong number this feature
+// has shown: a forced aggregation enum that made Amazon drop the connection, a
+// metrics flag that turned a working request into a 500, a page-size that was
+// silently refused. So the endpoint is DISCOVERED: the page is opened, its own
+// traffic is watched, and the request that carries a known ACI is the one that
+// gets replayed. If no such request appears, this reports exactly what it saw
+// and stores nothing.
+
+/** Reads JSON from MVP in the creator's session. The library push already does
+ *  this for writes; products need to ask which videos are still outstanding. */
+async function mvpJson(path) {
+  const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
+  for (const origin of origins) {
+    try {
+      const res = await fetch(`${origin}${path}`, { credentials: 'include', redirect: 'follow' })
+      if (res.ok) return await res.json().catch(() => null)
+    } catch (e) { /* try the other origin */ }
+  }
+  return null
+}
+
+/** Clicks whatever on the page represents one of the creator's videos, so that
+ *  Amazon's own code fires the call that loads that video's products. Returns a
+ *  description of what it clicked rather than a bare success, because a
+ *  discovery that found nothing has to be able to say why. */
+function clickFirstVideoInPage(acis) {
+  const wanted = new Set(acis || [])
+  const seen = []
+  const all = document.querySelectorAll('a, button, [role="button"], [data-testid], li, article, div[class*="card"], div[class*="row"]')
+  for (const el of all) {
+    const hay = `${el.getAttribute('href') || ''} ${el.getAttribute('data-testid') || ''} ${el.id || ''} ${(el.getAttribute('class') || '')}`
+    let hit = null
+    for (const a of wanted) { if (hay.indexOf(a) >= 0) { hit = a; break } }
+    if (!hit) {
+      // Some grids keep the id in a data attribute rather than the href.
+      for (const attr of el.getAttributeNames ? el.getAttributeNames() : []) {
+        const v = el.getAttribute(attr) || ''
+        for (const a of wanted) { if (v.indexOf(a) >= 0) { hit = a; break } }
+        if (hit) break
+      }
+    }
+    if (hit) {
+      seen.push(`${el.tagName.toLowerCase()} carrying ${hit}`)
+      try { el.click() } catch (e) {}
+      return { clicked: true, what: seen[0] }
+    }
+  }
+  // Nothing carried an ACI we know. Fall back to the first thing that looks like
+  // a video tile, and say that is what happened.
+  const tile = document.querySelector('a[href*="/manage-content"], a[href*="content"], [data-testid*="content"], [data-testid*="video"]')
+  if (tile) {
+    try { tile.click() } catch (e) {}
+    return { clicked: true, what: `a tile with no ACI in it (${(tile.getAttribute('href') || tile.getAttribute('data-testid') || '').slice(0, 80)})` }
+  }
+  return { clicked: false, what: `nothing on the page carried one of the ${wanted.size} ids we looked for` }
+}
+
+/** Replays the discovered detail request once per video and pulls the products
+ *  out of whatever comes back.
+ *
+ *  The response shape is unknown, so fields are found BY NAME rather than by
+ *  position: a key called asin holding ten characters is an ASIN wherever it
+ *  sits, and a key called duration holding a sane number of seconds is a length.
+ *  Reading by position is what produced "every video is 0s long". */
+function fetchVideoDetailsInPage(rec) {
+  return (async () => {
+    const out = { items: [], error: null, sample: null, calls: 0 }
+    const ASIN_RE = /^[A-Z0-9]{10}$/
+    const DROP = { 'content-length': 1, host: 1, connection: 1, 'accept-encoding': 1 }
+    const headers = {}
+    for (const k in (rec.headers || {})) { if (!DROP[String(k).toLowerCase()]) headers[k] = rec.headers[k] }
+    if (rec.body && !headers['Content-Type'] && !headers['content-type']) headers['Content-Type'] = 'application/json'
+
+    const harvest = (node, acc, depth) => {
+      if (depth > 8 || node == null) return
+      if (Array.isArray(node)) { for (const x of node) harvest(x, acc, depth + 1); return }
+      if (typeof node !== 'object') return
+      let asin = null
+      let title = null
+      for (const k of Object.keys(node)) {
+        const v = node[k]
+        if (typeof v === 'string' && /asin/i.test(k) && ASIN_RE.test(v)) asin = asin || v
+        if (typeof v === 'string' && /title|name|productName/i.test(k) && v.trim()) title = title || v.trim()
+        // A length, in whatever unit the field name declares. A field called
+        // durationMs holding 47000 is 47 seconds, and reading it as seconds
+        // would file a 47 second video under "over three minutes" and quietly
+        // wreck the length bands. Anything outside a day is a timestamp that
+        // happens to have "duration" in its name, and is refused.
+        if (typeof v === 'number' && /duration/i.test(k) && acc.duration == null) {
+          // The unit comes from the field name where the name declares one.
+          // Matching "ms" needs the camelCase boundary as well as an underscore
+          // one: durationMs has a letter before the M, so a plain word-boundary
+          // test misses it and files a 47 second video as thirteen hours.
+          const isMs = /milli|msec/i.test(k) || /(^|[^A-Za-z])ms([^A-Za-z]|$)/.test(k) || /Ms([^a-z]|$)/.test(k)
+          const secs = isMs ? v / 1000 : v
+          // Four hours, not a day. A shoppable video is not four hours long, so
+          // a bigger number is a timestamp or a millisecond value whose name did
+          // not say so, and unknown is the honest answer rather than a wrong
+          // length that would land in a band and skew the advice.
+          if (secs > 0 && secs <= 14400) acc.duration = secs
+        }
+      }
+      if (asin) acc.products.push({ asin, title: title || null })
+      for (const k of Object.keys(node)) harvest(node[k], acc, depth + 1)
+    }
+
+    for (const aci of (rec.acis || [])) {
+      if (Date.now() - rec.startedAt > 240000) { out.error = 'ran out of time in this pass'; break }
+      const url = String(rec.url).split(rec.sampleAci).join(aci)
+      const body = rec.body ? String(rec.body).split(rec.sampleAci).join(aci) : null
+      let res = null
+      try {
+        res = await fetch(new URL(url, location.href).toString(), {
+          method: rec.method || 'GET', credentials: 'include', headers,
+          ...(body ? { body } : {}),
+          signal: AbortSignal.timeout(20000),
+        })
+      } catch (e) { res = null }
+      out.calls++
+      if (!res || !res.ok) {
+        // A video that will not load is marked done anyway, with no products.
+        // Leaving it pending would make the crawl retry it forever and never
+        // finish, which is the failure the library read already taught us.
+        out.items.push({ aci, products: [], duration: null, failed: res ? `HTTP ${res.status}` : 'no response' })
+        if (!out.error && !res) out.error = `Amazon did not answer for ${aci}`
+        continue
+      }
+      const j = await res.json().catch(() => null)
+      if (!j) { out.items.push({ aci, products: [], duration: null, failed: 'unreadable' }); continue }
+      if (!out.sample) {
+        try {
+          const paths = []
+          const walk = (node, prefix, depth) => {
+            if (paths.length > 120 || depth > 5 || node == null) return
+            if (Array.isArray(node)) { if (node.length) walk(node[0], `${prefix}[0]`, depth + 1); return }
+            if (typeof node === 'object') { for (const k of Object.keys(node)) walk(node[k], prefix ? `${prefix}.${k}` : k, depth + 1); return }
+            const v = typeof node === 'string' ? `"${String(node).slice(0, 40)}"` : String(node)
+            paths.push(`${prefix}=${v}`)
+          }
+          walk(j, '', 0)
+          out.sample = paths.join(' | ').slice(0, 4000)
+        } catch (e) {}
+      }
+      const acc = { products: [], duration: null }
+      harvest(j, acc, 0)
+      // Deduplicate: the same product often appears in several places in one
+      // response, and counting it twice would inflate every product count.
+      const byAsin = new Map()
+      for (const p of acc.products) { if (!byAsin.has(p.asin)) byAsin.set(p.asin, p) }
+      out.items.push({ aci, products: [...byAsin.values()], duration: acc.duration, failed: null })
+      await new Promise((r) => setTimeout(r, 40))
+    }
+    return out
+  })()
+}
+
+async function pushVideoProductsToMvp(items) {
+  const products = []
+  const videos = []
+  const aciDone = []
+  for (const it of (items || [])) {
+    aciDone.push(it.aci)
+    for (const p of (it.products || [])) products.push({ aci: it.aci, asin: p.asin, title: p.title })
+    // Only fields we actually learned. The ingest route leaves anything absent
+    // alone, so this cannot erase the views and hearts the library read stored.
+    const v = { aci: it.aci, productCount: (it.products || []).length }
+    if (it.duration != null) v.durationSec = it.duration
+    videos.push(v)
+  }
+  const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
+  for (const origin of origins) {
+    try {
+      const res = await fetch(`${origin}/api/amazon-videos/ingest`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', redirect: 'follow',
+        body: JSON.stringify({ videos, products, aciDone }),
+      })
+      const body = await res.json().catch(() => null)
+      if (res.ok) return { ok: true, savedProducts: (body && body.savedProducts) || 0 }
+      return { ok: false, error: (body && body.error) || `HTTP ${res.status}` }
+    } catch (e) { /* try the other origin */ }
+  }
+  return { ok: false, error: 'could not reach MVP' }
+}
+
+let _vidProdJob = null
+
+async function videoProductsStatus() {
+  if (_vidProdJob) return { ..._vidProdJob }
+  try {
+    const s = await chrome.storage.local.get('mvpVideoProductsJob')
+    const saved = s && s.mvpVideoProductsJob
+    if (saved && !saved.done) return { ...saved, running: false, interrupted: true }
+    if (saved) return { ...saved, running: false }
+  } catch (e) {}
+  return null
+}
+
+async function startVideoProductsJob(userUrl) {
+  if (_vidProdJob && _vidProdJob.running) return { ok: true, already: true }
+  const job = {
+    running: true, done: false, error: null,
+    read: 0, withProducts: 0, savedProducts: 0, remaining: null,
+    endpoint: null, sample: null, probe: null, durationsFound: 0,
+    tabId: null,
+    scoutVersion: (chrome.runtime.getManifest() || {}).version || null,
+    startedAt: Date.now(),
+  }
+  _vidProdJob = job
+  try {
+    const s = await chrome.storage.local.get('mvpVideoProductsJob')
+    const prev = s && s.mvpVideoProductsJob
+    if (prev && prev.tabId != null) { try { await chrome.tabs.remove(prev.tabId) } catch (e) {} }
+  } catch (e) {}
+  const save = async () => { try { await chrome.storage.local.set({ mvpVideoProductsJob: { ...job, ts: Date.now() } }) } catch (e) {} }
+  await save()
+
+  const keepAlive = startKeepAlive()
+  void (async () => {
+    let tabId = null
+    try {
+      const userGave = /^https:\/\/(www\.)?amazon\.com\//i.test(String(userUrl || ''))
+      const url = userGave ? String(userUrl) : 'https://www.amazon.com/manage-content?ref=ive_cp'
+      const tab = await chrome.tabs.create({ url, active: false })
+      tabId = tab.id
+      job.tabId = tabId
+      await save()
+      await waitForTabLoad(tabId, 30000)
+      await _sleep(6000)
+
+      const first = await mvpJson('/api/amazon-videos/pending?limit=200')
+      const firstAcis = (first && first.acis) || []
+      job.remaining = (first && first.remaining) || 0
+      await save()
+      if (!firstAcis.length) {
+        job.error = job.remaining === 0 ? null : 'MVP did not hand back any videos to read'
+        job.done = true; job.running = false
+        stopKeepAlive(keepAlive); await save()
+        if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+        return
+      }
+
+      // ── discovery ────────────────────────────────────────────────────────
+      // Anything the page has already asked for that carries one of our ids.
+      const sinceTs = job.startedAt
+      const findTemplate = () => {
+        const recs = (_ccNetRing || []).filter((x) => x && x.ts >= sinceTs && /amazon\.com/i.test(String(x.url || '')))
+        for (const r of recs.slice().reverse()) {
+          const hay = `${r.url || ''} ${r.body || ''}`
+          for (const aci of firstAcis) {
+            // The list call carries every id on the page, so it is not a detail
+            // call and replaying it per video would read the same list 6,771
+            // times. A detail call carries one.
+            if (hay.indexOf(aci) >= 0 && !/get-content-list/i.test(String(r.url || ''))) {
+              const carried = firstAcis.filter((a) => hay.indexOf(a) >= 0).length
+              if (carried <= 2) return { rec: r, aci }
+            }
+          }
+        }
+        return null
+      }
+
+      let found = findTemplate()
+      let clickNote = 'the page asked for it on its own'
+      if (!found) {
+        // Nothing yet, so make the page open one video and watch what it calls.
+        const clicked = await chrome.scripting.executeScript({
+          target: { tabId }, func: clickFirstVideoInPage, args: [firstAcis.slice(0, 60)],
+        })
+        const c = (clicked && clicked[0] && clicked[0].result) || { clicked: false, what: 'the click could not run' }
+        clickNote = c.what
+        if (c.clicked) {
+          await _sleep(5000)
+          try { await waitForTabLoad(tabId, 15000) } catch (e) {}
+          await _sleep(2500)
+          found = findTemplate()
+        }
+      }
+
+      if (!found) {
+        const seen = Array.from(new Set((_ccNetRing || [])
+          .filter((x) => x && x.ts >= sinceTs && /amazon\.com/i.test(String(x.url || '')))
+          .map((x) => { try { return `${x.method || 'GET'} ${new URL(x.url, 'https://www.amazon.com').pathname}` } catch (e) { return String(x.url).slice(0, 90) } })))
+          .slice(0, 12)
+        job.error = 'no-detail-call'
+        job.probe = `Opened your video list and ${clickNote}. No request carried a single video's id, so there is nothing to replay and nothing was stored. What Amazon was asked for: ${seen.join(', ') || 'nothing'}`
+        job.done = true; job.running = false
+        stopKeepAlive(keepAlive); await save()
+        if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+        return
+      }
+
+      try { job.endpoint = `${found.rec.method || 'GET'} ${new URL(found.rec.url, 'https://www.amazon.com').pathname}` } catch (e) { job.endpoint = String(found.rec.url).slice(0, 120) }
+      job.probe = `Found it: ${job.endpoint}, ${clickNote}.`
+      await save()
+
+      // ── replay ───────────────────────────────────────────────────────────
+      let acis = firstAcis
+      for (let pass = 0; pass < 200 && Date.now() - job.startedAt < 1500000; pass++) {
+        if (!acis.length) break
+        const slice = acis.slice(0, 60)
+        const res = await chrome.scripting.executeScript({
+          target: { tabId }, world: 'MAIN', func: fetchVideoDetailsInPage,
+          args: [{
+            url: found.rec.url, method: found.rec.method || 'GET',
+            headers: found.rec.headers || {}, body: found.rec.body || null,
+            sampleAci: found.aci, acis: slice, startedAt: Date.now(),
+          }],
+        })
+        const r = (res && res[0] && res[0].result) || null
+        if (!r) { job.error = 'the page returned no result'; break }
+        if (r.sample && !job.sample) job.sample = r.sample
+        if (!r.items.length) { job.error = r.error || 'nothing came back for this batch'; break }
+        const pushed = await pushVideoProductsToMvp(r.items)
+        if (!pushed.ok) { job.error = pushed.error || 'could not save'; break }
+        job.read += r.items.length
+        job.withProducts += r.items.filter((x) => x.products && x.products.length).length
+        job.durationsFound += r.items.filter((x) => x.duration != null).length
+        job.savedProducts += pushed.savedProducts || 0
+        await save()
+
+        const next = await mvpJson('/api/amazon-videos/pending?limit=200')
+        acis = (next && next.acis) || []
+        job.remaining = (next && next.remaining) || 0
+        await save()
+      }
+    } catch (e) {
+      job.error = (e && e.message) || 'crawl-failed'
+    } finally {
+      job.running = false
+      job.done = true
+      job.tabId = null
+      stopKeepAlive(keepAlive)
+      await save()
+      if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    }
+  })()
+
+  return { ok: true, started: true }
+}
+
 // Turns the per-frame probes into one sentence a person can act on, and I can
 // debug from, without another round of guessing.
 function describeProbe(frames) {
@@ -7958,6 +8307,20 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     startVideoLibraryJob(msg.url, msg.startAt)
       .then((r) => sendResponse(r))
       .catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }))
+    return true // async response
+  }
+  // Read the products on each video, so the library can finally be joined to
+  // the money. Starts a job and answers at once, same as the library read.
+  if (msg.type === 'MVP_SCAN_VIDEO_PRODUCTS') {
+    startVideoProductsJob(msg.url)
+      .then((r) => sendResponse(r))
+      .catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }))
+    return true // async response
+  }
+  if (msg.type === 'MVP_SCAN_VIDEO_PRODUCTS_STATUS') {
+    videoProductsStatus()
+      .then((status) => sendResponse({ ok: true, status }))
+      .catch(() => sendResponse({ ok: true, status: null }))
     return true // async response
   }
   // Progress for the page's poll. Short, cheap, and safe to call at any point.

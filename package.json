@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run build:extension && npm run test:thumbnails && npm run test:access && npm run test:shorts && npm run test:render-filters && npm run test:passport && npm run test:link-cloak && npm run test:video-library && npm run test:video-insights && next build",
+    "build": "npm run build:extension && npm run test:thumbnails && npm run test:access && npm run test:shorts && npm run test:render-filters && npm run test:passport && npm run test:link-cloak && npm run test:video-library && npm run test:video-insights && npm run test:video-products && next build",
     "build:extension": "bash scripts/zip-extension.sh && bash scripts/zip-extension-store.sh",
     "start": "next start",
     "lint": "next lint",
@@ -16,7 +16,8 @@
     "test:passport": "tsx scripts/test-passport-groups.ts",
     "test:link-cloak": "tsx scripts/test-link-cloak.ts",
     "test:video-library": "node scripts/test-video-library-reader.mjs",
-    "test:video-insights": "tsx scripts/test-video-insights.ts"
+    "test:video-insights": "tsx scripts/test-video-insights.ts",
+    "test:video-products": "node scripts/test-video-products-reader.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",

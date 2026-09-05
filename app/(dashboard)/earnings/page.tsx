@@ -17,9 +17,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, RefreshCw, TrendingUp, Store, Globe, Video } from 'lucide-react'
+import { Loader2, RefreshCw, TrendingUp, Store, Globe, Video, Package } from 'lucide-react'
 import { toast } from 'sonner'
-import { requestEarningsSync, requestEarningsStatus, startCreatorHubVideosScan, getVideoScanStatus, type EarningsSyncStatus, type VideoScanStatus } from '@/lib/extension-frame'
+import { requestEarningsSync, requestEarningsStatus, startCreatorHubVideosScan, getVideoScanStatus, startVideoProductsScan, getVideoProductsStatus, type EarningsSyncStatus, type VideoScanStatus, type VideoProductsStatus } from '@/lib/extension-frame'
 import ProductBreakdown from '@/components/earnings/ProductBreakdown'
 import VideoInsights from '@/components/earnings/VideoInsights'
 
@@ -101,7 +101,23 @@ export default function EarningsPage() {
   // are returned, and this says whether Amazon omits them or names them
   // differently, instead of another round of guessing at a field name.
   const [videoSample, setVideoSample] = useState<string | null>(null)
+  const [scanningProducts, setScanningProducts] = useState(false)
+  const [productScan, setProductScan] = useState<string | null>(null)
+  const [videoCount, setVideoCount] = useState(0)
   const [hubUrl, setHubUrl] = useState('')
+  // How many videos are stored, which decides whether the product read is worth
+  // offering at all. Re-read whenever the data version moves so the button
+  // appears as soon as the library lands.
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      try {
+        const d = await fetch('/api/amazon-videos').then(x => x.json())
+        if (live) setVideoCount(d?.count || 0)
+      } catch { /* leave it hidden rather than guess */ }
+    })()
+    return () => { live = false }
+  }, [dataVersion])
   useEffect(() => {
     try {
       setStoreId(localStorage.getItem('mvp_amazon_store_id') || '')
@@ -297,6 +313,89 @@ export default function EarningsPage() {
     } finally { setScanningVideos(false) }
   }
 
+  // Reads which products each video features. This is the join that turns the
+  // library from a description of the content into an explanation of the income:
+  // a video with no ASIN on it cannot be matched to earnings, to the storefront,
+  // or to anything published off Amazon.
+  //
+  // Same shape as the library read, and for the same reason: one call per video
+  // over thousands of videos cannot be held open across a message, so SCOUT runs
+  // it as a job and this watches it.
+  async function loadVideoProducts() {
+    setScanningProducts(true)
+    try {
+      let status: VideoProductsStatus | null = null
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const started = await startVideoProductsScan(hubUrl.trim() || undefined)
+        if (!started.ok) {
+          const human =
+            started.error === 'not-installed' ? 'Install SCOUT and sign in to Amazon to read your videos.'
+            : started.error === 'needs-update' ? 'Your SCOUT is too old to run this. Reinstall it from the link above, then try again.'
+            : 'Could not start reading the products on your videos.'
+          setProductScan(human)
+          toast.error(human)
+          return
+        }
+        setProductScan('Opening your video list and watching what Amazon asks for, so the right request can be replayed.')
+        status = null
+        for (let tick = 0; tick < 1200; tick++) {
+          await new Promise(r => setTimeout(r, 2500))
+          status = await getVideoProductsStatus()
+          if (!status) continue
+          if (status.done || status.interrupted) break
+          setProductScan(
+            status.endpoint
+              ? `Reading products: ${status.read.toLocaleString()} videos done${status.remaining != null ? `, ${status.remaining.toLocaleString()} to go` : ''}. ${status.withProducts.toLocaleString()} had a product on them.`
+              : 'Opening your video list and watching what Amazon asks for, so the right request can be replayed.'
+          )
+        }
+        if (!status?.interrupted) break
+        // Nothing gained means whatever stopped it will stop it again.
+        if (!status.read) break
+        setProductScan(`Chrome paused SCOUT after ${status.read.toLocaleString()} videos. Picking up from there.`)
+      }
+
+      setDataVersion(v => v + 1)
+      void load()
+      if (status?.sample) setVideoSample(status.sample)
+
+      if (!status) {
+        setProductScan('SCOUT stopped answering, so there is nothing to report. Reload the page and try again.')
+        toast.error('SCOUT stopped answering.')
+        return
+      }
+      if (!status.done && !status.interrupted) {
+        setProductScan(`Still reading, ${status.read.toLocaleString()} videos done and ${status.remaining?.toLocaleString() ?? 'more'} to go. What has been read is saved. Run it again to carry on.`)
+        return
+      }
+      if (status.interrupted) {
+        setProductScan(`Chrome stopped SCOUT after ${status.read.toLocaleString()} videos. What was read is saved. Run it again to carry on.`)
+        toast(`${status.read.toLocaleString()} videos read. Run it again to continue.`)
+        return
+      }
+      if (status.error === 'no-detail-call') {
+        // The honest outcome when Amazon offers no per-video call: say exactly
+        // what was seen rather than storing something invented from the wrong
+        // response.
+        setProductScan(`Amazon never asked for a single video on its own, so there was no request to replay and nothing was stored. ${status.probe || ''}`)
+        toast.error('No per-video request to replay, so nothing was stored.')
+        return
+      }
+      if (status.error) {
+        setProductScan(`Stopped after ${status.read.toLocaleString()} videos: ${status.error}. What was read is saved.${status.endpoint ? ` Replaying ${status.endpoint}.` : ''}`)
+        toast.error('The product read stopped early.')
+        return
+      }
+      setProductScan(
+        `${status.read.toLocaleString()} videos read, ${status.withProducts.toLocaleString()} of them with a product attached, ${status.savedProducts.toLocaleString()} product rows saved.` +
+        `${status.remaining ? ` ${status.remaining.toLocaleString()} still to go, run it again to carry on.` : ''}` +
+        `${status.durationsFound ? ` Amazon also gave a length for ${status.durationsFound.toLocaleString()} of them.` : ' Amazon gave no length on this call either.'}` +
+        `${status.endpoint ? ` Read from ${status.endpoint}.` : ''}`
+      )
+      toast.success(`${status.withProducts.toLocaleString()} videos now have their products.`)
+    } finally { setScanningProducts(false) }
+  }
+
   // The newest month is almost always partial, and an unlabelled partial month
   // reads as a crash: four days of September under a full August looks like a 94%
   // drop rather than a month that hasn't happened yet. So it gets labelled, and it
@@ -363,8 +462,28 @@ export default function EarningsPage() {
               ? <><Loader2 size={15} className="animate-spin" /> Reading your Amazon videos…</>
               : <><Video size={15} /> Load my Amazon videos</>}
           </button>
+          {/* The second half, and the one that matters: a video with no ASIN on
+              it cannot be joined to earnings, to the storefront, or to anything
+              published off Amazon. Only offered once there are videos to read
+              products for. */}
+          {videoCount > 0 && (
+            <button type="button" onClick={() => void loadVideoProducts()} disabled={scanningProducts}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border disabled:opacity-60"
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+              title="Reads which products each of your videos features, so MVP can tell you which video is selling what. One call per video, so it takes a while and picks up where it left off.">
+              {scanningProducts
+                ? <><Loader2 size={15} className="animate-spin" /> Reading products…</>
+                : <><Package size={15} /> Read products for each video</>}
+            </button>
+          )}
           </div>
         </div>
+
+        {productScan && (
+          <div className="card p-4">
+            <p className="text-[12px]" style={muted}>{productScan}</p>
+          </div>
+        )}
 
         {videoScan && (
           <div className="card p-4">

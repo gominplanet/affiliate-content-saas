@@ -693,6 +693,56 @@ export async function startCreatorHubVideosScan(url?: string, startAt?: number):
   return { ok: !!resp.ok, started: resp.started, already: resp.already, error: resp.error }
 }
 
+/** Live state of the per-video product read: one call per video, thousands of
+ *  them, so it reports progress rather than returning an answer. */
+export interface VideoProductsStatus {
+  running: boolean
+  done: boolean
+  error: string | null
+  /** Videos whose products have been read this run. */
+  read: number
+  /** Of those, how many actually had a product on them. */
+  withProducts: number
+  savedProducts: number
+  /** Videos still waiting, straight from MVP rather than counted here. */
+  remaining: number | null
+  /** The request Amazon's own page made, which this replays. Named so a failure
+   *  can be diagnosed without another session. */
+  endpoint: string | null
+  sample: string | null
+  probe: string | null
+  /** Whether the detail call carries the length the list call withholds. */
+  durationsFound: number
+  scoutVersion: string | null
+  interrupted?: boolean
+}
+
+/**
+ * Start reading the products on each video.
+ *
+ * The endpoint is discovered rather than guessed: SCOUT opens the video list,
+ * watches what Amazon's own code asks for, and replays the request that carries
+ * a single video's id. If no such request appears it reports what it saw and
+ * stores nothing, which is the opposite of what guessing at a shape has done to
+ * this feature every previous time.
+ */
+export async function startVideoProductsScan(url?: string): Promise<{ ok: boolean; started?: boolean; already?: boolean; error?: string }> {
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok: boolean; started?: boolean; already?: boolean; error?: string }>(
+    { type: 'MVP_SCAN_VIDEO_PRODUCTS', ...(url ? { url } : {}) },
+    20000,
+  )
+  if (!resp) return { ok: false, error: 'needs-update' }
+  return { ok: !!resp.ok, started: resp.started, already: resp.already, error: resp.error }
+}
+
+/** Where the product read has got to. Short call, safe to poll. */
+export async function getVideoProductsStatus(): Promise<VideoProductsStatus | null> {
+  if (!(await isExtensionAvailable())) return null
+  const resp = await sendToExtension<{ ok: boolean; status: VideoProductsStatus | null }>({ type: 'MVP_SCAN_VIDEO_PRODUCTS_STATUS' }, 15000)
+  return (resp && resp.status) || null
+}
+
 /** Where the crawl has got to. Short call, safe to poll every few seconds. */
 export async function getVideoScanStatus(): Promise<VideoScanStatus | null> {
   if (!(await isExtensionAvailable())) return null

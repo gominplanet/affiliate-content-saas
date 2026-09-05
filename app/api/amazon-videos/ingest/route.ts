@@ -72,36 +72,56 @@ export async function POST(request: Request) {
   const skipped: string[] = []
 
   if (Array.isArray(body.videos) && body.videos.length) {
+    // Only the fields the caller actually sent.
+    //
+    // The library read sends whole rows. The per-video product read sends a
+    // couple of fields it learned from the detail call, and building a full row
+    // from that would upsert nulls over the views, hearts and watch time already
+    // stored: a crawl meant to add a video's products would quietly erase its
+    // performance. So a key absent from the payload is left alone, and a key
+    // present but null still writes null, because "Amazon reported nothing here"
+    // is itself a fact worth recording.
     const rows = body.videos.map(v => {
       const aci = str(v.aci, 200)
       if (!aci) { skipped.push('video without an ACI'); return null }
-      return {
-        user_id: user.id,
-        aci,
-        description: str(v.description, 500),
-        state: str(v.state, 60),
-        program: str(v.program, 60),
-        marketplace_id: str(v.marketplaceId, 40),
-        duration_sec: dec(v.durationSec),
-        media_url: str(v.mediaUrl, 1000),
-        views: int(v.views),
-        hearts: int(v.hearts),
-        avg_pct_viewed: dec(v.avgPctViewed),
-        avg_view_sec: dec(v.avgViewSec),
-        product_count: int(v.productCount),
-        published_at: ts(v.publishedAtMs),
-        modified_at: ts(v.modifiedAtMs),
-        synced_at: new Date().toISOString(),
+      const row: Record<string, unknown> = { user_id: user.id, aci, synced_at: new Date().toISOString() }
+      const put = (key: string, prop: keyof VideoIn, fn: (x: unknown) => unknown) => {
+        if (v[prop] !== undefined) row[key] = fn(v[prop])
       }
+      put('description', 'description', x => str(x, 500))
+      put('state', 'state', x => str(x, 60))
+      put('program', 'program', x => str(x, 60))
+      put('marketplace_id', 'marketplaceId', x => str(x, 40))
+      put('duration_sec', 'durationSec', dec)
+      put('media_url', 'mediaUrl', x => str(x, 1000))
+      put('views', 'views', int)
+      put('hearts', 'hearts', int)
+      put('avg_pct_viewed', 'avgPctViewed', dec)
+      put('avg_view_sec', 'avgViewSec', dec)
+      put('product_count', 'productCount', int)
+      put('published_at', 'publishedAtMs', ts)
+      put('modified_at', 'modifiedAtMs', ts)
+      return row
     }).filter((r): r is NonNullable<typeof r> => r !== null)
 
-    if (rows.length) {
+    // PostgREST builds one column list for the whole batch, so rows carrying
+    // different fields have to go up as separate batches or the missing ones are
+    // written as null anyway. Grouping by shape keeps that from happening
+    // without the caller having to know about it.
+    const byShape = new Map<string, Record<string, unknown>[]>()
+    for (const r of rows) {
+      const k = Object.keys(r).sort().join(',')
+      const list = byShape.get(k)
+      if (list) list.push(r)
+      else byShape.set(k, [r])
+    }
+    for (const group of byShape.values()) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (admin as any)
         .from('amazon_videos')
-        .upsert(rows, { onConflict: 'user_id,aci' })
+        .upsert(group, { onConflict: 'user_id,aci' })
       if (error) return NextResponse.json({ error: `Could not save videos: ${error.message}` }, { status: 500 })
-      savedVideos = rows.length
+      savedVideos += group.length
     }
   }
 
