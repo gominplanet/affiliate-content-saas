@@ -156,12 +156,34 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
   // breakdown is still shown, with a notice, rather than hidden: partial truth
   // labelled as partial beats an empty panel that explains nothing.
   const thin = covRatio != null && covRatio < 0.5
+  // Below this there is no ranking to show at all.
+  //
+  // At under 1% coverage "Every product" listed ten products that between them
+  // accounted for a rounding error, headed by a $24.52 Elgato. It looked like a
+  // best-seller list, it was not one, and reading it would send someone off to
+  // make videos about the wrong products entirely. A list that cannot be a
+  // ranking should not be drawn as one.
+  const tooThinToRank = covRatio != null && covRatio < 0.1
 
   const shown = products.slice(0, limit)
 
   return (
     <div className="space-y-3">
-      {thin && (
+      {tooThinToRank ? (
+        <div className="card p-4 border-l-4" style={{ borderLeftColor: '#d97706' }}>
+          <p className="text-[13px] font-semibold" style={label}>Your per-product earnings have not come through yet</p>
+          <p className="text-[12px] mt-1" style={muted}>
+            Amazon broke out {covLabel} of what you earned in these months, {products.length.toLocaleString()} products out of a
+            catalogue that earned {money(cov?.periodCents ?? null)}. That is far too little to rank, so nothing is ranked:
+            a list of ten products worth a few dollars each looks like your best sellers and is not, and acting on it would
+            mean making videos about the wrong products.
+          </p>
+          <p className="text-[12px] mt-1.5" style={muted}>
+            Re-sync above and this fills in. The paging that reads this report was skipping a page of every month, which is
+            the likeliest reason it is this thin. Your monthly totals are unaffected and still match Amazon exactly.
+          </p>
+        </div>
+      ) : thin && (
         <div className="card p-4 border-l-4" style={{ borderLeftColor: '#d97706' }}>
           <p className="text-[13px] font-semibold" style={label}>This breakdown is incomplete, so read it as a sample</p>
           <p className="text-[12px] mt-1" style={muted}>
@@ -170,6 +192,7 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
         </div>
       )}
 
+      {!tooThinToRank && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
 
         <div className="card p-4">
@@ -261,10 +284,14 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
           </p>
         </div>
       </div>
+      )}
 
+      {!tooThinToRank && (
       <div className="card p-5">
         <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-          <h2 className="text-sm font-semibold" style={label}>Every product</h2>
+          <h2 className="text-sm font-semibold" style={label}>
+            {covRatio != null && covRatio < 0.95 ? 'The products Amazon broke out' : 'Your products, best sellers first'}
+          </h2>
           <span className="text-[11px]" style={muted}>
             {products.length.toLocaleString()} product{products.length === 1 ? '' : 's'}
             {covLabel != null ? `, covering ${covLabel} of the earnings in these months` : ''}
@@ -297,7 +324,16 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
                     </a>
                   </td>
                   <td className="py-2 pr-3 text-right tabular-nums" style={muted}>{num(p.clicks)}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums" style={muted}>{num(p.orders)}</td>
+                  {/* A zero here is real, not missing, and it needs its reason
+                      beside it: Sponsored Products pays per CLICK, so a product
+                      earning through it genuinely has no orders. Without that,
+                      80 clicks and $24.52 against 0 orders reads as broken data
+                      and gets the whole table distrusted. */}
+                  <td className="py-2 pr-3 text-right tabular-nums" style={muted}>
+                    {p.orders === 0 && (p.earningsCents ?? 0) > 0 && p.streams?.length === 1 && p.streams[0] === 'epc'
+                      ? <span title="Sponsored Products pays per click, so there are no orders behind this">paid per click</span>
+                      : num(p.orders)}
+                  </td>
                   <td className="py-2 pr-3 text-right tabular-nums font-medium" style={label}>{money(p.earningsCents)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">
                     {p.deltaCents == null ? (
@@ -330,6 +366,7 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
           {covLabel != null && covRatio != null && covRatio < 0.95 ? ` These products account for ${covLabel} of the earnings in the same months, so anything missing is money Amazon reported in the totals but did not break down here.` : ''}
         </p>
       </div>
+      )}
     </div>
   )
 }

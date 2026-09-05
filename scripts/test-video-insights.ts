@@ -57,13 +57,79 @@ const earn: EarningRow[] = [
 
 const r = analyseVideoLibrary(rows, earn)
 
+// ── videos nobody watched must not shape quality findings ───────────────────
+// A video with no views still reports a percent watched, and it means nothing.
+// 429 of them sat in the top retention band on the real page, making it look
+// like holding attention destroys reach. They belong in dead weight and nowhere
+// else.
+const bandTotal = r.retentionVsReach.reduce((a, b) => a + b.videos, 0)
+check('unwatched videos are kept out of the retention bands',
+  bandTotal === rows.filter(x => (x.views ?? 0) > 0 && x.avg_pct_viewed != null).length,
+  `${bandTotal} banded, ${r.deadWeight.noViews} unwatched in the library`)
+check('but they are still counted as dead weight', r.deadWeight.noViews > 400,
+  `${r.deadWeight.noViews}`)
+check('no retention band is built from videos with no views',
+  r.retentionVsReach.every(b => (b.medianViews ?? 1) > 0),
+  'a band whose median reach is zero is a band of videos nobody saw')
+
+// ── the length table must not report the circular percentage ────────────────
+// Length here is watch-seconds divided by percent watched, so reporting percent
+// watched per length band is the algebra restating itself. It produced a
+// perfectly descending 71, 61, 54, 48, 40 that read as a finding and was not.
+check('the length table carries no percent-watched column',
+  r.byLength.every(b => !('avgPctViewed' in b)),
+  'percent watched cannot be compared across bands derived from it')
+check('the length table carries reach, which is measured independently',
+  r.byLength.every(b => 'medianViews' in b))
+
+// ── the period every number covers ──────────────────────────────────────────
+check('the library window is reported', !!r.window.libraryFrom && !!r.window.libraryTo,
+  JSON.stringify(r.window))
+check('the earnings window is reported separately from it',
+  r.window.earningsFrom === '2026-06' && r.window.earningsMonths === 2,
+  JSON.stringify(r.window))
+
+// ── MVP has to say something, not just draw it ──────────────────────────────
+check('findings are produced', r.findings.length >= 2, `${r.findings.length} findings`)
+check('every finding carries evidence and an action',
+  r.findings.every(f => f.headline && f.detail && f.action))
+// Dead uploads spread evenly across the library are not a month that went
+// wrong, and must not be reported as one.
+check('evenly spread dead uploads are not blamed on a month',
+  r.findings.some(f => f.kind === 'dead' && /spread across the library/.test(f.detail)),
+  r.findings.filter(f => f.kind === 'dead').map(f => f.detail).join(' | '))
+
+// But a month where almost nothing was ever seen IS a cause worth naming.
+{
+  const broken: VideoRow[] = []
+  for (let i = 0; i < 600; i++) {
+    const bad = i % 3 === 0
+    broken.push({
+      aci: `b-${i}`, description: `v${i}`, state: 'PUBLISHED',
+      views: bad ? 0 : 200, hearts: bad ? 0 : 5,
+      avg_pct_viewed: 45, avg_view_sec: 20, duration_sec: null,
+      product_count: null,
+      published_at: bad ? '2026-04-10T00:00:00Z' : `2025-0${(i % 8) + 1}-10T00:00:00Z`,
+    })
+  }
+  const br = analyseVideoLibrary(broken, [])
+  const dead = br.findings.find(f => f.kind === 'dead')
+  check('a month where nothing was seen is named as a cause',
+    !!dead && /2026-04/.test(dead.detail),
+    dead ? dead.detail : 'no dead-weight finding at all')
+  check('and the action points at that month rather than at the videos',
+    !!dead && /2026-04/.test(dead.action), dead?.action)
+}
+
 // ── the length Amazon refuses to report ─────────────────────────────────────
 // Amazon sends no duration on the video list, but it does send average seconds
 // watched and average percent watched, and a length follows from those. The
 // fixture carries both, so a length must be worked out for every video and
 // marked as derived rather than reported.
-check('a length is worked out from watch time', r.deadWeight.durationKnown === rows.length,
-  `durationKnown=${r.deadWeight.durationKnown} of ${rows.length}`)
+const watched = rows.filter(x => (x.views ?? 0) > 0).length
+check('a length is worked out for every video somebody watched',
+  r.deadWeight.durationKnown === watched,
+  `durationKnown=${r.deadWeight.durationKnown} of ${watched} watched`)
 check('the worked-out lengths are marked as derived, not reported',
   r.deadWeight.durationDerived === r.deadWeight.durationKnown,
   `${r.deadWeight.durationDerived} derived of ${r.deadWeight.durationKnown}`)
@@ -99,8 +165,9 @@ check('the month with the hits shows them in its top decile',
 
 check('retention bands are populated', r.retentionVsReach.length >= 3,
   `${r.retentionVsReach.length} bands`)
-check('retention bands account for every video with both figures',
-  r.retentionVsReach.reduce((a, b) => a + b.videos, 0) === rows.filter(x => x.avg_pct_viewed != null && x.views != null).length)
+check('retention bands account for every WATCHED video with both figures',
+  r.retentionVsReach.reduce((a, b) => a + b.videos, 0)
+    === rows.filter(x => x.avg_pct_viewed != null && (x.views ?? 0) > 0).length)
 
 check('resonance has a view floor', r.resonance.floor >= 500, `floor=${r.resonance.floor}`)
 check('resonance ranks the loved above the ignored',

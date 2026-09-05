@@ -105,8 +105,10 @@ export default function EarningsPage() {
   const [scanningProducts, setScanningProducts] = useState(false)
   const [productScan, setProductScan] = useState<string | null>(null)
   const [videoCount, setVideoCount] = useState(0)
-  // Years of history to read, counted back from this one. Nought is this year.
-  const [yearsBack, setYearsBack] = useState(0)
+  // Months of history to read. Twenty-four by default, because the video library
+  // goes back years and a page of charts built on eight months of earnings
+  // describes a fraction of the business while looking like all of it.
+  const [monthsBack, setMonthsBack] = useState(24)
   const [hubUrl, setHubUrl] = useState('')
   // How many videos are stored, which decides whether the product read is worth
   // offering at all. Re-read whenever the data version moves so the button
@@ -124,7 +126,7 @@ export default function EarningsPage() {
   useEffect(() => {
     try {
       setStoreId(localStorage.getItem('mvp_amazon_store_id') || '')
-      setYearsBack(Math.min(4, Math.max(0, Number(localStorage.getItem('mvp_amazon_years_back')) || 0)))
+      setMonthsBack(Math.min(60, Math.max(1, Number(localStorage.getItem('mvp_amazon_months_back')) || 24)))
       setHubUrl(localStorage.getItem('mvp_creatorhub_url') || '')
     } catch { /* ignore */ }
   }, [])
@@ -166,21 +168,23 @@ export default function EarningsPage() {
       const clean = storeId.trim().toLowerCase()
       const stores = /^(?:onamz)?[a-z0-9]{3,}-\d{2}$/.test(clean) ? [clean] : undefined
       try { if (stores) localStorage.setItem('mvp_amazon_store_id', clean) } catch { /* ignore */ }
-      try { localStorage.setItem('mvp_amazon_years_back', String(yearsBack)) } catch { /* ignore */ }
+      try { localStorage.setItem('mvp_amazon_months_back', String(monthsBack)) } catch { /* ignore */ }
       // How far back to read. It matters more than it looks: the video library
       // goes back years, so with only this year's earnings the output chart
       // shows videos published against nothing at all for most of its width,
       // and the product breakdown can only rank what happened since January.
-      const res = await requestEarningsSync(`${year - yearsBack}-01-01`, undefined, stores)
+      // Months back from the start of this month, not whole calendar years. A
+      // creator syncing in September with "this year" selected got eight months
+      // and a page full of charts describing a fraction of their business.
+      const from = new Date(Date.UTC(year, new Date().getUTCMonth() - monthsBack + 1, 1))
+      const res = await requestEarningsSync(from.toISOString().slice(0, 10), undefined, stores)
       if (!res.ok) {
         toast.error(res.error === 'not-installed'
           ? 'Install SCOUT and sign in to Amazon to read your earnings.'
           : (res.error || 'Could not start the sync.'))
         return
       }
-      toast(yearsBack
-        ? `Reading ${yearsBack + 1} years of Amazon earnings in a background tab. Roughly a minute per few months, so give it a while.`
-        : 'Reading your Amazon earnings. This opens a background tab and takes a minute per few months.')
+      toast(`Reading ${monthsBack} months of Amazon earnings in a background tab. Roughly a minute per few months, so give it a while.`)
       setSync({ running: true })
     } finally { setStarting(false) }
   }
@@ -461,16 +465,16 @@ export default function EarningsPage() {
               : <><RefreshCw size={15} /> {rows.length ? 'Re-sync' : 'Sync from Amazon'}</>}
           </button>
           <select
-            value={yearsBack}
-            onChange={e => setYearsBack(Number(e.target.value))}
+            value={monthsBack}
+            onChange={e => setMonthsBack(Number(e.target.value))}
             disabled={starting || !!sync?.running}
             className="px-3 py-2 rounded-lg border text-sm bg-transparent"
             style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
-            title="How far back to read. Your videos go back years, so a longer history is what lets the output chart and the product ranking cover the same span as your library.">
-            <option value={0}>This year</option>
-            <option value={1}>Last 2 years</option>
-            <option value={2}>Last 3 years</option>
-            <option value={4}>Last 5 years</option>
+            title="How far back to read. Your videos go back years, so a longer history is what lets the trend and the product ranking cover the same span as your library.">
+            <option value={12}>Last 12 months</option>
+            <option value={24}>Last 24 months</option>
+            <option value={36}>Last 36 months</option>
+            <option value={60}>Last 5 years</option>
           </select>
           {/* Reads the Creator Hub video table so MVP knows which products you
               already have a video for ON Amazon. Without it the product cards can

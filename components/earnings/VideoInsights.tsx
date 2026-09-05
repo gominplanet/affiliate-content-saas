@@ -14,7 +14,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2, Film, Clock, TrendingUp, AlertTriangle, Heart, Radio, Globe } from 'lucide-react'
+import { Loader2, Film, Clock, TrendingUp, AlertTriangle, Heart, Radio, Globe, Lightbulb } from 'lucide-react'
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -39,7 +39,9 @@ interface Payload {
     avgPctViewed: number | null; reportedViews: number; reportedRetention: number
   }
   deadWeight?: { noViews: number; noProducts: number; notLive: number; productCountKnown: number; durationKnown: number; durationDerived: number }
-  byLength?: { label: string; videos: number; avgPctViewed: number | null; medianViews: number | null; totalViews: number | null }[]
+  byLength?: { label: string; videos: number; medianViews: number | null; totalViews: number | null }[]
+  window?: { libraryFrom: string | null; libraryTo: string | null; earningsFrom: string | null; earningsTo: string | null; earningsMonths: number }
+  findings?: { kind: string; headline: string; detail: string; action: string; tone: 'good' | 'warn' | 'act' }[]
   months?: { month: string; videos: number; views: number | null; earningsCents: number | null }[]
   topByViews?: TopVideo[]
   topByHearts?: TopVideo[]
@@ -108,10 +110,23 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
   const dead = data.deadWeight
   const bands = data.byLength ?? []
   const months = data.months ?? []
-  // The band that actually holds attention, which is the whole point of the
-  // section. Only bands with enough videos to mean anything.
-  const bestBand = bands.filter(b => b.videos >= 5 && b.avgPctViewed != null)
-    .sort((a, b) => (b.avgPctViewed as number) - (a.avgPctViewed as number))[0]
+  // The band that reaches the most people. Reach, not percent watched: the
+  // length on this page is worked out from watch time divided by percent
+  // watched, so ranking lengths by that percentage is the arithmetic restating
+  // itself. Bands need enough videos in them to mean anything.
+  const bestBand = bands.filter(b => b.videos >= 30 && b.medianViews != null)
+    .sort((a, b) => (b.medianViews as number) - (a.medianViews as number))[0]
+  const w = data.window
+  // A plain-English period for whichever set of numbers is being described.
+  const spanOf = (from: string | null | undefined, to: string | null | undefined) => {
+    if (!from || !to) return ''
+    if (from === to) return ` in ${from}`
+    return ` from ${from} to ${to}`
+  }
+  const librarySpan = spanOf(w?.libraryFrom, w?.libraryTo)
+  const earningsSpan = spanOf(w?.earningsFrom, w?.earningsTo)
+  const findings = data.findings ?? []
+  const toneColour = (t: string) => (t === 'good' ? '#10B981' : t === 'warn' ? '#d97706' : '#7C3AED')
   const durationKnown = dead?.durationKnown ?? 0
   // How many of those lengths are worked out from watch time rather than
   // reported. It changes what the panel is allowed to claim, so it is never
@@ -121,7 +136,10 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
   const maxVideos = Math.max(1, ...months.map(m => m.videos))
   const maxEarn = Math.max(1, ...months.map(m => m.earningsCents ?? 0))
 
-  const byPublish = data.viewsByMonth ?? []
+  // The last two years of publishing. Twenty-eight bars in a fixed width came out
+  // as a scrollbar with the recent months hidden off the right, so the chart was
+  // showing the oldest data and cutting off the part that describes now.
+  const byPublish = (data.viewsByMonth ?? []).slice(-24)
   const maxMedian = Math.max(1, ...byPublish.map(m => m.medianViews ?? 0))
   const reach = data.retentionVsReach ?? []
   const maxReach = Math.max(1, ...reach.map(b => b.medianViews ?? 0))
@@ -154,7 +172,7 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
         {[
           { k: 'Videos on Amazon', v: data.videos.toLocaleString(), accent: '#7C3AED' },
           { k: 'Total views', v: num(t?.views), accent: '#0EA5A4' },
-          { k: 'Median views a video', v: num(t?.medianViews), accent: '#10B981' },
+          { k: 'Typical video reaches', v: num(t?.medianViews), accent: '#10B981' },
           { k: 'Average watched', v: pct(t?.avgPctViewed), accent: '#d97706' },
         ].map(c => (
           <div key={c.k} className="card p-4">
@@ -164,7 +182,10 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
         ))}
       </div>
       <p className="text-[11px] -mt-1" style={muted}>
-        Median rather than average views, because a handful of hits would otherwise make every video look successful.
+        Everything on this page covers your whole library{librarySpan}, which is what makes these lifetime figures rather
+        than a recent snapshot. Earnings, where they appear, cover only{earningsSpan || ' the months you have synced'} and
+        the two windows are not the same, so they are never divided into each other.
+        {' '}Median rather than average views, because a handful of hits would otherwise make every video look successful.
         {t ? ` Amazon reported views on ${t.reportedViews.toLocaleString()} of ${data.videos.toLocaleString()} videos and watch time on ${t.reportedRetention.toLocaleString()}.` : ''}
       </p>
 
@@ -190,8 +211,7 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
                 <tr style={muted}>
                   <th className="text-left font-medium py-1.5 pr-3">Length</th>
                   <th className="text-right font-medium py-1.5 pr-3">Videos</th>
-                  <th className="text-right font-medium py-1.5 pr-3">Watched</th>
-                  <th className="text-right font-medium py-1.5">Median views</th>
+                  <th className="text-right font-medium py-1.5">Typically reaches</th>
                 </tr>
               </thead>
               <tbody>
@@ -199,11 +219,10 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
                   <tr key={b.label} className="border-t" style={{ borderColor: 'var(--border)' }}>
                     <td className="py-1.5 pr-3" style={label}>{b.label}</td>
                     <td className="py-1.5 pr-3 text-right tabular-nums" style={muted}>{b.videos.toLocaleString()}</td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums font-medium"
+                    <td className="py-1.5 text-right tabular-nums font-medium"
                         style={{ color: bestBand && b.label === bestBand.label ? '#10B981' : 'var(--text)' }}>
-                      {pct(b.avgPctViewed)}
+                      {num(b.medianViews)} people
                     </td>
-                    <td className="py-1.5 text-right tabular-nums" style={muted}>{num(b.medianViews)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -211,14 +230,14 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
           </div>
           <p className="text-[11px] mt-3" style={muted}>
             {bestBand
-              ? `Your ${bestBand.label.toLowerCase()} videos hold attention best, at ${pct(bestBand.avgPctViewed)} watched across ${bestBand.videos.toLocaleString()} of them.`
-              : 'Not enough videos with watch time reported to call a winner yet.'}
-            {' '}Bands with fewer than five videos are shown but never used to pick a winner.
-            {derivedCount >= durationKnown && durationKnown > 0
-              ? ` Amazon sends no duration with your videos, so these lengths are worked out from what it does send: a video watched for 19 seconds on average, at 40% of its length, is about 48 seconds long. They are close rather than exact, which is enough to compare bands and not enough to quote a single video's length.`
-              : derivedCount > 0
-                ? ` Based on ${durationKnown.toLocaleString()} videos, ${derivedCount.toLocaleString()} of them worked out from average watch time rather than reported by Amazon.`
-                : ` Based on the ${durationKnown.toLocaleString()} videos Amazon reported a length for.`}
+              ? `Your ${bestBand.label.toLowerCase()} videos go furthest, reaching ${num(bestBand.medianViews)} people typically, across ${bestBand.videos.toLocaleString()} of them.`
+              : 'Not enough videos in any one length band to call a winner yet.'}
+            {' '}How far a video reaches, not how much of it people watch. Percent watched cannot be compared across
+            these bands: Amazon sends no duration, so the length is worked out from watch time divided by percent watched,
+            which means a higher percentage mathematically produces a shorter length. Ranking lengths by that percentage
+            would be the arithmetic restating itself rather than anything about your videos.
+            {' '}Based on {durationKnown.toLocaleString()} videos that somebody actually watched
+            {librarySpan}. Bands under 30 videos are shown but never used to pick a winner.
           </p>
           </>
           )}
@@ -263,6 +282,27 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
         </div>
       </div>
 
+      {findings.length > 0 && (
+        <div className="card p-5">
+          <p className="text-[12px] font-semibold mb-1 inline-flex items-center gap-1.5" style={label}>
+            <Lightbulb size={14} style={{ color: '#7C3AED' }} /> What this says you should do
+          </p>
+          <p className="text-[11px] mb-4" style={muted}>
+            Read from your {data.videos.toLocaleString()} videos{librarySpan}. Biggest first. Each one says what the data
+            shows, then what to do about it, and nothing appears here unless the numbers behind it are strong enough to act on.
+          </p>
+          <div className="space-y-4">
+            {findings.map((f, i) => (
+              <div key={`${f.kind}-${i}`} className="pl-3" style={{ borderLeft: `3px solid ${toneColour(f.tone)}` }}>
+                <p className="text-[14px] font-semibold" style={label}>{f.headline}</p>
+                <p className="text-[12px] mt-1" style={muted}>{f.detail}</p>
+                <p className="text-[12px] mt-1.5" style={{ color: toneColour(f.tone) }}>{f.action}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Where the money comes from, against where the audience is. On a library
           this size the gap between the two is usually the largest single fact on
           the page, and it has never had anywhere to appear. */}
@@ -291,8 +331,11 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
           </div>
           <p className="text-[11px] mt-3" style={muted}>
             Onsite money comes from your videos playing on your Amazon storefront. Offsite comes from links you placed
-            anywhere else. A library with {num(conc?.totalViews)} views on Amazon and almost nothing earned off it is not a
-            content problem, it is a distribution one: the videos already exist and have already proven they hold an audience.
+            anywhere else. The earnings cover{earningsSpan || ' the months you have synced'}; the views are lifetime, across
+            your whole library{librarySpan}. They are two different windows, which is why they sit side by side here rather
+            than being divided into a figure per view.
+            {' '}A library with {num(conc?.totalViews)} views on Amazon and almost nothing earned off it is not a content
+            problem, it is a distribution one: the videos already exist and have already proven they hold an audience.
           </p>
         </div>
       )}
@@ -302,28 +345,39 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
       {byPublish.length > 2 && (
         <div className="card p-5">
           <p className="text-[12px] font-semibold mb-3 inline-flex items-center gap-1.5" style={label}>
-            <Radio size={14} style={{ color: '#7C3AED' }} /> Is Amazon still showing your videos to people
+            <Radio size={14} style={{ color: '#7C3AED' }} /> How far each video reaches, by the month you published it
           </p>
-          <div className="overflow-x-auto">
-            <div className="flex items-end gap-2 min-w-[520px]" style={{ height: 130 }}>
-              {byPublish.map(m => (
+          <div className="flex items-end gap-1" style={{ height: 150 }}>
+            {byPublish.map((m, i) => {
+              // Only mark a label where the year changes, plus the first bar.
+              // Twenty-four cramped "24/07" labels are unreadable and none of
+              // them told you which year you were looking at anyway.
+              const year = m.month.slice(0, 4)
+              const newYear = i === 0 || year !== byPublish[i - 1].month.slice(0, 4)
+              return (
                 <div key={m.month} className="flex-1 flex flex-col justify-end items-center gap-1"
-                     title={`${m.month}: ${m.videos} videos, median ${num(m.medianViews)} views, top tenth ${num(m.topDecileViews)}`}>
+                     title={`${m.month}: ${m.videos} videos published, the typical one reached ${num(m.medianViews)} people, the best tenth reached ${num(m.topDecileViews)}`}>
+                  <span className="text-[9px] tabular-nums" style={muted}>{m.medianViews != null && m.medianViews >= 1 ? Math.round(m.medianViews) : ''}</span>
                   <div className="w-full flex items-end justify-center" style={{ height: 100 }}>
-                    <div style={{ width: '60%', height: `${((m.medianViews ?? 0) / maxMedian) * 100}%`, background: '#7C3AED', borderRadius: '3px 3px 0 0', minHeight: m.medianViews ? 2 : 0 }} />
+                    <div style={{ width: '70%', height: `${((m.medianViews ?? 0) / maxMedian) * 100}%`, background: '#7C3AED', borderRadius: '3px 3px 0 0', minHeight: m.medianViews ? 2 : 0 }} />
                   </div>
-                  <span className="text-[10px]" style={muted}>{m.month.slice(2).replace('-', '/')}</span>
+                  <span className="text-[9px] whitespace-nowrap" style={{ ...muted, fontWeight: newYear ? 600 : 400 }}>
+                    {newYear ? year.slice(2) : ''}{newYear ? '/' : ''}{m.month.slice(5)}
+                  </span>
                 </div>
-              ))}
-            </div>
+              )
+            })}
           </div>
           <p className="text-[11px] mt-3" style={muted}>
-            The typical video published that month, not the total. {firstPub && lastPub && firstPub.medianViews != null && lastPub.medianViews != null
-              ? `A video published in ${firstPub.month} typically got ${num(firstPub.medianViews)} views; one published in ${lastPub.month} typically got ${num(lastPub.medianViews)}.`
+            How many people the TYPICAL video published in that month has reached in its lifetime, not how many videos you
+            made and not the month's total. A bar half the height of another means each video published then went half as
+            far. {firstPub && lastPub && firstPub.medianViews != null && lastPub.medianViews != null
+              ? `A video from ${firstPub.month} has reached ${num(firstPub.medianViews)} people; one from ${lastPub.month} has reached ${num(lastPub.medianViews)}.`
               : ''}{' '}
-            Read it knowing older videos have had longer to accumulate, which flatters the left of the chart. Amazon reports
-            one lifetime view count per video and no curve, so that bias is stated rather than corrected away with a guess.
-            Months with fewer than five videos are left out.
+            Older videos have had longer to accumulate, which lifts the left of the chart, so the direction is meaningful and
+            the exact size of the gap is not. Amazon reports one lifetime count per video and no curve, so that bias is
+            stated rather than corrected away with a guess. Months with fewer than five videos are left out.
+            {(data.viewsByMonth ?? []).length > 24 ? ' Showing the last 24 months.' : ''}
           </p>
         </div>
       )}
@@ -349,9 +403,12 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
             ))}
           </div>
           <p className="text-[11px] mt-3" style={muted}>
-            Median views for the videos in each band of percent watched. If the bars climb, retention is buying you reach and
-            the next video should be tighter. If they are flat, Amazon is deciding who sees your work on something other than
-            how much of it people watch, and length and pacing are not the lever.
+            How far the typical video in each band of percent watched reaches. Videos nobody watched are excluded: a
+            percentage watched with no viewer behind it is not a measurement, and 429 of those were previously sitting in the
+            top band making it look as though holding attention destroyed reach.
+            {' '}If the bars climb, retention is buying you reach and the next video should be tighter. If they are flat,
+            Amazon is deciding who sees your work on something other than how much of it people watch, and pacing is not the
+            lever. Covers your library{librarySpan}.
           </p>
         </div>
       )}

@@ -108,6 +108,11 @@ const RETENTION_BANDS: { label: string; min: number; max: number }[] = [
 // A helper that "handled" a 0 to 1 scale as well would turn a genuine 1% video
 // into a 100% one, which is the sort of guess this file exists to avoid.
 
+/** Total of the views that were reported, or null when none were. */
+function allViewsOf(rows: { views: number }[]): number | null {
+  return rows.length ? rows.reduce((a, c) => a + c.views, 0) : null
+}
+
 export function analyseVideoLibrary(rows: VideoRow[], earn: EarningRow[]) {
   const withViews = rows.filter(r => r.views != null) as (VideoRow & { views: number })[]
   const withRetention = rows.filter(r => r.avg_pct_viewed != null)
@@ -120,24 +125,38 @@ export function analyseVideoLibrary(rows: VideoRow[], earn: EarningRow[]) {
   // A length for every video that has one, reported or worked out from watch
   // time. Amazon reports no duration at all on the video list, so without the
   // derivation this section stays empty forever on a library of thousands.
+  // Only videos somebody actually watched can say anything about how a video
+  // performs. A video with no views still reports a percent watched, and 429 of
+  // those sat in the top retention band making it look like holding attention
+  // kills reach. They are counted as dead weight, which is what they are, and
+  // kept out of every quality comparison.
+  const seen = rows.filter(r => r.views != null && r.views > 0)
+
   const lengths = new Map<string, { sec: number; derived: boolean }>()
-  for (const r of rows) {
+  for (const r of seen) {
     const l = videoLengthSec(r)
     if (l) lengths.set(r.aci, l)
   }
-  const knownDuration = rows.filter(r => lengths.has(r.aci))
+  const knownDuration = seen.filter(r => lengths.has(r.aci))
   const derivedCount = [...lengths.values()].filter(l => l.derived).length
   const byLength = BANDS.map(b => {
     const inBand = knownDuration.filter(r => {
       const s = (lengths.get(r.aci) as { sec: number }).sec
       return s >= b.min && s < b.max
     })
-    const ret = inBand.map(r => r.avg_pct_viewed).filter((v): v is number => v != null)
     const vw = inBand.map(r => r.views).filter((v): v is number => v != null)
     return {
       label: b.label,
       videos: inBand.length,
-      avgPctViewed: mean(ret),
+      // Views, and deliberately NOT percent watched.
+      //
+      // The length here is derived as watch-seconds divided by percent watched,
+      // so for any given watch time a higher percentage forces a shorter length.
+      // Banding by that length and then reporting percent watched per band is
+      // the algebra restating itself, and it produced a perfectly descending
+      // 71, 61, 54, 48, 40 that read as a finding about the videos and was
+      // nothing of the kind. Views are measured independently of the
+      // derivation, so they are the one signal this table can honestly carry.
       medianViews: median(vw),
       totalViews: vw.length ? vw.reduce((a, c) => a + c, 0) : null,
     }
@@ -255,9 +274,9 @@ export function analyseVideoLibrary(rows: VideoRow[], earn: EarningRow[]) {
   // are per video and both are lifetime, so unlike views against monthly
   // earnings this comparison is on a level footing.
   const retentionVsReach = RETENTION_BANDS.map(b => {
-    const inBand = rows.filter(r => {
+    const inBand = seen.filter(r => {
       const p = r.avg_pct_viewed
-      return p != null && r.views != null && p >= b.min && p < b.max
+      return p != null && p >= b.min && p < b.max
     })
     return {
       label: b.label,
@@ -322,6 +341,154 @@ export function analyseVideoLibrary(rows: VideoRow[], earn: EarningRow[]) {
     for (const s of Object.keys(counts).sort((a, b) => counts[b] - counts[a])) states.push({ state: s, videos: counts[s] })
   }
 
+  // ── what period any of this covers ──────────────────────────────────────
+  // Every number on this page is a number about a stretch of time, and none of
+  // them said which. "1.5 million views" over four years is a different business
+  // from the same figure over one, and the earnings window is usually much
+  // shorter than the library window, which makes any comparison of the two
+  // misleading unless it is stated.
+  const pubDates = rows.map(r => r.published_at).filter((d): d is string => !!d).sort()
+  const earnMonths = Object.keys(earnByMonth).sort()
+  const window = {
+    libraryFrom: pubDates[0]?.slice(0, 7) ?? null,
+    libraryTo: pubDates[pubDates.length - 1]?.slice(0, 7) ?? null,
+    earningsFrom: earnMonths[0] ?? null,
+    earningsTo: earnMonths[earnMonths.length - 1] ?? null,
+    earningsMonths: earnMonths.length,
+  }
+
+  // ── what MVP thinks the creator should do about it ──────────────────────
+  // A chart is not advice. These are the statements the numbers support, each
+  // with the evidence beside it, ranked so the biggest thing is first. A finding
+  // is only produced when the data behind it is strong enough to act on: a gap
+  // between bands too small to matter, or a band with too few videos in it,
+  // produces silence rather than a confident sentence.
+  const findings: {
+    kind: string; headline: string; detail: string; action: string; tone: 'good' | 'warn' | 'act'
+  }[] = []
+
+  // Where the money is not coming from. Usually the largest fact on the page.
+  if (onsiteCents != null && offsiteCents != null && onsiteCents + offsiteCents > 0) {
+    const share = (offsiteCents / (onsiteCents + offsiteCents)) * 100
+    const totalViews = allViewsOf(withViews)
+    if (share < 10 && totalViews != null && totalViews > 10000) {
+      findings.push({
+        kind: 'distribution',
+        tone: 'act',
+        headline: share < 1
+          ? 'Almost none of your income comes from outside Amazon'
+          : `Only ${Math.round(share)}% of your income comes from outside Amazon`,
+        detail: `Your library has ${totalViews.toLocaleString()} views on Amazon${window.libraryFrom ? ` built up since ${window.libraryFrom}` : ''}, and off Amazon you earned ${(offsiteCents / 100).toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}${window.earningsFrom ? ` across ${window.earningsMonths} months of earnings from ${window.earningsFrom}` : ''}.`,
+        action: 'The videos already exist and have already proven they hold an audience. Posting your best performing ones to YouTube and socials costs nothing to produce and is the largest untouched thing on this page.',
+      })
+    }
+  }
+
+  // How long the next one should be. Views only, because the percentage is
+  // arithmetic, and only when the gap is big enough to act on.
+  {
+    const solid = byLength.filter(b => b.videos >= 30 && b.medianViews != null)
+    if (solid.length >= 2) {
+      const best = [...solid].sort((a, b) => (b.medianViews as number) - (a.medianViews as number))[0]
+      const worst = [...solid].sort((a, b) => (a.medianViews as number) - (b.medianViews as number))[0]
+      const ratio = (best.medianViews as number) / Math.max(1, worst.medianViews as number)
+      if (ratio >= 1.5) {
+        findings.push({
+          kind: 'length',
+          tone: 'act',
+          headline: `Your ${best.label.toLowerCase()} videos reach the most people`,
+          detail: `They typically reach ${Math.round(best.medianViews as number).toLocaleString()} people across ${best.videos.toLocaleString()} videos, against ${Math.round(worst.medianViews as number).toLocaleString()} for your ${worst.label.toLowerCase()} ones. Reach is measured, unlike the percentage watched, which on this page is worked out from the same figures as the length and so cannot be used to compare lengths.`,
+          action: `Cut the next one to ${best.label.toLowerCase()} and see whether the gap holds. This is what your library has done, not proof of what it will do.`,
+        })
+      }
+    }
+  }
+
+  // Does retention buy reach, now that unwatched videos are out of it.
+  {
+    const solid = retentionVsReach.filter(b => b.videos >= 30 && b.medianViews != null)
+    if (solid.length >= 3) {
+      const first = solid[0].medianViews as number
+      const last = solid[solid.length - 1].medianViews as number
+      const rising = last > first * 1.3
+      const falling = first > last * 1.3
+      findings.push({
+        kind: 'retention',
+        tone: rising ? 'good' : 'warn',
+        headline: rising
+          ? 'Holding attention is buying you reach'
+          : falling
+            ? 'Holding attention is not what gets you seen'
+            : 'Reach is flat across every level of attention',
+        detail: rising
+          ? `Videos watched ${solid[solid.length - 1].label.toLowerCase()} typically reach ${Math.round(last).toLocaleString()} people, against ${Math.round(first).toLocaleString()} for those watched ${solid[0].label.toLowerCase()}.`
+          : `Videos watched ${solid[0].label.toLowerCase()} typically reach ${Math.round(first).toLocaleString()} people and those watched ${solid[solid.length - 1].label.toLowerCase()} reach ${Math.round(last).toLocaleString()}. Videos nobody watched are excluded, since a percentage watched means nothing without a viewer.`,
+        action: rising
+          ? 'Tightening the edit is worth the time: it is showing up in how many people Amazon puts the video in front of.'
+          : 'Editing tighter is not the lever here. What the video is ABOUT, and which product it features, is doing more for reach than how well it holds attention.',
+      })
+    }
+  }
+
+  // What resonated, which is a different list from what got reach.
+  if (resonance.loved.length && resonance.median != null && resonance.median > 0) {
+    const top = resonance.loved[0]
+    const mult = top.heartsPerThousand / resonance.median
+    if (mult >= 3) {
+      findings.push({
+        kind: 'resonance',
+        tone: 'good',
+        headline: 'A handful of your videos got a far stronger reaction than the rest',
+        detail: `"${(top.description || top.aci).slice(0, 70)}" drew ${top.heartsPerThousand.toFixed(1)} hearts a thousand views against a typical ${resonance.median.toFixed(1)}, ${Math.round(mult)} times the norm, on ${top.views.toLocaleString()} views.`,
+        action: 'Reach and reaction are different things, and reaction is the better guide to what to make again. These are the formats and product types to repeat.',
+      })
+    }
+  }
+
+  // Dead weight, and whether it is concentrated in a period.
+  {
+    const worst = zeroViewsByMonth.filter(m => m.videos >= 5).sort((a, b) => (b.zero / b.videos) - (a.zero / a.videos))[0]
+    if (noViews >= 20) {
+      const concentrated = worst && worst.zero >= 5 && worst.zero / worst.videos >= 0.5
+      findings.push({
+        kind: 'dead',
+        tone: 'warn',
+        headline: `${noViews.toLocaleString()} of your videos have never been seen by anyone`,
+        detail: concentrated
+          ? `They are not spread evenly: ${worst.month} accounts for ${worst.zero.toLocaleString()} of them, ${Math.round((worst.zero / worst.videos) * 100)}% of everything published that month.`
+          : `That is ${Math.round((noViews / rows.length) * 100)}% of everything you have published, spread across the library rather than concentrated in one period.`,
+        action: concentrated
+          ? `Something happened in ${worst.month} rather than that many weak videos. Worth opening one of them on Amazon and checking it published properly before shooting more the same way.`
+          : 'Worth knowing the size of before shooting more: at your median reach this is a large amount of work that returned nothing.',
+      })
+    }
+  }
+
+  // Is Amazon still showing the work to people.
+  if (viewsByMonth.length >= 6) {
+    const third = Math.max(1, Math.floor(viewsByMonth.length / 3))
+    const early = viewsByMonth.slice(0, third).map(m => m.medianViews).filter((v): v is number => v != null)
+    const late = viewsByMonth.slice(-third).map(m => m.medianViews).filter((v): v is number => v != null)
+    const a = mean(early)
+    const b = mean(late)
+    if (a != null && b != null && a > 0) {
+      const change = ((b - a) / a) * 100
+      if (Math.abs(change) >= 25) {
+        findings.push({
+          kind: 'trend',
+          tone: change > 0 ? 'good' : 'warn',
+          headline: change > 0
+            ? 'Amazon is showing each of your videos to more people than it used to'
+            : 'Amazon is showing each of your videos to fewer people than it used to',
+          detail: `A video published around ${viewsByMonth[0].month} typically reached ${Math.round(a).toLocaleString()} people. One published around ${viewsByMonth[viewsByMonth.length - 1].month} typically reached ${Math.round(b).toLocaleString()}. Older videos have had longer to accumulate, which works against the recent months here, so treat the size of the gap as approximate and the direction as real.`,
+          action: change > 0
+            ? 'Whatever changed in how you make or title these is working. Keep it.'
+            : 'Publishing more of the same is unlikely to fix this. The two levers with evidence behind them on this page are which products you feature and posting the work off Amazon.',
+        })
+      }
+    }
+  }
+
   const allViews = withViews.map(r => r.views)
   return {
     ok: true as const,
@@ -347,6 +514,8 @@ export function analyseVideoLibrary(rows: VideoRow[], earn: EarningRow[]) {
     },
     byLength,
     months,
+    window,
+    findings,
     viewsByMonth,
     retentionVsReach,
     resonance,
