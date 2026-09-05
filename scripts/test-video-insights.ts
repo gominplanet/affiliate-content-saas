@@ -11,7 +11,7 @@
 // fixtures shaped like a real library: thousands of videos, metrics missing on
 // some, a duration Amazon never sends, and a scattering of genuine zeros that
 // must stay distinguishable from absent data.
-import { analyseVideoLibrary, type VideoRow, type EarningRow } from '../lib/video-insights'
+import { analyseVideoLibrary, videoLengthSec, type VideoRow, type EarningRow } from '../lib/video-insights'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean | undefined, detail?: string) => {
@@ -57,11 +57,33 @@ const earn: EarningRow[] = [
 
 const r = analyseVideoLibrary(rows, earn)
 
-// ── the claims that went wrong before ───────────────────────────────────────
-check('length stays unknown', r.deadWeight.durationKnown === 0,
-  `durationKnown=${r.deadWeight.durationKnown}`)
-check('no length bands are invented', r.byLength.length === 0,
-  `${r.byLength.length} bands from no durations`)
+// ── the length Amazon refuses to report ─────────────────────────────────────
+// Amazon sends no duration on the video list, but it does send average seconds
+// watched and average percent watched, and a length follows from those. The
+// fixture carries both, so a length must be worked out for every video and
+// marked as derived rather than reported.
+check('a length is worked out from watch time', r.deadWeight.durationKnown === rows.length,
+  `durationKnown=${r.deadWeight.durationKnown} of ${rows.length}`)
+check('the worked-out lengths are marked as derived, not reported',
+  r.deadWeight.durationDerived === r.deadWeight.durationKnown,
+  `${r.deadWeight.durationDerived} derived of ${r.deadWeight.durationKnown}`)
+check('length bands are populated from them', r.byLength.length >= 2,
+  `${r.byLength.length} bands`)
+
+// The arithmetic itself: 19 seconds watched at 40% is a video of about 48s.
+const d = videoLengthSec({ duration_sec: null, avg_view_sec: 19, avg_pct_viewed: 40 })
+check('watch time and percentage give the length', !!d && Math.abs(d.sec - 47.5) < 0.01, `${d?.sec}`)
+check('a reported length wins over the derivation',
+  videoLengthSec({ duration_sec: 30, avg_view_sec: 19, avg_pct_viewed: 40 })?.derived === false)
+// Below a few percent watched the division turns Amazon's rounding into
+// nonsense, so those stay unknown rather than being estimated badly.
+check('a barely watched video is left unknown, not estimated',
+  videoLengthSec({ duration_sec: null, avg_view_sec: 2, avg_pct_viewed: 1 }) === null)
+check('an implausible result is discarded',
+  videoLengthSec({ duration_sec: null, avg_view_sec: 3600, avg_pct_viewed: 5 }) === null,
+  'twenty hours is not a shoppable video')
+check('no length at all stays no length',
+  videoLengthSec({ duration_sec: null, avg_view_sec: null, avg_pct_viewed: 40 }) === null)
 check('product counts are not claimed', r.deadWeight.productCountKnown === 0,
   `productCountKnown=${r.deadWeight.productCountKnown}`)
 check('a real zero view count is still counted', r.deadWeight.noViews > 400,
@@ -106,6 +128,8 @@ check('unreported views give a null total, not zero', blank.totals.views === nul
   `got ${blank.totals.views}`)
 check('unreported views give a null median', blank.totals.medianViews === null)
 check('unreported retention gives a null average', blank.totals.avgPctViewed === null)
+check('with no watch time reported, no length is worked out', blank.deadWeight.durationKnown === 0,
+  `${blank.deadWeight.durationKnown}`)
 check('no earnings gives a null split, not zero',
   blank.concentration.onsiteCents === null && blank.concentration.offsiteCents === null,
   `onsite=${blank.concentration.onsiteCents} offsite=${blank.concentration.offsiteCents}`)

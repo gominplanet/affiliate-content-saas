@@ -26,6 +26,7 @@ interface TopVideo {
   hearts: number | null
   avgPctViewed: number | null
   durationSec: number | null
+  durationDerived?: boolean | null
   productCount: number | null
   publishedAt: string | null
 }
@@ -37,7 +38,7 @@ interface Payload {
     views: number | null; hearts: number | null; medianViews: number | null
     avgPctViewed: number | null; reportedViews: number; reportedRetention: number
   }
-  deadWeight?: { noViews: number; noProducts: number; notLive: number; productCountKnown: number; durationKnown: number }
+  deadWeight?: { noViews: number; noProducts: number; notLive: number; productCountKnown: number; durationKnown: number; durationDerived: number }
   byLength?: { label: string; videos: number; avgPctViewed: number | null; medianViews: number | null; totalViews: number | null }[]
   months?: { month: string; videos: number; views: number | null; earningsCents: number | null }[]
   topByViews?: TopVideo[]
@@ -112,6 +113,10 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
   const bestBand = bands.filter(b => b.videos >= 5 && b.avgPctViewed != null)
     .sort((a, b) => (b.avgPctViewed as number) - (a.avgPctViewed as number))[0]
   const durationKnown = dead?.durationKnown ?? 0
+  // How many of those lengths are worked out from watch time rather than
+  // reported. It changes what the panel is allowed to claim, so it is never
+  // hidden behind a rounded figure.
+  const derivedCount = dead?.durationDerived ?? 0
   const productCountKnown = dead?.productCountKnown ?? 0
   const maxVideos = Math.max(1, ...months.map(m => m.videos))
   const maxEarn = Math.max(1, ...months.map(m => m.earningsCents ?? 0))
@@ -173,7 +178,9 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
               itself than a confident winner drawn from nothing. */}
           {durationKnown < Math.max(20, data.videos * 0.1) ? (
             <p className="text-[13px]" style={muted}>
-              Amazon does not report a length for {durationKnown ? 'most of' : 'any of'} your videos, so there is nothing here to compare. It was asked: the same call returned your views, hearts and watch percentage, and simply carried no duration. Running the load again will not change that, and reading each video one by one is the only route left.
+              Amazon reports no length for your videos, and there is not enough watch time recorded on them to work one out either.
+              A length can be derived wherever Amazon reports both the average seconds watched and the average percentage watched,
+              and that is missing here.
             </p>
           ) : (
           <>
@@ -206,7 +213,12 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
             {bestBand
               ? `Your ${bestBand.label.toLowerCase()} videos hold attention best, at ${pct(bestBand.avgPctViewed)} watched across ${bestBand.videos.toLocaleString()} of them.`
               : 'Not enough videos with watch time reported to call a winner yet.'}
-            {' '}Bands with fewer than five videos are shown but never used to pick a winner. Based on the {durationKnown.toLocaleString()} videos Amazon reported a length for.
+            {' '}Bands with fewer than five videos are shown but never used to pick a winner.
+            {derivedCount >= durationKnown && durationKnown > 0
+              ? ` Amazon sends no duration with your videos, so these lengths are worked out from what it does send: a video watched for 19 seconds on average, at 40% of its length, is about 48 seconds long. They are close rather than exact, which is enough to compare bands and not enough to quote a single video's length.`
+              : derivedCount > 0
+                ? ` Based on ${durationKnown.toLocaleString()} videos, ${derivedCount.toLocaleString()} of them worked out from average watch time rather than reported by Amazon.`
+                : ` Based on the ${durationKnown.toLocaleString()} videos Amazon reported a length for.`}
           </p>
           </>
           )}
@@ -449,7 +461,10 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
           </table>
         </div>
         <p className="text-[11px] mt-3" style={muted}>
-          Ranked by views. These are the videos worth remaking for another product, and the ones worth posting to YouTube and socials where they have never been seen. What is not here yet is which product each one sold, which needs a separate read of every video.
+          Ranked by views. These are the videos worth remaking for another product, and the ones worth posting to YouTube and socials where they have never been seen.
+          {(data.topByViews ?? []).some(v => v.durationDerived)
+            ? ' Lengths are worked out from average watch time, since Amazon sends none, so read them as approximate.'
+            : ''}
         </p>
       </div>
     </div>

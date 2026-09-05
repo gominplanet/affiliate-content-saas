@@ -33,6 +33,32 @@ export interface EarningRow {
   store_scope: string | null
 }
 
+/** A video's length in seconds, reported where Amazon reports one and worked out
+ *  where it does not.
+ *
+ *  Amazon's video list carries no duration, which left the single most useful
+ *  question on the page ("how long should the next one be") permanently blank.
+ *  But it does report, for every video, the average seconds watched and the
+ *  average percentage watched, and a length follows from those two: watch 19
+ *  seconds and that is 40% of it, the video is about 48 seconds long.
+ *
+ *  This is a derivation, not a measurement, and it is labelled as one everywhere
+ *  it surfaces. Two guards keep it honest. Below about 5% watched the division
+ *  amplifies Amazon's rounding into nonsense, so those are left unknown rather
+ *  than estimated badly. And a result outside a plausible range for a shoppable
+ *  video is discarded, because a wrong length lands in a band and skews the
+ *  advice, which is worse than an empty panel that explains itself. */
+export function videoLengthSec(r: { duration_sec: number | null; avg_view_sec: number | null; avg_pct_viewed: number | null }): { sec: number; derived: boolean } | null {
+  if (r.duration_sec != null && r.duration_sec > 0) return { sec: r.duration_sec, derived: false }
+  const watched = r.avg_view_sec
+  const pct = r.avg_pct_viewed
+  if (watched == null || pct == null) return null
+  if (!(watched > 0) || !(pct >= 5) || !(pct <= 100)) return null
+  const sec = watched / (pct / 100)
+  if (!Number.isFinite(sec) || sec < 1 || sec > 14400) return null
+  return { sec, derived: true }
+}
+
 /** Length bands a creator actually thinks in, rather than even splits. */
 const BANDS: { label: string; min: number; max: number }[] = [
   { label: 'Under 20s', min: 0, max: 20 },
@@ -91,9 +117,21 @@ export function analyseVideoLibrary(rows: VideoRow[], earn: EarningRow[]) {
   // A duration of zero is Amazon not reporting one, not a zero-length video.
   // Treating it as real put all 6,763 videos in the shortest band and produced a
   // confident answer to "how long should the next one be" from no data at all.
-  const knownDuration = rows.filter(r => r.duration_sec != null && r.duration_sec > 0)
+  // A length for every video that has one, reported or worked out from watch
+  // time. Amazon reports no duration at all on the video list, so without the
+  // derivation this section stays empty forever on a library of thousands.
+  const lengths = new Map<string, { sec: number; derived: boolean }>()
+  for (const r of rows) {
+    const l = videoLengthSec(r)
+    if (l) lengths.set(r.aci, l)
+  }
+  const knownDuration = rows.filter(r => lengths.has(r.aci))
+  const derivedCount = [...lengths.values()].filter(l => l.derived).length
   const byLength = BANDS.map(b => {
-    const inBand = knownDuration.filter(r => (r.duration_sec as number) >= b.min && (r.duration_sec as number) < b.max)
+    const inBand = knownDuration.filter(r => {
+      const s = (lengths.get(r.aci) as { sec: number }).sec
+      return s >= b.min && s < b.max
+    })
     const ret = inBand.map(r => r.avg_pct_viewed).filter((v): v is number => v != null)
     const vw = inBand.map(r => r.views).filter((v): v is number => v != null)
     return {
@@ -174,7 +212,12 @@ export function analyseVideoLibrary(rows: VideoRow[], earn: EarningRow[]) {
         views: r.views,
         hearts: r.hearts,
         avgPctViewed: r.avg_pct_viewed,
-        durationSec: r.duration_sec,
+        // The same length the bands use: reported where Amazon reports one,
+        // worked out from watch time where it does not. Rounded, because a
+        // derived figure quoted to the second would claim a precision it has not
+        // got.
+        durationSec: (() => { const l = lengths.get(r.aci); return l ? Math.round(l.sec) : null })(),
+        durationDerived: (lengths.get(r.aci)?.derived ?? null),
         productCount: r.product_count,
         publishedAt: r.published_at,
       }))
@@ -298,6 +341,9 @@ export function analyseVideoLibrary(rows: VideoRow[], earn: EarningRow[]) {
       noViews, noProducts, notLive,
       productCountKnown: withProductCount.length,
       durationKnown: knownDuration.length,
+      /** Of those, how many are worked out from watch time rather than reported
+       *  by Amazon, so the panel can say which it is showing. */
+      durationDerived: derivedCount,
     },
     byLength,
     months,
