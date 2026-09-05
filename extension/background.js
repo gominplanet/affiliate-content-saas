@@ -4120,14 +4120,25 @@ async function harvestCreatorHubVideosInPage(opts) {
 // pagination key is discovered from the response.
 function fetchContentListInPage(rec) {
   return (async () => {
-    const out = { items: [], pages: 0, error: null, sample: null, total: null, pageKey: null, queryKeys: null, sizeKey: null, bodyKeys: null }
+    // Reads ONE BATCH of the creator's video library and returns it.
+    //
+    // The previous version read the whole library in a single call, walked from
+    // offset 2,260 to the true end at 6,763, and then handed back nothing:
+    // roughly 4,500 records is far more than a scripting result can carry, so
+    // the work was done and thrown away at the last step. It now returns a
+    // bounded batch plus the offset it reached, and the worker calls it again.
+    //
+    // The request body is no longer guessed at. Amazon's own is:
+    //   pageSize, startIndex, contentState, ownerAffiliateId, query,
+    //   orderingType, retrieveMetrics, globalizeStatus
+    // so pageSize is set to 100 rather than left at the UI's 10, which is ten
+    // times fewer round trips for the same rows.
+    const out = { videos: [], total: null, nextOffset: 0, done: false, error: null, pages: 0, sample: null }
     const ASIN_RE = /^[A-Z0-9]{10}$/
-    // Every object anywhere in the payload that carries an ASIN under an
-    // asin-named key. Shape-agnostic on purpose: we have not seen this response.
-    // The list's real payload: one record per video, with Amazon's own engagement
-    // figures. It carries contentDetail.totalProductCount but never the products
-    // themselves, so this reads what is there and the product links come from a
-    // second call per video.
+    const startAt = Number(rec.startAt) || 0
+    const maxRows = Number(rec.maxRows) || 400
+    let offset = startAt
+
     const readVideos = (j, into) => {
       const rows = (j && Array.isArray(j.result)) ? j.result : []
       for (const r of rows) {
@@ -4154,344 +4165,61 @@ function fetchContentListInPage(rec) {
           modifiedAtMs: d.versionModificationTimestamp || null,
         })
       }
+      return rows.length
     }
 
-    const harvest = (root, into) => {
-      const q = [root]
-      let steps = 0
-      while (q.length && steps++ < 200000) {
-        const n = q.shift()
-        if (!n || typeof n !== 'object') continue
-        if (Array.isArray(n)) { for (const x of n) q.push(x); continue }
-        // A record's title, used for whichever ASINs hang off it. Amazon's video
-        // rows carry a description rather than a title.
-        let title = null
-        for (const k in n) {
-          const v = n[k]
-          if (typeof v === 'string' && !title && /title|description|name/i.test(k) && v.length > 3) title = v.slice(0, 200)
-        }
-        for (const k in n) {
-          const v = n[k]
-          if (!/asin/i.test(k)) continue
-          // An ASIN under an asin-named key arrives in three shapes here: a bare
-          // string, a list of strings, or an object wrapping a value. Only the
-          // first was handled, which is why a payload full of them read as empty.
-          const take = (x) => {
-            if (typeof x !== 'string') return
-            const a = x.toUpperCase()
-            if (ASIN_RE.test(a) && !into.has(a)) into.set(a, title)
-          }
-          if (typeof v === 'string') take(v)
-          else if (Array.isArray(v)) for (const x of v) { take(x); if (x && typeof x === 'object') for (const kk in x) take(x[kk]) }
-          else if (v && typeof v === 'object') for (const kk in v) take(v[kk])
-        }
-        for (const k in n) q.push(n[k])
-      }
-    }
-    const found = new Map()
+    const DROP = { 'content-length': 1, host: 1, connection: 1, 'accept-encoding': 1 }
+    const headers = {}
+    for (const k in (rec.headers || {})) { if (!DROP[String(k).toLowerCase()]) headers[k] = rec.headers[k] }
+    if (!headers['Content-Type'] && !headers['content-type']) headers['Content-Type'] = 'application/json'
+
     const videos = new Map()
-    let token = null
-    let page = 1
-    // Learned from the captured URL and the first response, never assumed.
-    let tokenKey = null
-    let pageKey = null
-    let bodyKey = null
-    let sizeKey = null
-    let pageSize = 10
-    // Where to resume. A page a second against a library of thousands cannot
-    // finish in one run, so each run starts where the last one stopped rather
-    // than re-reading from the top and timing out at the same place forever.
-    const startAt = Number(rec.startAt) || 0
-    // The captured body's field names. The bigger-page probe guessed at six
-    // plausible names and none of them matched, so print what is actually there.
-    // The captured body, verbatim. Three attempts at printing "field names"
-    // produced nothing useful, and to slice this query into windows small enough
-    // to page, the filter SHAPES matter as much as their names.
-    out.requestBody = String(rec.body || '').slice(0, 900)
-    try { out.bodyKeys = Object.keys(JSON.parse(rec.body || '{}')).join(', ') } catch (e) {}
-    // Declared once, here. It was previously created inside the pagination
-    // experiment and then used earlier in the loop by the bigger-page probe,
-    // which threw "post is not defined" and killed the whole read after one page.
-    const post = !!(rec.body && /^post$/i.test(String(rec.method || '')))
     let barren = 0
+    const started = Date.now()
     try {
-      const qk = [...new URL(rec.url, location.href).searchParams.keys()]
-      out.queryKeys = `${(rec.method || 'GET').toUpperCase()}${rec.body ? ' with a body' : ' with no body'}, query keys: ${qk.length ? qk.join(', ') : 'none'}`
-    } catch (e) {}
-    try {
-      const u0 = new URL(rec.url, location.href)
-      for (const k of u0.searchParams.keys()) {
-        if (/token|cursor/i.test(k)) tokenKey = tokenKey || k
-        if (/^(page|pageNumber|pageIndex|offset|start)$/i.test(k)) pageKey = pageKey || k
-      }
-      if (pageKey) page = (parseInt(u0.searchParams.get(pageKey), 10) || 1) + 1
-    } catch (e) {}
-    try {
-      // 6,763 videos at ten a page is 677 requests. The cap has to clear that
-      // with room to spare, and a wall clock stops a runaway rather than a low
-      // page limit silently truncating the library, which is what "2,010 across
-      // 200 pages" was.
-      const started = Date.now()
-      if (startAt > 0) {
-        bodyKey = 'startIndex'
-        page = startAt
-        out.pageKey = `startIndex (in the request body), resumed from ${startAt}`
-      }
-      for (let i = 0; i < 1500; i++) {
-        if (Date.now() - started > 240000) { out.error = 'ran out of time before the end of the library'; break }
-        const u = new URL(rec.url, location.href)
-        // The FIRST call is the page's own request, untouched. Adding parameters
-        // an endpoint does not expect is how a working request becomes a 400, and
-        // the earnings sync lost a day to exactly that. Pagination is only
-        // applied once we have seen a response and know what it uses.
-        if (i > 0) {
-          if (token) {
-            u.searchParams.set(tokenKey || 'nextToken', token)
-          } else if (pageKey) {
-            u.searchParams.set(pageKey, String(page))
-          }
-        }
-        const init = {
-          method: rec.method || 'GET',
-          credentials: 'include',
-          headers: rec.headers && Object.keys(rec.headers).length ? rec.headers : { accept: 'application/json' },
-          signal: AbortSignal.timeout(30000),
-        }
-        if (rec.body && /^post$/i.test(init.method)) {
-          // Pagination lives in the body for a POST. Same rule as the query
-          // string: the first call goes out exactly as the page sent it, and a
-          // key is only set once we have learned which one moves the window.
-          let b = rec.body
-          if ((i > 0 || startAt > 0) && (bodyKey || tokenKey)) {
-            try {
-              const o = JSON.parse(rec.body)
-              const set = (obj, key, val) => {
-                if (obj && typeof obj === 'object' && key in obj) { obj[key] = val; return true }
-                for (const k in obj) {
-                  if (obj[k] && typeof obj[k] === 'object' && set(obj[k], key, val)) return true
-                }
-                return false
-              }
-              if (token && tokenKey) { if (!set(o, tokenKey, token)) o[tokenKey] = token }
-              else if (bodyKey) { if (!set(o, bodyKey, page)) o[bodyKey] = page }
-              if (sizeKey) o[sizeKey] = pageSize
-              b = JSON.stringify(o)
-            } catch (e) { b = rec.body }
-          }
-          init.body = b
-        }
-        const res = await fetch(u.toString(), init)
-        if (!res.ok) { out.error = `HTTP ${res.status} on page ${i + 1}`; break }
-        const j = await res.json().catch(() => null)
-        if (!j) { out.error = 'not JSON'; break }
-        if (!out.sample) {
-          // A raw dump truncates inside the first long description and never
-          // reaches the fields that matter. A map of key paths says where an
-          // ASIN lives, or proves this response has none, in a fraction of the
-          // characters.
-          const paths = []
-          const walkPaths = (o, prefix, depth) => {
-            if (!o || typeof o !== 'object' || depth > 6 || paths.length > 120) return
-            if (Array.isArray(o)) { if (o.length) walkPaths(o[0], `${prefix}[0]`, depth + 1); return }
-            for (const k in o) {
-              const v = o[k]
-              const path = prefix ? `${prefix}.${k}` : k
-              if (v && typeof v === 'object') walkPaths(v, path, depth + 1)
-              else {
-                const isAsin = typeof v === 'string' && /^[A-Z0-9]{10}$/.test(v.toUpperCase()) && /^B0/i.test(v)
-                paths.push(isAsin ? `${path}=ASIN(${v})` : path)
-              }
-            }
-          }
-          try {
-            const first = j && Array.isArray(j.result) ? j.result[0] : j
-            walkPaths(first, '', 0)
-          } catch (e) {}
-          // Put anything product-shaped first. The list was printed in document
-          // order and cut off mid-word at 700 characters, so an ASIN sitting
-          // further down the record would never have been seen.
-          const hot = paths.filter((x) => /asin|product|item|catalog/i.test(x))
-          const rest = paths.filter((x) => !/asin|product|item|catalog/i.test(x))
-          out.sample = `${hot.length ? `PRODUCT FIELDS: ${hot.join(', ')} || ` : 'NO product or asin field in this record. '}all keys: ${rest.join(', ')}`
-        }
-        // Amazon states the library size. Reading fewer than that is a partial
-        // read and must say so rather than passing as the whole library.
+      while (videos.size < maxRows && Date.now() - started < 100000) {
+        let body
         try {
-          const t = j && j.metadata && j.metadata.totalResults
+          const o = JSON.parse(rec.body)
+          o.pageSize = 100
+          o.startIndex = offset
+          body = JSON.stringify(o)
+        } catch (e) { out.error = 'captured body was not JSON'; break }
+
+        const res = await fetch(new URL(rec.url, location.href).toString(), {
+          method: rec.method || 'POST', credentials: 'include', headers, body,
+          signal: AbortSignal.timeout(30000),
+        })
+        if (!res.ok) { out.error = `HTTP ${res.status} at offset ${offset}`; break }
+        const j = await res.json().catch(() => null)
+        if (!j) { out.error = `unreadable response at offset ${offset}`; break }
+        try {
+          const t = j.metadata && j.metadata.totalResults
           if (Number.isFinite(t)) out.total = t
         } catch (e) {}
-        const before = found.size + videos.size
-        harvest(j, found)
-        readVideos(j, videos)
-        out.pages = i + 1
 
-        // Ten per page is Amazon's UI default, not a limit we have to accept.
-        // Try once for a bigger window: if it returns more records the whole
-        // crawl gets an order of magnitude shorter, and if it does not, nothing
-        // is lost but one request.
-        // Not on a resumed run: the probe replays the page's original body, which
-        // has no offset, so it would re-read the top of the library and make a
-        // resumed pass look productive when it had found nothing new.
-        if (i === 0 && post && !sizeKey && startAt === 0) {
-          const got = (j && Array.isArray(j.result)) ? j.result.length : 0
-          for (const k of ['pageSize', 'size', 'limit', 'count', 'maxResults', 'numberOfResults']) {
-            try {
-              const o = JSON.parse(rec.body)
-              o[k] = 100
-              const probe = await fetch(new URL(rec.url, location.href).toString(), {
-                method: rec.method || 'POST', credentials: 'include',
-                headers: rec.headers && Object.keys(rec.headers).length ? rec.headers : { accept: 'application/json' },
-                body: JSON.stringify(o),
-                signal: AbortSignal.timeout(25000),
-              })
-              if (!probe.ok) continue
-              const pj = await probe.json().catch(() => null)
-              const n = (pj && Array.isArray(pj.result)) ? pj.result.length : 0
-              if (n > got) {
-                sizeKey = k
-                pageSize = n
-                readVideos(pj, videos)
-                out.sizeKey = `${k}=${n}`
-                break
-              }
-            } catch (e) { /* try the next name */ }
-            await new Promise((r) => setTimeout(r, 150))
-          }
-        }
-        // One page adding nothing is not the end of a 6,763 item list.
-        //
-        // A resumed run starts at an offset and its first page past that offset
-        // came back empty, so the crawl declared the library finished after ten
-        // videos. Amazon returns the odd empty window mid-list, and an ordering
-        // shift between runs can land an offset on rows we already have. Three
-        // barren pages in a row is an ending; one is a gap to step over.
-        if (found.size + videos.size === before) {
+        const before = videos.size
+        const rowCount = readVideos(j, videos)
+        out.pages++
+        offset += rowCount > 0 ? rowCount : 100
+
+        if (videos.size === before) {
+          // Amazon returns the occasional empty window mid-list, so one barren
+          // page is stepped over. Three in a row is the end of the library.
           barren++
-          out.barren = barren
-          // The offset at which Amazon stopped returning rows. If this sits far
-          // below the total it reports, the endpoint caps deep paging and no
-          // amount of offsetting will reach the rest: the query has to be split
-          // into windows instead.
-          if (out.emptyFrom == null) out.emptyFrom = page
-          if (barren >= 3) break
-          if (bodyKey || pageKey) { page += pageSize; continue }
-          break
-        }
-        barren = 0
-        let next = null
-        const seek = (o, d) => {
-          if (!o || typeof o !== 'object' || d > 6) return
-          for (const k in o) {
-            if (/nexttoken|nextpagetoken|cursor/i.test(k) && typeof o[k] === 'string' && o[k]) {
-              next = o[k]
-              if (!tokenKey) tokenKey = k
-              return
-            }
-            seek(o[k], d + 1)
-          }
-        }
-        seek(j, 0)
-        if (next && next !== token) token = next
-        else if (pageKey || bodyKey) {
-          const k = pageKey || bodyKey
-          token = null
-          page += /^(page|pageNumber|pageIndex)$/i.test(k) ? 1 : (j && Array.isArray(j.result) ? j.result.length : pageSize)
-        }
-        else {
-          // No cursor in the response and no page parameter in the captured URL,
-          // yet Amazon says there are thousands of records. So find the parameter
-          // by experiment rather than by another round of asking: ask for a
-          // window past the first page under each plausible name and keep
-          // whichever one actually returns different records.
-          const firstAci = (() => {
-            try { return (j.result[0].contentDetail || {}).mediaACI || null } catch (e) { return null }
-          })()
-          const size = (() => { try { return j.result.length || 10 } catch (e) { return 10 } })()
-          const candidates = ['startIndex', 'offset', 'start', 'from', 'skip', 'page', 'pageNumber', 'pageIndex', 'nextToken', 'nextPageToken', 'paginationToken']
-          const isPageStyle = (k) => /^(page|pageNumber|pageIndex)$/i.test(k)
-          let learned = null
-          let learnedInBody = false
-          for (const key of candidates) {
-            try {
-              const t = new URL(rec.url, location.href)
-              let probeBody = rec.body || null
-              if (post) {
-                // For a POST the key almost certainly belongs in the body, and
-                // the body is the page's own, so we only change the one field.
-                try {
-                  const o = JSON.parse(rec.body)
-                  o[key] = isPageStyle(key) ? 2 : size
-                  probeBody = JSON.stringify(o)
-                } catch (e) { probeBody = rec.body }
-              } else {
-                t.searchParams.set(key, isPageStyle(key) ? '2' : String(size))
-              }
-              const probe = await fetch(t.toString(), {
-                method: rec.method || 'GET', credentials: 'include',
-                headers: rec.headers && Object.keys(rec.headers).length ? rec.headers : { accept: 'application/json' },
-                ...(post ? { body: probeBody } : {}),
-                signal: AbortSignal.timeout(20000),
-              })
-              if (!probe.ok) continue
-              const pj = await probe.json().catch(() => null)
-              const a2 = (() => {
-                try { return (pj.result[0].contentDetail || {}).mediaACI || null } catch (e) { return null }
-              })()
-              // Different first record means the window moved. Same record means
-              // the parameter was ignored, which is not an error, just a no.
-              if (a2 && firstAci && a2 !== firstAci) {
-                learned = key
-                learnedInBody = post
-                readVideos(pj, videos)
-                break
-              }
-            } catch (e) { /* try the next candidate */ }
-            await new Promise((r) => setTimeout(r, 200))
-          }
-          if (!learned) {
-            out.error = `no pagination: response carries no cursor and none of ${candidates.join(', ')} moved the window`
-            break
-          }
-          if (learnedInBody) bodyKey = learned
-          else pageKey = learned
-          out.pageKey = `${learned}${learnedInBody ? ' (in the request body)' : ''}`
-          // Index-style keys count rows, page-style keys count pages.
-          page = isPageStyle(learned) ? 3 : size * 2
-          pageSize = size
-          token = null
-        }
-        // 120ms between pages was caution with no evidence behind it. Amazon
-        // answers a 100 row page in well under a second, so this is now a
-        // courtesy gap rather than a brake.
+          if (barren >= 3 || rowCount === 0) { out.done = rowCount === 0 && barren >= 3; break }
+        } else barren = 0
+
+        if (out.total != null && offset >= out.total) { out.done = true; break }
         await new Promise((r) => setTimeout(r, 60))
       }
     } catch (e) {
-      out.error = (e && e.message) || String(e)
+      out.error = (e && (e.name ? `${e.name}: ${e.message}` : e.message)) || String(e)
     }
-    out.items = [...found.entries()].map(([asin, title]) => ({ asin, title }))
     out.videos = [...videos.values()]
+    out.nextOffset = offset
     return out
   })()
-}
-
-
-// Push a batch of the creator's Amazon videos to MVP. Same shape as the other
-// pushers: the worker holds the mvpaffiliate.io cookie, the page does not.
-async function pushVideoLibraryToMvp(videos, products, aciDone) {
-  const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
-  for (const origin of origins) {
-    try {
-      const res = await fetch(`${origin}/api/amazon-videos/ingest`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', redirect: 'follow',
-        body: JSON.stringify({ videos: videos || [], products: products || [], aciDone: aciDone || [] }),
-      })
-      const body = await res.json().catch(() => null)
-      if (res.ok) return { ok: true, savedVideos: (body && body.savedVideos) || 0, savedProducts: (body && body.savedProducts) || 0 }
-      return { ok: false, error: (body && body.error) || `HTTP ${res.status}` }
-    } catch (e) { /* try the other origin */ }
-  }
-  return { ok: false, error: 'could not reach MVP' }
 }
 
 // Turns the per-frame probes into one sentence a person can act on, and I can
@@ -4535,83 +4263,70 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
     // The page's own list API first. Its answer is complete and carries no cart
     // widgets, so the DOM crawl below is now only a fallback for when we cannot
     // capture that request.
-    // Prefer a POST with a body: that is the one that can carry pagination. A
-    // parameterless GET returns the first page and nothing else, which is exactly
-    // where the last two runs stopped.
+    // Prefer a POST with a body: that is the one that carries pagination. A
+    // parameterless GET returns the first page and nothing else.
     const listRecs = (_ccNetRing || []).slice().reverse()
       .filter((x) => x && /\/manage-content\/api\/get-content-list/i.test(String(x.url || '')))
     const apiRec = listRecs.find((x) => x.body && /^post$/i.test(String(x.method || ''))) || listRecs[0]
-    // Why the API route did or did not work. The first version fell through to
-    // the DOM crawl in silence, so a failing API attempt was indistinguishable
-    // from never having tried, and the panel reported a scrape as if that were
-    // the plan.
     let apiNote = apiRec ? 'captured the list request' : 'never saw the list request'
     if (apiRec) {
+      // Batch after batch, pushing each one, until Amazon says the library is
+      // finished. Each call returns a bounded set, so nothing is lost to a
+      // result too large to hand back, and every batch is saved as it arrives
+      // rather than at the end.
+      let offset = Number(startAt) || 0
+      let saved = 0
+      let pages = 0
+      let total = null
+      let lastError = null
+      let done = false
+      const runStarted = Date.now()
       try {
-        const viaApi = await chrome.scripting.executeScript({
-          target: { tabId }, world: 'MAIN', func: fetchContentListInPage,
-          args: [{ url: apiRec.url, method: apiRec.method || 'GET', headers: apiRec.headers || {}, body: apiRec.body || null, startAt: Number(startAt) || 0 }],
-        })
-        const a = (viaApi && viaApi[0] && viaApi[0].result) || null
-        // The video library is the answer now. The list carries every video with
-        // Amazon's own engagement on it, which is what says which video is
-        // working; the products each one sells come from a second call.
-        if (a && a.videos && a.videos.length) {
-          const pushed = await pushVideoLibraryToMvp(a.videos, [], [])
-          const short = Number.isFinite(a.total) && a.videos.length < a.total
-          return {
-            ok: !!(pushed && pushed.ok),
-            // Which SCOUT produced this. Two rounds were spent reading a panel
-            // from a build that had not been reloaded, and every reported number
-            // is meaningless without knowing which code wrote it.
-            scoutVersion: (chrome.runtime.getManifest() || {}).version || null,
-            count: a.videos.length,
-            pages: a.pages || 0,
-            partial: short,
-            stopped: a.error
-              ? `list API stopped: ${a.error}${a.queryKeys ? `. The captured request was ${a.queryKeys}` : ''}${a.bodyKeys ? `. Its body fields: ${a.bodyKeys}` : ''}`
-              : short ? `Amazon reports ${a.total.toLocaleString()} videos and we read ${a.videos.length.toLocaleString()}` : 'end',
-            source: `Amazon's own video list${a.pageKey ? ` (paging by ${a.pageKey}${a.sizeKey ? `, ${a.sizeKey} per page` : ''})` : ''}`,
-            error: (pushed && pushed.ok) ? undefined : (pushed && pushed.error),
+        for (let batch = 0; batch < 40 && Date.now() - runStarted < 260000; batch++) {
+          const viaApi = await chrome.scripting.executeScript({
+            target: { tabId }, world: 'MAIN', func: fetchContentListInPage,
+            args: [{
+              url: apiRec.url, method: apiRec.method || 'POST',
+              headers: apiRec.headers || {}, body: apiRec.body || null,
+              startAt: offset, maxRows: 400,
+            }],
+          })
+          const a = (viaApi && viaApi[0] && viaApi[0].result) || null
+          if (!a) { lastError = 'the page returned no result'; break }
+          if (a.total != null) total = a.total
+          if (a.error) lastError = a.error
+          if (a.videos && a.videos.length) {
+            const pushed = await pushVideoLibraryToMvp(a.videos, [], [])
+            if (!pushed || !pushed.ok) { lastError = (pushed && pushed.error) || 'could not save'; break }
+            saved += a.videos.length
           }
+          pages += a.pages || 0
+          // No forward movement means no more to read, whatever the total says.
+          if (!a.videos || !a.videos.length || a.nextOffset <= offset) { done = done || !!a.done; break }
+          offset = a.nextOffset
+          if (a.done) { done = true; break }
         }
-        if (a && a.items && a.items.length) {
-          const push = await pushVideosToMvp(a.items)
-          // Amazon states the library size in the response. Reporting our count
-          // without it lets a partial read pass as the whole library, which is
-          // the failure this scanner has repeated all afternoon.
-          const short = Number.isFinite(a.total) && a.items.length < a.total
-          return {
-            ok: !!(push && push.ok),
-            count: a.items.length,
-            pages: a.pages || 0,
-            partial: short,
-            stopped: a.error
-              ? `list API stopped: ${a.error}`
-              : short ? `Amazon reports ${a.total.toLocaleString()} items and we read ${a.items.length.toLocaleString()}` : 'end',
-            source: "Amazon's own list API",
-            error: (push && push.ok) ? undefined : (push && push.error),
-          }
-        }
-        apiNote = [
-        'list API returned nothing',
-        a && a.error ? `: ${a.error}` : '',
-        a && a.total ? `, though Amazon reports ${a.total} items` : '',
-        a && a.emptyFrom != null ? `. Rows stopped at offset ${a.emptyFrom}` : '',
-        a && a.bodyKeys ? `. Request body fields: ${a.bodyKeys}` : '',
-        a && a.requestBody ? `. The request body: ${a.requestBody}` : '',
-      ].join('')
       } catch (e) {
-        apiNote = `list API call failed: ${(e && e.message) || e}`
+        lastError = (e && e.message) || String(e)
       }
-      // Do NOT fall back to scraping this page.
-      //
-      // Capturing the list request proves we are on the right page and that
-      // Amazon serves the library properly. If reading it failed, that is a bug
-      // to fix, not a reason to go back to the rendered markup, which on this
-      // page yields the cart flyout and has written an ice maker into this
-      // creator's video library three times today. Returning nothing is the
-      // correct outcome; writing something wrong is not.
+
+      if (saved > 0) {
+        const short = Number.isFinite(total) && (Number(startAt) || 0) + saved < total
+        return {
+          ok: true,
+          scoutVersion: (chrome.runtime.getManifest() || {}).version || null,
+          count: saved,
+          pages,
+          partial: short && !done,
+          stopped: done
+            ? 'end of the library'
+            : lastError
+              ? `stopped: ${lastError}`
+              : short ? `Amazon reports ${total.toLocaleString()} videos and this run reached ${((Number(startAt) || 0) + saved).toLocaleString()}` : 'end',
+          source: `Amazon's own video list${startAt ? `, resumed from ${startAt}` : ''}`,
+        }
+      }
+      apiNote = `list API saved nothing${lastError ? `: ${lastError}` : ''}${total ? `, though Amazon reports ${total} items` : ''}${apiRec.body ? `. The request body: ${String(apiRec.body).slice(0, 500)}` : ''}`
       return { ok: false, error: 'list-api-empty', probe: apiNote, source: "Amazon's own list API", scoutVersion: (chrome.runtime.getManifest() || {}).version || null }
     }
 
