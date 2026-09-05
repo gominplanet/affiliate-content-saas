@@ -15,6 +15,7 @@ import PageHero from '@/components/layout/PageHero'
 import SeoHubTabs from '@/components/seo/SeoHubTabs'
 import AiVisibilityCard from '@/components/seo/AiVisibilityCard'
 import StartHere from '@/components/seo/StartHere'
+import BlogHealthCard from '@/components/seo/BlogHealth'
 import AioReadinessCard from '@/components/seo/AioReadinessCard'
 import GetFound404Upload from '@/components/seo/GetFound404Upload'
 import { SeoGuide } from '@/components/guide/tool-guides'
@@ -807,6 +808,11 @@ export default function SeoPage() {
           names ticked green and a score of 80 with nothing to compare it to, and
           the one button that helps was three cards down. This says what to do,
           biggest first, and everything below it is the detail behind it. */}
+      {/* Is this blog working. Above the plan, because a creator whose traffic
+          stopped four days ago needs to know that before they read a list of
+          improvements. */}
+      <BlogHealthCard />
+
       <StartHere
         summary={data?.summary ?? null}
         connected={!!data?.connected}
