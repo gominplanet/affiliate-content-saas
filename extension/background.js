@@ -4326,6 +4326,23 @@ async function scanCreatorHubVideosBackground(userUrl, startAt) {
           source: `Amazon's own video list${startAt ? `, resumed from ${startAt}` : ''}`,
         }
       }
+      // Nothing new is not a failure when we resumed from the end.
+      //
+      // A run starting at the creator's stored count and finding nothing means
+      // the library is already complete, and Amazon answers an offset past the
+      // end with a 500 rather than an empty page. Reporting that as an error
+      // sent the last run back round a loop it had already finished.
+      if ((Number(startAt) || 0) > 0) {
+        return {
+          ok: true,
+          scoutVersion: (chrome.runtime.getManifest() || {}).version || null,
+          count: 0,
+          pages: 0,
+          partial: false,
+          stopped: `nothing new past ${Number(startAt).toLocaleString()}, so your library is already fully read`,
+          source: "Amazon's own video list",
+        }
+      }
       apiNote = `list API saved nothing${lastError ? `: ${lastError}` : ''}${total ? `, though Amazon reports ${total} items` : ''}${apiRec.body ? `. The request body: ${String(apiRec.body).slice(0, 500)}` : ''}`
       return { ok: false, error: 'list-api-empty', probe: apiNote, source: "Amazon's own list API", scoutVersion: (chrome.runtime.getManifest() || {}).version || null }
     }
