@@ -9292,8 +9292,12 @@ function ensureOffsiteStoreInPage() {
 // reliable path for MVP's "Send on Creator Connections": doing accept and send
 // as two separate tab operations (each opens + closes its own tab) raced and
 // threw "Frame with ID 0 was removed". Here a single tab is opened on the
-// campaign, we accept it when an Accept button is present (an un-accepted
-// opportunity has no brand chat until you accept), then send on the SAME tab.
+// campaign, we accept it when an Accept button is present, then send on the
+// SAME tab. NOTE: accepting is not a precondition for messaging. Amazon lets a
+// creator message a brand whose campaign they have not joined; this legacy
+// on-page path accepts because the page's own message box is rendered next to
+// the Accept button. The background path (sendByAsinApi) does not, and honours
+// the creator's choice.
 async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin, fast) {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }

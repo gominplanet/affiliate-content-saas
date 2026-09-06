@@ -7,8 +7,15 @@
  *   1. MVP drafts ONE reusable message group from your Outreach Profile + the
  *      options you tick, with [[PRODUCT]] / [[ASIN]] tokens.
  *   2. On send, it fills each brand's product + ASIN into that template and hands
- *      it to SCOUT, which accepts-if-needed and sends inside your Amazon session —
- *      one brand at a time, spaced out so Amazon doesn't flag the burst.
+ *      it to SCOUT, which sends inside your Amazon session, one brand at a time,
+ *      spaced out so Amazon doesn't flag the burst.
+ *
+ * Joining is a separate choice, and it is yours. MVP used to accept every
+ * campaign it messaged, on the belief that Amazon opened a brand chat only after
+ * you accepted. That was not Amazon's rule, it was our own ASIN lookup filtering
+ * on joined-only statuses, so an un-joined opportunity could never be found to
+ * message. Both are fixed: the lookup asks again without the filter, and the
+ * checkbox decides whether anything gets accepted at all.
  *
  * Brands you've already messaged are skipped. A failed brand doesn't stop the
  * batch; you get a per-brand result list at the end and can retry the failures.
@@ -89,6 +96,12 @@ function fillTemplate(segs: string[], product: string, asin: string): string {
 // Turn SCOUT's terse machine reasons into a line the creator can act on.
 function reasonText(raw: string): string {
   const s = String(raw || '').toLowerCase()
+  // Amazon allows messaging a brand you have not joined, but not for every
+  // campaign. When it refuses this one, say exactly that instead of dressing it
+  // up as a fault, because joining is a real decision and the creator turned it
+  // off on purpose.
+  if (/no[-_]?chat[-_]?unjoined/.test(s))
+    return 'Amazon wouldn’t open this brand’s chat while the campaign is un-joined. Joining is the only way to message this one.'
   // The brand chat is provisioned a few seconds after a campaign is accepted, so a
   // just-accepted brand can briefly have no chat/token. This is NOT "background
   // sending is off" — it's a timing/availability thing the creator can just Retry.
@@ -131,6 +144,10 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   // we can show a single "activate with one manual send" hint after the run.
   const sawNotLearnedRef = useRef(false)
   const [needsActivation, setNeedsActivation] = useState(false)
+  // Brands Amazon would not open a chat with until the campaign is accepted.
+  // Collected during a run so the only useful retry can be offered afterwards.
+  const joinRefusedRef = useRef<BulkCampaign[]>([])
+  const [joinRefused, setJoinRefused] = useState<BulkCampaign[]>([])
   const [templates, setTemplates] = useState<SavedTemplate[]>([])
   useEffect(() => { setTemplates(loadTemplates()) }, [])
   const cancelRef = useRef(false)
@@ -161,18 +178,31 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   const unique = Array.from(new Map(campaigns.filter(c => c.campaignId && c.asin).map(c => [c.campaignId, c])).values())
   const notMessaged = unique.filter(c => !alreadyMessaged.has((c.asin || '').toUpperCase()))
   const skipped = unique.filter(c => alreadyMessaged.has((c.asin || '').toUpperCase()))
+  // Default on: joining is what opens the chat, and it is what lets a creator
+  // make offsite content for the brand whether or not a sample ever arrives.
+  const [joinNew, setJoinNew] = useState(true)
   // Fold multiple products from the SAME brand into ONE message — Amazon's brand
   // chat is per brand, so messaging each product would spam the same thread. Only
   // fold when the brand is known; unknown-brand rows each stand on their own.
   const seenBrand = new Set<string>()
-  const toSend: BulkCampaign[] = []
+  const toSendAll: BulkCampaign[] = []
   const folded: BulkCampaign[] = []
   for (const c of notMessaged) {
     const b = (c.brand || '').trim().toLowerCase()
     if (b && seenBrand.has(b)) { folded.push(c); continue }
     if (b) seenBrand.add(b)
-    toSend.push(c)
+    toSendAll.push(c)
   }
+
+  // Joining and messaging are two separate acts, and MVP used to do both without
+  // asking. Accepting a campaign commits you to its terms; sending a message is
+  // just a conversation, and Amazon lets you have that conversation with a brand
+  // whose campaign you have not accepted. So the choice is real: leave this on
+  // and each brand is joined as it is messaged, turn it off and every selected
+  // brand is still messaged, with nothing accepted on your behalf.
+  const isJoined = (c: BulkCampaign) => alreadyAccepted.has((c.asin || '').toUpperCase())
+  const wouldJoin = toSendAll.filter(c => !isJoined(c))
+  const toSend = toSendAll
 
   useEffect(() => {
     try {
@@ -218,7 +248,11 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   const hasPlaceholder = /\[\[\s*(product|asin)\s*\]\]/i.test(cleanSegments.join(' '))
 
   // Send the template to a given set of campaigns, sequentially + paced.
-  const runBatch = useCallback(async (targets: BulkCampaign[]) => {
+  // `forceJoin` is for the one retry that exists: brands where Amazon declined to
+  // open a chat until the campaign was accepted. It overrides the toggle for that
+  // run only, and only because the creator pressed a button that says so.
+  const runBatch = useCallback(async (targets: BulkCampaign[], forceJoin?: boolean) => {
+    const join = forceJoin ?? joinNew
     if (cleanSegments.length === 0) { toast.error('Draft a message first.'); return }
     // One SCOUT presence check up front, so we don't hammer 100 sends at a wall.
     const scout = await getScoutStatus().catch(() => ({ installed: false, version: null as string | null }))
@@ -233,7 +267,9 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
 
     cancelRef.current = false
     sawNotLearnedRef.current = false
+    joinRefusedRef.current = []
     setNeedsActivation(false)
+    setJoinRefused([])
     setSending(true)
     // Seed the rows: queued to send, folded same-brand duplicates, and
     // already-messaged — the last two shown as skipped with the reason.
@@ -250,12 +286,13 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
       let ok = false, err = ''
       try {
         const message = fillTemplate(segments, c.product, c.asin)
-        // Auto-accept first: Amazon opens the brand chat only after you accept the
-        // campaign, so join every brand we're about to message (skip the ones
-        // already accepted). Best-effort — if accept fails, the send below still
-        // tries and reports its own reason.
+        // Join first when asked to, because a joined campaign is the one that can
+        // pay you and the one that can send you a sample. Best-effort: if the
+        // accept fails the send below still runs and reports its own reason.
         let justAccepted = false
-        if (!alreadyAccepted.has((c.asin || '').toUpperCase())) {
+        // Nothing is accepted on anyone's behalf. With the toggle off this block
+        // never runs, and the send below goes to the brand as a plain message.
+        if (join && !alreadyAccepted.has((c.asin || '').toUpperCase())) {
           try {
             const acc = await requestAcceptCampaign(c.detailsUrl)
             if (acc.ok && !acc.already) {
@@ -271,14 +308,20 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
         if (justAccepted) await sleep(4000)
         // Fully background: hidden-tab replay of Amazon's own search → chat/send API.
         let r = await requestSendByAsin(c.asin, message, [c.campaignId])
+        // Amazon declining to open a chat until the campaign is accepted. It is a
+        // settled answer, not a timing one, so it is never retried and never
+        // counted as SCOUT failing to learn the send. It gets its own retry, with
+        // joining on, which the creator chooses.
+        const needsJoin = (rr: { reason?: string; error?: string } | undefined) =>
+          /no[-_]?chat[-_]?unjoined/i.test(String((rr && (rr.reason || rr.error)) || ''))
         // A brand's chat often lags behind the acceptance — Amazon opens the chat a
         // bit AFTER you join, so the first lookup can come back "no chat yet"
         // (no-context-token). Retry that case (and a just-accepted miss) a couple
         // more times with growing waits before giving up. This is the #1 cause of a
         // just-joined brand failing when the rest succeed.
         const chatNotReady = (rr: { reason?: string; error?: string } | undefined) =>
-          /no[-_]?context[-_]?token|no[-_]?chat|open a chat/i.test(String((rr && (rr.reason || rr.error)) || ''))
-        for (let att = 0; att < 2 && !r.ok && (justAccepted || chatNotReady(r)); att++) {
+          !needsJoin(rr) && /no[-_]?context[-_]?token|no[-_]?chat|open a chat/i.test(String((rr && (rr.reason || rr.error)) || ''))
+        for (let att = 0; att < 2 && !r.ok && !needsJoin(r) && (justAccepted || chatNotReady(r)); att++) {
           await sleep(6000 + att * 6000) // 6s, then 12s
           r = await requestSendByAsin(c.asin, message, [c.campaignId])
         }
@@ -291,8 +334,9 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
         // activates it with ONE manual send — which then backs up to their account
         // and is restored on every future install. No tabs, ever.
         const notLearned = (rr: { reason?: string; error?: string } | undefined) =>
-          /not[-_]?learned|no[-_]?recipe|no[-_]?send[-_]?recipe|no[-_]?search[-_]?recipe|no[-_]?context[-_]?token|no[-_]?chat/.test(String((rr && (rr.reason || rr.error)) || ''))
+          !needsJoin(rr) && /not[-_]?learned|no[-_]?recipe|no[-_]?send[-_]?recipe|no[-_]?search[-_]?recipe|no[-_]?context[-_]?token|no[-_]?chat/.test(String((rr && (rr.reason || rr.error)) || ''))
         if (!r.ok && notLearned(r)) sawNotLearnedRef.current = true
+        if (!r.ok && needsJoin(r)) joinRefusedRef.current.push(c)
         ok = !!r.ok
         err = r.ok ? '' : reasonText(r.reason || r.error || 'send failed')
         try { console.warn('[MVP bulk] send result:', c.brand || c.asin, r) } catch { /* ignore */ }
@@ -312,8 +356,9 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
 
     setSending(false)
     setNeedsActivation(sawNotLearnedRef.current)
+    setJoinRefused(joinRefusedRef.current)
     onDone?.()
-  }, [segments, cleanSegments.length, opts.shareAddress, address, skipped, folded, alreadyAccepted, onDone])
+  }, [segments, cleanSegments.length, opts.shareAddress, address, skipped, folded, alreadyAccepted, joinNew, onDone])
 
   const started = rows.length > 0
   const sentCount = rows.filter(r => r.state === 'sent').length
@@ -359,11 +404,33 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                   in this browser with SCOUT installed, then hit send. Everything runs in the background, no tabs open.
                 </span>
               </div>
-              <div className="rounded-lg border p-2.5 mb-3 text-[12px] leading-relaxed flex items-start gap-2" style={{ borderColor: 'rgba(52,199,89,0.4)', background: 'rgba(52,199,89,0.08)', color: 'var(--text)' }}>
-                <span aria-hidden className="mt-[1px]">🤝</span>
-                <span style={{ color: 'var(--text-soft)' }}>
-                  MVP <b style={{ color: 'var(--text)' }}>joins each brand&apos;s campaign</b> as it messages them ({toSend.length} {toSend.length === 1 ? 'brand' : 'brands'} here), which is the recommended move. Joining opens the chat and lets you create offsite content for the brand, a blog post plus a social push, whether or not a sample ever arrives.
-                </span>
+              {/* Two separate acts, and MVP used to perform both off one button.
+                  Accepting commits you to a campaign's terms; messaging is a
+                  conversation. Everyone gets messaged either way. */}
+              <div className="rounded-lg border p-2.5 mb-3 text-[12px] leading-relaxed" style={{ borderColor: joinNew ? 'rgba(52,199,89,0.4)' : 'var(--border)', background: joinNew ? 'rgba(52,199,89,0.08)' : 'transparent', color: 'var(--text)' }}>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={joinNew}
+                    onChange={() => setJoinNew(v => !v)}
+                    className="accent-[#34c759] w-4 h-4 flex-shrink-0 mt-[2px]"
+                  />
+                  <span style={{ color: 'var(--text-soft)' }}>
+                    <b style={{ color: 'var(--text)' }}>
+                      Also join the {wouldJoin.length} {wouldJoin.length === 1 ? 'campaign' : 'campaigns'} you have not joined yet
+                    </b>
+                    {wouldJoin.length > 0 ? '. ' : ' (none here, everything selected is already joined). '}
+                    Joining is what puts you on the campaign&apos;s commission and lets you request a sample. It also lets you make
+                    offsite content for the brand, a blog post plus a social push, whether or not a sample ever arrives.
+                  </span>
+                </label>
+                {!joinNew && (
+                  <p className="text-[12px] mt-2 pl-6" style={{ color: 'var(--text-soft)' }}>
+                    {wouldJoin.length
+                      ? `All ${toSend.length} ${toSend.length === 1 ? 'brand is' : 'brands are'} still messaged. Nothing is accepted on your behalf, so ${wouldJoin.length === 1 ? 'that campaign stays' : 'those campaigns stay'} an open opportunity you can join later. Some brands only open a chat once you have joined; those come back marked, and you can retry them.`
+                      : 'Nothing changes here: every brand selected is already joined.'}
+                  </p>
+                )}
               </div>
               <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>Add to every message</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
@@ -458,6 +525,26 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                   </span>
                 </div>
               )}
+              {/* The one retry worth offering. These brands were messaged without
+                  joining because that is what was asked for, and Amazon would not
+                  open their chat on those terms. Joining them is a decision, so it
+                  is a button and not something done quietly on the next attempt. */}
+              {joinRefused.length > 0 && !sending && (
+                <div className="rounded-lg border p-2.5 mb-2 text-[12px] leading-relaxed" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--text-soft)' }}>
+                  <b style={{ color: 'var(--text)' }}>
+                    {joinRefused.length} {joinRefused.length === 1 ? 'brand' : 'brands'} would only accept a message from someone who has joined.
+                  </b>{' '}
+                  Everything else went out un-joined. You can join just these and send again.
+                  <button
+                    type="button"
+                    onClick={() => runBatch(joinRefused, true)}
+                    className="mt-2 block px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white"
+                    style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}
+                  >
+                    Join and message {joinRefused.length}
+                  </button>
+                </div>
+              )}
               {rows.map(r => {
                 const chip = stateChip(r.state)
                 return (
@@ -523,7 +610,10 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
         </div>
         {!started && (
           <p className="px-5 pb-4 -mt-1 text-[11px]" style={{ color: 'var(--text-faint)' }}>
-            SCOUT joins each brand&apos;s campaign if you haven&apos;t already, then sends from your Amazon session, one brand at a time spaced a few seconds apart so the burst isn&apos;t flagged. Keep this tab open; a failed brand won&apos;t stop the rest.
+            {joinNew
+              ? 'SCOUT joins each brand’s campaign if you haven’t already, then sends'
+              : 'SCOUT joins nothing. It messages every brand as an un-joined opportunity and sends'}{' '}
+            from your Amazon session, one brand at a time spaced a few seconds apart so the burst isn&apos;t flagged. Keep this tab open; a failed brand won&apos;t stop the rest.
             {finished ? '' : !hasPlaceholder && cleanSegments.length > 0 ? ' Add [[PRODUCT]] / [[ASIN]] back into the message so each brand is named.' : ''}
           </p>
         )}

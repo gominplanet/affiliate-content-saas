@@ -891,7 +891,8 @@ export default function CcCampaignsPage() {
               <p className="font-semibold mb-1" style={{ color: 'var(--text)' }}>Messaging brands, and how to change what you say</p>
               <ul className="space-y-1 list-disc pl-4">
                 <li><b>Message one brand:</b> the <Mail size={12} className="inline -mt-0.5" /> button on a card. MVP accepts the campaign if needed and sends the pitch through your logged-in Amazon session.</li>
-                <li><b>Message many at once:</b> tick the checkbox on up to {BULK_MAX} cards, then <b>Message N brands</b> in the bar that appears. Each is accepted and messaged in the background, one at a time.</li>
+                <li><b>Message many at once:</b> tick the checkbox on up to {BULK_MAX} cards, then <b>Message N brands</b> in the bar that appears. Each is messaged in the background, one at a time.</li>
+                <li><b>Joining is your call:</b> messaging a brand and joining its campaign are two different things, and you can message a brand without joining. The bulk window has a checkbox for it, on by default because joining is what puts you on the commission and lets you ask for a sample. Turn it off and nothing is accepted on your behalf.</li>
                 <li><b>Your wording:</b> every pitch is built from one saved profile — your greeting, credibility, offer, links and sample address. Edit it once and it applies to every message.</li>
                 <li><b>Edit before it sends:</b> in the message window you can rewrite each message, add or remove one, and tick what to include (product &amp; ASIN, livestream/banner offers, portfolio links, free sample, shipping address). Nothing goes out until you hit Send.</li>
               </ul>

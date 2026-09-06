@@ -438,20 +438,35 @@ async function ccSendInPage(opts) {
     const campaignIds = Array.isArray(campaignIdsHint) ? campaignIdsHint.filter(Boolean).slice() : []
     let brand = null
     let resolveErr = null
+    let unjoined = false
+    // Resolve the ASIN to a campaign id.
+    //
+    // Two passes, and the second one matters. SCHEDULED + DELIVERING are the
+    // statuses a campaign carries once you have JOINED it, so a joined-only
+    // search can never find an opportunity you have not accepted. That filter is
+    // ours, not Amazon's, and for a long time it made joining look mandatory
+    // before a brand could be messaged when in fact it was only mandatory before
+    // MVP could find the campaign to message about. Ask again with no status
+    // filter when the first pass comes back empty, and flag the result, so a
+    // creator who wants to talk to a brand before committing to its terms can.
+    const resolve = async (statuses) => {
+      const body = JSON.stringify({
+        campaignId: null, brandId: null,
+        filterOptions: { campaignType: 'BOUNTY_BOARD', availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, statuses, commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null },
+        sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }],
+        nextToken: null, pageNumber: 1, pageSize: 30, creatorId,
+        searchOptions: [{ fieldName: 'brandName', searchString: A }, { fieldName: 'campaignName', searchString: A }, { fieldName: 'asin', searchString: A }],
+      })
+      const r = await fetchT('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body, credentials: 'include' }, 12000)
+      const j = await r.json().catch(() => null)
+      const ads = (j && j.responses && j.responses[0] && j.responses[0].ads) || []
+      const hasAsin = (a) => Array.isArray(a.campaignAsins) && a.campaignAsins.map((x) => String(x).toUpperCase()).includes(A)
+      return ads.filter(hasAsin)
+    }
     if (A && creatorId) {
       try {
-        const body = JSON.stringify({
-          campaignId: null, brandId: null,
-          filterOptions: { campaignType: 'BOUNTY_BOARD', availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, statuses: ['SCHEDULED', 'DELIVERING'], commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null },
-          sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }],
-          nextToken: null, pageNumber: 1, pageSize: 30, creatorId,
-          searchOptions: [{ fieldName: 'brandName', searchString: A }, { fieldName: 'campaignName', searchString: A }, { fieldName: 'asin', searchString: A }],
-        })
-        const r = await fetchT('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body, credentials: 'include' }, 12000)
-        const j = await r.json().catch(() => null)
-        const ads = (j && j.responses && j.responses[0] && j.responses[0].ads) || []
-        const hasAsin = (a) => Array.isArray(a.campaignAsins) && a.campaignAsins.map((x) => String(x).toUpperCase()).includes(A)
-        const chosen = ads.filter(hasAsin)
+        let chosen = await resolve(['SCHEDULED', 'DELIVERING'])
+        if (!chosen.length) { chosen = await resolve(null); if (chosen.length) unjoined = true }
         for (const a of chosen) { if (a.campaignId && !campaignIds.includes(a.campaignId)) campaignIds.push(a.campaignId); if (!brand && a.brandName) brand = a.brandName }
       } catch (e) { resolveErr = e && e.message ? e.message : String(e) }
     }
@@ -482,7 +497,11 @@ async function ccSendInPage(opts) {
           if (!searchDbg) searchDbg = { status: sr.status, sentBody: String(sBody).slice(0, 700), respBody: String(raw).slice(0, 900) }
           if (!token && !creatorName) { const n = findCreatorName(sj); if (n) creatorName = n }
         }
-        if (!token) { lastReason = 'no-context-token'; continue }
+        // Separate reason when the campaign was only found without a status
+        // filter, i.e. it is one the creator has not joined. Amazon deciding not
+        // to open a chat there is a different fact from a chat that exists and
+        // did not answer, and it is the one case where joining IS the fix.
+        if (!token) { lastReason = unjoined ? 'no-chat-unjoined' : 'no-context-token'; continue }
         if (!creatorName) { const n = findCreatorName(sj); if (n) creatorName = n }
         let groups = 0
         for (const seg of segments) {
@@ -494,10 +513,10 @@ async function ccSendInPage(opts) {
           else { lastReason = 'send-rejected'; break }
           await new Promise((r) => setTimeout(r, 400))
         }
-        if (groups > 0) return { ok: groups === segments.length, reason: groups === segments.length ? undefined : 'partial', groups, campaignId: cid, brand, creatorName: creatorName || undefined, creatorId: creatorId || undefined, via: 'content' }
+        if (groups > 0) return { ok: groups === segments.length, reason: groups === segments.length ? undefined : 'partial', groups, campaignId: cid, brand, unjoined, creatorName: creatorName || undefined, creatorId: creatorId || undefined, via: 'content' }
       } catch (e) { lastReason = 'exception' }
     }
-    return { ok: false, reason: lastReason, campaignIds, brand, error: resolveErr || undefined, creatorName: creatorName || undefined, creatorId: creatorId || undefined, via: 'content', searchDbg: searchDbg || undefined }
+    return { ok: false, reason: lastReason, campaignIds, brand, unjoined, error: resolveErr || undefined, creatorName: creatorName || undefined, creatorId: creatorId || undefined, via: 'content', searchDbg: searchDbg || undefined }
   } catch (e) {
     return { ok: false, reason: 'exception', error: e && e.message ? e.message : String(e), via: 'content' }
   }
