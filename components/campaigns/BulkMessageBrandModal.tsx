@@ -25,6 +25,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Sparkles, Send, Users, Plus, Trash2, Check, AlertTriangle, RotateCcw } from 'lucide-react'
 import { requestSendByAsin, requestAcceptCampaign, getScoutStatus } from '@/lib/extension-frame'
+import { recordAccept } from '@/lib/accept-campaign'
 import OutreachProfileModal from '@/components/collaborations/OutreachProfileModal'
 
 export interface BulkCampaign {
@@ -297,10 +298,14 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
             const acc = await requestAcceptCampaign(c.detailsUrl)
             if (acc.ok && !acc.already) {
               justAccepted = true
-              void fetch('/api/campaigns/mark-accepted', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ asin: c.asin, campaignId: c.campaignId, detailsUrl: c.detailsUrl, brand: c.brand, commissionPct: c.commissionPct, productTitle: c.product }),
-              }).catch(() => {})
+              // Awaited and labelled. A campaign joined as part of a bulk send is
+              // the one a creator is most likely to have forgotten about, so it
+              // is the one MVP most needs to remember on their behalf.
+              await recordAccept({
+                asin: c.asin, campaignId: c.campaignId, detailsUrl: c.detailsUrl,
+                brand: c.brand, commissionPct: c.commissionPct, productTitle: c.product,
+                source: 'bulk-message',
+              })
             }
           } catch { /* accept is best-effort */ }
         }

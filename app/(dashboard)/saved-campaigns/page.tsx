@@ -57,6 +57,7 @@ export default function SavedCampaignsPage() {
     const ok = await acceptCampaignViaScout({
       detailsUrl: detailsUrlFor(s), asin: s.asin, campaignId: s.campaign_id,
       brand: s.brand, commissionPct: s.commission_pct, productTitle: s.title,
+      source: 'saved-campaigns',
     })
     if (ok) setAccepted((prev) => new Set(prev).add(s.id))
     setAccepting(null)

@@ -30,6 +30,8 @@ export async function POST(request: Request) {
       brand?: string
       commissionPct?: number
       productTitle?: string
+      /** Which part of MVP did this, so the record can say. */
+      source?: string
     }
     const asin = (body.asin || '').toString().trim().toUpperCase()
     if (!/^[A-Z0-9]{10}$/.test(asin)) {
@@ -68,7 +70,7 @@ export async function POST(request: Request) {
       if (safeBrand) patch.brand_name = safeBrand
       const { error } = await sb.from('campaigns').update(patch).eq('id', existing.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      await recordAcceptedCampaign(sb, ownerId, body.campaignId, safeBrand, asin)
+      await recordAcceptedCampaign(sb, ownerId, body.campaignId, safeBrand, asin, body.source)
       return NextResponse.json({ ok: true, created: false })
     }
 
@@ -90,24 +92,39 @@ export async function POST(request: Request) {
 
     const { error } = await sb.from('campaigns').insert(insert)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    await recordAcceptedCampaign(sb, ownerId, body.campaignId, safeBrand, asin)
+    await recordAcceptedCampaign(sb, ownerId, body.campaignId, safeBrand, asin, body.source)
     return NextResponse.json({ ok: true, created: true })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
 }
 
-/** Record the accepted campaign in the per-campaign ledger (many per ASIN), so
- *  the favorite-brands counts can exclude EVERY joined campaign — not just the one
- *  the ASIN-keyed campaigns row could hold. Best-effort; never fails the request. */
+/**
+ * Record the accept. This is MVP's memory of what it joined.
+ *
+ * It used to return early when Amazon had not given a campaign id, which meant an
+ * accept that succeeded on Amazon left no trace here. The Joined Campaigns page
+ * reads this ledger to answer "show me what I joined through MVP so I can make
+ * something for it", so a missing row is a campaign the creator can no longer
+ * find. The ledger is keyed by campaign so several campaigns for one product each
+ * keep their own row; without a real id there is still exactly one thing to
+ * remember, so it gets a stable per-product key instead of being dropped.
+ *
+ * `source` is written when the column exists and skipped when it does not, so
+ * this keeps working on a database that has not had migration 314 applied yet.
+ * Losing the label is survivable; losing the row is not.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function recordAcceptedCampaign(sb: any, userId: string, campaignId: string | undefined, brand: string | null, asin: string): Promise<void> {
-  const cid = (campaignId || '').toString().trim()
-  if (!cid) return
+async function recordAcceptedCampaign(sb: any, userId: string, campaignId: string | undefined, brand: string | null, asin: string, source?: string): Promise<void> {
+  const cid = (campaignId || '').toString().trim() || `asin:${asin}`
+  const base = { user_id: userId, campaign_id: cid, brand_name: brand, asin, accepted_at: new Date().toISOString() }
+  const src = typeof source === 'string' && source.trim() ? source.trim().slice(0, 40) : null
   try {
-    await sb.from('cc_accepted_campaigns').upsert(
-      { user_id: userId, campaign_id: cid, brand_name: brand, asin, accepted_at: new Date().toISOString() },
-      { onConflict: 'user_id,campaign_id' },
-    )
-  } catch { /* ledger is best-effort */ }
+    const withSource = await sb.from('cc_accepted_campaigns')
+      .upsert({ ...base, source: src }, { onConflict: 'user_id,campaign_id' })
+    if (!withSource?.error) return
+  } catch { /* fall through to the column-less write */ }
+  try {
+    await sb.from('cc_accepted_campaigns').upsert(base, { onConflict: 'user_id,campaign_id' })
+  } catch { /* the accept still happened on Amazon; never fail the request */ }
 }

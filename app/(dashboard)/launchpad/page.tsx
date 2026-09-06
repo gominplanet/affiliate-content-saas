@@ -13,6 +13,7 @@ import { Loader2, Check, Youtube, Sparkles, Globe, Rocket, Handshake, Lock, Uplo
 import { toast } from 'sonner'
 import UploadStage from '@/components/launchpad/UploadStage'
 import StorefrontStage from '@/components/launchpad/StorefrontStage'
+import { recordAccept } from '@/lib/accept-campaign'
 import { requestStudioFinish, requestFindCampaign, requestAcceptCampaign, requestAmazonAsinCheck, requestResolveLocalAsin } from '@/lib/extension-frame'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
@@ -510,14 +511,12 @@ export default function LaunchpadPage() {
         // do. Without this the campaign is joined on Amazon but MVP never learns,
         // so the "open campaigns" counts stay wrong and Accept all offers it again.
         if (asinClean) {
-          void fetch('/api/campaigns/mark-accepted', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              asin: asinClean, campaignId: ccCampaign.campaignId || undefined,
-              detailsUrl: ccCampaign.detailsUrl, brand: ccCampaign.brand,
-              commissionPct: ccCampaign.commissionPct, productTitle: ccCampaign.name,
-            }),
-          }).catch(() => {})
+          await recordAccept({
+            asin: asinClean, campaignId: ccCampaign.campaignId || undefined,
+            detailsUrl: ccCampaign.detailsUrl, brand: ccCampaign.brand,
+            commissionPct: ccCampaign.commissionPct, productTitle: ccCampaign.name,
+            source: 'launchpad',
+          })
         }
         toast.success(r.already ? 'Already accepted.' : 'Campaign accepted.')
       } else {

@@ -85,6 +85,9 @@ export interface JoinedCampaign {
    *  decision. MVP writes a ledger row every time it accepts and never writes one
    *  for a campaign found on Amazon, so this is a record rather than a guess. */
   joinedByMvp?: boolean
+  /** Which part of MVP did the joining, from the record it keeps. Null for
+   *  accepts made before MVP started writing it down. */
+  joinedSource?: string | null
   messagedAt: string | null
   detailsUrl: string | null
   content: ContentPiece[]

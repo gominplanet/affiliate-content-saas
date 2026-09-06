@@ -18,7 +18,7 @@ import {
   Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake, ShoppingBag,
   Bookmark, BookmarkCheck, Check, Send, Info, X, Pencil,
 } from 'lucide-react'
-import { acceptCampaignViaScout } from '@/lib/accept-campaign'
+import { acceptCampaignViaScout, recordAccept } from '@/lib/accept-campaign'
 import { campaignRunway } from '@/lib/campaign-runway'
 import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns, requestBrandChats, requestCcSendDebug, getScoutCcRecipe } from '@/lib/extension-frame'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -116,6 +116,7 @@ function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void
       await acceptCampaignViaScout({
         detailsUrl: c.detailsUrl, asin: c.repAsin, campaignId: c.campaignId,
         brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name,
+        source: 'write-post',
       })
     }
     // Persistent toast for the whole run — the CC engine (scrape → research →
@@ -176,11 +177,13 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
         toast.error(msg, { id: tId, duration: 8_000 })
         return
       }
-      // Record it (upsert — carries the catalog ids so status sticks).
-      void fetch('/api/campaigns/mark-accepted', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ asin: c.repAsin, campaignId: c.campaignId, detailsUrl: c.detailsUrl, brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name }),
-      }).catch(() => {})
+      // Record it, awaited, so an accept MVP just performed cannot go missing
+      // from the list built to show what was joined through MVP.
+      await recordAccept({
+        asin: c.repAsin, campaignId: c.campaignId, detailsUrl: c.detailsUrl,
+        brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name,
+        source: 'campaign-card',
+      })
       setAcceptedLocal(true)
       toast.success(res.already ? 'Already accepted — you’re in.' : 'Accepted. You can message the brand or make a post.', { id: tId, duration: 6_000 })
       onActed?.() // refresh per-ASIN status so "Hide joined" sees this immediately
@@ -466,10 +469,11 @@ export default function CcCampaignsPage() {
         if (r.ok && r.already) already++
         else if (r.ok) {
           joined++
-          void fetch('/api/campaigns/mark-accepted', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ asin: c.repAsin, campaignId: c.campaignId, detailsUrl: c.detailsUrl, brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name }),
-          }).catch(() => {})
+          await recordAccept({
+            asin: c.repAsin, campaignId: c.campaignId, detailsUrl: c.detailsUrl,
+            brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name,
+            source: 'bulk-accept',
+          })
         } else failed++
       } catch { failed++ }
       done++

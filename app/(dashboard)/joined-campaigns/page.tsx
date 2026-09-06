@@ -77,6 +77,19 @@ const SORTS: { key: Sort; label: string }[] = [
   { key: 'ending', label: 'Ending soonest' },
 ]
 
+/** How MVP remembers joining each one. Shown because the memory is the point:
+ *  a campaign a bulk send joined on your behalf is a different thing from one you
+ *  chose, and the list should not blur them. */
+const SOURCE_LABEL: Record<string, string> = {
+  'campaign-card': 'joined from a campaign card',
+  'bulk-accept': 'joined with Accept all',
+  'bulk-message': 'joined by a bulk message',
+  'write-post': 'joined when you wrote the post',
+  launchpad: 'joined from Launchpad',
+  'favorite-brands': 'joined from a favourite brand',
+  'saved-campaigns': 'joined from your saved list',
+}
+
 const money = (cents: number) => cents % 100 === 0 ? `$${(cents / 100).toLocaleString()}` : `$${(cents / 100).toFixed(2)}`
 
 export default function JoinedCampaignsPage() {
@@ -325,8 +338,12 @@ export default function JoinedCampaignsPage() {
                           </span>
                         )}
                       </div>
-                      {r.brand && r.product && (
-                        <p className="text-[11.5px] truncate" style={{ color: 'var(--text-faint)' }}>{r.brand}</p>
+                      {(r.brand || r.joinedSource) && (
+                        <p className="text-[11.5px] truncate" style={{ color: 'var(--text-faint)' }}>
+                          {r.brand && r.product ? r.brand : ''}
+                          {r.brand && r.product && r.joinedSource ? ' · ' : ''}
+                          {r.joinedSource ? (SOURCE_LABEL[r.joinedSource] ?? r.joinedSource) : ''}
+                        </p>
                       )}
                       {/* The prose belongs where a decision is being made, not
                           repeated down seven hundred rows. On a campaign waiting

@@ -116,11 +116,19 @@ async function load() {
   // stores the campaign's details_url and the sync does not, so a joined row
   // carrying one came through MVP.
   const joinedByMvp = new Set<string>()
+  const joinedSource = new Map<string, string>()
+  const readLedger = async (cols: string) =>
+    sb.from('cc_accepted_campaigns').select(cols).eq('user_id', ownerId).limit(2000)
   try {
-    const { data } = await sb.from('cc_accepted_campaigns').select('asin').eq('user_id', ownerId).limit(2000)
-    for (const r of (data ?? []) as { asin: string | null }[]) {
+    // The source column arrived in migration 314; a database without it must not
+    // lose the list, only the label.
+    let res = await readLedger('asin, source')
+    if (res.error) res = await readLedger('asin')
+    for (const r of (res.data ?? []) as { asin: string | null; source?: string | null }[]) {
       const a = String(r.asin || '').toUpperCase()
-      if (a) joinedByMvp.add(a)
+      if (!a) continue
+      joinedByMvp.add(a)
+      if (r.source) joinedSource.set(a, r.source)
     }
   } catch { /* no ledger, so the details_url fingerprint carries it alone */ }
 
@@ -358,6 +366,7 @@ async function load() {
       endsAt: r.ends_at || cat?.endsAt || null,
       joinedAt: r.accepted_at || r.amazon_joined_at || null,
       joinedByMvp: true,
+      joinedSource: joinedSource.get(r.asin) ?? null,
       messagedAt: r.messaged_at || null,
       detailsUrl: r.details_url || null,
       content: content.get(r.asin) ?? [],

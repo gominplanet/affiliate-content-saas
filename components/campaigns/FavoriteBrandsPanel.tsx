@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Star, Plus, X, Loader2, Handshake, MessageCircle, RefreshCw } from 'lucide-react'
 import { requestAcceptCampaign, requestCcBrandSearch } from '@/lib/extension-frame'
+import { recordAccept } from '@/lib/accept-campaign'
 import BulkMessageBrandModal, { type BulkCampaign } from '@/components/campaigns/BulkMessageBrandModal'
 
 interface FavBrand { brand: string; label: string; openCount: number; joinedCount: number; totalCount: number; lastCheckedAt: string | null }
@@ -120,10 +121,11 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
             // Amazon) was still counted "open", so Accept all kept returning
             // "already joined" and the count never dropped. Marking it here lets the
             // recount exclude it.
-            await fetch('/api/campaigns/mark-accepted', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ asin: c.repAsin, campaignId: c.campaignId, detailsUrl: c.detailsUrl, brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name }),
-            }).catch(() => {})
+            await recordAccept({
+              asin: c.repAsin, campaignId: c.campaignId, detailsUrl: c.detailsUrl,
+              brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name,
+              source: 'favorite-brands',
+            })
           } else failed++
         } catch { failed++ }
         done++
