@@ -937,24 +937,47 @@ export async function POST(request: Request) {
       }
     }
 
-    // What the description actually shipped, and — the part that was missing —
-    // why it isn't a geni.us link when the creator has Geniuslink connected.
-    // Until now a description that skipped Geniuslink because the stored style
-    // said 'direct' came back with no error at all, so Co-Pilot showed a green
-    // "Associates link ✓" and the creator had nothing to tell them their paid
-    // link service was sitting idle.
+    // WHAT THE CREATOR CHOSE vs WHAT THIS DESCRIPTION GOT.
+    //
+    // Every style can fall back quietly: a Passport mint returns null, a
+    // Geniuslink call throws or is skipped because the stored style says
+    // something else, a Bitly shorten comes back empty. Each fallback publishes
+    // a working link, so nothing looks broken, and Co-Pilot showed a green
+    // "Associates link ✓" over a link the creator never picked. The chosen style
+    // is a promise about every link MVP builds, so when this description could
+    // not keep it, it says so here rather than letting the creator find out in a
+    // published description weeks later.
     const linkStyleUsed: 'passport' | 'geniuslink' | 'bitly' | 'direct' =
       passportUsed ? 'passport' : geniuslinkUsed ? 'geniuslink' : bitlyUsed ? 'bitly' : 'direct'
+    const STYLE_LABEL: Record<string, string> = {
+      passport: 'Passport Links', geniuslink: 'Geniuslink', bitly: 'Bitly', direct: 'Direct',
+    }
+    const GOT_LABEL: Record<string, string> = {
+      passport: 'a Passport link', geniuslink: 'a geni.us link',
+      bitly: 'a Bitly short link', direct: 'a plain tagged Amazon link',
+    }
     let geniuslinkSkippedByStyle = false
-    if (!geniuslinkUsed && !geniuslinkError && affiliateUrl
-        && (intRow?.geniuslink_api_key || ytStyle.geniuslinkKey)
-        && (intRow?.geniuslink_api_secret || ytStyle.geniuslinkSecret)) {
+    const hasGeniuslinkKeys = !!((intRow?.geniuslink_api_key || ytStyle.geniuslinkKey)
+      && (intRow?.geniuslink_api_secret || ytStyle.geniuslinkSecret))
+    if (affiliateUrl && !geniuslinkError && ytStyle.style !== linkStyleUsed) {
+      // A failure inside the chosen style (the mint or the API call did not come
+      // back) reads differently from "your style points somewhere else", so the
+      // creator is not sent to check credentials that are fine.
       geniuslinkSkippedByStyle = true
-      geniuslinkError = ytStyle.style === 'passport'
-        ? 'Your link style is Passport Links, so this description uses a Passport link instead of Geniuslink. Change it in Brand Profile → Affiliate Link Routing.'
-        : ytStyle.style === 'bitly'
-          ? 'Your link style is Bitly, so this description uses a Bitly link instead of Geniuslink. Change it in Brand Profile → Affiliate Link Routing.'
-          : 'Your Geniuslink keys are saved but your link style is set to Direct, so this description uses a plain Amazon link. Switch it to Geniuslink in Brand Profile → Affiliate Link Routing.'
+      geniuslinkError =
+        `Your link style is ${STYLE_LABEL[ytStyle.style]}, but this description got ${GOT_LABEL[linkStyleUsed]}. `
+        + (ytStyle.style === 'passport'
+          ? 'The Passport link could not be created just now. Hit Regenerate, and check Brand Profile → Affiliate Link Routing if it keeps happening.'
+          : ytStyle.style === 'bitly'
+            ? 'The Bitly shorten did not come back. Hit Regenerate, and check your Bitly connection in Brand Profile → Affiliate Link Routing if it keeps happening.'
+            : 'Hit Regenerate, and check Brand Profile → Affiliate Link Routing if it keeps happening.')
+    } else if (affiliateUrl && !geniuslinkError && !geniuslinkUsed && hasGeniuslinkKeys) {
+      // Nothing failed: their Geniuslink keys simply are not the chosen style.
+      // Worth saying, because a paid service sitting idle looks like a bug.
+      geniuslinkSkippedByStyle = true
+      geniuslinkError = ytStyle.style === 'direct'
+        ? 'Your Geniuslink keys are saved but your link style is Direct, so this description uses a plain Amazon link. Switch it in Brand Profile → Affiliate Link Routing.'
+        : `Your link style is ${STYLE_LABEL[ytStyle.style]}, so this description uses ${GOT_LABEL[linkStyleUsed]} rather than Geniuslink. Change it in Brand Profile → Affiliate Link Routing.`
     }
 
     // Build subject context for the agent swarm. In product mode this is

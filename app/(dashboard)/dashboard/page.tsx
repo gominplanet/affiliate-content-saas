@@ -28,6 +28,7 @@ import FirstWinChecklist from '@/components/dashboard/FirstWinChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import NewsBanner from '@/components/dashboard/NewsBanner'
 import ReconnectBanner from '@/components/dashboard/ReconnectBanner'
+import LinkStyleNudge from '@/components/dashboard/LinkStyleNudge'
 import YouTubeVerifiedNudge from '@/components/dashboard/YouTubeVerifiedNudge'
 import WhatsNewCard from '@/components/dashboard/WhatsNewCard'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
@@ -384,6 +385,11 @@ export default async function DashboardPage() {
             surfaces here (proactive probe) so a creator fixes it in one click
             instead of churning over posts that quietly stopped going out. */}
         <ReconnectBanner />
+        {/* The one setting MVP cannot guess: which cloaker every affiliate link
+            it writes should use. Shows only until the creator has actually
+            picked one, because until then their links are a default nobody
+            chose. */}
+        <LinkStyleNudge />
         {/* One-time, positive nudge for users who connected YouTube before we
             were Google-verified — reconnect once for the verified, durable link.
             Only shown when YouTube is actually connected. */}

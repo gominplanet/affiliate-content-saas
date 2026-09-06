@@ -397,7 +397,13 @@ export default function BrandPage() {
   }, [])
   // The single "which cloaker does MVP use" value the chooser reflects: Passport
   // when it's on (it wins), otherwise the stored blog/social link mode.
-  const selectedLinkStyle: 'passport' | 'geniuslink' | 'bitly' | 'direct' = passportEnabled ? 'passport' : blogSocialLinkMode
+  //
+  // The TIER is part of that, not a detail. Passport is a paid-plan feature, and
+  // the enabled flag survives a downgrade, so reading the flag alone ticked
+  // Passport on this card while every generator resolved to something else. A
+  // card that shows a choice the product does not honor is worse than no card.
+  const passportActive = passportEnabled && passportCanUse
+  const selectedLinkStyle: 'passport' | 'geniuslink' | 'bitly' | 'direct' = passportActive ? 'passport' : blogSocialLinkMode
   // Pick a link style from the four tiles. Passport toggles instantly (server flag,
   // tier-gated); the other three flip the local mode and turn Passport off, and
   // persist when the user hits Save. Only one can be active at a time.
@@ -1093,6 +1099,14 @@ export default function BrandPage() {
                 busy={passportSaving}
                 onSelect={selectLinkStyle}
               />
+              {passportEnabled && !passportCanUse && (
+                <div className="mt-2.5 rounded-xl border p-3 text-[11.5px] leading-relaxed"
+                  style={{ borderColor: 'rgba(255,149,0,0.35)', background: 'rgba(255,149,0,0.08)', color: '#8a5300' }}>
+                  <b>Passport Links is switched on but your plan cannot use it,</b> so MVP is building{' '}
+                  {blogSocialLinkMode === 'geniuslink' ? 'Genius Links' : blogSocialLinkMode === 'bitly' ? 'Bitly links' : 'plain tagged Amazon links'}{' '}
+                  instead. Pick one of the styles above to make that explicit, or move to a plan that includes Passport.
+                </div>
+              )}
               <p className="mt-2 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
                 <b>Geo-routing</b> (sending an international shopper to their own country&rsquo;s Amazon) only comes with <b>Passport</b> (free) or <b>Genius Links</b> (paid). Bitly and Direct send everyone to the same store. A change applies to content generated afterward.
               </p>

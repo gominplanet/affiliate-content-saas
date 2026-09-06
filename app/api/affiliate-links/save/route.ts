@@ -24,6 +24,8 @@ import { toUserMessage } from '@/lib/friendly-error'
 import { snapshotActiveBlogIdentity } from '@/lib/site-identity'
 import { getOwnerUserId } from '@/lib/agency'
 import { pickLinkStyle } from '@/lib/link-style'
+import { canUsePassport } from '@/lib/feature-access'
+import { normalizeTier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,6 +70,17 @@ export async function GET() {
     })
     const pinRaw = String(row.pinterest_link_pref ?? '')
 
+    // HAS THIS CREATOR ACTUALLY PICKED, or are they just living with a default?
+    // The link style decides what every link in every piece of their content
+    // becomes, and MVP cannot ask at generation time, so the answer has to be on
+    // record before then. A stored mode, the legacy Geniuslink flag, or Passport
+    // switched on all count as a decision; an empty row is a creator who has
+    // never been asked, and gets sent to the chooser.
+    const passportOn = row.passport_links_enabled === true
+      && canUsePassport(normalizeTier((row.tier as string | null) ?? null))
+    const linkStyleChosen = LINK_MODES.has(modeRaw) || row.wrap_blog_geniuslink === true || passportOn
+    const effectiveLinkStyle = passportOn ? 'passport' : mode
+
     return NextResponse.json({
       ok: true,
       geniuslinkKey: (row.geniuslink_api_key as string) ?? '',
@@ -76,6 +89,9 @@ export async function GET() {
       bitlyToken: (row.bitly_access_token as string) ?? '',
       pinterestLinkPref: PIN_PREFS.has(pinRaw) ? pinRaw : 'auto',
       amazonTag: (row.amazon_associates_tag as string) ?? '',
+      linkStyleChosen,
+      effectiveLinkStyle,
+      passportOn,
     })
   } catch (err) {
     console.error('[affiliate-links GET]', err instanceof Error ? err.message : err)
