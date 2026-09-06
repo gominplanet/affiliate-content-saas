@@ -427,7 +427,9 @@ export default function JoinedCampaignsPage() {
       {creating && (
         <CreateForCampaignModal
           row={creating}
-          writing={writing === creating.asin}
+          // Only one Create window is open at a time, so any write in flight is
+          // this one's, and comparing ids would miss a switched product.
+          writing={writing !== null}
           onWrite={write}
           onClose={() => setCreating(null)}
         />

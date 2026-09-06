@@ -243,6 +243,7 @@ async function load() {
   type CatalogEntry = {
     endsAt: string | null; startsAt: string | null; commissionPct: number | null
     priceCents: number | null; imageUrl: string | null; brand: string | null; name: string | null
+    asins: string[]
     signals: { discountPct: number | null; rating: number | null; reviewCount: number | null; monthlySold: number | null; salesRank: number | null; salesRankCategory: string | null }
   }
   const catalog = new Map<string, CatalogEntry>()
@@ -265,6 +266,7 @@ async function load() {
       catalog.set(a, {
         endsAt: c.ends_at, startsAt: c.starts_at, commissionPct: c.commission_pct,
         priceCents: c.price_now_cents, imageUrl: c.image_url, brand: c.brand_name, name: c.campaign_name,
+        asins: (c.asins ?? []).map(x => String(x || '').toUpperCase()).filter(a => /^[A-Z0-9]{10}$/.test(a)),
         signals: {
           discountPct: c.discount_pct ?? null, rating: c.rating ?? null,
           reviewCount: c.review_count ?? null, monthlySold: c.monthly_sold ?? null,
@@ -355,6 +357,9 @@ async function load() {
     } : null
     return {
       asin: r.asin,
+      // The chosen product first, then the rest of the campaign's products, so a
+      // picker can default to what MVP would have done and still show the choice.
+      asins: [r.asin, ...(cat?.asins ?? []).filter(a => a !== r.asin)].slice(0, 30),
       campaignId: r.cc_campaign_id ?? null,
       brand: r.brand_name || cat?.brand || null,
       product: displayTitle(r.product_title) || displayTitle(cat?.name) || displayTitle(r.campaign_name),

@@ -65,7 +65,17 @@ export interface ProductSignals {
 }
 
 export interface JoinedCampaign {
+  /** The product MVP will write about unless the creator picks another.
+   *
+   *  Amazon's campaign name for it is `rep_asin`, and where that is missing the
+   *  browse page takes the first entry in the campaign's ASIN list, which is an
+   *  arbitrary choice nobody made on purpose. It is only a default, and `asins`
+   *  is what makes it visible. */
   asin: string
+  /** Every product this campaign covers, the chosen one included. A campaign can
+   *  span a dozen, and picking one for the creator without showing the rest hides
+   *  the actual decision: which of these is worth making something about. */
+  asins?: string[]
   campaignId: string | null
   brand: string | null
   product: string | null
