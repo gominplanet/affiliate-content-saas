@@ -65,7 +65,7 @@ async function load() {
   // Filtering on the marker kept the empty one and threw away the post, which is
   // how an account with 279 published posts was told that one of its 775
   // campaigns had content.
-  const COLS = 'asin, cc_campaign_id, brand_name, product_title, campaign_name, commission_pct, ends_at, accepted_at, amazon_joined_at, messaged_at, details_url, wordpress_url, blog_post_id, status, updated_at'
+  const COLS = 'asin, cc_campaign_id, brand_name, product_title, campaign_name, commission_pct, ends_at, accepted_at, amazon_joined_at, messaged_at, details_url, wordpress_url, blog_post_id, status, updated_at, campaign_asins'
   const FALLBACK_COLS = 'asin, cc_campaign_id, product_title, campaign_name, ends_at, accepted_at, wordpress_url, blog_post_id, status, updated_at'
   let rowsRaw: CampaignRow[] = []
   let readError: string | null = null
@@ -359,7 +359,12 @@ async function load() {
       asin: r.asin,
       // The chosen product first, then the rest of the campaign's products, so a
       // picker can default to what MVP would have done and still show the choice.
-      asins: [r.asin, ...(cat?.asins ?? []).filter(a => a !== r.asin)].slice(0, 30),
+      // What SCOUT read off Amazon's page wins over the catalog, because the
+      // catalog's list is empty for a large share of campaigns and Amazon's page
+      // is the only place that names them all.
+      asins: [r.asin, ...((r.campaign_asins?.length ? r.campaign_asins : (cat?.asins ?? []))
+        .map(a => String(a || '').toUpperCase())
+        .filter(a => /^[A-Z0-9]{10}$/.test(a) && a !== r.asin))].slice(0, 40),
       campaignId: r.cc_campaign_id ?? null,
       brand: r.brand_name || cat?.brand || null,
       product: displayTitle(r.product_title) || displayTitle(cat?.name) || displayTitle(r.campaign_name),

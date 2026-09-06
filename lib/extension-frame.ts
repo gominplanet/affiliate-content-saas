@@ -430,6 +430,23 @@ export interface AcceptCampaignResult { ok: boolean; accepted?: boolean; already
  * is a deliberate choice made in MVP (importing never accepts). Best-effort:
  * resolves, never throws.
  */
+/**
+ * Which products does this campaign actually cover?
+ *
+ * The shared catalog's asins column is empty for a large share of campaigns, so
+ * MVP recovers a single ASIN from the campaign's name and everything downstream
+ * inherits that one product as though it were the whole campaign. Amazon's own
+ * campaign page lists them all; SCOUT reads it in a hidden tab.
+ */
+export async function requestCampaignAsins(detailsUrl: string): Promise<{ ok: boolean; asins: string[]; reason?: string; error?: string }> {
+  if (!(await isExtensionAvailable())) return { ok: false, asins: [], error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; asins?: string[]; reason?: string; error?: string }>(
+    { type: 'MVP_CC_CAMPAIGN_ASINS', detailsUrl }, 65000,
+  )
+  if (!resp) return { ok: false, asins: [], error: 'timeout' }
+  return { ok: !!resp.ok, asins: Array.isArray(resp.asins) ? resp.asins : [], reason: resp.reason, error: resp.error }
+}
+
 export async function requestAcceptCampaign(detailsUrl: string): Promise<AcceptCampaignResult> {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }

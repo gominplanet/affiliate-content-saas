@@ -3353,6 +3353,51 @@ function acceptCampaignInPage() {
   return { ok: true, accepted: true, clicked: label }
 }
 
+// Read the PRODUCTS a Creator Connections campaign covers.
+//
+// A campaign can span a dozen ASINs, and MVP only reliably knows one of them:
+// the catalog's asins column is empty for a large share of campaigns, so the
+// browse page recovers a single ASIN from the campaign's name and everything
+// downstream inherits that one product as though it were the whole campaign.
+// Amazon's own campaign page lists them all, so read them there.
+//
+// Hidden tab, one harvest, tab closed. Returns whatever the page shows, plus the
+// throttle sentinel, so a robot check is reported rather than mistaken for a
+// campaign that covers nothing.
+async function campaignAsinsByUrl(detailsUrl) {
+  if (!detailsUrl) return { ok: false, error: 'no-url' }
+  let tabId = null
+  const keepAlive = startKeepAlive()
+  try {
+    const tab = await chrome.tabs.create({ url: detailsUrl, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 20000)
+    await _sleep(1500)
+    // The offsite store fix: CC pages render empty when the account is on an
+    // onsite store id, and an empty page reads as a campaign with no products.
+    try {
+      const sres = await chrome.scripting.executeScript({ target: { tabId }, func: ensureOffsiteStoreInPage })
+      const sw = sres && sres[0] && sres[0].result
+      if (sw && sw.switched) {
+        await _sleep(1200)
+        await chrome.tabs.update(tabId, { url: detailsUrl })
+        await waitForTabLoad(tabId, 20000)
+        await _sleep(1500)
+      }
+    } catch (e) {}
+    const ar = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAsinsInPage })
+    const r = (ar && ar[0] && ar[0].result) || { asins: [], blocked: false }
+    if (r.blocked) return { ok: false, reason: 'blocked', asins: [] }
+    const asins = (r.asins || []).map((a) => String(a || '').toUpperCase()).filter((a) => /^B0[A-Z0-9]{8}$/.test(a))
+    return { ok: true, asins: asins.slice(0, 60) }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception', asins: [] }
+  } finally {
+    stopKeepAlive(keepAlive)
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 async function acceptCampaignByUrl(detailsUrl, callerTabId) {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   let tabId = null
@@ -8959,6 +9004,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     ccMatchCampaigns(msg.keyword || '', msg.asins || [], callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_CC_CAMPAIGN_ASINS') {
+    // Which products does this campaign actually cover? Read from Amazon's own
+    // campaign page, because the shared catalog often has none.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout', asins: [] }), 60000)
+    campaignAsinsByUrl(msg.detailsUrl)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error', asins: [] }) })
     return true // async response — keep the channel open
   }
   if (msg.type === 'MVP_CC_ACCEPT') {

@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { X, PenLine, Loader2, ExternalLink, Check } from 'lucide-react'
 import PostToAll from '@/components/amazon/PostToAll'
+import { requestCampaignAsins } from '@/lib/extension-frame'
 import type { LibraryRow } from '@/lib/campaign-library'
 
 interface CampaignProduct {
@@ -54,7 +55,14 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
   // an arbitrary choice nobody made. The default is still that one, because it is
   // usually the campaign's headline product, but the rest are now visible and
   // switching changes what gets written and what gets posted.
-  const others = (row.asins ?? []).filter(a => a !== row.asin)
+  const [reading, setReading] = useState(false)
+  const [readError, setReadError] = useState<string | null>(null)
+  // The campaign's products, once SCOUT has read them off Amazon. Held here
+  // rather than reloading the whole list, so the choice is available in the
+  // window the creator already has open.
+  const [foundAsins, setFoundAsins] = useState<string[] | null>(null)
+  const known = foundAsins ?? row.asins ?? [row.asin]
+  const others = known.filter(a => a !== row.asin)
   const [asin, setAsin] = useState(row.asin)
   const [products, setProducts] = useState<CampaignProduct[] | null>(null)
   const [picking, setPicking] = useState(false)
@@ -63,11 +71,11 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
   const read = useCallback(async () => {
     const r = await fetch('/api/campaigns/products', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ asins: row.asins }),
+      body: JSON.stringify({ asins: known }),
     })
     const d = await r.json() as { products?: CampaignProduct[] }
     return d.products ?? []
-  }, [row.asins])
+  }, [known])
 
   const loadProducts = useCallback(async () => {
     if (products || !others.length) return
@@ -135,10 +143,45 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
               )}
             </div>
             <p className="text-[12px] mt-1 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              {others.length === 0
-                ? 'This campaign covers one product.'
-                : `This campaign covers ${others.length + 1} products. MVP defaults to the one Amazon lists first, which is not always the one worth writing about.`}
+              {others.length > 0
+                ? `This campaign covers ${others.length + 1} products. MVP defaults to the one Amazon lists first, which is not always the one worth writing about.`
+                : foundAsins
+                  ? 'Amazon lists one product for this campaign.'
+                  : 'MVP knows one product for this campaign. Amazon’s catalog leaves the list empty for most of them, so there may be more.'}
             </p>
+            {/* Read them off Amazon's own page, which is the only place that
+                names them all. Kept once read, because a campaign eventually
+                falls off Amazon's live list and the answer would be lost. */}
+            {others.length === 0 && !foundAsins && row.detailsUrl && (
+              <button type="button" disabled={reading}
+                onClick={async () => {
+                  setReading(true); setReadError(null)
+                  try {
+                    const res = await requestCampaignAsins(row.detailsUrl as string)
+                    if (!res.ok) {
+                      setReadError(res.error === 'not-installed'
+                        ? 'SCOUT is not installed in this browser, so Amazon’s page cannot be read.'
+                        : res.reason === 'blocked'
+                          ? 'Amazon asked SCOUT to prove it is not a robot. Open Creator Connections in this tab, then try again.'
+                          : 'Amazon did not answer. Try again in a moment.')
+                      return
+                    }
+                    const all = [...new Set([row.asin, ...res.asins])]
+                    setFoundAsins(all)
+                    if (all.length > 1) setPicking(true)
+                    void fetch('/api/campaigns/set-products', {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ asin: row.asin, asins: all }),
+                    }).catch(() => {})
+                  } finally { setReading(false) }
+                }}
+                className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-semibold disabled:opacity-50"
+                style={{ color: '#7C3AED' }}>
+                {reading ? <Loader2 size={12} className="animate-spin" /> : null}
+                {reading ? 'Reading Amazon’s campaign page…' : 'Read the products from Amazon'}
+              </button>
+            )}
+            {readError && <p className="text-[12px] mt-1.5" style={{ color: '#b3261e' }}>{readError}</p>}
             {picking && (
               <div className="mt-2.5 flex flex-col gap-1 max-h-64 overflow-y-auto">
                 {products === null ? (

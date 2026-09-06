@@ -36,6 +36,10 @@ export interface CampaignRow {
   blog_post_id?: string | null
   status?: string | null
   updated_at?: string | null
+  /** Every product the campaign covers, as SCOUT read it off Amazon's page.
+   *  Kept because the shared catalog's list is empty for a large share of
+   *  campaigns and the campaign eventually drops off Amazon's live list. */
+  campaign_asins?: string[] | null
 }
 
 /** True when any row for this product carries a join marker, whichever writer
@@ -77,6 +81,11 @@ export function mergeCampaignRows(rows: CampaignRow[]): Map<string, CampaignRow>
       commission_pct: first('commission_pct'),
       details_url: first('details_url'),
       campaign_name: first('campaign_name'),
+      // The longer list wins: a row that has never been read holds nothing, and
+      // taking "the first one with a value" would let an empty read overwrite a
+      // real one on the next merge.
+      campaign_asins: (raw.campaign_asins?.length ?? 0) > (prev.campaign_asins?.length ?? 0)
+        ? raw.campaign_asins : prev.campaign_asins,
       product_title:
         (prev.blog_post_id ? prev.product_title : null)
         ?? (raw.blog_post_id ? raw.product_title : null)
