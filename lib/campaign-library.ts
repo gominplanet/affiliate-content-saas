@@ -77,6 +77,14 @@ export interface JoinedCampaign {
   /** When the creator joined. Null for campaigns joined on Amazon directly,
    *  which MVP learns about from the sync rather than from having done it. */
   joinedAt: string | null
+  /** True when MVP performed the accept itself.
+   *
+   *  Worth keeping straight, because for a long time MVP accepted a campaign as a
+   *  side effect of sending a bulk message, without asking. A creator looking at
+   *  a list of hundreds is entitled to know how many of them were their own
+   *  decision. MVP writes a ledger row every time it accepts and never writes one
+   *  for a campaign found on Amazon, so this is a record rather than a guess. */
+  joinedByMvp?: boolean
   messagedAt: string | null
   detailsUrl: string | null
   content: ContentPiece[]
@@ -121,6 +129,9 @@ export interface CampaignLibrary {
     earning: number
     /** Open, nothing published, and a week or less left. */
     urgent: number
+    /** How many of these MVP accepted itself, rather than the creator accepting
+     *  on Amazon or through a deliberate press here. */
+    joinedByMvp: number
     /** Open, nothing published, split by what the remaining time can carry. */
     routes: Record<BestRoute, number>
     /** Amazon's total across the products in this list, or null when unsynced. */
@@ -291,7 +302,8 @@ export function buildCampaignLibrary(campaigns: JoinedCampaign[], now: Date = ne
   const routes: Record<BestRoute, number> = { 'video-long': 0, video: 0, 'social-now': 0, unknown: 0, closed: 0 }
   for (const r of rows) if (r.state === 'due') routes[r.runway.best]++
 
-  const summary = { joined: rows.length, made, due, missed, earning, urgent, routes, earnedCents }
+  const joinedByMvp = rows.filter(r => r.joinedByMvp).length
+  const summary = { joined: rows.length, made, due, missed, earning, urgent, joinedByMvp, routes, earnedCents }
 
   if (!rows.length) {
     return {

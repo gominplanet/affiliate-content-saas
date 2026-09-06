@@ -259,6 +259,17 @@ export default function JoinedCampaignsPage() {
                     <p className="text-[16px] font-bold tabular-nums" style={{ color }}>{n}</p>
                   </div>
                 ))}
+                {s.joinedByMvp > 0 && (
+                  <div>
+                    <p className="text-[10.5px] uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Joined through MVP</p>
+                    <p className="text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>
+                      {s.joinedByMvp}
+                      <span className="text-[11px] font-normal ml-1" style={{ color: 'var(--text-faint)' }}>
+                        of {s.joined}
+                      </span>
+                    </p>
+                  </div>
+                )}
                 {s.earnedCents != null && (
                   <div>
                     <p className="text-[10.5px] uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Amazon paid on these products</p>
@@ -423,7 +434,11 @@ export default function JoinedCampaignsPage() {
 
           <p className="text-[11px] mt-5 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
             One row per product. Amazon runs several campaigns for the same product across different windows, and being
-            joined to three of them is still one thing to make. Money shown is what Amazon reported against the product
+            joined to three of them is still one thing to make. This counts every campaign you have accepted at any point,
+            including ones that have since ended, so it is a history rather than a list of live commitments.
+            &ldquo;Joined through MVP&rdquo; is the number MVP accepted itself, from the record it keeps whenever it does;
+            the rest you accepted on Amazon or by pressing Join here. Use Read from Amazon to reconcile the list against
+            what Amazon still shows as joined. Money shown is what Amazon reported against the product
             itself, across every link you have anywhere, so it is never attributed to one post.
           </p>
         </>

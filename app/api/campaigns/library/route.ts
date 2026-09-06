@@ -237,6 +237,19 @@ async function load() {
     }
   }
 
+  // The ledger MVP writes every time IT performs an accept, and never writes for
+  // a campaign the creator joined on Amazon. It is the only record of who did the
+  // joining, which matters because for a long time a bulk message accepted every
+  // brand it touched without asking.
+  const joinedByMvp = new Set<string>()
+  try {
+    const { data } = await sb.from('cc_accepted_campaigns').select('asin').eq('user_id', ownerId).limit(2000)
+    for (const r of (data ?? []) as { asin: string | null }[]) {
+      const a = String(r.asin || '').toUpperCase()
+      if (a) joinedByMvp.add(a)
+    }
+  } catch { /* no ledger, so the split is simply unknown */ }
+
   const keepa = new Map<string, KeepaRow>()
   for (const k of keepaRows) {
     if (k.empty) continue // a tombstone for a product Keepa knows nothing about
@@ -328,6 +341,7 @@ async function load() {
       // The stored date wins when there is one; it is what the creator joined.
       endsAt: r.ends_at || cat?.endsAt || null,
       joinedAt: r.accepted_at || r.amazon_joined_at || null,
+      joinedByMvp: joinedByMvp.has(r.asin),
       messagedAt: r.messaged_at || null,
       detailsUrl: r.details_url || null,
       content: content.get(r.asin) ?? [],
