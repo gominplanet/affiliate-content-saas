@@ -18,6 +18,7 @@ import { getWalmartProductLinks } from '@/services/partnerboost'
 import { getExternalKey } from '@/lib/external-keys'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 
 export const dynamic = 'force-dynamic'
@@ -60,9 +61,10 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .maybeSingle()
     const wlStyle = await getLinkStyle(supabase, user.id)
-    if (source === 'minted' && wlStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    const wlCreds = geniuslinkCreds(wlStyle, intRow)
+    if (source === 'minted' && wlStyle.style === 'geniuslink' && wlCreds) {
       try {
-        const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+        const genius = createGeniuslinkService(wlCreds.key, wlCreds.secret)
         const { url: cl } = await genius.createLinkWithCode(url, (body.title || 'Walmart').slice(0, 80))
         if (cl) { url = cl; cloaked = true }
       } catch { /* non-fatal — return the un-cloaked minted link */ }

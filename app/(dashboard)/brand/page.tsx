@@ -379,6 +379,11 @@ export default function BrandPage() {
   // 'direct' (plain URL, free), 'geniuslink' (branded, tracked, costs per
   // click), or 'bitly' (free short link, needs the creator's Bitly token).
   const [blogSocialLinkMode, setBlogSocialLinkMode] = useState<'direct' | 'geniuslink' | 'bitly'>('direct')
+  // 'direct' above is a placeholder until the real settings arrive, not a
+  // choice. Saving the brand page before (or instead of) that load must not
+  // post it over a creator's actual routing, which is how a Geniuslink user
+  // ends up publishing plain Amazon links they never asked for.
+  const [linkModeLoaded, setLinkModeLoaded] = useState(false)
   const [bitlyToken, setBitlyToken] = useState('')
   // Passport ON is one of the four link styles and, when picked, becomes the
   // universal cloaker (it overrides the stored mode below). Its on/off flag saves
@@ -420,6 +425,8 @@ export default function BrandPage() {
       finally { setPassportSaving(false) }
     }
     setBlogSocialLinkMode(style)
+    // Picking one IS a choice, so Save sends it even if the settings read failed.
+    setLinkModeLoaded(true)
   }
   // Where a Clip Factory Pinterest pin links: auto (blog post → video →
   // homepage), the blog post, the source YouTube video, or the blog homepage.
@@ -584,6 +591,7 @@ export default function BrandPage() {
         setGeniuslinkSecret(d.geniuslinkSecret ?? '')
         const mode = d.blogSocialLinkMode
         setBlogSocialLinkMode(mode === 'geniuslink' || mode === 'bitly' || mode === 'direct' ? mode : 'direct')
+        setLinkModeLoaded(true)
         setBitlyToken(d.bitlyToken ?? '')
         const pref = d.pinterestLinkPref
         setPinterestLinkPref(pref === 'blog_post' || pref === 'youtube' || pref === 'homepage' ? pref : 'auto')
@@ -741,7 +749,8 @@ export default function BrandPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           geniuslinkKey, geniuslinkSecret,
-          blogSocialLinkMode, bitlyToken,
+          ...(linkModeLoaded ? { blogSocialLinkMode } : {}),
+          bitlyToken,
           pinterestLinkPref, amazonTag: amazonAssociatesTag,
         }),
       })

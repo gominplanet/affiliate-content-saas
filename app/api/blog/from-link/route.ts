@@ -37,6 +37,7 @@ import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { spendGate } from '@/lib/ai-spend'
@@ -196,8 +197,9 @@ export async function POST(req: Request) {
   // Bitly wraps the tagged fallback when that's their style; Passport calls
   // below self-gate (passportLinkForUser returns null unless it's their style).
   const flStyle = await getLinkStyle(supabase, ownerId)
-  const genius = (flStyle.style === 'geniuslink' && wp?.geniuslink_api_key && wp?.geniuslink_api_secret)
-    ? createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
+  const flCreds = geniuslinkCreds(flStyle, wp)
+  const genius = (flStyle.style === 'geniuslink' && flCreds)
+    ? createGeniuslinkService(flCreds.key, flCreds.secret)
     : null
   const flBitly = async (url: string): Promise<string> => {
     if (flStyle.style !== 'bitly' || !flStyle.bitlyToken) return url

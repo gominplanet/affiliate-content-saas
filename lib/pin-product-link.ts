@@ -13,6 +13,7 @@ import { asinFromAmazonUrl, firstProductUrl } from '@/lib/product-link'
 import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { extractAsin } from '@/services/amazon'
 import { createGeniuslinkService } from '@/services/geniuslink'
@@ -104,13 +105,12 @@ export async function resolvePinProductLink(
     const short = await shortenBitly(cfg.bitlyToken, dest)
     return short || dest
   }
-  const gKey = ((ig?.geniuslink_api_key as string) || '').trim()
-  const gSecret = ((ig?.geniuslink_api_secret as string) || '').trim()
-  if (cfg.style === 'geniuslink' && asin && gKey && gSecret) {
+  const creds = geniuslinkCreds(cfg, ig as { geniuslink_api_key?: string | null; geniuslink_api_secret?: string | null } | null)
+  if (cfg.style === 'geniuslink' && asin && creds) {
     // Best-effort: Geniuslink's create endpoint is flaky, so fall back to the
     // tagged direct URL.
     try {
-      const svc = createGeniuslinkService(gKey, gSecret)
+      const svc = createGeniuslinkService(creds.key, creds.secret)
       const { url } = await getOrCreateAmazonGeniuslink({ userId, asin, destination: dest, service: svc })
       if (url && /^https?:\/\//i.test(url)) return url
     } catch { /* Geniuslink unavailable — use the tagged direct link */ }

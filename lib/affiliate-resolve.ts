@@ -188,11 +188,17 @@ export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<A
     const base = tagFallback()
     const short = cfg.bitlyToken ? await shortenBitly(cfg.bitlyToken, base) : null
     affiliateUrl = short || base
-  } else if (cfg.style === 'geniuslink' && geniuslinkApiKey && geniuslinkApiSecret) {
+  } else if (cfg.style === 'geniuslink' && (geniuslinkApiKey || cfg.geniuslinkKey) && (geniuslinkApiSecret || cfg.geniuslinkSecret)) {
     // Keep the blog path's richer Geniuslink handling: per-site group, note, and
     // the "does the wrapped link actually reach the intended product?" check.
+    // getLinkStyle already read the owner's keys, so a caller that passes none
+    // (or reads a VA's own row rather than the owner's) still wraps rather than
+    // silently publishing a plain link.
     try {
-      const genius = createGeniuslinkService(geniuslinkApiKey, geniuslinkApiSecret)
+      const genius = createGeniuslinkService(
+        geniuslinkApiKey || (cfg.geniuslinkKey as string),
+        geniuslinkApiSecret || (cfg.geniuslinkSecret as string),
+      )
       const wrapped = await genius.createLink(subtaggedDestination, title, {
         groupId: geniuslinkGroupId ?? undefined,
         note: geniuslinkNote ?? undefined,

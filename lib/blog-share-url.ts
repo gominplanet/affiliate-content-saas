@@ -9,6 +9,7 @@
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { shortenBitly } from '@/lib/bitly'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
@@ -85,10 +86,14 @@ export async function ensureAffiliateShareLink(
 
   if (/geni\.us/i.test(link)) return link                  // already a Geniuslink
 
-  if (cfg.style === 'geniuslink' && apiKey && apiSecret && /amazon\.[a-z.]+/i.test(link)) {
+  // The caller passes the keys it read; getLinkStyle's own read of the same row
+  // stands in when that came back empty, so the style and the credentials can
+  // never disagree and silently downgrade the share to a plain link.
+  const creds = geniuslinkCreds(cfg, { geniuslink_api_key: apiKey, geniuslink_api_secret: apiSecret })
+  if (cfg.style === 'geniuslink' && creds && /amazon\.[a-z.]+/i.test(link)) {
     try {
-      const groupId = await resolveGeniuslinkGroupId({ supabase, siteId, siteUrl, apiKey, apiSecret }).catch(() => null)
-      const genius = createGeniuslinkService(apiKey, apiSecret)
+      const groupId = await resolveGeniuslinkGroupId({ supabase, siteId, siteUrl, apiKey: creds.key, apiSecret: creds.secret }).catch(() => null)
+      const genius = createGeniuslinkService(creds.key, creds.secret)
       const { url: gl, code } = await genius.createLinkWithCode(link, (title || 'Product').slice(0, 120), groupId != null ? { groupId } : undefined)
       if (gl && /geni\.us/i.test(gl)) {
         if (code) {

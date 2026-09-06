@@ -567,6 +567,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [productDiscoverySource, setProductDiscoverySource] = useState<'caller' | 'title' | 'search' | 'none' | null>(null)
   const [proSettings, setProSettings] = useState<ProPublishSettings>(defaultProSettings)
   const [geniuslinkError, setGeniuslinkError] = useState<string | null>(null)
+  /** True when Geniuslink was skipped because of the creator's chosen link
+   *  style, not because it failed. A different message: nothing is broken, a
+   *  setting is pointing somewhere else, and telling them to check their
+   *  credentials would send them looking for a fault that isn't there. */
+  const [geniuslinkSkippedByStyle, setGeniuslinkSkippedByStyle] = useState(false)
   // False only when the affiliate link is somehow missing from the assembled
   // description (server double-checks this). Defaults true (nothing to flag).
   const [geniuslinkVerified, setGeniuslinkVerified] = useState<boolean>(true)
@@ -1087,6 +1092,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       setGeniuslinkUsed((data.geniuslinkUsed ?? false) as boolean)
       setProductDiscoverySource((data.productDiscoverySource ?? null) as typeof productDiscoverySource)
       setGeniuslinkError((data.geniuslinkError ?? null) as string | null)
+      setGeniuslinkSkippedByStyle((data.geniuslinkSkippedByStyle ?? false) as boolean)
       setGeniuslinkVerified((data.geniuslinkVerified ?? true) as boolean)
 
       // ── Thumbnail no longer auto-fires after metadata generation ─────────
@@ -2305,10 +2311,13 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               misleading). Only point at credentials for a real auth/config error. */}
           {geniuslinkUsed === false && geniuslinkError && (
             <div className="mx-5 mb-3 px-3 py-2 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/20 text-xs text-[#ff9500]">
-              ⚠️ Geniuslink not used — {geniuslinkError}.{' '}
-              {/timeout|aborted|transient|temporar|\b5\d\d\b/i.test(geniuslinkError)
-                ? <>This is usually a temporary Geniuslink hiccup — your Amazon tag was used as a fallback, and a <strong>Regenerate</strong> normally goes through with Geniuslink.</>
-                : <>Go to <strong>Brand Profile → Affiliate Link Routing</strong> to add or update your credentials.</>}
+              {geniuslinkSkippedByStyle
+                ? <>⚠️ Geniuslink not used. {geniuslinkError}</>
+                : <>⚠️ Geniuslink not used — {geniuslinkError}.{' '}
+                    {/timeout|aborted|transient|temporar|\b5\d\d\b/i.test(geniuslinkError)
+                      ? <>This is usually a temporary Geniuslink hiccup — your Amazon tag was used as a fallback, and a <strong>Regenerate</strong> normally goes through with Geniuslink.</>
+                      : <>Go to <strong>Brand Profile → Affiliate Link Routing</strong> to add or update your credentials.</>}
+                  </>}
             </div>
           )}
 

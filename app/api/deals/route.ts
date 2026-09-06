@@ -47,6 +47,7 @@ import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { composeWithGptImage, composeWithNanoBanana, rehostToFal, GPT_IMAGE_COMPOSE_LOW_COST_MODEL } from '@/lib/thumbnail-generators'
 import { recordUsage } from '@/lib/ai-usage'
@@ -642,11 +643,15 @@ export async function POST(req: Request) {
     const short = await shortenBitly(dealStyle.bitlyToken, dealTagged)
     if (short) dealAffiliateUrl = short
   } else if (dealStyle.style === 'geniuslink') {
+    // getLinkStyle's keys stand in when this route's own row read came back
+    // without them, so "style says Geniuslink" and "we have keys" can never
+    // disagree and quietly publish a plain link.
+    const dealCreds = geniuslinkCreds(dealStyle, dealIntg)
     dealAffiliateUrl = await resolveDealAffiliateUrl(
       product.asin, product.title || '',
       dealIntg?.amazon_associates_tag ?? null,
-      dealIntg?.geniuslink_api_key ?? null,
-      dealIntg?.geniuslink_api_secret ?? null,
+      dealCreds?.key ?? null,
+      dealCreds?.secret ?? null,
     )
   }
 

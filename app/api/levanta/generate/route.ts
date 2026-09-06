@@ -19,6 +19,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { createClaudeService, type BrandProfile } from '@/services/claude'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { createLevantaLink } from '@/services/levanta'
 import { getExternalKey } from '@/lib/external-keys'
@@ -144,9 +145,10 @@ export async function POST(request: NextRequest) {
     // Levanta's own attribution that is the point of this link.
     const lvStyle = await getLinkStyle(supabase, user.id)
     let cloaked = false
-    if (lvStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    const lvCreds = geniuslinkCreds(lvStyle, intRow)
+    if (lvStyle.style === 'geniuslink' && lvCreds) {
       try {
-        const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+        const genius = createGeniuslinkService(lvCreds.key, lvCreds.secret)
         const { url } = await genius.createLinkWithCode(affiliateUrl, effTitle.slice(0, 80))
         if (url) { affiliateUrl = url; cloaked = true }
       } catch { /* non-fatal — fall back to the Levanta link */ }

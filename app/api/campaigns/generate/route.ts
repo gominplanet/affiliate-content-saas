@@ -21,6 +21,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClaudeService } from '@/services/claude'
@@ -379,9 +380,10 @@ export async function POST(request: Request) {
     } else if (ccStyle.style === 'bitly' && ccStyle.bitlyToken) {
       const short = await shortenBitly(ccStyle.bitlyToken, ccTagged)
       if (short) affiliateUrl = short
-    } else if (ccStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    } else if (ccStyle.style === 'geniuslink' && geniuslinkCreds(ccStyle, intRow)) {
       try {
-        const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+        const cc = geniuslinkCreds(ccStyle, intRow)!
+        const genius = createGeniuslinkService(cc.key, cc.secret)
         const { url, code } = await genius.createAsinLinkWithCode(asin, product?.title || asin)
         affiliateUrl = url
         geniuslinkCode = code

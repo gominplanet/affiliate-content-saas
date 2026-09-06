@@ -21,6 +21,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { createClaudeService, type BrandProfile } from '@/services/claude'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { buildPartnerBoostDeepLink, getWalmartProductLinks } from '@/services/partnerboost'
 import { getExternalKey } from '@/lib/external-keys'
@@ -147,9 +148,10 @@ export async function POST(request: NextRequest) {
     // Amazon ASIN, and it would drop Walmart's attribution).
     const wmStyle = await getLinkStyle(supabase, user.id)
     let cloaked = false
-    if (wmStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    const wmCreds = geniuslinkCreds(wmStyle, intRow)
+    if (wmStyle.style === 'geniuslink' && wmCreds) {
       try {
-        const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+        const genius = createGeniuslinkService(wmCreds.key, wmCreds.secret)
         const { url } = await genius.createLinkWithCode(affiliateUrl, p.name.slice(0, 80))
         if (url) { affiliateUrl = url; cloaked = true }
       } catch { /* non-fatal — fall back to the PartnerBoost link */ }

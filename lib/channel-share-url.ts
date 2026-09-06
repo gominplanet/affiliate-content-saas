@@ -19,26 +19,41 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { resolveGeniuslinkChannelGroupId, channelKey } from '@/lib/geniuslink-group'
 import { canUsePassport } from '@/lib/feature-access'
 import { normalizeTier } from '@/lib/tier'
+import { pickLinkStyle, geniuslinkCreds } from '@/lib/link-style'
 
-/** Is Geniuslink the creator's CHOSEN link style? Only then do we geni.us-wrap a
- *  share link. This mirrors lib/link-cloak getLinkStyle's priority (Passport ON
- *  wins → not geniuslink; else the saved blog_social_link_mode, honoring the
- *  legacy wrap_blog_geniuslink flag), but is inlined here because link-cloak
- *  imports this module — importing it back would be a cycle. When this is false
- *  (Passport / Bitly / Direct) the share helpers return the plain URL, so a
- *  creator who picked another style never gets a surprise geni.us link. */
+/** The Geniuslink credentials to wrap this share with, or null when Geniuslink
+ *  is not the creator's chosen style. The rule is lib/link-style pickLinkStyle,
+ *  the same function getLinkStyle uses, so a share link and a YouTube
+ *  description can never disagree about a creator's style. Only the read is
+ *  local: link-cloak imports this module, so calling back into it would be a
+ *  cycle. Answering with the credentials rather than a yes/no is what stops the
+ *  other half of the bug: a caller that passed no keys used to get the plain URL
+ *  even when the creator's row had a perfectly good pair sitting in it. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function geniuslinkIsChosenStyle(supabase: any, userId: string): Promise<boolean> {
+async function geniuslinkStyleCreds(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any, userId: string,
+  apiKey?: string | null, apiSecret?: string | null,
+): Promise<{ key: string; secret: string } | null> {
   try {
     const { data: ig } = await supabase
       .from('integrations')
-      .select('passport_links_enabled, tier, blog_social_link_mode, wrap_blog_geniuslink')
+      .select('passport_links_enabled, tier, blog_social_link_mode, wrap_blog_geniuslink, geniuslink_api_key, geniuslink_api_secret')
       .eq('user_id', userId).maybeSingle()
-    if (!ig) return false
-    if (!!ig.passport_links_enabled && canUsePassport(normalizeTier(ig.tier))) return false // Passport wins
-    const mode = (ig.blog_social_link_mode as string | null) || (ig.wrap_blog_geniuslink === true ? 'geniuslink' : 'direct')
-    return String(mode).toLowerCase() === 'geniuslink'
-  } catch { return false }
+    if (!ig) return null
+    if (!!ig.passport_links_enabled && canUsePassport(normalizeTier(ig.tier))) return null // Passport wins
+    const creds = geniuslinkCreds(
+      { geniuslinkKey: ig.geniuslink_api_key as string | null, geniuslinkSecret: ig.geniuslink_api_secret as string | null },
+      { geniuslink_api_key: apiKey, geniuslink_api_secret: apiSecret },
+    )
+    const style = pickLinkStyle({
+      passportEligible: false, // already ruled out above
+      mode: (ig.blog_social_link_mode as string | null) || (ig.wrap_blog_geniuslink === true ? 'geniuslink' : ''),
+      hasBitly: false, // irrelevant: this only asks "is it geniuslink?"
+      hasGeniuslink: !!creds,
+    })
+    return style === 'geniuslink' ? creds : null
+  } catch { return null }
 }
 
 interface SharePost {
@@ -75,9 +90,10 @@ export async function channelShareUrl(opts: ChannelShareOpts): Promise<string | 
   // generated back then. Reaching the old ordering with no Geniuslink keys (the
   // exact state after disconnecting Geniuslink) handed that stale link straight
   // back, which is how a Passport creator kept sharing geni.us links.
-  if (!(await geniuslinkIsChosenStyle(supabase, userId))) return base || fallback
-  // No destination, no creds, or a channel we don't group → best plain URL.
-  if (!base || !apiKey || !apiSecret || !key) return fallback
+  const creds = await geniuslinkStyleCreds(supabase, userId, apiKey, apiSecret)
+  if (!creds) return base || fallback
+  // No destination or a channel we don't group → best plain URL.
+  if (!base || !key) return fallback
 
   // Cached per-channel short link on the post.
   const cache = (post.geniuslink_channel_urls && typeof post.geniuslink_channel_urls === 'object')
@@ -86,9 +102,9 @@ export async function channelShareUrl(opts: ChannelShareOpts): Promise<string | 
   if (cached && /geni\.us/i.test(cached)) return cached
 
   try {
-    const groupId = await resolveGeniuslinkChannelGroupId({ supabase, userId, channel: key, apiKey, apiSecret })
+    const groupId = await resolveGeniuslinkChannelGroupId({ supabase, userId, channel: key, apiKey: creds.key, apiSecret: creds.secret })
     if (!groupId) return fallback
-    const svc = createGeniuslinkService(apiKey, apiSecret)
+    const svc = createGeniuslinkService(creds.key, creds.secret)
     const url = await svc.createLink(base, (post.title || 'Blog post').slice(0, 120), { groupId })
     if (url && /geni\.us/i.test(url)) {
       // Merge into the per-channel cache on the row (best-effort).
@@ -124,14 +140,15 @@ export async function channelWrapLink(opts: ChannelWrapOpts): Promise<string> {
   if (!destination) return destination
   if (/geni\.us/i.test(destination)) return destination
   const key = channelKey(opts.channel)
-  if (!apiKey || !apiSecret || !key) return destination
+  if (!key) return destination
   // Only geni.us-wrap when Geniuslink is the creator's chosen style; otherwise
   // (Passport / Bitly / Direct) return the destination as-is.
-  if (!(await geniuslinkIsChosenStyle(supabase, userId))) return destination
+  const creds = await geniuslinkStyleCreds(supabase, userId, apiKey, apiSecret)
+  if (!creds) return destination
   try {
-    const groupId = await resolveGeniuslinkChannelGroupId({ supabase, userId, channel: key, apiKey, apiSecret })
+    const groupId = await resolveGeniuslinkChannelGroupId({ supabase, userId, channel: key, apiKey: creds.key, apiSecret: creds.secret })
     if (!groupId) return destination
-    const svc = createGeniuslinkService(apiKey, apiSecret)
+    const svc = createGeniuslinkService(creds.key, creds.secret)
     const url = await svc.createLink(destination, (label || 'Link').slice(0, 120), { groupId })
     return (url && /geni\.us/i.test(url)) ? url : destination
   } catch {

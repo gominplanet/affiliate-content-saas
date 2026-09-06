@@ -810,7 +810,17 @@ export async function POST(request: Request) {
       const linkNote = youtubeVideoId
         ? `${youtubeVideoId} | ${YOUTUBE_COPILOT_GROUP_NAME}`
         : (product.title || videoTitle)
-      const subtaggedDest = appendAmazonSubtag(`https://www.amazon.com/dp/${trimmedAsin}`, youtubeVideoId)
+      // The destination carries the creator's Associates tag from the start.
+      // It used to be added only on the Bitly and direct branches, so the URL
+      // handed to Geniuslink was untagged: if that creator's Geniuslink account
+      // has no Amazon affiliate settings of its own, every click through the
+      // wrapped link earned nothing, and nothing on screen said so. Geniuslink
+      // overrides the tag when it is configured to, which is what a Geniuslink
+      // user expects; this only decides what happens when it is not.
+      const taggedBase = intRow?.amazon_associates_tag
+        ? `https://www.amazon.com/dp/${trimmedAsin}?tag=${intRow.amazon_associates_tag}`
+        : `https://www.amazon.com/dp/${trimmedAsin}`
+      const subtaggedDest = appendAmazonSubtag(taggedBase, youtubeVideoId)
       affiliateUrl = subtaggedDest
 
       // Passport Links (geo-routing) takes priority when on: one link that sends
@@ -833,15 +843,20 @@ export async function POST(request: Request) {
         } catch (e) { console.warn('[generate-metadata] passport link skipped:', e instanceof Error ? e.message : e) }
       }
 
-      if (!passportUsed && ytStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+      // getLinkStyle read the same row, so its keys stand in when the local read
+      // came back without them. One missing key here is the difference between a
+      // geni.us link and a bare Amazon URL in a published description.
+      const gKey = (intRow?.geniuslink_api_key as string | null) || ytStyle.geniuslinkKey
+      const gSecret = (intRow?.geniuslink_api_secret as string | null) || ytStyle.geniuslinkSecret
+      if (!passportUsed && ytStyle.style === 'geniuslink' && gKey && gSecret) {
         const groupId = await resolveGeniuslinkYouTubeGroupId({
           supabase,
           userId: ownerId,
-          apiKey: intRow.geniuslink_api_key,
-          apiSecret: intRow.geniuslink_api_secret,
+          apiKey: gKey,
+          apiSecret: gSecret,
         })
         try {
-          const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+          const genius = createGeniuslinkService(gKey, gSecret)
           // Cache-first by ASIN: reuse a previously-minted geni.us code instantly
           // when we have one, so Geniuslink's flaky/slow create API is only ever
           // hit the first time we see a product. Every re-review / Regenerate of
@@ -864,18 +879,13 @@ export async function POST(request: Request) {
       // Bitly style → shorten the tagged link (no geo-routing, but the creator's
       // chosen shortener + click stats). Runs only when Passport/Geniuslink didn't.
       if (!passportUsed && !geniuslinkUsed && ytStyle.style === 'bitly' && ytStyle.bitlyToken) {
-        const base = intRow?.amazon_associates_tag
-          ? appendAmazonSubtag(`https://www.amazon.com/dp/${trimmedAsin}?tag=${intRow.amazon_associates_tag}`, youtubeVideoId)
-          : subtaggedDest
+        const base = subtaggedDest
         const short = await shortenBitly(ytStyle.bitlyToken, base)
         affiliateUrl = short || base
         bitlyUsed = true
       }
       if (!passportUsed && !geniuslinkUsed && !bitlyUsed && intRow?.amazon_associates_tag) {
-        affiliateUrl = appendAmazonSubtag(
-          `https://www.amazon.com/dp/${trimmedAsin}?tag=${intRow.amazon_associates_tag}`,
-          youtubeVideoId,
-        )
+        affiliateUrl = subtaggedDest // already carries the tag and the ascsubtag
         // Keep the Geniuslink error visible — fallback to Associates is
         // safe revenue-wise but the user should still know their geni.us
         // link wasn't built so they can investigate (expired keys, group
@@ -891,10 +901,12 @@ export async function POST(request: Request) {
       // Non-Amazon direct store / brand link the creator put in the
       // description. Geniuslink wraps ANY destination (not Amazon-only), so
       // we still get tracking. If it's already a geni.us link, keep it.
+      const storeKey = (intRow?.geniuslink_api_key as string | null) || ytStyle.geniuslinkKey
+      const storeSecret = (intRow?.geniuslink_api_secret as string | null) || ytStyle.geniuslinkSecret
       if (storeAlreadyGenius) {
         affiliateUrl = storeUrl
         geniuslinkUsed = true
-      } else if (ytStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+      } else if (ytStyle.style === 'geniuslink' && storeKey && storeSecret) {
         // YT Co-Pilot path → MVP-YOUTUBE group (see Amazon branch above).
         const linkNote = youtubeVideoId
           ? `${youtubeVideoId} | ${YOUTUBE_COPILOT_GROUP_NAME}`
@@ -902,11 +914,11 @@ export async function POST(request: Request) {
         const groupId = await resolveGeniuslinkYouTubeGroupId({
           supabase,
           userId: ownerId,
-          apiKey: intRow.geniuslink_api_key,
-          apiSecret: intRow.geniuslink_api_secret,
+          apiKey: storeKey,
+          apiSecret: storeSecret,
         })
         try {
-          const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+          const genius = createGeniuslinkService(storeKey, storeSecret)
           affiliateUrl = await genius.createLink(storeUrl, videoTitle, {
             groupId: groupId ?? undefined,
             note: linkNote,
@@ -923,6 +935,26 @@ export async function POST(request: Request) {
       } else {
         affiliateUrl = storeUrl
       }
+    }
+
+    // What the description actually shipped, and — the part that was missing —
+    // why it isn't a geni.us link when the creator has Geniuslink connected.
+    // Until now a description that skipped Geniuslink because the stored style
+    // said 'direct' came back with no error at all, so Co-Pilot showed a green
+    // "Associates link ✓" and the creator had nothing to tell them their paid
+    // link service was sitting idle.
+    const linkStyleUsed: 'passport' | 'geniuslink' | 'bitly' | 'direct' =
+      passportUsed ? 'passport' : geniuslinkUsed ? 'geniuslink' : bitlyUsed ? 'bitly' : 'direct'
+    let geniuslinkSkippedByStyle = false
+    if (!geniuslinkUsed && !geniuslinkError && affiliateUrl
+        && (intRow?.geniuslink_api_key || ytStyle.geniuslinkKey)
+        && (intRow?.geniuslink_api_secret || ytStyle.geniuslinkSecret)) {
+      geniuslinkSkippedByStyle = true
+      geniuslinkError = ytStyle.style === 'passport'
+        ? 'Your link style is Passport Links, so this description uses a Passport link instead of Geniuslink. Change it in Brand Profile → Affiliate Link Routing.'
+        : ytStyle.style === 'bitly'
+          ? 'Your link style is Bitly, so this description uses a Bitly link instead of Geniuslink. Change it in Brand Profile → Affiliate Link Routing.'
+          : 'Your Geniuslink keys are saved but your link style is set to Direct, so this description uses a plain Amazon link. Switch it to Geniuslink in Brand Profile → Affiliate Link Routing.'
     }
 
     // Build subject context for the agent swarm. In product mode this is
@@ -1264,6 +1296,8 @@ export async function POST(request: Request) {
       geniuslinkUsed,
       geniuslinkError,
       geniuslinkVerified,
+      linkStyle: linkStyleUsed,
+      geniuslinkSkippedByStyle,
       agentInsights: {
         targetBuyer: productAnalysis.targetBuyer,
         topBenefits: productAnalysis.topBenefits,

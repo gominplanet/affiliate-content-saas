@@ -23,6 +23,7 @@ import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl, isAmazonNonProduct
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
@@ -692,6 +693,7 @@ async function handleGenerate(request: Request) {
     // subtag, and the destination-verification guard) inside the geniuslink case.
     const blogAsin = destination.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
     const blogLinkStyle = await getLinkStyle(supabase, ownerId)
+    const blogCreds = geniuslinkCreds(blogLinkStyle, wp)
     if (blogLinkStyle.style === 'passport') {
       // Passport cloaks ANY affiliate destination, not just Amazon ASINs.
       //   1) Amazon: geo-route by ASIN. Recover the ASIN when it's a direct /dp
@@ -734,7 +736,7 @@ async function handleGenerate(request: Request) {
     } else if (blogLinkStyle.style === 'bitly') {
       const short = blogLinkStyle.bitlyToken ? await shortenBitly(blogLinkStyle.bitlyToken, tagFallback) : null
       affiliateUrlOverride = short || tagFallback
-    } else if (blogLinkStyle.style === 'geniuslink' && wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
+    } else if (blogLinkStyle.style === 'geniuslink' && blogCreds) {
       // Resolve the per-site group (creates it on first use, caches the
       // ID on the row).
       //
@@ -753,12 +755,12 @@ async function handleGenerate(request: Request) {
             supabase,
             siteId: resolvedSiteId,
             siteUrl: site.wordpress_url,
-            apiKey: wp.geniuslink_api_key,
-            apiSecret: wp.geniuslink_api_secret,
+            apiKey: blogCreds.key,
+            apiSecret: blogCreds.secret,
           })
         : null
       try {
-        const genius = createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
+        const genius = createGeniuslinkService(blogCreds.key, blogCreds.secret)
         const wrapped = await genius.createLink(destinationWithSubtag, rawTitle, {
           groupId: groupId ?? undefined,
           note: linkNote,
@@ -1434,8 +1436,8 @@ async function handleGenerate(request: Request) {
       primaryName: (generated as { productName?: string | null }).productName || null,
       primaryUrl: productUrl || null,
       amazonTag: wp?.amazon_associates_tag ?? null,
-      geniuslinkKey: wp?.geniuslink_api_key ?? null,
-      geniuslinkSecret: wp?.geniuslink_api_secret ?? null,
+      geniuslinkKey: geniuslinkCreds(mpStyle, wp)?.key ?? null,
+      geniuslinkSecret: geniuslinkCreds(mpStyle, wp)?.secret ?? null,
       linkStyle: mpStyle.style,
       bitlyToken: mpStyle.bitlyToken,
       userId: user.id,
@@ -1911,9 +1913,9 @@ async function handleGenerate(request: Request) {
       blogUrl: wpPost.link,
       title: generated.title,
       mode,
-      geniuslinkKey: (wpAny?.geniuslink_api_key as string) || null,
-      geniuslinkSecret: (wpAny?.geniuslink_api_secret as string) || null,
-      bitlyToken: (wpAny?.bitly_access_token as string) || null,
+      geniuslinkKey: geniuslinkCreds(shareStyle, wp)?.key ?? null,
+      geniuslinkSecret: geniuslinkCreds(shareStyle, wp)?.secret ?? null,
+      bitlyToken: (wpAny?.bitly_access_token as string) || shareStyle.bitlyToken || null,
     })
   }
 

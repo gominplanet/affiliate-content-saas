@@ -19,6 +19,7 @@ import { generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal } f
 import { getWalmartProductLinks } from '@/services/partnerboost'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { getExternalKey } from '@/lib/external-keys'
 import { toUserMessage } from '@/lib/friendly-error'
@@ -80,9 +81,8 @@ export async function POST(request: Request) {
     // wrap, Bitly → shorten, Direct → the minted Walmart link. Passport doesn't
     // apply (Walmart, no Amazon ASIN, and it would drop the network attribution).
     const rStyle = await getLinkStyle(sb, user.id)
-    const gKey = (intRow?.geniuslink_api_key || '').trim()
-    const gSecret = (intRow?.geniuslink_api_secret || '').trim()
-    const genius = rStyle.style === 'geniuslink' && gKey && gSecret ? createGeniuslinkService(gKey, gSecret) : null
+    const rCreds = geniuslinkCreds(rStyle, intRow)
+    const genius = rStyle.style === 'geniuslink' && rCreds ? createGeniuslinkService(rCreds.key, rCreds.secret) : null
 
     const deals: DigestDeal[] = await Promise.all(items.map(async (it): Promise<DigestDeal> => {
       const id = String(it.itemId).trim()

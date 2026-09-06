@@ -33,6 +33,7 @@ import { composeWithGptImage, composeWithNanoBanana, rehostToFal, GPT_IMAGE_COMP
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { preflightWpPublish } from '@/lib/wp-preflight'
 import { listYouTubeChannels } from '@/lib/youtube-channels'
@@ -333,8 +334,9 @@ export async function POST(request: Request) {
   // (passportLinkForUser returns null unless Passport is on + eligible, which is
   // exactly when the style resolves to 'passport').
   const cmpStyle = await getLinkStyle(supabase, ownerId)
-  const genius = (cmpStyle.style === 'geniuslink' && wp?.geniuslink_api_key && wp?.geniuslink_api_secret)
-    ? createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
+  const cmpCreds = geniuslinkCreds(cmpStyle, wp)
+  const genius = (cmpStyle.style === 'geniuslink' && cmpCreds)
+    ? createGeniuslinkService(cmpCreds.key, cmpCreds.secret)
     : null
   // Wrap an Amazon-tagged fallback in Bitly when that's the creator's style.
   const cmpBitly = async (url: string): Promise<string> => {

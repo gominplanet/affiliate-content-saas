@@ -12,6 +12,7 @@ import { getExternalKey } from '@/lib/external-keys'
 import { createWaywardLink } from '@/services/wayward'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 
 export const dynamic = 'force-dynamic'
@@ -46,9 +47,10 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .maybeSingle()
     const wwStyle = await getLinkStyle(supabase, user.id)
-    if (body.cloak !== false && wwStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    const wwCreds = geniuslinkCreds(wwStyle, intRow)
+    if (body.cloak !== false && wwStyle.style === 'geniuslink' && wwCreds) {
       try {
-        const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+        const genius = createGeniuslinkService(wwCreds.key, wwCreds.secret)
         const { url: g } = await genius.createLinkWithCode(url, (body.title || asin).slice(0, 80))
         if (g) { url = g; cloaked = true }
       } catch { /* non-fatal — return the raw Wayward link */ }

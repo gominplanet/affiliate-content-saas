@@ -23,6 +23,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { toUserMessage } from '@/lib/friendly-error'
 import { snapshotActiveBlogIdentity } from '@/lib/site-identity'
 import { getOwnerUserId } from '@/lib/agency'
+import { pickLinkStyle } from '@/lib/link-style'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,7 +56,16 @@ export async function GET() {
     const row = (data || {}) as Record<string, unknown>
 
     const modeRaw = String(row.blog_social_link_mode ?? '')
-    const mode = LINK_MODES.has(modeRaw) ? modeRaw : (row.wrap_blog_geniuslink === true ? 'geniuslink' : 'direct')
+    // With no stored mode the chooser must show what generation will ACTUALLY
+    // do, which pickLinkStyle decides from the stored credentials. Showing
+    // "Direct" while every link went through Geniuslink (or the reverse) is how
+    // a routing bug stays invisible for months.
+    const mode = LINK_MODES.has(modeRaw) ? modeRaw : pickLinkStyle({
+      passportEligible: false, // Passport is its own toggle, not one of these three
+      mode: row.wrap_blog_geniuslink === true ? 'geniuslink' : '',
+      hasBitly: !!String(row.bitly_access_token ?? '').trim(),
+      hasGeniuslink: !!(String(row.geniuslink_api_key ?? '').trim() && String(row.geniuslink_api_secret ?? '').trim()),
+    })
     const pinRaw = String(row.pinterest_link_pref ?? '')
 
     return NextResponse.json({
@@ -83,26 +93,46 @@ export async function POST(request: Request) {
       geniuslinkKey?: string; geniuslinkSecret?: string; blogSocialLinkMode?: string
       bitlyToken?: string; pinterestLinkPref?: string; amazonTag?: string
     }
-    const mode = LINK_MODES.has(String(b.blogSocialLinkMode)) ? String(b.blogSocialLinkMode) : 'direct'
-    const pin = PIN_PREFS.has(String(b.pinterestLinkPref)) ? String(b.pinterestLinkPref) : 'auto'
-    const trim = (v?: string) => (v || '').trim() || null
-
     // Write to the OWNER's row so generation (which reads getLinkStyle for the
     // owner) actually sees the choice — a VA saving to their own row was silently
     // ignored by the generator, which is exactly "connected but publishes bare URLs".
     const ownerId = await getOwnerUserId(user.id)
     const admin = createAdminClient()
 
+    // A FIELD THAT WASN'T SENT IS NOT A FIELD SET TO EMPTY. This route is a
+    // partial save: the caller sends the fields the creator edited. Coercing a
+    // missing blogSocialLinkMode to 'direct' meant any save from a screen that
+    // doesn't render the chooser — or a save made before the settings finished
+    // loading — silently switched a Geniuslink creator back to plain Amazon
+    // links, with their API keys still sitting there looking connected. Same for
+    // the keys themselves: `(v || '').trim() || null` wiped them when omitted.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: existing } = await (admin as any).from('integrations')
+      .select('*').eq('user_id', ownerId).maybeSingle()
+    const prev = (existing || {}) as Record<string, unknown>
+    /** The sent value, trimmed; an absent field keeps what is stored. Sending an
+     *  empty string is an explicit clear, which is how a creator removes a key. */
+    const keep = (sent: string | undefined, col: string): string | null =>
+      sent === undefined ? ((prev[col] as string | null) ?? null) : (sent.trim() || null)
+    const storedMode = String(prev.blog_social_link_mode ?? '')
+    const mode = LINK_MODES.has(String(b.blogSocialLinkMode))
+      ? String(b.blogSocialLinkMode)
+      : (LINK_MODES.has(storedMode) ? storedMode : '')
+    const pin = PIN_PREFS.has(String(b.pinterestLinkPref))
+      ? String(b.pinterestLinkPref)
+      : (PIN_PREFS.has(String(prev.pinterest_link_pref ?? '')) ? String(prev.pinterest_link_pref) : 'auto')
+
     // ── Core columns — these always exist. If this fails, the save truly failed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: coreErr } = await (admin as any).from('integrations').upsert(
       {
         user_id: ownerId,
-        geniuslink_api_key: trim(b.geniuslinkKey),
-        geniuslink_api_secret: trim(b.geniuslinkSecret),
-        amazon_associates_tag: trim(b.amazonTag),
-        // Keep the legacy boolean in sync for any older reader.
-        wrap_blog_geniuslink: mode === 'geniuslink',
+        geniuslink_api_key: keep(b.geniuslinkKey, 'geniuslink_api_key'),
+        geniuslink_api_secret: keep(b.geniuslinkSecret, 'geniuslink_api_secret'),
+        amazon_associates_tag: keep(b.amazonTag, 'amazon_associates_tag'),
+        // Keep the legacy boolean in sync for any older reader. An unset mode
+        // leaves it alone rather than asserting "not geniuslink".
+        ...(mode ? { wrap_blog_geniuslink: mode === 'geniuslink' } : {}),
       },
       { onConflict: 'user_id' },
     )
@@ -113,11 +143,11 @@ export async function POST(request: Request) {
 
     // ── Newer columns — each best-effort so a DB missing one still saves the rest.
     const extras: Record<string, string> = {
-      blog_social_link_mode: mode,
+      ...(mode ? { blog_social_link_mode: mode } : {}),
       pinterest_link_pref: pin,
     }
     // bitly_access_token is nullable — set it explicitly (clears when blank).
-    const bitly = trim(b.bitlyToken)
+    const bitly = keep(b.bitlyToken, 'bitly_access_token')
     const skipped: string[] = []
     for (const [col, val] of Object.entries(extras)) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

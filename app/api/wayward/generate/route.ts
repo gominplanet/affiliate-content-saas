@@ -19,6 +19,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { createClaudeService, type BrandProfile } from '@/services/claude'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { createWaywardLink } from '@/services/wayward'
 import { getExternalKey } from '@/lib/external-keys'
@@ -126,9 +127,10 @@ export async function POST(request: NextRequest) {
     // Wayward's maas attribution that is the point of this link.
     const wwStyle = await getLinkStyle(supabase, user.id)
     let cloaked = false
-    if (wwStyle.style === 'geniuslink' && intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    const wwCreds = geniuslinkCreds(wwStyle, intRow)
+    if (wwStyle.style === 'geniuslink' && wwCreds) {
       try {
-        const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+        const genius = createGeniuslinkService(wwCreds.key, wwCreds.secret)
         const { url } = await genius.createLinkWithCode(affiliateUrl, effTitle.slice(0, 80))
         if (url) { affiliateUrl = url; cloaked = true }
       } catch { /* non-fatal */ }

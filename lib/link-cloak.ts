@@ -23,7 +23,13 @@ import { getDefaultSite } from '@/lib/wordpress-sites'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
 
-export type LinkStyle = 'passport' | 'geniuslink' | 'bitly' | 'direct'
+// The style decision itself lives in lib/link-style so channel-share-url can ask
+// the same question without an import cycle. Re-exported here because every
+// caller already reaches for link-cloak.
+export type { LinkStyle } from '@/lib/link-style'
+export { pickLinkStyle } from '@/lib/link-style'
+import type { LinkStyle } from '@/lib/link-style'
+import { pickLinkStyle } from '@/lib/link-style'
 
 export interface LinkStyleConfig {
   style: LinkStyle
@@ -31,25 +37,6 @@ export interface LinkStyleConfig {
   bitlyToken: string | null
   geniuslinkKey: string | null
   geniuslinkSecret: string | null
-}
-
-/**
- * Pure style decision (no I/O), so it's unit-testable and the single source of
- * truth for the priority rules. Passport (eligible) wins; else the stored mode;
- * a mode whose creds are missing downgrades to 'direct'.
- */
-export function pickLinkStyle(o: {
-  passportEligible: boolean
-  mode: string | null | undefined
-  hasBitly: boolean
-  hasGeniuslink: boolean
-}): LinkStyle {
-  if (o.passportEligible) return 'passport'
-  let style = (o.mode || 'direct').toLowerCase()
-  if (style === 'bitly' && !o.hasBitly) style = 'direct'
-  if (style === 'geniuslink' && !o.hasGeniuslink) style = 'direct'
-  if (style !== 'bitly' && style !== 'geniuslink' && style !== 'direct') style = 'direct'
-  return style as LinkStyle
 }
 
 /**
@@ -73,8 +60,10 @@ export async function getLinkStyle(supabase: Db, userId: string): Promise<LinkSt
     // way /api/affiliate-links/save GET does, so a creator who turned on
     // Geniuslink before the chooser existed still resolves to 'geniuslink' (and
     // the chooser UI + the resolvers agree on their style).
+    // An unset mode stays unset rather than becoming 'direct' here: pickLinkStyle
+    // reads that silence against the creator's stored credentials.
     const rawMode = (ig.blog_social_link_mode as string | null) || ''
-    const mode = rawMode || (ig.wrap_blog_geniuslink === true ? 'geniuslink' : 'direct')
+    const mode = rawMode || (ig.wrap_blog_geniuslink === true ? 'geniuslink' : '')
     const style = pickLinkStyle({
       passportEligible: !!ig.passport_links_enabled && canUsePassport(normalizeTier(tier)),
       mode,

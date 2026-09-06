@@ -12,6 +12,7 @@ import { resolveGeniuslinkChannelGroupId } from '@/lib/geniuslink-group'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { asinFromAmazonUrl, resolveFinalUrl } from '@/lib/product-link'
 import { fetchAmazonProduct } from '@/services/amazon'
@@ -97,12 +98,13 @@ export async function resolveAffiliateLink(opts: {
   const cfg = await getLinkStyle(createAdminClient(), opts.userId)
   let linkUrl = destination
   let note: string | null = null
+  const pinCreds = geniuslinkCreds(cfg, intRow)
   if (cfg.style === 'bitly' && cfg.bitlyToken && destination) {
     const short = await shortenBitly(cfg.bitlyToken, destination)
     if (short) linkUrl = short
-  } else if (cfg.style === 'geniuslink' && intRow.geniuslink_api_key && intRow.geniuslink_api_secret && destination) {
+  } else if (cfg.style === 'geniuslink' && pinCreds && destination) {
     try {
-      const svc = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+      const svc = createGeniuslinkService(pinCreds.key, pinCreds.secret)
       // Per-channel attribution: when a channel is given, mint a fresh link in
       // that channel's group (MVP-FACEBOOK, …). This bypasses the per-ASIN cache
       // on purpose — the cache holds one link per ASIN, which can't be split by
