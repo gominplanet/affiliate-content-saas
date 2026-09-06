@@ -554,6 +554,10 @@ async function designThumbnailBriefs(input: {
   lockedHeadline?: string | null
   noHuman?: boolean
   headlineStyle?: 'statement' | 'question'
+  /** Where the product is worn, when the creator asked to be shown in it. The
+   *  art director has to know, or it writes a concept that stages the garment
+   *  on a hanger beside them and the render dutifully obeys the concept. */
+  wornOn?: string | null
 }): Promise<ThumbBrief[]> {
   const n = Math.max(1, Math.min(5, Math.floor(input.count)))
   const isQuestion = input.headlineStyle === 'question'
@@ -600,6 +604,7 @@ async function designThumbnailBriefs(input: {
     input.claimsSheet ? `WHAT THE CREATOR SAID IN THE VIDEO (strongest grounding):\n${input.claimsSheet.slice(0, 500)}` : '',
     input.lockedHeadline ? `REQUIRED HEADLINE (use these exact words for every brief's line1+line2, just split + style them): "${input.lockedHeadline}"` : '',
     input.noHuman ? 'PRODUCT-ONLY (hard rule): these designs must contain NO people at all. Do NOT reference a person, model, hands, or anyone using the product in the concept, callouts or banner. The concept centers on the PRODUCT itself. Leave expression and pose empty.' : '',
+    input.wornOn ? `WORN (hard rule): the creator is WEARING this product — it is ${input.wornOn}. Every concept shows it on them. Never describe it held up, presented in a hand, laid out, floating, on a hanger, on a mannequin or on a stand, and never put a second copy of it anywhere in the design. Write "pose" as how they stand or move while wearing it, never as a gesture holding it.` : '',
     '',
     `Design ${n} distinct briefs now. Output the JSON array only.`,
   ].filter(Boolean).join('\n')
@@ -1182,7 +1187,9 @@ export async function POST(request: Request) {
     // folded in so a question brief is never served from a statement cache entry
     // (or vice versa) for the same post set.
     const sharedBriefKey = typeof briefKey === 'string' && briefKey.trim()
-      ? `${briefKey.trim().slice(0, 196)}${wantQuestion ? ':q' : ''}`
+      // The wear toggle changes what the art director is asked for, so a brief
+      // written before it was ticked must not be handed back after.
+      ? `${briefKey.trim().slice(0, 196)}${wantQuestion ? ':q' : ''}${wearProduct === true ? ':w' : ''}`
       : undefined
 
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
@@ -1490,7 +1497,10 @@ export async function POST(request: Request) {
     const wearable = wearProduct === true
       ? detectWearable({ title: productTitle })
       : { wearable: false, kind: null, on: null, keep: null }
-    const wearLine = wearDirective(wearable)
+    // A product-only design has nobody to dress, so the toggle does nothing
+    // there rather than telling the model to wear something that isn't in
+    // the frame.
+    const wearLine = noHuman ? null : wearDirective(wearable)
 
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
     fal.config({ credentials: falKey })
@@ -1708,6 +1718,7 @@ export async function POST(request: Request) {
             claimsSheet: claimsSheetGfx,
             lockedHeadline: lockedHeadline || undefined,
             headlineStyle: wantQuestion ? 'question' : 'statement',
+            wornOn: wearLine ? wearable.on : null,
           }),
         })
 
@@ -1868,6 +1879,11 @@ export async function POST(request: Request) {
             // art director wrote for THIS brief.
             const gfxBadge = badge || (wantAutoBadge ? (brief.badge || '') : '')
             const gfxAccent = accentW || (wantAutoAccent ? (brief.emphasisWord || '') : '')
+            // The wardrobe line varies what the creator has on, which is the one
+            // thing that must not vary when the product IS what they have on.
+            const gfxWardrobe = wearLine
+              ? 'WARDROBE: what they are wearing is the product itself, described above; anything else on them is plain and neutral, and the product is never swapped for a similar garment.'
+              : wardrobeDirective(faceModel?.outfit_pref)
             const personAction = briefExpression || briefPose
               ? `Give them ${briefExpression || 'a natural, content-fitting reaction'}${briefPose ? `, ${briefPose}` : ''} — make the expression genuine and specific, not a generic stock smile.`
               : 'Place them on one side reacting to the product with a genuine, content-fitting expression (not a generic smile).'
@@ -1948,9 +1964,11 @@ export async function POST(request: Request) {
                 `★ CREATOR'S SCENE DIRECTION (highest priority — build the whole thumbnail around this): "${sceneDirection}".`,
                 "Match that direction for the SETTING / background, the creator's pose, expression and action, and any props described. The creator is the main subject of the scene.",
                 '',
-                `★ CREATOR IDENTITY (never compromise, even to fit the direction): ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy — same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY. ${wardrobeDirective(faceModel?.outfit_pref)} Show them HEAD-AND-SHOULDERS to CHEST-UP only — the references are head-and-chest selfies, so never invent their full body, legs or body build.`,
+                `★ CREATOR IDENTITY (never compromise, even to fit the direction): ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy — same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY. ${gfxWardrobe} Show them HEAD-AND-SHOULDERS to CHEST-UP only — the references are head-and-chest selfies, so never invent their full body, legs or body build.`,
                 '',
-                productRefNum
+                wearLine
+                  ? `PRODUCT: the product is worn, exactly as the WORN, NOT HELD rule above says. It appears in the frame only on the person${productRefNum ? `, and it is the item in Image ${productRefNum}` : ''} — no second copy of it anywhere, held or beside them or on a stand. Keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or marketing text.`
+                  : productRefNum
                   ? `PRODUCT: feature ${productLabel} (from Image ${productRefNum}) clearly and recognisably in the scene exactly as the direction implies (held, beside them, in use…). Keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or marketing text.`
                   : `PRODUCT: feature ${productLabel} clearly and recognisably in the scene as the direction implies.`,
                 '',
@@ -2000,9 +2018,11 @@ export async function POST(request: Request) {
               '',
               'INTEGRATION (important): the person and the product must sit NATURALLY in the scene with realistic lighting and grounded shadows, like a real photo. Do NOT put a glowing outline, rim-light halo, coloured aura or cut-out edge around the person or the product — no haloing, nothing that makes them look pasted on. Keep edges clean and photographic.',
               '',
-              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MUST change their expression to fit this thumbnail (do NOT copy the reference photo's expression) and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. ${wardrobeDirective(faceModel?.outfit_pref)} ${personAction} Place them on one side of the frame. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
+              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MUST change their expression to fit this thumbnail (do NOT copy the reference photo's expression) and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. ${gfxWardrobe} ${personAction} Place them on one side of the frame. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
               '',
-              productRefNum
+              wearLine
+                ? `PRODUCT: the product is worn, exactly as the WORN, NOT HELD rule above says${productRefNum ? `, and it is the item in Image ${productRefNum}` : ''}. It is ${wearable.on}, lit naturally so it reads clearly at thumbnail size, and it appears NOWHERE else in the design: no hero shot of it beside them, no copy on a hanger, a mannequin, a stand or a surface, none held in a hand. Keep its true shape, colours and its own printed branding; never invent packaging or fake logos.`
+                : productRefNum
                 ? `PRODUCT: feature the product from Image ${productRefNum} accurately as the hero — its true shape, colours and its own printed branding (never invent packaging or fake logos). Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura behind it. Show it however fits the design: hero shot, in-use, or lifestyle.`
                 : `PRODUCT: feature ${productLabel} accurately and prominently, true to life.`,
               '',
@@ -2477,6 +2497,13 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             // creator to balance against.
             const compositionLine = noHuman
               ? `COMPOSITION (PRODUCT ONLY — NO HUMAN): The product is the HERO, centered or slightly off-center in the frame. Render it LARGE, dramatically lit, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow and premium rim-lighting. ABSOLUTELY NO PEOPLE in the image — no faces, no hands, no arms, no body parts, no silhouettes, no reflections of people. The product stands alone as the sole subject. Multiple-angle shots OK if it adds drama (one main + a smaller secondary angle floating behind), but the focus is unmistakably on the product itself.`
+              // "Make me wear it": the default layout puts the creator on one
+              // side and a hero shot of the product on the other, which for a
+              // shirt is a shirt on a hanger standing next to someone wearing a
+              // different shirt. Worn means the product has no second home in
+              // the frame, so the opposite side has to be told it is scenery.
+              : wearLine
+              ? `COMPOSITION (THE PRODUCT IS WORN — see the WORN, NOT HELD rule above): Put the creator LARGE on the ${hostSide} side, framed chest-up, ${expression}. The product is ${wearable.on} — that is the ONLY place it appears. Light it so it reads clearly at thumbnail size: a ${palette.accent} accent glow falling across it and premium rim-lighting separating the creator from the background. The ${productSide} side of the frame is scene, background and headline space ONLY — do NOT render a second copy of the product there or anywhere else, not on a hanger, not on a mannequin, not on a stand, not laid out on a surface, not floating, and not held in a hand.`
               : nProducts >= 2
                 ? `COMPOSITION: Put the creator on the ${hostSide} side, framed chest-up, ${expression}, ${action.replace('the product', 'the products')}. Render ALL ${nProducts} products visibly and large on the ${productSide} side of the frame, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow and premium rim-lighting so they pop. ${compositionNote ? `Arrange them per the creator's direction above ("${compositionNote}").` : 'Arrange them in a clean, balanced layout (side-by-side, stacked, or a small grid) so each product is clearly recognisable at thumbnail size.'} Every product must be unobscured and identifiable.`
                 : `COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, ${expression}, with ${action}. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow (warm light wrapping the product) and premium rim-lighting so it pops.`
@@ -2489,7 +2516,12 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             // append a HEADLINE-AWARE brand guard that explicitly exempts the
             // intentional headline + arrow as the ONLY allowed text.
             // When noHuman, skip identity + outfit (no human to describe).
-            const humanClauses = noHuman ? '' : `${identityClause}\n${outfitNote}\n`
+            // The wardrobe line exists to vary what the creator has on, which is
+            // the one thing that must not vary when the product IS what they
+            // have on. Left in, it dresses them in something else and the model
+            // resolves the conflict by putting the real garment beside them.
+            const wornWardrobe = `WARDROBE: what they are wearing is the product itself, described above. Anything else on them is plain and neutral so nothing competes with it, and it is never swapped for a different garment of the same type.`
+            const humanClauses = noHuman ? '' : `${identityClause}\n${wearLine ? wornWardrobe : outfitNote}\n`
             // Creator's uploaded style reference, distilled — match its LOOK
             // (palette/lighting/contrast/energy) while keeping our composition
             // rules below authoritative. High priority so the upload visibly
@@ -2507,7 +2539,7 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
               ? `★ CREATOR'S THUMBNAIL DIRECTION (this is exactly what the creator asked for — follow it for the scene, setting/background, mood, the ${noHuman ? 'composition' : "creator's pose and facial expression"}, and any props or action described): "${sceneDirection}". It OVERRIDES the default scene, expression and background suggestions written further below. It does NOT override the identity lock${noHuman ? '' : ' (the face must stay the exact person from the references)'} or the product-fidelity rules (the real product, its true look and its own branding). If the direction ever conflicts with those, keep the ${noHuman ? 'product' : 'identity and product'} faithful and apply the rest of the direction.\n`
               : ''
             return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
-${creatorDirectionClause}${userStyleClause}${humanClauses}${productRefClause}
+${wearLine ? `${wearLine}\n` : ''}${creatorDirectionClause}${userStyleClause}${humanClauses}${productRefClause}
 ${styleRefClause}
 ${compositionLine}
 ${wantEffects ? `ENERGY EFFECTS (the creator asked for these): make the image feel kinetic — bold speed lines radiating outward from the product, a subtle motion streak trailing the product (the product ITSELF stays sharp and identifiable), a radial light burst behind the headline area, and, only if the product is a drink, food or liquid, a dramatic splash frozen mid-air. High energy, still photorealistic, never cartoonish.
