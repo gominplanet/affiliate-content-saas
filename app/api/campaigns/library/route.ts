@@ -95,10 +95,39 @@ async function load() {
   }
   if (readError) return NextResponse.json({ ...buildCampaignLibrary([]), error: readError })
 
-  // Merge every row for a product into one, then keep the products that were
-  // actually joined. Nothing is dropped for being on the "wrong" row.
+  // Merge every row for a product into one. Nothing is dropped for being on the
+  // "wrong" row.
   const byAsin = mergeCampaignRows(rowsRaw)
-  for (const [asin, r] of byAsin) if (!isJoined(r)) byAsin.delete(asin)
+
+  // ── whose campaigns these are ─────────────────────────────────────────────
+  //
+  // Only the ones MVP joined. This page is not a mirror of Amazon.
+  //
+  // It briefly was, and that was the mistake. The Amazon sync writes a join
+  // marker for whatever Amazon hands back, capped at a thousand, so a creator
+  // with 124,039 accepted campaigns on Amazon opened this page and found 775 of
+  // them: an arbitrary slice of a list they never asked to see here, drowning the
+  // handful they actually worked on through MVP. Amazon's own console is the
+  // place to browse Amazon's list. This is the place to see what MVP did.
+  //
+  // Two records say MVP did the joining. The ledger, which mark-accepted writes on
+  // every accept and the sync never writes, is the exact one. For accepts made
+  // before that ledger existed there is still a fingerprint: the accept path
+  // stores the campaign's details_url and the sync does not, so a joined row
+  // carrying one came through MVP.
+  const joinedByMvp = new Set<string>()
+  try {
+    const { data } = await sb.from('cc_accepted_campaigns').select('asin').eq('user_id', ownerId).limit(2000)
+    for (const r of (data ?? []) as { asin: string | null }[]) {
+      const a = String(r.asin || '').toUpperCase()
+      if (a) joinedByMvp.add(a)
+    }
+  } catch { /* no ledger, so the details_url fingerprint carries it alone */ }
+
+  for (const [asin, r] of byAsin) {
+    const mvpJoined = joinedByMvp.has(asin) || (isJoined(r) && !!r.details_url)
+    if (!mvpJoined) byAsin.delete(asin)
+  }
 
   const asins = [...byAsin.keys()]
   if (!asins.length) {
@@ -237,19 +266,6 @@ async function load() {
     }
   }
 
-  // The ledger MVP writes every time IT performs an accept, and never writes for
-  // a campaign the creator joined on Amazon. It is the only record of who did the
-  // joining, which matters because for a long time a bulk message accepted every
-  // brand it touched without asking.
-  const joinedByMvp = new Set<string>()
-  try {
-    const { data } = await sb.from('cc_accepted_campaigns').select('asin').eq('user_id', ownerId).limit(2000)
-    for (const r of (data ?? []) as { asin: string | null }[]) {
-      const a = String(r.asin || '').toUpperCase()
-      if (a) joinedByMvp.add(a)
-    }
-  } catch { /* no ledger, so the split is simply unknown */ }
-
   const keepa = new Map<string, KeepaRow>()
   for (const k of keepaRows) {
     if (k.empty) continue // a tombstone for a product Keepa knows nothing about
@@ -341,7 +357,7 @@ async function load() {
       // The stored date wins when there is one; it is what the creator joined.
       endsAt: r.ends_at || cat?.endsAt || null,
       joinedAt: r.accepted_at || r.amazon_joined_at || null,
-      joinedByMvp: joinedByMvp.has(r.asin),
+      joinedByMvp: true,
       messagedAt: r.messaged_at || null,
       detailsUrl: r.details_url || null,
       content: content.get(r.asin) ?? [],

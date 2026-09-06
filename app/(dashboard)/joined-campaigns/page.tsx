@@ -2,17 +2,20 @@
 
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Joined campaigns — the work queue for everything you committed to.
+// Joined campaigns — the work queue for what you joined THROUGH MVP.
 //
-// MVP used to accept campaigns silently, in bulk, as a side effect of sending a
-// message, on the belief that Amazon opened a brand chat only after you joined.
-// It does not. A creator could finish a session joined to thirty-four campaigns
-// they never chose, with no record of it anywhere in the product.
+// The scope is the whole design. This is not a mirror of Amazon. A creator can
+// have tens of thousands of accepted campaigns in Amazon's own console, built up
+// over years, and pulling those in here buries the handful they actually chose to
+// work on. Amazon's console is where you browse Amazon's list; this is where you
+// see what MVP did and what came of it.
 //
-// This is the other half of fixing that. Joining is now something you do when
-// you are ready to make something, and this is where you see what you took on:
-// what is still open, what has content, what closed empty. Ordered as a work
-// queue, so the first row is the thing to make next rather than the first row
+// It exists because MVP used to accept campaigns silently, in bulk, as a side
+// effect of sending a message, on the belief that Amazon opened a brand chat only
+// after you joined. It does not. Joining is now something you do when you are
+// ready to make something, and this is where you see what you took on: what is
+// still open, what has content, what closed empty. Ordered as a work queue, so
+// the first row is the thing to make next rather than the first row
 // alphabetically.
 //
 // Every count, every state and every sentence comes from lib/campaign-library.ts
@@ -23,10 +26,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Loader2, ExternalLink, RefreshCw, Sparkles, ArrowUpDown, CircleAlert, CircleCheck, CircleDashed, CircleDollarSign } from 'lucide-react'
+import { Loader2, ExternalLink, Sparkles, ArrowUpDown, CircleAlert, CircleCheck, CircleDashed, CircleDollarSign } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import CreateForCampaignModal from '@/components/campaigns/CreateForCampaignModal'
-import { requestMyCcCampaigns } from '@/lib/extension-frame'
 import { ROUTE_EXPLAINER, type BestRoute } from '@/lib/campaign-runway'
 import { buildCampaignLibrary, type CampaignLibrary, type CampaignState, type LibraryRow } from '@/lib/campaign-library'
 
@@ -80,7 +82,6 @@ const money = (cents: number) => cents % 100 === 0 ? `$${(cents / 100).toLocaleS
 export default function JoinedCampaignsPage() {
   const [data, setData] = useState<CampaignLibrary | null>(null)
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
   const [route, setRoute] = useState<Route>('any')
   const [writing, setWriting] = useState<string | null>(null)
@@ -132,33 +133,6 @@ export default function JoinedCampaignsPage() {
     } finally { setLoading(false) }
   }, [mergeEarnings])
   useEffect(() => { load() }, [load])
-
-  // Pull the authoritative joined list off Amazon. A campaign joined on Amazon
-  // directly is the same commitment as one joined here, and a list that only
-  // knows about MVP's own accepts would quietly under-report the work.
-  const sync = useCallback(async () => {
-    setSyncing(true)
-    const tId = 'joined-sync'
-    toast.loading('Reading your joined campaigns from Amazon…', { id: tId, duration: Infinity })
-    try {
-      const res = await requestMyCcCampaigns()
-      if (!res.ok) {
-        toast.error(res.error === 'not-installed'
-          ? 'SCOUT extension not detected. Install it and sign in to Amazon, then try again.'
-          : res.reason || res.error || 'Amazon did not answer.', { id: tId, duration: 8000 })
-        return
-      }
-      const campaigns = res.campaigns || []
-      await fetch('/api/campaigns/sync-joined', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaigns }),
-      })
-      toast.success(`${campaigns.length} joined ${campaigns.length === 1 ? 'campaign' : 'campaigns'} read from Amazon.`, { id: tId, duration: 5000 })
-      await load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Sync failed', { id: tId, duration: 8000 })
-    } finally { setSyncing(false) }
-  }, [load])
 
   // Write the post for a campaign, from the row that says it is missing.
   const write = useCallback(async (row: LibraryRow) => {
@@ -212,15 +186,7 @@ export default function JoinedCampaignsPage() {
     <>
       <PageHero
         title="Joined campaigns"
-        subtitle="Everything you have committed to, and what came of it. Joining is what makes a campaign’s boosted commission apply to what you publish, so a joined campaign with nothing published pays nothing."
-        actions={
-          <button onClick={sync} disabled={syncing}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border disabled:opacity-50"
-            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
-            {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Read from Amazon
-          </button>
-        }
+        subtitle="The campaigns you joined through MVP, and what came of each one. Joining is what makes a campaign’s boosted commission apply to what you publish, so a joined campaign with nothing published pays nothing."
       />
 
       {loading ? (
@@ -259,17 +225,6 @@ export default function JoinedCampaignsPage() {
                     <p className="text-[16px] font-bold tabular-nums" style={{ color }}>{n}</p>
                   </div>
                 ))}
-                {s.joinedByMvp > 0 && (
-                  <div>
-                    <p className="text-[10.5px] uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Joined through MVP</p>
-                    <p className="text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>
-                      {s.joinedByMvp}
-                      <span className="text-[11px] font-normal ml-1" style={{ color: 'var(--text-faint)' }}>
-                        of {s.joined}
-                      </span>
-                    </p>
-                  </div>
-                )}
                 {s.earnedCents != null && (
                   <div>
                     <p className="text-[10.5px] uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Amazon paid on these products</p>
@@ -329,7 +284,7 @@ export default function JoinedCampaignsPage() {
           {rows.length === 0 ? (
             <p className="text-[13px] py-8 text-center" style={{ color: 'var(--text-faint)' }}>
               {s && s.joined === 0
-                ? <>Nothing joined yet. <Link href="/cc-campaigns" className="font-semibold" style={{ color: '#7C3AED' }}>Browse campaigns</Link>, message any brand you like without joining, and join one when you are ready to make something for it.</>
+                ? <>You have not joined a campaign through MVP yet. <Link href="/cc-campaigns" className="font-semibold" style={{ color: '#7C3AED' }}>Browse campaigns</Link>, message any brand you like without joining, and join one when you are ready to make something for it. Campaigns you joined on Amazon itself stay on Amazon; this page is what MVP did.</>
                 : 'Nothing in this group.'}
             </p>
           ) : (
@@ -443,12 +398,11 @@ export default function JoinedCampaignsPage() {
           )}
 
           <p className="text-[11px] mt-5 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-            One row per product. Amazon runs several campaigns for the same product across different windows, and being
-            joined to three of them is still one thing to make. This counts every campaign you have accepted at any point,
-            including ones that have since ended, so it is a history rather than a list of live commitments.
-            &ldquo;Joined through MVP&rdquo; is the number MVP accepted itself, from the record it keeps whenever it does;
-            the rest you accepted on Amazon or by pressing Join here. Use Read from Amazon to reconcile the list against
-            what Amazon still shows as joined. Money shown is what Amazon reported against the product
+            Only the campaigns you joined through MVP. Your Amazon account may hold tens of thousands more, accepted over
+            the years in Amazon&rsquo;s own console, and mirroring those here would bury the ones you actually chose to work on.
+            One row per product, because Amazon runs several campaigns for the same product across different windows and
+            being joined to three of them is still one thing to make. Ones that have already ended stay listed, under Closed,
+            so the ones that ran out before anything was made are countable rather than invisible. Money shown is what Amazon reported against the product
             itself, across every link you have anywhere, so it is never attributed to one post.
           </p>
         </>
