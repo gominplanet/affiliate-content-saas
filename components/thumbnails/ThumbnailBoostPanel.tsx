@@ -17,6 +17,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import WearProductToggle from '@/components/thumbnails/WearProductToggle'
 import { toast } from 'sonner'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -26,6 +27,7 @@ export type ThumbPose = 'auto' | 'hold' | 'wear' | 'use' | 'point' | 'thumbs'
 const LS = {
   question: 'mvp_thumb_question',
   pose: 'mvp_thumb_pose',
+  wear: 'mvp_thumb_wear_product',
   effects: 'mvp_thumb_effects',
   autoBadge: 'mvp_thumb_auto_badge',
   autoAccent: 'mvp_thumb_auto_accent',
@@ -55,6 +57,8 @@ export interface ThumbnailBoost {
   deletePreset: (id: string) => Promise<void>
   // Fine-tune
   pose: ThumbPose; setPose: (p: ThumbPose) => void
+  /** "Make me wear it": apparel goes on the creator rather than in their hand. */
+  wear: boolean; setWear: (v: boolean) => void
   badgeText: string; setBadgeText: (s: string) => void
   accentWord: string; setAccentWord: (s: string) => void
   scenePrompt: string; setScenePrompt: (s: string) => void
@@ -70,6 +74,7 @@ export function useThumbnailBoost(opts: { defaultQuestion?: boolean } = {}): Thu
   const [autoBadge, setAutoBadgeState] = useState(false)
   const [autoAccent, setAutoAccentState] = useState(false)
   const [pose, setPoseState] = useState<ThumbPose>('auto')
+  const [wear, setWearState] = useState(false)
   const [badgeText, setBadgeText] = useState('')
   const [accentWord, setAccentWord] = useState('')
   const [scenePrompt, setScenePrompt] = useState('')
@@ -87,6 +92,7 @@ export function useThumbnailBoost(opts: { defaultQuestion?: boolean } = {}): Thu
     setEffectsState(lsGet(LS.effects) === '1')
     setAutoBadgeState(lsGet(LS.autoBadge) === '1')
     setAutoAccentState(lsGet(LS.autoAccent) === '1')
+    setWearState(lsGet(LS.wear) === '1')
     const p = lsGet(LS.pose) as ThumbPose | null
     if (p && ['auto', 'hold', 'wear', 'use', 'point', 'thumbs'].includes(p)) setPoseState(p)
     ;(async () => {
@@ -102,6 +108,7 @@ export function useThumbnailBoost(opts: { defaultQuestion?: boolean } = {}): Thu
   const setAutoBadge = useCallback((on: boolean) => { setAutoBadgeState(on); lsSet(LS.autoBadge, on ? '1' : '0') }, [])
   const setAutoAccent = useCallback((on: boolean) => { setAutoAccentState(on); lsSet(LS.autoAccent, on ? '1' : '0') }, [])
   const setPose = useCallback((p: ThumbPose) => { setPoseState(p); lsSet(LS.pose, p) }, [])
+  const setWear = useCallback((v: boolean) => { setWearState(v); lsSet(LS.wear, v ? '1' : '0') }, [])
 
   const applyPreset = useCallback((id: string, url: string) => { setStyleReferenceUrl(url); setLoadedPresetId(id) }, [])
   const clearStyle = useCallback(() => { setStyleReferenceUrl(null); setLoadedPresetId(null) }, [])
@@ -160,18 +167,21 @@ export function useThumbnailBoost(opts: { defaultQuestion?: boolean } = {}): Thu
     autoBadge: autoBadge || undefined,
     autoAccent: autoAccent || undefined,
     pose: pose !== 'auto' ? pose : undefined,
+    // Apparel goes ON the person. The server ignores it for anything nobody
+    // wears, so it is safe to send whenever the creator has it on.
+    wearProduct: wear || undefined,
     badgeText: badgeText.trim() || undefined,
     accentWord: accentWord.trim() || undefined,
     ...((accentWord.trim() || autoAccent) ? { accentColor: '#FF2D2D' } : {}),
     styleReferenceUrl: styleReferenceUrl || undefined,
     scenePrompt: scenePrompt.trim() || undefined,
-  }), [question, effects, autoBadge, autoAccent, pose, badgeText, accentWord, styleReferenceUrl, scenePrompt])
+  }), [question, effects, autoBadge, autoAccent, pose, wear, badgeText, accentWord, styleReferenceUrl, scenePrompt])
 
   return {
     question, setQuestion, effects, setEffects, autoBadge, setAutoBadge, autoAccent, setAutoAccent,
     savedStyles, styleReferenceUrl, loadedPresetId, styleRefUploading, savingPreset,
     applyPreset, clearStyle, uploadStyleRef, saveCurrentAsPreset, deletePreset,
-    pose, setPose, badgeText, setBadgeText, accentWord, setAccentWord, scenePrompt, setScenePrompt,
+    pose, setPose, wear, setWear, badgeText, setBadgeText, accentWord, setAccentWord, scenePrompt, setScenePrompt,
     requestFields,
   }
 }
@@ -286,7 +296,12 @@ export default function ThumbnailBoostPanel({ boost, face, disabled, showQuestio
           <ChevronDown size={12} className="ml-auto text-[#86868b] transition-transform group-open:rotate-180" />
         </summary>
         <div className="mt-3 flex flex-col gap-3">
+          {/* Apparel goes ON the person. Above the pose chips on purpose: when it
+              is on, the pose is settled and the chips below it stop applying. */}
           {face && (
+            <WearProductToggle wear={boost.wear} onChange={boost.setWear} disabled={disabled} compact />
+          )}
+          {face && !boost.wear && (
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-semibold" style={muted}>You with the product</span>
               <div className="flex flex-wrap gap-1.5">

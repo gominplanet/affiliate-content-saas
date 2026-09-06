@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
+import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
 
 interface FaceModel { id: string; name: string }
 type Network = 'instagram' | 'facebook'
@@ -37,6 +38,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [postType, setPostType] = useState<'feed' | 'story'>('story') // IG only — story (9:16) is the link-in-bio default
   const [linkInBioCta, setLinkInBioCta] = useState(true) // IG only — bake "LINK IN BIO" into the design
   const [question, setQuestion] = useHeadlineStyle()
+  const [wear, setWear] = useWearProduct()
 
   const [connected, setConnected] = useState<boolean | null>(null)
   const [caption, setCaption] = useState('')
@@ -91,6 +93,9 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
       headlineStyle: headlineStyleValue(question),
+      // Apparel goes ON the person. Meaningless without a face, and the server
+      // ignores it for a product nobody wears.
+      wearProduct: wear && mode === 'face',
     }
     try {
       const res = await fetch('/api/youtube/generate-thumbnail', {
@@ -194,6 +199,10 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
           </button>
         )}
         <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={genBusy} compact />
+        {/* Apparel goes ON the person, not held beside them. */}
+        {mode === 'face' && (
+          <WearProductToggle wear={wear} onChange={setWear} disabled={genBusy} compact />
+        )}
         <button onClick={generate} disabled={genBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-sm font-semibold transition disabled:opacity-60" style={{ color: 'var(--text)' }}>
           {genBusy ? <><Loader2 size={16} className="animate-spin" /> Designing…</> : <><Wand2 size={16} /> {thumbUrl ? 'Regenerate design' : 'Generate design'}</>}

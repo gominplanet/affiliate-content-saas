@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { Sparkles, Download, Loader2, User, Package, AlertCircle, Wand2 } from 'lucide-react'
 import PageExplainer from '@/components/amazon/PageExplainer'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
+import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
 
 interface FaceModel { id: string; name: string; outfit_pref?: string | null }
 
@@ -28,6 +29,7 @@ export default function AmazonThumbnailsPage() {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<{ url: string; hook: string } | null>(null)
   const [question, setQuestion] = useHeadlineStyle()
+  const [wear, setWear] = useWearProduct()
 
   useEffect(() => {
     (async () => {
@@ -88,6 +90,9 @@ export default function AmazonThumbnailsPage() {
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
       ...(headline.trim() ? { customHeadline: headline.trim() } : {}),
       headlineStyle: headlineStyleValue(question),
+      // Apparel goes ON the person. Meaningless without a face, and the server
+      // ignores it for a product nobody wears.
+      wearProduct: wear && mode === 'face',
     }
 
     try {
@@ -234,6 +239,12 @@ export default function AmazonThumbnailsPage() {
             writes the headline (no custom headline typed above). */}
         {!headline.trim() && (
           <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={busy} />
+        )}
+
+        {/* Apparel goes ON the person. Independent of the headline style, which
+            is why it sits outside that block. */}
+        {mode === 'face' && (
+          <WearProductToggle wear={wear} onChange={setWear} disabled={busy} />
         )}
 
         <button

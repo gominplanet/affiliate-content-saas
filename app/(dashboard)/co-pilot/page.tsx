@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useWearProduct } from '@/components/thumbnails/WearProductToggle'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -715,6 +716,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    *  true = curiosity question about the product + a matching facial reaction.
    *  Remembered per browser so a creator who prefers questions keeps it. */
   const [thumbQuestionMode, setThumbQuestionMode] = useState(false)
+  // "Make me wear it": apparel goes ON the creator rather than being held up
+  // beside them. Shared state so it is the same toggle everywhere it appears.
+  const [thumbWear, setThumbWear] = useWearProduct()
   useEffect(() => {
     try { setThumbQuestionMode(localStorage.getItem('mvp_thumb_question') === '1') } catch { /* ignore */ }
   }, [])
@@ -1778,6 +1782,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // Headline style: 'question' composes a curiosity question about the
           // product + a matching facial reaction; default polished statement.
           headlineStyle: thumbQuestionMode ? 'question' : 'statement',
+          wearProduct: thumbWear && !isProductOnly,
           // Boost controls (pose / energy effects / starburst badge / red accent word).
           pose: thumbPose !== 'auto' ? thumbPose : undefined,
           energyEffects: thumbEffects || undefined,
@@ -1895,6 +1900,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           textMode: 'graphic',
           breakFrame: breakFrame || undefined,
           headlineStyle: thumbQuestionMode ? 'question' : 'statement',
+          wearProduct: thumbWear && !(selectedFaceModelId === 'no-human' || scoutFaceSelection === 'no-human'),
           // Boost controls — same levers as the manual Generate button. accentColor
           // is already sent above on this path, so it isn't repeated here.
           pose: thumbPose !== 'auto' ? thumbPose : undefined,
@@ -2497,6 +2503,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         ['energy', 'Energy', thumbEffects, () => toggleThumbEffects(!thumbEffects), 'Speed lines, a streak on the product, a burst behind the title'],
                         ['badge', 'Badge', thumbAutoBadge, () => toggleThumbAutoBadge(!thumbAutoBadge), 'A starburst badge with a real benefit, written for you'],
                         ['accent', 'Red accent', thumbAutoAccent, () => toggleThumbAutoAccent(!thumbAutoAccent), 'One headline word pops in red'],
+                        ['wear', 'Wear it', thumbWear, () => setThumbWear(!thumbWear), 'Clothing, shoes, watches, bags and glasses go ON you instead of being held up beside you. Nothing changes for a product nobody wears.'],
                       ] as Array<[string, string, boolean, () => void, string]>).map(([k, label, on, toggle, tip]) => (
                         <button key={k} type="button" disabled={generatingThumbnail} onClick={toggle} title={tip}
                           className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-all disabled:opacity-60 ${
