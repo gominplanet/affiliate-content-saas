@@ -110,36 +110,6 @@ async function load() {
     return NextResponse.json(buildCampaignLibrary([]))
   }
 
-  // ── the campaign window, the price and the picture ────────────────────────
-  // The accept route stores what the card had, which for a campaign accepted
-  // straight from the browse grid is no end date at all. The shared catalog is
-  // where that lives, so a joined campaign without a window is looked up rather
-  // than shown as undated.
-  const catalog = new Map<string, { endsAt: string | null; startsAt: string | null; commissionPct: number | null; priceCents: number | null; imageUrl: string | null; brand: string | null; name: string | null }>()
-  for (const part of chunk(asins)) {
-    try {
-      const { data } = await sb
-        .from('cc_campaign_catalog')
-        .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, image_url, price_now_cents')
-        .overlaps('asins', part)
-        .limit(2000)
-      for (const c of (data ?? []) as Array<{ asins: string[] | null; campaign_name: string | null; brand_name: string | null; commission_pct: number | null; starts_at: string | null; ends_at: string | null; image_url: string | null; price_now_cents: number | null }>) {
-        for (const raw of c.asins ?? []) {
-          const a = String(raw || '').toUpperCase()
-          if (!byAsin.has(a)) continue
-          const prev = catalog.get(a)
-          // Keep the campaign that runs longest for this product: it is the one
-          // whose window the creator can still publish into.
-          if (prev && (prev.endsAt || '') >= (c.ends_at || '')) continue
-          catalog.set(a, {
-            endsAt: c.ends_at, startsAt: c.starts_at, commissionPct: c.commission_pct,
-            priceCents: c.price_now_cents, imageUrl: c.image_url, brand: c.brand_name, name: c.campaign_name,
-          })
-        }
-      }
-    } catch { /* the catalog is enrichment; a joined campaign is still a joined campaign */ }
-  }
-
   // ── what exists for each product ──────────────────────────────────────────
   //
   // Everything below is enrichment: five independent reads that answer "what did
@@ -179,7 +149,23 @@ async function load() {
   // is used and the rest is left out. A creator seeing their campaigns with the
   // content column thin beats a creator seeing an error, and the alternative is
   // the whole function running out of time and returning nothing at all.
-  const [postRows, ytRows, avpRows, ccRows, earnings] = await withDeadline(Promise.all([
+  type CatRow = {
+    asins: string[] | null; campaign_name: string | null; brand_name: string | null
+    commission_pct: number | null; starts_at: string | null; ends_at: string | null
+    image_url: string | null; price_now_cents: number | null
+  }
+
+  const [catRows, postRows, ytRows, avpRows, ccRows] = await withDeadline(Promise.all([
+    // The campaign window, the price and the picture. The accept route stores
+    // what the card had, which for a campaign accepted straight from the browse
+    // grid is no end date at all, and the window is what every piece of advice on
+    // this page is built from. This ran sequentially outside the deadline before,
+    // which meant a slow shared catalog could burn the whole time budget on its
+    // own with nothing to show for it.
+    spread<CatRow>(chunk(asins), part =>
+      sb.from('cc_campaign_catalog')
+        .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, image_url, price_now_cents')
+        .overlaps('asins', part).limit(2000)),
     spread<PostRow>(chunk(postIds), part =>
       sb.from('blog_posts').select('id, title, published_at').in('id', part)),
     spread<YtRow>(chunk(asins), part =>
@@ -191,8 +177,23 @@ async function load() {
     spread<CcRow>(chunk(asins), part =>
       sb.from('creator_content').select('asin, platform, kind, url, title, posted_at')
         .eq('user_id', ownerId).in('asin', part).limit(1000)),
-    readEarnings(sb, ownerId, asins),
-  ]), [[], [], [], [], { totals: new Map(), synced: false }] as const)
+  ]), [[], [], [], [], []] as const)
+
+  const catalog = new Map<string, { endsAt: string | null; startsAt: string | null; commissionPct: number | null; priceCents: number | null; imageUrl: string | null; brand: string | null; name: string | null }>()
+  for (const c of catRows) {
+    for (const raw of c.asins ?? []) {
+      const a = String(raw || '').toUpperCase()
+      if (!byAsin.has(a)) continue
+      const prev = catalog.get(a)
+      // Keep the campaign that runs longest for this product: it is the one
+      // whose window the creator can still publish into.
+      if (prev && (prev.endsAt || '') >= (c.ends_at || '')) continue
+      catalog.set(a, {
+        endsAt: c.ends_at, startsAt: c.starts_at, commissionPct: c.commission_pct,
+        priceCents: c.price_now_cents, imageUrl: c.image_url, brand: c.brand_name, name: c.campaign_name,
+      })
+    }
+  }
 
   // The blog post MVP wrote for the campaign. The campaigns row carries the
   // published URL; the post itself carries the date, which decides whether it
@@ -249,11 +250,9 @@ async function load() {
     add(c.asin, { kind: 'social', title: c.title, at: c.posted_at, url: c.url })
   }
 
-  const { totals: earned, synced: earningsSynced } = earnings
 
   const joined: JoinedCampaign[] = [...byAsin.values()].map(r => {
     const cat = catalog.get(r.asin)
-    const e = earned.get(r.asin)
     return {
       asin: r.asin,
       campaignId: r.cc_campaign_id,
@@ -269,82 +268,21 @@ async function load() {
       messagedAt: r.messaged_at || null,
       detailsUrl: r.details_url || null,
       content: content.get(r.asin) ?? [],
-      earned: earningsSynced ? { clicks: e?.clicks ?? 0, orders: e?.orders ?? 0, cents: e?.cents ?? 0 } : null,
+      // Filled in by a second request. Amazon reports one row per product per
+      // month per stream per store, which on a real account is tens of thousands
+      // of rows, and reading them was most of what timed this function out. The
+      // page is a work queue first: what to make next does not depend on what a
+      // product has already paid, so the list goes out without waiting for it.
+      earned: null,
     }
   })
 
   return NextResponse.json(buildCampaignLibrary(joined))
 }
 
-/**
- * What Amazon paid on each of these products.
- *
- * Amazon reports one row per product per month per stream per store, so an
- * account with a few hundred joined campaigns and a couple of years of history
- * runs to tens of thousands of rows. PostgREST caps a read at a thousand, so this
- * pages, and the pages for each chunk of products run in parallel rather than one
- * after another, which is what turned this read from most of the function's time
- * budget into a fraction of it.
- *
- * `synced` is the honest part. Null earnings mean Amazon has never been read for
- * this account, which is a completely different fact from Amazon reporting zero,
- * and the page says different things about them. One row anywhere proves the
- * account is synced, so a product with no row after that is a real zero.
- *
- * The page cap exists so a pathological account cannot run the function out of
- * time. Hitting it would make every total an undercount, and an undercount
- * presented as "Amazon paid you $X" is a lie, so hitting it reports nothing
- * rather than something wrong.
- */
-const EARNINGS_MAX_PAGES = 12
-
-async function readEarnings(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  sb: any, ownerId: string, asins: string[],
-): Promise<{ totals: Map<string, { clicks: number; orders: number; cents: number }>; synced: boolean }> {
-  type Row = { asin: string; clicks: number | null; orders: number | null; earnings_cents: number | null }
-  const totals = new Map<string, { clicks: number; orders: number; cents: number }>()
-  let synced = false
-  let truncated = false
-
-  const readChunk = async (part: string[]): Promise<Row[]> => {
-    const out: Row[] = []
-    for (let page = 0; page < EARNINGS_MAX_PAGES; page++) {
-      let rows: Row[] = []
-      try {
-        const { data } = await sb
-          .from('amazon_earnings_products').select('asin, clicks, orders, earnings_cents')
-          .eq('user_id', ownerId).in('asin', part).range(page * 1000, page * 1000 + 999)
-        rows = (data ?? []) as Row[]
-      } catch { break }
-      out.push(...rows)
-      if (rows.length < 1000) return out
-      if (page === EARNINGS_MAX_PAGES - 1) truncated = true
-    }
-    return out
-  }
-
-  const pages = await Promise.all(chunk(asins).map(readChunk))
-  for (const rows of pages) {
-    for (const e of rows) {
-      synced = true
-      const a = (e.asin || '').toUpperCase()
-      const prev = totals.get(a) ?? { clicks: 0, orders: 0, cents: 0 }
-      totals.set(a, {
-        clicks: prev.clicks + (e.clicks ?? 0),
-        orders: prev.orders + (e.orders ?? 0),
-        cents: prev.cents + (e.earnings_cents ?? 0),
-      })
-    }
-  }
-  // A partial sum reported as a total is worse than no number at all.
-  if (truncated) return { totals: new Map(), synced: false }
-  return { totals, synced }
-}
-
 /** Enrichment gets this long, then the page goes out with what it has. Well
  *  under the function's own limit, because being late is the same as failing. */
-const ENRICHMENT_DEADLINE_MS = 20_000
+const ENRICHMENT_DEADLINE_MS = 12_000
 
 function withDeadline<T>(work: Promise<T>, fallback: T): Promise<T> {
   return Promise.race([

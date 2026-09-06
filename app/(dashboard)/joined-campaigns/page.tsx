@@ -27,7 +27,7 @@ import { Loader2, PenLine, ExternalLink, RefreshCw, Share2, CircleAlert, CircleC
 import PageHero from '@/components/layout/PageHero'
 import { requestMyCcCampaigns } from '@/lib/extension-frame'
 import { ROUTE_EXPLAINER, type BestRoute } from '@/lib/campaign-runway'
-import type { CampaignLibrary, CampaignState, LibraryRow } from '@/lib/campaign-library'
+import { buildCampaignLibrary, type CampaignLibrary, type CampaignState, type LibraryRow } from '@/lib/campaign-library'
 
 type Filter = 'all' | CampaignState
 
@@ -72,6 +72,23 @@ export default function JoinedCampaignsPage() {
   // shown. Non-JSON back from the route means it crashed outright rather than
   // answering, and the status is the only clue there is.
   const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Fold Amazon's per-product earnings into the list once they arrive. Rebuilt
+  // through buildCampaignLibrary rather than patched in place, so the states, the
+  // ordering and the sentences all come from the one tested function no matter
+  // which side of the wire runs it.
+  const mergeEarnings = useCallback(async (lib: CampaignLibrary) => {
+    try {
+      const r = await fetch('/api/campaigns/library/earnings')
+      const e = await r.json() as { synced?: boolean; totals?: Record<string, { clicks: number; orders: number; cents: number }> }
+      if (!e?.synced) return
+      const totals = e.totals || {}
+      setData(buildCampaignLibrary(lib.rows.map(row => ({
+        ...row,
+        earned: totals[row.asin] ?? { clicks: 0, orders: 0, cents: 0 },
+      }))))
+    } catch { /* the list is already right, it is just less precise */ }
+  }, [])
   const load = useCallback(async () => {
     try {
       const r = await fetch('/api/campaigns/library')
@@ -85,11 +102,16 @@ export default function JoinedCampaignsPage() {
       }
       setLoadError(payload.error || null)
       setData(payload)
+      // What Amazon paid comes second, because reading it is what used to time
+      // the whole page out. The list is already on screen by now; this only
+      // separates "published" from "published and paying", so it is re-derived
+      // through the same pure function rather than asking the server again.
+      if (payload.rows?.length) void mergeEarnings(payload)
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e))
       setData(null)
     } finally { setLoading(false) }
-  }, [])
+  }, [mergeEarnings])
   useEffect(() => { load() }, [load])
 
   // Pull the authoritative joined list off Amazon. A campaign joined on Amazon
