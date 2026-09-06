@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run build:extension && npm run test:thumbnails && npm run test:access && npm run test:shorts && npm run test:render-filters && npm run test:passport && npm run test:link-cloak && npm run test:video-library && npm run test:video-insights && npm run test:video-products && npm run test:cc-products && npm run test:video-product-insights && npm run test:seo-steps && npm run test:blog-health && npm run test:cc-send && npm run test:campaign-library && npm run test:campaign-runway && npm run test:post-link && npm run test:health-claims && next build",
+    "build": "npm run build:extension && npm run test:thumbnails && npm run test:access && npm run test:shorts && npm run test:render-filters && npm run test:passport && npm run test:link-cloak && npm run test:video-library && npm run test:video-insights && npm run test:video-products && npm run test:cc-products && npm run test:video-product-insights && npm run test:seo-steps && npm run test:blog-health && npm run test:cc-send && npm run test:campaign-library && npm run test:campaign-runway && npm run test:post-link && npm run test:health-claims && npm run test:campaign-rows && next build",
     "build:extension": "bash scripts/zip-extension.sh && bash scripts/zip-extension-store.sh",
     "start": "next start",
     "lint": "next lint",
@@ -26,7 +26,8 @@
     "test:campaign-library": "tsx scripts/test-campaign-library.ts",
     "test:campaign-runway": "tsx scripts/test-campaign-runway.ts",
     "test:post-link": "tsx scripts/test-post-product-link.ts",
-    "test:health-claims": "tsx scripts/test-health-claims.ts"
+    "test:health-claims": "tsx scripts/test-health-claims.ts",
+    "test:campaign-rows": "tsx scripts/test-campaign-rows.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",

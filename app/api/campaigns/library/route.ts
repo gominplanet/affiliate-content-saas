@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { buildCampaignLibrary, type ContentPiece, type JoinedCampaign } from '@/lib/campaign-library'
+import { mergeCampaignRows, displayTitle, isJoined, type CampaignRow } from '@/lib/campaign-rows'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -29,24 +30,6 @@ const chunk = <T>(xs: T[], n = CHUNK): T[][] => {
   const out: T[][] = []
   for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n))
   return out
-}
-
-interface CampaignRow {
-  asin: string
-  cc_campaign_id: string | null
-  brand_name: string | null
-  product_title: string | null
-  campaign_name: string | null
-  commission_pct: number | null
-  ends_at: string | null
-  accepted_at: string | null
-  amazon_joined_at: string | null
-  messaged_at: string | null
-  details_url: string | null
-  wordpress_url: string | null
-  blog_post_id: string | null
-  status: string | null
-  updated_at: string | null
 }
 
 export async function GET() {
@@ -71,40 +54,52 @@ async function load() {
 
   // Joined means joined, however it happened. amazon_joined_at is the marker the
   // Amazon sync writes for campaigns the creator joined on Amazon directly;
-  // accepted_at is the one MVP writes. A campaign only MVP knows about and one
-  // only Amazon knows about are the same commitment.
+  // accepted_at is the one MVP writes.
   //
-  // Both columns arrived in later migrations, and the select fails as a unit, so
-  // a database missing either one would drop the whole page rather than one
-  // marker. Fall back to accepted_at alone, then to nothing, so the list is
-  // never empty for a schema reason the creator cannot see or act on.
+  // Read EVERY campaigns row and merge by product, rather than reading only the
+  // rows that carry a join marker. This is not tidiness, it is the difference
+  // between the page being right and the page being a lie. The blog generator
+  // INSERTS its own row for a product instead of updating the accepted one, so a
+  // product the creator joined and then wrote a post for has two rows: the accept
+  // row with the join marker and no post, and the post row with no join marker.
+  // Filtering on the marker kept the empty one and threw away the post, which is
+  // how an account with 279 published posts was told that one of its 775
+  // campaigns had content.
   const COLS = 'asin, cc_campaign_id, brand_name, product_title, campaign_name, commission_pct, ends_at, accepted_at, amazon_joined_at, messaged_at, details_url, wordpress_url, blog_post_id, status, updated_at'
   const FALLBACK_COLS = 'asin, cc_campaign_id, product_title, campaign_name, ends_at, accepted_at, wordpress_url, blog_post_id, status, updated_at'
-  let rowsRaw: unknown[] | null = null
+  let rowsRaw: CampaignRow[] = []
   let readError: string | null = null
   {
-    const full = await sb.from('campaigns').select(COLS)
-      .eq('user_id', ownerId).or('amazon_joined_at.not.is.null,accepted_at.not.is.null').limit(1000)
-    if (!full.error) rowsRaw = full.data
+    const read = async (cols: string) => {
+      const out: CampaignRow[] = []
+      for (let page = 0; page < 5; page++) {
+        const r = await sb.from('campaigns').select(cols)
+          .eq('user_id', ownerId).range(page * 1000, page * 1000 + 999)
+        if (r.error) return { rows: out, error: r.error.message as string }
+        const rows = (r.data ?? []) as CampaignRow[]
+        out.push(...rows)
+        if (rows.length < 1000) break
+      }
+      return { rows: out, error: null as string | null }
+    }
+    const full = await read(COLS)
+    if (!full.error) rowsRaw = full.rows
     else {
-      readError = full.error.message
-      const lean = await sb.from('campaigns').select(FALLBACK_COLS)
-        .eq('user_id', ownerId).not('accepted_at', 'is', null).limit(1000)
-      if (!lean.error) { rowsRaw = lean.data; readError = null }
-      else readError = `${readError} / ${lean.error.message}`
+      // Both markers arrived in later migrations and a select fails as a unit, so
+      // a database missing one column would drop the whole page rather than one
+      // field. Fall back to the columns that have always existed.
+      const lean = await read(FALLBACK_COLS)
+      readError = lean.error ? `${full.error} / ${lean.error}` : null
+      rowsRaw = lean.rows
     }
   }
   if (readError) return NextResponse.json({ ...buildCampaignLibrary([]), error: readError })
 
-  // One row per product, keeping the campaign that runs longest, because that is
-  // the window the creator still has to publish into.
-  const byAsin = new Map<string, CampaignRow>()
-  for (const r of (rowsRaw ?? []) as CampaignRow[]) {
-    const asin = (r.asin || '').toUpperCase()
-    if (!/^[A-Z0-9]{10}$/.test(asin)) continue
-    const prev = byAsin.get(asin)
-    if (!prev || (r.ends_at || '') > (prev.ends_at || '')) byAsin.set(asin, { ...r, asin })
-  }
+  // Merge every row for a product into one, then keep the products that were
+  // actually joined. Nothing is dropped for being on the "wrong" row.
+  const byAsin = mergeCampaignRows(rowsRaw)
+  for (const [asin, r] of byAsin) if (!isJoined(r)) byAsin.delete(asin)
+
   const asins = [...byAsin.keys()]
   if (!asins.length) {
     return NextResponse.json(buildCampaignLibrary([]))
@@ -203,7 +198,7 @@ async function load() {
   for (const r of byAsin.values()) {
     if (!r.wordpress_url && !r.blog_post_id) continue
     const meta = r.blog_post_id ? postDates.get(r.blog_post_id) : undefined
-    add(r.asin, { kind: 'blog', url: r.wordpress_url, title: meta?.title ?? r.product_title, at: meta?.at ?? null })
+    add(r.asin, { kind: 'blog', url: r.wordpress_url ?? null, title: meta?.title ?? displayTitle(r.product_title), at: meta?.at ?? null })
   }
 
   for (const v of ytRows) {
@@ -255,9 +250,9 @@ async function load() {
     const cat = catalog.get(r.asin)
     return {
       asin: r.asin,
-      campaignId: r.cc_campaign_id,
+      campaignId: r.cc_campaign_id ?? null,
       brand: r.brand_name || cat?.brand || null,
-      product: r.product_title || cat?.name || null,
+      product: displayTitle(r.product_title) || displayTitle(cat?.name) || displayTitle(r.campaign_name),
       imageUrl: cat?.imageUrl ?? null,
       commissionPct: r.commission_pct ?? cat?.commissionPct ?? null,
       priceCents: cat?.priceCents ?? null,
