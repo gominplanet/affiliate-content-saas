@@ -56,22 +56,108 @@ function camp(over: Partial<JoinedCampaign> = {}): JoinedCampaign {
 // ── the list is a work queue, not an inventory ──────────────────────────────
 // The first row is the answer to "what do I make next", and every other order
 // buries it.
+//
+// Sorting by deadline alone got this wrong, which is the bug this block exists
+// to hold shut. A campaign closing in two days is the most urgent thing on the
+// list and close to the least valuable: no sample arrives in two days, and no
+// blog post is found by Google in two days. The campaign with five weeks left is
+// where the work actually pays, and it is the one quietly decaying towards
+// uselessness while the dying one sits on top of it.
 {
   const lib = buildCampaignLibrary([
     camp({ asin: 'B000000009', product: 'Earning', content: [blog()], earned: { clicks: 9, orders: 2, cents: 5000 } }),
     camp({ asin: 'B000000008', product: 'Closed', endsAt: inDays(-9) }),
-    camp({ asin: 'B000000007', product: 'Due in 30' }),
+    camp({ asin: 'B000000007', product: 'Due in 20', endsAt: inDays(20) }),
     camp({ asin: 'B000000006', product: 'Due in 2', endsAt: inDays(2) }),
+    camp({ asin: 'B000000004', product: 'Due in 40', endsAt: inDays(40) }),
     camp({ asin: 'B000000005', product: 'Made', content: [blog()] }),
   ], NOW)
-  check('the thing to make next is first', lib.rows[0].product === 'Due in 2', lib.rows.map(r => r.product).join(' > '))
-  check('the other open one is second', lib.rows[1].product === 'Due in 30', lib.rows.map(r => r.product).join(' > '))
+  const order = lib.rows.map(r => r.product).join(' > ')
+  check('the campaign whose time can still carry a video leads', lib.rows[0].product === 'Due in 40', order)
+  check('the one that can only carry a blog and a social push comes next',
+    lib.rows[1].product === 'Due in 20', order)
+  check('and the nearly dead one is last of the open ones', lib.rows[2].product === 'Due in 2', order)
   check('nothing that closed empty is near the top',
-    lib.rows[lib.rows.length - 1].product === 'Closed', lib.rows.map(r => r.product).join(' > '))
-  check('and it names that campaign in the instruction',
-    /Start with Due in 2/.test(lib.doThis), lib.doThis)
-  check('with the deadline attached', /2 days left/.test(lib.doThis), lib.doThis)
-  check('and what one sale is worth', /\$4 a sale/.test(lib.doThis), lib.doThis)
+    lib.rows[lib.rows.length - 1].product === 'Closed', order)
+  check('the instruction names that campaign', /Start with Due in 40/.test(lib.doThis), lib.doThis)
+  check('and says what its time is for rather than just that it is running out',
+    /Ask for the sample now and film it/.test(lib.doThis), lib.doThis)
+  check('with what one sale is worth', /\$4 a sale/.test(lib.doThis), lib.doThis)
+}
+
+// ── a short window is told what it is actually good for ─────────────────────
+// The distinction the whole file turns on. A sample cannot arrive and be filmed
+// in twelve days, and Google will not have found a new post before the boost
+// ends, so telling someone to "hurry and write the post" is telling them to work
+// for the ordinary rate. What still reaches a buyer inside twelve days is social.
+{
+  const lib = buildCampaignLibrary([camp({ endsAt: inDays(12) })], NOW)
+  const row = lib.rows[0]
+  check('a video is ruled out and the sample wait is the reason given',
+    row.runway.video.viable === false && /sample takes about 14 days/i.test(row.runway.video.note), row.runway.video.note)
+  check('a blog post is ruled out for this window, and search is the reason',
+    row.runway.blog.viable === false && /ends before anyone arrives from Google/i.test(row.runway.blog.note), row.runway.blog.note)
+  check('social is what is left', row.runway.social.viable === true && row.runway.best === 'social-first', row.runway.best)
+  check('the row says to write the post but push it socially',
+    /money inside this window comes from the social push/i.test(row.note), row.note)
+  check('and it never tells them to hurry a blog post for the boost',
+    !/write.{0,30}(quickly|now|today)/i.test(row.note), row.note)
+}
+
+// ── a long window is a video window ─────────────────────────────────────────
+{
+  const lib = buildCampaignLibrary([camp({ endsAt: inDays(45) })], NOW)
+  const row = lib.rows[0]
+  check('45 days is enough for the sample route', row.runway.best === 'video', row.runway.best)
+  check('and it says so in the creator’s terms',
+    /ask for a sample, film it/i.test(row.note), row.note)
+  check('with the point that a longer window earns more from the same video',
+    /the longer the window, the more that video earns/i.test(row.note), row.note)
+  check('a blog post is fine here too', row.runway.blog.viable === true, row.runway.blog.note)
+}
+
+// ── already having the product removes the wait that rules videos out ───────
+{
+  const waiting = buildCampaignLibrary([camp({ endsAt: inDays(20) })], NOW)
+  check('20 days is not enough when a sample has to arrive first',
+    waiting.rows[0].runway.video.viable === false, waiting.rows[0].runway.video.note)
+
+  // Content already published for this product proves the creator has it.
+  const owns = buildCampaignLibrary([
+    camp({ endsAt: inDays(20), content: [{ kind: 'amazon-video', url: null, title: null, at: inDays(-40) }] }),
+  ], NOW)
+  check('but it is enough when the product is already on the desk',
+    owns.rows[0].runway.video.viable === true, owns.rows[0].runway.video.note)
+}
+
+// ── the routes are counted, so the page can lead with the good ones ─────────
+{
+  const lib = buildCampaignLibrary([
+    camp({ asin: 'B1', endsAt: inDays(60) }),
+    camp({ asin: 'B2', endsAt: inDays(40) }),
+    camp({ asin: 'B3', endsAt: inDays(15) }),
+    camp({ asin: 'B4', endsAt: inDays(3) }),
+    camp({ asin: 'B5', endsAt: null }),
+  ], NOW)
+  check('the video windows are counted', lib.summary.routes.video === 2, JSON.stringify(lib.summary.routes))
+  check('the social-first windows are counted', lib.summary.routes['social-first'] === 1, JSON.stringify(lib.summary.routes))
+  check('the nearly closed ones are counted', lib.summary.routes['social-now'] === 1, JSON.stringify(lib.summary.routes))
+  check('and an undated one is not filed under any of them', lib.summary.routes.unknown === 1, JSON.stringify(lib.summary.routes))
+}
+
+// ── when the best thing on the list is a short window, say what is better ───
+{
+  const lib = buildCampaignLibrary([
+    camp({ asin: 'B1', endsAt: inDays(4) }),
+    camp({ asin: 'B2', endsAt: inDays(50) }),
+  ], NOW)
+  check('the long window leads', lib.rows[0].daysLeft === 50, `${lib.rows[0].daysLeft}`)
+
+  const shortOnly = buildCampaignLibrary([camp({ asin: 'B1', endsAt: inDays(4) })], NOW)
+  check('a list of nothing but dying campaigns says so plainly',
+    /Only a social post can land in time/i.test(shortOnly.doThis), shortOnly.doThis)
+  check('and does not pretend a blog post will pay here',
+    !/write the post/i.test(shortOnly.doThis), shortOnly.doThis)
 }
 
 // ── a campaign with no end date is not urgent, late, or missed ──────────────
@@ -163,7 +249,7 @@ function camp(over: Partial<JoinedCampaign> = {}): JoinedCampaign {
   check('the split is stated, not implied by a chart',
     /joined 34 campaigns/i.test(lib.verdict) && /3 have content/i.test(lib.verdict), lib.verdict)
   check('and the reason it matters is said once',
-    /pays nothing until something exists to link from/i.test(lib.doThis), lib.doThis)
+    /pays nothing until something exists to link from/i.test(lib.verdict), lib.verdict)
 }
 
 // ── campaigns that closed empty are counted out loud ────────────────────────

@@ -23,12 +23,32 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Loader2, PenLine, ExternalLink, RefreshCw, CircleAlert, CircleCheck, CircleDashed, CircleDollarSign } from 'lucide-react'
+import { Loader2, PenLine, ExternalLink, RefreshCw, Share2, CircleAlert, CircleCheck, CircleDashed, CircleDollarSign } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import { requestMyCcCampaigns } from '@/lib/extension-frame'
+import { ROUTE_EXPLAINER, type BestRoute } from '@/lib/campaign-runway'
 import type { CampaignLibrary, CampaignState, LibraryRow } from '@/lib/campaign-library'
 
 type Filter = 'all' | CampaignState
+
+/** What the creator is deciding to make. The whole reason the page needs this:
+ *  the same 20 days is a fine window for a social push and a useless one for a
+ *  sample that has to arrive before anything can be filmed. */
+type Route = 'any' | 'video' | 'blog' | 'social'
+
+const ROUTES: { key: Route; label: string; hint: string }[] = [
+  { key: 'any', label: 'Anything', hint: 'Everything you have joined that still needs something made.' },
+  { key: 'video', label: 'Amazon video', hint: 'Windows long enough for a sample to arrive, be filmed, and still earn.' },
+  { key: 'blog', label: 'Blog post', hint: 'Windows long enough for search to find the post before the boost ends.' },
+  { key: 'social', label: 'Social post', hint: 'Anything still open. A social post reaches people the same day.' },
+]
+
+const ROUTE_CHIP: Record<BestRoute, { label: string; color: string }> = {
+  video: { label: 'Video window', color: '#047857' },
+  'social-first': { label: 'Social push', color: '#b45309' },
+  'social-now': { label: 'Social today or skip', color: '#e11d48' },
+  unknown: { label: 'No end date', color: '#78716c' },
+}
 
 const STATE: Record<CampaignState, { label: string; color: string; icon: typeof CircleAlert; tab: string }> = {
   due: { label: 'Nothing made yet', color: '#e11d48', icon: CircleAlert, tab: 'To make' },
@@ -44,6 +64,7 @@ export default function JoinedCampaignsPage() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
+  const [route, setRoute] = useState<Route>('any')
   const [writing, setWriting] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -100,8 +121,20 @@ export default function JoinedCampaignsPage() {
     } finally { setWriting(null) }
   }, [load])
 
-  const rows = (data?.rows ?? []).filter(r => filter === 'all' || r.state === filter)
+  // The route filter only narrows the work queue. A campaign that is already
+  // made or already closed is not a decision about what to film.
+  const fitsRoute = useCallback((r: LibraryRow) => {
+    if (route === 'any' || r.state !== 'due') return true
+    // Null is an undated campaign, and hiding one because Amazon left a field
+    // blank would quietly drop real work off the list.
+    return r.runway[route].viable !== false
+  }, [route])
+
+  const rows = (data?.rows ?? []).filter(r => (filter === 'all' || r.state === filter) && fitsRoute(r))
   const s = data?.summary
+  const dueRows = (data?.rows ?? []).filter(r => r.state === 'due')
+  const routeCount = (k: Route) =>
+    k === 'any' ? dueRows.length : dueRows.filter(r => r.runway[k].viable !== false).length
 
   return (
     <>
@@ -167,6 +200,30 @@ export default function JoinedCampaignsPage() {
             </div>
           )}
 
+          {/* What are you making? The question that turns "days left" into an
+              answer, because the three routes have opposite shapes. */}
+          {s && s.due > 0 && (filter === 'all' || filter === 'due') && (
+            <div className="rounded-xl border p-3 mb-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+              <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>
+                What are you making?
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {ROUTES.map(r => (
+                  <button key={r.key} onClick={() => setRoute(r.key)} title={r.hint}
+                    className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border"
+                    style={route === r.key
+                      ? { borderColor: '#7C3AED', background: 'rgba(124,58,237,0.10)', color: '#7C3AED' }
+                      : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+                    {r.label} <span className="tabular-nums opacity-70">{routeCount(r.key)}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[12px] mt-2 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+                {route === 'any' ? ROUTE_EXPLAINER : ROUTES.find(r => r.key === route)?.hint}
+              </p>
+            </div>
+          )}
+
           {rows.length === 0 ? (
             <p className="text-[13px] py-8 text-center" style={{ color: 'var(--text-faint)' }}>
               {s && s.joined === 0
@@ -198,11 +255,22 @@ export default function JoinedCampaignsPage() {
                             {r.commissionPct}%{r.perSaleCents != null ? ` · ${money(r.perSaleCents)} a sale` : ''}
                           </span>
                         )}
+                        {r.state === 'due' && (
+                          <span className="text-[10px] font-bold px-1.5 py-[1px] rounded flex-shrink-0"
+                            style={{ background: `${ROUTE_CHIP[r.runway.best].color}1a`, color: ROUTE_CHIP[r.runway.best].color }}>
+                            {ROUTE_CHIP[r.runway.best].label}
+                          </span>
+                        )}
                       </div>
                       {r.brand && r.product && (
                         <p className="text-[11.5px] truncate" style={{ color: 'var(--text-faint)' }}>{r.brand}</p>
                       )}
-                      <p className="text-[12.5px] mt-1 leading-relaxed" style={{ color: urgent ? st.color : 'var(--text-soft)' }}>{r.note}</p>
+                      {/* Answer the question that was asked. With a route
+                          selected the row says what THAT route can do with this
+                          window; otherwise it says what the window is best for. */}
+                      <p className="text-[12.5px] mt-1 leading-relaxed" style={{ color: urgent ? st.color : 'var(--text-soft)' }}>
+                        {r.state === 'due' && route !== 'any' ? r.runway[route].note : r.note}
+                      </p>
                       {r.content.length > 0 && (
                         <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5">
                           {r.content.filter(c => c.url).slice(0, 4).map((c, i) => (
@@ -216,12 +284,30 @@ export default function JoinedCampaignsPage() {
                     </div>
 
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                      {r.state === 'due' && (
+                      {/* Which action leads is the window's decision, not a
+                          preference. Under a week nothing that has to be found
+                          gets found, so pushing "write a post" there would be
+                          asking for work that earns the ordinary rate. */}
+                      {r.state === 'due' && r.runway.best !== 'social-now' && (
                         <button onClick={() => write(r)} disabled={writing === r.asin}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
                           style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
                           {writing === r.asin ? <Loader2 size={12} className="animate-spin" /> : <PenLine size={12} />} Write the post
                         </button>
+                      )}
+                      {r.state === 'due' && r.runway.best !== 'video' && (
+                        <Link href="/amazon/social"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold"
+                          style={r.runway.best === 'social-now'
+                            ? { background: '#d97706', color: '#fff' }
+                            : { border: '1px solid var(--border)', color: 'var(--text)' }}>
+                          <Share2 size={12} /> Make the social post
+                        </Link>
+                      )}
+                      {r.state === 'due' && r.runway.best === 'video' && (
+                        <span className="text-[11px] text-right max-w-[140px] leading-snug" style={{ color: 'var(--text-faint)' }}>
+                          Ask the brand for a sample now, so there is time to film it.
+                        </span>
                       )}
                       {r.detailsUrl && (
                         <a href={r.detailsUrl} target="_blank" rel="noreferrer"

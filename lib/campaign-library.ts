@@ -30,6 +30,8 @@
 // date off often enough that treating a missing date as urgency would invent a
 // panic out of a blank field.
 
+import { campaignRunway, type BestRoute, type Runway } from './campaign-runway'
+
 export type ContentKind = 'blog' | 'youtube' | 'amazon-video' | 'social'
 
 export interface ContentPiece {
@@ -80,6 +82,9 @@ export interface LibraryRow extends JoinedCampaign {
   /** False only when every piece is dated and every one of them landed after the
    *  window closed. Null when nothing is dated. */
   madeInWindow: boolean | null
+  /** What the remaining time is good for. The reason a campaign closing in three
+   *  days is urgent and almost worthless at the same time. */
+  runway: Runway
   note: string
 }
 
@@ -93,6 +98,8 @@ export interface CampaignLibrary {
     earning: number
     /** Open, nothing published, and a week or less left. */
     urgent: number
+    /** Open, nothing published, split by what the remaining time can carry. */
+    routes: Record<BestRoute, number>
     /** Amazon's total across the products in this list, or null when unsynced. */
     earnedCents: number | null
   }
@@ -187,12 +194,9 @@ function noteFor(row: Omit<LibraryRow, 'note'>): string {
     if (clicks != null && clicks > 0) return `${made} published. ${plural(clicks, 'click')} on this product so far, no sale yet.`
     return `${made} published. Nothing from Amazon on this product yet.`
   }
-  if (state === 'due') {
-    if (daysLeft == null) return 'Joined, nothing published for it. Amazon gave no end date for this one.'
-    if (daysLeft === 0) return 'Joined, nothing published for it. The window closes today.'
-    if (daysLeft <= SOON_DAYS) return `Joined, nothing published for it. ${plural(daysLeft, 'day')} left.`
-    return `Joined, nothing published for it. ${plural(daysLeft, 'day')} left.`
-  }
+  // The days left are in the runway sentence already, and it says what they are
+  // good for, which is the part that decides what to make.
+  if (state === 'due') return `Nothing published for it yet. ${row.runway.headline}`
   const ago = daysLeft == null ? null : Math.abs(daysLeft)
   return ago == null
     ? 'The window closed with nothing published for it.'
@@ -202,11 +206,28 @@ function noteFor(row: Omit<LibraryRow, 'note'>): string {
 /** Work queue order: the thing to make next, first. */
 const STATE_RANK: Record<CampaignState, number> = { due: 0, made: 1, earning: 2, missed: 3 }
 
+/**
+ * What the remaining time can still carry, best first.
+ *
+ * Sorting the queue by deadline alone put the wrong row on top. A campaign
+ * closing in three days is the most urgent and close to the least valuable:
+ * nothing that has to be found by a shopper or by Google can be found in three
+ * days. A campaign closing in five weeks is where the work actually pays, and it
+ * is quietly decaying towards the useless band while the dying one sits above it.
+ *
+ * So the bands come first, and inside a band the one closing soonest leads,
+ * because that is the one about to fall out of it.
+ */
+const ROUTE_RANK: Record<BestRoute, number> = { video: 0, 'social-first': 1, 'social-now': 2, unknown: 3 }
+
 function compare(a: LibraryRow, b: LibraryRow): number {
   if (STATE_RANK[a.state] !== STATE_RANK[b.state]) return STATE_RANK[a.state] - STATE_RANK[b.state]
   if (a.state === 'due') {
-    // Closing soonest first. A campaign with no end date is not urgent and must
-    // not push a dated one down the list, so it sorts after every dated row.
+    const ar = ROUTE_RANK[a.runway.best]
+    const br = ROUTE_RANK[b.runway.best]
+    if (ar !== br) return ar - br
+    // A campaign with no end date is not urgent and must not push a dated one
+    // down the list, so it sorts after every dated row.
     const ad = a.daysLeft ?? Number.POSITIVE_INFINITY
     const bd = b.daysLeft ?? Number.POSITIVE_INFINITY
     if (ad !== bd) return ad - bd
@@ -223,7 +244,13 @@ export function buildCampaignLibrary(campaigns: JoinedCampaign[], now: Date = ne
     const perSaleCents = c.priceCents != null && c.commissionPct != null && c.priceCents > 0 && c.commissionPct > 0
       ? Math.round(c.priceCents * (c.commissionPct / 100))
       : null
-    const partial = { ...c, state: stateOf(c, daysLeft), daysLeft, perSaleCents, madeInWindow: madeInWindow(c) }
+    // A creator who has already published for this product plainly has it, so the
+    // sample wait does not apply to making another piece for it.
+    const ownsProduct = c.content.some(p => p.kind === 'amazon-video' || p.kind === 'youtube')
+    const partial = {
+      ...c, state: stateOf(c, daysLeft), daysLeft, perSaleCents,
+      madeInWindow: madeInWindow(c), runway: campaignRunway(daysLeft, { ownsProduct }),
+    }
     return { ...partial, note: noteFor(partial) }
   })
   rows.sort(compare)
@@ -237,7 +264,10 @@ export function buildCampaignLibrary(campaigns: JoinedCampaign[], now: Date = ne
   const anyEarnings = rows.some(r => r.earned != null)
   const earnedCents = anyEarnings ? rows.reduce((a, r) => a + (r.earned?.cents ?? 0), 0) : null
 
-  const summary = { joined: rows.length, made, due, missed, earning, urgent, earnedCents }
+  const routes: Record<BestRoute, number> = { video: 0, 'social-first': 0, 'social-now': 0, unknown: 0 }
+  for (const r of rows) if (r.state === 'due') routes[r.runway.best]++
+
+  const summary = { joined: rows.length, made, due, missed, earning, urgent, routes, earnedCents }
 
   if (!rows.length) {
     return {
@@ -259,6 +289,8 @@ export function buildCampaignLibrary(campaigns: JoinedCampaign[], now: Date = ne
   if (missed > 0) {
     verdict += ` ${missed} closed before anything was made for ${missed === 1 ? 'it' : 'them'}.`
   }
+  // Why the open ones matter, said once at the top rather than on every row.
+  if (due > 0) verdict += ' A joined campaign pays nothing until something exists to link from.'
 
   let doThis: string
   if (due === 0) {
@@ -266,12 +298,21 @@ export function buildCampaignLibrary(campaigns: JoinedCampaign[], now: Date = ne
       ? 'Nothing is waiting on you. The ones that closed empty are the argument for joining a campaign when you are ready to make something for it, rather than in bulk.'
       : 'Nothing is waiting on you. Join the next campaign when you have something you want to make for it.'
   } else {
+    // Name the campaign, and name what its remaining time is actually good for.
+    // "14 days left" tells someone to hurry; it does not tell them that a sample
+    // cannot arrive in 14 days and that the only thing that still reaches a buyer
+    // inside that window is a social post.
     const name = first.product || first.brand || first.asin
-    const when = first.daysLeft == null
-      ? 'no end date from Amazon'
-      : first.daysLeft <= 0 ? 'closing today' : `${plural(first.daysLeft, 'day')} left`
-    const worth = first.perSaleCents != null ? `, ${money(first.perSaleCents)} a sale` : ''
-    doThis = `Start with ${name}: ${when}${worth}. A joined campaign pays nothing until something exists to link from.`
+    const worth = first.perSaleCents != null ? ` at ${money(first.perSaleCents)} a sale` : ''
+    const make =
+      first.runway.best === 'video' ? 'Ask for the sample now and film it: that is what a window this long is for.'
+      : first.runway.best === 'social-first' ? 'Write the post for the long term if you want it, but plan the social push, because that is the only thing that reaches a buyer before this window shuts.'
+      : first.runway.best === 'social-now' ? 'Only a social post can land in time. If you cannot post today, spend the effort on one of the longer campaigns instead.'
+      : 'Check its window on Amazon first, because there is no end date to plan around.'
+    doThis = `Start with ${name}${worth}. ${make}`
+    if (routes.video > 0 && first.runway.best !== 'video') {
+      doThis += ` ${plural(routes.video, 'campaign')} still ${routes.video === 1 ? 'has' : 'have'} room for a video, which is the better use of the time.`
+    }
   }
 
   return { rows, summary, verdict, doThis }

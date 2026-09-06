@@ -19,6 +19,7 @@ import {
   Bookmark, BookmarkCheck, Check, Send, Info, X, Pencil,
 } from 'lucide-react'
 import { acceptCampaignViaScout } from '@/lib/accept-campaign'
+import { campaignRunway } from '@/lib/campaign-runway'
 import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns, requestBrandChats, requestCcSendDebug, getScoutCcRecipe } from '@/lib/extension-frame'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
@@ -147,6 +148,11 @@ function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void
 function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, socialOnly = false, selected, onToggleSelect, hasReply }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void; saved?: boolean; onToggleSave?: () => void; socialOnly?: boolean; selected?: boolean; onToggleSelect?: () => void; hasReply?: boolean }) {
   const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null, onActed, !!status?.accepted)
   const endingSoon = c.daysLeft != null && c.daysLeft <= 1
+  // What the remaining window is good for, shown BEFORE the join rather than
+  // after. "18 days left" reads as plenty until you know a sample takes a
+  // fortnight to arrive and search takes three weeks to find a new post, at
+  // which point 18 days means one thing only: a social push.
+  const runway = campaignRunway(c.daysLeft ?? null, { ownsProduct: false })
 
   // In-app Accept: SCOUT opens the campaign's Amazon page (the user's logged-in
   // session) and clicks Accept — no tab-hopping. On success we record it via the
@@ -221,6 +227,14 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
           </div>
           <p className="text-[11px] text-[var(--text-3)] truncate">{c.brand || 'Unknown brand'}</p>
           <p className="text-sm font-medium text-[var(--text)] leading-snug line-clamp-2">{c.name || c.repAsin}</p>
+          {!c.isFull && runway.best !== 'unknown' && (
+            <p title={runway.headline} className="text-[10.5px] font-semibold mt-1"
+              style={{ color: runway.best === 'video' ? '#047857' : runway.best === 'social-first' ? '#b45309' : '#b3261e' }}>
+              {runway.best === 'video' ? 'Room for a sample and a video'
+                : runway.best === 'social-first' ? 'Too short for a sample or for search. Social push.'
+                : 'Social today, or leave it'}
+            </p>
+          )}
         </div>
       </div>
 
@@ -288,7 +302,9 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
             </a>
           ) : (
             <button onClick={() => makePost()} disabled={gen || c.isFull} className="btn-primary flex items-center gap-1.5 text-xs flex-1 justify-center disabled:opacity-50"
-              title={c.isFull ? 'Campaign is full — no bounty to earn' : 'Scrape, write and publish a blog post for this product (~1 min)'}>
+              title={c.isFull ? 'Campaign is full, no bounty to earn'
+                : runway.blog.viable === false ? `Scrape, write and publish a blog post for this product (~1 min). ${runway.blog.note}`
+                : 'Scrape, write and publish a blog post for this product (~1 min)'}>
               {gen ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} {gen ? 'Publishing…' : 'Make blog post'}
             </button>
           )}
