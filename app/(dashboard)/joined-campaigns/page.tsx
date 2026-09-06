@@ -358,21 +358,31 @@ export default function JoinedCampaignsPage() {
                           </span>
                         )}
                         {r.state === 'due' && (
-                          <span className="text-[10px] font-bold px-1.5 py-[1px] rounded flex-shrink-0"
+                          <span title={r.runway.headline} className="text-[10px] font-bold px-1.5 py-[1px] rounded flex-shrink-0"
                             style={{ background: `${ROUTE_CHIP[r.runway.best].color}1a`, color: ROUTE_CHIP[r.runway.best].color }}>
                             {ROUTE_CHIP[r.runway.best].label}
+                          </span>
+                        )}
+                        {r.daysLeft != null && r.daysLeft >= 0 && (
+                          <span className="text-[10px] font-bold px-1.5 py-[1px] rounded flex-shrink-0 tabular-nums"
+                            style={{ background: urgent ? 'rgba(225,29,72,0.12)' : 'var(--surface-2)', color: urgent ? '#e11d48' : 'var(--text-soft)' }}>
+                            {r.daysLeft === 0 ? 'ends today' : `${r.daysLeft}d left`}
                           </span>
                         )}
                       </div>
                       {r.brand && r.product && (
                         <p className="text-[11.5px] truncate" style={{ color: 'var(--text-faint)' }}>{r.brand}</p>
                       )}
-                      {/* Answer the question that was asked. With a route
-                          selected the row says what THAT route can do with this
-                          window; otherwise it says what the window is best for. */}
-                      <p className="text-[12.5px] mt-1 leading-relaxed" style={{ color: urgent ? st.color : 'var(--text-soft)' }}>
-                        {r.state === 'due' && route !== 'any' ? r.runway[route].note : r.note}
-                      </p>
+                      {/* The prose belongs where a decision is being made, not
+                          repeated down seven hundred rows. On a campaign waiting
+                          to be made the chips already say what the window can
+                          carry and how long is left, and the full reasoning is a
+                          hover away and spelled out in the Create window. The
+                          other states earn their line, because there it differs:
+                          what was published, what Amazon paid, when it closed. */}
+                      {r.state !== 'due' && (
+                        <p className="text-[12.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-soft)' }}>{r.note}</p>
+                      )}
                       {/* What the product itself is doing. A high commission on
                           something nobody buys is not an opportunity, and these
                           are the numbers that tell them apart. Anything unknown

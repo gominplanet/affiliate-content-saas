@@ -116,6 +116,22 @@ const postRow: CampaignRow = {
 
 // ── the titles a person actually reads ──────────────────────────────────────
 {
+  // Amazon's campaign names are marketing strings for its own browser: pipe
+  // separated promo segments, the commission stapled on, wrapped in quotes,
+  // decorated with stars, suffixed with internal codes. The product name is one
+  // segment among several and every other segment is advertising.
+  check('the promo segment and the commission come off, leaving the product',
+    displayTitle('1 New Release | 4K Large Projector Screen for World Cup.Earn 20% Commission!') === '4K Large Projector Screen for World Cup',
+    `${displayTitle('1 New Release | 4K Large Projector Screen for World Cup.Earn 20% Commission!')}`)
+  check('quotes, a star, a sold count and an internal code all come off too',
+    displayTitle('"⭐3K+ Sold | Bear Baby Food Maker | Homemade Baby Food | 15% Commission" (FW)') === 'Bear Baby Food Maker',
+    `${displayTitle('"⭐3K+ Sold | Bear Baby Food Maker | Homemade Baby Food | 15% Commission" (FW)')}`)
+  check('a product whose own name contains a promo word survives',
+    displayTitle('Deal Cutter Pro | 12% Commission') === 'Deal Cutter Pro',
+    `${displayTitle('Deal Cutter Pro | 12% Commission')}`)
+  check('a name with no pipes is left alone',
+    displayTitle('Anker 737 Power Bank, 24000mAh') === 'Anker 737 Power Bank, 24000mAh')
+
   check('the ASIN and the commission come off Amazon’s label',
     displayTitle('B0F327X17F +Room Numbers for Office Doors, Collaboration Invite 10%') === 'Room Numbers for Office Doors',
     `${displayTitle('B0F327X17F +Room Numbers for Office Doors, Collaboration Invite 10%')}`)

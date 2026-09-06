@@ -89,21 +89,54 @@ export function mergeCampaignRows(rows: CampaignRow[]): Map<string, CampaignRow>
 /**
  * A name a person would recognise.
  *
- * Amazon's campaign names are internal labels, not product names: they carry the
- * ASIN, a leading # or +, and the commission stapled on the end, so a row reads
- * "B0F327X17F +Room Numbers for Office Doors, Collaboration Invite 10%". The
- * commission is already its own chip on the card and the ASIN means nothing to
- * anyone, so both come off. Whatever survives goes through the banned-word scrub
- * like every other string MVP puts on a screen: a title inherited from an old
- * post is still MVP showing it.
+ * Amazon's campaign names are marketing strings written for the campaign browser,
+ * not product names. They arrive as pipe-separated promo segments with the
+ * commission stapled on, wrapped in quotes, prefixed with the ASIN, decorated
+ * with stars, and suffixed with internal codes:
+ *
+ *   "⭐3K+ Sold | Bear Baby Food Maker | Homemade Baby Food | 15% Commission" (FW)
+ *   1 New Release | 4K Large Projector Screen for World Cup.Earn 20% Commission!
+ *   B0F327X17F +Room Numbers for Office Doors, Collaboration Invite 10%
+ *
+ * The commission is already its own chip on the card and the rest is noise, so
+ * the segments that are pure promotion are dropped and the longest real one is
+ * kept. Whatever survives goes through the banned-word scrub like every other
+ * string MVP puts on a screen: a title inherited from an old post is still MVP
+ * showing it.
  */
+
+/** Segments that are advertising rather than the product. Matched whole, so a
+ *  product legitimately called "Deal Cutter" is not thrown away. */
+const PROMO_SEGMENT = /^(?:\s*(?:⭐|★|🔥|#|\d+\s*)*(?:new\s+release|best\s*seller|amazon'?s\s+choice|top\s+rated|hot\s+deal|deal\s+of\s+the\s+day|limited\s+time|free\s+shipping|fast\s+shipping|high\s+conversion|new\s+arrival|trending|sale|clearance)\s*)$/i
+/** "3K+ Sold", "1,200 sold", "⭐3K+ Sold". */
+const SOLD_SEGMENT = /^\s*[⭐★🔥\s]*[\d.,]+\s*[KkMm]?\+?\s*sold\s*$/i
+/** Any segment that is only about the commission. */
+const COMMISSION_SEGMENT = /^\s*[\d.]+\s*%\s*commission\s*$/i
+
 export function displayTitle(raw: string | null | undefined): string | null {
   let t = String(raw || '').trim()
   if (!t) return null
-  t = t.replace(/^[#+\-•\s]+/, '')
+
+  // Wrapping quotes, and a trailing internal code like "(FW)".
+  t = t.replace(/^["'\u201c\u2018]+/, '').replace(/["'\u201d\u2019]+$/, '').trim()
+  t = t.replace(/\s*\([A-Z]{2,4}\)\s*$/, '').trim()
+  // The commission, wherever Amazon stapled it on.
+  t = t.replace(/[.\s]*Earn\s+[\d.]+\s*%\s*Commission!?/gi, ' ')
+  t = t.replace(/[,\s]*Collaboration Invite\s*[\d.]+\s*%/gi, ' ')
+
+  // Pipe-separated promo segments: keep the longest one that is about a product.
+  if (t.includes('|')) {
+    const parts = t.split('|').map(x => x.trim()).filter(Boolean)
+    const real = parts.filter(x =>
+      !PROMO_SEGMENT.test(x) && !SOLD_SEGMENT.test(x) && !COMMISSION_SEGMENT.test(x)
+      && /[a-z]{3}/i.test(x))
+    if (real.length) t = real.reduce((a, b) => (b.length > a.length ? b : a))
+  }
+
+  t = t.replace(/^[#+\-•⭐★\s]+/, '')
   t = t.replace(/^B0[A-Z0-9]{8}\b[\s+,:-]*/i, '')
-  t = t.replace(/[,\s]*Collaboration Invite\s*\d+(?:\.\d+)?%\s*$/i, '')
   t = t.replace(/[,\s]*Campaign\s*$/i, '')
+  t = t.replace(/[\s.,;:!]+$/, '')
   t = t.replace(/\s{2,}/g, ' ').trim()
   const clean = scrubBanned(t).trim()
   return clean || null
