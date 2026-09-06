@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, User, Package, Rocket, Check, AlertCircle, ExternalLink } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
+import { WEAR_CAVEAT } from '@/lib/wear-product'
 
 interface FaceModel { id: string; name: string }
 type NetKey = 'pinterest' | 'instagram' | 'facebook'
@@ -38,6 +39,10 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
   const [faceId, setFaceId] = useState('')
   const [busy, setBusy] = useState(false)
   const [question, setQuestion] = useHeadlineStyle()
+  // "Make me wear it". Only reaches the design when the product turns out to be
+  // something a person wears; the server works that out from its name, so this
+  // being on for a power bank simply does nothing.
+  const [wear, setWear] = useState(false)
   const [nets, setNets] = useState<Record<NetKey, NetState>>({
     pinterest: { label: 'Pinterest', accent: '#E60023', connected: false, status: 'idle' },
     instagram: { label: 'Instagram', accent: '#E1306C', connected: false, status: 'idle' },
@@ -90,6 +95,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
           body: JSON.stringify({
             videoTitle: 'Product spotlight', textMode: 'graphic', format: n.format, briefKey: bk,
             headlineStyle: headlineStyleValue(question),
+            wearProduct: wear && mode === 'face',
             ...(n.extra || {}), ...productField, ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
           }),
         })
@@ -112,7 +118,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
       }
     }
     setBusy(false)
-  }, [product, mode, faceId, nets, question])
+  }, [product, mode, faceId, nets, question, wear])
 
   const anyConnected = NETS.some(n => nets[n.key].connected)
 
@@ -162,6 +168,27 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
       )}
 
       <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={busy} compact />
+
+      {/* Apparel: put it ON them. A design showing someone holding a jacket up to
+          the camera is the wrong picture, and holding it up is what every design
+          did. Only offered with a face, because there is nobody to dress without
+          one. */}
+      {mode === 'face' && (
+        <div className="rounded-xl border p-2.5" style={{ borderColor: wear ? 'rgba(217,119,6,0.4)' : 'var(--border)', background: wear ? 'rgba(217,119,6,0.06)' : 'transparent' }}>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" checked={wear} onChange={() => setWear(v => !v)} disabled={busy}
+              className="accent-[#d97706] w-4 h-4 flex-shrink-0 mt-[2px]" />
+            <span className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              <b style={{ color: 'var(--text)' }}>Make me wear it</b>{' '}
+              (clothing, shoes, watches, bags, glasses). It goes on you instead of being held up beside you.
+              Nothing changes for a product nobody wears.
+            </span>
+          </label>
+          {wear && (
+            <p className="text-[11.5px] mt-1.5 pl-6 leading-relaxed" style={{ color: '#b45309' }}>{WEAR_CAVEAT}</p>
+          )}
+        </div>
+      )}
 
       {/* Per-network status */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">

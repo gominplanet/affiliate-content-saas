@@ -27,6 +27,7 @@ import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
 import { bakeSimpleHeadline, compositeBadgeOnly, NEON_BORDER_STYLE_COUNT, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
+import { detectWearable, wearDirective } from '@/lib/wear-product'
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -1008,6 +1009,10 @@ export async function POST(request: Request) {
       // ── Boost controls (2026-09-03) — the levers that separate a designed
       //    pro thumbnail from the default composite. All optional.
       pose,
+      /** "Make me wear it": the product goes ON the creator rather than being
+       *  held beside them. Only acts when the product is something a person
+       *  actually wears, which lib/wear-product works out from its name. */
+      wearProduct,
       energyEffects,
       badgeText,
       accentWord,
@@ -1118,6 +1123,10 @@ export async function POST(request: Request) {
        *  framing pick; the rest force a specific interaction so the person
        *  visibly holds / wears / uses the product instead of just standing near it. */
       pose?: 'auto' | 'hold' | 'wear' | 'use' | 'point' | 'thumbs'
+      /** "Make me wear it". Distinct from pose:'wear', which is a gesture hint
+       *  with no fidelity rules attached; this one names the body part the
+       *  product goes on and holds the render to the reference photo. */
+      wearProduct?: boolean
       /** Add motion energy: speed lines, a streak on the product, a radial burst
        *  behind the headline, a splash for drinks/food. Off by default. */
       energyEffects?: boolean
@@ -1469,6 +1478,19 @@ export async function POST(request: Request) {
     if (customProductRefs.length > 0) {
       productImageUrl = customProductRefs[0]
     }
+
+    // ── "Make me wear it" ────────────────────────────────────────────────────
+    // Resolved here, after every source of the product's NAME has been tried,
+    // because the name is what decides this. A jacket goes on the torso and a
+    // watch on a wrist; a power bank goes nowhere, so the toggle being on can
+    // never put one on somebody's arm. The directive that comes back is mostly
+    // about fidelity: an image model asked for "a person in a jacket" will draw
+    // A jacket, and the whole point of an apparel design is that the viewer is
+    // looking at the one they can buy.
+    const wearable = wearProduct === true
+      ? detectWearable({ title: productTitle })
+      : { wearable: false, kind: null, on: null, keep: null }
+    const wearLine = wearDirective(wearable)
 
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
     fal.config({ credentials: falKey })
@@ -1839,7 +1861,9 @@ export async function POST(request: Request) {
             const briefExpression = (brief.expression || '').trim()
             // Boost: an explicit pose (hold / wear / use / point / thumbs) beats the
             // brief's own gesture.
-            const briefPose = poseOverride || (brief.pose || '').trim()
+            // Wearing it beats any gesture: a pose that has them holding it up
+            // is the exact picture this option exists to stop.
+            const briefPose = wearLine ? '' : (poseOverride || (brief.pose || '').trim())
             // Zero-typing Boost: typed values win; else the auto toggles use what the
             // art director wrote for THIS brief.
             const gfxBadge = badge || (wantAutoBadge ? (brief.badge || '') : '')
@@ -1919,6 +1943,7 @@ export async function POST(request: Request) {
               // outlined text still hold and are NEVER overridden by the direction.
               prompt = [
                 'Professional YouTube thumbnail, 16:9 landscape (1536×864 px). High energy, high contrast, photorealistic.',
+                ...(wearLine ? ['', wearLine] : []),
                 '',
                 `★ CREATOR'S SCENE DIRECTION (highest priority — build the whole thumbnail around this): "${sceneDirection}".`,
                 "Match that direction for the SETTING / background, the creator's pose, expression and action, and any props described. The creator is the main subject of the scene.",
@@ -1968,6 +1993,7 @@ export async function POST(request: Request) {
             // art director owns everything else so each thumbnail is unique.
             prompt = [
               pinDirective,
+              ...(wearLine ? [wearLine] : []),
               ...creativeHead,
               '',
               "BRAND: if the product's brand or logo is clear, include it as a clean logo lockup.",
@@ -2423,7 +2449,7 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             const expression = frame.expression
             // Boost: an explicit pose (hold / wear / use / point / thumbs) beats the
             // angle's default framing action.
-            const action = poseOverride || frame.action
+            const action = wearLine ? 'wearing the product, exactly as described above' : (poseOverride || frame.action)
             // Headline phrasing copied from the user's winning Gemini-handoff
             // prompt VERBATIM — natural-language description, not a structured
             // template. The earlier "emphasisWord must be yellow, all others
