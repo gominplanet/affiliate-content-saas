@@ -47,9 +47,18 @@ export interface LinkStyleConfig {
 export async function getLinkStyle(supabase: Db, userId: string): Promise<LinkStyleConfig> {
   const empty: LinkStyleConfig = { style: 'direct', tier: null, bitlyToken: null, geniuslinkKey: null, geniuslinkSecret: null }
   try {
+    // select('*'), NOT a named column list, and this is the whole reason the
+    // feature was dead in production. blog_social_link_mode ships in migration
+    // 274; on a database where that migration has not run, naming it makes
+    // PostgREST reject the ENTIRE read, so `ig` came back null and every single
+    // creator resolved to 'direct' no matter what they had chosen. A missing
+    // migration should cost the one column it added, not every creator's link
+    // style, and there is nothing on screen that could ever have shown it: the
+    // chooser reads through a route that already used select('*') and so
+    // displayed the right answer while generation used the wrong one.
     const { data: ig } = await supabase
       .from('integrations')
-      .select('passport_links_enabled, tier, blog_social_link_mode, wrap_blog_geniuslink, bitly_access_token, geniuslink_api_key, geniuslink_api_secret')
+      .select('*')
       .eq('user_id', userId).maybeSingle()
     if (!ig) return empty
     const tier = (ig.tier as string | null) ?? null

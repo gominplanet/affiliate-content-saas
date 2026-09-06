@@ -36,9 +36,12 @@ async function geniuslinkStyleCreds(
   apiKey?: string | null, apiSecret?: string | null,
 ): Promise<{ key: string; secret: string } | null> {
   try {
+    // select('*') so a database missing migration 274 (blog_social_link_mode)
+    // costs that one column rather than failing the whole read and silently
+    // making every creator 'direct'. See getLinkStyle for the full story.
     const { data: ig } = await supabase
       .from('integrations')
-      .select('passport_links_enabled, tier, blog_social_link_mode, wrap_blog_geniuslink, geniuslink_api_key, geniuslink_api_secret')
+      .select('*')
       .eq('user_id', userId).maybeSingle()
     if (!ig) return null
     if (!!ig.passport_links_enabled && canUsePassport(normalizeTier(ig.tier))) return null // Passport wins

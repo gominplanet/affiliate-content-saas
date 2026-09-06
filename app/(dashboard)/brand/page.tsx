@@ -379,11 +379,12 @@ export default function BrandPage() {
   // 'direct' (plain URL, free), 'geniuslink' (branded, tracked, costs per
   // click), or 'bitly' (free short link, needs the creator's Bitly token).
   const [blogSocialLinkMode, setBlogSocialLinkMode] = useState<'direct' | 'geniuslink' | 'bitly'>('direct')
-  // 'direct' above is a placeholder until the real settings arrive, not a
-  // choice. Saving the brand page before (or instead of) that load must not
-  // post it over a creator's actual routing, which is how a Geniuslink user
-  // ends up publishing plain Amazon links they never asked for.
-  const [linkModeLoaded, setLinkModeLoaded] = useState(false)
+  // Nothing in this card is real until its fetch comes back: the mode is a
+  // placeholder, the key fields are empty because they have not arrived, not
+  // because the creator cleared them. Saving the page before that (or after a
+  // failed read) must not post any of it, which is how a creator who connected
+  // Geniuslink years ago gets disconnected by saving their brand colours.
+  const [linkSettingsLoaded, setLinkSettingsLoaded] = useState(false)
   const [bitlyToken, setBitlyToken] = useState('')
   // Passport ON is one of the four link styles and, when picked, becomes the
   // universal cloaker (it overrides the stored mode below). Its on/off flag saves
@@ -432,7 +433,7 @@ export default function BrandPage() {
     }
     setBlogSocialLinkMode(style)
     // Picking one IS a choice, so Save sends it even if the settings read failed.
-    setLinkModeLoaded(true)
+    setLinkSettingsLoaded(true)
   }
   // Where a Clip Factory Pinterest pin links: auto (blog post → video →
   // homepage), the blog post, the source YouTube video, or the blog homepage.
@@ -597,7 +598,7 @@ export default function BrandPage() {
         setGeniuslinkSecret(d.geniuslinkSecret ?? '')
         const mode = d.blogSocialLinkMode
         setBlogSocialLinkMode(mode === 'geniuslink' || mode === 'bitly' || mode === 'direct' ? mode : 'direct')
-        setLinkModeLoaded(true)
+        setLinkSettingsLoaded(true)
         setBitlyToken(d.bitlyToken ?? '')
         const pref = d.pinterestLinkPref
         setPinterestLinkPref(pref === 'blog_post' || pref === 'youtube' || pref === 'homepage' ? pref : 'auto')
@@ -753,12 +754,20 @@ export default function BrandPage() {
     try {
       const res = await fetch('/api/affiliate-links/save', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        // EVERY field here is omitted until the settings have actually loaded.
+        // These inputs start empty, and an empty string is a real instruction to
+        // the route: it CLEARS that credential. So a Save that ran before this
+        // card's fetch came back (or after it failed) posted blanks over a
+        // creator's Geniuslink keys and reset their link style, and the card
+        // then showed exactly what a creator who never connected would see. That
+        // is how a long-connected creator gets silently disconnected by saving
+        // their brand colours. Nothing to send is now nothing to write.
+        body: JSON.stringify(linkSettingsLoaded ? {
           geniuslinkKey, geniuslinkSecret,
-          ...(linkModeLoaded ? { blogSocialLinkMode } : {}),
+          blogSocialLinkMode,
           bitlyToken,
           pinterestLinkPref, amazonTag: amazonAssociatesTag,
-        }),
+        } : {}),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) {
