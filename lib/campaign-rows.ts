@@ -113,6 +113,12 @@ const SOLD_SEGMENT = /^\s*[⭐★🔥\s]*[\d.,]+\s*[KkMm]?\+?\s*sold\s*$/i
 /** Any segment that is only about the commission. */
 const COMMISSION_SEGMENT = /^\s*[\d.]+\s*%\s*commission\s*$/i
 
+/** Sentences brands open their campaign brief with, where the product name is
+ *  what follows. "Let more customers know more about Levoit Classic 36-Inch Tower
+ *  Fan White" is a request written to a creator, not a name for a fan. Stripped
+ *  only when enough is left to still be a name. */
+const BRIEF_PREFIX = /^(?:let\s+more\s+(?:customers|people|shoppers)\s+(?:know|learn)(?:\s+more)?\s+about|help\s+(?:us\s+)?(?:promote|spread\s+the\s+word\s+about|introduce)|we\s+(?:are|'re)\s+looking\s+for\s+creators\s+(?:to\s+\w+\s+)?(?:for|about)|looking\s+for\s+creators\s+(?:to\s+\w+\s+)?(?:for|about)|introducing|check\s+out|promote|showcase|review)\s+(?:our\s+|the\s+|new\s+|my\s+)*/i
+
 export function displayTitle(raw: string | null | undefined): string | null {
   let t = String(raw || '').trim()
   if (!t) return null
@@ -134,6 +140,9 @@ export function displayTitle(raw: string | null | undefined): string | null {
   }
 
   t = t.replace(/^[#+\-•⭐★\s]+/, '')
+  // A brief written to the creator, with the product buried inside it.
+  const briefless = t.replace(BRIEF_PREFIX, '').trim()
+  if (briefless.length >= 12) t = briefless
   t = t.replace(/^B0[A-Z0-9]{8}\b[\s+,:-]*/i, '')
   t = t.replace(/[,\s]*Campaign\s*$/i, '')
   t = t.replace(/[\s.,;:!]+$/, '')

@@ -132,6 +132,21 @@ const postRow: CampaignRow = {
   check('a name with no pipes is left alone',
     displayTitle('Anker 737 Power Bank, 24000mAh') === 'Anker 737 Power Bank, 24000mAh')
 
+  // Some campaign names are a sentence written TO the creator, with the product
+  // buried inside it. The brief is not the product's name.
+  check('a brief written to the creator is stripped back to the product',
+    displayTitle('Let more customers know more about Levoit Classic 36-Inch Tower Fan White') === 'Levoit Classic 36-Inch Tower Fan White',
+    `${displayTitle('Let more customers know more about Levoit Classic 36-Inch Tower Fan White')}`)
+  check('and so are the other openings brands use',
+    displayTitle('Help us promote our new Anker 737 Power Bank') === 'Anker 737 Power Bank'
+    && displayTitle('Introducing SoundCore Q30 Headphones') === 'SoundCore Q30 Headphones',
+    `${displayTitle('Help us promote our new Anker 737 Power Bank')} / ${displayTitle('Introducing SoundCore Q30 Headphones')}`)
+  check('a product actually called "Review" or "Showcase" is not eaten',
+    displayTitle('Review') === 'Review' && displayTitle('Showcase') === 'Showcase',
+    `${displayTitle('Review')} / ${displayTitle('Showcase')}`)
+  check('and stripping never leaves a stub too short to be a name',
+    displayTitle('Promote the Fan') === 'Promote the Fan', `${displayTitle('Promote the Fan')}`)
+
   check('the ASIN and the commission come off Amazon’s label',
     displayTitle('B0F327X17F +Room Numbers for Office Doors, Collaboration Invite 10%') === 'Room Numbers for Office Doors',
     `${displayTitle('B0F327X17F +Room Numbers for Office Doors, Collaboration Invite 10%')}`)
