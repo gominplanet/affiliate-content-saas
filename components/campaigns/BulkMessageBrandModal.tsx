@@ -106,13 +106,13 @@ function reasonText(raw: string): string {
   // just-accepted brand can briefly have no chat/token. This is NOT "background
   // sending is off" — it's a timing/availability thing the creator can just Retry.
   if (/no-context-token|no-chat/.test(s))
-    return 'This brand’s chat wasn’t ready yet (Amazon opens it a few seconds after accepting) — hit Retry in a moment.'
+    return 'This brand’s chat wasn’t ready yet (Amazon opens it a few seconds after accepting). Hit Retry in a moment.'
   if (/not-learned|no-recipe|no-send-recipe|no-search-recipe/.test(s))
-    return 'SCOUT couldn’t build the message request — reload SCOUT and Retry.'
-  if (/no-creator-id/.test(s)) return 'Couldn’t read your Amazon creator profile — open Creator Connections in this browser, then Retry.'
-  if (/no-campaign-for-asin/.test(s)) return 'This product isn’t in your accepted campaigns yet (accept may still be propagating) — Retry in a moment.'
-  if (/send-rejected/.test(s)) return 'Amazon rejected the message (length or content) — trim it and Retry.'
-  if (/not[_-]?signed[_-]?in|signin|401|unauth/.test(s)) return 'You’re signed out of Amazon — sign in to Creator Connections, then Retry.'
+    return 'SCOUT couldn’t build the message request. Reload SCOUT and Retry.'
+  if (/no-creator-id/.test(s)) return 'Couldn’t read your Amazon creator profile. Open Creator Connections in this browser, then Retry.'
+  if (/no-campaign-for-asin/.test(s)) return 'MVP couldn’t match this product to a campaign on Amazon. Retry in a moment.'
+  if (/send-rejected/.test(s)) return 'Amazon rejected the message (length or content). Trim it and Retry.'
+  if (/not[_-]?signed[_-]?in|signin|401|unauth/.test(s)) return 'You’re signed out of Amazon. Sign in to Creator Connections, then Retry.'
   return raw || 'send failed'
 }
 
@@ -178,9 +178,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   const unique = Array.from(new Map(campaigns.filter(c => c.campaignId && c.asin).map(c => [c.campaignId, c])).values())
   const notMessaged = unique.filter(c => !alreadyMessaged.has((c.asin || '').toUpperCase()))
   const skipped = unique.filter(c => alreadyMessaged.has((c.asin || '').toUpperCase()))
-  // Default on: joining is what opens the chat, and it is what lets a creator
-  // make offsite content for the brand whether or not a sample ever arrives.
-  const [joinNew, setJoinNew] = useState(true)
+  const [joinNew, setJoinNew] = useState(false)
   // Fold multiple products from the SAME brand into ONE message — Amazon's brand
   // chat is per brand, so messaging each product would spam the same thread. Only
   // fold when the brand is known; unknown-brand rows each stand on their own.
@@ -194,12 +192,14 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
     toSendAll.push(c)
   }
 
-  // Joining and messaging are two separate acts, and MVP used to do both without
-  // asking. Accepting a campaign commits you to its terms; sending a message is
-  // just a conversation, and Amazon lets you have that conversation with a brand
-  // whose campaign you have not accepted. So the choice is real: leave this on
-  // and each brand is joined as it is messaged, turn it off and every selected
-  // brand is still messaged, with nothing accepted on your behalf.
+  // Off by default, and that is the whole correction.
+  //
+  // Joining does not get you a sample. The message does that, and it does it
+  // whether or not you have joined. What joining does is make the campaign's
+  // boosted commission apply to content you publish inside its window, which
+  // matters exactly when you are about to make something and not a moment
+  // before. So messaging is free and joining is a decision, taken on the
+  // Joined Campaigns page or the moment you press write.
   const isJoined = (c: BulkCampaign) => alreadyAccepted.has((c.asin || '').toUpperCase())
   const wouldJoin = toSendAll.filter(c => !isJoined(c))
   const toSend = toSendAll
@@ -275,7 +275,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
     // already-messaged — the last two shown as skipped with the reason.
     setRows([
       ...targets.map(c => ({ campaign: c, state: 'pending' as SendState })),
-      ...folded.map(c => ({ campaign: c, state: 'skipped' as SendState, note: `Same brand as ${c.brand || 'another'} — messaged once` })),
+      ...folded.map(c => ({ campaign: c, state: 'skipped' as SendState, note: `Same brand as ${c.brand || 'another'}, messaged once` })),
       ...skipped.map(c => ({ campaign: c, state: 'skipped' as SendState, note: 'Already messaged' })),
     ])
 
@@ -407,28 +407,27 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
               {/* Two separate acts, and MVP used to perform both off one button.
                   Accepting commits you to a campaign's terms; messaging is a
                   conversation. Everyone gets messaged either way. */}
-              <div className="rounded-lg border p-2.5 mb-3 text-[12px] leading-relaxed" style={{ borderColor: joinNew ? 'rgba(52,199,89,0.4)' : 'var(--border)', background: joinNew ? 'rgba(52,199,89,0.08)' : 'transparent', color: 'var(--text)' }}>
+              <div className="rounded-lg border p-2.5 mb-3 text-[12px] leading-relaxed" style={{ borderColor: joinNew ? 'rgba(124,58,237,0.4)' : 'var(--border)', background: joinNew ? 'rgba(124,58,237,0.07)' : 'transparent', color: 'var(--text)' }}>
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={joinNew}
                     onChange={() => setJoinNew(v => !v)}
-                    className="accent-[#34c759] w-4 h-4 flex-shrink-0 mt-[2px]"
+                    className="accent-[#7C3AED] w-4 h-4 flex-shrink-0 mt-[2px]"
                   />
                   <span style={{ color: 'var(--text-soft)' }}>
                     <b style={{ color: 'var(--text)' }}>
                       Also join the {wouldJoin.length} {wouldJoin.length === 1 ? 'campaign' : 'campaigns'} you have not joined yet
                     </b>
                     {wouldJoin.length > 0 ? '. ' : ' (none here, everything selected is already joined). '}
-                    Joining is what puts you on the campaign&apos;s commission and lets you request a sample. It also lets you make
-                    offsite content for the brand, a blog post plus a social push, whether or not a sample ever arrives.
+                    Your message asks for the sample either way. Joining is what makes the campaign&apos;s boosted rate apply to
+                    content you publish before its window closes, so it is worth doing when you know you will make something.
+                    Leave it off and join later, per campaign, from Joined Campaigns.
                   </span>
                 </label>
-                {!joinNew && (
-                  <p className="text-[12px] mt-2 pl-6" style={{ color: 'var(--text-soft)' }}>
-                    {wouldJoin.length
-                      ? `All ${toSend.length} ${toSend.length === 1 ? 'brand is' : 'brands are'} still messaged. Nothing is accepted on your behalf, so ${wouldJoin.length === 1 ? 'that campaign stays' : 'those campaigns stay'} an open opportunity you can join later. Some brands only open a chat once you have joined; those come back marked, and you can retry them.`
-                      : 'Nothing changes here: every brand selected is already joined.'}
+                {joinNew && wouldJoin.length > 0 && (
+                  <p className="text-[12px] mt-2 pl-6" style={{ color: '#d97706' }}>
+                    {`Joining ${wouldJoin.length} ${wouldJoin.length === 1 ? 'campaign' : 'campaigns'} commits you to ${wouldJoin.length === 1 ? 'its terms' : 'their terms'}. A joined campaign with nothing published pays nothing, so these will show up on Joined Campaigns as work waiting on you.`}
                   </p>
                 )}
               </div>
@@ -507,7 +506,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                   <button onClick={addSeg} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#7C3AED] hover:underline"><Plus size={13} /> Add a message</button>
                   <p className="text-[11px] leading-relaxed pt-1" style={{ color: 'var(--text-faint)' }}>
                     <b>[[PRODUCT]]</b> and <b>[[ASIN]]</b> get replaced with each brand&apos;s own product when it sends. Keep them in the message.
-                    {' '}Greeting, credibility, links &amp; sample address come from your saved profile —{' '}
+                    {' '}Greeting, credibility, links &amp; sample address come from your saved profile.{' '}
                     <button type="button" onClick={() => setEditWording(true)} className="font-semibold underline" style={{ color: '#7C3AED' }}>edit it here</button>.
                   </p>
                 </div>

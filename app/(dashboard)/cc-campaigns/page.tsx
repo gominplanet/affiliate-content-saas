@@ -18,6 +18,7 @@ import {
   Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake, ShoppingBag,
   Bookmark, BookmarkCheck, Check, Send, Info, X, Pencil,
 } from 'lucide-react'
+import { acceptCampaignViaScout } from '@/lib/accept-campaign'
 import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns, requestBrandChats, requestCcSendDebug, getScoutCcRecipe } from '@/lib/extension-frame'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
@@ -98,12 +99,24 @@ function fmtMessagedFull(iso: string | null | undefined): string {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void) {
+function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void, alreadyJoined = false) {
   const [gen, setGen] = useState(false)
   const [postUrl, setPostUrl] = useState<string | null>(presetUrl)
   const makePost = useCallback(async () => {
     if (!c.repAsin) { toast.error('No product ASIN on this campaign yet.'); return }
     setGen(true)
+    // Join first, because this is the moment joining is actually for. A post
+    // published for a campaign you have not joined earns the ordinary rate, and
+    // the whole value of joining is that the boosted one applies to what you
+    // publish inside the window. Pressing write is the intent; nothing was
+    // accepted before it. Best-effort: a failed join still gets the post
+    // written, at the standard rate, which is better than no post.
+    if (!alreadyJoined && c.detailsUrl) {
+      await acceptCampaignViaScout({
+        detailsUrl: c.detailsUrl, asin: c.repAsin, campaignId: c.campaignId,
+        brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name,
+      })
+    }
     // Persistent toast for the whole run — the CC engine (scrape → research →
     // write → fact-check → hero image → publish) takes ~1-2 min. Keeping the
     // toast up (and the card in its generating state) tells the user it's
@@ -127,12 +140,12 @@ function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to generate', { id: toastId, duration: 8_000 })
     } finally { setGen(false) }
-  }, [c.repAsin, c.name, c.endsAt])
+  }, [c.repAsin, c.name, c.endsAt, c.detailsUrl, c.campaignId, c.brand, c.commissionPct, alreadyJoined, onActed])
   return { gen, postUrl, makePost }
 }
 
 function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, socialOnly = false, selected, onToggleSelect, hasReply }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void; saved?: boolean; onToggleSave?: () => void; socialOnly?: boolean; selected?: boolean; onToggleSelect?: () => void; hasReply?: boolean }) {
-  const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null, onActed)
+  const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null, onActed, !!status?.accepted)
   const endingSoon = c.daysLeft != null && c.daysLeft <= 1
 
   // In-app Accept: SCOUT opens the campaign's Amazon page (the user's logged-in

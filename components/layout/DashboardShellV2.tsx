@@ -533,6 +533,9 @@ export default function DashboardShellV2({
         { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Research' },
         { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(effectiveTier) },
         { href: '/cc-campaigns', icon: <BadgePercent size={15} />, label: 'CC Campaigns', gate: canBrowseDealRadar(effectiveTier) },
+        // Sits next to the browse page on purpose: browsing is where you commit,
+        // this is where you see what the commitments produced.
+        { href: '/joined-campaigns', icon: <Handshake size={15} />, label: 'Joined Campaigns', gate: canBrowseDealRadar(effectiveTier) },
         { href: '/epc-library', icon: <TrendingUp size={15} />, label: 'EPC Library', gate: canBrowseDealRadar(effectiveTier) },
         { href: '/saved-campaigns', icon: <Bookmark size={15} />, label: 'Saved Campaigns', gate: canBrowseDealRadar(effectiveTier) },
         { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta' },
@@ -754,7 +757,7 @@ export default function DashboardShellV2({
   const AMAZON_HUB_HREFS = new Set<string>(
     AMAZON_HUB.items.map((i) => i.href).concat([
       // Surfaced INSIDE the Research hub page, so no duplicate sidebar rows.
-      '/amz-finder', '/deal-radar', '/cc-campaigns', '/saved-campaigns',
+      '/amz-finder', '/deal-radar', '/cc-campaigns', '/joined-campaigns', '/saved-campaigns',
     ]),
   )
   const orderedGroups: NavGroupDef[] = (() => {
