@@ -148,7 +148,21 @@ async function load() {
     campaign_id?: string | null
     asins: string[] | null; campaign_name: string | null; brand_name: string | null
     commission_pct: number | null; starts_at: string | null; ends_at: string | null
-    image_url: string | null; price_now_cents: number | null
+    image_url: string | null; price_now_cents: number | null; price_was_cents?: number | null
+    discount_pct?: number | null; rating?: number | null; review_count?: number | null
+    monthly_sold?: number | null; sales_rank?: number | null; sales_rank_category?: string | null
+  }
+  /** Keepa's shared per-product cache. Keyed by ASIN with no user column, so this
+   *  is a plain indexed lookup and the same row serves every creator who has the
+   *  product. It is what turns "10% commission" into "10% of a $40 product that
+   *  sells 2,000 a month", which is the difference between a number and a reason
+   *  to make something. */
+  type KeepaRow = {
+    asin: string; image_url: string | null; sales_rank: number | null
+    sales_rank_category: string | null; monthly_sold: number | null
+    price_now_cents: number | null; price_avg_cents: number | null
+    price_lowest_cents: number | null; discount_pct: number | null
+    deal_quality: string | null; empty: boolean | null
   }
 
   // Amazon's own campaign ids, which the sync stores. Looking the catalog up by
@@ -157,7 +171,7 @@ async function load() {
   // not the other, but the id is the one that reliably answers.
   const campaignIds = [...new Set([...byAsin.values()].map(r => r.cc_campaign_id).filter(Boolean) as string[])]
 
-  const [catRows, catByIdRows, postRows, ytRows, avpRows, ccRows] = await withDeadline(Promise.all([
+  const [catRows, catByIdRows, keepaRows, postRows, ytRows, avpRows, ccRows] = await withDeadline(Promise.all([
     // The campaign window, the price and the picture. The accept route stores
     // what the card had, which for a campaign accepted straight from the browse
     // grid is no end date at all, and the window is what every piece of advice on
@@ -166,12 +180,16 @@ async function load() {
     // own with nothing to show for it.
     spread<CatRow>(chunk(asins), part =>
       sb.from('cc_campaign_catalog')
-        .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, image_url, price_now_cents')
+        .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, image_url, price_now_cents, price_was_cents, discount_pct, rating, review_count, monthly_sold, sales_rank, sales_rank_category')
         .overlaps('asins', part).limit(2000)),
     spread<CatRow>(chunk(campaignIds), part =>
       sb.from('cc_campaign_catalog')
-        .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, image_url, price_now_cents')
+        .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, image_url, price_now_cents, price_was_cents, discount_pct, rating, review_count, monthly_sold, sales_rank, sales_rank_category')
         .in('campaign_id', part)),
+    spread<KeepaRow>(chunk(asins), part =>
+      sb.from('keepa_product_cache')
+        .select('asin, image_url, sales_rank, sales_rank_category, monthly_sold, price_now_cents, price_avg_cents, price_lowest_cents, discount_pct, deal_quality, empty')
+        .in('asin', part)),
     spread<PostRow>(chunk(postIds), part =>
       sb.from('blog_posts').select('id, title, published_at').in('id', part)),
     spread<YtRow>(chunk(asins), part =>
@@ -183,9 +201,14 @@ async function load() {
     spread<CcRow>(chunk(asins), part =>
       sb.from('creator_content').select('asin, platform, kind, url, title, posted_at')
         .eq('user_id', ownerId).in('asin', part).limit(1000)),
-  ]), [[], [], [], [], [], []] as const)
+  ]), [[], [], [], [], [], [], []] as const)
 
-  const catalog = new Map<string, { endsAt: string | null; startsAt: string | null; commissionPct: number | null; priceCents: number | null; imageUrl: string | null; brand: string | null; name: string | null }>()
+  type CatalogEntry = {
+    endsAt: string | null; startsAt: string | null; commissionPct: number | null
+    priceCents: number | null; imageUrl: string | null; brand: string | null; name: string | null
+    signals: { discountPct: number | null; rating: number | null; reviewCount: number | null; monthlySold: number | null; salesRank: number | null; salesRankCategory: string | null }
+  }
+  const catalog = new Map<string, CatalogEntry>()
   // The id lookup answers for the exact campaign the creator joined, so it is
   // applied to that campaign's own product directly rather than through its ASIN
   // list, and it goes in first so the broader overlap can only add.
@@ -205,8 +228,19 @@ async function load() {
       catalog.set(a, {
         endsAt: c.ends_at, startsAt: c.starts_at, commissionPct: c.commission_pct,
         priceCents: c.price_now_cents, imageUrl: c.image_url, brand: c.brand_name, name: c.campaign_name,
+        signals: {
+          discountPct: c.discount_pct ?? null, rating: c.rating ?? null,
+          reviewCount: c.review_count ?? null, monthlySold: c.monthly_sold ?? null,
+          salesRank: c.sales_rank ?? null, salesRankCategory: c.sales_rank_category ?? null,
+        },
       })
     }
+  }
+
+  const keepa = new Map<string, KeepaRow>()
+  for (const k of keepaRows) {
+    if (k.empty) continue // a tombstone for a product Keepa knows nothing about
+    keepa.set(String(k.asin || '').toUpperCase(), k)
   }
 
   // The blog post MVP wrote for the campaign. The campaigns row carries the
@@ -267,14 +301,29 @@ async function load() {
 
   const joined: JoinedCampaign[] = [...byAsin.values()].map(r => {
     const cat = catalog.get(r.asin)
+    const kp = keepa.get(r.asin)
+    const sig = cat?.signals
+    // Null everywhere means nothing is known about the product, which the card
+    // shows as an absence rather than as a row of zeroes.
+    const signals = (kp || sig) ? {
+      priceAvgCents: kp?.price_avg_cents ?? null,
+      priceLowestCents: kp?.price_lowest_cents ?? null,
+      discountPct: kp?.discount_pct ?? sig?.discountPct ?? null,
+      dealQuality: kp?.deal_quality ?? null,
+      rating: sig?.rating ?? null,
+      reviewCount: sig?.reviewCount ?? null,
+      monthlySold: kp?.monthly_sold ?? sig?.monthlySold ?? null,
+      salesRank: kp?.sales_rank ?? sig?.salesRank ?? null,
+      salesRankCategory: kp?.sales_rank_category ?? sig?.salesRankCategory ?? null,
+    } : null
     return {
       asin: r.asin,
       campaignId: r.cc_campaign_id ?? null,
       brand: r.brand_name || cat?.brand || null,
       product: displayTitle(r.product_title) || displayTitle(cat?.name) || displayTitle(r.campaign_name),
-      imageUrl: cat?.imageUrl ?? null,
+      imageUrl: cat?.imageUrl ?? kp?.image_url ?? null,
       commissionPct: r.commission_pct ?? cat?.commissionPct ?? null,
-      priceCents: cat?.priceCents ?? null,
+      priceCents: cat?.priceCents ?? kp?.price_now_cents ?? null,
       startsAt: cat?.startsAt ?? null,
       // The stored date wins when there is one; it is what the creator joined.
       endsAt: r.ends_at || cat?.endsAt || null,
@@ -282,6 +331,7 @@ async function load() {
       messagedAt: r.messaged_at || null,
       detailsUrl: r.details_url || null,
       content: content.get(r.asin) ?? [],
+      signals,
       // Filled in by a second request. Amazon reports one row per product per
       // month per stream per store, which on a real account is tens of thousands
       // of rows, and reading them was most of what timed this function out. The

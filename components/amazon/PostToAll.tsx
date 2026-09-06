@@ -21,8 +21,17 @@ const NETS: { key: NetKey; label: string; accent: string; format: string; endpoi
   { key: 'facebook', label: 'Facebook', accent: '#1877F2', format: 'fb', endpoint: '/api/amazon/fb' },
 ]
 
-export default function PostToAll({ presetProduct }: { presetProduct?: { value: string; nonce: number } }) {
-  const [open, setOpen] = useState(false)
+export default function PostToAll({ presetProduct, defaultOpen = false, hideProductInput = false }: {
+  presetProduct?: { value: string; nonce: number }
+  /** Opened already, for a caller that has picked the product itself (a campaign
+   *  card). The collapsed state exists so this does not dominate a page it shares
+   *  with three composers; a modal built around it has no such problem. */
+  defaultOpen?: boolean
+  /** The product is settled by the caller and the field would only invite the
+   *  creator to change it to something the surrounding page is not about. */
+  hideProductInput?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
   const [product, setProduct] = useState('')
   const [mode, setMode] = useState<'face' | 'product'>('face')
   const [faces, setFaces] = useState<FaceModel[]>([])
@@ -125,14 +134,16 @@ export default function PostToAll({ presetProduct }: { presetProduct?: { value: 
           <Rocket size={16} className="text-[#d97706]" />
           <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>Post to all three at once</h2>
         </div>
-        <button onClick={() => setOpen(false)} className="text-[11px] hover:underline" style={{ color: 'var(--text-soft)' }}>Hide</button>
+        {!defaultOpen && <button onClick={() => setOpen(false)} className="text-[11px] hover:underline" style={{ color: 'var(--text-soft)' }}>Hide</button>}
       </div>
       <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
         One product → a Pinterest pin, an Instagram story (with link-in-bio) and a Facebook post, all from one shared design. Fine-tune any of them in the tabs below instead.
       </p>
 
-      <input value={product} onChange={e => setProduct(e.target.value)} placeholder="https://www.amazon.com/dp/B0…  or  B0D5H9M72G"
-        className="w-full px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6]" />
+      {!hideProductInput && (
+        <input value={product} onChange={e => setProduct(e.target.value)} placeholder="https://www.amazon.com/dp/B0…  or  B0D5H9M72G"
+          className="w-full px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6]" />
+      )}
       <div className="grid grid-cols-2 gap-2">
         <button onClick={() => setMode('face')} disabled={faces.length === 0}
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition disabled:opacity-40 ${mode === 'face' ? 'border-[#d97706] text-[#d97706] bg-[#d97706]/5' : 'border-gray-200 dark:border-white/10'}`} style={mode !== 'face' ? { color: 'var(--text)' } : undefined}>

@@ -23,8 +23,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Loader2, PenLine, ExternalLink, RefreshCw, Share2, CircleAlert, CircleCheck, CircleDashed, CircleDollarSign } from 'lucide-react'
+import { Loader2, ExternalLink, RefreshCw, Sparkles, ArrowUpDown, CircleAlert, CircleCheck, CircleDashed, CircleDollarSign } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
+import CreateForCampaignModal from '@/components/campaigns/CreateForCampaignModal'
 import { requestMyCcCampaigns } from '@/lib/extension-frame'
 import { ROUTE_EXPLAINER, type BestRoute } from '@/lib/campaign-runway'
 import { buildCampaignLibrary, type CampaignLibrary, type CampaignState, type LibraryRow } from '@/lib/campaign-library'
@@ -58,6 +59,22 @@ const STATE: Record<CampaignState, { label: string; color: string; icon: typeof 
   missed: { label: 'Closed empty', color: '#78716c', icon: CircleDashed, tab: 'Closed' },
 }
 
+/** How the creator wants the list ordered.
+ *
+ *  "next" is the library's own work-queue order: what the remaining window can
+ *  still carry, soonest to fall out of that band first. It is the default because
+ *  it is the only order that answers "what do I make today". The other three are
+ *  the ones a person asks for out loud when they are picking by hand, and they
+ *  are deliberately plain: the biggest cheque, the priciest product, the closest
+ *  deadline. */
+type Sort = 'next' | 'commission' | 'price' | 'ending'
+const SORTS: { key: Sort; label: string }[] = [
+  { key: 'next', label: 'What to make next' },
+  { key: 'commission', label: 'Most per sale' },
+  { key: 'price', label: 'Priciest product' },
+  { key: 'ending', label: 'Ending soonest' },
+]
+
 const money = (cents: number) => cents % 100 === 0 ? `$${(cents / 100).toLocaleString()}` : `$${(cents / 100).toFixed(2)}`
 
 export default function JoinedCampaignsPage() {
@@ -67,6 +84,8 @@ export default function JoinedCampaignsPage() {
   const [filter, setFilter] = useState<Filter>('all')
   const [route, setRoute] = useState<Route>('any')
   const [writing, setWriting] = useState<string | null>(null)
+  const [creating, setCreating] = useState<LibraryRow | null>(null)
+  const [sort, setSort] = useState<Sort>('next')
 
   // A blank "could not load" is a page nobody can fix, so the reason is kept and
   // shown. Non-JSON back from the route means it crashed outright rather than
@@ -169,7 +188,21 @@ export default function JoinedCampaignsPage() {
     return r.runway[route].viable !== false
   }, [route])
 
-  const rows = (data?.rows ?? []).filter(r => (filter === 'all' || r.state === filter) && fitsRoute(r))
+  // Sorting is a view, so it happens here rather than on the server: switching
+  // is instant and the library's own order stays available as one of the
+  // choices. A missing number always sorts last, never as a zero, because a
+  // product whose price we do not know is not a free product.
+  const last = (n: number | null | undefined) => (n == null ? -1 : n)
+  const sortRows = useCallback((rs: LibraryRow[]) => {
+    if (sort === 'next') return rs
+    const out = [...rs]
+    if (sort === 'commission') out.sort((a, b) => last(b.perSaleCents) - last(a.perSaleCents) || last(b.commissionPct) - last(a.commissionPct))
+    if (sort === 'price') out.sort((a, b) => last(b.priceCents) - last(a.priceCents))
+    if (sort === 'ending') out.sort((a, b) => (a.daysLeft ?? Number.POSITIVE_INFINITY) - (b.daysLeft ?? Number.POSITIVE_INFINITY))
+    return out
+  }, [sort])
+
+  const rows = sortRows((data?.rows ?? []).filter(r => (filter === 'all' || r.state === filter) && fitsRoute(r)))
   const s = data?.summary
   const dueRows = (data?.rows ?? []).filter(r => r.state === 'due')
   const routeCount = (k: Route) =>
@@ -237,7 +270,7 @@ export default function JoinedCampaignsPage() {
           </div>
 
           {s && s.joined > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-3">
+            <div className="flex flex-wrap items-center gap-1.5 mb-3">
               {([['all', `All ${s.joined}`], ['due', `${STATE.due.tab} ${s.due}`], ['made', `${STATE.made.tab} ${s.made - s.earning}`], ['earning', `${STATE.earning.tab} ${s.earning}`], ['missed', `${STATE.missed.tab} ${s.missed}`]] as const).map(([k, label]) => (
                 <button key={k} onClick={() => setFilter(k as Filter)}
                   className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border"
@@ -247,6 +280,14 @@ export default function JoinedCampaignsPage() {
                   {label}
                 </button>
               ))}
+              <label className="ml-auto inline-flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+                <ArrowUpDown size={13} />
+                <select value={sort} onChange={e => setSort(e.target.value as Sort)}
+                  className="px-2 py-1.5 rounded-lg border bg-transparent text-[12px] font-semibold"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                  {SORTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                </select>
+              </label>
             </div>
           )}
 
@@ -321,6 +362,30 @@ export default function JoinedCampaignsPage() {
                       <p className="text-[12.5px] mt-1 leading-relaxed" style={{ color: urgent ? st.color : 'var(--text-soft)' }}>
                         {r.state === 'due' && route !== 'any' ? r.runway[route].note : r.note}
                       </p>
+                      {/* What the product itself is doing. A high commission on
+                          something nobody buys is not an opportunity, and these
+                          are the numbers that tell them apart. Anything unknown
+                          is left out rather than shown as a zero. */}
+                      {(r.priceCents != null || r.signals) && (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[11.5px]" style={{ color: 'var(--text-faint)' }}>
+                          {r.priceCents != null && (
+                            <span style={{ color: 'var(--text-soft)' }} className="font-semibold">{money(r.priceCents)}</span>
+                          )}
+                          {r.signals?.discountPct != null && r.signals.discountPct > 0 && (
+                            <span style={{ color: '#1c7a35' }}>{r.signals.discountPct}% off</span>
+                          )}
+                          {r.signals?.dealQuality && <span>{r.signals.dealQuality}</span>}
+                          {r.signals?.rating != null && (
+                            <span>{r.signals.rating.toFixed(1)}★{r.signals.reviewCount != null ? ` (${r.signals.reviewCount.toLocaleString()})` : ''}</span>
+                          )}
+                          {r.signals?.monthlySold != null && r.signals.monthlySold > 0 && (
+                            <span>{r.signals.monthlySold.toLocaleString()} bought a month</span>
+                          )}
+                          {r.signals?.salesRank != null && r.signals.salesRank > 0 && (
+                            <span>#{r.signals.salesRank.toLocaleString()}{r.signals.salesRankCategory ? ` in ${r.signals.salesRankCategory}` : ''}</span>
+                          )}
+                        </div>
+                      )}
                       {r.content.length > 0 && (
                         <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5">
                           {r.content.filter(c => c.url).slice(0, 4).map((c, i) => (
@@ -334,33 +399,15 @@ export default function JoinedCampaignsPage() {
                     </div>
 
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                      {/* Which action leads is the window's decision, not a
-                          preference. The video is the fast route at both ends,
-                          so where there is time for one it comes first, and the
-                          post is offered underneath. Where there is not, the
-                          post leads only if search can still find it, because
-                          otherwise it is work that earns the ordinary rate. */}
-                      {r.state === 'due' && r.runway.video.viable === true && (
-                        <span className="text-[11px] text-right max-w-[150px] leading-snug" style={{ color: 'var(--text-soft)' }}>
-                          Ask the brand for the sample. It usually lands in a few days.
-                        </span>
-                      )}
-                      {r.state === 'due' && r.runway.blog.viable !== false && (
-                        <button onClick={() => write(r)} disabled={writing === r.asin}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
-                          style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
-                          {writing === r.asin ? <Loader2 size={12} className="animate-spin" /> : <PenLine size={12} />} Write the post
-                        </button>
-                      )}
-                      {r.state === 'due' && r.runway.blog.viable === false && (
-                        <Link href="/amazon/social"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold"
-                          style={r.runway.video.viable === true
-                            ? { border: '1px solid var(--border)', color: 'var(--text)' }
-                            : { background: '#d97706', color: '#fff' }}>
-                          <Share2 size={12} /> Make the social post
-                        </Link>
-                      )}
+                      {/* One button, because the choice of WHAT to make belongs
+                          inside, next to what the window can carry. Splitting it
+                          into three buttons on the card put the decision before
+                          the reasoning. */}
+                      <button onClick={() => setCreating(r)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white"
+                        style={{ background: r.state === 'due' ? 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' : 'var(--text-faint)' }}>
+                        <Sparkles size={12} /> {r.state === 'due' ? 'Create' : 'Create more'}
+                      </button>
                       {r.detailsUrl && (
                         <a href={r.detailsUrl} target="_blank" rel="noreferrer"
                           className="text-[11.5px] font-medium hover:underline" style={{ color: 'var(--text-faint)' }}>
@@ -380,6 +427,14 @@ export default function JoinedCampaignsPage() {
             itself, across every link you have anywhere, so it is never attributed to one post.
           </p>
         </>
+      )}
+      {creating && (
+        <CreateForCampaignModal
+          row={creating}
+          writing={writing === creating.asin}
+          onWrite={write}
+          onClose={() => setCreating(null)}
+        />
       )}
     </>
   )

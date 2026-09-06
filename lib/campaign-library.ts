@@ -43,6 +43,27 @@ export interface ContentPiece {
   at: string | null
 }
 
+/**
+ * What the product itself looks like, for deciding whether it is worth making
+ * something for. A high commission on a product nobody buys is not an
+ * opportunity, and this is the difference between the two.
+ *
+ * Every field is nullable and every null means "not known", never zero. A
+ * product with no rating is not a badly rated product.
+ */
+export interface ProductSignals {
+  priceAvgCents: number | null
+  priceLowestCents: number | null
+  discountPct: number | null
+  /** Keepa's read on the current price against its own history. */
+  dealQuality: string | null
+  rating: number | null
+  reviewCount: number | null
+  monthlySold: number | null
+  salesRank: number | null
+  salesRankCategory: string | null
+}
+
 export interface JoinedCampaign {
   asin: string
   campaignId: string | null
@@ -59,6 +80,8 @@ export interface JoinedCampaign {
   messagedAt: string | null
   detailsUrl: string | null
   content: ContentPiece[]
+  /** How the product itself is doing. Null when nothing is known about it. */
+  signals?: ProductSignals | null
   /** What Amazon reported for this ASIN. Null means Amazon has not been synced,
    *  which is a different fact from Amazon reporting nothing. */
   earned: { clicks: number | null; orders: number | null; cents: number | null } | null
