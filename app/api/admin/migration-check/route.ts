@@ -207,6 +207,55 @@ create index if not exists scheduled_posts_updated_at_idx
     table: 'integrations', column: 'cc_send_recipe',
     sql: `alter table public.integrations add column if not exists cc_send_recipe jsonb;\nalter table public.integrations add column if not exists cc_search_recipe jsonb;`,
   },
+  // 274 went unnoticed on production for months and took every creator's link
+  // style with it: the column decides which cloaker MVP uses, so without it
+  // everyone published plain Amazon links regardless of what they picked. It
+  // belongs in this list precisely because its absence is invisible everywhere
+  // else on screen.
+  {
+    id: '274', what: 'Link style chooser (integrations.blog_social_link_mode) — WITHOUT THIS, EVERY creator publishes Direct links whatever they chose',
+    table: 'integrations', column: 'blog_social_link_mode',
+    sql: `alter table public.integrations
+  add column if not exists blog_social_link_mode text not null default 'direct',
+  add column if not exists bitly_access_token text;
+update public.integrations
+  set blog_social_link_mode = 'geniuslink'
+  where wrap_blog_geniuslink is true
+    and blog_social_link_mode = 'direct';
+alter table public.integrations
+  drop constraint if exists integrations_blog_social_link_mode_chk;
+alter table public.integrations
+  add constraint integrations_blog_social_link_mode_chk
+  check (blog_social_link_mode in ('direct', 'geniuslink', 'bitly'));
+notify pgrst, 'reload schema';`,
+  },
+  {
+    id: '277', what: 'Pinterest link target (integrations.pinterest_link_pref)',
+    table: 'integrations', column: 'pinterest_link_pref',
+    sql: `alter table public.integrations
+  add column if not exists pinterest_link_pref text not null default 'auto';
+alter table public.integrations
+  drop constraint if exists integrations_pinterest_link_pref_chk;
+alter table public.integrations
+  add constraint integrations_pinterest_link_pref_chk
+  check (pinterest_link_pref in ('auto', 'blog_post', 'youtube', 'homepage'));
+notify pgrst, 'reload schema';`,
+  },
+  {
+    id: '310', what: 'Campaigns accepted through MVP (cc_accepted_campaigns)',
+    table: 'cc_accepted_campaigns', column: 'asin',
+    sql: `-- Run migration 310 (cc_accepted_campaigns) from supabase/migrations.`,
+  },
+  {
+    id: '314', what: 'How a campaign was accepted (cc_accepted_campaigns.source)',
+    table: 'cc_accepted_campaigns', column: 'source',
+    sql: `alter table public.cc_accepted_campaigns add column if not exists source text;`,
+  },
+  {
+    id: '315', what: 'Every product a campaign covers (campaigns.campaign_asins)',
+    table: 'campaigns', column: 'campaign_asins',
+    sql: `alter table public.campaigns add column if not exists campaign_asins text[];`,
+  },
 ]
 
 // Per-instance memo of the last probe result. Schema drift is not a
