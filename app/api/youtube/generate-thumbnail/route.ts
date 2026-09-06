@@ -26,7 +26,7 @@ import { composeWithGptImage, composeWithNanoBanana, generateWithIdeogram, rehos
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
 import { bakeSimpleHeadline, compositeBadgeOnly, NEON_BORDER_STYLE_COUNT, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
-import { scrubBanned } from '@/lib/scrub'
+import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -537,7 +537,7 @@ OUTPUT: a strict JSON array of N_BRIEFS objects with keys line1, line2, emphasis
 // Curiosity-question override for the art-director briefs: every headline
 // becomes a short question, with a matching facial reaction, and hard-bans the
 // money/price/buy/amazon/"game changer" angles.
-const QUESTION_DIRECTIVE = `HEADLINE STYLE — CURIOSITY QUESTION (this overrides the headline guidance above): For EVERY brief, line1 + line2 must together form ONE short, punchy QUESTION about THIS product's real claim, effect, taste/feel, quality or result — the kind that makes someone need to click to find the answer. Examples of the vibe: a fat-burner → "DOES IT REALLY" / "BURN FAT???"; fish oil → "ANY FISHY" / "AFTERTASTE?"; a testosterone complex → "DOES THIS" / "ACTUALLY WORK???"; a shaver → "IS IT REALLY" / "THAT CLOSE?". End with a question mark ("?" or "???"). Set each brief's "expression" to a reaction that MATCHES its question — skeptical, doubtful, unsure, curious/intrigued, or wide-eyed surprised — so the face sells the question. The "banner" may be a short question or "".
+const QUESTION_DIRECTIVE = `HEADLINE STYLE — CURIOSITY QUESTION (this overrides the headline guidance above): For EVERY brief, line1 + line2 must together form ONE short, punchy QUESTION about THIS product's real claim, effect, taste/feel, quality or result — the kind that makes someone need to click to find the answer. Examples of the vibe: fish oil → "ANY FISHY" / "AFTERTASTE?"; a supplement → "DOES THIS" / "ACTUALLY WORK???"; a shaver → "IS IT REALLY" / "THAT CLOSE?"; a blender → "CAN IT CRUSH" / "FROZEN FRUIT?". NEVER name a body effect, condition or symptom, not even as the question: "DOES IT BURN FAT???", "BOOST YOUR ENERGY?" and "SUPPORTS TESTOSTERONE?" are all forbidden. Ask about the PRODUCT (does it work, is it worth it, what does it taste like, how does it compare), never about what it does to a body. End with a question mark ("?" or "???"). Set each brief's "expression" to a reaction that MATCHES its question — skeptical, doubtful, unsure, curious/intrigued, or wide-eyed surprised — so the face sells the question. The "banner" may be a short question or "".
 BANNED IN THE QUESTION (non-negotiable): NEVER mention money, price, cost, "cheap", "expensive", value, "worth it", "amazon", "purchase", or "buy"/"buying"/"bought"/"should I buy", and NEVER "game changer". Ask about performance, results, taste/feel, quality or living up to the hype — never about price or buying.`
 
 // Banned words for question headlines (mirrors art-director-pin.ts BANNED_Q).
@@ -560,6 +560,16 @@ async function designThumbnailBriefs(input: {
   const clampBrief = (o: Record<string, unknown>, i: number): ThumbBrief => {
     let l1 = clampLine(stripDesignBrands(scrubBanned(String(o.line1 || '').trim())).toUpperCase(), 18)
     let l2 = clampLine(stripDesignBrands(scrubBanned(String(o.line2 || '').trim())).toUpperCase(), 26)
+    // Health claims are checked on the PAIR, not line by line. The headline is
+    // split across two lines by design, so "DOES THIS" / "BOOST YOUR ENERGY???"
+    // hides the verb on one line and the subject on the other: each half passes
+    // on its own, and scrubbing them separately would leave a dangling "DOES
+    // THIS" on the thumbnail. The whole headline has to go. This shipped once,
+    // on a beef organ supplement, and went out to the creator's Facebook page.
+    if (hasHealthClaim(`${l1} ${l2}`)) {
+      if (isQuestion) { l1 = 'DOES IT'; l2 = 'ACTUALLY WORK?' }
+      else { l1 = 'WHAT YOU'; l2 = 'ACTUALLY GET' }
+    }
     // Question mode: enforce the banned-word rule; fall back to a safe generic
     // question if the model slipped a money/buy/amazon angle in.
     if (isQuestion && BANNED_Q_THUMB.test(`${l1} ${l2}`)) { l1 = 'DOES IT'; l2 = 'ACTUALLY WORK?' }

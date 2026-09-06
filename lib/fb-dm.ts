@@ -12,6 +12,8 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { resolvePostDmLink, matchesKeyword, renderMessage } from '@/lib/ig-dm'
+import { postProductAsin } from '@/lib/post-product-link'
+import { resolveCloakedLink } from '@/lib/link-cloak'
 import { sendPrivateReply, replyToCommentPublic } from '@/services/facebook'
 
 export interface FbCommentEvent {
@@ -93,7 +95,19 @@ export async function processFacebookCommentEvent(ev: FbCommentEvent): Promise<s
       .eq('user_id', userId)
       .eq('facebook_post_id', ev.postId)
       .maybeSingle()
-    if (post) link = resolvePostDmLink(post)
+    if (post) {
+      link = resolvePostDmLink(post)
+      // Cloak per the creator's chosen link style, the same as every other
+      // surface. Without this the reply sent whatever was stored on the post,
+      // which for anything generated while Geniuslink was connected was a
+      // geni.us link, months after the creator moved to Passport.
+      if (link) {
+        link = await resolveCloakedLink({
+          supabase: sb, userId, destination: link, asin: postProductAsin(post),
+          channel: 'facebook', source: 'facebook', label: null,
+        })
+      }
+    }
   }
   if (!link) {
     await sb.from('ig_dm_sends').update({ status: 'skipped', error: 'no link for post' }).eq('comment_id', ev.commentId)

@@ -10,6 +10,8 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendPrivateReply, replyToComment, refreshLongLivedToken } from '@/services/instagram'
+import { resolveCloakedLink } from '@/lib/link-cloak'
+import { postProductDestination, postProductAsin } from '@/lib/post-product-link'
 
 export interface IgCommentEvent {
   igAccountId: string   // the IG account that received the comment (webhook entry.id)
@@ -32,32 +34,30 @@ export function matchesKeyword(text: string, keyword: string): boolean {
   return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}([^\\p{L}\\p{N}]|$)`, 'iu').test(text)
 }
 
-/** The link a post's DM should send: geni.us from the stored code → the first
- *  affiliate link in the post body → the blog post URL as a safe fallback. */
+/** The link a post's DM should send: its product destination, else the blog post
+ *  URL as a safe fallback. Cloak the result before sending it. */
 export function resolvePostDmLink(post: {
   geniuslink_code?: string | null
   content?: string | null
   wordpress_url?: string | null
 }): string | null {
-  if (post.geniuslink_code) return `https://geni.us/${post.geniuslink_code}`
-  const html = post.content || ''
-  // First geni.us or Amazon product link in the body (the CTA).
-  const m = html.match(/https?:\/\/(?:geni\.us\/[A-Za-z0-9]+|(?:www\.)?amazon\.[a-z.]+\/[^\s"'<>]*(?:\/dp\/|\/gp\/)[^\s"'<>]*)/i)
-  if (m) return m[0]
-  return post.wordpress_url || null
+  return postProductDestination(post) || post.wordpress_url || null
 }
 
-/** Just the post's affiliate/product link (geni.us from the stored code → the
- *  first geni.us/Amazon link in the body) with NO blog-URL fallback. Returns
- *  null when the post has no distinct affiliate link — used for the optional
- *  "buy it now" CTA, which must never fall back to the blog URL (that's already
- *  the primary CTA). */
+/** Just the post's product link, with NO blog-URL fallback. Returns null when
+ *  the post has no distinct affiliate link — used for the optional "buy it now"
+ *  CTA, which must never fall back to the blog URL (that's already the primary
+ *  CTA). */
 export function resolvePostAffiliateLink(post: {
   geniuslink_code?: string | null
   content?: string | null
 }): string | null {
-  return resolvePostDmLink({ ...post, wordpress_url: null })
+  return postProductDestination(post)
 }
+
+// Re-exported so the many call sites that already import from here keep
+// working; the ordering itself lives in lib/post-product-link.ts and is tested.
+export { postProductDestination, postProductAsin }
 
 /** Fill the {link} placeholder in the message template. */
 export function renderMessage(template: string, link: string): string {
@@ -171,6 +171,17 @@ export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
     settings = s
     keyword = s.keyword
     link = resolvePostDmLink(post)
+    // Cloak it the same way every other surface does. This path used to send
+    // whatever resolvePostDmLink returned, which for any post generated while
+    // Geniuslink was connected meant a geni.us link going out in DMs long after
+    // the creator moved to Passport. A campaign link (branch A) is the
+    // creator's own pasted URL and is left exactly as they typed it.
+    if (link) {
+      link = await resolveCloakedLink({
+        supabase: sb, userId: userId as string, destination: link, asin: postProductAsin(post),
+        channel: 'instagram', source: 'instagram', label: null,
+      })
+    }
   }
 
   if (!userId) return 'skip:no-user'

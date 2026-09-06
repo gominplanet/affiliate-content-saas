@@ -347,15 +347,17 @@ CORE PRINCIPLES (do not violate):
 3. NO TEMPLATED HOOKS. The following openings are BANNED across all 5 outputs because they've been overused: "Worth It?", "Before You Buy", "Don't Buy Until", "Real Talk", "Watch This First", "Is It Worth It?", "I Tested … for 30 Days", "The Truth About…", "What Nobody Tells You", "Here's What Happened When".
 4. NEVER use the word "honest" anywhere.
 
-ALLOWED ANGLES (mix across the 5 — never use the same angle twice):
-- Specific-result hook: lead with a number/outcome from the analysis ("I Slept 8 Hours After Years of Insomnia — Here's What Did It")
-- Counter-intuitive setup: contradict an assumption ("This $30 Diffuser Replaced My $200 Sleep Routine")
-- Surprised-curiosity: a thing the creator didn't expect ("I Was Wrong About Aromatherapy Until I Tried This")
-- Direct-benefit headline: state the payoff plainly ("Cortisol Manager Cut My Stress in Half — Here's How")
-- Comparative / vs: contrast with an alternative ("Ashwagandha Tea vs Cortisol Manager — Which Actually Works?")
-- Question grounded in the pain point: ("Can a Supplement Really Fix Stress-Induced Insomnia?")
-- Story snapshot: ("The Week I Switched to Cortisol Manager — and Stopped Waking at 3 AM")
-- Skeptic-to-believer arc: ("I Didn't Buy The Hype About Cortisol Manager. Then Week 3 Happened.")
+5. NO HEALTH OR MEDICAL CLAIMS, in any form, including as a question. Never say or imply that a product treats, cures, prevents, relieves, boosts or supports any condition, symptom or body function. "Cut My Stress in Half", "Boost Your Energy", "Supports Testosterone" and "Can This Fix Insomnia?" are ALL forbidden. Write about the product, what it is, how it is made, what using it is like, how it compares. Never about what it does to a body.
+
+ALLOWED ANGLES (mix across the 5, never use the same angle twice). Every example below is deliberately free of body claims, match that:
+- Specific-result hook: lead with a real number from the analysis ("I Ran This Blender For 30 Days. Here Is What Broke")
+- Counter-intuitive setup: contradict an assumption ("This $30 Kettle Replaced My $200 Espresso Setup")
+- Surprised-curiosity: a thing the creator didn't expect ("I Was Wrong About Cast Iron Until I Tried This One")
+- Direct-benefit headline: state the payoff plainly, about the PRODUCT ("The One Feature That Made Me Keep This Vacuum")
+- Comparative / vs: contrast with an alternative ("Ninja vs Vitamix: Which One Survived My Kitchen?")
+- Question grounded in the product: ("Is A $400 Pan Actually Any Different?")
+- Story snapshot: ("The Week I Switched Coffee Grinders And Noticed The Difference")
+- Skeptic-to-believer arc: ("I Didn't Buy The Hype About This Mattress. Then Week 3 Happened.")
 
 ${clickableTitleRulesForYouTube(5)}
 

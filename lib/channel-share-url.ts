@@ -69,11 +69,15 @@ export async function channelShareUrl(opts: ChannelShareOpts): Promise<string | 
   const base = post.wordpress_url || null
   const fallback = post.geniuslink_blog_url || base
   const key = channelKey(opts.channel)
+  // The style decides FIRST, before the creds and channel checks below.
+  // `fallback` prefers a geni.us cached on the post, and a creator who has since
+  // moved to Passport still has that cached value sitting on every post they
+  // generated back then. Reaching the old ordering with no Geniuslink keys (the
+  // exact state after disconnecting Geniuslink) handed that stale link straight
+  // back, which is how a Passport creator kept sharing geni.us links.
+  if (!(await geniuslinkIsChosenStyle(supabase, userId))) return base || fallback
   // No destination, no creds, or a channel we don't group → best plain URL.
   if (!base || !apiKey || !apiSecret || !key) return fallback
-  // Only geni.us-wrap when Geniuslink is the creator's chosen style. Passport /
-  // Bitly / Direct → share the plain blog URL (no geni.us, no per-click cost).
-  if (!(await geniuslinkIsChosenStyle(supabase, userId))) return base
 
   // Cached per-channel short link on the post.
   const cache = (post.geniuslink_channel_urls && typeof post.geniuslink_channel_urls === 'object')
