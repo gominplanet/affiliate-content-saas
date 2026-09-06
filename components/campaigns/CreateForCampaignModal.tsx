@@ -58,18 +58,38 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
   const [asin, setAsin] = useState(row.asin)
   const [products, setProducts] = useState<CampaignProduct[] | null>(null)
   const [picking, setPicking] = useState(false)
+  const [filling, setFilling] = useState(false)
+
+  const read = useCallback(async () => {
+    const r = await fetch('/api/campaigns/products', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asins: row.asins }),
+    })
+    const d = await r.json() as { products?: CampaignProduct[] }
+    return d.products ?? []
+  }, [row.asins])
 
   const loadProducts = useCallback(async () => {
     if (products || !others.length) return
     try {
-      const r = await fetch('/api/campaigns/products', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ asins: row.asins }),
-      })
-      const d = await r.json() as { products?: CampaignProduct[] }
-      setProducts(d.products ?? [])
-    } catch { setProducts([]) }
-  }, [products, others.length, row.asins])
+      const first = await read()
+      setProducts(first)
+      // A picker offering bare ASINs is not a choice, it is a guess with extra
+      // steps. Joining a campaign never looks its products up, so the ones the
+      // creator did not research are unknown here through no fault of theirs.
+      // Look them up once, on the press that needs them, and read again.
+      const blind = first.filter(p => !p.title && !p.imageUrl).map(p => p.asin)
+      if (!blind.length) return
+      setFilling(true)
+      try {
+        await fetch('/api/campaigns/scan-products', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ asins: blind }),
+        })
+        setProducts(await read())
+      } finally { setFilling(false) }
+    } catch { setProducts(products ?? []) }
+  }, [products, others.length, read])
   useEffect(() => { if (picking) void loadProducts() }, [picking, loadProducts])
 
   const chosen = products?.find(p => p.asin === asin) ?? null
@@ -123,9 +143,15 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
               <div className="mt-2.5 flex flex-col gap-1 max-h-64 overflow-y-auto">
                 {products === null ? (
                   <span className="text-[12px] inline-flex items-center gap-1.5 py-2" style={{ color: 'var(--text-faint)' }}>
-                    <Loader2 size={12} className="animate-spin" /> Looking these up…
+                    <Loader2 size={12} className="animate-spin" /> Reading what is known…
                   </span>
-                ) : products.map(p => (
+                ) : (<>
+                {filling && (
+                  <span className="text-[12px] inline-flex items-center gap-1.5 pb-1" style={{ color: 'var(--text-faint)' }}>
+                    <Loader2 size={12} className="animate-spin" /> Looking up the ones nothing knows yet…
+                  </span>
+                )}
+                {products.map(p => (
                   <button key={p.asin} type="button" onClick={() => { setAsin(p.asin); setPicking(false) }}
                     className="flex items-center gap-2.5 rounded-lg border p-2 text-left"
                     style={{ borderColor: p.asin === asin ? '#7C3AED' : 'var(--border)', background: p.asin === asin ? 'rgba(124,58,237,0.06)' : 'transparent' }}>
@@ -148,6 +174,7 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
                     {p.asin === asin && <Check size={14} style={{ color: '#7C3AED', flexShrink: 0 }} />}
                   </button>
                 ))}
+                </>)}
               </div>
             )}
           </div>

@@ -26,7 +26,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Loader2, ExternalLink, Sparkles, ArrowUpDown, CircleAlert, CircleCheck, CircleDashed, CircleDollarSign } from 'lucide-react'
+import { Loader2, ExternalLink, Sparkles, ArrowUpDown, ScanSearch, CircleAlert, CircleCheck, CircleDashed, CircleDollarSign } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import CreateForCampaignModal from '@/components/campaigns/CreateForCampaignModal'
 import { ROUTE_EXPLAINER, type BestRoute } from '@/lib/campaign-runway'
@@ -100,6 +100,7 @@ export default function JoinedCampaignsPage() {
   const [writing, setWriting] = useState<string | null>(null)
   const [creating, setCreating] = useState<LibraryRow | null>(null)
   const [sort, setSort] = useState<Sort>('next')
+  const [scanning, setScanning] = useState(false)
 
   // A blank "could not load" is a page nobody can fix, so the reason is kept and
   // shown. Non-JSON back from the route means it crashed outright rather than
@@ -147,6 +148,33 @@ export default function JoinedCampaignsPage() {
   }, [mergeEarnings])
   useEffect(() => { load() }, [load])
 
+  // Look up the products nothing has ever looked up.
+  //
+  // Joining a campaign does not scan its product, so a creator who accepted in
+  // bulk ends up with a list of ids: no picture, no price, no sense of whether
+  // anyone buys the thing. Both of the judgements this page exists to support
+  // need that, and so does choosing between a campaign's products.
+  const scan = useCallback(async () => {
+    setScanning(true)
+    const tId = 'scan-products'
+    toast.loading('Looking up the products…', { id: tId, duration: Infinity })
+    try {
+      const r = await fetch('/api/campaigns/scan-products', { method: 'POST' })
+      const d = await r.json() as { ok?: boolean; scanned?: number; filled?: number; remaining?: number; error?: string }
+      if (!d?.ok) { toast.error(d?.error || 'Could not look them up.', { id: tId, duration: 8000 }); return }
+      if (!d.scanned) {
+        toast.success('Every product is already looked up.', { id: tId, duration: 5000 })
+        return
+      }
+      toast.success(
+        `${d.filled ?? 0} of ${d.scanned} filled in${d.remaining ? `. ${d.remaining} still to go, press again.` : '.'}`,
+        { id: tId, duration: 6000 })
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Look-up failed', { id: tId, duration: 8000 })
+    } finally { setScanning(false) }
+  }, [load])
+
   // Write the post for a campaign, from the row that says it is missing.
   const write = useCallback(async (row: LibraryRow) => {
     setWriting(row.asin)
@@ -192,6 +220,9 @@ export default function JoinedCampaignsPage() {
   const rows = sortRows((data?.rows ?? []).filter(r => (filter === 'all' || r.state === filter) && fitsRoute(r)))
   const s = data?.summary
   const dueRows = (data?.rows ?? []).filter(r => r.state === 'due')
+  // A product with no picture is one nothing has ever looked up. It is a proxy,
+  // but an honest one: everything else on the card comes from the same read.
+  const unscanned = (data?.rows ?? []).filter(r => !r.imageUrl).length
   const routeCount = (k: Route) =>
     k === 'any' ? dueRows.length : dueRows.filter(r => r.runway[k].viable !== false).length
 
@@ -200,6 +231,15 @@ export default function JoinedCampaignsPage() {
       <PageHero
         title="Joined campaigns"
         subtitle="The campaigns you joined through MVP, and what came of each one. Joining is what makes a campaign’s boosted commission apply to what you publish, so a joined campaign with nothing published pays nothing."
+        actions={unscanned > 0 ? (
+          <button onClick={scan} disabled={scanning}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border disabled:opacity-50"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            title="Joining a campaign does not look its product up, so these have no picture, price or sales figures yet.">
+            {scanning ? <Loader2 size={14} className="animate-spin" /> : <ScanSearch size={14} />}
+            Look up {unscanned} {unscanned === 1 ? 'product' : 'products'}
+          </button>
+        ) : undefined}
       />
 
       {loading ? (
