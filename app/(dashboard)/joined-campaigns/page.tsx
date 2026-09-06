@@ -68,11 +68,27 @@ export default function JoinedCampaignsPage() {
   const [route, setRoute] = useState<Route>('any')
   const [writing, setWriting] = useState<string | null>(null)
 
+  // A blank "could not load" is a page nobody can fix, so the reason is kept and
+  // shown. Non-JSON back from the route means it crashed outright rather than
+  // answering, and the status is the only clue there is.
+  const [loadError, setLoadError] = useState<string | null>(null)
   const load = useCallback(async () => {
     try {
       const r = await fetch('/api/campaigns/library')
-      setData(await r.json())
-    } catch { setData(null) } finally { setLoading(false) }
+      const text = await r.text()
+      let payload: (CampaignLibrary & { error?: string }) | null = null
+      try { payload = JSON.parse(text) } catch { payload = null }
+      if (!payload) {
+        setLoadError(`The server answered ${r.status} with something that was not a campaign list. ${text.slice(0, 160)}`)
+        setData(null)
+        return
+      }
+      setLoadError(payload.error || null)
+      setData(payload)
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e))
+      setData(null)
+    } finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -157,9 +173,20 @@ export default function JoinedCampaignsPage() {
           <Loader2 size={15} className="animate-spin" /> Working out what you joined…
         </div>
       ) : !data ? (
-        <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>Could not load your campaigns. Reload the page to try again.</p>
+        <div className="rounded-2xl border p-4" style={{ borderColor: 'rgba(225,29,72,0.4)', background: 'rgba(225,29,72,0.05)' }}>
+          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Could not load your campaigns.</p>
+          {loadError && <p className="text-[12px] mt-1.5 font-mono break-words" style={{ color: 'var(--text-soft)' }}>{loadError}</p>}
+        </div>
       ) : (
         <>
+          {loadError && (
+            <div className="rounded-2xl border p-3 mb-4" style={{ borderColor: 'rgba(217,119,6,0.4)', background: 'rgba(217,119,6,0.06)' }}>
+              <p className="text-[12.5px]" style={{ color: 'var(--text)' }}>
+                Some of your campaigns could not be read, so this list may be short.
+              </p>
+              <p className="text-[11.5px] mt-1 font-mono break-words" style={{ color: 'var(--text-soft)' }}>{loadError}</p>
+            </div>
+          )}
           {/* The verdict, in the creator's terms, before any list. */}
           <div className="rounded-2xl border p-4 sm:p-5 mb-5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <p className="text-[14px] font-bold leading-relaxed" style={{ color: 'var(--text)' }}>{data.verdict}</p>

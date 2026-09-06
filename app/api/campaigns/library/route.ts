@@ -15,7 +15,6 @@
 // on the list three times and make the counts read as three times the work.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { buildCampaignLibrary, type ContentPiece, type JoinedCampaign } from '@/lib/campaign-library'
 
@@ -51,26 +50,51 @@ interface CampaignRow {
 }
 
 export async function GET() {
+  try {
+    return await load()
+  } catch (e) {
+    // A page that says "could not load" and nothing else is a page nobody can
+    // fix. Always answer in the library's own shape so the UI renders, and carry
+    // the reason so it can be read off the screen instead of guessed at.
+    const message = e instanceof Error ? e.message : String(e)
+    return NextResponse.json({ ...buildCampaignLibrary([]), error: message }, { status: 200 })
+  }
+}
+
+async function load() {
   const supabase = await createServerClient()
   const auth = await getAuthAndOwner(supabase)
   if ('error' in auth) return auth.error
   const { ownerId } = auth
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const admin = createAdminClient() as any
 
   // Joined means joined, however it happened. amazon_joined_at is the marker the
   // Amazon sync writes for campaigns the creator joined on Amazon directly;
   // accepted_at is the one MVP writes. A campaign only MVP knows about and one
   // only Amazon knows about are the same commitment.
-  const { data: rowsRaw, error } = await sb
-    .from('campaigns')
-    .select('asin, cc_campaign_id, brand_name, product_title, campaign_name, commission_pct, ends_at, accepted_at, amazon_joined_at, messaged_at, details_url, wordpress_url, blog_post_id, status, updated_at')
-    .eq('user_id', ownerId)
-    .or('amazon_joined_at.not.is.null,accepted_at.not.is.null')
-    .limit(1000)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  //
+  // Both columns arrived in later migrations, and the select fails as a unit, so
+  // a database missing either one would drop the whole page rather than one
+  // marker. Fall back to accepted_at alone, then to nothing, so the list is
+  // never empty for a schema reason the creator cannot see or act on.
+  const COLS = 'asin, cc_campaign_id, brand_name, product_title, campaign_name, commission_pct, ends_at, accepted_at, amazon_joined_at, messaged_at, details_url, wordpress_url, blog_post_id, status, updated_at'
+  const FALLBACK_COLS = 'asin, cc_campaign_id, product_title, campaign_name, ends_at, accepted_at, wordpress_url, blog_post_id, status, updated_at'
+  let rowsRaw: unknown[] | null = null
+  let readError: string | null = null
+  {
+    const full = await sb.from('campaigns').select(COLS)
+      .eq('user_id', ownerId).or('amazon_joined_at.not.is.null,accepted_at.not.is.null').limit(1000)
+    if (!full.error) rowsRaw = full.data
+    else {
+      readError = full.error.message
+      const lean = await sb.from('campaigns').select(FALLBACK_COLS)
+        .eq('user_id', ownerId).not('accepted_at', 'is', null).limit(1000)
+      if (!lean.error) { rowsRaw = lean.data; readError = null }
+      else readError = `${readError} / ${lean.error.message}`
+    }
+  }
+  if (readError) return NextResponse.json({ ...buildCampaignLibrary([]), error: readError })
 
   // One row per product, keeping the campaign that runs longest, because that is
   // the window the creator still has to publish into.
@@ -94,7 +118,7 @@ export async function GET() {
   const catalog = new Map<string, { endsAt: string | null; startsAt: string | null; commissionPct: number | null; priceCents: number | null; imageUrl: string | null; brand: string | null; name: string | null }>()
   for (const part of chunk(asins)) {
     try {
-      const { data } = await admin
+      const { data } = await sb
         .from('cc_campaign_catalog')
         .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, image_url, price_now_cents')
         .overlaps('asins', part)
