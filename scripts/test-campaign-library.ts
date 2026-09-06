@@ -317,6 +317,38 @@ function camp(over: Partial<JoinedCampaign> = {}): JoinedCampaign {
   check('no jargon reaches the page', !jargon.test(all), (all.match(jargon) || [])[0])
 }
 
+
+// ── when the windows are missing, that is the finding ───────────────────────
+// A real account came back with 775 joined campaigns and no end date on 774 of
+// them. Everything this page decides comes from the window, so ranking them
+// anyway would be pretending to know. It has to say so once rather than printing
+// "no end date" seven hundred times and leaving the creator to work it out.
+{
+  const many = [
+    ...Array.from({ length: 20 }, (_, i) => camp({ asin: `B${String(i).padStart(9, '0')}`, endsAt: null })),
+    camp({ asin: 'C000000001', endsAt: inDays(40) }),
+  ]
+  const lib = buildCampaignLibrary(many, NOW)
+  check('the missing windows are counted and stated',
+    /Amazon gave no end date for 20 of the 21 campaigns waiting on you/i.test(lib.doThis), lib.doThis)
+  check('and the reason it matters is given',
+    /the time left is what decides/i.test(lib.doThis), lib.doThis)
+  check('it says what the list can and cannot do',
+    /can only tell you what you joined, not what to do about it/i.test(lib.doThis), lib.doThis)
+  check('the one dated campaign still leads, because it is the only actionable one',
+    lib.rows[0].asin === 'C000000001', lib.rows[0].asin)
+
+  // A handful of undated campaigns among dated ones is not the headline.
+  const few = buildCampaignLibrary([
+    camp({ asin: 'B1', endsAt: null }),
+    camp({ asin: 'B2', endsAt: inDays(40) }),
+    camp({ asin: 'B3', endsAt: inDays(20) }),
+    camp({ asin: 'B4', endsAt: inDays(35) }),
+  ], NOW)
+  check('a minority of undated campaigns does not take over the instruction',
+    !/Amazon gave no end date/i.test(few.doThis), few.doThis)
+}
+
 console.log(failures.length ? 'FAIL' : 'ALL PASS')
 for (const f of failures) console.log(`  ${f}`)
 process.exit(failures.length ? 1 : 0)

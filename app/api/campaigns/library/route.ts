@@ -145,12 +145,19 @@ async function load() {
   // content column thin beats a creator seeing an error, and the alternative is
   // the whole function running out of time and returning nothing at all.
   type CatRow = {
+    campaign_id?: string | null
     asins: string[] | null; campaign_name: string | null; brand_name: string | null
     commission_pct: number | null; starts_at: string | null; ends_at: string | null
     image_url: string | null; price_now_cents: number | null
   }
 
-  const [catRows, postRows, ytRows, avpRows, ccRows] = await withDeadline(Promise.all([
+  // Amazon's own campaign ids, which the sync stores. Looking the catalog up by
+  // id is an indexed key lookup; looking it up by ASIN is an array overlap over a
+  // shared table of every live campaign. Both run, because a row can have one and
+  // not the other, but the id is the one that reliably answers.
+  const campaignIds = [...new Set([...byAsin.values()].map(r => r.cc_campaign_id).filter(Boolean) as string[])]
+
+  const [catRows, catByIdRows, postRows, ytRows, avpRows, ccRows] = await withDeadline(Promise.all([
     // The campaign window, the price and the picture. The accept route stores
     // what the card had, which for a campaign accepted straight from the browse
     // grid is no end date at all, and the window is what every piece of advice on
@@ -161,6 +168,10 @@ async function load() {
       sb.from('cc_campaign_catalog')
         .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, image_url, price_now_cents')
         .overlaps('asins', part).limit(2000)),
+    spread<CatRow>(chunk(campaignIds), part =>
+      sb.from('cc_campaign_catalog')
+        .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, image_url, price_now_cents')
+        .in('campaign_id', part)),
     spread<PostRow>(chunk(postIds), part =>
       sb.from('blog_posts').select('id, title, published_at').in('id', part)),
     spread<YtRow>(chunk(asins), part =>
@@ -172,12 +183,20 @@ async function load() {
     spread<CcRow>(chunk(asins), part =>
       sb.from('creator_content').select('asin, platform, kind, url, title, posted_at')
         .eq('user_id', ownerId).in('asin', part).limit(1000)),
-  ]), [[], [], [], [], []] as const)
+  ]), [[], [], [], [], [], []] as const)
 
   const catalog = new Map<string, { endsAt: string | null; startsAt: string | null; commissionPct: number | null; priceCents: number | null; imageUrl: string | null; brand: string | null; name: string | null }>()
-  for (const c of catRows) {
-    for (const raw of c.asins ?? []) {
-      const a = String(raw || '').toUpperCase()
+  // The id lookup answers for the exact campaign the creator joined, so it is
+  // applied to that campaign's own product directly rather than through its ASIN
+  // list, and it goes in first so the broader overlap can only add.
+  const idToAsin = new Map<string, string>()
+  for (const r of byAsin.values()) if (r.cc_campaign_id) idToAsin.set(r.cc_campaign_id, r.asin)
+  for (const c of [...catByIdRows, ...catRows]) {
+    const own = c.campaign_id
+    const targets = own && idToAsin.has(own)
+      ? [idToAsin.get(own) as string]
+      : (c.asins ?? []).map(x => String(x || '').toUpperCase())
+    for (const a of targets) {
       if (!byAsin.has(a)) continue
       const prev = catalog.get(a)
       // Keep the campaign that runs longest for this product: it is the one

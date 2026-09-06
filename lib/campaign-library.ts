@@ -315,6 +315,14 @@ export function buildCampaignLibrary(campaigns: JoinedCampaign[], now: Date = ne
     if (videoRoom > 0 && first.runway.best !== 'video' && first.runway.best !== 'video-long') {
       doThis += ` ${plural(videoRoom, 'campaign')} still ${videoRoom === 1 ? 'has' : 'have'} room for a video, which is the better use of the time.`
     }
+    // When most of the list has no end date, that IS the finding. Everything this
+    // page decides comes from the window, so without one it cannot say which
+    // campaign is worth the work, and quietly ranking them anyway would be
+    // pretending to know. Say it once, plainly, instead of printing "no end date"
+    // seven hundred times and leaving the creator to draw the conclusion.
+    if (routes.unknown > due / 2) {
+      doThis = `Amazon gave no end date for ${routes.unknown} of the ${plural(due, 'campaign')} waiting on you, and the time left is what decides whether a video, a post or a social push is worth making. Until those windows are known this list can only tell you what you joined, not what to do about it. ${doThis}`
+    }
   }
 
   return { rows, summary, verdict, doThis }
