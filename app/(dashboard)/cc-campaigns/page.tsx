@@ -227,11 +227,11 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
           </div>
           <p className="text-[11px] text-[var(--text-3)] truncate">{c.brand || 'Unknown brand'}</p>
           <p className="text-sm font-medium text-[var(--text)] leading-snug line-clamp-2">{c.name || c.repAsin}</p>
-          {!c.isFull && runway.best !== 'unknown' && (
+          {!c.isFull && runway.best !== 'unknown' && runway.best !== 'closed' && (
             <p title={runway.headline} className="text-[10.5px] font-semibold mt-1"
-              style={{ color: runway.best === 'video' ? '#047857' : runway.best === 'social-first' ? '#b45309' : '#b3261e' }}>
-              {runway.best === 'video' ? 'Room for a sample and a video'
-                : runway.best === 'social-first' ? 'Too short for a sample or for search. Social push.'
+              style={{ color: runway.best === 'social-now' ? '#b3261e' : '#047857' }}>
+              {runway.best === 'video-long' ? 'Video window, earns for weeks'
+                : runway.best === 'video' ? (runway.blog.viable ? 'Room for a video or a post' : 'Video yes, blog post too slow')
                 : 'Social today, or leave it'}
             </p>
           )}

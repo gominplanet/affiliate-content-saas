@@ -211,14 +211,15 @@ const STATE_RANK: Record<CampaignState, number> = { due: 0, made: 1, earning: 2,
  *
  * Sorting the queue by deadline alone put the wrong row on top. A campaign
  * closing in three days is the most urgent and close to the least valuable:
- * nothing that has to be found by a shopper or by Google can be found in three
- * days. A campaign closing in five weeks is where the work actually pays, and it
- * is quietly decaying towards the useless band while the dying one sits above it.
+ * nothing can be filmed, delivered and seen in three days. A campaign with three
+ * weeks left is where the work actually pays, and it is quietly decaying towards
+ * the useless band while the dying one sits above it.
  *
- * So the bands come first, and inside a band the one closing soonest leads,
- * because that is the one about to fall out of it.
+ * So the bands come first. Both video bands share a rank because they call for
+ * the same action, and inside a band the one closing soonest leads, because that
+ * is the one about to fall out of it.
  */
-const ROUTE_RANK: Record<BestRoute, number> = { video: 0, 'social-first': 1, 'social-now': 2, unknown: 3 }
+const ROUTE_RANK: Record<BestRoute, number> = { 'video-long': 0, video: 0, 'social-now': 1, unknown: 2, closed: 3 }
 
 function compare(a: LibraryRow, b: LibraryRow): number {
   if (STATE_RANK[a.state] !== STATE_RANK[b.state]) return STATE_RANK[a.state] - STATE_RANK[b.state]
@@ -264,7 +265,7 @@ export function buildCampaignLibrary(campaigns: JoinedCampaign[], now: Date = ne
   const anyEarnings = rows.some(r => r.earned != null)
   const earnedCents = anyEarnings ? rows.reduce((a, r) => a + (r.earned?.cents ?? 0), 0) : null
 
-  const routes: Record<BestRoute, number> = { video: 0, 'social-first': 0, 'social-now': 0, unknown: 0 }
+  const routes: Record<BestRoute, number> = { 'video-long': 0, video: 0, 'social-now': 0, unknown: 0, closed: 0 }
   for (const r of rows) if (r.state === 'due') routes[r.runway.best]++
 
   const summary = { joined: rows.length, made, due, missed, earning, urgent, routes, earnedCents }
@@ -305,13 +306,14 @@ export function buildCampaignLibrary(campaigns: JoinedCampaign[], now: Date = ne
     const name = first.product || first.brand || first.asin
     const worth = first.perSaleCents != null ? ` at ${money(first.perSaleCents)} a sale` : ''
     const make =
-      first.runway.best === 'video' ? 'Ask for the sample now and film it: that is what a window this long is for.'
-      : first.runway.best === 'social-first' ? 'Write the post for the long term if you want it, but plan the social push, because that is the only thing that reaches a buyer before this window shuts.'
+      first.runway.best === 'video-long' ? 'Ask for the sample and film it. A window this long means that one video keeps selling for weeks.'
+      : first.runway.best === 'video' ? 'Ask for the sample now and film it. It usually arrives in a few days, which is the only route fast enough for a window this size.'
       : first.runway.best === 'social-now' ? 'Only a social post can land in time. If you cannot post today, spend the effort on one of the longer campaigns instead.'
       : 'Check its window on Amazon first, because there is no end date to plan around.'
     doThis = `Start with ${name}${worth}. ${make}`
-    if (routes.video > 0 && first.runway.best !== 'video') {
-      doThis += ` ${plural(routes.video, 'campaign')} still ${routes.video === 1 ? 'has' : 'have'} room for a video, which is the better use of the time.`
+    const videoRoom = routes.video + routes['video-long']
+    if (videoRoom > 0 && first.runway.best !== 'video' && first.runway.best !== 'video-long') {
+      doThis += ` ${plural(videoRoom, 'campaign')} still ${videoRoom === 1 ? 'has' : 'have'} room for a video, which is the better use of the time.`
     }
   }
 

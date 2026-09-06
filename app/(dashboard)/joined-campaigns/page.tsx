@@ -38,16 +38,17 @@ type Route = 'any' | 'video' | 'blog' | 'social'
 
 const ROUTES: { key: Route; label: string; hint: string }[] = [
   { key: 'any', label: 'Anything', hint: 'Everything you have joined that still needs something made.' },
-  { key: 'video', label: 'Amazon video', hint: 'Windows long enough for a sample to arrive, be filmed, and still earn.' },
-  { key: 'blog', label: 'Blog post', hint: 'Windows long enough for search to find the post before the boost ends.' },
+  { key: 'video', label: 'Amazon video', hint: 'Windows with time for the sample to arrive, be filmed, and still earn. The sample is usually only a few days, so this covers most open campaigns.' },
+  { key: 'blog', label: 'Blog post', hint: 'Windows long enough for search to find the post before the boost ends, which takes about three weeks on its own.' },
   { key: 'social', label: 'Social post', hint: 'Anything still open. A social post reaches people the same day.' },
 ]
 
 const ROUTE_CHIP: Record<BestRoute, { label: string; color: string }> = {
-  video: { label: 'Video window', color: '#047857' },
-  'social-first': { label: 'Social push', color: '#b45309' },
+  'video-long': { label: 'Video, earns for weeks', color: '#047857' },
+  video: { label: 'Video, still time', color: '#059669' },
   'social-now': { label: 'Social today or skip', color: '#e11d48' },
   unknown: { label: 'No end date', color: '#78716c' },
+  closed: { label: 'Closed', color: '#78716c' },
 }
 
 const STATE: Record<CampaignState, { label: string; color: string; icon: typeof CircleAlert; tab: string }> = {
@@ -285,29 +286,31 @@ export default function JoinedCampaignsPage() {
 
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                       {/* Which action leads is the window's decision, not a
-                          preference. Under a week nothing that has to be found
-                          gets found, so pushing "write a post" there would be
-                          asking for work that earns the ordinary rate. */}
-                      {r.state === 'due' && r.runway.best !== 'social-now' && (
+                          preference. The video is the fast route at both ends,
+                          so where there is time for one it comes first, and the
+                          post is offered underneath. Where there is not, the
+                          post leads only if search can still find it, because
+                          otherwise it is work that earns the ordinary rate. */}
+                      {r.state === 'due' && r.runway.video.viable === true && (
+                        <span className="text-[11px] text-right max-w-[150px] leading-snug" style={{ color: 'var(--text-soft)' }}>
+                          Ask the brand for the sample. It usually lands in a few days.
+                        </span>
+                      )}
+                      {r.state === 'due' && r.runway.blog.viable !== false && (
                         <button onClick={() => write(r)} disabled={writing === r.asin}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
                           style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
                           {writing === r.asin ? <Loader2 size={12} className="animate-spin" /> : <PenLine size={12} />} Write the post
                         </button>
                       )}
-                      {r.state === 'due' && r.runway.best !== 'video' && (
+                      {r.state === 'due' && r.runway.blog.viable === false && (
                         <Link href="/amazon/social"
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold"
-                          style={r.runway.best === 'social-now'
-                            ? { background: '#d97706', color: '#fff' }
-                            : { border: '1px solid var(--border)', color: 'var(--text)' }}>
+                          style={r.runway.video.viable === true
+                            ? { border: '1px solid var(--border)', color: 'var(--text)' }
+                            : { background: '#d97706', color: '#fff' }}>
                           <Share2 size={12} /> Make the social post
                         </Link>
-                      )}
-                      {r.state === 'due' && r.runway.best === 'video' && (
-                        <span className="text-[11px] text-right max-w-[140px] leading-snug" style={{ color: 'var(--text-faint)' }}>
-                          Ask the brand for a sample now, so there is time to film it.
-                        </span>
                       )}
                       {r.detailsUrl && (
                         <a href={r.detailsUrl} target="_blank" rel="noreferrer"
