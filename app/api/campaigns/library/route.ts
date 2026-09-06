@@ -20,7 +20,7 @@ import { buildCampaignLibrary, type ContentPiece, type JoinedCampaign } from '@/
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 30
+export const maxDuration = 60
 
 /** PostgREST puts the filter in the URL, so a few hundred ASINs at once is a
  *  request that never arrives. */
@@ -141,6 +141,17 @@ async function load() {
   }
 
   // ── what exists for each product ──────────────────────────────────────────
+  //
+  // Everything below is enrichment: five independent reads that answer "what did
+  // this creator already make for this product". They used to run one after
+  // another, chunk by chunk, page by page, and on an account with a few hundred
+  // joined campaigns and years of earnings that is a hundred round trips in a
+  // row. The function's time limit is what the page hit, and a timed-out function
+  // returns an error page rather than JSON, which is exactly the blank "could not
+  // load" with no reason attached.
+  //
+  // They do not depend on each other, so they all go at once, and each one fails
+  // into an empty list rather than taking the page with it.
   const content = new Map<string, ContentPiece[]>()
   const add = (asin: string, piece: ContentPiece) => {
     const a = asin.toUpperCase()
@@ -149,68 +160,77 @@ async function load() {
     list.push(piece)
     content.set(a, list)
   }
+  /** A read whose failure costs one column, never the page. */
+  const safe = async <T>(q: PromiseLike<{ data: T[] | null }>): Promise<T[]> => {
+    try { const r = await q; return (r?.data ?? []) as T[] } catch { return [] }
+  }
+  const spread = <T>(parts: string[][], run: (part: string[]) => PromiseLike<{ data: T[] | null }>) =>
+    Promise.all(parts.map(p => safe(run(p)))).then(x => x.flat())
+
+  const postIds = [...byAsin.values()].map(r => r.blog_post_id).filter(Boolean) as string[]
+
+  type PostRow = { id: string; title: string | null; published_at: string | null }
+  type YtRow = { asin: string; title: string | null; published_at: string | null; youtube_video_id: string | null }
+  type AvpRow = { asin: string; aci: string }
+  type CcRow = { asin: string | null; platform: string | null; url: string | null; title: string | null; posted_at: string | null }
+
+  // The campaign list is the page. What was made for each one and what Amazon
+  // paid are enrichment, so they get a deadline: whatever has come back by then
+  // is used and the rest is left out. A creator seeing their campaigns with the
+  // content column thin beats a creator seeing an error, and the alternative is
+  // the whole function running out of time and returning nothing at all.
+  const [postRows, ytRows, avpRows, ccRows, earnings] = await withDeadline(Promise.all([
+    spread<PostRow>(chunk(postIds), part =>
+      sb.from('blog_posts').select('id, title, published_at').in('id', part)),
+    spread<YtRow>(chunk(asins), part =>
+      sb.from('youtube_videos').select('asin, title, published_at, youtube_video_id')
+        .eq('user_id', ownerId).in('asin', part).limit(1000)),
+    spread<AvpRow>(chunk(asins), part =>
+      sb.from('amazon_video_products').select('asin, aci')
+        .eq('user_id', ownerId).in('asin', part).limit(1000)),
+    spread<CcRow>(chunk(asins), part =>
+      sb.from('creator_content').select('asin, platform, kind, url, title, posted_at')
+        .eq('user_id', ownerId).in('asin', part).limit(1000)),
+    readEarnings(sb, ownerId, asins),
+  ]), [[], [], [], [], { totals: new Map(), synced: false }] as const)
 
   // The blog post MVP wrote for the campaign. The campaigns row carries the
   // published URL; the post itself carries the date, which decides whether it
   // landed inside the campaign window.
-  const postIds = [...byAsin.values()].map(r => r.blog_post_id).filter(Boolean) as string[]
-  const postDates = new Map<string, { at: string | null; title: string | null }>()
-  for (const part of chunk(postIds)) {
-    try {
-      const { data } = await sb.from('blog_posts').select('id, title, published_at').in('id', part)
-      for (const p of (data ?? []) as Array<{ id: string; title: string | null; published_at: string | null }>) {
-        postDates.set(p.id, { at: p.published_at, title: p.title })
-      }
-    } catch { /* the URL alone still proves the post exists */ }
-  }
+  const postDates = new Map<string, { at: string | null; title: string | null }>(
+    postRows.map(p => [p.id, { at: p.published_at, title: p.title }]))
   for (const r of byAsin.values()) {
     if (!r.wordpress_url && !r.blog_post_id) continue
     const meta = r.blog_post_id ? postDates.get(r.blog_post_id) : undefined
     add(r.asin, { kind: 'blog', url: r.wordpress_url, title: meta?.title ?? r.product_title, at: meta?.at ?? null })
   }
 
-  // YouTube videos MVP knows the product for.
-  for (const part of chunk(asins)) {
-    try {
-      const { data } = await sb
-        .from('youtube_videos').select('asin, title, published_at, youtube_video_id')
-        .eq('user_id', ownerId).in('asin', part).limit(1000)
-      for (const v of (data ?? []) as Array<{ asin: string; title: string | null; published_at: string | null; youtube_video_id: string | null }>) {
-        add(v.asin, {
-          kind: 'youtube', title: v.title, at: v.published_at,
-          url: v.youtube_video_id ? `https://www.youtube.com/watch?v=${v.youtube_video_id}` : null,
-        })
-      }
-    } catch { /* no YouTube connected */ }
+  for (const v of ytRows) {
+    add(v.asin, {
+      kind: 'youtube', title: v.title, at: v.published_at,
+      url: v.youtube_video_id ? `https://www.youtube.com/watch?v=${v.youtube_video_id}` : null,
+    })
   }
 
   // Amazon shoppable videos. The join table says which products a video sells,
   // and it is only as complete as the per-video product read, so a missing row
-  // here means "not read yet" as often as it means "no video".
+  // here means "not read yet" as often as it means "no video". The metadata read
+  // depends on that answer, so it is the one thing that cannot go in the batch
+  // above, and it is skipped entirely when there is nothing to look up.
   const aciByAsin = new Map<string, string[]>()
   const acis = new Set<string>()
-  for (const part of chunk(asins)) {
-    try {
-      const { data } = await sb
-        .from('amazon_video_products').select('asin, aci')
-        .eq('user_id', ownerId).in('asin', part).limit(1000)
-      for (const v of (data ?? []) as Array<{ asin: string; aci: string }>) {
-        const a = v.asin.toUpperCase()
-        aciByAsin.set(a, [...(aciByAsin.get(a) ?? []), v.aci])
-        acis.add(v.aci)
-      }
-    } catch { /* the video library has not been read */ }
+  for (const v of avpRows) {
+    const a = v.asin.toUpperCase()
+    aciByAsin.set(a, [...(aciByAsin.get(a) ?? []), v.aci])
+    acis.add(v.aci)
   }
   const videoMeta = new Map<string, { at: string | null; title: string | null; url: string | null }>()
-  for (const part of chunk([...acis])) {
-    try {
-      const { data } = await sb
-        .from('amazon_videos').select('aci, description, published_at, media_url')
-        .eq('user_id', ownerId).in('aci', part).limit(1000)
-      for (const v of (data ?? []) as Array<{ aci: string; description: string | null; published_at: string | null; media_url: string | null }>) {
-        videoMeta.set(v.aci, { at: v.published_at, title: v.description, url: v.media_url })
-      }
-    } catch { /* metadata is optional; the join row already proves the video */ }
+  if (acis.size) {
+    type VidRow = { aci: string; description: string | null; published_at: string | null; media_url: string | null }
+    const vids = await spread<VidRow>(chunk([...acis]), part =>
+      sb.from('amazon_videos').select('aci, description, published_at, media_url')
+        .eq('user_id', ownerId).in('aci', part).limit(1000))
+    for (const v of vids) videoMeta.set(v.aci, { at: v.published_at, title: v.description, url: v.media_url })
   }
   for (const [asin, list] of aciByAsin) {
     for (const aci of list) {
@@ -220,55 +240,16 @@ async function load() {
   }
 
   // Anything else recorded in the content library (TikTok posts and the like).
-  for (const part of chunk(asins)) {
-    try {
-      const { data } = await sb
-        .from('creator_content').select('asin, platform, kind, url, title, posted_at')
-        .eq('user_id', ownerId).in('asin', part).limit(1000)
-      for (const c of (data ?? []) as Array<{ asin: string | null; platform: string | null; url: string | null; title: string | null; posted_at: string | null }>) {
-        if (!c.asin) continue
-        // Amazon rows here duplicate the video join table above; only the social
-        // platforms add anything, and counting a video twice would tell someone
-        // they made two things when they made one.
-        if ((c.platform || '').toLowerCase() === 'amazon') continue
-        add(c.asin, { kind: 'social', title: c.title, at: c.posted_at, url: c.url })
-      }
-    } catch { /* nothing recorded */ }
+  for (const c of ccRows) {
+    if (!c.asin) continue
+    // Amazon rows here duplicate the video join table above; only the social
+    // platforms add anything, and counting a video twice would tell someone they
+    // made two things when they made one.
+    if ((c.platform || '').toLowerCase() === 'amazon') continue
+    add(c.asin, { kind: 'social', title: c.title, at: c.posted_at, url: c.url })
   }
 
-  // ── what Amazon paid on each product ──────────────────────────────────────
-  // Null when the account has never been synced, because "Amazon has not been
-  // read" and "Amazon reported nothing" are different facts and the page says
-  // different things about them.
-  const earned = new Map<string, { clicks: number; orders: number; cents: number }>()
-  let earningsSynced = false
-  for (const part of chunk(asins)) {
-    for (let from = 0; ; from += 1000) {
-      let rows: Array<{ asin: string; clicks: number | null; orders: number | null; earnings_cents: number | null }> = []
-      try {
-        const { data } = await sb
-          .from('amazon_earnings_products').select('asin, clicks, orders, earnings_cents')
-          .eq('user_id', ownerId).in('asin', part).range(from, from + 999)
-        rows = (data ?? []) as typeof rows
-      } catch { break }
-      if (!rows.length) break
-      earningsSynced = true
-      for (const e of rows) {
-        const a = (e.asin || '').toUpperCase()
-        const prev = earned.get(a) ?? { clicks: 0, orders: 0, cents: 0 }
-        earned.set(a, {
-          clicks: prev.clicks + (e.clicks ?? 0),
-          orders: prev.orders + (e.orders ?? 0),
-          cents: prev.cents + (e.earnings_cents ?? 0),
-        })
-      }
-      if (rows.length < 1000) break
-    }
-  }
-  // One synced product proves the account is synced, so a product with no row is
-  // a real zero rather than an unknown. Without a single row anywhere, nothing
-  // is known and every product stays null.
-  if (!earningsSynced) earned.clear()
+  const { totals: earned, synced: earningsSynced } = earnings
 
   const joined: JoinedCampaign[] = [...byAsin.values()].map(r => {
     const cat = catalog.get(r.asin)
@@ -293,4 +274,81 @@ async function load() {
   })
 
   return NextResponse.json(buildCampaignLibrary(joined))
+}
+
+/**
+ * What Amazon paid on each of these products.
+ *
+ * Amazon reports one row per product per month per stream per store, so an
+ * account with a few hundred joined campaigns and a couple of years of history
+ * runs to tens of thousands of rows. PostgREST caps a read at a thousand, so this
+ * pages, and the pages for each chunk of products run in parallel rather than one
+ * after another, which is what turned this read from most of the function's time
+ * budget into a fraction of it.
+ *
+ * `synced` is the honest part. Null earnings mean Amazon has never been read for
+ * this account, which is a completely different fact from Amazon reporting zero,
+ * and the page says different things about them. One row anywhere proves the
+ * account is synced, so a product with no row after that is a real zero.
+ *
+ * The page cap exists so a pathological account cannot run the function out of
+ * time. Hitting it would make every total an undercount, and an undercount
+ * presented as "Amazon paid you $X" is a lie, so hitting it reports nothing
+ * rather than something wrong.
+ */
+const EARNINGS_MAX_PAGES = 12
+
+async function readEarnings(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any, ownerId: string, asins: string[],
+): Promise<{ totals: Map<string, { clicks: number; orders: number; cents: number }>; synced: boolean }> {
+  type Row = { asin: string; clicks: number | null; orders: number | null; earnings_cents: number | null }
+  const totals = new Map<string, { clicks: number; orders: number; cents: number }>()
+  let synced = false
+  let truncated = false
+
+  const readChunk = async (part: string[]): Promise<Row[]> => {
+    const out: Row[] = []
+    for (let page = 0; page < EARNINGS_MAX_PAGES; page++) {
+      let rows: Row[] = []
+      try {
+        const { data } = await sb
+          .from('amazon_earnings_products').select('asin, clicks, orders, earnings_cents')
+          .eq('user_id', ownerId).in('asin', part).range(page * 1000, page * 1000 + 999)
+        rows = (data ?? []) as Row[]
+      } catch { break }
+      out.push(...rows)
+      if (rows.length < 1000) return out
+      if (page === EARNINGS_MAX_PAGES - 1) truncated = true
+    }
+    return out
+  }
+
+  const pages = await Promise.all(chunk(asins).map(readChunk))
+  for (const rows of pages) {
+    for (const e of rows) {
+      synced = true
+      const a = (e.asin || '').toUpperCase()
+      const prev = totals.get(a) ?? { clicks: 0, orders: 0, cents: 0 }
+      totals.set(a, {
+        clicks: prev.clicks + (e.clicks ?? 0),
+        orders: prev.orders + (e.orders ?? 0),
+        cents: prev.cents + (e.earnings_cents ?? 0),
+      })
+    }
+  }
+  // A partial sum reported as a total is worse than no number at all.
+  if (truncated) return { totals: new Map(), synced: false }
+  return { totals, synced }
+}
+
+/** Enrichment gets this long, then the page goes out with what it has. Well
+ *  under the function's own limit, because being late is the same as failing. */
+const ENRICHMENT_DEADLINE_MS = 20_000
+
+function withDeadline<T>(work: Promise<T>, fallback: T): Promise<T> {
+  return Promise.race([
+    work,
+    new Promise<T>(resolve => setTimeout(() => resolve(fallback), ENRICHMENT_DEADLINE_MS)),
+  ])
 }
