@@ -36,6 +36,25 @@ const TABLE_REF = String.raw`(?:if\s+exists\s+)?(?:only\s+)?(?:public\.)?([a-z0-
 /** Words that are never a table name, only ever a mis-capture. */
 const NOT_A_TABLE = new Set(['if', 'only', 'exists', 'table', 'public'])
 
+/**
+ * Tables a later migration REPLACED without dropping.
+ *
+ * The point of this audit is that an empty result means the database matches
+ * the code. A result you have to mentally filter is not that: the last run
+ * returned four rows, three of them noise about a table nothing has read since
+ * migration 161, and the one row that mattered sat underneath them. An audit
+ * that cries wolf gets skimmed, and then the real row gets skimmed too.
+ *
+ * These were superseded rather than dropped, so the old table genuinely is not
+ * in the database and genuinely should not be. Anything listed here needs a
+ * reason and a successor, so this never becomes a place to hide a real gap.
+ */
+const SUPERSEDED = new Set([
+  // 084/098/099 built it; migration 161 replaced it with cc_campaign_catalog.
+  // Nothing outside a stale generated type has referenced it since.
+  'creator_connections_catalog',
+])
+
 type Obj = { migration: string; table: string; column: string | null }
 
 function collect(): Obj[] {
@@ -77,6 +96,7 @@ function collect(): Obj[] {
   const seen = new Set<string>()
   return found.filter(o => {
     if (NOT_A_TABLE.has(o.table)) return false
+    if (SUPERSEDED.has(o.table)) return false
     const k = key(o.table, o.column)
     if (seen.has(k) || gone.has(k) || gone.has(key(o.table, null))) return false
     seen.add(k)
