@@ -1912,9 +1912,17 @@ export async function POST(request: Request) {
             const gfxWardrobe = wearLine
               ? `WARDROBE: they are wearing the product itself, and it keeps EXACTLY the colour, pattern, texture, collar and trim of the reference photo — never simplified, never recoloured, never a plain version of it. Any OTHER garment visible on them (a jacket over it, a shirt under it) is unpatterned so it does not compete; that applies to those garments only and NEVER to the product.`
               : wardrobeDirective(faceModel?.outfit_pref)
-            const personAction = briefExpression || briefPose
-              ? `Give them ${briefExpression || 'a natural, content-fitting reaction'}${briefPose ? `, ${briefPose}` : ''} — make the expression genuine and specific, not a generic stock smile.`
-              : 'Place them on one side reacting to the product with a genuine, content-fitting expression (not a generic smile).'
+            // When the creator chose a face, this line must not ask for one. Blanking
+            // briefExpression above dropped it into the fallback below, which asks
+            // for a "content-fitting expression" — and the content is a question
+            // headline, so content-fitting means skeptical. That is why Excited
+            // kept rendering as a frown. Now it carries the POSE only and points
+            // at the chosen expression rather than competing with it.
+            const personAction = expressionLine
+              ? `${briefPose ? `Pose: ${briefPose}. ` : ''}Their facial expression is the one specified separately in this brief — use exactly that and do not substitute a reaction you think suits the headline better.`
+              : briefExpression || briefPose
+                ? `Give them ${briefExpression || 'a natural, content-fitting reaction'}${briefPose ? `, ${briefPose}` : ''} — make the expression genuine and specific, not a generic stock smile.`
+                : 'Place them on one side reacting to the product with a genuine, content-fitting expression (not a generic smile).'
             // Content-fitting facial expression. gpt-image RE-RENDERS the person
             // (it doesn't paste the selfie), so the reference photos lock identity
             // while the prompt drives the expression. Seed the FIRST variant's
@@ -2025,6 +2033,12 @@ export async function POST(request: Request) {
                   `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 16:9 landscape (1536×864) — in the polished style of today's top product-review creators. Bring THIS art-director brief (written specifically for this product) to life exactly:`,
                   '',
                   `DESIGN CONCEPT: ${briefConcept}`,
+                  // The concept is prose written by another model, and prose about
+                  // a product review tends to describe a face whether it was asked
+                  // to or not. It is the thing the render follows most closely, so
+                  // when the creator has chosen a face, the concept is told its
+                  // opinion on that one subject does not count.
+                  expressionLine ? 'NOTE ON THE CONCEPT ABOVE: follow it for the layout, palette, background, badges and energy. If it describes the person reacting, looking doubtful, smiling, or feeling any way at all, IGNORE that part — the facial expression is specified separately below and that specification wins.' : '',
                   briefPalette ? `COLOUR PALETTE: ${briefPalette}. Do NOT default to plain yellow-on-black.${wearLine ? ' This palette governs the BACKGROUND, type and graphics ONLY. The product keeps its own real colours and pattern from the reference photo, even when they clash with the palette — a clash is correct, a recoloured product is not.' : ''}` : '',
                   briefBanner ? `BANNER PHRASE: render "${briefBanner}" inside a hand-painted brush-stroke or torn banner as a secondary punch (correct spelling).` : '',
                   briefCallouts.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips, or spec pill badges — correctly spelled, a few words each: ${briefCallouts.join(' · ')}.` : '',
@@ -2053,7 +2067,7 @@ export async function POST(request: Request) {
               '',
               'INTEGRATION (important): the person and the product must sit NATURALLY in the scene with realistic lighting and grounded shadows, like a real photo. Do NOT put a glowing outline, rim-light halo, coloured aura or cut-out edge around the person or the product — no haloing, nothing that makes them look pasted on. Keep edges clean and photographic.',
               '',
-              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MUST change their expression to fit this thumbnail (do NOT copy the reference photo's expression) and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. ${gfxWardrobe} ${personAction} Place them on one side of the frame. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
+              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — ${expressionLine ? 'render the facial expression specified separately in this brief rather than copying the reference photo\'s expression' : 'you MUST change their expression to fit this thumbnail (do NOT copy the reference photo\'s expression)'} and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. ${gfxWardrobe} ${personAction} Place them on one side of the frame. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
               '',
               wearLine
                 ? `PRODUCT: the product is worn, exactly as the WORN, NOT HELD rule above says${productRefNum ? `, and it is the item in Image ${productRefNum}` : ''}. It is ${wearable.on}, lit naturally so it reads clearly at thumbnail size, and it appears NOWHERE else in the design: no hero shot of it beside them, no copy on a hanger, a mannequin, a stand or a surface, none held in a hand. Keep its true shape, colours and its own printed branding; never invent packaging or fake logos.`
