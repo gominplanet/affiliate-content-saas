@@ -28,7 +28,8 @@
     "test:post-link": "tsx scripts/test-post-product-link.ts",
     "test:health-claims": "tsx scripts/test-health-claims.ts",
     "test:campaign-rows": "tsx scripts/test-campaign-rows.ts",
-    "test:wear": "tsx scripts/test-wear-product.ts"
+    "test:wear": "tsx scripts/test-wear-product.ts",
+    "schema:audit": "tsx scripts/schema-audit.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",
