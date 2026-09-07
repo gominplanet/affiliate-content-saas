@@ -86,21 +86,49 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { enabled?: boolean; countryTags?: unknown }
 
   // Enable flag → the OWNER's account row.
+  //
+  // WRITTEN, THEN READ BACK. This flag decides what every affiliate link in a
+  // creator's content becomes, and until now the route awaited the write
+  // without looking at it and returned ok:true regardless. A write that never
+  // landed (a missing unique index on user_id makes an onConflict upsert throw,
+  // among other things) produced a toggle that switched on, said it saved, and
+  // left the database on false. From the outside that is indistinguishable from
+  // never having touched it, which is exactly the position we were just in.
+  //
+  // So the answer comes from the row, not from the absence of an exception.
   if (typeof body.enabled === 'boolean') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (admin as any).from('integrations').upsert({ user_id: ownerId, passport_links_enabled: body.enabled }, { onConflict: 'user_id' })
+    const { error: upErr } = await (admin as any).from('integrations')
+      .upsert({ user_id: ownerId, passport_links_enabled: body.enabled }, { onConflict: 'user_id' })
+    if (upErr) {
+      console.error('[passport] enable write failed:', upErr.message)
+      return NextResponse.json({ error: `Could not save the Passport setting: ${upErr.message}` }, { status: 500 })
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: after } = await (admin as any).from('integrations')
+      .select('passport_links_enabled').eq('user_id', ownerId).maybeSingle()
+    if (!after || after.passport_links_enabled !== body.enabled) {
+      console.error(`[passport] enable did not persist: wanted ${body.enabled}, row says ${after ? after.passport_links_enabled : 'no row'}`)
+      return NextResponse.json({
+        error: 'The Passport setting did not save. Nothing was changed, so your links are still being built the old way.',
+      }, { status: 500 })
+    }
   }
 
   // Country tags → the active site if there is one, else the account.
   if (body.countryTags !== undefined) {
     const tags = cleanCountryTags(body.countryTags)
     const site = await getDefaultSite(supabase, user.id)
-    if (site && site.id !== 'legacy') {
+    // Same rule as above: a save that cannot fail out loud is a save you cannot
+    // trust, and country tags decide which storefront a click lands on.
+    const { error: tagErr } = site && site.id !== 'legacy'
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('wordpress_sites').update({ amazon_country_tags: tags }).eq('user_id', user.id).eq('id', site.id)
-    } else {
+      ? await (supabase as any).from('wordpress_sites').update({ amazon_country_tags: tags }).eq('user_id', user.id).eq('id', site.id)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('integrations').upsert({ user_id: user.id, amazon_country_tags: tags }, { onConflict: 'user_id' })
+      : await (supabase as any).from('integrations').upsert({ user_id: user.id, amazon_country_tags: tags }, { onConflict: 'user_id' })
+    if (tagErr) {
+      console.error('[passport] country tags write failed:', tagErr.message)
+      return NextResponse.json({ error: `Could not save your country tags: ${tagErr.message}` }, { status: 500 })
     }
   }
 
