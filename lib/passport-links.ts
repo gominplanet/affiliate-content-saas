@@ -42,15 +42,27 @@ export const AMAZON_MARKETPLACES: Record<string, { host: string; code: string }>
   TR: { host: 'www.amazon.com.tr', code: 'TR' },
 }
 
-/** The branded short base from env, normalized so links resolve for real
- *  visitors. A BARE APEX (a host with a single label before the TLD, e.g.
- *  mvpl.ink) is upgraded to its www host: the apex is a redirect-only domain
- *  that times out for many visitors (ERR_TIMED_OUT), while www.<domain> serves
- *  the redirect directly in one clean hop. A base that already carries a
- *  subdomain (https://www.mvpl.ink) is used as-is, so this stays overridable. */
+/** mvpl.ink is THE Passport domain. Not a configured option that happens to be
+ *  set today: every Passport link is on it, and PASSPORT_LINK_BASE exists only
+ *  to point a different environment somewhere else.
+ *
+ *  It used to be the other way round, with the env var required and the app's
+ *  own origin as the fallback. That fallback is the failure this default
+ *  removes: one deploy, cron or preview without the variable mints links on
+ *  www.mvpaffiliate.io/go/<code> instead, and those links are already published
+ *  in descriptions by the time anyone notices the domain changed halfway down a
+ *  creator's channel. Both shapes keep resolving, so nothing already out there
+ *  breaks, but nothing new should be minted on the wrong one.
+ *
+ *  A BARE APEX (a host with a single label before the TLD, e.g. mvpl.ink) is
+ *  upgraded to its www host: the apex is a redirect-only domain that times out
+ *  for many visitors (ERR_TIMED_OUT), while www.<domain> serves the redirect
+ *  directly in one clean hop. A base that already carries a subdomain
+ *  (https://www.mvpl.ink) is used as-is, so this stays overridable. */
+const PASSPORT_DOMAIN = 'https://www.mvpl.ink'
+
 function brandedShortBase(): string {
-  const explicit = (process.env.PASSPORT_LINK_BASE || '').trim().replace(/\/+$/, '')
-  if (!explicit) return ''
+  const explicit = (process.env.PASSPORT_LINK_BASE || '').trim().replace(/\/+$/, '') || PASSPORT_DOMAIN
   try {
     const u = new URL(explicit)
     if (u.hostname.split('.').length === 2) {
@@ -61,26 +73,18 @@ function brandedShortBase(): string {
   return explicit
 }
 
-/** The base URL a Passport Link is built on. Set PASSPORT_LINK_BASE to the short
- *  branded domain (e.g. https://www.mvpl.ink) once it's registered + pointed at
- *  the app; until then it defaults to the app origin, and the same codes keep
- *  working when the domain is swapped in (only this env changes). No trailing
+/** The base URL a Passport Link is built on: www.mvpl.ink, or whatever
+ *  PASSPORT_LINK_BASE points a non-production environment at. No trailing
  *  slash. */
 export function passportLinkBase(): string {
-  const branded = brandedShortBase()
-  if (branded) return branded
-  const app = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://www.mvpaffiliate.io').trim().replace(/\/+$/, '')
-  return app
+  return brandedShortBase()
 }
 
-/** Full public URL for a link code. On the branded short domain the redirect is
- *  served at the root via a host rewrite (www.mvpl.ink/x7k), so no /go segment;
- *  on the app's own domain (the pre-domain fallback) the route lives at /go/x7k. */
+/** Full public URL for a link code: www.mvpl.ink/x7k. The redirect is served at
+ *  the root via a host rewrite, so there is no /go segment. The app's own
+ *  /go/<code> route stays alive for links minted before the domain existed. */
 export function passportLinkUrl(code: string): string {
-  const branded = brandedShortBase()
-  if (branded) return `${branded}/${code}`
-  const app = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://www.mvpaffiliate.io').trim().replace(/\/+$/, '')
-  return `${app}/go/${code}`
+  return `${brandedShortBase()}/${code}`
 }
 
 /** Extract a Passport link CODE from a URL, or null if it isn't one. Recognizes
