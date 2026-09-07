@@ -34,6 +34,18 @@ export interface ExpressionOption {
   hint: string
   /** What the image model is told. Empty for 'auto'. */
   directive: string
+  /** Is a closed-mouth smile the WRONG answer for this one?
+   *
+   *  The face judge exists to catch the polite, non-committal closed-mouth
+   *  smile these models fall back to whenever an expression is hard, and telling
+   *  it to fail that smile is what makes it useful for Surprised or Confused.
+   *
+   *  It also made Confident unpassable. That expression is defined as "a knowing
+   *  closed-lip smirk", so the judge was told to reject the correct answer, said
+   *  DIFFERENT, paid for a re-render, and said DIFFERENT again. A guard that
+   *  fails the thing it is guarding is worse than no guard, so the rule is
+   *  per-expression rather than global. */
+  politeSmileIsWrong: boolean
 }
 
 export const EXPRESSIONS: ExpressionOption[] = [
@@ -42,6 +54,8 @@ export const EXPRESSIONS: ExpressionOption[] = [
     label: 'Auto',
     hint: 'MVP matches the face to the headline',
     directive: '',
+    // Never read: Auto generates no portrait and so is never judged.
+    politeSmileIsWrong: false,
   },
   {
     key: 'serious',
@@ -49,6 +63,8 @@ export const EXPRESSIONS: ExpressionOption[] = [
     hint: 'Straight talk, no gimmick',
     directive:
       'a level, unsmiling look straight down the lens: brows flat and relaxed, eyes steady and direct, lips closed with the jaw set. Composed and matter-of-fact, not angry, not stern, not glaring',
+    // Unsmiling is the whole point, so a polite smile is a real failure here.
+    politeSmileIsWrong: true,
   },
   {
     key: 'happy',
@@ -56,6 +72,7 @@ export const EXPRESSIONS: ExpressionOption[] = [
     hint: 'They liked it',
     directive:
       'a genuine warm smile that reaches the eyes: cheeks lifted, the corners of the eyes creasing, an easy open-lipped smile rather than a wide forced grin. Relaxed brows. It must read as a real person pleased with something, never a stock-photo smile',
+    politeSmileIsWrong: false,
   },
   {
     key: 'surprised',
@@ -63,6 +80,7 @@ export const EXPRESSIONS: ExpressionOption[] = [
     hint: 'Did not expect that',
     directive:
       'caught off guard: eyebrows high, forehead lightly creased, eyes wide and round, mouth open in a soft O. Genuine surprise, not fear and not a scream',
+    politeSmileIsWrong: true,
   },
   {
     key: 'skeptical',
@@ -70,6 +88,7 @@ export const EXPRESSIONS: ExpressionOption[] = [
     hint: 'Best over a question headline',
     directive:
       'openly doubtful: ONE eyebrow raised while the other stays level, eyes slightly narrowed and fixed on the lens, mouth closed and pressed a little to one side, chin dipped. Unconvinced and weighing it up, not annoyed',
+    politeSmileIsWrong: true,
   },
   {
     key: 'excited',
@@ -77,6 +96,7 @@ export const EXPRESSIONS: ExpressionOption[] = [
     hint: 'High energy, big reaction',
     directive:
       'lit up: eyebrows raised high, eyes wide and bright, a big open-mouthed grin mid-reaction as if talking, head tilted slightly back. Real energy, the face of someone in the middle of saying "look at this"',
+    politeSmileIsWrong: true,
   },
   {
     key: 'confused',
@@ -84,6 +104,7 @@ export const EXPRESSIONS: ExpressionOption[] = [
     hint: 'Wait, what?',
     directive:
       'puzzled: brows drawn together and pulled slightly up in the middle, forehead creased, head tilted to one side, mouth just open. Genuinely trying to work something out, not frowning in anger',
+    politeSmileIsWrong: true,
   },
   {
     key: 'unimpressed',
@@ -91,6 +112,7 @@ export const EXPRESSIONS: ExpressionOption[] = [
     hint: 'Honest, when it did not deliver',
     directive:
       'distinctly underwhelmed: eyelids lowered, one eyebrow slightly raised, mouth flat with the corners turned faintly down, a small shrug in the shoulders. Deadpan and unconvinced, never disgusted or sneering',
+    politeSmileIsWrong: true,
   },
   {
     key: 'confident',
@@ -98,6 +120,7 @@ export const EXPRESSIONS: ExpressionOption[] = [
     hint: 'The verdict is in',
     directive:
       'a knowing closed-lip smirk, one corner of the mouth up, chin slightly raised, eyes calm and locked on the lens, eyebrows relaxed. Someone who has already made up their mind and is about to tell you',
+    politeSmileIsWrong: false,
   },
 ]
 
@@ -145,4 +168,13 @@ export const EXPRESSION_LABEL: Record<ExpressionKey, string> = EXPRESSIONS.reduc
  *  noise diluting the only sentence that matters. */
 export function expressionDescription(key: ExpressionKey): string | null {
   return BY_KEY.get(key)?.directive || null
+}
+
+/** Whether the face judge may treat a closed-mouth smile as an automatic fail.
+ *
+ *  False for Confident and Happy, whose correct answers ARE closed-lipped or
+ *  gently smiling. A judge told to reject that will reject the right portrait,
+ *  charge for a second render, and reject that one too. */
+export function politeSmileIsWrong(key: ExpressionKey): boolean {
+  return BY_KEY.get(key)?.politeSmileIsWrong === true
 }

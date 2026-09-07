@@ -91,7 +91,18 @@ export const parseVerdict = parseGarmentVerdict
  *  again, so this is the cheapest check in the pipeline and guards the most.
  *
  *  Same two rules as the garment check: it fails open, and it judges one thing. */
-export function expressionCheckPrompt(label: string, description: string): string {
+export function expressionCheckPrompt(label: string, description: string, politeSmileIsWrong = true): string {
+  // THE CLAUSE THAT MADE ONE EXPRESSION UNPASSABLE. Failing the polite
+  // closed-mouth smile is what makes this check worth running for Surprised or
+  // Confused, where that smile is exactly the fallback we are hunting. It is
+  // also a description of the CORRECT answer for Confident ("a knowing
+  // closed-lip smirk") and close to it for Happy. Applied globally it told the
+  // judge to reject the right portrait, which it did, twice, with a paid
+  // re-render in between. So the caller says whether it applies.
+  const fallbackRule = politeSmileIsWrong
+    ? 'Say DIFFERENT when the face shows a clearly different emotion from the one described, or when it shows the neutral, polite closed-mouth smile that these models fall back to instead of committing to an expression.'
+    : 'Say DIFFERENT when the face shows a clearly different emotion from the one described. Note that a closed-mouth or gently smiling face may be exactly right here — judge it against the description above, not against how expressive it is.'
+
   return `This is a portrait generated to show one specific facial expression.
 
 THE EXPRESSION IT WAS SUPPOSED TO SHOW — "${label}": ${description}.
@@ -100,7 +111,7 @@ Answer with ONE word on the first line: MATCH, DIFFERENT, or UNSURE. Then one sh
 
 Judge ONLY the expression. Ignore who the person is, the lighting, the background and the image quality.
 
-Say DIFFERENT when the face shows a clearly different emotion from the one described, or when it shows the neutral, polite closed-mouth smile that these models fall back to instead of committing to an expression.
+${fallbackRule}
 
 Say MATCH when the emotion described is the one a viewer would name looking at this face, even if it is less exaggerated than the description.
 

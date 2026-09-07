@@ -10,6 +10,7 @@
 //
 // So: only an explicit DIFFERENT costs money. Everything else keeps the render.
 import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt } from '../lib/garment-match'
+import { EXPRESSIONS, politeSmileIsWrong } from '../lib/face-expression'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -69,7 +70,7 @@ check('UNSURE is neither', parseGarmentVerdict('UNSURE\nThe garment is mostly hi
 // It guards the one image everything downstream copies, so a judge with
 // opinions about identity or lighting would start rejecting good portraits.
 {
-  const p = expressionCheckPrompt('surprised (did not expect that)', 'eyebrows high, eyes wide, mouth open in a soft O')
+  const p = expressionCheckPrompt('surprised (did not expect that)', 'eyebrows high, eyes wide, mouth open in a soft O', true)
   check('it names the expression it is judging', /surprised/.test(p) && /eyebrows high/.test(p))
   check('it judges the expression only', /Judge ONLY the expression/.test(p))
   check('it ignores who the person is', /Ignore who the person is/.test(p))
@@ -78,6 +79,54 @@ check('UNSURE is neither', parseGarmentVerdict('UNSURE\nThe garment is mostly hi
   check('it forgives a less exaggerated version',
     /even if it is less exaggerated/.test(p), 'or every real face gets rejected for not being a caricature')
   check('and it still allows UNSURE', /UNSURE/.test(p))
+}
+
+// ── the fallback rule must not fail the expressions it describes ────────────
+// Confident is defined as "a knowing closed-lip smirk". Told globally to reject
+// the polite closed-mouth smile, the judge rejected the correct portrait, paid
+// for a re-render, and rejected that one too. A guard that fails the thing it
+// guards is worse than no guard.
+{
+  const lenient = expressionCheckPrompt('confident (the verdict is in)', 'a knowing closed-lip smirk, chin slightly raised', false)
+  check('a closed-lip expression is not auto-failed for being closed-lipped',
+    !/polite closed-mouth smile that these models fall back to/.test(lenient), lenient)
+  check('and the judge is told a closed mouth may be right here',
+    /closed-mouth or gently smiling face may be exactly right/.test(lenient))
+  check('but it still judges against the description',
+    /judge it against the description above/.test(lenient))
+  check('and it still fails a genuinely different emotion',
+    /clearly different emotion from the one described/.test(lenient))
+
+  const strict = expressionCheckPrompt('surprised (did not expect that)', 'eyes wide', true)
+  check('the strict version keeps the fallback rule',
+    /polite closed-mouth smile that these models fall back to/.test(strict))
+  check('the two versions are genuinely different prompts', strict !== lenient)
+  check('strict is the default, so a new expression is guarded until told otherwise',
+    expressionCheckPrompt('x', 'y') === strict.replace('surprised (did not expect that)', 'x').replace('eyes wide', 'y'))
+}
+
+// ── every expression declares whether a closed mouth is a failure ───────────
+{
+  for (const e of EXPRESSIONS) {
+    check(`${e.key} declares the flag`, typeof e.politeSmileIsWrong === 'boolean')
+  }
+  check('confident does not treat a closed mouth as failure',
+    politeSmileIsWrong('confident') === false,
+    'its own directive is "a knowing closed-lip smirk"')
+  check('happy does not either', politeSmileIsWrong('happy') === false)
+  check('surprised does', politeSmileIsWrong('surprised') === true)
+  check('serious does, since unsmiling is the point', politeSmileIsWrong('serious') === true)
+  check('unimpressed does', politeSmileIsWrong('unimpressed') === true)
+  // The flag must agree with the words. An expression whose own description
+  // asks for a closed or smiling mouth cannot also be failed for having one.
+  for (const e of EXPRESSIONS) {
+    if (!e.directive) continue
+    const wantsClosedOrSmiling = /closed-lip|closed-lip smirk|warm smile/.test(e.directive)
+    if (wantsClosedOrSmiling) {
+      check(`${e.key}: the flag matches its own description`, e.politeSmileIsWrong === false,
+        `it asks for ${/closed-lip/.test(e.directive) ? 'a closed-lip mouth' : 'a smile'} and would be failed for producing one`)
+    }
+  }
 }
 
 // ── one parser, two callers ─────────────────────────────────────────────────

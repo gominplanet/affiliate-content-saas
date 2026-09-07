@@ -28,7 +28,7 @@ import { bakeSimpleHeadline, compositeBadgeOnly, NEON_BORDER_STYLE_COUNT, type T
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { detectWearable, wearDirective } from '@/lib/wear-product'
-import { normalizeExpression, expressionDirective, expressionDescription, EXPRESSION_LABEL } from '@/lib/face-expression'
+import { normalizeExpression, expressionDirective, expressionDescription, EXPRESSION_LABEL, politeSmileIsWrong } from '@/lib/face-expression'
 import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt, type GarmentVerdict } from '@/lib/garment-match'
 import { buildGraphicThumbnailPrompt } from '@/lib/thumbnail-prompt'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
@@ -715,6 +715,9 @@ async function portraitShowsExpression(opts: {
   portraitPng: Buffer | Uint8Array
   label: string
   description: string
+  /** Whether a closed-mouth smile counts as a failure for THIS expression. It
+   *  does not for Confident, whose correct answer is a closed-lip smirk. */
+  politeSmileIsWrong: boolean
 }): Promise<GarmentVerdict> {
   try {
     const anthropic = createAnthropicClient()
@@ -725,7 +728,7 @@ async function portraitShowsExpression(opts: {
         role: 'user',
         content: [
           { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png' as const, data: Buffer.from(opts.portraitPng).toString('base64') } },
-          { type: 'text' as const, text: expressionCheckPrompt(opts.label, opts.description) },
+          { type: 'text' as const, text: expressionCheckPrompt(opts.label, opts.description, opts.politeSmileIsWrong) },
         ],
       }],
     }))
@@ -794,6 +797,18 @@ async function headAndNeckCrop(png: Buffer | Uint8Array): Promise<{ bytes: Buffe
     const H = meta.height ?? 0
     if (!W || !H) return { bytes: png, cropped: false }
 
+    // ASK THE QUESTION OF A SMALL COPY. This is the only place in the pipeline
+    // that would otherwise hand a vision model a raw creator selfie, and a phone
+    // selfie normalised to PNG runs to several megabytes before base64 adds a
+    // third on top. The other two checks send an Amazon thumbnail and a
+    // generated 1024px portrait, which is why they never hit this. A face box is
+    // returned in fractions of the frame, so it applies to the full-resolution
+    // original unchanged and nothing is lost by asking about a small JPEG.
+    const probe = await sharp(src)
+      .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer()
+
     const anthropic = createAnthropicClient()
     const msg = await withAnthropicRetry(() => anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -801,7 +816,7 @@ async function headAndNeckCrop(png: Buffer | Uint8Array): Promise<{ bytes: Buffe
       messages: [{
         role: 'user',
         content: [
-          { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png' as const, data: src.toString('base64') } },
+          { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: probe.toString('base64') } },
           { type: 'text' as const, text: FACE_BOX_PROMPT },
         ],
       }],
@@ -811,8 +826,19 @@ async function headAndNeckCrop(png: Buffer | Uint8Array): Promise<{ bytes: Buffe
       feature: 'yt_thumb_head_crop', model: 'claude-haiku-4-5-20251001',
     })
 
-    const rect = headCropRect(parseFaceBox((msg.content[0] as { type: string; text?: string })?.text), W, H)
-    if (!rect) return { bytes: png, cropped: false }
+    // Each failure gets its own line. "Could not be cropped" covers a refusal, a
+    // box the parser rejected and a face too small to use, and those need
+    // different fixes, so the log has to say which one happened.
+    const box = parseFaceBox((msg.content[0] as { type: string; text?: string })?.text)
+    if (!box) {
+      console.warn('[head-crop] no usable face box:', String((msg.content[0] as { text?: string })?.text ?? '').slice(0, 160))
+      return { bytes: png, cropped: false }
+    }
+    const rect = headCropRect(box, W, H)
+    if (!rect) {
+      console.warn(`[head-crop] face too small to crop: box=${JSON.stringify(box)} image=${W}x${H}`)
+      return { bytes: png, cropped: false }
+    }
 
     let img = sharp(src).extract(rect)
     // A crop is by definition smaller than what it came from, and a small face
@@ -2152,6 +2178,7 @@ export async function POST(request: Request) {
           if (posed && portraitPrompt && expressionDesc) {
             const v = await portraitShowsExpression({
               portraitPng: posed, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
+              politeSmileIsWrong: politeSmileIsWrong(expressionKey),
             })
             expressionVerified = v.match
             if (v.match === false) {
@@ -2167,6 +2194,7 @@ export async function POST(request: Request) {
                 recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxModelOverride ?? 'gpt-image', images: 1 })
                 expressionVerified = (await portraitShowsExpression({
                   portraitPng: retry, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
+                  politeSmileIsWrong: politeSmileIsWrong(expressionKey),
                 })).match
               }
             }
