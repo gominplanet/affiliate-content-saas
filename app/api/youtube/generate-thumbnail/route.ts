@@ -869,9 +869,13 @@ async function generateExpressionPortrait(opts: {
   if (!opts.refs.length) return null
   try {
     const openai = createOpenAIService()
-    const prompt = `A clean, close-up SOLO head-and-shoulders portrait of EXACTLY ONE person — the main subject of the reference photos. Reproduce their facial identity exactly: same bone structure, same eye shape and colour, same nose, same lip shape, same hair colour, texture and style, same skin tone, same apparent age, same facial hair, same distinguishing marks. A viewer who knows them must recognise them instantly.
+    const prompt = `A clean, close-up SOLO head-and-shoulders portrait of EXACTLY ONE person — the main subject of the reference photos. Reproduce their facial identity exactly: same bone structure, same eye colour, same nose, same hair colour, texture and style, same skin tone, same apparent age, same facial hair, same distinguishing marks. A viewer who knows them must recognise them instantly.
 
-THE ONE THING THAT CHANGES IS THEIR EXPRESSION. ${opts.expressionDirectiveText}
+Their eye and lip SHAPE means the shape of those features at rest — their proportions, not their current position. It does NOT mean the eyes must stay half-closed or the mouth must stay shut. Eyes widen, brows lift, mouths open, and the person is still themselves throughout. If the expression below calls for a wide eye or an open mouth, the eye opens and the mouth opens.
+
+THE ONE THING THAT CHANGES IS THEIR EXPRESSION, AND IT MUST BE UNMISTAKABLE. A polite closed-mouth smile is the default this model falls back to whenever an expression is hard, and it is the wrong answer for every expression except a warm one. Commit to the description below: if it asks for a raised brow, raise it visibly; if it asks for an open mouth, open it. A viewer glancing at this face for a quarter of a second must be able to name the emotion.
+
+${opts.expressionDirectiveText}
 
 The reference photos show this person with a DIFFERENT expression from the one described above. Do not copy the expression, eyebrow position, mouth position or head angle from them — take only WHO the person is. A person's face is still unmistakably their own face when they change what it is doing, and that is exactly what this image must show.
 
