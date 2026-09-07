@@ -2009,76 +2009,88 @@ export async function POST(request: Request) {
           }
           if (!primary) throw new Error('no readable face photo for graphic mode')
 
-          // THE EXPRESSION HAS TO BE IN THE REFERENCE, NOT IN A SENTENCE.
-          //
-          // The design step treats these selfies as the highest-priority thing
-          // in the brief and copies the face in them, expression included. Six
-          // renders proved that a written instruction does not beat a
-          // photograph, and it should not: that same instinct is what keeps a
-          // creator recognisable. So we hand it a photograph that agrees —
-          // the same person, already wearing the expression they chose.
-          //
-          // Best-effort by design. One extra image call, only when a creator
-          // actually picked something, and any failure leaves the original
-          // selfies in place so the design still renders.
-          if (expressionLine) {
-            const portraitRefs = [
-              { data: primary, filename: 'face_0.png', mime: 'image/png' },
-              ...extraPhotoBytes.slice(0, 2).map((b, i) => ({ data: b, filename: `face_${i + 1}.png`, mime: 'image/png' as const })),
-            ]
-            const portraitPrompt = buildExpressionPortraitPrompt(expressionKey)
-            let posed = portraitPrompt ? await generateExpressionPortrait({
-              refs: portraitRefs,
-              promptText: portraitPrompt,
-              imageModel: gfxModelOverride,
-            }) : null
-
-            // LOOK AT IT. The design step copies this face, so a portrait that
-            // came back with the polite smile these models default to makes a
-            // thumbnail with a polite smile whatever the creator picked — the
-            // exact failure that took an afternoon to find, because nobody could
-            // see this intermediate image. A fraction of a cent to check,
-            // against $0.06 to render it again: the cheapest guard here, on the
-            // one image everything downstream depends on.
-            const expressionDesc = expressionDescription(expressionKey)
-            if (posed && portraitPrompt && expressionDesc) {
-              const v = await portraitShowsExpression({
-                portraitPng: posed, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
-              })
-              expressionVerified = v.match
-              if (v.match === false) {
-                console.warn(`[expression-check] re-rendering the portrait once: ${v.reason}`)
-                const retry = await generateExpressionPortrait({
-                  refs: portraitRefs,
-                  promptText: `${portraitPrompt}\n\nTHE PREVIOUS ATTEMPT AT THIS PORTRAIT GOT THE EXPRESSION WRONG: ${v.reason} Commit to the expression described above, visibly and unambiguously.`,
-                  imageModel: gfxModelOverride,
-                })
-                if (retry) {
-                  posed = retry
-                  expressionRetried = true
-                  recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxModelOverride ?? 'gpt-image', images: 1 })
-                  expressionVerified = (await portraitShowsExpression({
-                    portraitPng: retry, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
-                  })).match
-                }
-              }
-            }
-            if (posed) {
-              // The new portrait leads. One original selfie stays behind it as a
-              // second identity anchor, so a drift in the generated face has
-              // something true to be pulled back toward.
-              const anchor = extraPhotoBytes[0] ?? primary
-              photoBytes = posed
-              extraPhotoBytes = [anchor]
-              expressionInReference = true
-              recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxModelOverride ?? 'gpt-image', images: 1 })
-            }
-          }
         } else if (gfxStoryboardFrame) {
           // No face model → the video's storyboard frame is the only identity source.
           photoBytes = await normalizeToPng(new Uint8Array(gfxStoryboardFrame.buffer))
         } else {
           throw new Error('no face identity for graphic mode')
+        }
+
+        // Runs for EVERY identity path, not just a saved face model. A creator
+        // working from SCOUT frames or a storyboard picks an expression the same
+        // way and was silently getting the prompt-only route, which is the one
+        // that does not work.
+        // Deliberately optional: the SCOUT path can reach here without an
+        // identity image if every frame crop failed to decode, and a portrait of
+        // nobody is not worth an image call.
+        // photoBytes! because TypeScript cannot see that every branch above
+        // either assigned it or threw; the `&& identityPng` guard below is the
+        // runtime half, for the SCOUT path where every frame crop could fail.
+        const identityPng: Buffer | Uint8Array | undefined = photoBytes!
+        // THE EXPRESSION HAS TO BE IN THE REFERENCE, NOT IN A SENTENCE.
+        //
+        // The design step treats these selfies as the highest-priority thing
+        // in the brief and copies the face in them, expression included. Six
+        // renders proved that a written instruction does not beat a
+        // photograph, and it should not: that same instinct is what keeps a
+        // creator recognisable. So we hand it a photograph that agrees —
+        // the same person, already wearing the expression they chose.
+        //
+        // Best-effort by design. One extra image call, only when a creator
+        // actually picked something, and any failure leaves the original
+        // selfies in place so the design still renders.
+        if (expressionLine && identityPng) {
+          const portraitRefs = [
+            { data: identityPng, filename: 'face_0.png', mime: 'image/png' },
+            ...extraPhotoBytes.slice(0, 2).map((b, i) => ({ data: b, filename: `face_${i + 1}.png`, mime: 'image/png' as const })),
+          ]
+          const portraitPrompt = buildExpressionPortraitPrompt(expressionKey)
+          let posed = portraitPrompt ? await generateExpressionPortrait({
+            refs: portraitRefs,
+            promptText: portraitPrompt,
+            imageModel: gfxModelOverride,
+          }) : null
+
+          // LOOK AT IT. The design step copies this face, so a portrait that
+          // came back with the polite smile these models default to makes a
+          // thumbnail with a polite smile whatever the creator picked — the
+          // exact failure that took an afternoon to find, because nobody could
+          // see this intermediate image. A fraction of a cent to check,
+          // against $0.06 to render it again: the cheapest guard here, on the
+          // one image everything downstream depends on.
+          const expressionDesc = expressionDescription(expressionKey)
+          if (posed && portraitPrompt && expressionDesc) {
+            const v = await portraitShowsExpression({
+              portraitPng: posed, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
+            })
+            expressionVerified = v.match
+            if (v.match === false) {
+              console.warn(`[expression-check] re-rendering the portrait once: ${v.reason}`)
+              const retry = await generateExpressionPortrait({
+                refs: portraitRefs,
+                promptText: `${portraitPrompt}\n\nTHE PREVIOUS ATTEMPT AT THIS PORTRAIT GOT THE EXPRESSION WRONG: ${v.reason} Commit to the expression described above, visibly and unambiguously.`,
+                imageModel: gfxModelOverride,
+              })
+              if (retry) {
+                posed = retry
+                expressionRetried = true
+                recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxModelOverride ?? 'gpt-image', images: 1 })
+                expressionVerified = (await portraitShowsExpression({
+                  portraitPng: retry, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
+                })).match
+              }
+            }
+          }
+          if (posed) {
+            // The new portrait leads. One original selfie stays behind it as a
+            // second identity anchor, so a drift in the generated face has
+            // something true to be pulled back toward.
+            const anchor = extraPhotoBytes[0] ?? identityPng
+            photoBytes = posed
+            extraPhotoBytes = [anchor]
+            expressionInReference = true
+            recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxModelOverride ?? 'gpt-image', images: 1 })
+          }
         }
 
         // Product image (unchanged — fetched separately).
