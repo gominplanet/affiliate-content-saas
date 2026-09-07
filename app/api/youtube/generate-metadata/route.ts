@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { footerBlocks } from '@/lib/yt-description-footer'
 import { clickableTitleRulesForYouTube } from '@/lib/clickable-titles'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
@@ -1134,17 +1135,13 @@ export async function POST(request: Request) {
     // Honor the creator's explicit preference (Brand Profile → Brand
      // Outreach Contact). Fall back to whichever channel they actually
      // filled in if the preferred one is empty.
-    const collabLine = (() => {
-      if (contactPreference === 'email' && contactEmail) {
-        return `Let's Work Together! Email me for collaborations: ${contactEmail}`
-      }
-      if (contactPreference === 'website' && websiteUrl) {
-        return `Let's Work Together! Check my WEBSITE for collaborations: ${websiteUrl}`
-      }
-      if (websiteUrl) return `Let's Work Together! Check my WEBSITE for collaborations: ${websiteUrl}`
-      if (contactEmail) return `Let's Work Together! Email me for collaborations: ${contactEmail}`
-      return ''
-    })()
+    // Both footer lines used to be built here independently and both fell back
+    // to websiteUrl, so a creator whose collaboration contact IS their website
+    // got the same address printed twice, three lines apart. Neither line was
+    // wrong alone; it was only visible in the assembled description. They are
+    // now built together, by a module that can be read and tested as one block.
+    const footer = footerBlocks({ websiteUrl, contactEmail, contactPreference })
+    const collabLine = footer.collabLine ?? ''
 
     const gearBlock = gearSections.map(section => {
       const itemLines = section.items
@@ -1194,8 +1191,8 @@ export async function POST(request: Request) {
     // Blog backlink — creates a loop between every YouTube video and the user's
     // blog. Read from their saved Blog URL (brand_profiles.website_url). Skipped
     // when the user hasn't set one.
-    if (websiteUrl) {
-      descParts.push(`----------`, `For more in depth reviews, make sure to check out my blog: ${websiteUrl}`)
+    if (footer.blogLine) {
+      descParts.push(`----------`, footer.blogLine)
     }
     if (collabLine) descParts.push(`----------`, collabLine)
     if (isProduct) {
