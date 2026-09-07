@@ -16,6 +16,7 @@ import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { asinFromAmazonUrl, resolveFinalUrl } from '@/lib/product-link'
 import { pinDestination, isBlockedPinLink, type PinDestinationKind } from '@/lib/pinterest-destination'
+import { tileImageFor } from '@/lib/tile-image'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -204,7 +205,7 @@ async function resolvePinDestinationFor(opts: {
   intRow: PinIntegration
   asin: string
   productTitle?: string
-  imageUrl?: string
+  imageUrl?: string | null
   affiliateUrl: string
 }) {
   const admin = createAdminClient()
@@ -237,6 +238,10 @@ async function resolvePinDestinationFor(opts: {
         tileError = 'no ASIN, so the product could not be added to the shop page'
         console.warn('[pin-destination] no ASIN; not pointing this pin at the shop page')
       }
+      // A tile with no picture is a blank grey card at the top of the page a pin
+      // just sent someone to, which is worse than the pin not linking there.
+      const tileImage = await tileImageFor(admin, opts.asin, opts.imageUrl)
+
       if (opts.asin) {
         // NEWEST FIRST. A pin sends someone to this page for THIS product, so
         // finding it at the bottom of a grid of forty tiles is the same as not
@@ -262,12 +267,14 @@ async function resolvePinDestinationFor(opts: {
               // your story" at the top. A pin sends someone here FOR this
               // product, so it belongs in that section and ticked on, not in
               // "More sales I found" at the bottom of the grid.
-              .update({ hidden: false, url: opts.affiliateUrl, position: topPosition, in_story: true }).eq('id', existing.id)
+              // image_url is refreshed too, so a tile written blank by an
+              // earlier version fills in the next time it is pinned.
+              .update({ hidden: false, url: opts.affiliateUrl, position: topPosition, in_story: true, ...(tileImage ? { image_url: tileImage } : {}) }).eq('id', existing.id)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           : await (admin as any).from('link_page_items').insert({
               page_id: page.id, user_id: opts.userId, kind: 'product',
               title: (opts.productTitle || 'Shop this').slice(0, 200),
-              url: opts.affiliateUrl, image_url: opts.imageUrl || null,
+              url: opts.affiliateUrl, image_url: tileImage,
               asin: opts.asin || null, source: 'pinterest',
               position: topPosition, hidden: false,
               // Lands in "Current deals · live in your story", ticked on, which
@@ -338,6 +345,11 @@ export async function publishAmazonPin(opts: {
   /** When set (Passport Links on), pin THIS link directly, skipping tag/geni.us
    *  resolution — the geo-routing link. */
   linkOverride?: string | null
+  /** The product photo for the SHOP TILE, which is a different picture from the
+   *  pin. The deal path renders a designed vertical pin and passes it as base64,
+   *  so imageUrl is empty there and the tile was being written with no image at
+   *  all: a blank grey card at the top of the page the pin sends people to. */
+  tileImageUrl?: string | null
 }): Promise<PublishPinResult> {
   const { intRow } = opts
   if (!intRow.pinterest_access_token) throw new Error('Pinterest is not connected.')
@@ -373,7 +385,8 @@ export async function publishAmazonPin(opts: {
   // product that is not on the page it lands on.
   const dest = await resolvePinDestinationFor({
     userId: opts.userId, intRow,
-    asin, productTitle: opts.productTitle, imageUrl: opts.imageUrl,
+    asin, productTitle: opts.productTitle,
+    imageUrl: opts.tileImageUrl || opts.imageUrl || null,
     affiliateUrl,
   })
   if (!dest.url) {

@@ -8,6 +8,7 @@
 // grid the bio points at.
 import { publishMedia } from '@/services/instagram'
 import { createFacebookService } from '@/services/facebook'
+import { tileImageFor } from '@/lib/tile-image'
 import { resolveAffiliateLink, finalizeSocialCaption, type PinIntegration } from '@/lib/amazon-pin-publish'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -73,15 +74,23 @@ async function syncLinkInBioTile(db: Db, userId: string, item: { asin: string; t
     if (item.asin) {
       const { data: existing } = await db.from('link_page_items').select('id').eq('page_id', page.id).eq('asin', item.asin).maybeSingle()
       if (existing?.id) {
-        await db.from('link_page_items').update({ in_story: inStory, hidden: false }).eq('id', existing.id).eq('user_id', userId)
+        // Refresh the picture too, so a tile written blank by an earlier
+        // version fills in the next time the product is pushed.
+        const refreshed = await tileImageFor(db, item.asin, item.imageUrl)
+        await db.from('link_page_items')
+          .update({ in_story: inStory, hidden: false, ...(refreshed ? { image_url: refreshed } : {}) })
+          .eq('id', existing.id).eq('user_id', userId)
         return
       }
     }
     const { data: last } = await db.from('link_page_items').select('position').eq('page_id', page.id).order('position', { ascending: false }).limit(1).maybeSingle()
     const position = (typeof last?.position === 'number' ? last.position : -1) + 1
+    // Shared with the pin path: a tile without a picture is a blank grey card,
+    // and "the caller had no image handy" is not a good enough reason for one.
+    const tileImage = await tileImageFor(db, item.asin, item.imageUrl)
     await db.from('link_page_items').insert({
       page_id: page.id, user_id: userId, kind: 'product',
-      title: item.title.slice(0, 200), url: item.url, image_url: item.imageUrl || null,
+      title: item.title.slice(0, 200), url: item.url, image_url: tileImage,
       asin: item.asin || null, source: 'amazon-social', position, hidden: false, in_story: inStory,
     })
   } catch { /* best-effort */ }

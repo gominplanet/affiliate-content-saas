@@ -68,6 +68,10 @@ export async function publishDealPin(opts: {
       intRow,
       asin: opts.asin,
       productTitle: opts.title,
+      // The product photo for the shop tile. Separate from the pin image on
+      // purpose: when the art-directed pin renders, it is passed as base64 and
+      // imageUrl is empty, which is how the tile ended up a blank grey card.
+      tileImageUrl: opts.productImageUrl,
       // Prefer the designed pin; fall back to the raw product photo if the
       // render failed so the deal still gets pinned.
       ...(designed
