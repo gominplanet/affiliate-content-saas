@@ -38,6 +38,15 @@ export interface PinDestination {
   kind: PinDestinationKind
   /** Shown to the creator. Non-null whenever the answer is worth explaining. */
   note: string | null
+  /** True when the ONLY thing standing between this creator and working
+   *  Pinterest pins is a Link in Bio page they have not made yet.
+   *
+   *  Kept as a flag rather than left for the UI to sniff out of the message,
+   *  so the caller can offer the fix as a button instead of printing a
+   *  sentence and leaving them to find the page. */
+  needsLinkPage?: boolean
+  /** Where to send them to fix it. */
+  setupPath?: string
 }
 
 export interface PinDestinationInput {
@@ -82,16 +91,23 @@ export function pinDestination(input: PinDestinationInput): PinDestination {
     return {
       url: home,
       kind: 'homepage',
-      note: 'Pinterest does not allow affiliate redirect links, so this pin points at your site. Set up your Link in Bio page to send pins straight to the product instead.',
+      note: 'Pinterest does not allow affiliate redirect links, so this pin points at your site homepage. Set up your Link in Bio page and pins will land on the product itself.',
+      needsLinkPage: true,
+      setupPath: LINK_IN_BIO_PATH,
     }
   }
 
   return {
     url: null,
     kind: 'none',
-    note: 'Pinterest does not allow affiliate redirect links, and there is no page of yours to send this pin to yet. Set up your Link in Bio page, or connect your blog, and Pinterest will work.',
+    note: 'Pinterest does not allow affiliate redirect links, so a pin has to point at a page of yours. Set up your Link in Bio page and this product will be on it, ready to pin.',
+    needsLinkPage: true,
+    setupPath: LINK_IN_BIO_PATH,
   }
 }
+
+/** Where a creator makes the page this feature needs. */
+export const LINK_IN_BIO_PATH = '/link-in-bio'
 
 /** Is this URL one Pinterest will treat as a cloaked affiliate redirect?
  *

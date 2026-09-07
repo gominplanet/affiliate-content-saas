@@ -184,7 +184,14 @@ Return ONLY the caption text.` }],
       asin, title: deal.title as string, productImageUrl: dealImage,
       linkOverride: pinLink,
     })
-    results.push({ platform: 'pinterest', ok: pinRes.ok, url: pinRes.url, error: pinRes.error })
+    // needsLinkPage rides along so the modal can offer "Set up Link in Bio" as
+    // a step rather than printing a sentence and leaving them to find it. A pin
+    // refused for this reason is one setup away from working, which reads very
+    // differently from a platform rejecting your content.
+    results.push({
+      platform: 'pinterest', ok: pinRes.ok, url: pinRes.url, error: pinRes.error,
+      ...(pinRes.needsLinkPage ? { needsLinkPage: true, setupPath: pinRes.setupPath } : {}),
+    })
     if (pinRes.note && !geniuslinkNote) geniuslinkNote = pinRes.note
   }
 

@@ -27,7 +27,15 @@ function defaultSchedule(): { date: string; time: string } {
 }
 
 export interface QuickPostDeal { asin: string; title: string; imageUrl: string | null }
-interface PostResult { platform: string; ok: boolean; url?: string; error?: string }
+interface PostResult {
+  platform: string; ok: boolean; url?: string; error?: string
+  /** Pinterest only, and not really a failure: the pin was refused because
+   *  there is no page of the creator's to point at yet (Pinterest does not
+   *  accept affiliate redirect links). One setup step from working, so it is
+   *  shown as a step to take rather than as a platform rejecting their content. */
+  needsLinkPage?: boolean
+  setupPath?: string
+}
 
 // Turn a raw platform API error into something a creator can act on. The socials
 // hand back long JSON blobs (Meta) or terse strings ("Authentication failed")
@@ -225,13 +233,25 @@ export default function QuickPostModal({
             <div className="space-y-1.5">
               {results.map((r) => {
                 const fe = r.ok ? null : friendlyPostError(r.platform, r.error)
+                // A missing Link in Bio page is the one "failure" here that the
+                // creator can fix in a minute, so it gets the amber treatment
+                // and a way to go and do it, not a red line among red lines.
+                const setup = !r.ok && r.needsLinkPage
                 return (
                   <div key={r.platform} className="flex items-start gap-2 text-sm">
-                    {r.ok ? <Check size={15} className="text-emerald-600 mt-0.5" /> : <AlertCircle size={15} className="text-red-600 mt-0.5 shrink-0" />}
+                    {r.ok
+                      ? <Check size={15} className="text-emerald-600 mt-0.5" />
+                      : <AlertCircle size={15} className={`mt-0.5 shrink-0 ${setup ? 'text-amber-600' : 'text-red-600'}`} />}
                     <span className="capitalize font-medium shrink-0">{r.platform === 'instagram_story' ? 'Instagram Story' : (QUICK_PLATFORMS.find((p) => p.key === r.platform)?.label || r.platform)}</span>
                     {r.ok
                       ? (r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs mt-0.5">view</a> : <span className="text-xs text-muted-foreground mt-0.5">posted</span>)
-                      : (
+                      : setup ? (
+                        <span className="text-xs text-amber-700 dark:text-amber-500 min-w-0">
+                          {r.error}
+                          {' '}
+                          <a href={r.setupPath || '/link-in-bio'} className="underline font-medium whitespace-nowrap">Set up Link in Bio →</a>
+                        </span>
+                      ) : (
                         <span className="text-xs text-red-600 min-w-0">
                           {fe!.text}
                           {fe!.fixHref && (

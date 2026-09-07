@@ -18,8 +18,13 @@ export interface DealPinResult {
   ok: boolean
   url?: string
   error?: string
-  /** Soft note (e.g. Geniuslink hiccup) — the pin still published. */
+  /** Soft note (e.g. Geniuslink hiccup, or which page the pin points at) — the
+   *  pin still published. */
   note?: string | null
+  /** The pin was refused ONLY because there is no page of the creator's to
+   *  point at. One setup step from working, so the caller offers the step. */
+  needsLinkPage?: boolean
+  setupPath?: string
 }
 
 /**
@@ -72,6 +77,14 @@ export async function publishDealPin(opts: {
     })
     return { ok: true, url: pin.pinUrl, note: pin.geniuslinkNote }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not publish the pin.' }
+    // A pin refused only because the creator has no page to point at is not a
+    // failure to report and move on from; it is one setup step away from
+    // working. Pass that through so the caller can offer the step.
+    const e = err as Error & { needsLinkPage?: boolean; setupPath?: string }
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'Could not publish the pin.',
+      ...(e?.needsLinkPage ? { needsLinkPage: true, setupPath: e.setupPath || '/link-in-bio' } : {}),
+    }
   }
 }

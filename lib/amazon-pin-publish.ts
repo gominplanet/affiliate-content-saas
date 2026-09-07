@@ -322,7 +322,16 @@ export async function publishAmazonPin(opts: {
     asin, productTitle: opts.productTitle, imageUrl: opts.imageUrl,
     affiliateUrl,
   })
-  if (!dest.url) throw new Error(dest.note || 'Pinterest needs a page of your own to link to.')
+  if (!dest.url) {
+    // Carries the flag so the caller can offer the fix as a button instead of
+    // printing a sentence and leaving the creator to find the page themselves.
+    const err = new Error(dest.note || 'Pinterest needs a page of your own to link to.') as Error & {
+      needsLinkPage?: boolean; setupPath?: string
+    }
+    err.needsLinkPage = true
+    err.setupPath = dest.setupPath
+    throw err
+  }
   const linkUrl = dest.url
   // Belt and braces. Whatever assembled this, an affiliate redirect must not be
   // what Pinterest sees, because the failure is not a rejected request: it is a

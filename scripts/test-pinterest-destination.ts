@@ -58,6 +58,19 @@ const APP = 'https://www.mvpaffiliate.io'
     none.url === null && none.kind === 'none',
     'publishing a pin we know will be rejected, then showing the creator Pinterest\'s spam wording, blames them for our gap')
   check('and it explains what to set up', /Link in Bio/.test(none.note || ''), none.note || 'null')
+
+  // ── the fix is offered, not just described ────────────────────────────────
+  // A sentence telling someone to go and make a page, with no way to get there,
+  // is a dead end dressed up as help.
+  check('the no-page case is flagged so the UI can offer a button',
+    none.needsLinkPage === true && none.setupPath === '/link-in-bio',
+    JSON.stringify({ needsLinkPage: none.needsLinkPage, setupPath: none.setupPath }))
+  check('and so is the homepage fallback, where a page would be an upgrade',
+    home.needsLinkPage === true && home.setupPath === '/link-in-bio')
+  check('but a working shop page prompts nothing',
+    pinDestination({ shopHandle: 'lisa', appOrigin: APP }).needsLinkPage !== true)
+  check('and neither does a blog post',
+    pinDestination({ blogPostUrl: 'https://mine.com/p', appOrigin: APP }).needsLinkPage !== true)
 }
 
 // ── junk in the inputs must not become a destination ────────────────────────
