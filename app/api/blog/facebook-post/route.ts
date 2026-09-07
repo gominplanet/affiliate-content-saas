@@ -16,8 +16,9 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { postProductAsin } from '@/lib/post-product-link'
 import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
-import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
+import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
 import { blogShareUrl } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { spendGate } from '@/lib/ai-spend'
@@ -175,7 +176,12 @@ Return ONLY the post text, nothing else.`,
     // product before reading, then the review blurb + blog link follow, and the
     // disclaimer repeats at the very end. Never falls back to the blog URL, so it
     // only appears when the post has a real product link.
+    // Does this link land on Amazon? Decided BEFORE cloaking, because after it
+    // the URL cannot say: that is what cloaking is. Amazon policy 6(w) requires
+    // the placement to make clear it links to an Amazon Site, and the CTA is the
+    // only thing that can, since nobody reads mvpl.ink/x7k as Amazon.
     let affiliateLink = resolvePostAffiliateLink(post)
+    const amazonDestination = isAmazonLink(affiliateLink) || !!postProductAsin(post as { content?: string | null })
     // Cloak the product CTA link at post time per the creator's chosen Link style
     // (Geniuslink → correct per-site group + persisted code; Bitly → shorten;
     // Direct/Passport → unchanged). Best-effort; falls back to the tagged link.
@@ -207,6 +213,7 @@ Return ONLY the post text, nothing else.`,
     const caption = composeCaption({
       product: pref.product, content: pref.content, writeUp: reviewText,
       blogUrl: shareUrl, videoUrl, affiliateLink, disclosure, blogLabel: 'Read the full post',
+      amazonDestination,
     })
     // The link-post fallback (no image) points at whichever link is primary.
     const fallbackLink = primaryCardUrl(pref, affiliateLink, shareUrl, videoUrl) ?? shareUrl

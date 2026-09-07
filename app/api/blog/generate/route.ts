@@ -1393,7 +1393,15 @@ async function handleGenerate(request: Request) {
   //         Idempotent — safe on rebuild (won't double-stack).
   try {
     if (productUrl) {
-      const stripIsAmazon = /^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(productUrl)
+      // The ASIN decides this, not the URL. productUrl is the creator's CLOAKED
+      // link (Passport, geni.us, Bitly), and a cloaked link by definition does
+      // not read as Amazon, so this regex said "not Amazon" for exactly the
+      // creators MVP steers toward. The button then said "Get the best price
+      // today" and the disclaimer said "the seller's website", on a link that
+      // goes to Amazon: unclear placement under Associates policy 6(w), and the
+      // "As an Amazon Associate we earn from qualifying purchases" line dropped
+      // off the page with it. If we resolved an ASIN, it is Amazon.
+      const stripIsAmazon = !!effectiveAsin || /^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(productUrl)
       content = injectPriceStrip(content, {
         affiliateUrl: productUrl,
         isAmazon: stripIsAmazon,

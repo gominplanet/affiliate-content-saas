@@ -44,9 +44,10 @@ import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
 import { publishPinForPost } from '@/lib/pin-publish'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { postProductAsin } from '@/lib/post-product-link'
 import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
-import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
+import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
@@ -519,6 +520,10 @@ async function publishOne(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let schedAffiliateLink = resolvePostAffiliateLink(post as any)
+  // Decided BEFORE the cloak below: a wrapped link cannot say where it lands,
+  // and Amazon policy 6(w) needs the CTA beside it to make that clear.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const schedAmazonDestination = isAmazonLink(schedAffiliateLink) || !!postProductAsin(post as any)
   // "If a user has a Geniuslink, MVP always uses it." A post generated during a
   // brief Geniuslink outage has no code, so this resolves to the raw Amazon
   // tagged link. When the creator has Geniuslink connected, build one now (in
@@ -676,6 +681,7 @@ async function publishOne(
         product: liPref.product, content: liPref.content, writeUp: stripLinkPlaceholders(row.body_text),
         blogUrl: url, videoUrl: schedVideoUrl, affiliateLink: schedAffiliateLink,
         disclosure: effectiveDisclosure(AFFILIATE_DISCLAIMER_DEFAULT, schedAffiliateLink, schedHasAmazonTag), blogLabel: 'Read the full review',
+        amazonDestination: schedAmazonDestination,
       })
       const postText = capSocialText(liComposed, SOCIAL_LIMITS.linkedin)
       const liCardUrl = primaryCardUrl(liPref, schedAffiliateLink, url, schedVideoUrl) ?? url
@@ -760,6 +766,7 @@ async function publishOne(
         product: fbPref.product, content: fbPref.content, writeUp: row.body_text,
         blogUrl: url, videoUrl: schedVideoUrl, affiliateLink: schedAffiliateLink,
         disclosure: effectiveDisclosure(disclaimer, schedAffiliateLink, schedHasAmazonTag), blogLabel: 'Read the full post',
+        amazonDestination: schedAmazonDestination,
       })
       const fbFallbackLink = primaryCardUrl(fbPref, schedAffiliateLink, url, schedVideoUrl) ?? url
       const fb = createFacebookService(fbPageToken, fbPageId)

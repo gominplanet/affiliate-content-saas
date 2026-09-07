@@ -57,8 +57,9 @@ export function youtubeWatchUrl(videoId: string | null | undefined): string | nu
   return videoId ? `https://www.youtube.com/watch?v=${videoId}` : null
 }
 
-/** Is this affiliate link an Amazon destination we can be sure about? geni.us
- *  and other routers are NOT counted (they route dynamically). */
+/** Is this affiliate link VISIBLY an Amazon destination? A cloaked link never is:
+ *  that is what cloaking means. Use `amazonDestination` when the caller knows
+ *  where the link lands (see productCtaLine). */
 export function isAmazonLink(url: string | null | undefined): boolean {
   if (!url) return false
   return /amazon\.[a-z.]+|amzn\.to/i.test(url)
@@ -76,9 +77,26 @@ export function effectiveDisclosure(base: string, affiliateLink: string | null, 
   return b
 }
 
-// Neutral unless the link is confirmably Amazon.
-function productCtaLine(link: string): string {
-  return isAmazonLink(link) ? `🛒 Grab it on Amazon 👉 ${link}` : `🛒 Get it here 👉 ${link}`
+/**
+ * The CTA that sits next to the product link, and the reason it must name the
+ * retailer.
+ *
+ * Amazon's Associates policy 6(w): "You will not use a link shortening service,
+ * button, hyperlink or other ad placement in a manner that makes it unclear that
+ * you are linking to an Amazon Site." Nobody can tell that mvpl.ink/x7k or
+ * geni.us/abc goes to Amazon by looking at it, so the words beside it are the
+ * only thing that makes it clear, and they are what keeps a creator's account
+ * safe.
+ *
+ * This used to decide by reading the URL, which a cloaked link defeats by
+ * design: the moment a creator picked Passport or Geniuslink, the very styles
+ * MVP recommends, their posts said "Get it here" next to a short link. So the
+ * caller passes what it KNOWS. It always knows: it started from an ASIN.
+ */
+function productCtaLine(link: string, amazonDestination: boolean): string {
+  return (amazonDestination || isAmazonLink(link))
+    ? `🛒 Grab it on Amazon 👉 ${link}`
+    : `🛒 Get it here 👉 ${link}`
 }
 function blogCtaLine(url: string, label: string): string { return `🔗 ${label}: ${url}` }
 function videoCtaLine(url: string): string { return `🎬 Want to see it in action? Watch the full review 👉 ${url}` }
@@ -121,6 +139,9 @@ export function composeCaption(opts: {
   affiliateLink: string | null
   disclosure: string
   blogLabel?: string
+  /** True when the affiliate link lands on Amazon, however it is wrapped. The
+   *  caller knows (it resolved the ASIN); the URL cannot say once cloaked. */
+  amazonDestination?: boolean
 }): string {
   const blogLabel = opts.blogLabel ?? 'Read the full post'
   const writeUp = opts.writeUp.trim()
@@ -129,7 +150,7 @@ export function composeCaption(opts: {
   const contentLine = contentCtaLine(opts.content, opts.blogUrl, opts.videoUrl, blogLabel)
 
   if (useProduct) {
-    const head = `${productCtaLine(opts.affiliateLink as string)}${disc ? `\n${disc}` : ''}`
+    const head = `${productCtaLine(opts.affiliateLink as string, opts.amazonDestination === true)}${disc ? `\n${disc}` : ''}`
     return [head, writeUp, contentLine].filter(Boolean).join('\n\n').trim()
   }
   return [contentLine, writeUp, disc].filter(Boolean).join('\n\n').trim()

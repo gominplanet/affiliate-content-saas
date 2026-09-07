@@ -18,8 +18,9 @@ import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { postProductAsin } from '@/lib/post-product-link'
 import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
-import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
+import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
 import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 60
@@ -171,7 +172,12 @@ Return ONLY the post text, no extra commentary.`,
     // Compose the caption per the user's LinkedIn link mode (blog / affiliate /
     // both). composeCaption places the affiliate + blog links and the FTC
     // disclosure in the right order; the write-up itself carries no links.
+    // Does this link land on Amazon? Decided BEFORE cloaking, because after it
+    // the URL cannot say: that is what cloaking is. Amazon policy 6(w) requires
+    // the placement to make clear it links to an Amazon Site, and the CTA is the
+    // only thing that can, since nobody reads mvpl.ink/x7k as Amazon.
     let affiliateLink = resolvePostAffiliateLink(post)
+    const amazonDestination = isAmazonLink(affiliateLink) || !!postProductAsin(post as { content?: string | null })
     // Cloak the product CTA link per the creator's chosen Link style (best-effort).
     if (affiliateLink) {
       affiliateLink = await ensureAffiliateShareLink(supabase, {
@@ -194,6 +200,7 @@ Return ONLY the post text, no extra commentary.`,
     const composed = composeCaption({
       product: pref.product, content: pref.content, writeUp: cleaned,
       blogUrl: shareUrl, videoUrl, affiliateLink, disclosure, blogLabel: 'Read the full review',
+      amazonDestination,
     })
     // LinkedIn's UGC API allows up to 3000 chars per post — defensive cap.
     const postText = capSocialText(composed, SOCIAL_LIMITS.linkedin)
