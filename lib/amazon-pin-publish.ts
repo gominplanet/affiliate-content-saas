@@ -228,6 +228,15 @@ async function resolvePinDestinationFor(opts: {
       shopHandle = page.handle as string
       // Put the product on the page before pinning at it. Upsert by ASIN so a
       // re-pin re-surfaces the existing tile instead of duplicating it.
+      // NO ASIN, NO SHOP DESTINATION. Without one there is nothing to put on the
+      // page, and pointing a pin at a grid that does not contain the product it
+      // advertises is the exact symptom this whole change exists to avoid. It
+      // used to skip the tile quietly and still return the shop page, which
+      // reproduces the bug rather than reporting it.
+      if (!opts.asin) {
+        tileError = 'no ASIN, so the product could not be added to the shop page'
+        console.warn('[pin-destination] no ASIN; not pointing this pin at the shop page')
+      }
       if (opts.asin) {
         // NEWEST FIRST. A pin sends someone to this page for THIS product, so
         // finding it at the bottom of a grid of forty tiles is the same as not
@@ -249,7 +258,11 @@ async function resolvePinDestinationFor(opts: {
         const { error: tileErr } = existing?.id
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ? await (admin as any).from('link_page_items')
-              .update({ hidden: false, url: opts.affiliateUrl, position: topPosition }).eq('id', existing.id)
+              // in_story: the page renders these under "Current deals · live in
+              // your story" at the top. A pin sends someone here FOR this
+              // product, so it belongs in that section and ticked on, not in
+              // "More sales I found" at the bottom of the grid.
+              .update({ hidden: false, url: opts.affiliateUrl, position: topPosition, in_story: true }).eq('id', existing.id)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           : await (admin as any).from('link_page_items').insert({
               page_id: page.id, user_id: opts.userId, kind: 'product',
@@ -257,6 +270,10 @@ async function resolvePinDestinationFor(opts: {
               url: opts.affiliateUrl, image_url: opts.imageUrl || null,
               asin: opts.asin || null, source: 'pinterest',
               position: topPosition, hidden: false,
+              // Lands in "Current deals · live in your story", ticked on, which
+              // is the section at the top of the page. A pin that sends someone
+              // here for one product should not put it below forty others.
+              in_story: true,
             })
         if (tileErr) {
           console.error('[pin-destination] could not put the product on the shop page:', tileErr.message)
