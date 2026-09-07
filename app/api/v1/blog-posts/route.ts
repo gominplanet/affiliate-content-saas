@@ -41,22 +41,39 @@ export async function GET(req: NextRequest) {
   )
 
   const admin = createAdminClient()
+  // link_style is derived from the published content by a trigger (migration
+  // 317), so it answers what a post actually contains rather than what the
+  // generator meant to do. Returned here so "why is this post on geni.us" never
+  // again needs a code hunt across nine generator routes.
+  //
+  // NAMED IN A LIST, SO IT IS ATTEMPTED AND NOT ASSUMED. PostgREST rejects the
+  // ENTIRE read when one named column does not exist, which is how naming
+  // blog_social_link_mode before migration 274 had run made every creator's
+  // link style resolve to 'direct' with nothing on screen to show it. A column
+  // that ships in an unapplied migration must cost that column and nothing
+  // else, so the query drops it and runs again rather than failing the endpoint.
+  const BASE_COLS = 'id, title, slug, status, post_type, wordpress_post_id, wordpress_url, published_at, created_at'
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query: any = admin
-    .from('blog_posts')
-    .select('id, title, slug, status, post_type, wordpress_post_id, wordpress_url, published_at, created_at')
-    .eq('user_id', auth.caller.userId)
-    .order('created_at', { ascending: false })
-    .limit(limit)
-
-  if (statusFilter && ['published', 'draft', 'failed', 'pending'].includes(statusFilter)) {
-    query = query.eq('status', statusFilter)
+  const build = (cols: string): any => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = admin
+      .from('blog_posts')
+      .select(cols)
+      .eq('user_id', auth.caller.userId)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (statusFilter && ['published', 'draft', 'failed', 'pending'].includes(statusFilter)) {
+      q = q.eq('status', statusFilter)
+    }
+    if (cursor) q = q.lt('created_at', cursor)
+    return q
   }
-  if (cursor) {
-    query = query.lt('created_at', cursor)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let { data, error } = await build(`${BASE_COLS}, link_style`)
+  if (error) {
+    console.warn('[v1/blog-posts] retrying without link_style:', error.message)
+    ;({ data, error } = await build(BASE_COLS))
   }
-
-  const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

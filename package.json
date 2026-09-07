@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run build:extension && npm run test:thumbnails && npm run test:access && npm run test:shorts && npm run test:render-filters && npm run test:passport && npm run test:link-cloak && npm run test:video-library && npm run test:video-insights && npm run test:video-products && npm run test:cc-products && npm run test:video-product-insights && npm run test:seo-steps && npm run test:blog-health && npm run test:cc-send && npm run test:campaign-library && npm run test:campaign-runway && npm run test:post-link && npm run test:health-claims && npm run test:campaign-rows && npm run test:wear && npm run test:disclosure && npm run test:expression && npm run test:garment && npm run test:thumb-prompt && npm run test:portrait && npm run test:head-crop && npm run test:framing && next build",
+    "build": "npm run build:extension && npm run test:thumbnails && npm run test:access && npm run test:shorts && npm run test:render-filters && npm run test:passport && npm run test:link-cloak && npm run test:video-library && npm run test:video-insights && npm run test:video-products && npm run test:cc-products && npm run test:video-product-insights && npm run test:seo-steps && npm run test:blog-health && npm run test:cc-send && npm run test:campaign-library && npm run test:campaign-runway && npm run test:post-link && npm run test:health-claims && npm run test:campaign-rows && npm run test:wear && npm run test:disclosure && npm run test:expression && npm run test:garment && npm run test:thumb-prompt && npm run test:portrait && npm run test:head-crop && npm run test:framing && npm run test:post-link-style && next build",
     "build:extension": "bash scripts/zip-extension.sh && bash scripts/zip-extension-store.sh",
     "start": "next start",
     "lint": "next lint",
@@ -36,6 +36,7 @@
     "test:thumb-prompt": "tsx scripts/test-thumbnail-prompt.ts",
     "test:head-crop": "tsx scripts/test-head-crop.ts",
     "test:framing": "tsx scripts/test-body-framing.ts",
+    "test:post-link-style": "tsx scripts/test-post-link-style.ts",
     "test:portrait": "tsx scripts/test-expression-portrait.ts"
   },
   "dependencies": {
