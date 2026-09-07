@@ -59,16 +59,21 @@ function* scenarios(): Generator<{ name: string; input: ThumbnailPromptInput }> 
     for (const worn of [true, false]) {
       for (const concept of [true, false]) {
         for (const inRef of expressionLine ? [true, false] : [false]) {
-          yield {
-            name: `${e.key}${worn ? ' + worn' : ''}${concept ? ' + concept' : ' + fallback'}${inRef ? ' + posed-ref' : ''}`,
-            input: base({
-              expressionLine,
-              expressionInReference: inRef,
-              wearLine: worn ? WEAR : null,
-              wearOn: worn ? POLO.on : null,
-              concept: concept ? base().concept : '',
-              palette: concept ? base().palette : '',
-            }),
+          // Only meaningful when the product is worn: it says whether the
+          // creator's own clothes were cropped out of the identity references.
+          for (const headOnly of worn ? [true, false] : [false]) {
+            yield {
+              name: `${e.key}${worn ? ' + worn' : ''}${concept ? ' + concept' : ' + fallback'}${inRef ? ' + posed-ref' : ''}${worn ? (headOnly ? ' + head-only refs' : ' + uncropped refs') : ''}`,
+              input: base({
+                expressionLine,
+                expressionInReference: inRef,
+                wearLine: worn ? WEAR : null,
+                wearOn: worn ? POLO.on : null,
+                refsAreHeadOnly: headOnly,
+                concept: concept ? base().concept : '',
+                palette: concept ? base().palette : '',
+              }),
+            }
           }
         }
       }
@@ -165,6 +170,19 @@ for (const { name, input } of all) {
       '"hero shot" plus "worn" is how a shirt lands on the person AND on a hanger')
     check(`[${name}] the garment gets the last word too`,
       /FINAL CHECK — THE GARMENT/.test(p))
+
+    // ── 5b. The clothing story is told one way, not both ────────────────────
+    // The root cause of the plain-polo regression was a photograph of the
+    // creator in a plain polo sitting in the reference set. Which sentence is
+    // correct depends entirely on whether that photograph is still there, and
+    // saying both is how the model learns that neither is load-bearing.
+    const onlyImage = /ONLY image here that shows clothing/.test(p)
+    const differentDay = /a photo of a different day/.test(p)
+    check(`[${name}] exactly one account of where clothing comes from`,
+      onlyImage !== differentDay, `onlyImage=${onlyImage} differentDay=${differentDay}`)
+    check(`[${name}] and it matches how the references were actually built`,
+      onlyImage === (input.refsAreHeadOnly === true),
+      'claiming the references carry no clothing while a full selfie is still in the set is the original bug, restated as a promise')
   }
 
   // ── 6. It is still a complete brief ───────────────────────────────────────

@@ -36,7 +36,9 @@ export default function AmazonThumbnailsPage() {
     sourceTitle?: string | null; sourceImage?: string | null
     expressionUsed?: string; wearApplied?: boolean; expressionViaPortrait?: boolean
     garmentMatch?: boolean | null; garmentNote?: string | null; garmentRetried?: boolean
+    garmentChecked?: boolean
     expressionVerified?: boolean | null; expressionRetried?: boolean
+    refsHeadOnly?: boolean; headCropNote?: string | null
   } | null>(null)
   const [question, setQuestion] = useHeadlineStyle()
   const [wear, setWear] = useWearProduct()
@@ -133,9 +135,12 @@ export default function AmazonThumbnailsPage() {
         garmentMatch: (data.garmentMatch as boolean | null) ?? null,
         garmentNote: (data.garmentNote as string | null) ?? null,
         garmentRetried: !!data.garmentRetried,
+        garmentChecked: !!data.garmentChecked,
         expressionVerified: (data.expressionVerified as boolean | null) ?? null,
         expressionRetried: !!data.expressionRetried,
         wearApplied: !!data.wearApplied,
+        refsHeadOnly: !!data.refsHeadOnly,
+        headCropNote: (data.headCropNote as string | null) ?? null,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed. Try again.')
@@ -343,7 +348,25 @@ export default function AmazonThumbnailsPage() {
                     <p className="text-[11px] text-[#1f7a4d] mt-0.5">
                       Garment checked against the product photo{result.garmentRetried ? ' (took a second attempt)' : ''}.
                     </p>
+                  ) : result.wearApplied ? (
+                    /* A blank line here used to look exactly like a passed
+                       check. It is not: it means nobody looked. */
+                    <p className="text-[11px] text-[#86868b] mt-0.5">
+                      The garment could not be checked this time, so compare it against the photo yourself.
+                    </p>
                   ) : null}
+                  {/* Whether the creator's own clothes were cropped out of the
+                      reference photos. When they were not, a render in the wrong
+                      shirt is very likely and this is the reason why, so it says
+                      so before the creator goes looking for a different cause. */}
+                  {result.wearApplied && result.headCropNote && (
+                    <p className="text-[11px] mt-0.5 leading-relaxed"
+                      style={{ color: result.refsHeadOnly ? '#86868b' : '#b45309' }}>
+                      {result.refsHeadOnly
+                        ? 'Your reference photos were cropped to head and neck, so only the product photo decides the clothing.'
+                        : `Heads up: ${result.headCropNote}.`}
+                    </p>
+                  )}
                   <p className="text-[11px] text-[#86868b] mt-0.5">
                     If this is not the product you meant, the ASIN is the wrong colour or variant.
                   </p>

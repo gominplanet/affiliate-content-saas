@@ -50,6 +50,9 @@ export interface ThumbnailPromptInput {
   wearLine?: string | null
   /** Where the product is worn, e.g. "worn on the torso". */
   wearOn?: string | null
+  /** True when every creator reference was cropped to head and neck, so the
+   *  product photo is the only image in the set that shows any clothing. */
+  refsAreHeadOnly?: boolean
   /** The wardrobe line used when nothing is worn. */
   outfitDirective?: string
   /** How the reference images are labelled and what they are for. */
@@ -69,9 +72,24 @@ export interface ThumbnailPromptInput {
 }
 
 /** The single source of the "make me wear it" fidelity rule, repeated at the end
- *  of the prompt because recency is what an image model actually weights. */
-export function garmentFinalCheck(): string {
-  return 'FINAL CHECK — THE GARMENT: the item on them is the one in the product reference photo. Same colour, same pattern and texture, same collar, same trim and contrast panels, same sleeve length. If the palette or the design would look better with a different colour, the reference still wins.'
+ *  of the prompt because recency is what an image model actually weights.
+ *
+ *  WHERE THE WRONG POLO WAS ACTUALLY COMING FROM. Six rounds of tightening this
+ *  sentence produced a plain pale polo on a creator whose product photo showed a
+ *  navy cable-knit one. The wording was never the problem: the creator's own
+ *  selfie showed him wearing a plain pale polo, and a photograph of a person
+ *  wearing a shirt beats any sentence about a different shirt, for the same
+ *  reason the reference selfie beat every written expression instruction.
+ *
+ *  So the real fix crops the clothing out of the references (lib/head-crop) and
+ *  this sentence's job changes: not to argue the point, but to say which of the
+ *  images in front of the model is the one that carries clothing at all. When
+ *  the crop could not run, that has to be said differently and honestly, since
+ *  a competing photograph is then still in the set. */
+export function garmentFinalCheck(refsAreHeadOnly?: boolean): string {
+  return `FINAL CHECK — THE GARMENT: the item on them is the one in the product reference photo. Same colour, same pattern and texture, same collar, same trim and contrast panels, same sleeve length. If the palette or the design would look better with a different colour, the reference still wins.${refsAreHeadOnly
+    ? ' The product photo is the ONLY image here that shows clothing: the creator reference photos are head-and-neck crops and contain no garment, so there is nothing else in this set to take a shirt from and nothing to average it against.'
+    : ' If any creator reference photo happens to show them wearing something, that is a photo of a different day and NOT this product: take the garment from the product photo alone, never from what they have on in a reference.'}`
 }
 
 /** The expression's last word, which differs depending on whether the reference
@@ -205,7 +223,7 @@ export function buildGraphicThumbnailPrompt(input: ThumbnailPromptInput): string
     '',
     'FRAMING: the canvas is a full 16:9 landscape (1536×864) and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout, the person\'s full head and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.',
     'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — make it POP.',
-    ...(input.wearLine ? ['', garmentFinalCheck()] : []),
+    ...(input.wearLine ? ['', garmentFinalCheck(input.refsAreHeadOnly)] : []),
     ...(input.expressionLine ? ['', expressionFinalCheck(input.expressionLine, input.expressionInReference === true)] : []),
   ].filter(Boolean).join('\n')
 }

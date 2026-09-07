@@ -32,6 +32,7 @@ import { normalizeExpression, expressionDirective, expressionDescription, EXPRES
 import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt, type GarmentVerdict } from '@/lib/garment-match'
 import { buildGraphicThumbnailPrompt } from '@/lib/thumbnail-prompt'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
+import { FACE_BOX_PROMPT, parseFaceBox, headCropRect, headCropNote } from '@/lib/head-crop'
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -764,6 +765,62 @@ async function garmentMatchesProduct(opts: {
     // Never let the guard break the thing it is guarding.
     console.warn('[garment-check] skipped:', e instanceof Error ? e.message : e)
     return { match: null, reason: 'check unavailable' }
+  }
+}
+
+/**
+ * Take the creator's own clothes out of an identity reference.
+ *
+ * Only used when the product is WORN. The design step treats the reference
+ * selfies as the identity lock and reproduces what it sees in them, clothing
+ * included, which is how a creator whose selfie shows a plain pale polo kept
+ * getting a plain pale polo in place of the navy cable-knit one in the product
+ * photo. No sentence fixes that. Removing the competing photograph does.
+ *
+ * A cheap vision call for the face box, then a crop at the base of the neck.
+ * Fails open in the only direction that is safe: any failure returns the
+ * original photo, because feeding in a badly cropped face would break the
+ * identity lock that is the whole point of the reference.
+ */
+async function headAndNeckCrop(png: Buffer | Uint8Array): Promise<{ bytes: Buffer | Uint8Array; cropped: boolean }> {
+  try {
+    const src = Buffer.from(png)
+    const meta = await sharp(src).metadata()
+    const W = meta.width ?? 0
+    const H = meta.height ?? 0
+    if (!W || !H) return { bytes: png, cropped: false }
+
+    const anthropic = createAnthropicClient()
+    const msg = await withAnthropicRetry(() => anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 120,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png' as const, data: src.toString('base64') } },
+          { type: 'text' as const, text: FACE_BOX_PROMPT },
+        ],
+      }],
+    }))
+    recordAnthropicUsage(msg, {
+      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_head_crop', model: 'claude-haiku-4-5-20251001',
+    })
+
+    const rect = headCropRect(parseFaceBox((msg.content[0] as { type: string; text?: string })?.text), W, H)
+    if (!rect) return { bytes: png, cropped: false }
+
+    let img = sharp(src).extract(rect)
+    // A crop is by definition smaller than what it came from, and a small face
+    // is a weak identity lock. Put the long edge back up to something the
+    // renderer can actually read a face out of.
+    if (Math.max(rect.width, rect.height) < 768) {
+      img = img.resize(768, 768, { fit: 'inside', withoutEnlargement: false })
+    }
+    return { bytes: await img.png().toBuffer(), cropped: true }
+  } catch (e) {
+    console.warn('[head-crop] skipped:', e instanceof Error ? e.message : e)
+    return { bytes: png, cropped: false }
   }
 }
 
@@ -1892,6 +1949,12 @@ export async function POST(request: Request) {
         // it took a second attempt. Surfaced so a wrong face is attributable.
         let expressionVerified: boolean | null = null
         let expressionRetried = false
+        // Whether the creator's own clothes were cropped out of the identity
+        // references. Only meaningful when the product is worn, and reported
+        // because the failure case is invisible otherwise: no crop means the
+        // creator's own shirt is still the most authoritative garment in the brief.
+        let refsAreHeadOnly = false
+        let headCropText: string | null = null
         // The garment judge's answer, and whether it cost a second render. Surfaced
         // on the result card so a wrong garment is attributable rather than argued about.
         // A holder, not two plain locals: the render (and so the check) runs
@@ -2093,6 +2156,44 @@ export async function POST(request: Request) {
           }
         }
 
+        // THE CREATOR'S OWN CLOTHES ARE A COMPETING PRODUCT PHOTO.
+        //
+        // "Make me wear it" kept returning a plain pale polo for a product photo
+        // showing a navy cable-knit one, intermittently, on the same ASIN, through
+        // six rounds of rewording. The reason it could never be worded away: the
+        // creator's reference selfie shows him wearing a plain pale polo. The design
+        // step is told those photos are the identity lock and the highest priority
+        // thing in the brief, and nothing in a photograph separates "who this person
+        // is" from "what they had on that day".
+        //
+        // It is the same mechanism that made every expression come back as the
+        // selfie's expression, and it takes the same answer. You do not out-argue a
+        // photograph. So when the product is worn, the clothing is cut out of every
+        // reference and the product photo becomes the only garment in the set.
+        //
+        // Skips the generated portrait, which is already a head-and-neck crop by
+        // construction. Failing to crop is not fatal, but it IS reported: the
+        // uncropped case is exactly when the wrong garment comes back, and it has
+        // spent long enough looking like a mystery.
+        // photoBytes! for the same reason as identityPng above: every branch
+        // assigns it or throws, and TypeScript cannot see that. The truthiness
+        // check is the runtime half, for the SCOUT path where every frame crop
+        // can fail and leave nothing to crop.
+        const primaryRef: Buffer | Uint8Array | undefined = photoBytes!
+        if (wearLine && primaryRef) {
+          const refs0: (Buffer | Uint8Array)[] = [primaryRef, ...extraPhotoBytes]
+          const cleaned = await Promise.all(refs0.map(async (b, i) => {
+            if (i === 0 && expressionInReference) return { bytes: b, cropped: true, generated: true }
+            return { ...(await headAndNeckCrop(b)), generated: false }
+          }))
+          photoBytes = cleaned[0].bytes
+          extraPhotoBytes = cleaned.slice(1).map(c => c.bytes)
+          const real = cleaned.filter(c => !c.generated)
+          refsAreHeadOnly = cleaned.every(c => c.cropped)
+          headCropText = headCropNote(real.filter(c => c.cropped).length, real.length)
+          if (!refsAreHeadOnly) console.warn('[head-crop] a creator reference kept its clothing; the wrong garment is likely')
+        }
+
         // Product image (unchanged — fetched separately).
         const productAb = productImageUrl
           ? await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
@@ -2227,11 +2328,24 @@ export async function POST(request: Request) {
               : expressionInReference
                 ? ' The first portrait was made for this design and the person in it is ALREADY wearing the exact expression this thumbnail needs — reproduce that expression as faithfully as you reproduce the face. It is a head-only crop and carries NO clothing information: take nothing about what they are wearing from it. Any later reference photo is there only to confirm identity; ignore the expression and the clothing in those too.'
                 : ' IMPORTANT — these photos define WHO this person is, not what their face is doing: take the bone structure, eye shape and colour, nose, lip shape, hair, skin tone, apparent age and distinguishing marks from them, and do NOT copy the expression, eyebrow position, mouth position, head angle or gaze direction you see in them. Those come from the FACIAL EXPRESSION instruction in this brief and from nowhere else. The same person wearing a completely different expression is still instantly recognisable as themselves, and that is exactly what is being asked for.'
+            // WHAT THE REFERENCE PHOTOS ARE FOR is the sentence that caused the
+            // wrong garment, so the scope belongs here and not only in the final
+            // check. A worn product means the creator's own clothes are a rival
+            // product photo, and the frame crop's "outfit context" is the one
+            // piece of context we now specifically do not want.
+            const frameContext = wearLine
+              ? (expressionLine ? 'hair style and lighting context' : 'pose, hair style and lighting context')
+              : (expressionLine ? 'outfit, hair style and lighting context' : 'pose, outfit, hair style, and lighting context')
+            const wardrobeSourceNote = !wearLine
+              ? ''
+              : refsAreHeadOnly
+                ? ' Every creator photo here is a head-and-neck crop showing no clothing at all, so the product reference is the only image in this set that carries a garment.'
+                : ' Whatever the creator has on in these photos is a different day and is NOT this product: take the garment from the product reference photo alone and never from what they are wearing in a reference.'
             const identityInstruction = (scoutUsedFaceModel && scoutFrameIdx
-              ? `Images 1–${creatorCount - 1} are close-up portrait photos of the creator — use these as the PRIMARY face identity source. Image ${creatorCount} is a cropped frame from the actual video — use it to match the creator's ${expressionLine ? 'outfit, hair style and lighting context' : 'pose, outfit, hair style, and lighting context'}. Together they give you both the exact face AND the real-video look.`
+              ? `Images 1–${creatorCount - 1} are close-up portrait photos of the creator — use these as the PRIMARY face identity source. Image ${creatorCount} is a cropped frame from the actual video — use it to match the creator's ${frameContext}. Together they give you both the exact face AND the real-video look.`
               : usingFaceModel
                 ? 'These are close-up portrait photos of the creator — use them for a strong face identity lock.'
-                : 'These are portrait-cropped regions from the creator\'s actual video — the face fills most of each reference image.') + expressionSourceNote
+                : 'These are portrait-cropped regions from the creator\'s actual video — the face fills most of each reference image.') + expressionSourceNote + wardrobeSourceNote
             if (sceneDirection) {
               // The creator typed a scene in "Describe your thumbnail" — let it
               // DRIVE the composition (setting, pose, expression, action, props)
@@ -2289,6 +2403,7 @@ export async function POST(request: Request) {
                 expressionInReference,
                 wearLine,
                 wearOn: wearable.on,
+                refsAreHeadOnly,
                 outfitDirective: wardrobeDirective(faceModel?.outfit_pref),
                 creatorRefLabel,
                 identityInstruction,
@@ -2402,8 +2517,17 @@ export async function POST(request: Request) {
           garmentMatch: garment.check ? garment.check.match : null,
           garmentNote: garment.check && garment.check.match === false ? garment.check.reason : null,
           garmentRetried: garment.retried,
+          // Whether the garment could be judged at all. A blank verdict used to
+          // be indistinguishable from a passed check on the card, which is how a
+          // wrong polo shipped looking verified.
+          garmentChecked: !!garment.check,
           wearApplied: !!wearLine,
           wearKind: wearable.kind,
+          // Did the creator's own clothes get cropped out of the references. The
+          // "no" case is the one that predicts a wrong garment, so it is never
+          // silent again.
+          refsHeadOnly: refsAreHeadOnly,
+          headCropNote: headCropText,
           thumbnailScores: gfxUrls.map(() => 0),
           thumbnailScore: 0,
           belowThreshold: false,
