@@ -30,6 +30,8 @@ import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { detectWearable, wearDirective } from '@/lib/wear-product'
 import { normalizeExpression, expressionDirective, EXPRESSION_LABEL } from '@/lib/face-expression'
 import { parseGarmentVerdict, GARMENT_CHECK_PROMPT, type GarmentVerdict } from '@/lib/garment-match'
+import { buildGraphicThumbnailPrompt } from '@/lib/thumbnail-prompt'
+import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -863,25 +865,15 @@ async function matchFaceModelToFrame<T extends { name: string; source_images: st
  */
 async function generateExpressionPortrait(opts: {
   refs: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }>
-  expressionDirectiveText: string
+  /** Built by lib/expression-portrait, where it can be read and tested. */
+  promptText: string
   imageModel?: string
 }): Promise<Uint8Array | null> {
   if (!opts.refs.length) return null
   try {
     const openai = createOpenAIService()
-    const prompt = `A clean, close-up SOLO head-and-shoulders portrait of EXACTLY ONE person — the main subject of the reference photos. Reproduce their facial identity exactly: same bone structure, same eye colour, same nose, same hair colour, texture and style, same skin tone, same apparent age, same facial hair, same distinguishing marks. A viewer who knows them must recognise them instantly.
+    const prompt = opts.promptText
 
-Their eye and lip SHAPE means the shape of those features at rest — their proportions, not their current position. It does NOT mean the eyes must stay half-closed or the mouth must stay shut. Eyes widen, brows lift, mouths open, and the person is still themselves throughout. If the expression below calls for a wide eye or an open mouth, the eye opens and the mouth opens.
-
-THE ONE THING THAT CHANGES IS THEIR EXPRESSION, AND IT MUST BE UNMISTAKABLE. A polite closed-mouth smile is the default this model falls back to whenever an expression is hard, and it is the wrong answer for every expression except a warm one. Commit to the description below: if it asks for a raised brow, raise it visibly; if it asks for an open mouth, open it. A viewer glancing at this face for a quarter of a second must be able to name the emotion.
-
-${opts.expressionDirectiveText}
-
-The reference photos show this person with a DIFFERENT expression from the one described above. Do not copy the expression, eyebrow position, mouth position or head angle from them — take only WHO the person is. A person's face is still unmistakably their own face when they change what it is doing, and that is exactly what this image must show.
-
-FRAMING — HEAD AND NECK ONLY. Crop at the base of the neck, above the collarbone. NO clothing, NO collar, NO shoulders, NO torso may be visible: this image exists to carry a face and nothing else. That matters because the design this feeds may put a specific garment on this person, and any clothing invented here would compete with it.
-
-Even, flattering studio lighting. Realistic natural skin texture with visible pores — not smoothed, not beauty-filtered, not de-aged. Plain, evenly lit neutral grey backdrop. No text, no logos, no props, and absolutely no second person anywhere in the frame.`
     const b64 = await openai.generateWithReferences({
       prompt, images: opts.refs, size: '1024x1024', quality: 'medium',
       ...(opts.imageModel ? { model: opts.imageModel } : {}),
@@ -1987,11 +1979,12 @@ export async function POST(request: Request) {
               { data: primary, filename: 'face_0.png', mime: 'image/png' },
               ...extraPhotoBytes.slice(0, 2).map((b, i) => ({ data: b, filename: `face_${i + 1}.png`, mime: 'image/png' as const })),
             ]
-            const posed = await generateExpressionPortrait({
+            const portraitPrompt = buildExpressionPortraitPrompt(expressionKey)
+            const posed = portraitPrompt ? await generateExpressionPortrait({
               refs: portraitRefs,
-              expressionDirectiveText: expressionLine,
+              promptText: portraitPrompt,
               imageModel: gfxModelOverride,
-            })
+            }) : null
             if (posed) {
               // The new portrait leads. One original selfie stays behind it as a
               // second identity anchor, so a drift in the generated face has
@@ -2035,12 +2028,10 @@ export async function POST(request: Request) {
             const briefPalette = (brief.palette || '').trim()
             const briefBanner = (brief.banner || '').trim()
             const briefCallouts = Array.isArray(brief.callouts) ? brief.callouts.filter(Boolean) : []
-            // Art-director-chosen reaction + gesture (varied per thumbnail). Empty
-            // on the fallback path → the render falls back to a generic reaction.
-            // The creator's pick replaces the brief's own reaction outright:
-            // handing the model both produces the average of two moods, which
-            // renders as a face doing nothing.
-            const briefExpression = expressionLine ? '' : (brief.expression || '').trim()
+            // The brief's own reaction and gesture are passed RAW to
+            // buildGraphicThumbnailPrompt, which owns the rule about what
+            // survives when the creator has chosen an expression. Deriving it
+            // here as well is how two copies of one rule drift apart.
             // Boost: an explicit pose (hold / wear / use / point / thumbs) beats the
             // brief's own gesture.
             // Wearing it beats any gesture: a pose that has them holding it up
@@ -2060,17 +2051,6 @@ export async function POST(request: Request) {
             const gfxWardrobe = wearLine
               ? `WARDROBE: they are wearing the product itself, and it keeps EXACTLY the colour, pattern, texture, collar and trim of the reference photo — never simplified, never recoloured, never a plain version of it. Any OTHER garment visible on them (a jacket over it, a shirt under it) is unpatterned so it does not compete; that applies to those garments only and NEVER to the product.`
               : wardrobeDirective(faceModel?.outfit_pref)
-            // When the creator chose a face, this line must not ask for one. Blanking
-            // briefExpression above dropped it into the fallback below, which asks
-            // for a "content-fitting expression" — and the content is a question
-            // headline, so content-fitting means skeptical. That is why Excited
-            // kept rendering as a frown. Now it carries the POSE only and points
-            // at the chosen expression rather than competing with it.
-            const personAction = expressionLine
-              ? `${briefPose ? `Pose: ${briefPose}. ` : ''}Their facial expression is the one specified separately in this brief — use exactly that and do not substitute a reaction you think suits the headline better.`
-              : briefExpression || briefPose
-                ? `Give them ${briefExpression || 'a natural, content-fitting reaction'}${briefPose ? `, ${briefPose}` : ''} — make the expression genuine and specific, not a generic stock smile.`
-                : 'Place them on one side reacting to the product with a genuine, content-fitting expression (not a generic smile).'
             // Content-fitting facial expression. gpt-image RE-RENDERS the person
             // (it doesn't paste the selfie), so the reference photos lock identity
             // while the prompt drives the expression. Seed the FIRST variant's
@@ -2198,71 +2178,37 @@ export async function POST(request: Request) {
                 ...(expressionLine ? ['', `FINAL CHECK — THE FACE: ${expressionLine}`] : []),
               ].join('\n')
             } else {
-            // The art director (Sonnet) already designed a bespoke, product-
-            // specific brief — lead with THAT (concept + palette + banner +
-            // callouts), the way ChatGPT briefs its image model. If the brief is
-            // empty (art-director call failed → plain copy fallback), fall back
-            // to the generic design-tools menu so it still isn't a flat template.
-            const creativeHead = briefConcept
-              ? [
-                  `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 16:9 landscape (1536×864) — in the polished style of today's top product-review creators. Bring THIS art-director brief (written specifically for this product) to life exactly:`,
-                  '',
-                  `DESIGN CONCEPT: ${briefConcept}`,
-                  // The concept is prose written by another model, and prose about
-                  // a product review tends to describe a face whether it was asked
-                  // to or not. It is the thing the render follows most closely, so
-                  // when the creator has chosen a face, the concept is told its
-                  // opinion on that one subject does not count.
-                  expressionLine ? 'NOTE ON THE CONCEPT ABOVE: follow it for the layout, palette, background, badges and energy. If it describes the person reacting, looking doubtful, smiling, or feeling any way at all, IGNORE that part — the facial expression is specified separately below and that specification wins.' : '',
-                  briefPalette ? `COLOUR PALETTE: ${briefPalette}. Do NOT default to plain yellow-on-black.${wearLine ? ' This palette governs the BACKGROUND, type and graphics ONLY. The product keeps its own real colours and pattern from the reference photo, even when they clash with the palette — a clash is correct, a recoloured product is not.' : ''}` : '',
-                  briefBanner ? `BANNER PHRASE: render "${briefBanner}" inside a hand-painted brush-stroke or torn banner as a secondary punch (correct spelling).` : '',
-                  briefCallouts.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips, or spec pill badges — correctly spelled, a few words each: ${briefCallouts.join(' · ')}.` : '',
-                  'Execute it vibrant, modern, high-contrast and layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
-                  ...gfxBoostLinesFor(gfxBadge, gfxAccent),
-                ].filter(Boolean)
-              : [
-                  `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 16:9 landscape (1536×864) — in the style of today's top product-review creators (MrBeast-era energy). It MUST look vibrant, modern and high-contrast and make the viewer want to click. NEVER flat, dull, plain or template-like. Make this one ${gfxVibe}. YOU are the designer — own the layout, colours, fonts and effects.`,
-                  '',
-                  'USE THESE MODERN DESIGN TOOLS (pick the ones that fit this product, and mix them freely for variety):',
-                  '• TITLE TYPOGRAPHY: never one flat block of text, and do NOT default to the generic "plain white top line + plain yellow bottom line" look. Bold modern display font, colour the words to fit THIS product\'s palette (not always yellow), vary size and weight so the key word jumps out, and drop a short punchy phrase into a hand-painted brush-stroke or torn banner.',
-                  '• FEATURE CALLOUTS & ICONS: a short benefit list with bright coloured CHECKMARKS or small circular ICON chips (2–3 words each), and/or spec PILL badges (e.g. "144Hz", "FHD", "360°"), and/or a round hero badge ("#1", "BEST").',
-                  '• BACKGROUND: a vivid studio colour gradient, a bold themed graphic scene, OR a real-life setting — always colourful, high-contrast, with real depth (soft focus / bokeh). Never a plain flat wall.',
-                  gfxFeatures ? `Draw callouts ONLY from these real product details (correctly spelled):\n${gfxFeatures}` : '',
-                ].filter(Boolean)
-            // PERMISSIVE brief — we lock ONLY the three non-negotiables
-            // (recognisable person, accurate product, exact/legible text); the
-            // art director owns everything else so each thumbnail is unique.
-            prompt = [
-              pinDirective,
-              ...(wearLine ? [wearLine] : []),
-              ...(expressionLine ? [expressionLine] : []),
-              ...creativeHead,
-              '',
-              "BRAND: if the product's brand or logo is clear, include it as a clean logo lockup.",
-              '',
-              'INTEGRATION (important): the person and the product must sit NATURALLY in the scene with realistic lighting and grounded shadows, like a real photo. Do NOT put a glowing outline, rim-light halo, coloured aura or cut-out edge around the person or the product — no haloing, nothing that makes them look pasted on. Keep edges clean and photographic.',
-              '',
-              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — ${expressionLine ? 'render the facial expression specified separately in this brief rather than copying the reference photo\'s expression' : 'you MUST change their expression to fit this thumbnail (do NOT copy the reference photo\'s expression)'} and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. ${gfxWardrobe} ${personAction} Place them on one side of the frame. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
-              '',
-              wearLine
-                ? `PRODUCT: the product is worn, exactly as the WORN, NOT HELD rule above says${productRefNum ? `, and it is the item in Image ${productRefNum}` : ''}. It is ${wearable.on}, lit naturally so it reads clearly at thumbnail size, and it appears NOWHERE else in the design: no hero shot of it beside them, no copy on a hanger, a mannequin, a stand or a surface, none held in a hand. Keep its true shape, colours and its own printed branding; never invent packaging or fake logos.`
-                : productRefNum
-                ? `PRODUCT: feature the product from Image ${productRefNum} accurately as the hero — its true shape, colours and its own printed branding (never invent packaging or fake logos). Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura behind it. Show it however fits the design: hero shot, in-use, or lifestyle.`
-                : `PRODUCT: feature ${productLabel} accurately and prominently, true to life.`,
-              '',
-              `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes: split it across lines, give words their own colour/size/weight, use a banner for a key phrase — a designed, layered look, NOT plain white-and-yellow outlined caps. Keep the exact words and spelling. Big and instantly readable.`,
-              '',
-              'FRAMING: the canvas is a full 16:9 landscape (1536×864) and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout, the person\'s full head and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.',
-              'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — make it POP.',
-              // LAST, on purpose. Everything above competes: the art director's
-              // concept describes a mood, the palette describes colours, the
-              // person line asks for a fitting reaction. An instruction placed
-              // early gets averaged away by all of it, which is exactly what
-              // happened to a chosen expression and to a worn garment's real
-              // colours. These two repeat here so they are the final word.
-              ...(wearLine ? ['', `FINAL CHECK — THE GARMENT: the item on them is the one in the product reference photo. Same colour, same pattern and texture, same collar, same trim and contrast panels, same sleeve length. If the palette or the design would look better with a different colour, the reference still wins.`] : []),
-              ...(expressionLine ? ['', `FINAL CHECK — THE FACE: ${expressionLine}${expressionInReference ? ' The first reference portrait already wears this exact expression — match it.' : ' The reference photos are the source of WHO they are and never of what their face is doing: if the expression in this render matches the reference selfie rather than the instruction above, it is wrong.'}`] : []),
-            ].filter(Boolean).join('\n')
+              // The default graphic design. Assembled in lib/thumbnail-prompt so
+              // the finished string can be printed, diffed and tested: every bug
+              // in this prompt has been a CONTRADICTION between two lines written
+              // hundreds of lines apart, which is invisible until you look at the
+              // assembled result. scripts/test-thumbnail-prompt.ts now builds all
+              // 68 combinations on every build and reads them for exactly that.
+              prompt = buildGraphicThumbnailPrompt({
+                line1, line2,
+                concept: briefConcept,
+                palette: briefPalette,
+                banner: briefBanner,
+                callouts: briefCallouts,
+                // The RAW brief values. The module decides what survives when the
+                // creator has chosen an expression, so that rule lives in one
+                // place instead of being re-derived at each call site.
+                briefExpression: (brief.expression || '').trim(),
+                briefPose,
+                expressionLine,
+                expressionInReference,
+                wearLine,
+                wearOn: wearable.on,
+                outfitDirective: wardrobeDirective(faceModel?.outfit_pref),
+                creatorRefLabel,
+                identityInstruction,
+                productRefNum,
+                productLabel,
+                productFacts: gfxFeatures,
+                formatDirective: pinDirective,
+                boostLines: gfxBoostLinesFor(gfxBadge, gfxAccent),
+                fallbackVibe: gfxVibe,
+              })
             }
             refs = [
               { data: photoBytes, filename: usingFaceModel && !scoutUsedFaceModel ? 'creator_portrait.png' : usingFaceModel ? 'creator_portrait_1.png' : 'creator_crop.png', mime: 'image/png' },

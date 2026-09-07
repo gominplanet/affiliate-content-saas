@@ -136,3 +136,13 @@ export const EXPRESSION_LABEL: Record<ExpressionKey, string> = EXPRESSIONS.reduc
   acc[e.key] = e.key === 'auto' ? 'whatever fits the headline' : `${e.label.toLowerCase()} (${e.hint.toLowerCase()})`
   return acc
 }, {} as Record<ExpressionKey, string>)
+
+/** The expression description ALONE, with none of the design-brief framing.
+ *
+ *  expressionDirective() is written to win an argument inside a thumbnail brief
+ *  ("it OVERRIDES any other expression described anywhere else"). In a portrait
+ *  prompt there is no argument to win and no other brief, so that wrapper is
+ *  noise diluting the only sentence that matters. */
+export function expressionDescription(key: ExpressionKey): string | null {
+  return BY_KEY.get(key)?.directive || null
+}

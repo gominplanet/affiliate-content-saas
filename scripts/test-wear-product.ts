@@ -96,7 +96,11 @@ const check = (name: string, cond: boolean | undefined, detail?: string) => {
   check('it forbids moving a logo', /reinvent a logo/i.test(d), d)
   check('it forbids inventing an unseen part',
     /frame the shot so that part is not shown rather than inventing it/i.test(d), d)
-  check('and the person stays the person', /same face, the same identity/i.test(d), d)
+  // Deliberately NOT "the same face": that wording collided with a chosen
+  // facial expression, one rule saying change the face and this one saying keep
+  // it. The clause only ever meant "do not swap the person out".
+  check('and the person stays the person', /the same person, the same hair, the same identity/i.test(d), d)
+  check('without pinning what the face is doing', !/\bthe same face\b/i.test(d), d)
 }
 
 // ── nothing to wear, nothing to say ─────────────────────────────────────────

@@ -139,7 +139,11 @@ export function wearDirective(w: WearableProduct): string | null {
     `IT MUST BE THE SAME ITEM as the product reference image: match its ${w.keep}.`,
     `Do not restyle it, do not change its colour, do not clean up or redesign its graphic, do not move or reinvent a logo, and do not swap it for a similar item.`,
     `If part of it is not visible in the reference photo, frame the shot so that part is not shown rather than inventing it.`,
-    `Everything else about the person stays as the reference photos show: the same face, the same identity.`,
+    // "the same face" used to end this line, and it collided head-on with a
+    // chosen facial expression: one rule says change the face, the other says
+    // keep it. This clause only ever meant "do not swap the person out", so it
+    // now says that and nothing about what the face is doing.
+    `Everything else about the person stays as the reference photos show: the same person, the same hair, the same identity — never a different individual.`,
   ].join(' ')
 }
 
