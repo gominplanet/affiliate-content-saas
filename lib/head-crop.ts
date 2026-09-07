@@ -153,9 +153,17 @@ export function headCropRect(face: FaceBox | null, imgW: number, imgH: number): 
  * creator's own clothing is still in front of the renderer, and a wrong garment
  * in that render has a known cause rather than being a mystery again.
  */
-export function headCropNote(cropped: number, total: number): string | null {
-  if (total <= 0) return null
-  if (cropped === 0) return 'your reference photos could not be cropped, so what you are wearing in them may appear instead of the product'
-  if (cropped < total) return `${cropped} of ${total} reference photos cropped to head and neck`
-  return 'reference photos cropped to head and neck'
+export function headCropNote(headOnly: number, withClothing: number, dropped = 0): string | null {
+  if (headOnly + withClothing + dropped === 0) return null
+  // The only bad state: a photograph of the creator in their own clothes is
+  // still in front of the renderer, which is precisely when the wrong garment
+  // comes back. Everything else is a working outcome and reads as one.
+  if (withClothing > 0) {
+    return withClothing === 1
+      ? 'a reference photo could not be cropped, so what you are wearing in it may appear instead of the product'
+      : `${withClothing} reference photos could not be cropped, so what you are wearing in them may appear instead of the product`
+  }
+  return dropped > 0
+    ? 'reference photos cropped to head and neck (one that could not be cropped was left out)'
+    : 'reference photos cropped to head and neck'
 }

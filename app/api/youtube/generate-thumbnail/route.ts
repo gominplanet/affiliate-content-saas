@@ -2241,11 +2241,31 @@ export async function POST(request: Request) {
             if (i === 0 && expressionInReference) return { bytes: b, cropped: true, generated: true }
             return { ...(await headAndNeckCrop(b)), generated: false }
           }))
-          photoBytes = cleaned[0].bytes
-          extraPhotoBytes = cleaned.slice(1).map(c => c.bytes)
-          const real = cleaned.filter(c => !c.generated)
-          refsAreHeadOnly = cleaned.every(c => c.cropped)
-          headCropText = headCropNote(real.filter(c => c.cropped).length, real.length)
+          // AN UNCROPPABLE EXTRA IS DROPPED, NOT SHIPPED.
+          //
+          // The extras exist to stop identity drift, which is a real but modest
+          // risk. A full selfie of the creator in their own clothes is a
+          // photograph competing with the product photo, which is the bug this
+          // whole path exists to kill. Those are not the same size of problem,
+          // so when the lead reference is already a purpose-built head-only
+          // portrait, an extra that would not crop simply does not go.
+          //
+          // Only when there IS such a portrait. With no portrait the lead is a
+          // raw selfie, and dropping references would leave nothing to render a
+          // face from, so there the honest outcome is to keep them and say so.
+          const leadIsHeadOnly = cleaned[0].cropped
+          const keep = leadIsHeadOnly ? cleaned.filter((c, i) => i === 0 || c.cropped) : cleaned
+          const dropped = cleaned.length - keep.length
+
+          photoBytes = keep[0].bytes
+          extraPhotoBytes = keep.slice(1).map(c => c.bytes)
+          refsAreHeadOnly = keep.every(c => c.cropped)
+          headCropText = headCropNote(
+            keep.filter(c => c.cropped && !c.generated).length,
+            keep.filter(c => !c.cropped).length,
+            dropped,
+          )
+          if (dropped) console.warn(`[head-crop] dropped ${dropped} uncroppable reference(s); the posed portrait carries identity`)
           if (!refsAreHeadOnly) console.warn('[head-crop] a creator reference kept its clothing; the wrong garment is likely')
         }
 

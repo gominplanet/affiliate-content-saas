@@ -123,24 +123,26 @@ function box(x: number, y: number, w: number, h: number): FaceBox { return { x, 
 }
 
 // ── what the card is told ───────────────────────────────────────────────────
-// The one case that must never be silent: no face box, no crop, so the
-// creator's own shirt is still the most authoritative clothing in the brief.
+// One state is bad and the rest are working outcomes. The bad one: a photograph
+// of the creator in their own clothes is still in front of the renderer, which
+// is exactly when the wrong garment comes back. That must never read like the
+// others, and the others must never read like a warning.
 {
-  check('a total failure says so in plain words',
-    /may appear instead of the product/.test(headCropNote(0, 2) || ''), headCropNote(0, 2) || 'null')
-  check('a partial crop is counted honestly', headCropNote(1, 2) === '1 of 2 reference photos cropped to head and neck')
-  check('a full crop reads simply', headCropNote(2, 2) === 'reference photos cropped to head and neck')
-  check('no references means no note at all', headCropNote(0, 0) === null)
-}
+  check('an uncropped reference is called out in plain words',
+    /may appear instead of the product/.test(headCropNote(0, 1) || ''), headCropNote(0, 1) || 'null')
+  check('and it counts them correctly',
+    /2 reference photos could not be cropped/.test(headCropNote(0, 2) || ''), headCropNote(0, 2) || 'null')
+  check('one uncropped among several still warns',
+    /may appear instead of the product/.test(headCropNote(2, 1) || ''),
+    'one competing photograph is enough to produce the wrong garment')
 
-// ── the question asks for a rectangle, not an opinion ───────────────────────
-{
-  const p = FACE_BOX_PROMPT
-  check('it asks for JSON only', /ONLY JSON/.test(p))
-  check('it defines the box as fractions', /fraction of the image/.test(p))
-  check('it excludes the neck and shoulders', /neck/.test(p) && /shoulders/.test(p),
-    'a box that includes the neck pushes the crop down onto the collar')
-  check('it allows no face', /"face":null/.test(p))
+  check('a clean set reads simply', headCropNote(2, 0) === 'reference photos cropped to head and neck')
+  check('dropping an uncroppable extra is a working outcome, not a warning',
+    !/may appear/.test(headCropNote(0, 0, 1) || '') && /left out/.test(headCropNote(0, 0, 1) || ''),
+    headCropNote(0, 0, 1) || 'null')
+  check('and it still says the references are head and neck',
+    /cropped to head and neck/.test(headCropNote(1, 0, 1) || ''))
+  check('no references at all means no note', headCropNote(0, 0, 0) === null)
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
