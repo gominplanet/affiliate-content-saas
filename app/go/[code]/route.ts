@@ -15,12 +15,17 @@
 import { NextResponse, after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildPassportDestination, parseUserAgent, normalizeCountry } from '@/lib/passport-links'
+import { linkIsLive } from '@/lib/passport-abuse'
 import { localAsinAvailable } from '@/lib/passport-marketplace'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const AMAZON_HOME = 'https://www.amazon.com'
+/** Where a click on a switched-off link goes. Not Amazon: a disabled link
+ *  should stop earning, and not an error page either, since the visitor did
+ *  nothing wrong and deserves somewhere real to land. */
+const APP_HOME = process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io'
 const AMAZON_HOME_HOST = 'www.amazon.com'
 
 export async function GET(req: Request, ctx: { params: Promise<{ code: string }> }) {
@@ -33,8 +38,22 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
     const admin = createAdminClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: link } = await (admin as any)
-      .from('passport_links').select('asin, destination_url, user_id, site_id, source').eq('code', code).maybeSingle()
+      // select('*') rather than a named list. `disabled` ships in migration 319,
+      // and PostgREST rejects an ENTIRE read over one column it does not know,
+      // which here would mean every Passport link on the internet stops
+      // redirecting the moment this deploys ahead of the migration. The same
+      // mistake with blog_social_link_mode took Geniuslink down platform-wide.
+      // A row is a handful of columns; reading all of them costs nothing.
+      .from('passport_links').select('*').eq('code', code).maybeSingle()
     if (!link || (!link.asin && !link.destination_url)) return NextResponse.redirect(AMAZON_HOME, 302)
+
+    // A link a moderator has switched off. Not an error page: send the visitor
+    // somewhere real, and do not log the click, since a disabled link's traffic
+    // is not the creator's traffic to report on.
+    if (!linkIsLive(link)) {
+      console.warn(`[passport] blocked click on disabled link ${code}`)
+      return NextResponse.redirect(APP_HOME, 302)
+    }
 
     // Source: the one baked into the link (new clean codes carry it on the row),
     // else a legacy ?s= param, else the referring host.

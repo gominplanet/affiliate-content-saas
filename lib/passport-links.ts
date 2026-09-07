@@ -9,6 +9,7 @@
 // the link-builders (blog / social) use it.
 
 import { canUsePassport } from '@/lib/feature-access'
+import { mintVerdict } from '@/lib/passport-abuse'
 import { normalizeTier } from '@/lib/tier'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -477,6 +478,39 @@ export async function getOrCreatePassportLink(
   try {
     const existing = await findExisting()
     if (existing) return existing
+
+    // ── RATE LIMIT, and only here ─────────────────────────────────────────
+    // Checked after findExisting, so re-using a link a creator already has
+    // costs nothing and can never be blocked. The limit exists to stop one
+    // account minting thousands of links and getting the shared domain
+    // blocklisted, which would break every other creator's published links.
+    //
+    // Fails OPEN. If the count cannot be read, the link is minted. Refusing to
+    // create links because a COUNT query failed would break a working feature
+    // to prevent an abuse that is not happening, which is the wrong trade in
+    // the same way a garment check that rejects on a hedge is.
+    try {
+      const since = (ms: number) => new Date(Date.now() - ms).toISOString()
+      const [{ count: hourCount }, { count: dayCount }, { data: ig }] = await Promise.all([
+        admin.from('passport_links').select('code', { count: 'exact', head: true })
+          .eq('user_id', userId).gte('created_at', since(3_600_000)),
+        admin.from('passport_links').select('code', { count: 'exact', head: true })
+          .eq('user_id', userId).gte('created_at', since(86_400_000)),
+        admin.from('integrations').select('tier').eq('user_id', userId).maybeSingle(),
+      ])
+      const verdict = mintVerdict(
+        { lastHour: hourCount ?? 0, lastDay: dayCount ?? 0 },
+        normalizeTier(ig?.tier),
+      )
+      if (!verdict.allowed) {
+        // Loudly, and with the numbers, because this is also the alarm that
+        // says an account is compromised or a loop is running.
+        console.error(`[passport] mint refused for ${userId}: ${verdict.window} limit, ${hourCount ?? 0}/h ${dayCount ?? 0}/day`)
+        return null
+      }
+    } catch (e) {
+      console.warn('[passport] rate check skipped:', e instanceof Error ? e.message : e)
+    }
 
     // Auto-assign the link to a channel group derived from its source (YouTube /
     // Blog / Social / …), so the groups analytics segment with no manual setup.

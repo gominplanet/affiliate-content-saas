@@ -65,6 +65,10 @@ const publicPaths = [
   // renders server-side with the service-role client and shows only PUBLISHED
   // pages, so there's nothing session-gated to protect.
   '/shop',
+  // The short-link domain's own front page. Reached only by a rewrite from
+  // mvpl.ink/, and it must render for a logged-out visitor or a crawler, which
+  // is the entire population that will ever see it.
+  '/link-domain',
   '/pricing', '/privacy', '/terms',
   // Public product tour — the marketing twin of the in-app /pro-tour page.
   '/tour',
@@ -116,8 +120,27 @@ export async function middleware(request: NextRequest) {
         url.pathname = `/go/${seg}`
         return NextResponse.rewrite(url)
       }
-      // Bare domain or a non-code path → send to the main site.
-      return NextResponse.redirect('https://www.mvpaffiliate.io')
+      // THE ROOT SERVES A REAL PAGE, it does not bounce.
+      //
+      // This used to 302 to the main site. A domain whose root is itself a
+      // redirect, with nothing but redirects underneath, has no page anywhere on
+      // it for a filter or a reviewer to assess, and that absence is itself one
+      // of the signals that gets a shortener classified as disposable. Pinterest
+      // already refuses links here for that family of reason.
+      //
+      // Rewrite, not redirect: the page is served AT mvpl.ink so the domain has
+      // real content of its own rather than borrowing the main site's.
+      if (request.nextUrl.pathname === '/' || request.nextUrl.pathname === '') {
+        const url = request.nextUrl.clone()
+        url.pathname = '/link-domain'
+        return NextResponse.rewrite(url)
+      }
+      // robots.txt is served from the app; anything else on this domain is a
+      // typo or a probe, and the root page is the honest answer to both.
+      if (request.nextUrl.pathname === '/robots.txt') return NextResponse.next()
+      const rootUrl = request.nextUrl.clone()
+      rootUrl.pathname = '/link-domain'
+      return NextResponse.rewrite(rootUrl)
     }
   }
 
