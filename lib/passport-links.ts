@@ -126,11 +126,61 @@ export function normalizeCountry(raw: string | null | undefined): string {
  * ordered regex checks, no dependency. Returns null fields for an empty/unknown
  * UA so the analytics side can bucket them as "Unknown".
  */
+/**
+ * What kind of visitor was that?
+ *
+ * THE BOT TEST RUNS FIRST, AND THAT IS THE WHOLE POINT. It used to run last,
+ * after Chrome and Safari. Modern Googlebot, Bingbot, AhrefsBot and most
+ * scrapers carry "Chrome/" in their user agent, so every one of them matched
+ * Chrome and was counted as a human click. The bot tally only ever caught the
+ * naive ones like facebookexternalhit, and the headline "real clicks" number a
+ * creator uses to judge their own channel was inflated by an unknown amount.
+ * Anything that says it is a bot is a bot, whatever else it claims to be.
+ *
+ * AND AN UNRECOGNISED AGENT IS NOT A DESKTOP. Device used to fall through to
+ * 'Desktop' for any user agent that was not mobile-shaped, so curl,
+ * python-requests, headless tooling and empty agents were all filed as desktop
+ * visitors. On one real account that was 329 of 453 clicks. Now a device is
+ * only claimed when an actual browser was identified; everything else returns
+ * null and is reported as unclassified, which is the true answer.
+ */
 export function parseUserAgent(ua: string | null | undefined): { device: string | null; browser: string | null; os: string | null } {
   const s = (ua || '').trim()
   if (!s) return { device: null, browser: null, os: null }
 
-  // OS first (also informs the device guess).
+  // ── Bots, first, before anything can mistake one for Chrome ───────────────
+  // Two families: things that announce themselves as crawlers or previewers,
+  // and non-browser HTTP clients. Both are traffic; neither is a reader.
+  const BOT = new RegExp([
+    // self-declared crawlers and link previewers
+    'bot\\b', '\\bbots\\b', 'crawler', 'spider', 'slurp', 'archiver', 'scraper',
+    'facebookexternalhit', 'whatsapp', 'slackbot', 'discordbot', 'telegrambot',
+    'twitterbot', 'linkedinbot', 'pinterestbot', 'redditbot', 'embedly', 'quora link preview',
+    'applebot', 'googlebot', 'bingbot', 'bingpreview', 'yandex', 'duckduck', 'baiduspider',
+    'semrush', 'ahrefs', 'mj12', 'dotbot', 'petalbot', 'dataforseo', 'screaming frog',
+    'google-inspectiontool', 'chrome-lighthouse', 'gptbot', 'ccbot', 'claudebot', 'perplexity',
+    // headless and scripted clients
+    'headlesschrome', 'phantomjs', 'puppeteer', 'playwright', 'selenium',
+    'python-requests', 'python-urllib', 'aiohttp', 'httpx', 'scrapy',
+    'curl/', 'wget', 'libwww', 'go-http-client', 'okhttp', 'axios', 'node-fetch',
+    'java/', 'apache-httpclient', 'postmanruntime', 'insomnia', 'guzzle', 'restsharp',
+  ].join('|'), 'i')
+  if (BOT.test(s)) return { device: null, browser: 'Bot', os: null }
+
+  // ── Browser. Order matters: Edge, Brave and Opera all masquerade as Chrome,
+  // and every Chrome user agent also carries "Safari". ─────────────────────
+  let browser: string | null = null
+  if (/Edg[eA]?\//i.test(s)) browser = 'Edge'
+  else if (/OPR\/|Opera/i.test(s)) browser = 'Opera'
+  else if (/SamsungBrowser/i.test(s)) browser = 'Samsung Internet'
+  else if (/Firefox\/|FxiOS/i.test(s)) browser = 'Firefox'
+  else if (/CriOS|Chrome\//i.test(s)) browser = 'Chrome'
+  else if (/Safari\//i.test(s) && /AppleWebKit/i.test(s)) browser = 'Safari'
+
+  // No browser identified means we genuinely do not know what this was. Saying
+  // "Desktop" here is how a dashboard reports 414 desktop visitors it never saw.
+  if (!browser) return { device: null, browser: null, os: null }
+
   let os: string | null = null
   if (/iPhone|iPad|iPod/i.test(s)) os = 'iOS'
   else if (/Android/i.test(s)) os = 'Android'
@@ -139,23 +189,11 @@ export function parseUserAgent(ua: string | null | undefined): { device: string 
   else if (/CrOS/i.test(s)) os = 'ChromeOS'
   else if (/Linux/i.test(s)) os = 'Linux'
 
-  // Device class. A tablet is an iPad, or an Android without the "Mobile" token.
+  // A tablet is an iPad, or an Android without the "Mobile" token.
   let device: string
   if (/iPad|Tablet|PlayBook|Silk/i.test(s) || (/Android/i.test(s) && !/Mobile/i.test(s))) device = 'Tablet'
   else if (/Mobi|iPhone|iPod|Android.*Mobile|Windows Phone/i.test(s)) device = 'Mobile'
   else device = 'Desktop'
-
-  // Browser — order matters (Edge/Brave/Opera masquerade as Chrome; Chrome UAs
-  // also carry "Safari", so Chrome must be checked before Safari).
-  let browser: string | null = null
-  if (/Edg[eA]?\//i.test(s)) browser = 'Edge'
-  else if (/OPR\/|Opera/i.test(s)) browser = 'Opera'
-  else if (/SamsungBrowser/i.test(s)) browser = 'Samsung Internet'
-  else if (/Firefox\/|FxiOS/i.test(s)) browser = 'Firefox'
-  else if (/CriOS/i.test(s)) browser = 'Chrome'
-  else if (/Chrome\//i.test(s)) browser = 'Chrome'
-  else if (/Safari\//i.test(s)) browser = 'Safari'
-  else if (/bot|crawler|spider|facebookexternalhit|WhatsApp|Slackbot|Discordbot|TelegramBot/i.test(s)) browser = 'Bot'
 
   return { device, browser, os }
 }

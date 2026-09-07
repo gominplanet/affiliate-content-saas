@@ -49,7 +49,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
 
     const visitorCountry = req.headers.get('x-vercel-ip-country') || req.headers.get('cf-ipcountry') || 'US'
     // Device / browser / OS from the UA, for the dashboard breakdowns.
-    const ua = parseUserAgent(req.headers.get('user-agent'))
+    const uaRaw = req.headers.get('user-agent')
+    const ua = parseUserAgent(uaRaw)
 
     // Two kinds of link. An Amazon ASIN is geo-routed to the visitor's local store
     // + the creator's tag there; any other link is forwarded to its destination
@@ -118,11 +119,29 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
     const userId = link.user_id as string
     after(async () => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (admin as any).from('passport_link_clicks').insert({
+        const base = {
           code, user_id: userId, country: logCountry, marketplace, source,
           device: ua.device, browser: ua.browser, os: ua.os,
-        })
+        }
+        // The raw string as well as the verdict. device/browser/os are one
+        // parser's opinion, and when that parser turned out to be counting
+        // crawlers as readers there was nothing left to re-examine. Capped so a
+        // hostile client cannot write megabytes into the click log.
+        //
+        // Written as "try it, then drop it": user_agent ships in migration 318,
+        // and PostgREST rejects an ENTIRE insert over one unknown column. Naming
+        // it unconditionally would mean every click silently vanishing on any
+        // database where 318 has not run yet, inside an after() whose catch
+        // swallows the error. A missing migration must cost that column, never
+        // the click.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: insErr } = await (admin as any).from('passport_link_clicks')
+          .insert({ ...base, user_agent: (uaRaw || '').slice(0, 512) || null })
+        if (insErr) {
+          console.warn('[passport-click] retrying without user_agent:', insErr.message)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (admin as any).from('passport_link_clicks').insert(base)
+        }
       } catch { /* never let logging block anything */ }
     })
 

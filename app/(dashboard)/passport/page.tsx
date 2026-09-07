@@ -7,6 +7,7 @@
 // country breakdown, top products, and sources.
 
 import { useCallback, useEffect, useState } from 'react'
+import { countryName, countryFlag } from '@/lib/passport-analytics-labels'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Globe, MousePointerClick, MapPin, Package, TrendingUp, Store, Smartphone, Monitor, Tablet } from 'lucide-react'
 import PassportLinksCard from '@/components/brand/PassportLinksCard'
@@ -30,7 +31,13 @@ const COUNTRY: Record<string, { name: string; flag: string }> = {
   SG: { name: 'Singapore', flag: '🇸🇬' }, AE: { name: 'UAE', flag: '🇦🇪' },
   SA: { name: 'Saudi Arabia', flag: '🇸🇦' }, TR: { name: 'Türkiye', flag: '🇹🇷' },
 }
-const cn = (c: string) => COUNTRY[c] || { name: c, flag: '🌐' }
+// COUNTRY is a hand-kept table of the markets MVP routes to, so it carries a
+// friendly short name ("United States") for those. It was also the ONLY source
+// of names and flags, which is why a visitor from RU, PY or SX showed a grey
+// globe next to a bare code: the table simply had no row. Now the table is a
+// preference and not a limit — anything it does not know is derived from the
+// ISO code itself, so every country a creator ever reaches reads as a country.
+const cn = (c: string) => COUNTRY[c] || { name: countryName(c), flag: countryFlag(c) }
 
 interface Analytics {
   total: number; botClicks?: number; days: number
@@ -40,8 +47,11 @@ interface Analytics {
   byMarketplace?: { store: string; count: number }[]
   byDevice?: { device: string; count: number }[]
   byBrowser?: { browser: string; count: number }[]
-  bySource: { source: string; count: number }[]
-  topProducts: { code: string; count: number; asin: string | null; label: string | null }[]
+  bySource: { source: string; count: number; label?: string }[]
+  topProducts: { code: string; count: number; asin: string | null; label: string | null; kind?: 'product' | 'link' }[]
+  /** How much of the traffic the device/browser panel actually accounts for. */
+  coverage?: { known: number; unclassified: number }
+  coverageNote?: string | null
   byDay: { date: string; count: number }[]
 }
 
@@ -223,6 +233,12 @@ export default function PassportPage() {
                 {data!.topProducts.map((p) => (
                   <div key={p.code} className="flex items-center gap-2">
                     <span className="text-[12.5px] flex-1 min-w-0 truncate" style={{ color: 'var(--text)' }} title={p.label || p.asin || p.code}>{p.label || p.asin || p.code}</span>
+                    {p.kind === 'link' && (
+                      /* Not an Amazon product. Listing a blog post or a brand
+                         page unlabelled under "Top products" is how a chart
+                         stops being believed. */
+                      <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-faint)' }}>link</span>
+                    )}
                     <span className="text-[12px] font-semibold flex-shrink-0 tabular-nums" style={{ color: 'var(--text-soft)' }}>{p.count.toLocaleString()}</span>
                   </div>
                 ))}
@@ -277,6 +293,14 @@ export default function PassportPage() {
                   )}
                 </>
               ) : <p className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>Device data starts logging on new clicks.</p>}
+              {/* What this panel does NOT account for, in words. "Unknown" used
+                  to sit in the list beside Chrome and Safari as though it were a
+                  browser someone chose; on one account that was 329 of 453
+                  clicks. A panel that quietly describes a fraction of the data
+                  is worse than one that says which fraction. */}
+              {data!.coverageNote && (
+                <p className="text-[11px] mt-3 leading-relaxed" style={{ color: 'var(--text-faint)' }}>{data!.coverageNote}</p>
+              )}
             </div>
           </div>
 
@@ -287,7 +311,7 @@ export default function PassportPage() {
               <div className="flex flex-wrap gap-2">
                 {data!.bySource.map((s) => (
                   <span key={s.source} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px]" style={{ background: 'var(--surface-2)', color: 'var(--text-soft)' }}>
-                    {s.source} <b style={{ color: 'var(--text)' }}>{s.count.toLocaleString()}</b>
+                    {s.label || s.source} <b style={{ color: 'var(--text)' }}>{s.count.toLocaleString()}</b>
                   </span>
                 ))}
               </div>

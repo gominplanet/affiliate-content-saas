@@ -7,6 +7,9 @@
 // simple; if click volume ever gets huge this moves to a SQL rollup, but the shape
 // the dashboard consumes stays the same.
 import { NextResponse } from 'next/server'
+import {
+  sourceLabel, cleanProductLabel, isYouTubeVideoId, coverage, coverageNote,
+} from '@/lib/passport-analytics-labels'
 import { createServerClient } from '@/lib/supabase/server'
 import { AMAZON_MARKETPLACES as MARKETPLACES } from '@/lib/passport-links'
 import { canUsePassport } from '@/lib/feature-access'
@@ -60,7 +63,7 @@ export async function GET(request: Request) {
     }
     if (error) {
       // Table missing (migration 282 not run) → empty dashboard, not an error.
-      return NextResponse.json({ ok: true, total: 0, botClicks: 0, byGroup: [], byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
+      return NextResponse.json({ ok: true, total: 0, botClicks: 0, byGroup: [], byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, coverage: { known: 0, unclassified: 0 }, coverageNote: null, days })
     }
     const allRows = (rows ?? []) as { code: string; country: string | null; marketplace: string | null; source: string | null; device?: string | null; browser?: string | null; os?: string | null; created_at: string }[]
     // Bots (crawlers + social link-preview fetchers like facebookexternalhit /
@@ -118,8 +121,13 @@ export async function GET(request: Request) {
     for (const c of clicks) {
       bump(countryM, (c.country || 'US').toUpperCase())
       if (c.marketplace) bump(marketM, hostToCode[c.marketplace] || c.marketplace)
-      bump(deviceM, c.device || 'Unknown')
-      bump(browserM, c.browser || 'Unknown')
+      // Only count a device or browser we actually identified. Bucketing the
+      // unreadable ones under 'Unknown' put them in the same list as Chrome and
+      // Safari, as though Unknown were a browser somebody chose; on one account
+      // that was 329 of 453 clicks presented as a browsing preference. The
+      // missing share is reported once, in words, as coverage below.
+      if (c.device) bump(deviceM, c.device)
+      if (c.browser) bump(browserM, c.browser)
       bump(sourceM, c.source || 'direct')
       bump(codeM, c.code)
       bump(dayM, c.created_at.slice(0, 10))
@@ -144,6 +152,25 @@ export async function GET(request: Request) {
 
     const entries = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1])
 
+    // Coverage is measured over the SAME working set the panels describe, so it
+    // cannot disagree with them after a group filter.
+    const cov = coverage(clicks)
+
+    // Video ids → titles, so "Vhj3WN1cu6U 91" becomes the video's name. One
+    // bounded read; a missing title degrades to the id, which still identifies
+    // the video rather than pretending to be a name.
+    const videoTitles = new Map<string, string>()
+    const videoIds = [...sourceM.keys()].filter(isYouTubeVideoId).slice(0, 25)
+    if (videoIds.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: vids } = await (supabase as any)
+        .from('youtube_videos').select('youtube_video_id, title')
+        .eq('user_id', user.id).in('youtube_video_id', videoIds)
+      for (const v of ((vids ?? []) as { youtube_video_id: string | null; title: string | null }[])) {
+        if (v.youtube_video_id && v.title) videoTitles.set(v.youtube_video_id, v.title)
+      }
+    }
+
     const byGroup = [...groupM.entries()]
       .map(([id, count]) => ({ id: id === UNGROUPED ? null : id, name: id === UNGROUPED ? 'Ungrouped' : (groupName.get(id) || 'Group'), count }))
       .sort((a, b) => b.count - a.count)
@@ -161,11 +188,29 @@ export async function GET(request: Request) {
       byMarketplace: entries(marketM).map(([store, count]) => ({ store, count })),
       byDevice: entries(deviceM).map(([device, count]) => ({ device, count })),
       byBrowser: entries(browserM).map(([browser, count]) => ({ browser, count })).slice(0, 8),
-      bySource: entries(sourceM).map(([source, count]) => ({ source, count })).slice(0, 10),
-      topProducts: topCodes.map(([code, count]) => ({ code, count, asin: labels[code]?.asin || null, label: labels[code]?.label || null })),
+      // How much of the traffic the two panels above actually account for. A
+      // panel that silently describes a quarter of the data is worse than one
+      // that says so.
+      coverage: cov,
+      coverageNote: coverageNote(cov),
+      // Sources carry a video id, 'blog', 'direct' or a referrer host in one
+      // column. The id stays (it is what makes a row traceable) and the label is
+      // what a person reads.
+      bySource: entries(sourceM).map(([source, count]) => ({
+        source, count, label: sourceLabel(source, videoTitles),
+      })).slice(0, 10),
+      topProducts: topCodes.map(([code, count]) => ({
+        code, count,
+        asin: labels[code]?.asin || null,
+        label: cleanProductLabel(labels[code]?.label, labels[code]?.asin),
+        // An ASIN means a product; anything else is a link the creator made to
+        // somewhere that is not an Amazon product, and listing a blog post under
+        // "Top products" is how a chart stops being believed.
+        kind: labels[code]?.asin ? 'product' : 'link',
+      })),
       byDay,
     })
   } catch {
-    return NextResponse.json({ ok: true, total: 0, botClicks: 0, byGroup: [], byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, days })
+    return NextResponse.json({ ok: true, total: 0, botClicks: 0, byGroup: [], byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, coverage: { known: 0, unclassified: 0 }, coverageNote: null, days })
   }
 }
