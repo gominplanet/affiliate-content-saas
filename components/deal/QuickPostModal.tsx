@@ -178,7 +178,7 @@ export default function QuickPostModal({
               ))}
             </div>
             {pinterestEnabled && selected.has('pinterest') && (
-              <p className="text-[11px] text-muted-foreground mt-1.5">Pinterest gets its own designed pin linking to your affiliate link (blog post not required).</p>
+              <p className="text-[11px] text-muted-foreground mt-1.5">Pinterest gets its own designed pin. Pinterest does not accept affiliate redirect links, so the pin points at your Link in Bio shop page and the product is added there with your affiliate link on it.</p>
             )}
           </div>
 
@@ -268,7 +268,12 @@ export default function QuickPostModal({
           {linkNote && (
             <div className="flex items-start gap-2 text-xs rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-amber-700 dark:text-amber-400">
               <AlertCircle size={14} className="mt-0.5 shrink-0" />
-              <span>Your affiliate tag still earns, but we couldn&apos;t shorten via Geniuslink this time, so the post used your plain Amazon link. Reason: {linkNote}</span>
+              {/* Printed as written. This used to be wrapped in "we couldn't shorten via
+                  Geniuslink", which then framed notes that had nothing to do with
+                  Geniuslink, or with shortening: a pin explaining that it points at
+                  the shop page was announced as a Geniuslink failure. The note is a
+                  complete sentence at its source. */}
+              <span>{linkNote}</span>
             </div>
           )}
         </div>

@@ -124,7 +124,12 @@ export async function resolveAffiliateLink(opts: {
         linkUrl = await svc.createLink(destination, opts.productTitle || 'product', channelGroupId ? { groupId: channelGroupId } : undefined)
       }
     } catch (e) {
-      note = `Geniuslink hiccup — used your plain affiliate link instead. ${e instanceof Error ? e.message : ''}`.trim()
+      // A COMPLETE SENTENCE, because the caller prints it as-is. The modals used
+      // to wrap every note in "we couldn't shorten via Geniuslink", which then
+      // appeared over notes that had nothing to do with Geniuslink or with
+      // shortening at all. A message that explains itself cannot be mis-framed
+      // by whoever renders it.
+      note = `Your affiliate tag still earns, but Geniuslink did not respond, so this post used your plain Amazon link.${e instanceof Error && e.message ? ` (${e.message})` : ''}`
     }
   }
   return { linkUrl, asin, note }
@@ -204,6 +209,7 @@ async function resolvePinDestinationFor(opts: {
 }) {
   const admin = createAdminClient()
   let shopHandle: string | null = null
+  let tileError: string | null = null
   // Read the homepage here rather than off intRow: callers select a narrow
   // column set for the Pinterest token and tag, so wordpress_url is not on it
   // and the homepage fallback would have been silently empty every time.
@@ -223,26 +229,38 @@ async function resolvePinDestinationFor(opts: {
       // Put the product on the page before pinning at it. Upsert by ASIN so a
       // re-pin re-surfaces the existing tile instead of duplicating it.
       if (opts.asin) {
+        // NEWEST FIRST. A pin sends someone to this page for THIS product, so
+        // finding it at the bottom of a grid of forty tiles is the same as not
+        // finding it. position ascending is how the page sorts, so one below the
+        // current minimum puts it first without rewriting every other row.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: first } = await (admin as any).from('link_page_items')
+          .select('position').eq('page_id', page.id).order('position', { ascending: true }).limit(1).maybeSingle()
+        const topPosition = (typeof first?.position === 'number' ? first.position : 1) - 1
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: existing } = await (admin as any)
           .from('link_page_items').select('id').eq('page_id', page.id).eq('asin', opts.asin).maybeSingle()
-        if (existing?.id) {
+
+        // THE ERROR IS READ. The supabase client returns { error } rather than
+        // throwing, so an unchecked write here fails in complete silence and the
+        // pin still publishes, pointing at a page that does not contain the
+        // product it advertises. That is a worse outcome than not pinning.
+        const { error: tileErr } = existing?.id
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (admin as any).from('link_page_items')
-            .update({ hidden: false, url: opts.affiliateUrl }).eq('id', existing.id)
-        } else {
+          ? await (admin as any).from('link_page_items')
+              .update({ hidden: false, url: opts.affiliateUrl, position: topPosition }).eq('id', existing.id)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: last } = await (admin as any).from('link_page_items')
-            .select('position').eq('page_id', page.id).order('position', { ascending: false }).limit(1).maybeSingle()
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (admin as any).from('link_page_items').insert({
-            page_id: page.id, user_id: opts.userId, kind: 'product',
-            title: (opts.productTitle || 'Shop this').slice(0, 200),
-            url: opts.affiliateUrl, image_url: opts.imageUrl || null,
-            asin: opts.asin || null, source: 'pinterest',
-            position: (typeof last?.position === 'number' ? last.position : -1) + 1,
-            hidden: false,
-          })
+          : await (admin as any).from('link_page_items').insert({
+              page_id: page.id, user_id: opts.userId, kind: 'product',
+              title: (opts.productTitle || 'Shop this').slice(0, 200),
+              url: opts.affiliateUrl, image_url: opts.imageUrl || null,
+              asin: opts.asin || null, source: 'pinterest',
+              position: topPosition, hidden: false,
+            })
+        if (tileErr) {
+          console.error('[pin-destination] could not put the product on the shop page:', tileErr.message)
+          tileError = tileErr.message
         }
       }
     }
@@ -253,11 +271,30 @@ async function resolvePinDestinationFor(opts: {
     shopHandle = null
   }
 
-  return pinDestination({
+  // A shop page we could not put the product on is not a destination for THIS
+  // pin. Falling through leaves the creator's other pages as options, and a
+  // homepage pin is a poor outcome but an honest one; a pin at a grid that does
+  // not contain the product is neither.
+  if (tileError) shopHandle = null
+
+  // The shop page is ISR-cached for 60s, so a product added a second before the
+  // pin publishes would not be on the page a creator immediately opens to check.
+  // Best-effort: a cache that refuses to drop is still correct within the minute.
+  if (shopHandle && !tileError) {
+    try {
+      const { revalidatePath } = await import('next/cache')
+      revalidatePath(`/shop/${shopHandle}`)
+    } catch { /* not in a request context that can revalidate */ }
+  }
+
+  const dest = pinDestination({
     shopHandle,
     homepageUrl,
     appOrigin: process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io',
   })
+  return tileError
+    ? { ...dest, note: `${dest.note ? dest.note + ' ' : ''}(The product could not be added to your shop page: ${tileError})` }
+    : dest
 }
 
 /**
