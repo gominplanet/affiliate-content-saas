@@ -29,6 +29,7 @@ import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { detectWearable, wearDirective } from '@/lib/wear-product'
 import { normalizeExpression, expressionDirective, EXPRESSION_LABEL } from '@/lib/face-expression'
+import { parseGarmentVerdict, GARMENT_CHECK_PROMPT, type GarmentVerdict } from '@/lib/garment-match'
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -674,6 +675,53 @@ async function designThumbnailBriefs(input: {
 // moodboard pic, one of their own previous wins). We distill it into a
 // short style brief that gets folded into the scene prompt — color
 // palette, lighting, composition, mood. Cheap (~$0.005/call) and works
+
+/**
+ * Ask a cheap vision model whether the render put the RIGHT garment on.
+ *
+ * Runs only on apparel designs with "make me wear it" on, which is the only
+ * place this failure happens, and costs a fraction of a cent against the $0.19
+ * of the render it is guarding. Generating three variants and picking would
+ * cost $0.38 extra on EVERY apparel thumbnail to fix something already right
+ * about half the time; this pays for a second render only on the ones that
+ * were actually wrong.
+ *
+ * Fails open in every direction: no product photo, a refusal, a timeout, a
+ * hedge, a malformed answer — all keep the render. The only outcome that costs
+ * a creator money is an explicit DIFFERENT.
+ */
+async function garmentMatchesProduct(opts: {
+  productPng: Buffer | Uint8Array
+  renderB64: string
+}): Promise<GarmentVerdict> {
+  try {
+    const anthropic = createAnthropicClient()
+    const productB64 = Buffer.from(opts.productPng).toString('base64')
+    const msg = await withAnthropicRetry(() => anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 120,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png' as const, data: productB64 } },
+          { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png' as const, data: opts.renderB64 } },
+          { type: 'text' as const, text: GARMENT_CHECK_PROMPT },
+        ],
+      }],
+    }))
+    recordAnthropicUsage(msg, {
+      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_garment_check', model: 'claude-haiku-4-5-20251001',
+    })
+    const first = msg.content[0] as { type: string; text?: string }
+    return parseGarmentVerdict(first?.text)
+  } catch (e) {
+    // Never let the guard break the thing it is guarding.
+    console.warn('[garment-check] skipped:', e instanceof Error ? e.message : e)
+    return { match: null, reason: 'check unavailable' }
+  }
+}
+
 // alongside the product-image Kontext path without conflicting.
 async function extractStyleBrief(referenceUrl: string): Promise<string | null> {
   try {
@@ -1801,6 +1849,12 @@ export async function POST(request: Request) {
         // True once the reference photo itself carries the chosen expression, which
         // flips what the design step must be told about it.
         let expressionInReference = false
+        // The garment judge's answer, and whether it cost a second render. Surfaced
+        // on the result card so a wrong garment is attributable rather than argued about.
+        // A holder, not two plain locals: the render (and so the check) runs
+        // inside the per-variant closure, and TypeScript cannot see across that
+        // to know these were ever assigned.
+        const garment: { check: GarmentVerdict | null; retried: boolean } = { check: null, retried: false }
         // Load a selfie as PNG bytes. source_images are STORAGE PATHS in the
         // private 'headshots' bucket — a raw fetch() on the bare path 400s, which
         // is exactly why the whole graphic path was silently falling back to
@@ -2218,8 +2272,38 @@ export async function POST(request: Request) {
             // Tier-gated quality (gfxQuality): Pro/admin get HIGH for the crispest
             // ChatGPT-grade render; other paid tiers get MEDIUM. Co-Pilot generates
             // one variant, so a single high render stays well under the timeout.
-            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
+            let b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxRecordOverride ?? gfxModel, images: 1 })
+
+            // ── Did it put the right garment on? ────────────────────────────
+            // Only for a worn product, and only once. Across one afternoon the
+            // same polo came back correct, wrong, correct, correct, wrong, and
+            // three rounds of rewording moved it twice and regressed it twice.
+            // That is variance in the renderer, not a sentence to fix, so it is
+            // checked rather than argued with: a fraction of a cent to look at
+            // the result, and a second $0.19 render spent only on the ones that
+            // were actually wrong.
+            //
+            // A single retry on purpose. Two would turn a bad afternoon into a
+            // bill, and the second render is a fresh sample of the same coin,
+            // not a smarter attempt.
+            if (wearLine && productBytes && b64) {
+              const verdict = await garmentMatchesProduct({ productPng: productBytes, renderB64: b64 })
+              garment.check = verdict
+              if (verdict.match === false) {
+                console.warn(`[garment-check] re-rendering once: ${verdict.reason}`)
+                const retryPrompt = `${prompt}\n\nTHE PREVIOUS ATTEMPT AT THIS DESIGN GOT THE GARMENT WRONG: ${verdict.reason} Render the item exactly as the product reference photo shows it — its real colour, its pattern and texture, its collar, trim and contrast panels — even where the design's palette would suggest something else.`
+                const retry = await openaiGfx.generateWithReferences({ prompt: retryPrompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
+                if (retry) {
+                  recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxRecordOverride ?? gfxModel, images: 1 })
+                  b64 = retry
+                  garment.retried = true
+                  // Report what the SECOND one looks like, so the card never
+                  // says "wrong garment" about an image we then replaced.
+                  garment.check = await garmentMatchesProduct({ productPng: productBytes, renderB64: retry })
+                }
+              }
+            }
             // Badge the creator chose (5 stars / hot / etc). The GFX path bakes its
             // own headline via gpt-image and never runs bakeSimpleHeadline, so the
             // badge must be composited here or it never shows. forcedDecoration:
@@ -2273,6 +2357,9 @@ export async function POST(request: Request) {
           sourceProductImageUrl: productImageUrl || null,
           expressionUsed: expressionKey,
           expressionViaPortrait: expressionInReference,
+          garmentMatch: garment.check ? garment.check.match : null,
+          garmentNote: garment.check && garment.check.match === false ? garment.check.reason : null,
+          garmentRetried: garment.retried,
           wearApplied: !!wearLine,
           wearKind: wearable.kind,
           thumbnailScores: gfxUrls.map(() => 0),

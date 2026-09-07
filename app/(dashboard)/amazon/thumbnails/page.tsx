@@ -35,6 +35,7 @@ export default function AmazonThumbnailsPage() {
     url: string; hook: string
     sourceTitle?: string | null; sourceImage?: string | null
     expressionUsed?: string; wearApplied?: boolean; expressionViaPortrait?: boolean
+    garmentMatch?: boolean | null; garmentNote?: string | null; garmentRetried?: boolean
   } | null>(null)
   const [question, setQuestion] = useHeadlineStyle()
   const [wear, setWear] = useWearProduct()
@@ -128,6 +129,9 @@ export default function AmazonThumbnailsPage() {
         sourceImage: (data.sourceProductImageUrl as string | null) ?? null,
         expressionUsed: (data.expressionUsed as string) || 'auto',
         expressionViaPortrait: !!data.expressionViaPortrait,
+        garmentMatch: (data.garmentMatch as boolean | null) ?? null,
+        garmentNote: (data.garmentNote as string | null) ?? null,
+        garmentRetried: !!data.garmentRetried,
         wearApplied: !!data.wearApplied,
       })
     } catch (err) {
@@ -322,6 +326,19 @@ export default function AmazonThumbnailsPage() {
                     {result.expressionViaPortrait ? ' (posed reference)' : result.expressionUsed !== 'auto' ? ' (prompt only)' : ''}
                     {result.wearApplied ? ' · worn on you' : ''}
                   </p>
+                  {/* The garment judge's verdict, when one ran. A creator should
+                      not have to compare a render against a product page pixel by
+                      pixel to find out MVP already knew. */}
+                  {result.garmentMatch === false ? (
+                    <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: '#b45309' }}>
+                      The garment still does not match the product{result.garmentRetried ? ', after a second attempt' : ''}
+                      {result.garmentNote ? `: ${result.garmentNote}` : '.'} Generate again, or use it if it is close enough.
+                    </p>
+                  ) : result.garmentMatch === true ? (
+                    <p className="text-[11px] text-[#1f7a4d] mt-0.5">
+                      Garment checked against the product photo{result.garmentRetried ? ' (took a second attempt)' : ''}.
+                    </p>
+                  ) : null}
                   <p className="text-[11px] text-[#86868b] mt-0.5">
                     If this is not the product you meant, the ASIN is the wrong colour or variant.
                   </p>
