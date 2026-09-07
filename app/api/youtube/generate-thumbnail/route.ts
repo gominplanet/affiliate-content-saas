@@ -790,6 +790,56 @@ async function matchFaceModelToFrame<T extends { name: string; source_images: st
   return null
 }
 
+
+/**
+ * A portrait of the creator ALREADY WEARING the expression they picked.
+ *
+ * Six renders in a row came back with the same squint through three different
+ * chosen expressions, and no amount of prompt wording moved it. The reason is
+ * structural, not textual: the design model is handed the creator's own selfies
+ * as its identity reference and told they are the highest-priority thing in the
+ * brief. It copies the face in the photograph. The expression is IN the
+ * photograph. A sentence asking for a different one is a sentence arguing with
+ * a picture, and the picture wins every time — which is the same instinct that
+ * keeps a creator recognisable, so it is not a bug to be shouted down.
+ *
+ * So stop arguing. Make a picture that agrees.
+ *
+ * This renders one new portrait from the creator's selfies wearing the chosen
+ * expression, and the design step then uses THAT as its reference. The identity
+ * lock now works for us: it faithfully copies a face that is already smiling.
+ *
+ * Costs one extra image call, so it only ever runs when a creator has actually
+ * picked something. Best-effort: on any failure the caller keeps the original
+ * selfies and the design comes out exactly as it does today.
+ */
+async function generateExpressionPortrait(opts: {
+  refs: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }>
+  expressionDirectiveText: string
+  imageModel?: string
+}): Promise<Uint8Array | null> {
+  if (!opts.refs.length) return null
+  try {
+    const openai = createOpenAIService()
+    const prompt = `A clean, close-up SOLO head-and-shoulders portrait of EXACTLY ONE person — the main subject of the reference photos. Reproduce their facial identity exactly: same bone structure, same eye shape and colour, same nose, same lip shape, same hair colour, texture and style, same skin tone, same apparent age, same facial hair, same distinguishing marks. A viewer who knows them must recognise them instantly.
+
+THE ONE THING THAT CHANGES IS THEIR EXPRESSION. ${opts.expressionDirectiveText}
+
+The reference photos show this person with a DIFFERENT expression from the one described above. Do not copy the expression, eyebrow position, mouth position or head angle from them — take only WHO the person is. A person's face is still unmistakably their own face when they change what it is doing, and that is exactly what this image must show.
+
+Head-and-shoulders framing, the whole head and hair comfortably inside the frame with margin on all sides. Even, flattering studio lighting. Realistic natural skin texture with visible pores — not smoothed, not beauty-filtered, not de-aged. Plain, evenly lit neutral grey backdrop. No text, no logos, no props, and absolutely no second person anywhere in the frame.`
+    const b64 = await openai.generateWithReferences({
+      prompt, images: opts.refs, size: '1024x1024', quality: 'medium',
+      ...(opts.imageModel ? { model: opts.imageModel } : {}),
+    })
+    if (!b64) return null
+    return await normalizeToPng(new Uint8Array(Buffer.from(b64, 'base64')))
+  } catch (e) {
+    console.warn('[expression-portrait] failed, using the original selfies:', e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function generateFaceCutout(supabase: any, opts: {
   userId: string
@@ -1746,6 +1796,9 @@ export async function POST(request: Request) {
         let extraPhotoBytes: (Buffer | Uint8Array)[] = []
         let scoutUsedFaceModel = false
         let faceSelfieUsed = false
+        // True once the reference photo itself carries the chosen expression, which
+        // flips what the design step must be told about it.
+        let expressionInReference = false
         // Load a selfie as PNG bytes. source_images are STORAGE PATHS in the
         // private 'headshots' bucket — a raw fetch() on the bare path 400s, which
         // is exactly why the whole graphic path was silently falling back to
@@ -1848,13 +1901,48 @@ export async function POST(request: Request) {
           // generic/wrong face.) Load up to 3 selfies — a single reference drifts;
           // multiple angles give gpt-image a strong identity lock.
           const urls = faceModel.source_images.slice(0, 3)
+          let primary: Buffer | Uint8Array | null = null
           for (const url of urls) {
             const bytes = await loadFacePng(url)
             if (!bytes) continue
-            if (!faceSelfieUsed) { photoBytes = bytes; faceSelfieUsed = true }
+            if (!primary) { primary = bytes; photoBytes = bytes; faceSelfieUsed = true }
             else extraPhotoBytes.push(bytes)
           }
-          if (!faceSelfieUsed) throw new Error('no readable face photo for graphic mode')
+          if (!primary) throw new Error('no readable face photo for graphic mode')
+
+          // THE EXPRESSION HAS TO BE IN THE REFERENCE, NOT IN A SENTENCE.
+          //
+          // The design step treats these selfies as the highest-priority thing
+          // in the brief and copies the face in them, expression included. Six
+          // renders proved that a written instruction does not beat a
+          // photograph, and it should not: that same instinct is what keeps a
+          // creator recognisable. So we hand it a photograph that agrees —
+          // the same person, already wearing the expression they chose.
+          //
+          // Best-effort by design. One extra image call, only when a creator
+          // actually picked something, and any failure leaves the original
+          // selfies in place so the design still renders.
+          if (expressionLine) {
+            const portraitRefs = [
+              { data: primary, filename: 'face_0.png', mime: 'image/png' },
+              ...extraPhotoBytes.slice(0, 2).map((b, i) => ({ data: b, filename: `face_${i + 1}.png`, mime: 'image/png' as const })),
+            ]
+            const posed = await generateExpressionPortrait({
+              refs: portraitRefs,
+              expressionDirectiveText: expressionLine,
+              imageModel: gfxModelOverride,
+            })
+            if (posed) {
+              // The new portrait leads. One original selfie stays behind it as a
+              // second identity anchor, so a drift in the generated face has
+              // something true to be pulled back toward.
+              const anchor = extraPhotoBytes[0] ?? primary
+              photoBytes = posed
+              extraPhotoBytes = [anchor]
+              expressionInReference = true
+              recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxModelOverride ?? 'gpt-image', images: 1 })
+            }
+          }
         } else if (gfxStoryboardFrame) {
           // No face model → the video's storyboard frame is the only identity source.
           photoBytes = await normalizeToPng(new Uint8Array(gfxStoryboardFrame.buffer))
@@ -2000,9 +2088,15 @@ export async function POST(request: Request) {
             // So the fix is not a louder expression instruction. Three of those
             // failed. It is telling the model that a face has two halves, and
             // that the photo only owns one of them.
-            const expressionSourceNote = expressionLine
-              ? ' IMPORTANT — these photos define WHO this person is, not what their face is doing: take the bone structure, eye shape and colour, nose, lip shape, hair, skin tone, apparent age and distinguishing marks from them, and do NOT copy the expression, eyebrow position, mouth position, head angle or gaze direction you see in them. Those come from the FACIAL EXPRESSION instruction in this brief and from nowhere else. The same person wearing a completely different expression is still instantly recognisable as themselves, and that is exactly what is being asked for.'
-              : ''
+            // Which way this reads depends on WHICH photo is in front of the
+            // model, and getting it backwards would have the two mechanisms
+            // fighting: telling it to ignore an expression we deliberately put
+            // there is worse than saying nothing at all.
+            const expressionSourceNote = !expressionLine
+              ? ''
+              : expressionInReference
+                ? ' The first portrait was made for this design and the person in it is ALREADY wearing the exact expression this thumbnail needs — reproduce that expression as faithfully as you reproduce the face. Any later reference photo is there only to confirm identity; ignore the expression in those.'
+                : ' IMPORTANT — these photos define WHO this person is, not what their face is doing: take the bone structure, eye shape and colour, nose, lip shape, hair, skin tone, apparent age and distinguishing marks from them, and do NOT copy the expression, eyebrow position, mouth position, head angle or gaze direction you see in them. Those come from the FACIAL EXPRESSION instruction in this brief and from nowhere else. The same person wearing a completely different expression is still instantly recognisable as themselves, and that is exactly what is being asked for.'
             const identityInstruction = (scoutUsedFaceModel && scoutFrameIdx
               ? `Images 1–${creatorCount - 1} are close-up portrait photos of the creator — use these as the PRIMARY face identity source. Image ${creatorCount} is a cropped frame from the actual video — use it to match the creator's ${expressionLine ? 'outfit, hair style and lighting context' : 'pose, outfit, hair style, and lighting context'}. Together they give you both the exact face AND the real-video look.`
               : usingFaceModel
@@ -2107,7 +2201,7 @@ export async function POST(request: Request) {
               // happened to a chosen expression and to a worn garment's real
               // colours. These two repeat here so they are the final word.
               ...(wearLine ? ['', `FINAL CHECK — THE GARMENT: the item on them is the one in the product reference photo. Same colour, same pattern and texture, same collar, same trim and contrast panels, same sleeve length. If the palette or the design would look better with a different colour, the reference still wins.`] : []),
-              ...(expressionLine ? ['', `FINAL CHECK — THE FACE: ${expressionLine} The reference photos are the source of WHO they are and never of what their face is doing: if the expression in this render matches the reference selfie rather than the instruction above, it is wrong.`] : []),
+              ...(expressionLine ? ['', `FINAL CHECK — THE FACE: ${expressionLine}${expressionInReference ? ' The first reference portrait already wears this exact expression — match it.' : ' The reference photos are the source of WHO they are and never of what their face is doing: if the expression in this render matches the reference selfie rather than the instruction above, it is wrong.'}`] : []),
             ].filter(Boolean).join('\n')
             }
             refs = [
@@ -2176,6 +2270,7 @@ export async function POST(request: Request) {
           sourceProductTitle: productTitle || null,
           sourceProductImageUrl: productImageUrl || null,
           expressionUsed: expressionKey,
+          expressionViaPortrait: expressionInReference,
           wearApplied: !!wearLine,
           wearKind: wearable.kind,
           thumbnailScores: gfxUrls.map(() => 0),

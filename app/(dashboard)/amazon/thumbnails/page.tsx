@@ -34,7 +34,7 @@ export default function AmazonThumbnailsPage() {
   const [result, setResult] = useState<{
     url: string; hook: string
     sourceTitle?: string | null; sourceImage?: string | null
-    expressionUsed?: string; wearApplied?: boolean
+    expressionUsed?: string; wearApplied?: boolean; expressionViaPortrait?: boolean
   } | null>(null)
   const [question, setQuestion] = useHeadlineStyle()
   const [wear, setWear] = useWearProduct()
@@ -127,6 +127,7 @@ export default function AmazonThumbnailsPage() {
         sourceTitle: (data.sourceProductTitle as string | null) ?? null,
         sourceImage: (data.sourceProductImageUrl as string | null) ?? null,
         expressionUsed: (data.expressionUsed as string) || 'auto',
+        expressionViaPortrait: !!data.expressionViaPortrait,
         wearApplied: !!data.wearApplied,
       })
     } catch (err) {
@@ -318,6 +319,7 @@ export default function AmazonThumbnailsPage() {
                   )}
                   <p className="text-[11px] text-[#86868b] mt-1">
                     Expression: {result.expressionUsed === 'auto' ? 'Auto' : result.expressionUsed}
+                    {result.expressionViaPortrait ? ' (posed reference)' : result.expressionUsed !== 'auto' ? ' (prompt only)' : ''}
                     {result.wearApplied ? ' · worn on you' : ''}
                   </p>
                   <p className="text-[11px] text-[#86868b] mt-0.5">
