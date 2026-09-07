@@ -28,7 +28,14 @@ export default function AmazonThumbnailsPage() {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ url: string; hook: string } | null>(null)
+  /** The render, plus WHAT WENT IN to make it. A wrong-coloured garment is
+   *  either the wrong source photo or a bad prompt, and you cannot tell which
+   *  from the output alone. */
+  const [result, setResult] = useState<{
+    url: string; hook: string
+    sourceTitle?: string | null; sourceImage?: string | null
+    expressionUsed?: string; wearApplied?: boolean
+  } | null>(null)
   const [question, setQuestion] = useHeadlineStyle()
   const [wear, setWear] = useWearProduct()
   const [expression, setExpression] = useExpression()
@@ -115,7 +122,13 @@ export default function AmazonThumbnailsPage() {
       }
       const url = (Array.isArray(data.thumbnailUrls) && data.thumbnailUrls[0]) || data.thumbnailUrl
       if (!url) throw new Error('No thumbnail came back. Try again.')
-      setResult({ url, hook: (data.overlayHook as string) || '' })
+      setResult({
+        url, hook: (data.overlayHook as string) || '',
+        sourceTitle: (data.sourceProductTitle as string | null) ?? null,
+        sourceImage: (data.sourceProductImageUrl as string | null) ?? null,
+        expressionUsed: (data.expressionUsed as string) || 'auto',
+        wearApplied: !!data.wearApplied,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed. Try again.')
     } finally {
@@ -284,6 +297,36 @@ export default function AmazonThumbnailsPage() {
             </a>
             {result.hook && <span className="text-xs px-2 py-1 rounded-full bg-[#d97706]/10 text-[#d97706] font-medium">{result.hook}</span>}
           </div>
+
+          {/* WHAT WENT IN. If the garment in the render is not the garment on
+              this card, MVP was handed the wrong product photo and no amount of
+              prompt wording will fix it — check the ASIN, not the design.
+              Amazon lists each colour of a shirt as its own ASIN, so a variant
+              is the single easiest thing to get wrong. */}
+          {(result.sourceImage || result.sourceTitle) && (
+            <div className="mt-4 pt-3 border-t border-gray-200 dark:border-white/10">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#86868b] mb-2">What MVP used</p>
+              <div className="flex items-start gap-3">
+                {result.sourceImage && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={result.sourceImage} alt="Product reference MVP used"
+                    className="w-16 h-16 object-contain rounded-lg border border-gray-200 dark:border-white/10 bg-white flex-shrink-0" />
+                )}
+                <div className="min-w-0">
+                  {result.sourceTitle && (
+                    <p className="text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-snug">{result.sourceTitle}</p>
+                  )}
+                  <p className="text-[11px] text-[#86868b] mt-1">
+                    Expression: {result.expressionUsed === 'auto' ? 'Auto' : result.expressionUsed}
+                    {result.wearApplied ? ' · worn on you' : ''}
+                  </p>
+                  <p className="text-[11px] text-[#86868b] mt-0.5">
+                    If this is not the product you meant, the ASIN is the wrong colour or variant.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

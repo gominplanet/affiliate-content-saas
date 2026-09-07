@@ -2146,6 +2146,17 @@ export async function POST(request: Request) {
           ok: true,
           thumbnailUrl: gfxUrls[0],
           thumbnailUrls: gfxUrls,
+          // WHAT WENT IN. Two rounds were spent arguing about a wrong-coloured
+          // polo without either of us being able to see which product photo the
+          // model was handed, or whether the chosen expression reached the
+          // server at all. A render that disagrees with the product page is
+          // either the wrong source image or a bad prompt, and those need
+          // opposite fixes. Now the answer is on screen.
+          sourceProductTitle: productTitle || null,
+          sourceProductImageUrl: productImageUrl || null,
+          expressionUsed: expressionKey,
+          wearApplied: !!wearLine,
+          wearKind: wearable.kind,
           thumbnailScores: gfxUrls.map(() => 0),
           thumbnailScore: 0,
           belowThreshold: false,
