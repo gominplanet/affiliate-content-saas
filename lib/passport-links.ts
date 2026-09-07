@@ -217,7 +217,10 @@ export async function passportLinkForUser(
     if (!ig?.passport_links_enabled) return null
     // Studio + Pro only — even if the flag is set, a lower tier gets no link.
     if (!canUsePassport(normalizeTier(ig?.tier))) return null
-    const { data: site } = await db.from('wordpress_sites').select('id').eq('user_id', userId).eq('is_default', true).maybeSingle()
+    // limit(1), not maybeSingle(): two rows flagged default is a data quirk, not
+    // a reason to fail the whole mint and drop the creator to a plain link.
+    const { data: siteRows } = await db.from('wordpress_sites').select('id').eq('user_id', userId).eq('is_default', true).limit(1)
+    const site = Array.isArray(siteRows) ? siteRows[0] : null
     const siteId = (site?.id as string | undefined) ?? null
     // The source is baked into its own code, so the URL stays clean (no ?s= tail).
     const code = await getOrCreatePassportLink(db, userId, siteId, { asin: a, label: opts?.title ?? null, source: opts?.source ?? null })
@@ -246,7 +249,10 @@ export async function passportLinkForDestination(
     const { data: ig } = await db.from('integrations').select('passport_links_enabled, tier').eq('user_id', userId).maybeSingle()
     if (!ig?.passport_links_enabled) return null
     if (!canUsePassport(normalizeTier(ig?.tier))) return null
-    const { data: site } = await db.from('wordpress_sites').select('id').eq('user_id', userId).eq('is_default', true).maybeSingle()
+    // limit(1), not maybeSingle(): two rows flagged default is a data quirk, not
+    // a reason to fail the whole mint and drop the creator to a plain link.
+    const { data: siteRows } = await db.from('wordpress_sites').select('id').eq('user_id', userId).eq('is_default', true).limit(1)
+    const site = Array.isArray(siteRows) ? siteRows[0] : null
     const siteId = (site?.id as string | undefined) ?? null
     const code = await getOrCreatePassportLink(db, userId, siteId, { destinationUrl: dest, label: opts?.title ?? null, source: opts?.source ?? null })
     if (!code) return null
@@ -405,14 +411,25 @@ export async function getOrCreatePassportLink(
 
   // Find this creator's existing link for the same target + source (Supabase
   // needs .is for null columns and .eq otherwise).
+  //
+  // ORDER + LIMIT 1, never maybeSingle(). maybeSingle() treats a second matching
+  // row as an ERROR, and duplicates are reachable here: two generations racing on
+  // the same product each insert before the other's read lands. Once that has
+  // happened the read fails forever, the insert below then hits the unique index,
+  // the retry re-reads and fails again, and this returns null on every future
+  // call for that target. The caller reads null as "Passport is not available"
+  // and quietly publishes a plain Amazon link instead of the creator's chosen
+  // geo-routing link, with nothing logged and nothing on screen. Any of the
+  // duplicates is a correct answer; the oldest keeps the link stable.
   const findExisting = async (): Promise<string | null> => {
     let q = admin.from('passport_links').select('code').eq('user_id', userId)
     q = a === null ? q.is('asin', null) : q.eq('asin', a)
     q = d === null ? q.is('destination_url', null) : q.eq('destination_url', d)
     q = siteId === null ? q.is('site_id', null) : q.eq('site_id', siteId)
     q = src === null ? q.is('source', null) : q.eq('source', src)
-    const { data } = await q.maybeSingle()
-    return (data?.code as string | undefined) || null
+    const { data, error } = await q.order('created_at', { ascending: true }).limit(1)
+    if (error) console.warn('[passport] existing-link lookup failed:', error.message)
+    return ((Array.isArray(data) ? data[0]?.code : null) as string | undefined) || null
   }
 
   try {
@@ -429,13 +446,17 @@ export async function getOrCreatePassportLink(
     // concurrent create (the unique index catches the latter).
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = randomCode()
-      const { data } = await admin.from('passport_links').insert({
+      const { data, error } = await admin.from('passport_links').insert({
         code, user_id: userId, site_id: siteId, asin: a, destination_url: d, source: src,
         label: (target.label || '').slice(0, 300) || null, group_id: groupId,
       }).select('code').maybeSingle()
       if (data?.code) return data.code as string
       const race = await findExisting()
       if (race) return race
+      // Say why. A Passport link that cannot be minted downgrades the creator to
+      // a plain Amazon link, and until now that happened in complete silence, so
+      // a missing column or a broken policy looked identical to working fine.
+      if (error) console.warn(`[passport] mint failed (attempt ${attempt + 1}):`, error.message)
     }
     return null
   } catch {
