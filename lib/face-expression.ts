@@ -129,3 +129,10 @@ export function expressionDirective(key: ExpressionKey): string | null {
 export function hasExpressionChoice(key: ExpressionKey): boolean {
   return key !== 'auto' && BY_KEY.has(key)
 }
+
+/** The plain words for a pick, for anywhere that needs to NAME the choice
+ *  rather than instruct on it: the art-director brief, a log line, a label. */
+export const EXPRESSION_LABEL: Record<ExpressionKey, string> = EXPRESSIONS.reduce((acc, e) => {
+  acc[e.key] = e.key === 'auto' ? 'whatever fits the headline' : `${e.label.toLowerCase()} (${e.hint.toLowerCase()})`
+  return acc
+}, {} as Record<ExpressionKey, string>)

@@ -115,6 +115,22 @@ const check = (name: string, cond: boolean | undefined, detail?: string) => {
   check('without promising it will be exact', !/exactly|guaranteed|perfect/i.test(WEAR_CAVEAT), WEAR_CAVEAT)
 }
 
+// ── nothing in the wear path may call the product plain ─────────────────────
+// This shipped and regressed a real design. The wardrobe line read "anything
+// else on them is plain and neutral", the image model attached "plain" to the
+// garment, and a navy cable-knit polo with a white contrast collar came back as
+// a plain pale polo. Any sentence that can be read as describing the product
+// must never contain a word that flattens it.
+{
+  const w = detectWearable({ title: 'Gracyoga Men\u2019s Polo Shirts Casual Knit Texture Collared Golf Shirt' })
+  check('a knit-texture polo is wearable', w.wearable, JSON.stringify(w))
+  const d = wearDirective(w) || ''
+  check('the directive never calls anything plain', !/\bplain\b/i.test(d), d)
+  check('the directive never calls anything neutral', !/\bneutral\b/i.test(d), d)
+  check('the directive never invites simplifying it', !/\bsimplif|clean it up\b/i.test(d), d)
+  check('and it names the pattern as something to keep', /print|pattern|colour/i.test(d), d)
+}
+
 console.log(failures.length ? 'FAIL' : 'ALL PASS')
 for (const f of failures) console.log(`  ${f}`)
 process.exit(failures.length ? 1 : 0)

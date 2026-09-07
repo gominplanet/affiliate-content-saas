@@ -28,7 +28,7 @@ import { bakeSimpleHeadline, compositeBadgeOnly, NEON_BORDER_STYLE_COUNT, type T
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { detectWearable, wearDirective } from '@/lib/wear-product'
-import { normalizeExpression, expressionDirective } from '@/lib/face-expression'
+import { normalizeExpression, expressionDirective, EXPRESSION_LABEL } from '@/lib/face-expression'
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -559,8 +559,14 @@ async function designThumbnailBriefs(input: {
    *  art director has to know, or it writes a concept that stages the garment
    *  on a hanger beside them and the render dutifully obeys the concept. */
   wornOn?: string | null
+  /** The expression the creator chose. Same reason: the brief names a reaction
+   *  of its own, and with the Question style it is told to make that reaction
+   *  skeptical. A concept describing a doubtful face beats a directive asking
+   *  for an excited one, because the concept is the thing the render follows. */
+  fixedExpression?: string | null
 }): Promise<ThumbBrief[]> {
   const n = Math.max(1, Math.min(5, Math.floor(input.count)))
+  const fixedExpression = (input.fixedExpression || '').trim()
   const isQuestion = input.headlineStyle === 'question'
   const anthropic = createAnthropicClient()
   const clampBrief = (o: Record<string, unknown>, i: number): ThumbBrief => {
@@ -593,7 +599,8 @@ async function designThumbnailBriefs(input: {
       callouts: calls,
       banner: stripDesignBrands(scrubBanned(String(o.banner || '').trim())).slice(0, 40),
       badge: clampLine(stripDesignBrands(scrubBanned(String(o.badge || '').trim())).toUpperCase(), 18),
-      expression: String(o.expression || '').trim().slice(0, 60),
+      // The creator's pick wins even if the model ignored the rule above.
+      expression: fixedExpression || String(o.expression || '').trim().slice(0, 60),
       pose: String(o.pose || '').trim().slice(0, 60),
     }
   }
@@ -605,6 +612,7 @@ async function designThumbnailBriefs(input: {
     input.claimsSheet ? `WHAT THE CREATOR SAID IN THE VIDEO (strongest grounding):\n${input.claimsSheet.slice(0, 500)}` : '',
     input.lockedHeadline ? `REQUIRED HEADLINE (use these exact words for every brief's line1+line2, just split + style them): "${input.lockedHeadline}"` : '',
     input.noHuman ? 'PRODUCT-ONLY (hard rule): these designs must contain NO people at all. Do NOT reference a person, model, hands, or anyone using the product in the concept, callouts or banner. The concept centers on the PRODUCT itself. Leave expression and pose empty.' : '',
+    input.fixedExpression ? `EXPRESSION IS FIXED (hard rule, overrides every other instruction about reactions, including the headline-style guidance): the creator chose ${input.fixedExpression}. Set every brief's "expression" field to exactly that, and make sure NOTHING in the concept, banner or callouts describes them reacting any other way. Do not write a doubtful or skeptical face into the concept unless that IS the chosen expression.` : '',
     input.wornOn ? `WORN (hard rule): the creator is WEARING this product — it is ${input.wornOn}. Every concept shows it on them. Never describe it held up, presented in a hand, laid out, floating, on a hanger, on a mannequin or on a stand, and never put a second copy of it anywhere in the design. Write "pose" as how they stand or move while wearing it, never as a gesture holding it.` : '',
     '',
     `Design ${n} distinct briefs now. Output the JSON array only.`,
@@ -1193,7 +1201,7 @@ export async function POST(request: Request) {
     const sharedBriefKey = typeof briefKey === 'string' && briefKey.trim()
       // The wear toggle changes what the art director is asked for, so a brief
       // written before it was ticked must not be handed back after.
-      ? `${briefKey.trim().slice(0, 196)}${wantQuestion ? ':q' : ''}${wearProduct === true ? ':w' : ''}`
+      ? `${briefKey.trim().slice(0, 196)}${wantQuestion ? ':q' : ''}${wearProduct === true ? ':w' : ''}${typeof expressionChoice === 'string' && expressionChoice && expressionChoice !== 'auto' ? `:x${expressionChoice}` : ''}`
       : undefined
 
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
@@ -1730,6 +1738,7 @@ export async function POST(request: Request) {
             lockedHeadline: lockedHeadline || undefined,
             headlineStyle: wantQuestion ? 'question' : 'statement',
             wornOn: wearLine ? wearable.on : null,
+            fixedExpression: expressionLine ? EXPRESSION_LABEL[expressionKey] : null,
           }),
         })
 
@@ -1895,8 +1904,13 @@ export async function POST(request: Request) {
             const gfxAccent = accentW || (wantAutoAccent ? (brief.emphasisWord || '') : '')
             // The wardrobe line varies what the creator has on, which is the one
             // thing that must not vary when the product IS what they have on.
+            // "anything else on them is plain and neutral" was the whole regression.
+            // The model read "plain and neutral" as applying to the garment and
+            // rendered a plain pale polo in place of a navy cable-knit one with a
+            // white contrast collar. Nothing in that sentence may describe the
+            // product, so it now only ever describes what is NOT the product.
             const gfxWardrobe = wearLine
-              ? 'WARDROBE: what they are wearing is the product itself, described above; anything else on them is plain and neutral, and the product is never swapped for a similar garment.'
+              ? `WARDROBE: they are wearing the product itself, and it keeps EXACTLY the colour, pattern, texture, collar and trim of the reference photo — never simplified, never recoloured, never a plain version of it. Any OTHER garment visible on them (a jacket over it, a shirt under it) is unpatterned so it does not compete; that applies to those garments only and NEVER to the product.`
               : wardrobeDirective(faceModel?.outfit_pref)
             const personAction = briefExpression || briefPose
               ? `Give them ${briefExpression || 'a natural, content-fitting reaction'}${briefPose ? `, ${briefPose}` : ''} — make the expression genuine and specific, not a generic stock smile.`
@@ -1994,6 +2008,11 @@ export async function POST(request: Request) {
                 `  Place the two lines where they do NOT cover the creator's face or the product (e.g. across the top or down one side). Outlined text only — no panels or filled boxes — crisp and readable at small sizes. No other text anywhere in the image${gfxBadge ? ' except the starburst badge above' : ''}.`,
                 '',
                 'STYLE: High-production YouTube creator thumbnail. Bold, punchy, cinematic depth of field (softly blurred background) so the creator and product stay sharp. No logos, no watermarks, no brand names rendered in the image itself.',
+                // Last word, for the same reason as the default branch: the
+                // creator's own scene direction above describes a mood and a
+                // look, and an earlier instruction loses to it.
+                ...(wearLine ? ['', 'FINAL CHECK — THE GARMENT: the item on them is the one in the product reference photo. Same colour, same pattern and texture, same collar and trim, same sleeve length. The scene direction never changes what the product looks like.'] : []),
+                ...(expressionLine ? ['', `FINAL CHECK — THE FACE: ${expressionLine}`] : []),
               ].join('\n')
             } else {
             // The art director (Sonnet) already designed a bespoke, product-
@@ -2006,7 +2025,7 @@ export async function POST(request: Request) {
                   `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 16:9 landscape (1536×864) — in the polished style of today's top product-review creators. Bring THIS art-director brief (written specifically for this product) to life exactly:`,
                   '',
                   `DESIGN CONCEPT: ${briefConcept}`,
-                  briefPalette ? `COLOUR PALETTE: ${briefPalette}. Do NOT default to plain yellow-on-black.` : '',
+                  briefPalette ? `COLOUR PALETTE: ${briefPalette}. Do NOT default to plain yellow-on-black.${wearLine ? ' This palette governs the BACKGROUND, type and graphics ONLY. The product keeps its own real colours and pattern from the reference photo, even when they clash with the palette — a clash is correct, a recoloured product is not.' : ''}` : '',
                   briefBanner ? `BANNER PHRASE: render "${briefBanner}" inside a hand-painted brush-stroke or torn banner as a secondary punch (correct spelling).` : '',
                   briefCallouts.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips, or spec pill badges — correctly spelled, a few words each: ${briefCallouts.join(' · ')}.` : '',
                   'Execute it vibrant, modern, high-contrast and layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
@@ -2046,6 +2065,14 @@ export async function POST(request: Request) {
               '',
               'FRAMING: the canvas is a full 16:9 landscape (1536×864) and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout, the person\'s full head and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.',
               'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — make it POP.',
+              // LAST, on purpose. Everything above competes: the art director's
+              // concept describes a mood, the palette describes colours, the
+              // person line asks for a fitting reaction. An instruction placed
+              // early gets averaged away by all of it, which is exactly what
+              // happened to a chosen expression and to a worn garment's real
+              // colours. These two repeat here so they are the final word.
+              ...(wearLine ? ['', `FINAL CHECK — THE GARMENT: the item on them is the one in the product reference photo. Same colour, same pattern and texture, same collar, same trim and contrast panels, same sleeve length. If the palette or the design would look better with a different colour, the reference still wins.`] : []),
+              ...(expressionLine ? ['', `FINAL CHECK — THE FACE: ${expressionLine}`] : []),
             ].filter(Boolean).join('\n')
             }
             refs = [
@@ -2538,7 +2565,10 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             // the one thing that must not vary when the product IS what they
             // have on. Left in, it dresses them in something else and the model
             // resolves the conflict by putting the real garment beside them.
-            const wornWardrobe = `WARDROBE: what they are wearing is the product itself, described above. Anything else on them is plain and neutral so nothing competes with it, and it is never swapped for a different garment of the same type.`
+            // Same wording bug as the graphic path: "plain and neutral" read as
+            // describing the garment and flattened a patterned product into a
+            // blank one. It may only ever describe what is NOT the product.
+            const wornWardrobe = `WARDROBE: they are wearing the product itself, and it keeps EXACTLY the colour, pattern, texture, collar and trim of the reference photo — never simplified, never recoloured, never a plain version of it. Any OTHER garment visible on them is unpatterned so it does not compete; that applies to those garments only and NEVER to the product.`
             const humanClauses = noHuman ? '' : `${identityClause}\n${wearLine ? wornWardrobe : outfitNote}\n`
             // Creator's uploaded style reference, distilled — match its LOOK
             // (palette/lighting/contrast/energy) while keeping our composition
@@ -2564,7 +2594,7 @@ ${wantEffects ? `ENERGY EFFECTS (the creator asked for these): make the image fe
 ` : ''}${headlineClause}
 BACKGROUND (must FIT the product's real-world use): set the scene where ${productTitle || 'this product'} is ACTUALLY used — INFER the correct environment from the product itself. Examples: a kitchen gadget → a kitchen; an OUTDOOR / patio / deck / pool / garden / lawn product → a tidy outdoor patio, deck, balcony, poolside or backyard (NOT indoors); a car/auto product → a garage or driveway; a bathroom product → a bathroom; a workshop/tool → a garage or workbench; a desk/office product → a desk. Do NOT default to a generic indoor living room unless the product is genuinely a living-room item. Grade the chosen setting as ${palette.overall} cinematic — a dramatic blend of ${palette.rim} rim-light behind the subject and ${palette.accent} glow around the product, deep contrast, soft vignette around the edges. The rim light must visibly separate the subject from the background so any cut-out edge blends cleanly with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes. Loosely fits the video "${videoTitle}" without literally illustrating the title.
 The ONLY text in the image is the headline described above (plus the arrow${cBadge && withText ? ' and the starburst badge' : ''}). HARD RULE: the word "Amazon" (and "Prime") must NEVER appear in the headline or anywhere in the image, and NEVER draw the Amazon smile / swoosh arrow logo. NO retailer logos, NO invented brand names, NO marketing copy or feature lists from product packaging, NO price tags, watermarks, ©/™/® symbols, or any extra signage anywhere in the background or on surfaces. The product's own physical branding on its body/bottle/box IS kept intact (it's the item being reviewed).
-Ultra-sharp, professional, photorealistic.`
+Ultra-sharp, professional, photorealistic.${wearLine ? `\nFINAL CHECK — THE GARMENT: the item on them is the one in the product reference photo. Same colour, same pattern and texture, same collar and trim, same sleeve length. The scene's palette and lighting never change what the product looks like.` : ''}${expressionLine ? `\nFINAL CHECK — THE FACE: ${expressionLine}` : ''}`
           }
 
           // wantClean (default) = overlay the title via canvas (perfect text);
