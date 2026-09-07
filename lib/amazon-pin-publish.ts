@@ -15,6 +15,7 @@ import { getLinkStyle } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { asinFromAmazonUrl, resolveFinalUrl } from '@/lib/product-link'
+import { pinDestination, isBlockedPinLink, type PinDestinationKind } from '@/lib/pinterest-destination'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -177,8 +178,86 @@ export interface PublishPinResult {
   pinUrl: string
   title: string
   description: string
+  /** Where the PIN points: a page the creator owns. Never an affiliate link. */
   linkUrl: string
+  /** What that page sends the shopper to. Reporting only one of these is how
+   *  the mismatch stayed invisible until Pinterest rejected a push. */
+  affiliateUrl: string
+  destinationKind: PinDestinationKind
   geniuslinkNote: string | null
+}
+
+/**
+ * Resolve the page this pin should land on, and make sure the product is
+ * actually on it first.
+ *
+ * The tile write is deliberately before the pin: a pin advertising a product
+ * that is not on the page it lands on is worse than no pin.
+ */
+async function resolvePinDestinationFor(opts: {
+  userId: string
+  intRow: PinIntegration
+  asin: string
+  productTitle?: string
+  imageUrl?: string
+  affiliateUrl: string
+}) {
+  const admin = createAdminClient()
+  let shopHandle: string | null = null
+  // Read the homepage here rather than off intRow: callers select a narrow
+  // column set for the Pinterest token and tag, so wordpress_url is not on it
+  // and the homepage fallback would have been silently empty every time.
+  let homepageUrl: string | null = null
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: ig } = await (admin as any)
+      .from('integrations').select('wordpress_url').eq('user_id', opts.userId).maybeSingle()
+    homepageUrl = (ig?.wordpress_url as string | null) || null
+  } catch { homepageUrl = null }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: page } = await (admin as any)
+      .from('link_pages').select('id, handle, published').eq('user_id', opts.userId).maybeSingle()
+    if (page?.handle && page.published) {
+      shopHandle = page.handle as string
+      // Put the product on the page before pinning at it. Upsert by ASIN so a
+      // re-pin re-surfaces the existing tile instead of duplicating it.
+      if (opts.asin) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: existing } = await (admin as any)
+          .from('link_page_items').select('id').eq('page_id', page.id).eq('asin', opts.asin).maybeSingle()
+        if (existing?.id) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (admin as any).from('link_page_items')
+            .update({ hidden: false, url: opts.affiliateUrl }).eq('id', existing.id)
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: last } = await (admin as any).from('link_page_items')
+            .select('position').eq('page_id', page.id).order('position', { ascending: false }).limit(1).maybeSingle()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (admin as any).from('link_page_items').insert({
+            page_id: page.id, user_id: opts.userId, kind: 'product',
+            title: (opts.productTitle || 'Shop this').slice(0, 200),
+            url: opts.affiliateUrl, image_url: opts.imageUrl || null,
+            asin: opts.asin || null, source: 'pinterest',
+            position: (typeof last?.position === 'number' ? last.position : -1) + 1,
+            hidden: false,
+          })
+        }
+      }
+    }
+  } catch (e) {
+    // A shop page we could not read is the same as not having one: we fall
+    // through to the homepage rather than pinning at an affiliate link.
+    console.warn('[pin-destination] shop page lookup failed:', e instanceof Error ? e.message : e)
+    shopHandle = null
+  }
+
+  return pinDestination({
+    shopHandle,
+    homepageUrl,
+    appOrigin: process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io',
+  })
 }
 
 /**
@@ -217,8 +296,38 @@ export async function publishAmazonPin(opts: {
     : await resolveAffiliateLink({
         userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle, channel: 'pinterest',
       })
-  const { linkUrl, asin, note: geniuslinkNote } = resolved
-  if (!linkUrl) throw new Error('No product link to pin to. Paste an Amazon link or ASIN.')
+  const { linkUrl: affiliateUrl, asin, note: geniuslinkNote } = resolved
+  if (!affiliateUrl) throw new Error('No product link to pin to. Paste an Amazon link or ASIN.')
+
+  // ── WHERE THE PIN IS ALLOWED TO POINT ─────────────────────────────────────
+  //
+  // Not at the affiliate link. Pinterest rejects affiliate redirect and cloaking
+  // domains as a class — a real Deal Radar push came back with "we blocked this
+  // link because it may lead to spam" on Pinterest alone while every other
+  // platform in the same run posted fine — and MVP already knew this: the video
+  // pin path carries the rule "NEVER an affiliate redirect, Pinterest + Amazon
+  // ToS; every option here is the creator's own page". This path was written
+  // separately and did the opposite.
+  //
+  // So the pin points at a page the creator owns, and the affiliate link sits on
+  // that page. For a deal push, no blog post exists and never will, but the
+  // shop page does: every Amazon social publish already drops the product onto
+  // it as a tile with the affiliate link on it, which is why the same modal
+  // tells the creator to point their bio there.
+  //
+  // The tile is written BEFORE the pin goes out, so a pin can never advertise a
+  // product that is not on the page it lands on.
+  const dest = await resolvePinDestinationFor({
+    userId: opts.userId, intRow,
+    asin, productTitle: opts.productTitle, imageUrl: opts.imageUrl,
+    affiliateUrl,
+  })
+  if (!dest.url) throw new Error(dest.note || 'Pinterest needs a page of your own to link to.')
+  const linkUrl = dest.url
+  // Belt and braces. Whatever assembled this, an affiliate redirect must not be
+  // what Pinterest sees, because the failure is not a rejected request: it is a
+  // creator being told their content looks like spam.
+  if (isBlockedPinLink(linkUrl)) throw new Error('Pinterest does not accept affiliate redirect links. This pin was not published.')
 
   // Copy — use what the caller passed, else auto-write.
   let title = (opts.title || '').trim()
@@ -263,5 +372,12 @@ export async function publishAmazonPin(opts: {
     } catch { /* best-effort heal — pin already published */ }
   }
   const pinId = pin.id
-  return { pinId, pinUrl: `https://www.pinterest.com/pin/${pinId}/`, title, description, linkUrl, geniuslinkNote }
+  return {
+    pinId, pinUrl: `https://www.pinterest.com/pin/${pinId}/`, title, description,
+    // What the PIN points at (the creator's page) and what that page sends the
+    // shopper to (their affiliate link). Reporting only one of them is how this
+    // became invisible in the first place.
+    linkUrl, affiliateUrl, destinationKind: dest.kind,
+    geniuslinkNote: geniuslinkNote || dest.note,
+  }
 }
