@@ -559,6 +559,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [product, setProduct] = useState<ProductInfo | null>(null)
   const [affiliateUrl, setAffiliateUrl] = useState<string | null>(null)
   const [geniuslinkUsed, setGeniuslinkUsed] = useState<boolean | null>(null)
+  /** WHAT THE SERVER ACTUALLY BUILT, not what the URL looks like from here.
+   *  The badge below used to guess from the URL shape: Geniuslink, else a
+   *  "?tag=" substring, else "Plain Amazon link". A Passport link is
+   *  mvpl.ink/<code> and carries neither, so every working Passport link was
+   *  labelled a plain Amazon link, and a creator who had just switched to
+   *  Passport was told his links were not being built. The server already sends
+   *  the answer; the badge simply was not reading it. */
+  const [linkStyleUsed, setLinkStyleUsed] = useState<'passport' | 'geniuslink' | 'bitly' | 'direct' | null>(null)
   /** Where the product attached to this generation came from:
    *  'caller' = user dropped an ASIN in the YT title themselves
    *  'title'  = same (server detected the ASIN in the title)
@@ -1092,6 +1100,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       setProduct({ ...productData, bullets: productBullets, description: productDescription })
       setAffiliateUrl(data.affiliateUrl as string)
       setGeniuslinkUsed((data.geniuslinkUsed ?? false) as boolean)
+      setLinkStyleUsed((data.linkStyle ?? null) as typeof linkStyleUsed)
       setProductDiscoverySource((data.productDiscoverySource ?? null) as typeof productDiscoverySource)
       setGeniuslinkError((data.geniuslinkError ?? null) as string | null)
       setGeniuslinkSkippedByStyle((data.geniuslinkSkippedByStyle ?? false) as boolean)
@@ -2302,7 +2311,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                   {affiliateUrl && (
                     <span className="flex items-center gap-1 text-[#7C3AED]">
                       <Link2 size={9} />
-                      {geniuslinkUsed ? 'Geniuslink ✓' : affiliateUrl?.includes('?tag=') ? 'Associates link ✓' : 'Plain Amazon link'}
+                      {linkStyleUsed === 'passport' ? 'Passport link ✓'
+                        : linkStyleUsed === 'geniuslink' ? 'Geniuslink ✓'
+                        : linkStyleUsed === 'bitly' ? 'Bitly link ✓'
+                        : linkStyleUsed === 'direct' ? (affiliateUrl?.includes('?tag=') ? 'Associates link ✓' : 'Plain Amazon link')
+                        // Pre-fix responses carry no linkStyle. Guess from the URL
+                        // as before rather than showing nothing.
+                        : geniuslinkUsed ? 'Geniuslink ✓'
+                        : affiliateUrl?.includes('mvpl.ink') ? 'Passport link ✓'
+                        : affiliateUrl?.includes('?tag=') ? 'Associates link ✓' : 'Plain Amazon link'}
                     </span>
                   )}
                 </div>
