@@ -139,7 +139,7 @@ export default function AmazonThumbnailsPage() {
     } finally {
       setBusy(false); setStatus('')
     }
-  }, [product, headline, mode, faceId, question, saveOutfitIfDirty])
+  }, [product, headline, mode, faceId, question, wear, expression, saveOutfitIfDirty])
 
   return (
     <div className="max-w-3xl mx-auto">

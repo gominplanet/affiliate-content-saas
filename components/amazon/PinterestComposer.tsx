@@ -128,7 +128,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Thumbnail failed. Try again.')
     } finally { setGenBusy(false) }
-  }, [product, mode, faceId, question])
+  }, [product, mode, faceId, question, wear, expression])
 
   const publish = useCallback(async () => {
     if (!thumbUrl) return

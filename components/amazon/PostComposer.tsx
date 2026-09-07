@@ -113,7 +113,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Design failed. Try again.')
     } finally { setGenBusy(false) }
-  }, [product, mode, faceId, network, cfg.format, postType, linkInBioCta, question])
+  }, [product, mode, faceId, network, cfg.format, postType, linkInBioCta, question, wear, expression])
 
   const publish = useCallback(async () => {
     if (!thumbUrl) return

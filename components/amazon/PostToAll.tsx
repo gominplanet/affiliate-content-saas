@@ -121,7 +121,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
       }
     }
     setBusy(false)
-  }, [product, mode, faceId, nets, question, wear])
+  }, [product, mode, faceId, nets, question, wear, expression])
 
   const anyConnected = NETS.some(n => nets[n.key].connected)
 
