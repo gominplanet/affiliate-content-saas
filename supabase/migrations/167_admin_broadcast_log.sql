@@ -6,8 +6,15 @@
 --
 -- Populated by /api/admin/broadcast at send-time and by the Resend webhook
 -- (/api/newsletter/resend-webhook) as delivery/open/click/bounce events arrive.
--- Service-role only (admin surfaces) — no RLS policies needed; the table is
--- never exposed to the anon/auth client.
+-- Service-role only (admin surfaces), which is why there are no policies: the
+-- service role bypasses RLS, so with RLS on and nothing granted, these tables are
+-- reachable by the admin routes and by nobody else.
+--
+-- RLS IS THE THING THAT MAKES THAT TRUE. "Service-role only" was written here as
+-- if it were a property of the code, but a table sitting in the public schema is
+-- served by PostgREST to anyone holding the anon key unless RLS says otherwise,
+-- and these rows are every broadcast subject and every recipient's email
+-- address. The enable statements below are the whole protection.
 
 CREATE TABLE IF NOT EXISTS admin_broadcasts (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -32,3 +39,8 @@ CREATE TABLE IF NOT EXISTS admin_broadcast_events (
 
 CREATE INDEX IF NOT EXISTS idx_admin_broadcast_events_bid
   ON admin_broadcast_events (broadcast_id);
+
+-- No policies on purpose: the admin routes use the service-role client, which
+-- bypasses RLS. Every other key gets nothing.
+alter table admin_broadcasts        enable row level security;
+alter table admin_broadcast_events  enable row level security;
