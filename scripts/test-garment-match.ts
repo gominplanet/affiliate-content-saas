@@ -9,7 +9,7 @@
 // design a creator makes.
 //
 // So: only an explicit DIFFERENT costs money. Everything else keeps the render.
-import { parseGarmentVerdict, GARMENT_CHECK_PROMPT } from '../lib/garment-match'
+import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt } from '../lib/garment-match'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -63,6 +63,29 @@ check('UNSURE is neither', parseGarmentVerdict('UNSURE\nThe garment is mostly hi
   check('it lists what actually counts as wrong', /wrong colour/i.test(p) && /contrast collar/i.test(p))
   check('it forgives lighting and folds', /lighting/i.test(p) && /folds/i.test(p))
   check('it forbids guessing', /Do not guess/i.test(p))
+}
+
+// ── the face check asks about the face, and only the face ──────────────────
+// It guards the one image everything downstream copies, so a judge with
+// opinions about identity or lighting would start rejecting good portraits.
+{
+  const p = expressionCheckPrompt('surprised (did not expect that)', 'eyebrows high, eyes wide, mouth open in a soft O')
+  check('it names the expression it is judging', /surprised/.test(p) && /eyebrows high/.test(p))
+  check('it judges the expression only', /Judge ONLY the expression/.test(p))
+  check('it ignores who the person is', /Ignore who the person is/.test(p))
+  check('it names the polite-smile fallback as a failure',
+    /polite closed-mouth smile/.test(p), 'that default is the failure mode this exists to catch')
+  check('it forgives a less exaggerated version',
+    /even if it is less exaggerated/.test(p), 'or every real face gets rejected for not being a caricature')
+  check('and it still allows UNSURE', /UNSURE/.test(p))
+}
+
+// ── one parser, two callers ─────────────────────────────────────────────────
+{
+  check('parseVerdict is the same function, not a second copy',
+    parseVerdict === parseGarmentVerdict)
+  check('and it reads a face verdict the same way',
+    parseVerdict('DIFFERENT\nHe is smiling politely, not surprised.').match === false)
 }
 
 console.log(failures.length ? 'FAIL' : 'ALL PASS')

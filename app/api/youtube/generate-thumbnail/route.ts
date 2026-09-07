@@ -28,8 +28,8 @@ import { bakeSimpleHeadline, compositeBadgeOnly, NEON_BORDER_STYLE_COUNT, type T
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { detectWearable, wearDirective } from '@/lib/wear-product'
-import { normalizeExpression, expressionDirective, EXPRESSION_LABEL } from '@/lib/face-expression'
-import { parseGarmentVerdict, GARMENT_CHECK_PROMPT, type GarmentVerdict } from '@/lib/garment-match'
+import { normalizeExpression, expressionDirective, expressionDescription, EXPRESSION_LABEL } from '@/lib/face-expression'
+import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt, type GarmentVerdict } from '@/lib/garment-match'
 import { buildGraphicThumbnailPrompt } from '@/lib/thumbnail-prompt'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
@@ -677,6 +677,7 @@ async function designThumbnailBriefs(input: {
 // moodboard pic, one of their own previous wins). We distill it into a
 // short style brief that gets folded into the scene prompt — color
 // palette, lighting, composition, mood. Cheap (~$0.005/call) and works
+// alongside the product-image Kontext path without conflicting.
 
 /**
  * Ask a cheap vision model whether the render put the RIGHT garment on.
@@ -692,6 +693,48 @@ async function designThumbnailBriefs(input: {
  * hedge, a malformed answer — all keep the render. The only outcome that costs
  * a creator money is an explicit DIFFERENT.
  */
+
+/**
+ * Does the generated portrait actually wear the expression that was asked for?
+ *
+ * This is the cheapest check in the pipeline and it guards the most. The design
+ * step copies the face it is handed, so a portrait that came back with the
+ * polite smile these models default to produces a thumbnail with a polite
+ * smile, whatever the creator picked — which is exactly the failure that took
+ * an afternoon to find, because nobody could see the intermediate image.
+ *
+ * A fraction of a cent to look, against $0.06 to render it again. Fails open:
+ * anything other than an explicit DIFFERENT keeps the portrait.
+ */
+async function portraitShowsExpression(opts: {
+  portraitPng: Buffer | Uint8Array
+  label: string
+  description: string
+}): Promise<GarmentVerdict> {
+  try {
+    const anthropic = createAnthropicClient()
+    const msg = await withAnthropicRetry(() => anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 120,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png' as const, data: Buffer.from(opts.portraitPng).toString('base64') } },
+          { type: 'text' as const, text: expressionCheckPrompt(opts.label, opts.description) },
+        ],
+      }],
+    }))
+    recordAnthropicUsage(msg, {
+      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_expression_check', model: 'claude-haiku-4-5-20251001',
+    })
+    return parseVerdict((msg.content[0] as { type: string; text?: string })?.text)
+  } catch (e) {
+    console.warn('[expression-check] skipped:', e instanceof Error ? e.message : e)
+    return { match: null, reason: 'check unavailable' }
+  }
+}
+
 async function garmentMatchesProduct(opts: {
   productPng: Buffer | Uint8Array
   renderB64: string
@@ -1845,6 +1888,10 @@ export async function POST(request: Request) {
         // True once the reference photo itself carries the chosen expression, which
         // flips what the design step must be told about it.
         let expressionInReference = false
+        // Whether the posed portrait actually showed the expression, and whether
+        // it took a second attempt. Surfaced so a wrong face is attributable.
+        let expressionVerified: boolean | null = null
+        let expressionRetried = false
         // The garment judge's answer, and whether it cost a second render. Surfaced
         // on the result card so a wrong garment is attributable rather than argued about.
         // A holder, not two plain locals: the render (and so the check) runs
@@ -1980,11 +2027,42 @@ export async function POST(request: Request) {
               ...extraPhotoBytes.slice(0, 2).map((b, i) => ({ data: b, filename: `face_${i + 1}.png`, mime: 'image/png' as const })),
             ]
             const portraitPrompt = buildExpressionPortraitPrompt(expressionKey)
-            const posed = portraitPrompt ? await generateExpressionPortrait({
+            let posed = portraitPrompt ? await generateExpressionPortrait({
               refs: portraitRefs,
               promptText: portraitPrompt,
               imageModel: gfxModelOverride,
             }) : null
+
+            // LOOK AT IT. The design step copies this face, so a portrait that
+            // came back with the polite smile these models default to makes a
+            // thumbnail with a polite smile whatever the creator picked — the
+            // exact failure that took an afternoon to find, because nobody could
+            // see this intermediate image. A fraction of a cent to check,
+            // against $0.06 to render it again: the cheapest guard here, on the
+            // one image everything downstream depends on.
+            const expressionDesc = expressionDescription(expressionKey)
+            if (posed && portraitPrompt && expressionDesc) {
+              const v = await portraitShowsExpression({
+                portraitPng: posed, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
+              })
+              expressionVerified = v.match
+              if (v.match === false) {
+                console.warn(`[expression-check] re-rendering the portrait once: ${v.reason}`)
+                const retry = await generateExpressionPortrait({
+                  refs: portraitRefs,
+                  promptText: `${portraitPrompt}\n\nTHE PREVIOUS ATTEMPT AT THIS PORTRAIT GOT THE EXPRESSION WRONG: ${v.reason} Commit to the expression described above, visibly and unambiguously.`,
+                  imageModel: gfxModelOverride,
+                })
+                if (retry) {
+                  posed = retry
+                  expressionRetried = true
+                  recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxModelOverride ?? 'gpt-image', images: 1 })
+                  expressionVerified = (await portraitShowsExpression({
+                    portraitPng: retry, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
+                  })).match
+                }
+              }
+            }
             if (posed) {
               // The new portrait leads. One original selfie stays behind it as a
               // second identity anchor, so a drift in the generated face has
@@ -2307,6 +2385,8 @@ export async function POST(request: Request) {
           sourceProductImageUrl: productImageUrl || null,
           expressionUsed: expressionKey,
           expressionViaPortrait: expressionInReference,
+          expressionVerified,
+          expressionRetried,
           garmentMatch: garment.check ? garment.check.match : null,
           garmentNote: garment.check && garment.check.match === false ? garment.check.reason : null,
           garmentRetried: garment.retried,

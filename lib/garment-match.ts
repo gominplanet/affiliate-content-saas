@@ -76,3 +76,33 @@ Say DIFFERENT only for a change a shopper would notice as the wrong product: the
 Say MATCH when it is the same item. Small differences in shade from lighting, fabric folds, fit, crop, or a partly hidden garment are all a MATCH.
 
 Say UNSURE when the garment is too obscured to judge. Do not guess.`
+
+/** The same MATCH / DIFFERENT / UNSURE parser, under a name that does not claim
+ *  to be about garments. The face check uses the identical answer shape, and two
+ *  copies of this logic would drift the moment one of them was tightened. */
+export const parseVerdict = parseGarmentVerdict
+
+/** Does the generated portrait actually show the expression that was asked for?
+ *
+ *  The portrait is the single image the whole feature rests on: the design step
+ *  copies the face it is handed, so a portrait that came back with a polite
+ *  smile makes a thumbnail with a polite smile whatever the creator picked. It
+ *  costs a fraction of a cent to look, against $0.06 to render the portrait
+ *  again, so this is the cheapest check in the pipeline and guards the most.
+ *
+ *  Same two rules as the garment check: it fails open, and it judges one thing. */
+export function expressionCheckPrompt(label: string, description: string): string {
+  return `This is a portrait generated to show one specific facial expression.
+
+THE EXPRESSION IT WAS SUPPOSED TO SHOW — "${label}": ${description}.
+
+Answer with ONE word on the first line: MATCH, DIFFERENT, or UNSURE. Then one short sentence saying why.
+
+Judge ONLY the expression. Ignore who the person is, the lighting, the background and the image quality.
+
+Say DIFFERENT when the face shows a clearly different emotion from the one described, or when it shows the neutral, polite closed-mouth smile that these models fall back to instead of committing to an expression.
+
+Say MATCH when the emotion described is the one a viewer would name looking at this face, even if it is less exaggerated than the description.
+
+Say UNSURE only when the face is obscured or cropped so you cannot judge it.`
+}

@@ -36,6 +36,7 @@ export default function AmazonThumbnailsPage() {
     sourceTitle?: string | null; sourceImage?: string | null
     expressionUsed?: string; wearApplied?: boolean; expressionViaPortrait?: boolean
     garmentMatch?: boolean | null; garmentNote?: string | null; garmentRetried?: boolean
+    expressionVerified?: boolean | null; expressionRetried?: boolean
   } | null>(null)
   const [question, setQuestion] = useHeadlineStyle()
   const [wear, setWear] = useWearProduct()
@@ -132,6 +133,8 @@ export default function AmazonThumbnailsPage() {
         garmentMatch: (data.garmentMatch as boolean | null) ?? null,
         garmentNote: (data.garmentNote as string | null) ?? null,
         garmentRetried: !!data.garmentRetried,
+        expressionVerified: (data.expressionVerified as boolean | null) ?? null,
+        expressionRetried: !!data.expressionRetried,
         wearApplied: !!data.wearApplied,
       })
     } catch (err) {
@@ -324,6 +327,8 @@ export default function AmazonThumbnailsPage() {
                   <p className="text-[11px] text-[#86868b] mt-1">
                     Expression: {result.expressionUsed === 'auto' ? 'Auto' : result.expressionUsed}
                     {result.expressionViaPortrait ? ' (posed reference)' : result.expressionUsed !== 'auto' ? ' (prompt only)' : ''}
+                    {result.expressionVerified === true ? ' ✓' : result.expressionVerified === false ? ' — the face did not come out as asked' : ''}
+                    {result.expressionRetried ? ' (took a second attempt)' : ''}
                     {result.wearApplied ? ' · worn on you' : ''}
                   </p>
                   {/* The garment judge's verdict, when one ran. A creator should
