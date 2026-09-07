@@ -369,19 +369,38 @@ Return ONLY valid JSON with these exact keys:
 // A handful of distinct composition styles so pins don't all look like the same
 // before/after split. One is picked at random per generation (and re-rolled on
 // regenerate), which is the biggest lever on visual variety.
+/** The one rule, shared by every pin prompt including the fallbacks.
+ *
+ *  It used to live only in the art-director prompts. The fallbacks that run when
+ *  the art director cannot get product photos had no such rule, and five of six
+ *  scene compositions actively ASKED for an invented person: "a charismatic,
+ *  expressive person", "a person holding the product toward the camera with a
+ *  strong expression". So a roundup that could not resolve its photos silently
+ *  produced a stock human with a forced grin, on a product nobody was holding.
+ *
+ *  Two halves of the same product designed against each other, and the wrong
+ *  half was the one that ran when things went less than perfectly. */
+const NO_PEOPLE_CLAUSE = 'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections anywhere in the image. No models, no shoppers, no hands holding or using anything. If a reference shows a person or hands, keep ONLY the product.'
+
+/** Scene rotation for the fallback pin, so pins vary between generations.
+ *
+ *  Every one is product-only. Variety now comes from the framing, the surface
+ *  and the light rather than from an invented human doing an expression at the
+ *  camera, which is the single most obviously AI-generated thing a pin can
+ *  contain and the thing a creator's own face model exists to avoid. */
 const PIN_COMPOSITIONS: Array<(f: Record<string, string>) => string> = [
-  // 0 — before/after split (the original look)
-  f => `A dynamic split-screen before-and-after layout. A charismatic, expressive person (the expert) looks toward camera with a ${f.emotion} expression, gesturing toward the product. Show a clear before-vs-after transformation — before: ${f.problem}; after: ${f.solution} — with ${f.product_name} in real use.`,
-  // 1 — single bold hero reaction
-  f => `A single bold hero shot: a charismatic person holding ${f.product_name} up toward the camera with a strong ${f.emotion} expression, the product clearly the star, in a clean modern lifestyle setting that fits a ${f.product_category}.`,
-  // 2 — authentic lifestyle / in-context
-  f => `An authentic lifestyle scene: ${f.product_name} in its natural real-world environment, used as intended for a ${f.product_category}, with a person interacting naturally (slightly off-centre) in a ${f.emotion} mood. Editorial, candid, unposed feel.`,
-  // 3 — dramatic product close-up
-  f => `A dramatic, crisp close-up of ${f.product_name} filling most of the frame with shallow depth of field; a person softly out of focus in the background reacting with a ${f.emotion} expression. Premium product-photography feel.`,
-  // 4 — hands-on / point-of-view
-  f => `A hands-on point-of-view scene: human hands actively using ${f.product_name} for a ${f.product_category}, shot slightly top-down, conveying the "${f.solution}" result. Tactile, satisfying, real.`,
-  // 5 — flat-lay / styled arrangement
-  f => `A clean, styled flat-lay from directly overhead: ${f.product_name} arranged with a few complementary props that suit a ${f.product_category}, on a tasteful surface, bright and aspirational. No people.`,
+  // 0 — hero on a colour field
+  f => `${f.product_name} as a single bold hero, centred and filling most of the frame, floating on a rich flat colour field that suits a ${f.product_category}, with a soft contact shadow beneath it. Confident, graphic, poster-like.`,
+  // 1 — dramatic close-up
+  f => `A dramatic, crisp close-up of ${f.product_name} filling most of the frame, shallow depth of field, one strong light source raking across its surface so its material and texture read clearly. Premium product-photography feel.`,
+  // 2 — in its real setting, unattended
+  f => `${f.product_name} sitting in the real-world setting it belongs in for a ${f.product_category}, unattended and in use-ready position, with the environment softly out of focus behind it. Editorial and candid, no one present.`,
+  // 3 — styled flat-lay
+  f => `A clean, styled flat-lay from directly overhead: ${f.product_name} arranged with a few complementary props that suit a ${f.product_category}, on a tasteful surface, bright and aspirational.`,
+  // 4 — before and after, told with the product
+  f => `A split composition contrasting ${f.problem} on one side with ${f.solution} on the other, told entirely through objects, surfaces and light with ${f.product_name} as the hero on the "after" side. No people in either half.`,
+  // 5 — detail macro
+  f => `An extreme macro detail of the most distinctive part of ${f.product_name}, abstract and tactile, filling the frame, with the rest of the product suggested softly out of focus. Rich colour, gallery-quality.`,
 ]
 
 // Multi-product roundup pins (buying guides / comparisons): a clean collage of
@@ -397,6 +416,7 @@ Composition: ${layout} showing these ${n} DISTINCT products together, each in it
 
 Leave a calmer band across the TOP and a little space at the BOTTOM (softer background / gradient) for headline text added later.
 
+${NO_PEOPLE_CLAUSE}
 ABSOLUTELY NO TEXT: Do NOT render ANY text, letters, words, numbers, captions, labels, logos, watermarks, signage, UI, badges, stickers, price tags, or typography of ANY kind anywhere. Purely photographic product tiles with zero written characters. (Headline text is added separately afterward.)
 NO BRANDS: Do NOT render or invent any retailer/marketplace names or logos (especially "Amazon", "Prime", "Walmart", "eBay"), store logos, watermarks, or copyright/trademark symbols — only each product's own physical form/branding.
 
@@ -417,6 +437,7 @@ ${referenceClause}
 
 Visual Style: Vibrant, saturated colors, high-contrast cinematic lighting, modern lifestyle / luxury-tech aesthetic, shallow depth of field so the subject pops. Leave some clean, less-busy space near the TOP and the BOTTOM of the frame (calmer areas, e.g. softer background or gradient) suitable for overlaying text later.
 
+${NO_PEOPLE_CLAUSE}
 ABSOLUTELY NO TEXT: Do NOT render ANY text, letters, words, numbers, captions, labels, logos, watermarks, signage, UI, badges, stickers, or typography of ANY kind anywhere in the image. It must be a purely photographic scene with zero written characters. (Headline text is added separately afterward.)
 NO BRANDS: Do NOT render or invent any retailer/marketplace names or logos (especially "Amazon", "Prime", "Walmart", "eBay"), any company/store logos, watermarks, copyright/trademark symbols, or price tags anywhere — only the product's own physical branding is allowed.
 
