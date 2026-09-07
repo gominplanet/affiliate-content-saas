@@ -1982,11 +1982,32 @@ export async function POST(request: Request) {
               creatorRefLabel = `Image 1 (${usingFaceModel ? 'close-up portrait photo' : 'portrait crop from the video'})`
             }
             const productRefNum = productBytes ? creatorCount + 1 : null
-            const identityInstruction = scoutUsedFaceModel && scoutFrameIdx
-              ? `Images 1–${creatorCount - 1} are close-up portrait photos of the creator — use these as the PRIMARY face identity source. Image ${creatorCount} is a cropped frame from the actual video — use it to match the creator's pose, outfit, hair style, and lighting context. Together they give you both the exact face AND the real-video look.`
+            // WHERE THE EXPRESSION WAS ACTUALLY COMING FROM.
+            //
+            // Five renders in a row came back with the same squint, the same
+            // brow and the same head angle, through three different chosen
+            // expressions and three different design concepts. That is not an
+            // art director repeatedly picking skeptical. That is the reference
+            // selfie being reproduced, expression and all.
+            //
+            // Of course it was. The model is told these photos are a "strong
+            // face identity lock" and that identity is the highest priority
+            // instruction in the brief, and nothing anywhere says which parts of
+            // a photo are the person and which parts are just what they happened
+            // to be doing when it was taken. Faced with a conflict between the
+            // photo and a sentence, it keeps the photo, correctly.
+            //
+            // So the fix is not a louder expression instruction. Three of those
+            // failed. It is telling the model that a face has two halves, and
+            // that the photo only owns one of them.
+            const expressionSourceNote = expressionLine
+              ? ' IMPORTANT — these photos define WHO this person is, not what their face is doing: take the bone structure, eye shape and colour, nose, lip shape, hair, skin tone, apparent age and distinguishing marks from them, and do NOT copy the expression, eyebrow position, mouth position, head angle or gaze direction you see in them. Those come from the FACIAL EXPRESSION instruction in this brief and from nowhere else. The same person wearing a completely different expression is still instantly recognisable as themselves, and that is exactly what is being asked for.'
+              : ''
+            const identityInstruction = (scoutUsedFaceModel && scoutFrameIdx
+              ? `Images 1–${creatorCount - 1} are close-up portrait photos of the creator — use these as the PRIMARY face identity source. Image ${creatorCount} is a cropped frame from the actual video — use it to match the creator's ${expressionLine ? 'outfit, hair style and lighting context' : 'pose, outfit, hair style, and lighting context'}. Together they give you both the exact face AND the real-video look.`
               : usingFaceModel
                 ? 'These are close-up portrait photos of the creator — use them for a strong face identity lock.'
-                : 'These are portrait-cropped regions from the creator\'s actual video — the face fills most of each reference image.'
+                : 'These are portrait-cropped regions from the creator\'s actual video — the face fills most of each reference image.') + expressionSourceNote
             if (sceneDirection) {
               // The creator typed a scene in "Describe your thumbnail" — let it
               // DRIVE the composition (setting, pose, expression, action, props)
@@ -2086,7 +2107,7 @@ export async function POST(request: Request) {
               // happened to a chosen expression and to a worn garment's real
               // colours. These two repeat here so they are the final word.
               ...(wearLine ? ['', `FINAL CHECK — THE GARMENT: the item on them is the one in the product reference photo. Same colour, same pattern and texture, same collar, same trim and contrast panels, same sleeve length. If the palette or the design would look better with a different colour, the reference still wins.`] : []),
-              ...(expressionLine ? ['', `FINAL CHECK — THE FACE: ${expressionLine}`] : []),
+              ...(expressionLine ? ['', `FINAL CHECK — THE FACE: ${expressionLine} The reference photos are the source of WHO they are and never of what their face is doing: if the expression in this render matches the reference selfie rather than the instruction above, it is wrong.`] : []),
             ].filter(Boolean).join('\n')
             }
             refs = [
@@ -2446,7 +2467,7 @@ export async function POST(request: Request) {
    – Exact bone structure (cheekbone height, jaw width, chin shape, brow ridge)
    – Exact eye shape, eye colour, eyelid fold, and the spacing between the eyes
    – Exact nose shape (bridge, tip, nostrils)
-   – Exact mouth shape, lip thickness, and resting expression
+   – Exact mouth shape and lip thickness${expressionLine ? ' (their EXPRESSION is specified separately and is NOT taken from the reference)' : ', and resting expression'}
    – Exact hair colour, texture, length and style
    – Exact ethnicity, skin tone and apparent age (do not lighten / darken / age / de-age)
    – Any distinguishing features visible in the references (freckles, moles, asymmetries, glasses)
