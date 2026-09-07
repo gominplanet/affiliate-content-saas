@@ -9,6 +9,7 @@
 // the operator's own account under Standard Access. See project_ig_comment_to_dm.
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { ensureDisclaimer } from '@/lib/social-disclaimer'
 import { sendPrivateReply, replyToComment, refreshLongLivedToken } from '@/services/instagram'
 import { resolveCloakedLink } from '@/lib/link-cloak'
 import { postProductDestination, postProductAsin } from '@/lib/post-product-link'
@@ -59,10 +60,25 @@ export function resolvePostAffiliateLink(post: {
 // working; the ordering itself lives in lib/post-product-link.ts and is tested.
 export { postProductDestination, postProductAsin }
 
-/** Fill the {link} placeholder in the message template. */
-export function renderMessage(template: string, link: string): string {
-  const t = (template && template.trim()) || 'Here you go 🔗 {link}'
-  return t.includes('{link}') ? t.replace(/\{link\}/g, link) : `${t}\n${link}`
+/**
+ * Fill the {link} placeholder, then guarantee the two things a DM carrying an
+ * affiliate link has to say.
+ *
+ * The template is the creator's to write, and the default was "Here you go
+ * {link}". Next to a cloaked link that is a bare mvpl.ink URL with no retailer
+ * named and no disclosure, in a private message, which is the least transparent
+ * place a link can land. Amazon policy 6(w) wants the placement to make clear it
+ * goes to an Amazon Site, and the FTC wants the relationship disclosed where the
+ * recommendation is made, not only on a blog somewhere else.
+ *
+ * Neither is added when the creator already said it, so a template that reads
+ * naturally is left exactly as written.
+ */
+export function renderMessage(template: string, link: string, amazonDestination = false): string {
+  const t = (template && template.trim()) || 'Here you go \u{1F517} {link}'
+  let out = t.includes('{link}') ? t.replace(/\{link\}/g, link) : `${t}\n${link}`
+  if (amazonDestination && !/\bamazon\b/i.test(out)) out = `${out}\n\nThis link goes to Amazon.`
+  return ensureDisclaimer(out)
 }
 
 /** Read the user's IG token, refreshing + persisting it if it's near expiry. */
@@ -120,6 +136,9 @@ export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
   let userId: string | undefined
   let keyword = ''
   let link: string | null = null
+  // Whether the link lands on Amazon, captured where we still know: after the
+  // cloak it is unreadable from the URL.
+  let amazonDest = false
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let settings: any = null
   let source: 'campaign' | 'global' = 'global'
@@ -177,6 +196,7 @@ export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
     // the creator moved to Passport. A campaign link (branch A) is the
     // creator's own pasted URL and is left exactly as they typed it.
     if (link) {
+      amazonDest = !!postProductAsin(post)
       link = await resolveCloakedLink({
         supabase: sb, userId: userId as string, destination: link, asin: postProductAsin(post),
         channel: 'instagram', source: 'instagram', label: null,
@@ -213,7 +233,7 @@ export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
     return 'fail:no-token'
   }
 
-  const message = renderMessage(settings?.message_template || '', link)
+  const message = renderMessage(settings?.message_template || '', link, amazonDest)
   try {
     await sendPrivateReply({ igUserId: tok.igUserId, commentId: ev.commentId, message, accessToken: tok.accessToken })
     await sb.from('ig_dm_sends').update({ status: 'sent', link_sent: link }).eq('comment_id', ev.commentId)

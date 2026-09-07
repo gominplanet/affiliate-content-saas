@@ -17,6 +17,7 @@
 // styles produced the least compliant copy.
 import { composeCaption, effectiveDisclosure, isAmazonLink } from '../lib/social-link-mode'
 import { renderPriceStrip } from '../lib/price-strip'
+import { renderMessage } from '../lib/ig-dm'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -66,6 +67,23 @@ for (const [label, link] of [['Passport', PASSPORT], ['Geniuslink', GENIUS]] as 
   check('a raw Amazon URL is recognisable', isAmazonLink(RAW))
   check('a Passport link is NOT recognisable from its URL', !isAmazonLink(PASSPORT))
   check('a geni.us link is NOT recognisable from its URL', !isAmazonLink(GENIUS))
+}
+
+// ── a DM carrying an affiliate link says both things ────────────────────────
+// The least transparent place a link can land: a private message, no page
+// around it, a template the creator wrote months ago. The default template was
+// "Here you go 🔗 {link}" and nothing else.
+{
+  const dm = renderMessage('', PASSPORT, true)
+  check('the DM names Amazon', /amazon/i.test(dm), dm)
+  check('the DM carries a disclosure', /Amazon Associate|affiliate/i.test(dm), dm)
+
+  const written = renderMessage('Grab it on Amazon here: {link} #ad', PASSPORT, true)
+  check('a creator who already said it is not corrected',
+    (written.match(/amazon/gi) || []).length <= 2 && !/This link goes to Amazon/.test(written), written)
+
+  const nonAmazon = renderMessage('', 'https://brand.com/p', false)
+  check('a non-Amazon DM never claims Amazon', !/goes to Amazon/i.test(nonAmazon), nonAmazon)
 }
 
 console.log(failures.length ? 'FAIL' : 'ALL PASS')

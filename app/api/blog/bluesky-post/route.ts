@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { postProductAsin } from '@/lib/post-product-link'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
@@ -12,7 +13,7 @@ import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } 
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
 import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
-import { parseLinkPrefs, linkPrefFor, primaryCardUrl, youtubeWatchUrl } from '@/lib/social-link-mode'
+import { parseLinkPrefs, linkPrefFor, primaryCardUrl, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { spendGate } from '@/lib/ai-spend'
 
@@ -182,7 +183,15 @@ Return ONLY the post text.`,
     // The card link (url) + compact #ad when the affiliate link is on (no room
     // for the full disclosure line on Bluesky).
     const url = cardUrl
-    const finalText = `${postText}${pref.product && affiliateLink ? ' #ad' : ''}\n\n${url}`
+    // Name the retailer when the card IS the product link. Bluesky's 300 chars
+    // is why the full disclosure lives on the destination post, but a bare
+    // mvpl.ink or geni.us URL with only "#ad" beside it does not tell anyone it
+    // goes to Amazon, and Associates policy 6(w) asks that it does. Three words
+    // fit; a policy strike does not.
+    const cardIsProduct = pref.product && !!affiliateLink && url === affiliateLink
+    const amazonDestination = isAmazonLink(affiliateLink) || !!postProductAsin(post as { content?: string | null })
+    const lead = cardIsProduct && amazonDestination ? 'On Amazon: ' : ''
+    const finalText = `${postText}${pref.product && affiliateLink ? ' #ad' : ''}\n\n${lead}${url}`
 
     // Dry-run: return the generated text without publishing
     if (dryRun) {
