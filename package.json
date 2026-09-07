@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run build:extension && npm run test:thumbnails && npm run test:access && npm run test:shorts && npm run test:render-filters && npm run test:passport && npm run test:link-cloak && npm run test:video-library && npm run test:video-insights && npm run test:video-products && npm run test:cc-products && npm run test:video-product-insights && npm run test:seo-steps && npm run test:blog-health && npm run test:cc-send && npm run test:campaign-library && npm run test:campaign-runway && npm run test:post-link && npm run test:health-claims && npm run test:campaign-rows && npm run test:wear && npm run test:disclosure && next build",
+    "build": "npm run build:extension && npm run test:thumbnails && npm run test:access && npm run test:shorts && npm run test:render-filters && npm run test:passport && npm run test:link-cloak && npm run test:video-library && npm run test:video-insights && npm run test:video-products && npm run test:cc-products && npm run test:video-product-insights && npm run test:seo-steps && npm run test:blog-health && npm run test:cc-send && npm run test:campaign-library && npm run test:campaign-runway && npm run test:post-link && npm run test:health-claims && npm run test:campaign-rows && npm run test:wear && npm run test:disclosure && npm run test:expression && next build",
     "build:extension": "bash scripts/zip-extension.sh && bash scripts/zip-extension-store.sh",
     "start": "next start",
     "lint": "next lint",
@@ -30,7 +30,8 @@
     "test:campaign-rows": "tsx scripts/test-campaign-rows.ts",
     "test:wear": "tsx scripts/test-wear-product.ts",
     "schema:audit": "tsx scripts/schema-audit.ts",
-    "test:disclosure": "tsx scripts/test-amazon-disclosure.ts"
+    "test:disclosure": "tsx scripts/test-amazon-disclosure.ts",
+    "test:expression": "tsx scripts/test-face-expression.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",

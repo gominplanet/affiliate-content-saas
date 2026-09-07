@@ -10,6 +10,7 @@ import Link from 'next/link'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
+import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
 
 const PIN_RED = '#E60023'
 interface FaceModel { id: string; name: string }
@@ -33,6 +34,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
   const [genError, setGenError] = useState<string | null>(null)
   const [question, setQuestion] = useHeadlineStyle()
   const [wear, setWear] = useWearProduct()
+  const [expression, setExpression] = useExpression()
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [briefKey, setBriefKey] = useState('') // reused when cross-posting this design to IG/FB
 
@@ -111,6 +113,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
       // Apparel goes ON the person. Meaningless without a face, and the server
       // ignores it for a product nobody wears.
       wearProduct: wear && mode === 'face',
+      ...(mode === 'face' ? { expression } : {}),
     }
     try {
       const res = await fetch('/api/youtube/generate-thumbnail', {
@@ -201,7 +204,10 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
         <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={genBusy} compact />
         {/* Apparel goes ON the person, not held beside them. */}
         {mode === 'face' && (
-          <WearProductToggle wear={wear} onChange={setWear} disabled={genBusy} compact />
+          <>
+            <WearProductToggle wear={wear} onChange={setWear} disabled={genBusy} compact />
+            <ExpressionPicker value={expression} onChange={setExpression} disabled={genBusy} compact />
+          </>
         )}
         <button onClick={generate} disabled={genBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-sm font-semibold transition disabled:opacity-60" style={{ color: 'var(--text)' }}>

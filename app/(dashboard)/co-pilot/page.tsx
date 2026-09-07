@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useWearProduct } from '@/components/thumbnails/WearProductToggle'
+import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -724,6 +725,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // "Make me wear it": apparel goes ON the creator rather than being held up
   // beside them. Shared state so it is the same toggle everywhere it appears.
   const [thumbWear, setThumbWear] = useWearProduct()
+  const [thumbExpression, setThumbExpression] = useExpression()
   useEffect(() => {
     try { setThumbQuestionMode(localStorage.getItem('mvp_thumb_question') === '1') } catch { /* ignore */ }
   }, [])
@@ -1789,6 +1791,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // product + a matching facial reaction; default polished statement.
           headlineStyle: thumbQuestionMode ? 'question' : 'statement',
           wearProduct: thumbWear && !isProductOnly,
+          ...(thumbExpression !== 'auto' && !isProductOnly ? { expression: thumbExpression } : {}),
           // Boost controls (pose / energy effects / starburst badge / red accent word).
           pose: thumbPose !== 'auto' ? thumbPose : undefined,
           energyEffects: thumbEffects || undefined,
@@ -1907,6 +1910,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           breakFrame: breakFrame || undefined,
           headlineStyle: thumbQuestionMode ? 'question' : 'statement',
           wearProduct: thumbWear && !(selectedFaceModelId === 'no-human' || scoutFaceSelection === 'no-human'),
+          ...(thumbExpression !== 'auto' && !(selectedFaceModelId === 'no-human' || scoutFaceSelection === 'no-human') ? { expression: thumbExpression } : {}),
           // Boost controls — same levers as the manual Generate button. accentColor
           // is already sent above on this path, so it isn't repeated here.
           pose: thumbPose !== 'auto' ? thumbPose : undefined,
@@ -2521,6 +2525,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                           {on ? '✓ ' : ''}{label}
                         </button>
                       ))}
+                    </div>
+                    {/* The face itself. The chips above change the design; this
+                        changes the person in it, which is the one thing a
+                        creator could never steer before. */}
+                    <div className="mt-2.5">
+                      <ExpressionPicker value={thumbExpression} onChange={setThumbExpression} disabled={generatingThumbnail} compact />
                     </div>
                   </div>
 

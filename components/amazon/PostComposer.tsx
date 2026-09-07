@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
+import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
 
 interface FaceModel { id: string; name: string }
 type Network = 'instagram' | 'facebook'
@@ -39,6 +40,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [linkInBioCta, setLinkInBioCta] = useState(true) // IG only — bake "LINK IN BIO" into the design
   const [question, setQuestion] = useHeadlineStyle()
   const [wear, setWear] = useWearProduct()
+  const [expression, setExpression] = useExpression()
 
   const [connected, setConnected] = useState<boolean | null>(null)
   const [caption, setCaption] = useState('')
@@ -96,6 +98,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       // Apparel goes ON the person. Meaningless without a face, and the server
       // ignores it for a product nobody wears.
       wearProduct: wear && mode === 'face',
+      ...(mode === 'face' ? { expression } : {}),
     }
     try {
       const res = await fetch('/api/youtube/generate-thumbnail', {
@@ -201,7 +204,10 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
         <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={genBusy} compact />
         {/* Apparel goes ON the person, not held beside them. */}
         {mode === 'face' && (
-          <WearProductToggle wear={wear} onChange={setWear} disabled={genBusy} compact />
+          <>
+            <WearProductToggle wear={wear} onChange={setWear} disabled={genBusy} compact />
+            <ExpressionPicker value={expression} onChange={setExpression} disabled={genBusy} compact />
+          </>
         )}
         <button onClick={generate} disabled={genBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-sm font-semibold transition disabled:opacity-60" style={{ color: 'var(--text)' }}>

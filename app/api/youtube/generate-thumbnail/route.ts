@@ -28,6 +28,7 @@ import { bakeSimpleHeadline, compositeBadgeOnly, NEON_BORDER_STYLE_COUNT, type T
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { detectWearable, wearDirective } from '@/lib/wear-product'
+import { normalizeExpression, expressionDirective } from '@/lib/face-expression'
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -1018,6 +1019,7 @@ export async function POST(request: Request) {
        *  held beside them. Only acts when the product is something a person
        *  actually wears, which lib/wear-product works out from its name. */
       wearProduct,
+      expression: expressionChoice,
       energyEffects,
       badgeText,
       accentWord,
@@ -1132,6 +1134,8 @@ export async function POST(request: Request) {
        *  with no fidelity rules attached; this one names the body part the
        *  product goes on and holds the render to the reference photo. */
       wearProduct?: boolean
+      /** The creator's chosen facial expression (lib/face-expression). */
+      expression?: string
       /** Add motion energy: speed lines, a streak on the product, a radial burst
        *  behind the headline, a splash for drinks/food. Off by default. */
       energyEffects?: boolean
@@ -1502,6 +1506,13 @@ export async function POST(request: Request) {
     // the frame.
     const wearLine = noHuman ? null : wearDirective(wearable)
 
+    // The face the creator asked for. It has to beat two other instructions
+    // already in the prompt (the angle's scene preset and the art director's
+    // brief), so it is injected high and says it overrides. Nobody to emote in
+    // a product-only design, so it does nothing there either.
+    const expressionKey = noHuman ? 'auto' : normalizeExpression(expressionChoice)
+    const expressionLine = expressionDirective(expressionKey)
+
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
     fal.config({ credentials: falKey })
 
@@ -1869,7 +1880,10 @@ export async function POST(request: Request) {
             const briefCallouts = Array.isArray(brief.callouts) ? brief.callouts.filter(Boolean) : []
             // Art-director-chosen reaction + gesture (varied per thumbnail). Empty
             // on the fallback path → the render falls back to a generic reaction.
-            const briefExpression = (brief.expression || '').trim()
+            // The creator's pick replaces the brief's own reaction outright:
+            // handing the model both produces the average of two moods, which
+            // renders as a face doing nothing.
+            const briefExpression = expressionLine ? '' : (brief.expression || '').trim()
             // Boost: an explicit pose (hold / wear / use / point / thumbs) beats the
             // brief's own gesture.
             // Wearing it beats any gesture: a pose that has them holding it up
@@ -1960,6 +1974,7 @@ export async function POST(request: Request) {
               prompt = [
                 'Professional YouTube thumbnail, 16:9 landscape (1536×864 px). High energy, high contrast, photorealistic.',
                 ...(wearLine ? ['', wearLine] : []),
+                ...(expressionLine ? ['', expressionLine] : []),
                 '',
                 `★ CREATOR'S SCENE DIRECTION (highest priority — build the whole thumbnail around this): "${sceneDirection}".`,
                 "Match that direction for the SETTING / background, the creator's pose, expression and action, and any props described. The creator is the main subject of the scene.",
@@ -2012,6 +2027,7 @@ export async function POST(request: Request) {
             prompt = [
               pinDirective,
               ...(wearLine ? [wearLine] : []),
+              ...(expressionLine ? [expressionLine] : []),
               ...creativeHead,
               '',
               "BRAND: if the product's brand or logo is clear, include it as a clean logo lockup.",
@@ -2466,7 +2482,9 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             const variantCopy = hooks[i % hooks.length]
             const frame = FRAMING_MAP[variantCopy.angle] ?? FRAMING_MAP.CURIOSITY_GAP
             const palette = frame.lighting
-            const expression = frame.expression
+            // The creator's pick beats the angle's scene preset for the same
+            // reason: two named expressions in one prompt cancel out.
+            const expression = expressionLine ? 'the expression described above' : frame.expression
             // Boost: an explicit pose (hold / wear / use / point / thumbs) beats the
             // angle's default framing action.
             const action = wearLine ? 'wearing the product, exactly as described above' : (poseOverride || frame.action)
@@ -2539,7 +2557,7 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
               ? `★ CREATOR'S THUMBNAIL DIRECTION (this is exactly what the creator asked for — follow it for the scene, setting/background, mood, the ${noHuman ? 'composition' : "creator's pose and facial expression"}, and any props or action described): "${sceneDirection}". It OVERRIDES the default scene, expression and background suggestions written further below. It does NOT override the identity lock${noHuman ? '' : ' (the face must stay the exact person from the references)'} or the product-fidelity rules (the real product, its true look and its own branding). If the direction ever conflicts with those, keep the ${noHuman ? 'product' : 'identity and product'} faithful and apply the rest of the direction.\n`
               : ''
             return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
-${wearLine ? `${wearLine}\n` : ''}${creatorDirectionClause}${userStyleClause}${humanClauses}${productRefClause}
+${wearLine ? `${wearLine}\n` : ''}${expressionLine ? `${expressionLine}\n` : ''}${creatorDirectionClause}${userStyleClause}${humanClauses}${productRefClause}
 ${styleRefClause}
 ${compositionLine}
 ${wantEffects ? `ENERGY EFFECTS (the creator asked for these): make the image feel kinetic — bold speed lines radiating outward from the product, a subtle motion streak trailing the product (the product ITSELF stays sharp and identifiable), a radial light burst behind the headline area, and, only if the product is a drink, food or liquid, a dramatic splash frozen mid-air. High energy, still photorealistic, never cartoonish.

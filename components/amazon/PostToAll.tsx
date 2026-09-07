@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2, User, Package, Rocket, Check, AlertCircle, ExternalLink } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
+import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
 
 interface FaceModel { id: string; name: string }
 type NetKey = 'pinterest' | 'instagram' | 'facebook'
@@ -43,6 +44,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
   // something a person wears; the server works that out from its name, so this
   // being on for a power bank simply does nothing.
   const [wear, setWear] = useWearProduct()
+  const [expression, setExpression] = useExpression()
   const [nets, setNets] = useState<Record<NetKey, NetState>>({
     pinterest: { label: 'Pinterest', accent: '#E60023', connected: false, status: 'idle' },
     instagram: { label: 'Instagram', accent: '#E1306C', connected: false, status: 'idle' },
@@ -96,6 +98,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
             videoTitle: 'Product spotlight', textMode: 'graphic', format: n.format, briefKey: bk,
             headlineStyle: headlineStyleValue(question),
             wearProduct: wear && mode === 'face',
+            ...(mode === 'face' ? { expression } : {}),
             ...(n.extra || {}), ...productField, ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
           }),
         })
@@ -170,7 +173,10 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
       <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={busy} compact />
 
       {mode === 'face' && (
-        <WearProductToggle wear={wear} onChange={setWear} disabled={busy} />
+        <>
+          <WearProductToggle wear={wear} onChange={setWear} disabled={busy} />
+          <ExpressionPicker value={expression} onChange={setExpression} disabled={busy} />
+        </>
       )}
 
       {/* Per-network status */}

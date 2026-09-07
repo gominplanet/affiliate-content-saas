@@ -12,6 +12,7 @@ import { Sparkles, Download, Loader2, User, Package, AlertCircle, Wand2 } from '
 import PageExplainer from '@/components/amazon/PageExplainer'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
+import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
 
 interface FaceModel { id: string; name: string; outfit_pref?: string | null }
 
@@ -30,6 +31,7 @@ export default function AmazonThumbnailsPage() {
   const [result, setResult] = useState<{ url: string; hook: string } | null>(null)
   const [question, setQuestion] = useHeadlineStyle()
   const [wear, setWear] = useWearProduct()
+  const [expression, setExpression] = useExpression()
 
   useEffect(() => {
     (async () => {
@@ -93,6 +95,7 @@ export default function AmazonThumbnailsPage() {
       // Apparel goes ON the person. Meaningless without a face, and the server
       // ignores it for a product nobody wears.
       wearProduct: wear && mode === 'face',
+      ...(mode === 'face' ? { expression } : {}),
     }
 
     try {
@@ -244,7 +247,10 @@ export default function AmazonThumbnailsPage() {
         {/* Apparel goes ON the person. Independent of the headline style, which
             is why it sits outside that block. */}
         {mode === 'face' && (
-          <WearProductToggle wear={wear} onChange={setWear} disabled={busy} />
+          <>
+            <WearProductToggle wear={wear} onChange={setWear} disabled={busy} />
+            <ExpressionPicker value={expression} onChange={setExpression} disabled={busy} />
+          </>
         )}
 
         <button

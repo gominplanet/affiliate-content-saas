@@ -18,6 +18,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import WearProductToggle from '@/components/thumbnails/WearProductToggle'
+import ExpressionPicker from '@/components/thumbnails/ExpressionPicker'
+import { normalizeExpression, type ExpressionKey } from '@/lib/face-expression'
 import { toast } from 'sonner'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -28,6 +30,7 @@ const LS = {
   question: 'mvp_thumb_question',
   pose: 'mvp_thumb_pose',
   wear: 'mvp_thumb_wear_product',
+  expression: 'mvp_thumb_expression',
   effects: 'mvp_thumb_effects',
   autoBadge: 'mvp_thumb_auto_badge',
   autoAccent: 'mvp_thumb_auto_accent',
@@ -59,6 +62,8 @@ export interface ThumbnailBoost {
   pose: ThumbPose; setPose: (p: ThumbPose) => void
   /** "Make me wear it": apparel goes on the creator rather than in their hand. */
   wear: boolean; setWear: (v: boolean) => void
+  /** The face the creator asked for; 'auto' leaves it to the art director. */
+  expression: ExpressionKey; setExpression: (v: ExpressionKey) => void
   badgeText: string; setBadgeText: (s: string) => void
   accentWord: string; setAccentWord: (s: string) => void
   scenePrompt: string; setScenePrompt: (s: string) => void
@@ -75,6 +80,7 @@ export function useThumbnailBoost(opts: { defaultQuestion?: boolean } = {}): Thu
   const [autoAccent, setAutoAccentState] = useState(false)
   const [pose, setPoseState] = useState<ThumbPose>('auto')
   const [wear, setWearState] = useState(false)
+  const [expression, setExpressionState] = useState<ExpressionKey>('auto')
   const [badgeText, setBadgeText] = useState('')
   const [accentWord, setAccentWord] = useState('')
   const [scenePrompt, setScenePrompt] = useState('')
@@ -93,6 +99,7 @@ export function useThumbnailBoost(opts: { defaultQuestion?: boolean } = {}): Thu
     setAutoBadgeState(lsGet(LS.autoBadge) === '1')
     setAutoAccentState(lsGet(LS.autoAccent) === '1')
     setWearState(lsGet(LS.wear) === '1')
+    setExpressionState(normalizeExpression(lsGet(LS.expression)))
     const p = lsGet(LS.pose) as ThumbPose | null
     if (p && ['auto', 'hold', 'wear', 'use', 'point', 'thumbs'].includes(p)) setPoseState(p)
     ;(async () => {
@@ -109,6 +116,7 @@ export function useThumbnailBoost(opts: { defaultQuestion?: boolean } = {}): Thu
   const setAutoAccent = useCallback((on: boolean) => { setAutoAccentState(on); lsSet(LS.autoAccent, on ? '1' : '0') }, [])
   const setPose = useCallback((p: ThumbPose) => { setPoseState(p); lsSet(LS.pose, p) }, [])
   const setWear = useCallback((v: boolean) => { setWearState(v); lsSet(LS.wear, v ? '1' : '0') }, [])
+  const setExpression = useCallback((v: ExpressionKey) => { setExpressionState(v); lsSet(LS.expression, v) }, [])
 
   const applyPreset = useCallback((id: string, url: string) => { setStyleReferenceUrl(url); setLoadedPresetId(id) }, [])
   const clearStyle = useCallback(() => { setStyleReferenceUrl(null); setLoadedPresetId(null) }, [])
@@ -170,18 +178,19 @@ export function useThumbnailBoost(opts: { defaultQuestion?: boolean } = {}): Thu
     // Apparel goes ON the person. The server ignores it for anything nobody
     // wears, so it is safe to send whenever the creator has it on.
     wearProduct: wear || undefined,
+    ...(expression !== 'auto' ? { expression } : {}),
     badgeText: badgeText.trim() || undefined,
     accentWord: accentWord.trim() || undefined,
     ...((accentWord.trim() || autoAccent) ? { accentColor: '#FF2D2D' } : {}),
     styleReferenceUrl: styleReferenceUrl || undefined,
     scenePrompt: scenePrompt.trim() || undefined,
-  }), [question, effects, autoBadge, autoAccent, pose, wear, badgeText, accentWord, styleReferenceUrl, scenePrompt])
+  }), [question, effects, autoBadge, autoAccent, pose, wear, expression, badgeText, accentWord, styleReferenceUrl, scenePrompt])
 
   return {
     question, setQuestion, effects, setEffects, autoBadge, setAutoBadge, autoAccent, setAutoAccent,
     savedStyles, styleReferenceUrl, loadedPresetId, styleRefUploading, savingPreset,
     applyPreset, clearStyle, uploadStyleRef, saveCurrentAsPreset, deletePreset,
-    pose, setPose, wear, setWear, badgeText, setBadgeText, accentWord, setAccentWord, scenePrompt, setScenePrompt,
+    pose, setPose, wear, setWear, expression, setExpression, badgeText, setBadgeText, accentWord, setAccentWord, scenePrompt, setScenePrompt,
     requestFields,
   }
 }
@@ -299,7 +308,10 @@ export default function ThumbnailBoostPanel({ boost, face, disabled, showQuestio
           {/* Apparel goes ON the person. Above the pose chips on purpose: when it
               is on, the pose is settled and the chips below it stop applying. */}
           {face && (
-            <WearProductToggle wear={boost.wear} onChange={boost.setWear} disabled={disabled} compact />
+            <>
+              <WearProductToggle wear={boost.wear} onChange={boost.setWear} disabled={disabled} compact />
+              <ExpressionPicker value={boost.expression} onChange={boost.setExpression} disabled={disabled} compact />
+            </>
           )}
           {face && !boost.wear && (
             <div className="flex flex-col gap-1">
