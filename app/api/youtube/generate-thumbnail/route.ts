@@ -827,7 +827,9 @@ THE ONE THING THAT CHANGES IS THEIR EXPRESSION. ${opts.expressionDirectiveText}
 
 The reference photos show this person with a DIFFERENT expression from the one described above. Do not copy the expression, eyebrow position, mouth position or head angle from them — take only WHO the person is. A person's face is still unmistakably their own face when they change what it is doing, and that is exactly what this image must show.
 
-Head-and-shoulders framing, the whole head and hair comfortably inside the frame with margin on all sides. Even, flattering studio lighting. Realistic natural skin texture with visible pores — not smoothed, not beauty-filtered, not de-aged. Plain, evenly lit neutral grey backdrop. No text, no logos, no props, and absolutely no second person anywhere in the frame.`
+FRAMING — HEAD AND NECK ONLY. Crop at the base of the neck, above the collarbone. NO clothing, NO collar, NO shoulders, NO torso may be visible: this image exists to carry a face and nothing else. That matters because the design this feeds may put a specific garment on this person, and any clothing invented here would compete with it.
+
+Even, flattering studio lighting. Realistic natural skin texture with visible pores — not smoothed, not beauty-filtered, not de-aged. Plain, evenly lit neutral grey backdrop. No text, no logos, no props, and absolutely no second person anywhere in the frame.`
     const b64 = await openai.generateWithReferences({
       prompt, images: opts.refs, size: '1024x1024', quality: 'medium',
       ...(opts.imageModel ? { model: opts.imageModel } : {}),
@@ -2095,7 +2097,7 @@ export async function POST(request: Request) {
             const expressionSourceNote = !expressionLine
               ? ''
               : expressionInReference
-                ? ' The first portrait was made for this design and the person in it is ALREADY wearing the exact expression this thumbnail needs — reproduce that expression as faithfully as you reproduce the face. Any later reference photo is there only to confirm identity; ignore the expression in those.'
+                ? ' The first portrait was made for this design and the person in it is ALREADY wearing the exact expression this thumbnail needs — reproduce that expression as faithfully as you reproduce the face. It is a head-only crop and carries NO clothing information: take nothing about what they are wearing from it. Any later reference photo is there only to confirm identity; ignore the expression and the clothing in those too.'
                 : ' IMPORTANT — these photos define WHO this person is, not what their face is doing: take the bone structure, eye shape and colour, nose, lip shape, hair, skin tone, apparent age and distinguishing marks from them, and do NOT copy the expression, eyebrow position, mouth position, head angle or gaze direction you see in them. Those come from the FACIAL EXPRESSION instruction in this brief and from nowhere else. The same person wearing a completely different expression is still instantly recognisable as themselves, and that is exactly what is being asked for.'
             const identityInstruction = (scoutUsedFaceModel && scoutFrameIdx
               ? `Images 1–${creatorCount - 1} are close-up portrait photos of the creator — use these as the PRIMARY face identity source. Image ${creatorCount} is a cropped frame from the actual video — use it to match the creator's ${expressionLine ? 'outfit, hair style and lighting context' : 'pose, outfit, hair style, and lighting context'}. Together they give you both the exact face AND the real-video look.`
