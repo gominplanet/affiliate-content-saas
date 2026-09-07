@@ -27,6 +27,8 @@
 // randomness, no reading of anything it was not handed, so the same inputs
 // always produce the same prompt and a test can hold it to that.
 
+import { framingLine, type EffectiveFraming, type BuildKey, type HeightKey } from '@/lib/body-framing'
+
 export interface ThumbnailPromptInput {
   /** Headline, already upper-cased and split by the copy step. */
   line1: string
@@ -53,6 +55,13 @@ export interface ThumbnailPromptInput {
   /** True when every creator reference was cropped to head and neck, so the
    *  product photo is the only image in the set that shows any clothing. */
   refsAreHeadOnly?: boolean
+  /** How much of the creator is in frame. Defaults to the historic bust shot,
+   *  so every caller that has not been taught about framing keeps its old
+   *  behaviour rather than silently starting to invent bodies. */
+  framing?: EffectiveFraming
+  /** Only read for a full-body shot: what the invented body looks like. */
+  build?: BuildKey
+  height?: HeightKey
   /** The wardrobe line used when nothing is worn. */
   outfitDirective?: string
   /** How the reference images are labelled and what they are for. */
@@ -136,7 +145,7 @@ export function personLine(input: ThumbnailPromptInput): string {
   const expressionClause = input.expressionLine
     ? 'render the facial expression specified separately in this brief rather than copying the reference photo\'s expression'
     : 'you MUST change their expression to fit this thumbnail (do NOT copy the reference photo\'s expression)'
-  return `PERSON: ${input.creatorRefLabel}. ${input.identityInstruction} Use this exact person — ${expressionClause} and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. ${wardrobeLine(input)} ${personActionLine(input)} Place them on one side of the frame. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`
+  return `PERSON: ${input.creatorRefLabel}. ${input.identityInstruction} Use this exact person — ${expressionClause} and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. ${wardrobeLine(input)} ${personActionLine(input)} Place them on one side of the frame. ${framingLine({ framing: input.framing ?? 'bust', build: input.build, height: input.height })}`
 }
 
 /** The product's own paragraph. When it is worn it appears in exactly one place

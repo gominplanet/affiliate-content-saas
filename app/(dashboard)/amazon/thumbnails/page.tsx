@@ -13,6 +13,7 @@ import PageExplainer from '@/components/amazon/PageExplainer'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
 import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
+import FramingPicker, { useFraming } from '@/components/thumbnails/FramingPicker'
 
 interface FaceModel { id: string; name: string; outfit_pref?: string | null }
 
@@ -39,10 +40,12 @@ export default function AmazonThumbnailsPage() {
     garmentChecked?: boolean
     expressionVerified?: boolean | null; expressionRetried?: boolean
     refsHeadOnly?: boolean; headCropNote?: string | null
+    framingUsed?: 'bust' | 'full'; framingNote?: string | null
   } | null>(null)
   const [question, setQuestion] = useHeadlineStyle()
   const [wear, setWear] = useWearProduct()
   const [expression, setExpression] = useExpression()
+  const { framing, setFraming, build, setBuild, height, setHeight } = useFraming()
 
   useEffect(() => {
     (async () => {
@@ -106,7 +109,7 @@ export default function AmazonThumbnailsPage() {
       // Apparel goes ON the person. Meaningless without a face, and the server
       // ignores it for a product nobody wears.
       wearProduct: wear && mode === 'face',
-      ...(mode === 'face' ? { expression } : {}),
+      ...(mode === 'face' ? { expression, framing, bodyBuild: build, bodyHeight: height } : {}),
     }
 
     try {
@@ -141,13 +144,18 @@ export default function AmazonThumbnailsPage() {
         wearApplied: !!data.wearApplied,
         refsHeadOnly: !!data.refsHeadOnly,
         headCropNote: (data.headCropNote as string | null) ?? null,
+        framingUsed: (data.framingUsed as 'bust' | 'full') ?? 'bust',
+        framingNote: (data.framingNote as string | null) ?? null,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed. Try again.')
     } finally {
       setBusy(false); setStatus('')
     }
-  }, [product, headline, mode, faceId, question, wear, expression, saveOutfitIfDirty])
+    // framing/build/height belong here for the reason expression did: a missing
+    // dep meant the card reported one expression while the picker showed
+    // another, and several test rounds were spent measuring the wrong thing.
+  }, [product, headline, mode, faceId, question, wear, expression, framing, build, height, saveOutfitIfDirty])
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -276,6 +284,16 @@ export default function AmazonThumbnailsPage() {
           <>
             <WearProductToggle wear={wear} onChange={setWear} disabled={busy} />
             <ExpressionPicker value={expression} onChange={setExpression} disabled={busy} />
+            {/* autoIsFull comes from the last render rather than a guess: the
+                page knows the ASIN, not the product's category, so the honest
+                answer before the first generation is the historic default. */}
+            <FramingPicker
+              framing={framing} onFraming={setFraming}
+              build={build} onBuild={setBuild}
+              height={height} onHeight={setHeight}
+              autoIsFull={result?.framingUsed === 'full'}
+              disabled={busy}
+            />
           </>
         )}
 
@@ -366,6 +384,10 @@ export default function AmazonThumbnailsPage() {
                         ? 'Your reference photos were cropped to head and neck, so only the product photo decides the clothing.'
                         : `Heads up: ${result.headCropNote}.`}
                     </p>
+                  )}
+                  {/* A generated body must never pass for a photographed one. */}
+                  {result.framingNote && (
+                    <p className="text-[11px] text-[#86868b] mt-0.5 leading-relaxed">{result.framingNote}</p>
                   )}
                   <p className="text-[11px] text-[#86868b] mt-0.5">
                     If this is not the product you meant, the ASIN is the wrong colour or variant.

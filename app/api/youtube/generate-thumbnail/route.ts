@@ -33,6 +33,10 @@ import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionChec
 import { buildGraphicThumbnailPrompt } from '@/lib/thumbnail-prompt'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
 import { FACE_BOX_PROMPT, parseFaceBox, headCropRect, headCropNote } from '@/lib/head-crop'
+import {
+  normalizeFraming, normalizeBuild, normalizeHeight, resolveFraming, framingLine, framingNote,
+  type EffectiveFraming,
+} from '@/lib/body-framing'
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -1224,6 +1228,12 @@ export async function POST(request: Request) {
        *  actually wears, which lib/wear-product works out from its name. */
       wearProduct,
       expression: expressionChoice,
+      /** How much of the creator is in frame, and what to make of the body the
+       *  references do not show. 'auto' lets the product category decide, which
+       *  is the only way trousers and shoes ever get shown at all. */
+      framing: framingChoice,
+      bodyBuild: bodyBuildChoice,
+      bodyHeight: bodyHeightChoice,
       energyEffects,
       badgeText,
       accentWord,
@@ -1340,6 +1350,11 @@ export async function POST(request: Request) {
       wearProduct?: boolean
       /** The creator's chosen facial expression (lib/face-expression). */
       expression?: string
+      /** 'bust' | 'full' | 'auto' (lib/body-framing). */
+      framing?: string
+      /** Only read for a full-body shot. */
+      bodyBuild?: string
+      bodyHeight?: string
       /** Add motion energy: speed lines, a streak on the product, a radial burst
        *  behind the headline, a splash for drinks/food. Off by default. */
       energyEffects?: boolean
@@ -1709,6 +1724,18 @@ export async function POST(request: Request) {
     // there rather than telling the model to wear something that isn't in
     // the frame.
     const wearLine = noHuman ? null : wearDirective(wearable)
+    // HOW MUCH OF THEM IS IN FRAME. Every design used to be chest-up, which is
+    // right for a thumbnail and impossible for trousers, shoes, socks, a dress
+    // or swimwear: the wearable detector correctly says "worn on their feet" and
+    // the framing rule then forbade showing feet. So the category picks the
+    // default and the creator can override it either way. Build and height only
+    // matter for a full-body shot, where everything below the chest is invented
+    // because MVP has photos of a face and nothing else.
+    const bodyBuild = normalizeBuild(bodyBuildChoice)
+    const bodyHeight = normalizeHeight(bodyHeightChoice)
+    const framing: EffectiveFraming = noHuman
+      ? 'bust'
+      : resolveFraming(normalizeFraming(framingChoice), wearable.kind)
 
     // The face the creator asked for. It has to beat two other instructions
     // already in the prompt (the angle's scene preset and the art director's
@@ -2360,7 +2387,7 @@ export async function POST(request: Request) {
                 `★ CREATOR'S SCENE DIRECTION (highest priority — build the whole thumbnail around this): "${sceneDirection}".`,
                 "Match that direction for the SETTING / background, the creator's pose, expression and action, and any props described. The creator is the main subject of the scene.",
                 '',
-                `★ CREATOR IDENTITY (never compromise, even to fit the direction): ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy — same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY. ${gfxWardrobe} Show them HEAD-AND-SHOULDERS to CHEST-UP only — the references are head-and-chest selfies, so never invent their full body, legs or body build.`,
+                `★ CREATOR IDENTITY (never compromise, even to fit the direction): ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy — same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY. ${gfxWardrobe} ${framingLine({ framing, build: bodyBuild, height: bodyHeight })}`,
                 '',
                 wearLine
                   ? `PRODUCT: the product is worn, exactly as the WORN, NOT HELD rule above says. It appears in the frame only on the person${productRefNum ? `, and it is the item in Image ${productRefNum}` : ''} — no second copy of it anywhere, held or beside them or on a stand. Keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or marketing text.`
@@ -2404,6 +2431,9 @@ export async function POST(request: Request) {
                 wearLine,
                 wearOn: wearable.on,
                 refsAreHeadOnly,
+                framing,
+                build: bodyBuild,
+                height: bodyHeight,
                 outfitDirective: wardrobeDirective(faceModel?.outfit_pref),
                 creatorRefLabel,
                 identityInstruction,
@@ -2528,6 +2558,11 @@ export async function POST(request: Request) {
           // silent again.
           refsHeadOnly: refsAreHeadOnly,
           headCropNote: headCropText,
+          // Framing, and a plain statement that a full-body render's body is
+          // generated. A creator should never have to work out for themselves
+          // which parts of their own picture MVP had a photo of.
+          framingUsed: framing,
+          framingNote: framingNote(framing, bodyBuild, bodyHeight),
           thumbnailScores: gfxUrls.map(() => 0),
           thumbnailScore: 0,
           belowThreshold: false,

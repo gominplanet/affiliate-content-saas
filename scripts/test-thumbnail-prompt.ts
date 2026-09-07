@@ -62,17 +62,22 @@ function* scenarios(): Generator<{ name: string; input: ThumbnailPromptInput }> 
           // Only meaningful when the product is worn: it says whether the
           // creator's own clothes were cropped out of the identity references.
           for (const headOnly of worn ? [true, false] : [false]) {
-            yield {
-              name: `${e.key}${worn ? ' + worn' : ''}${concept ? ' + concept' : ' + fallback'}${inRef ? ' + posed-ref' : ''}${worn ? (headOnly ? ' + head-only refs' : ' + uncropped refs') : ''}`,
-              input: base({
-                expressionLine,
-                expressionInReference: inRef,
-                wearLine: worn ? WEAR : null,
-                wearOn: worn ? POLO.on : null,
-                refsAreHeadOnly: headOnly,
-                concept: concept ? base().concept : '',
-                palette: concept ? base().palette : '',
-              }),
+            for (const framing of ['bust', 'full'] as const) {
+              yield {
+                name: `${e.key}${worn ? ' + worn' : ''}${concept ? ' + concept' : ' + fallback'}${inRef ? ' + posed-ref' : ''}${worn ? (headOnly ? ' + head-only refs' : ' + uncropped refs') : ''} + ${framing}`,
+                input: base({
+                  expressionLine,
+                  expressionInReference: inRef,
+                  wearLine: worn ? WEAR : null,
+                  wearOn: worn ? POLO.on : null,
+                  refsAreHeadOnly: headOnly,
+                  framing,
+                  build: 'athletic',
+                  height: 'tall',
+                  concept: concept ? base().concept : '',
+                  palette: concept ? base().palette : '',
+                }),
+              }
             }
           }
         }
@@ -183,6 +188,23 @@ for (const { name, input } of all) {
     check(`[${name}] and it matches how the references were actually built`,
       onlyImage === (input.refsAreHeadOnly === true),
       'claiming the references carry no clothing while a full selfie is still in the set is the original bug, restated as a promise')
+  }
+
+  // ── 5c. Exactly ONE instruction about how much of them is in frame ────────
+  // The sentence a full-body shot replaces is emphatic and absolute ("do NOT
+  // invent or show their full body, legs, waist-down"). Leave it anywhere in the
+  // prompt while asking for a full-body shot and the model splits the
+  // difference, which is a cropped half-figure and a product you cannot see.
+  {
+    const forbids = /do NOT invent or show their full body/.test(p)
+    const asks = /Show them FULL BODY/.test(p)
+    check(`[${name}] exactly one framing instruction in the whole prompt`,
+      forbids !== asks, `forbids=${forbids} asks=${asks}`)
+    check(`[${name}] and it is the framing that was asked for`,
+      asks === (input.framing === 'full'))
+    check(`[${name}] a bust shot never describes a body it is not showing`,
+      input.framing === 'full' || !/athletic, toned build/.test(p),
+      'build and height are meaningless chest-up, and a stray one is a contradiction')
   }
 
   // ── 6. It is still a complete brief ───────────────────────────────────────
