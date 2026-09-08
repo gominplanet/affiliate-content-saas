@@ -116,7 +116,10 @@ function pickAccentWord(lines: string[]): string {
   return all.sort((a, b) => b.length - a.length)[0] || ''
 }
 
-async function compositeLogoLeft(banner: Buffer, logo: Buffer, W: number, H: number): Promise<Buffer> {
+// Returns sharp's own Buffer<ArrayBuffer> rather than the wider default
+// Buffer<ArrayBufferLike>, so the result can be assigned back to a variable
+// holding a toBuffer() result. sharp 0.35 tightened these generics.
+async function compositeLogoLeft(banner: Buffer, logo: Buffer, W: number, H: number): Promise<Buffer<ArrayBuffer>> {
   const logoPng = await sharp(logo)
     .resize({ width: Math.round(W * 0.13), height: Math.round(H * 0.52), fit: 'inside', withoutEnlargement: false })
     .png().toBuffer()

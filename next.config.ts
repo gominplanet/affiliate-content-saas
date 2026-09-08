@@ -9,8 +9,17 @@ import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   typescript: {
-    // Supabase generic type inference breaks with ssr@0.5 + supabase-js@2.105 — fix post-MVP
-    ignoreBuildErrors: true,
+    // Was `true`, with a note about Supabase generic inference breaking under
+    // ssr@0.5 + supabase-js@2.105, to be fixed post-MVP. That fix happened
+    // somewhere along the way: the codebase is type-clean and a build with this
+    // off gets through "Checking validity of types" and on to page generation.
+    //
+    // Leaving the escape hatch open meant type errors could not fail a deploy,
+    // so the only thing gating production was the test suite below `build`.
+    // Good as that is, it cannot catch a bad type. Turning this back on costs
+    // nothing today and makes the next regression a failed build rather than a
+    // runtime surprise on someone's account.
+    ignoreBuildErrors: false,
   },
   eslint: {
     ignoreDuringBuilds: true,

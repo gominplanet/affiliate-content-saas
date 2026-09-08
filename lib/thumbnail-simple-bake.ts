@@ -21,7 +21,9 @@
 // Why opentype.js loads the font ONCE and we cache the parsed font in
 // module scope: parsing takes ~50ms cold; cached lookups are ~0ms.
 import { Resvg } from '@resvg/resvg-js'
-import sharp from 'sharp'
+// sharp 0.35 no longer exposes its types as a `sharp.*` namespace alongside the
+// default export, so the option types are imported by name.
+import sharp, { type OverlayOptions } from 'sharp'
 // opentype.js is a CommonJS module. Next.js's serverless bundler wraps CJS
 // modules differently across runtimes — sometimes the default import works
 // (`import opentype from 'opentype.js'` → opentype.parse is callable),
@@ -627,7 +629,7 @@ export async function bakeSimpleHeadline(
       }
     }
 
-    const compositeLayers: sharp.OverlayOptions[] = [
+    const compositeLayers: OverlayOptions[] = [
       { input: borderPng, top: 0, left: 0 },
     ]
     // Decoration sits above the border but below the person cutout + text.
