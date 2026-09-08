@@ -3783,7 +3783,13 @@ export default function ContentPage() {
         const missed = typeof data.attempted === 'number' && data.attempted > data.fixed && !failed
           ? `, ${data.attempted - data.fixed} left unchanged`
           : ''
-        setFixCatResult(`Done. Fixed the affiliate link on ${data.fixed} post${data.fixed !== 1 ? 's' : ''}${failed}${missed}.`)
+        // A post can be written and still hold another link in the wrong style
+        // (a roundup with several products). Saying it plainly beats a green
+        // "Done" over a page a reader can still click the wrong link on.
+        const partial = data.partiallyFixed
+          ? ` ${data.partiallyFixed} of them still carr${data.partiallyFixed === 1 ? 'ies' : 'y'} another link that isn't ${data.chosenStyleLabel || 'your chosen style'}, so run this again to catch the rest.`
+          : ''
+        setFixCatResult(`Done. Fixed the affiliate link on ${data.fixed} post${data.fixed !== 1 ? 's' : ''}${failed}${missed}.${partial}`)
       }
     } catch {
       setFixCatResult('Something went wrong.')

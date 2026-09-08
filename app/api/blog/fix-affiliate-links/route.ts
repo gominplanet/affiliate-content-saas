@@ -150,6 +150,13 @@ export async function POST(request: Request) {
     if (!dryRun && selectedFixes) {
       let fixed = 0
       const errs: string[] = []
+      // Posts that were written and STILL carry a link in some other style.
+      // The swap replaces one exact URL; a roundup with five products, or a
+      // post whose sticky bar and hero button were built at different times,
+      // holds more than one. Counting a post as fixed while a reader can still
+      // click the wrong kind of link is the same lie in a smaller place, so it
+      // is checked after the write and reported.
+      const partiallyFixed: string[] = []
       for (const f of selectedFixes) {
         try {
           if (!f?.postId || !f?.oldUrl || !/^https?:\/\//i.test(f?.newUrl || '')) continue
@@ -173,6 +180,12 @@ export async function POST(request: Request) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await supabase.from('blog_posts').update({ content: updated }).eq('id', row.id)
           fixed++
+          // Read the post back as a reader sees it: every affiliate href, not
+          // just the one that was swapped.
+          const leftovers = (updated.match(new RegExp(AFFILIATE_HREF.source, 'gi')) || [])
+            .map((h) => h.match(/href="([^"]+)"/i)?.[1] || '')
+            .filter((u) => { const st = styleOfUrl(u); return st !== null && st !== chosenStyle })
+          if (leftovers.length) partiallyFixed.push(f.postId)
           // Best-effort: refresh the video's stored product link (single reviews
           // store the UUID in video_id; comparison posts store a youtube id and
           // simply won't match — harmless).
@@ -182,7 +195,14 @@ export async function POST(request: Request) {
           errs.push(`${f.postId}: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
-      return NextResponse.json({ success: true, fixed, attempted: selectedFixes.length, errors: errs.slice(0, 10) })
+      return NextResponse.json({
+        success: true,
+        fixed,
+        attempted: selectedFixes.length,
+        errors: errs.slice(0, 10),
+        partiallyFixed: partiallyFixed.length,
+        chosenStyleLabel: STYLE_LABEL[chosenStyle],
+      })
     }
 
     // ── Load published posts that have a body + a WP id ──────────────────────

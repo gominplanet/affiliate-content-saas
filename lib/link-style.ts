@@ -55,14 +55,42 @@ export function styleOfUrl(url: string | null | undefined): LinkStyle | null {
   const s = String(url ?? '').trim()
   if (!/^https?:\/\//i.test(s)) return null
   if (/(?:geni\.us|\bgnz\.)/i.test(s)) return 'geniuslink'
-  // Passport links are either the creator's branded short domain or the
-  // app-origin /go/ fallback. Both are minted by MVP and by nothing else.
-  if (/mvpl\.ink/i.test(s) || /\/go\/[A-Za-z0-9_-]+/.test(s)) return 'passport'
+  if (isPassportUrl(s)) return 'passport'
   if (/\bbit\.ly\//i.test(s)) return 'bitly'
   // amzn.to and a.co are Amazon's OWN shorteners, not a cloaker the creator
   // picked. They read as direct: the tag rides inside them.
   if (/amazon\.[a-z.]+/i.test(s) || /(?:amzn\.to|a\.co)\//i.test(s)) return 'direct'
   return null
+}
+
+/** The two shapes a Passport Link comes in: a code at the root of the branded
+ *  short domain (www.mvpl.ink/x7k) and the app-origin fallback (/go/x7k) that
+ *  older links were minted on.
+ *
+ *  The same rules as passportCodeFromUrl in lib/passport-links, deliberately
+ *  restated rather than imported: this module is dependency-free on purpose
+ *  (see the file header), and passport-links pulls in the admin Supabase client.
+ *  A restatement that drifts is the exact failure this file was created to stop,
+ *  so scripts/test-link-restyle pins the two against each other.
+ *
+ *  A Passport creator whose links these fail to recognise does not see a
+ *  cosmetic bug: the repair tool reads its own freshly minted Passport link as
+ *  the wrong style, refuses its own work, and reports that their posts cannot be
+ *  converted. So the check has to be exact, and it has to honour
+ *  PASSPORT_LINK_BASE the same way minting does. */
+function isPassportUrl(s: string): boolean {
+  let u: URL
+  try { u = new URL(s) } catch { return false }
+  const code = /^[A-Za-z0-9]{4,16}$/
+  if (/^\/go\/[A-Za-z0-9]{4,16}\/?$/.test(u.pathname)) return true
+  const host = u.hostname.toLowerCase().replace(/^www\./, '')
+  let brandedHost = ''
+  try {
+    const base = (process.env.PASSPORT_LINK_BASE || '').trim() || 'https://www.mvpl.ink'
+    brandedHost = new URL(base).hostname.toLowerCase().replace(/^www\./, '')
+  } catch { /* unparseable override → the known domain below still applies */ }
+  if (host !== 'mvpl.ink' && (!brandedHost || host !== brandedHost)) return false
+  return code.test(u.pathname.replace(/^\/+/, '').replace(/\/+$/, ''))
 }
 
 /**

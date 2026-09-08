@@ -16,6 +16,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { styleOfUrl, pickLinkStyle } from '../lib/link-style'
+import { passportCodeFromUrl, passportLinkUrl } from '../lib/passport-links'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -34,8 +35,9 @@ const CONTENT = read('app/(dashboard)/content/page.tsx')
     ['https://www.amazon.com/dp/B0H986NKLH?tag=alejandrogime-20&ascsubtag=80cHCuOkfz8', 'direct'],
     ['https://geni.us/abc123', 'geniuslink'],
     ['https://gnz.io/xyz', 'geniuslink'],
-    ['https://mvpl.ink/k3n', 'passport'],
-    ['https://mvpaffiliate.io/go/k3n', 'passport'],
+    ['https://www.mvpl.ink/k3nx', 'passport'],
+    ['https://mvpl.ink/k3nx', 'passport'],
+    ['https://www.mvpaffiliate.io/go/k3nx', 'passport'],
     ['https://bit.ly/3xYz', 'bitly'],
     // Amazon's own shorteners carry the tag inside them. They are a direct
     // link in a smaller wrapper, not a cloaker anybody picked.
@@ -50,6 +52,34 @@ const CONTENT = read('app/(dashboard)/content/page.tsx')
   for (const [url, want] of cases) {
     check(`styleOfUrl(${url || '""'}) is ${want}`, styleOfUrl(url) === want, `got ${styleOfUrl(url)}`)
   }
+  // ── the two Passport recognisers must agree ───────────────────────────────
+  // styleOfUrl restates passportCodeFromUrl's rules rather than importing them
+  // (lib/link-style is dependency-free on purpose). A restatement that drifts is
+  // the exact failure this file guards, and here it would be a bad one: the
+  // repair tool would mint a Passport link, read it back as the wrong style,
+  // refuse its own work, and tell a Passport creator their posts cannot be
+  // converted.
+  for (const u of [
+    'https://www.mvpl.ink/k3nx',
+    'https://mvpl.ink/abcd1234',
+    'https://www.mvpaffiliate.io/go/k3nx',
+    'https://www.mvpl.ink/x7k',            // 3 chars: below the code minimum
+    'https://www.mvpl.ink/pricing',        // a real page on the domain, not a code
+    'https://www.mvpl.ink/deep/path/here',
+    'https://www.amazon.com/dp/B0H986NKLH',
+    'https://geni.us/abc',
+  ]) {
+    const byCode = passportCodeFromUrl(u) !== null
+    const byStyle = styleOfUrl(u) === 'passport'
+    check(`both recognisers agree on ${u}`, byCode === byStyle,
+      `passportCodeFromUrl=${byCode} styleOfUrl=${byStyle}`)
+  }
+  // And the link MVP itself mints has to read back as Passport, or the tool
+  // refuses every conversion it just performed.
+  check('a freshly minted Passport URL reads as passport',
+    styleOfUrl(passportLinkUrl('k3nx')) === 'passport',
+    `passportLinkUrl gave ${passportLinkUrl('k3nx')}`)
+
   // The pair has to line up, because the whole comparison is
   // styleOfUrl(live) !== pickLinkStyle(settings).
   check('a Geniuslink creator with a plain Amazon link reads as off-style',
