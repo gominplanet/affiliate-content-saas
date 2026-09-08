@@ -6,6 +6,7 @@ import ExpressionPicker, { useExpression } from '@/components/thumbnails/Express
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { detectLineEdit, LINE_META, type LineKey } from '@/lib/yt-description-lines'
 import PageHero from '@/components/layout/PageHero'
 import { CoPilotGuide } from '@/components/guide/tool-guides'
 import HeroVideo from '@/components/layout/HeroVideo'
@@ -597,6 +598,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [expanded, setExpanded] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
+  /** Set when the creator has rewritten one of MVP's own boilerplate lines in
+   *  the box below. Their edit already goes out with THIS video; the offer is
+   *  to keep it for every future one, which until now they could not do at all.
+   *  Detected by exact match against the lines MVP emitted, not by diffing, so
+   *  a product name or a hashtag can never be mistaken for a template. */
+  const [lineEditOffer, setLineEditOffer] = useState<{ key: LineKey; text: string } | null>(null)
+  const [savingLine, setSavingLine] = useState(false)
+  const [savedLineKey, setSavedLineKey] = useState<LineKey | null>(null)
+  const [descOverrides, setDescOverrides] = useState<Record<string, unknown> | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
   const [thumbnailPrompt, setThumbnailPrompt] = useState<string | null>(null)
@@ -795,10 +805,33 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // so we can render an amber upgrade banner with a /pricing CTA instead.
   const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
 
+  /** Persist one rewritten boilerplate line as this creator's default. */
+  async function saveLineAsDefault() {
+    if (!lineEditOffer) return
+    setSavingLine(true)
+    try {
+      const res = await fetch('/api/youtube/description-lines', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: lineEditOffer.key, text: lineEditOffer.text }),
+      })
+      const j = await res.json().catch(() => null)
+      if (!res.ok || j?.error) { toast.error(String(j?.error || 'Could not save that line.')); return }
+      setSavedLineKey(lineEditOffer.key)
+      setDescOverrides((p) => ({ ...(p ?? {}), [lineEditOffer.key]: lineEditOffer.text }))
+      setLineEditOffer(null)
+      toast.success('Saved. Every new description will use your wording.')
+    } catch {
+      toast.error('Could not save that line.')
+    } finally { setSavingLine(false) }
+  }
+
   useEffect(() => {
     if (generated) {
       setEditTitle(generated.title)
       setEditDesc(generated.description)
+      setLineEditOffer(null)
+      setSavedLineKey(null)
       setExpanded(true)
     }
   }, [generated])
@@ -1110,6 +1143,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       setGeniuslinkError((data.geniuslinkError ?? null) as string | null)
       setGeniuslinkSkippedByStyle((data.geniuslinkSkippedByStyle ?? false) as boolean)
       setLinkStyleHonoured((data.linkStyleHonoured ?? false) as boolean)
+      setDescOverrides((data.descriptionLineOverrides ?? null) as Record<string, unknown> | null)
       setGeniuslinkVerified((data.geniuslinkVerified ?? true) as boolean)
 
       // ── Thumbnail no longer auto-fires after metadata generation ─────────
@@ -2431,10 +2465,56 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                 </div>
                 <textarea
                   value={editDesc}
-                  onChange={e => setEditDesc(e.target.value)}
+                  onChange={e => {
+                    const next = e.target.value
+                    setEditDesc(next)
+                    // Did they rewrite one of MVP's own lines? Exact-match
+                    // against what MVP emitted, so per-video text (the product
+                    // name, the hashtags, the ASIN) can never be mistaken for a
+                    // template the creator wants kept.
+                    setLineEditOffer(generated ? detectLineEdit(generated.description, next, descOverrides, {
+                      shop: product ? 'AMAZON' : 'the product',
+                      link: affiliateUrl || '',
+                      site: '', email: '',
+                    }) : null)
+                  }}
                   rows={10}
                   className="input-field resize-none text-xs leading-relaxed font-mono"
                 />
+                {/* The offer. Their edit already ships with THIS video either
+                    way; this is the part that was missing, and the reason a
+                    creator was retyping the same sentence on every upload. */}
+                {lineEditOffer && (
+                  <div className="mt-2 px-3 py-2 rounded-lg bg-[#7C3AED]/8 border border-[#7C3AED]/20 flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                        You changed the {LINE_META[lineEditOffer.key].label.toLowerCase()}
+                      </p>
+                      <p className="text-[11px] text-[#6e6e73] dark:text-[#a1a1a6] mt-0.5">
+                        This video already uses your version. Keep it for every future description too?
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => void saveLineAsDefault()}
+                      disabled={savingLine}
+                      className="shrink-0 px-2.5 py-1 rounded-md text-[11px] font-semibold text-white disabled:opacity-50"
+                      style={{ background: '#7C3AED' }}
+                    >
+                      {savingLine ? 'Saving…' : 'Save as default'}
+                    </button>
+                    <button
+                      onClick={() => setLineEditOffer(null)}
+                      className="shrink-0 px-1.5 py-1 text-[11px] text-[#86868b] hover:underline"
+                    >
+                      Not now
+                    </button>
+                  </div>
+                )}
+                {savedLineKey && (
+                  <p className="mt-2 text-[11px] text-[#2E6B45] dark:text-[#6DBF8C]">
+                    Saved. Your {LINE_META[savedLineKey].label.toLowerCase()} is now used on every new description. Change it any time on the YouTube page.
+                  </p>
+                )}
               </div>
 
               {/* Tags */}

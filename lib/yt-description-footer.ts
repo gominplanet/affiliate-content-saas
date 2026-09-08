@@ -49,6 +49,12 @@ export interface FooterInput {
    *  description, e.g. their custom block. If their own text already carries
    *  the website, MVP does not add it again on top. */
   existingText?: string | null
+  /** The finished wording for each line, already resolved against the
+   *  creator's own overrides and with tokens filled (lib/yt-description-lines).
+   *  This module decides WHICH lines appear; it no longer decides what they
+   *  say, because that is the creator's to change. Omitted in tests and older
+   *  callers, which then get MVP's defaults. */
+  lines?: Partial<Record<'blogPromoted' | 'blogFull' | 'collabWebsite' | 'collabEmail' | 'collabNoLink', string>>
 }
 
 export interface FooterBlocks {
@@ -79,24 +85,27 @@ export function footerBlocks(input: FooterInput): FooterBlocks {
   // reported: "the website is still wrong, is there a way I can edit the
   // description?". Above the fold is the better slot, so when it exists the
   // link goes there and the lower line stands down.
+  const L = input.lines ?? {}
   const promotedBlogLine = site && input.promoted && !alreadyTheirs
-    ? `👉 For more in-depth reviews, check out my blog: ${site}`
+    ? (L.blogPromoted || `👉 For more in-depth reviews, check out my blog: ${site}`)
     : null
   const blogLine = site && !promotedBlogLine && !alreadyTheirs
-    ? `For more in depth reviews, make sure to check out my blog: ${site}`
+    ? (L.blogFull || `For more in depth reviews, make sure to check out my blog: ${site}`)
     : null
 
   // Which route the collaboration line should use. The creator's explicit pick
   // wins; otherwise whichever they actually filled in.
   let collabLine: string | null = null
+  const collabEmailLine = L.collabEmail || `Let's Work Together! Email me for collaborations: ${email}`
+  const collabSiteLine = L.collabWebsite || `Let's Work Together! Check my WEBSITE for collaborations: ${site}`
   if (pref === 'email' && email) {
-    collabLine = `Let's Work Together! Email me for collaborations: ${email}`
+    collabLine = collabEmailLine
   } else if (pref === 'website' && site) {
-    collabLine = `Let's Work Together! Check my WEBSITE for collaborations: ${site}`
+    collabLine = collabSiteLine
   } else if (site) {
-    collabLine = `Let's Work Together! Check my WEBSITE for collaborations: ${site}`
+    collabLine = collabSiteLine
   } else if (email) {
-    collabLine = `Let's Work Together! Email me for collaborations: ${email}`
+    collabLine = collabEmailLine
   }
 
   // THE DUPLICATE. The collaboration line is about to print a URL that already
@@ -107,10 +116,10 @@ export function footerBlocks(input: FooterInput): FooterBlocks {
   if (siteAlreadyShown && collabLine && sameUrl(site, extractUrl(collabLine))) {
     if (email && pref !== 'website') {
       // Two real routes exist and only one was being used. Use both.
-      collabLine = `Let's Work Together! Email me for collaborations: ${email}`
+      collabLine = collabEmailLine
     } else {
       // Only the website. Keep the invitation, drop the repeat.
-      collabLine = `Let's Work Together! Brand collaborations welcome — reach me through the website linked above.`
+      collabLine = L.collabNoLink || `Let's Work Together! Brand collaborations welcome — reach me through the website linked above.`
     }
   }
 

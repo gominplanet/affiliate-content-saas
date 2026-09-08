@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { descriptionLines } from '@/lib/yt-description-lines'
 import { footerBlocks } from '@/lib/yt-description-footer'
 import { clickableTitleRulesForYouTube } from '@/lib/clickable-titles'
 import { scrubBanned } from '@/lib/scrub'
@@ -560,7 +561,7 @@ export async function POST(request: Request) {
     const [brandResult, intResult, videoRowResult] = await Promise.all([
       supabase
         .from('brand_profiles')
-        .select('name,author_name,niches,tone,website_url,contact_email,contact_preference,gear_sections,youtube_description_block')
+        .select('*')
         .eq('user_id', ownerId)
         .single(),
       // passport_links_enabled ships in migration 283, not yet in generated types.
@@ -1168,10 +1169,29 @@ export async function POST(request: Request) {
     // disclosure and above the hashtags, where the blog link is actually seen.
     // existingText: the creator's own custom block, so MVP never adds a link
     // they already wrote themselves.
+    // The creator's own wording where they have set it, MVP's where they have
+    // not. Defaults here are byte-identical to the strings this route used to
+    // hard-code, so an account that has never touched them sees no change.
+    const lineOverrides = (brand?.yt_description_lines as Record<string, unknown> | null) ?? null
+    const lineValues = {
+      shop: isProduct ? 'AMAZON' : 'the product',
+      link: affiliateUrl || '',
+      site: websiteUrl || '',
+      email: contactEmail || '',
+    }
+    const LINES = descriptionLines(lineOverrides, lineValues)
+
     const footer = footerBlocks({
       websiteUrl, contactEmail, contactPreference,
       promoted: !!affiliateUrl,
       existingText: customBlock || null,
+      lines: {
+        blogPromoted: LINES.blogPromoted,
+        blogFull: LINES.blogFull,
+        collabWebsite: LINES.collabWebsite,
+        collabEmail: LINES.collabEmail,
+        collabNoLink: LINES.collabNoLink,
+      },
     })
     const collabLine = footer.collabLine ?? ''
 
@@ -1188,15 +1208,11 @@ export async function POST(request: Request) {
     // mode (no link at all) opens straight with the video summary.
     const descParts: string[] = []
     if (affiliateUrl) {
-      const shopLabel = isProduct ? 'AMAZON' : 'the product'
-      const disclosureLine = isProduct
-        ? `Disclosure: As an Amazon Associate and Influencer I earn commissions, at no cost to you, made out of qualifying purchases.`
-        : `Disclosure: This video contains affiliate links. I may earn a commission at no extra cost to you.`
       descParts.push(
-        `Check Today's Price and Availability on ${shopLabel} here: ${affiliateUrl}`,
-        `(affiliate link)`,
+        LINES.affiliateCta,
+        LINES.affiliateLabel,
         `----------`,
-        disclosureLine,
+        isProduct ? LINES.disclosureProduct : LINES.disclosureGeneral,
       )
       // Blog backlink, promoted HIGH — right under the disclosure, above the
       // hashtags — with an arrow so it lands above YouTube's "...more" fold
@@ -1214,7 +1230,7 @@ export async function POST(request: Request) {
         `----------`,
         seoData.hashtags,
         `----------`,
-        `Thank you for watching! If you enjoyed this video review and found it useful, please subscribe and like for more product reviews :)`,
+        LINES.signOff,
       )
     } else {
       descParts.push(
@@ -1356,6 +1372,9 @@ export async function POST(request: Request) {
       linkStyle: linkStyleUsed,
       geniuslinkSkippedByStyle,
       linkStyleHonoured,
+      // What the creator has already overridden, so Co-Pilot can compare an
+      // edit against their current wording rather than MVP's defaults.
+      descriptionLineOverrides: lineOverrides,
       agentInsights: {
         targetBuyer: productAnalysis.targetBuyer,
         topBenefits: productAnalysis.topBenefits,
