@@ -65,35 +65,76 @@ export async function writeSocialCaption(opts: {
 
 /** Drop the just-posted product into the creator's Link-in-Bio shop grid and
  *  mark it live "in my story", so followers who see the IG post can tap link-in-
- *  bio and shop it. Re-marks an existing tile instead of duplicating. Best-effort
- *  — skips silently if they have no shop page. `inStory` controls the toggle. */
-async function syncLinkInBioTile(db: Db, userId: string, item: { asin: string; title: string; imageUrl?: string; url: string }, inStory: boolean): Promise<void> {
+ *  bio and shop it. Re-marks an existing tile instead of duplicating.
+ *
+ *  Returns null on success, or a sentence describing what went wrong. It used to
+ *  return void and swallow everything, which is how an Instagram post could go
+ *  out saying "link in bio to shop" while the product was never added to the
+ *  page. The caller folds a returned sentence into the post's note so the
+ *  failure is visible instead of looking exactly like a success.
+ *
+ *  A creator with no shop page is not a failure: there is nothing to add to, the
+ *  caption's link-in-bio line is their own permanent bio link, and that is a
+ *  setup choice rather than something that broke. */
+async function syncLinkInBioTile(db: Db, userId: string, item: { asin: string; title: string; imageUrl?: string; url: string }, inStory: boolean): Promise<string | null> {
+  let handle: string | null = null
   try {
-    const { data: page } = await db.from('link_pages').select('id').eq('user_id', userId).maybeSingle()
-    if (!page?.id) return
-    if (item.asin) {
-      const { data: existing } = await db.from('link_page_items').select('id').eq('page_id', page.id).eq('asin', item.asin).maybeSingle()
-      if (existing?.id) {
-        // Refresh the picture too, so a tile written blank by an earlier
-        // version fills in the next time the product is pushed.
-        const refreshed = await tileImageFor(db, item.asin, item.imageUrl)
-        await db.from('link_page_items')
-          .update({ in_story: inStory, hidden: false, ...(refreshed ? { image_url: refreshed } : {}) })
-          .eq('id', existing.id).eq('user_id', userId)
-        return
-      }
-    }
-    const { data: last } = await db.from('link_page_items').select('position').eq('page_id', page.id).order('position', { ascending: false }).limit(1).maybeSingle()
-    const position = (typeof last?.position === 'number' ? last.position : -1) + 1
-    // Shared with the pin path: a tile without a picture is a blank grey card,
-    // and "the caller had no image handy" is not a good enough reason for one.
+    const { data: page } = await db.from('link_pages').select('id, handle').eq('user_id', userId).maybeSingle()
+    if (!page?.id) return null
+    handle = (page.handle as string | null) ?? null
+
+    // A tile without a picture is a blank grey card on the page a post just
+    // sent someone to. Shared with the pin path: "the caller had no image
+    // handy" is not a good enough reason for one.
     const tileImage = await tileImageFor(db, item.asin, item.imageUrl)
-    await db.from('link_page_items').insert({
-      page_id: page.id, user_id: userId, kind: 'product',
-      title: item.title.slice(0, 200), url: item.url, image_url: tileImage,
-      asin: item.asin || null, source: 'amazon-social', position, hidden: false, in_story: inStory,
-    })
-  } catch { /* best-effort */ }
+
+    // NEWEST FIRST, matching the pin path. A post sends someone to this page for
+    // THIS product, so finding it below forty older tiles is the same as not
+    // finding it. position ascending is how the page sorts, so one below the
+    // current minimum puts it first without rewriting every other row.
+    const { data: first } = await db.from('link_page_items')
+      .select('position').eq('page_id', page.id).order('position', { ascending: true }).limit(1).maybeSingle()
+    const topPosition = (typeof first?.position === 'number' ? first.position : 1) - 1
+
+    const { data: existing } = item.asin
+      ? await db.from('link_page_items').select('id').eq('page_id', page.id).eq('asin', item.asin).maybeSingle()
+      : { data: null }
+
+    // THE ERROR IS READ. The supabase client returns { error } rather than
+    // throwing, so an unchecked write here fails in complete silence.
+    const { error: tileErr } = existing?.id
+      ? await db.from('link_page_items')
+          .update({
+            in_story: inStory, hidden: false, url: item.url, position: topPosition,
+            ...(tileImage ? { image_url: tileImage } : {}),
+          })
+          .eq('id', existing.id).eq('user_id', userId)
+      : await db.from('link_page_items').insert({
+          page_id: page.id, user_id: userId, kind: 'product',
+          title: item.title.slice(0, 200), url: item.url, image_url: tileImage,
+          asin: item.asin || null, source: 'amazon-social',
+          position: topPosition, hidden: false, in_story: inStory,
+        })
+
+    if (tileErr) {
+      console.error('[link-in-bio] could not put the product on the shop page:', tileErr.message)
+      return `The post went out, but the product could not be added to your Link in Bio page (${tileErr.message}). Add it by hand so the link in the caption leads somewhere.`
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[link-in-bio] shop page sync failed:', msg)
+    return `The post went out, but the product could not be added to your Link in Bio page (${msg}). Add it by hand so the link in the caption leads somewhere.`
+  }
+
+  // The page is served with ISR (revalidate 60), so without this the tile can be
+  // up to a minute late for someone who taps the link straight after the post.
+  if (handle) {
+    try {
+      const { revalidatePath } = await import('next/cache')
+      revalidatePath(`/shop/${handle}`)
+    } catch { /* not in a request context that can revalidate */ }
+  }
+  return null
 }
 
 // Facebook caption order (Seb's preference): affiliate link + disclosure FIRST,
@@ -171,6 +212,10 @@ export async function publishToInstagram(opts: {
   // marks it live in the "in my story" section so followers can tap link-in-bio
   // and buy it; a feed post just adds the shoppable tile. Use the REAL product
   // name + clean product photo for the tile (not the busy story graphic).
+  // Set when the shop tile could not be written. Folded into the returned note
+  // so the caller's modal says it, rather than the post reporting a clean
+  // success while the page it points at is missing the product.
+  let tileNote: string | null = null
   if (linkUrl) {
     let tileTitle = (opts.productTitle || '').trim()
     let tileImage: string | undefined = undefined
@@ -181,12 +226,17 @@ export async function publishToInstagram(opts: {
         tileImage = p.imageUrl || undefined
       } catch { /* best-effort */ }
     }
-    await syncLinkInBioTile(opts.db, opts.userId, { asin, title: tileTitle || 'Shop this', imageUrl: tileImage || opts.imageUrl, url: linkUrl }, isStory)
+    tileNote = await syncLinkInBioTile(opts.db, opts.userId, { asin, title: tileTitle || 'Shop this', imageUrl: tileImage || opts.imageUrl, url: linkUrl }, isStory)
   }
 
   const mediaId = await publishMedia({
     userId: intRow.instagram_user_id, accessToken: intRow.instagram_access_token,
     mediaType: isStory ? 'STORIES' : 'IMAGE', imageUrl: opts.imageUrl, caption: isStory ? undefined : caption,
   })
-  return { id: mediaId, url: isStory ? `https://www.instagram.com/${intRow.instagram_username || ''}` : `https://www.instagram.com/p/${mediaId}/`, caption, linkUrl, note }
+  return {
+    id: mediaId,
+    url: isStory ? `https://www.instagram.com/${intRow.instagram_username || ''}` : `https://www.instagram.com/p/${mediaId}/`,
+    caption, linkUrl,
+    note: [note, tileNote].filter(Boolean).join(' ') || note,
+  }
 }
