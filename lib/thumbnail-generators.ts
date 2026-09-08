@@ -225,16 +225,23 @@ export async function applyMoodyGrade(url: string): Promise<string> {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function rehostFacePhotos(supabase: any, paths: string[], max = 3): Promise<string[]> {
-  const out: string[] = []
-  for (const path of (paths || []).slice(0, max)) {
-    try {
-      const { data: file } = await supabase.storage.from('headshots').download(path)
-      if (!file) continue
-      const url = await fal.storage.upload(file as Blob)
-      if (url) out.push(url)
-    } catch { /* skip unreadable photo */ }
-  }
-  return out
+  // In parallel, not one after another. These are independent photos: three of
+  // them meant six network round trips in series (download, upload, download,
+  // upload…) on the path a creator waits on every time they generate a
+  // thumbnail. Now it is two steps deep regardless of how many photos there are.
+  //
+  // Order is preserved, because the identity references are passed to the image
+  // model in order and the first one carries the most weight.
+  const results = await Promise.all(
+    (paths || []).slice(0, max).map(async (path) => {
+      try {
+        const { data: file } = await supabase.storage.from('headshots').download(path)
+        if (!file) return null
+        return (await fal.storage.upload(file as Blob)) || null
+      } catch { return null /* skip unreadable photo */ }
+    }),
+  )
+  return results.filter((u): u is string => !!u)
 }
 
 /**

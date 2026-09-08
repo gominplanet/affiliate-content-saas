@@ -194,17 +194,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'That face has no photos. Add one under "Your Face" first.' }, { status: 400 })
     }
 
-    const refImages: Array<{ data: Uint8Array; filename: string; mime: string }> = []
-    for (const path of srcImages.slice(0, 5)) {
-      const { data: file } = await supabase.storage.from('headshots').download(path)
-      if (!file) continue
-      try {
-        const png = await normalizeToPng(new Uint8Array(await file.arrayBuffer()))
-        refImages.push({ data: png, filename: `face_${refImages.length}.png`, mime: 'image/png' })
-      } catch (e) {
-        console.warn('[photobooth] skipping unreadable reference photo', path, e)
-      }
-    }
+    // Five independent photos, fetched together rather than one after another.
+    // Order preserved so the first reference stays first.
+    const fetched = await Promise.all(
+      srcImages.slice(0, 5).map(async (path: string) => {
+        try {
+          const { data: file } = await supabase.storage.from('headshots').download(path)
+          if (!file) return null
+          return await normalizeToPng(new Uint8Array(await file.arrayBuffer()))
+        } catch (e) {
+          console.warn('[photobooth] skipping unreadable reference photo', path, e)
+          return null
+        }
+      }),
+    )
+    const refImages = fetched
+      .filter((d): d is Uint8Array => !!d)
+      .map((data, i) => ({ data, filename: `face_${i}.png`, mime: 'image/png' }))
     if (refImages.length === 0) {
       return NextResponse.json({ error: 'Could not load the reference photos. Try re-adding your face.' }, { status: 500 })
     }

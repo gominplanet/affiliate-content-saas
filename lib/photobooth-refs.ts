@@ -70,13 +70,17 @@ export async function getStarredPhotoboothRefs(
 
   if (matching.length === 0) return []
 
-  // Sign each path so it's publicly fetchable, then re-host on fal.
-  const signedUrls: string[] = []
-  for (const m of matching) {
-    const path = `${shotsFolder(userId)}/${m.file.name}`
-    const { data: signed } = await admin.storage.from(SHOTS_BUCKET).createSignedUrl(path, SIGNED_TTL)
-    if (signed?.signedUrl) signedUrls.push(signed.signedUrl)
-  }
+  // Sign each path so it's publicly fetchable, then re-host on fal. Signing is
+  // one independent call per shot, so they go together; the re-host below
+  // already did. Order preserved.
+  const signed = await Promise.all(
+    matching.map(async (m) => {
+      const path = `${shotsFolder(userId)}/${m.file.name}`
+      const { data } = await admin.storage.from(SHOTS_BUCKET).createSignedUrl(path, SIGNED_TTL)
+      return data?.signedUrl || null
+    }),
+  )
+  const signedUrls = signed.filter((u): u is string => !!u)
   if (signedUrls.length === 0) return []
 
   // Re-host on fal so Nano Banana can fetch them at request time (Supabase

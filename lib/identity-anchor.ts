@@ -89,15 +89,22 @@ export async function getOrCreateIdentityAnchor(
 
   // 2. Build it with gpt-image from the face photos (Photobooth-grade).
   try {
-    const refImages: Array<{ data: Uint8Array; filename: string; mime: string }> = []
-    for (const p of sourceImages.slice(0, 5)) {
-      try {
-        const { data: file } = await supabase.storage.from(BUCKET).download(p)
-        if (!file) continue
-        const png = await normalizeToPng(new Uint8Array(await (file as Blob).arrayBuffer()))
-        refImages.push({ data: png, filename: `face_${refImages.length}.png`, mime: 'image/png' })
-      } catch { /* skip unreadable photo */ }
-    }
+    // Downloaded and re-encoded in parallel. Five independent photos fetched one
+    // after another is five round trips a creator waits through, for no reason
+    // other than the loop shape. Order is preserved so the first reference stays
+    // the first reference.
+    const fetched = await Promise.all(
+      sourceImages.slice(0, 5).map(async (p) => {
+        try {
+          const { data: file } = await supabase.storage.from(BUCKET).download(p)
+          if (!file) return null
+          return await normalizeToPng(new Uint8Array(await (file as Blob).arrayBuffer()))
+        } catch { return null /* skip unreadable photo */ }
+      }),
+    )
+    const refImages = fetched
+      .filter((d): d is Uint8Array => !!d)
+      .map((data, i) => ({ data, filename: `face_${i}.png`, mime: 'image/png' }))
     if (refImages.length === 0) return null
 
     const model = OpenAIService.imageModel()

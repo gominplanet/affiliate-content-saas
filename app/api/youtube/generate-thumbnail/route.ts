@@ -1025,19 +1025,26 @@ async function generateFaceCutout(supabase: any, opts: {
 }): Promise<string | null> {
   if (!opts.sourceImages.length) return null
   try {
-    const refImages: Array<{ data: Uint8Array; filename: string; mime: string }> = []
-    for (const path of opts.sourceImages.slice(0, 5)) {
-      const { data: file } = await supabase.storage.from('headshots').download(path)
-      if (!file) continue
-      try {
-        // Re-encode to a clean RGB PNG so gpt-image never rejects the photo
-        // for an odd format / colour mode / orientation.
-        const png = await normalizeToPng(new Uint8Array(await file.arrayBuffer()))
-        refImages.push({ data: png, filename: `face_${refImages.length}.png`, mime: 'image/png' })
-      } catch (e) {
-        console.warn('[generateFaceCutout] skipping unreadable reference photo', path, e)
-      }
-    }
+    // Downloaded and re-encoded in parallel. These are five independent photos,
+    // and doing them in series put five round trips on the critical path of the
+    // slowest feature in the product. Order is preserved.
+    const fetched = await Promise.all(
+      opts.sourceImages.slice(0, 5).map(async (path: string) => {
+        try {
+          const { data: file } = await supabase.storage.from('headshots').download(path)
+          if (!file) return null
+          // Re-encode to a clean RGB PNG so gpt-image never rejects the photo
+          // for an odd format / colour mode / orientation.
+          return await normalizeToPng(new Uint8Array(await file.arrayBuffer()))
+        } catch (e) {
+          console.warn('[generateFaceCutout] skipping unreadable reference photo', path, e)
+          return null
+        }
+      }),
+    )
+    const refImages = fetched
+      .filter((d): d is Uint8Array => !!d)
+      .map((data, i) => ({ data, filename: `face_${i}.png`, mime: 'image/png' }))
     if (refImages.length === 0) return null
     // A pinned wardrobe (the creator's signature look, e.g. a white lab coat)
     // overrides the random pool so every thumbnail keeps that outfit.
@@ -2115,15 +2122,18 @@ export async function POST(request: Request) {
           // ALWAYS. (Previously a storyboard frame could win here and render a
           // generic/wrong face.) Load up to 3 selfies — a single reference drifts;
           // multiple angles give gpt-image a strong identity lock.
+          // Loaded together, not one after another: three independent selfies in
+          // series is three round trips on a path the creator is already waiting
+          // on. Order still decides which is primary, so the identity lock is
+          // unchanged.
           const urls = faceModel.source_images.slice(0, 3)
-          let primary: Buffer | Uint8Array | null = null
-          for (const url of urls) {
-            const bytes = await loadFacePng(url)
-            if (!bytes) continue
-            if (!primary) { primary = bytes; photoBytes = bytes; faceSelfieUsed = true }
-            else extraPhotoBytes.push(bytes)
-          }
+          const loaded = (await Promise.all(urls.map((u: string) => loadFacePng(u))))
+            .filter((b): b is Buffer | Uint8Array => !!b)
+          const primary = loaded[0] ?? null
           if (!primary) throw new Error('no readable face photo for graphic mode')
+          photoBytes = primary
+          faceSelfieUsed = true
+          for (const bytes of loaded.slice(1)) extraPhotoBytes.push(bytes)
 
         } else if (gfxStoryboardFrame) {
           // No face model → the video's storyboard frame is the only identity source.
