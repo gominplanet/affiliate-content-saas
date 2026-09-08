@@ -15,6 +15,7 @@
 // move on. The dashboard save MUST NOT fail because WP is offline.
 
 import { maybeDecrypt } from '@/lib/secrets'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 // We deliberately avoid importing SupabaseClient<Database> here — the two
 // callers (newsletter/settings, customizations route) hand us differently-
@@ -148,7 +149,7 @@ export async function pushNewsletterToWp(
 
     let existing: Record<string, unknown> = {}
     try {
-      const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+      const getRes = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
         headers: { Authorization: authHeader, 'User-Agent': ua },
       })
       if (getRes.ok) existing = await getRes.json() as Record<string, unknown>
@@ -157,7 +158,7 @@ export async function pushNewsletterToWp(
     const merged = { ...existing, newsletter }
 
     try {
-      const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+      const postRes = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

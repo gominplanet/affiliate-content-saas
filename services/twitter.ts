@@ -9,6 +9,7 @@
  *   - users.read       — fetch the connected user's @handle / display name
  *   - offline.access   — receive a refresh_token for long-lived sessions
  */
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 const TWITTER_API = 'https://api.twitter.com'
 
@@ -43,7 +44,7 @@ export async function exchangeCodeForToken(
     code_verifier: codeVerifier,
   })
 
-  const res = await fetch(`${TWITTER_API}/2/oauth2/token`, {
+  const res = await fetchWithTimeout(`${TWITTER_API}/2/oauth2/token`, {
     method: 'POST',
     headers: {
       Authorization: basicAuth(),
@@ -68,7 +69,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TwitterT
     client_id: process.env.TWITTER_CLIENT_ID!,
   })
 
-  const res = await fetch(`${TWITTER_API}/2/oauth2/token`, {
+  const res = await fetchWithTimeout(`${TWITTER_API}/2/oauth2/token`, {
     method: 'POST',
     headers: {
       Authorization: basicAuth(),
@@ -93,7 +94,7 @@ export type TwitterUserProfile = {
 
 /** Fetch the authenticated user's basic profile (@handle, display name, ID). */
 export async function getProfile(accessToken: string): Promise<TwitterUserProfile> {
-  const res = await fetch(`${TWITTER_API}/2/users/me`, {
+  const res = await fetchWithTimeout(`${TWITTER_API}/2/users/me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   if (!res.ok) {
@@ -106,7 +107,7 @@ export async function getProfile(accessToken: string): Promise<TwitterUserProfil
 
 /** Create a single tweet on the authenticated user's behalf. */
 export async function createTweet(accessToken: string, text: string): Promise<{ id: string; text: string }> {
-  const res = await fetch(`${TWITTER_API}/2/tweets`, {
+  const res = await fetchWithTimeout(`${TWITTER_API}/2/tweets`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,

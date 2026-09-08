@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { clearChannelFailures } from '@/lib/channel-health'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 interface TikTokTokenResponse {
   access_token?: string
@@ -83,7 +84,7 @@ export async function GET(request: Request) {
 
   let tokens: TikTokTokenResponse
   try {
-    const res = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
+    const res = await fetchWithTimeout('https://open.tiktokapis.com/v2/oauth/token/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -117,7 +118,7 @@ export async function GET(request: Request) {
   let displayName = ''
   let avatarUrl = ''
   try {
-    const infoRes = await fetch(
+    const infoRes = await fetchWithTimeout(
       'https://open.tiktokapis.com/v2/user/info/?fields=open_id,username,display_name,avatar_url',
       { headers: { Authorization: `Bearer ${tokens.access_token}` } },
     )

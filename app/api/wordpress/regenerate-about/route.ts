@@ -12,6 +12,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { generateAboutPage } from '@/lib/wordpress-about-template'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export async function POST(request: Request) {
   try {
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
     // Find the existing About page. The page was created with the title
     // "About <brand>", so WP may have slugged it "about" OR "about-<brand>";
     // search by title and match the slug 'about' first, else any "About …" page.
-    const findRes = await fetch(`${wpBase}/wp-json/wp/v2/pages?search=${encodeURIComponent('About')}&status=publish&per_page=20&_fields=id,title,slug`, {
+    const findRes = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/pages?search=${encodeURIComponent('About')}&status=publish&per_page=20&_fields=id,title,slug`, {
       headers: { Authorization: authHeader },
     }).catch(() => null)
     if (!findRes || !findRes.ok) return NextResponse.json({ ok: true, note: 'about_lookup_failed' })
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
       null
     if (!aboutId) return NextResponse.json({ ok: true, note: 'no_about_page' })
 
-    const upRes = await fetch(`${wpBase}/wp-json/wp/v2/pages/${aboutId}`, {
+    const upRes = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/pages/${aboutId}`, {
       method: 'POST',
       headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),

@@ -40,6 +40,7 @@ import {
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 // Telemetry context — populated at request start, read by the three
 // Anthropic helpers below so each call is tagged with the right user/tier.
@@ -3509,7 +3510,7 @@ Ultra-sharp, professional, photorealistic.${wearLine ? `\nFINAL CHECK — THE GA
     if (typeof uploadedPhotoUrl === 'string' && /^https?:\/\//.test(uploadedPhotoUrl)) {
       try {
         const overlayHookU = lockedHeadline || (await generateHook(videoTitle, productDescription, await claimsSheetPromise))
-        const photoRes = await fetch(uploadedPhotoUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        const photoRes = await fetchWithTimeout(uploadedPhotoUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
         if (!photoRes.ok) throw new Error(`Cannot fetch uploaded photo (${photoRes.status})`)
         const falPhotoUrl = await fal.storage.upload(await photoRes.blob())
 
@@ -3708,7 +3709,7 @@ Bright, flattering, high-contrast premium thumbnail look. Do NOT add any other p
     if (productImageUrl) {
       try {
         // fal.ai cannot reach Supabase/Amazon URLs directly — re-host first
-        const imgRes = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        const imgRes = await fetchWithTimeout(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
         if (!imgRes.ok) throw new Error(`Cannot fetch product image (${imgRes.status})`)
         const imgBlob = await imgRes.blob()
         const falImageUrl = await fal.storage.upload(imgBlob)

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 120
 
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
   const rawPosts: RawPost[] = []
   let page = 1
   while (true) {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${base}/wp-json/wp/v2/posts?per_page=100&page=${page}&status=publish&_fields=id,title,link,date,slug,featured_media`,
       { headers },
     )
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
   for (let i = 0; i < mediaIds.length; i += 100) {
     const chunk = mediaIds.slice(i, i + 100)
     try {
-      const mRes = await fetch(
+      const mRes = await fetchWithTimeout(
         `${base}/wp-json/wp/v2/media?include=${chunk.join(',')}&per_page=100&_fields=id,source_url`,
         { headers },
       )
@@ -165,7 +166,7 @@ export async function POST(request: Request) {
   const embedYtIdMap: Record<number, string> = {} // wpPostId → youtube_video row id
   for (const p of needsContentCheck) {
     try {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${base}/wp-json/wp/v2/posts/${p.id}?_fields=content`,
         { headers },
       )

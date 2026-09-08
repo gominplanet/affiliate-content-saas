@@ -19,6 +19,7 @@ import { isWpConnectionError } from '@/lib/wp-connection-health'
 import { normalizeTier, tierAllowsSocial } from '@/lib/tier'
 import { getConnectedPlatforms } from '@/lib/channel-health'
 import { DEFAULT_SOCIAL_OFFSETS_MIN, type SchedulableSocial } from '@/lib/schedule-types'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 const AUTOPILOT_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
 
@@ -170,13 +171,13 @@ async function runServiceRouteJob(
     // The hop log makes any remaining loop visible in Vercel logs.
     let url = `${resolveSelfBaseUrl()}${routePath}`
     const hops: string[] = []
-    res = await fetch(url, init)
+    res = await fetchWithTimeout(url, init)
     while ([301, 302, 303, 307, 308].includes(res.status) && hops.length < 5) {
       const loc = res.headers.get('location')
       if (!loc) break
       url = new URL(loc, url).toString()
       hops.push(`${res.status}→${url}`)
-      res = await fetch(url, init)
+      res = await fetchWithTimeout(url, init)
     }
     if (hops.length) console.log('[generation-job] self-call redirect chain:', hops.join(' | '), '→ final', res.status)
     if ([301, 302, 303, 307, 308].includes(res.status)) {

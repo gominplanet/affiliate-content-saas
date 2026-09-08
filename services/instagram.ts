@@ -31,6 +31,7 @@
  * Docs:
  *   https://developers.facebook.com/docs/instagram-platform/content-publishing
  */
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 const GRAPH_BASE = 'https://graph.instagram.com'
 const GRAPH_VERSION = 'v22.0'
@@ -96,7 +97,7 @@ export async function exchangeCodeForTokens(opts: {
     redirect_uri: opts.redirectUri,
     code: opts.code,
   })
-  const shortRes = await fetch(`${OAUTH_BASE}/access_token`, {
+  const shortRes = await fetchWithTimeout(`${OAUTH_BASE}/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: formBody.toString(),
@@ -115,7 +116,7 @@ export async function exchangeCodeForTokens(opts: {
 
   // Step 2: short-lived → long-lived token (60 days)
   const longUrl = `${GRAPH_BASE}/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(opts.clientSecret)}&access_token=${encodeURIComponent(shortData.access_token)}`
-  const longRes = await fetch(longUrl)
+  const longRes = await fetchWithTimeout(longUrl)
   const longData = await longRes.json() as {
     access_token?: string
     token_type?: string
@@ -130,7 +131,7 @@ export async function exchangeCodeForTokens(opts: {
   const expiresAt = Date.now() + (longData.expires_in ?? 60 * 24 * 60 * 60) * 1000
 
   // Step 3: fetch username for display
-  const meRes = await fetch(`${GRAPH_BASE}/${GRAPH_VERSION}/me?fields=id,username&access_token=${encodeURIComponent(longToken)}`)
+  const meRes = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/me?fields=id,username&access_token=${encodeURIComponent(longToken)}`)
   const meData = await meRes.json() as { id?: string; username?: string; error?: { message: string } }
   if (!meRes.ok || !meData.id) {
     throw new Error(`Instagram /me failed: ${meData.error?.message || `HTTP ${meRes.status}`}`)
@@ -152,7 +153,7 @@ export async function exchangeCodeForTokens(opts: {
  */
 export async function refreshLongLivedToken(currentToken: string): Promise<{ accessToken: string; expiresAt: number }> {
   const url = `${GRAPH_BASE}/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(currentToken)}`
-  const res = await fetch(url)
+  const res = await fetchWithTimeout(url)
   const data = await res.json() as { access_token?: string; expires_in?: number; error?: { message: string } }
   if (!res.ok || !data.access_token) {
     throw new Error(`Instagram token refresh failed: ${data.error?.message || `HTTP ${res.status}`}`)
@@ -188,7 +189,7 @@ export interface MediaInsights {
 export async function getMediaInsights(opts: { mediaId: string; accessToken: string }): Promise<MediaInsights | null> {
   try {
     const metrics = 'reach,likes,comments,saved,shares,views'
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${GRAPH_BASE}/${GRAPH_VERSION}/${encodeURIComponent(opts.mediaId)}/insights?metric=${metrics}&access_token=${encodeURIComponent(opts.accessToken)}`,
     )
     const data = await res.json() as { data?: Array<{ name: string; values?: Array<{ value: number }> }>; error?: { message?: string } }
@@ -213,7 +214,7 @@ export async function getMediaInsights(opts: { mediaId: string; accessToken: str
 
 export async function getMediaCount(opts: { userId: string; accessToken: string }): Promise<number | null> {
   try {
-    const res = await fetch(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}?fields=media_count&access_token=${encodeURIComponent(opts.accessToken)}`)
+    const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}?fields=media_count&access_token=${encodeURIComponent(opts.accessToken)}`)
     const data = await res.json() as { media_count?: number }
     if (!res.ok || typeof data.media_count !== 'number') return null
     return data.media_count
@@ -270,7 +271,7 @@ export async function createMediaContainer(opts: {
     if (opts.caption) body.set('caption', opts.caption.slice(0, 2200))
   }
 
-  const res = await fetch(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}/media`, {
+  const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}/media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
@@ -297,7 +298,7 @@ export async function waitForContainer(opts: {
   let attempt = 0
   while (Date.now() < deadline) {
     attempt += 1
-    const res = await fetch(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.containerId}?fields=status_code,status&access_token=${encodeURIComponent(opts.accessToken)}`)
+    const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.containerId}?fields=status_code,status&access_token=${encodeURIComponent(opts.accessToken)}`)
     const data = await res.json() as { status_code?: string; status?: string; error?: { message: string } }
     if (!res.ok) {
       throw new Error(`Instagram status check failed: ${data.error?.message || `HTTP ${res.status}`}`)
@@ -325,7 +326,7 @@ export async function publishContainer(opts: {
     creation_id: opts.containerId,
     access_token: opts.accessToken,
   })
-  const res = await fetch(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}/media_publish`, {
+  const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}/media_publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
@@ -377,7 +378,7 @@ export async function sendPrivateReply(opts: {
   accessToken: string
 }): Promise<{ recipientId?: string; messageId?: string }> {
   const url = `${GRAPH_BASE}/${GRAPH_VERSION}/${opts.igUserId}/messages?access_token=${encodeURIComponent(opts.accessToken)}`
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -398,7 +399,7 @@ export async function sendPrivateReply(opts: {
 export async function subscribeToComments(opts: { igUserId: string; accessToken: string }): Promise<boolean> {
   try {
     const url = `${GRAPH_BASE}/${GRAPH_VERSION}/${opts.igUserId}/subscribed_apps?subscribed_fields=comments&access_token=${encodeURIComponent(opts.accessToken)}`
-    const res = await fetch(url, { method: 'POST' })
+    const res = await fetchWithTimeout(url, { method: 'POST' })
     const data = await res.json().catch(() => ({})) as { success?: boolean; error?: { message: string } }
     if (!res.ok) { console.warn('[instagram] subscribe_apps failed:', data?.error?.message || res.status); return false }
     return data.success !== false
@@ -417,7 +418,7 @@ export async function replyToComment(opts: {
 }): Promise<boolean> {
   try {
     const url = `${GRAPH_BASE}/${GRAPH_VERSION}/${opts.commentId}/replies?access_token=${encodeURIComponent(opts.accessToken)}`
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: opts.message.slice(0, 280) }),

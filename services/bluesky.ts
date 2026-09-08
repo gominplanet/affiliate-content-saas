@@ -14,6 +14,7 @@
  * bsky.social accounts that's https://bsky.social. Custom PDS handles
  * (e.g. self-hosted) require resolving via DNS — out of scope for v1.
  */
+import { fetchWithTimeout, UPLOAD_TIMEOUT_MS } from '@/lib/fetch-timeout'
 
 const PDS_BASE = 'https://bsky.social'
 
@@ -26,7 +27,7 @@ export type BlueskySession = {
 
 /** Authenticate with handle + app password. Returns session tokens + DID. */
 export async function createSession(handle: string, appPassword: string): Promise<BlueskySession> {
-  const res = await fetch(`${PDS_BASE}/xrpc/com.atproto.server.createSession`, {
+  const res = await fetchWithTimeout(`${PDS_BASE}/xrpc/com.atproto.server.createSession`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ identifier: handle, password: appPassword }),
@@ -92,7 +93,7 @@ export async function createPost(
     ...(embed ? { embed } : {}),
   }
 
-  const res = await fetch(`${PDS_BASE}/xrpc/com.atproto.repo.createRecord`, {
+  const res = await fetchWithTimeout(`${PDS_BASE}/xrpc/com.atproto.repo.createRecord`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${session.accessJwt}`,
@@ -117,12 +118,15 @@ export async function createPost(
  *  so we skip oversized images rather than error the whole post. */
 async function uploadBlob(session: BlueskySession, imageUrl: string): Promise<unknown | null> {
   try {
-    const imgRes = await fetch(imageUrl)
+    const imgRes = await fetchWithTimeout(imageUrl)
     if (!imgRes.ok) return null
     const contentType = imgRes.headers.get('content-type') || 'image/jpeg'
     const bytes = new Uint8Array(await imgRes.arrayBuffer())
     if (bytes.byteLength > 976_000) return null // PDS blob limit ≈ 1MB
-    const res = await fetch(`${PDS_BASE}/xrpc/com.atproto.repo.uploadBlob`, {
+    const res = await fetchWithTimeout(`${PDS_BASE}/xrpc/com.atproto.repo.uploadBlob`, {
+      // Binary upload: the image bytes go over this request, so it gets the
+      // upload ceiling rather than the ordinary API one.
+      timeoutMs: UPLOAD_TIMEOUT_MS,
       method: 'POST',
       headers: { Authorization: `Bearer ${session.accessJwt}`, 'Content-Type': contentType },
       body: bytes,

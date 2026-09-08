@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 const GRAPH = 'https://graph.facebook.com/v19.0'
 
 export interface FacebookPage {
@@ -13,7 +14,7 @@ export class FacebookService {
     message: string
     link: string
   }): Promise<{ id: string }> {
-    const res = await fetch(`${GRAPH}/${this.pageId}/feed`, {
+    const res = await fetchWithTimeout(`${GRAPH}/${this.pageId}/feed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -34,7 +35,7 @@ export class FacebookService {
     imageUrl: string
     caption: string
   }): Promise<{ id: string; post_id?: string }> {
-    const res = await fetch(`${GRAPH}/${this.pageId}/photos`, {
+    const res = await fetchWithTimeout(`${GRAPH}/${this.pageId}/photos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -58,7 +59,7 @@ export async function exchangeCodeForToken(code: string, redirectUri: string): P
   url.searchParams.set('redirect_uri', redirectUri)
   url.searchParams.set('code', code)
 
-  const res = await fetch(url.toString())
+  const res = await fetchWithTimeout(url.toString())
   if (!res.ok) {
     const body = await res.text()
     throw new Error(`Token exchange failed: ${body.slice(0, 300)}`)
@@ -74,7 +75,7 @@ export async function getLongLivedToken(shortToken: string): Promise<string> {
   url.searchParams.set('client_secret', process.env.FACEBOOK_APP_SECRET!)
   url.searchParams.set('fb_exchange_token', shortToken)
 
-  const res = await fetch(url.toString())
+  const res = await fetchWithTimeout(url.toString())
   if (!res.ok) throw new Error('Long-lived token exchange failed')
   const data = await res.json() as { access_token: string }
   return data.access_token
@@ -89,7 +90,7 @@ export async function getLongLivedToken(shortToken: string): Promise<string> {
 
 /** DM the author of a Page comment. Returns the message id; throws on error. */
 export async function sendPrivateReply(opts: { commentId: string; message: string; pageAccessToken: string }): Promise<string> {
-  const res = await fetch(`${GRAPH}/${encodeURIComponent(opts.commentId)}/private_replies`, {
+  const res = await fetchWithTimeout(`${GRAPH}/${encodeURIComponent(opts.commentId)}/private_replies`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: opts.message, access_token: opts.pageAccessToken }),
@@ -102,7 +103,7 @@ export async function sendPrivateReply(opts: { commentId: string; message: strin
 /** Optional public "Sent you a DM!" reply under the comment — best-effort. */
 export async function replyToCommentPublic(opts: { commentId: string; message: string; pageAccessToken: string }): Promise<void> {
   try {
-    await fetch(`${GRAPH}/${encodeURIComponent(opts.commentId)}/comments`, {
+    await fetchWithTimeout(`${GRAPH}/${encodeURIComponent(opts.commentId)}/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: opts.message, access_token: opts.pageAccessToken }),
@@ -113,7 +114,7 @@ export async function replyToCommentPublic(opts: { commentId: string; message: s
 /** Subscribe this Page to `feed` webhooks so comment events reach our endpoint.
  *  The #1 "no events" cause is a Page that was never subscribed. Idempotent. */
 export async function subscribePageToFeed(opts: { pageId: string; pageAccessToken: string }): Promise<void> {
-  const res = await fetch(`${GRAPH}/${opts.pageId}/subscribed_apps`, {
+  const res = await fetchWithTimeout(`${GRAPH}/${opts.pageId}/subscribed_apps`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ subscribed_fields: 'feed', access_token: opts.pageAccessToken }),
@@ -168,7 +169,7 @@ export async function resolveManualPage(
     const pUrl = new URL(`${GRAPH}/${hint}`)
     pUrl.searchParams.set('fields', 'id,name,access_token')
     pUrl.searchParams.set('access_token', inputToken)
-    const pRes = await fetch(pUrl.toString())
+    const pRes = await fetchWithTimeout(pUrl.toString())
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pBody: any = await pRes.json()
     if (pRes.ok && pBody?.id) {
@@ -187,7 +188,7 @@ export async function resolveManualPage(
   const meUrl = new URL(`${GRAPH}/me`)
   meUrl.searchParams.set('fields', 'id,name,category')
   meUrl.searchParams.set('access_token', inputToken)
-  const res = await fetch(meUrl.toString())
+  const res = await fetchWithTimeout(meUrl.toString())
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const body: any = await res.json()
   if (!res.ok || !body?.id) {
@@ -224,7 +225,7 @@ export async function verifyPageToken(
     const url = new URL(`${GRAPH}/${encodeURIComponent(pageId)}`)
     url.searchParams.set('fields', 'id,name')
     url.searchParams.set('access_token', pageAccessToken)
-    const res = await fetch(url.toString())
+    const res = await fetchWithTimeout(url.toString())
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const body: any = await res.json().catch(() => ({}))
     if (res.ok && body?.id) return { ok: true, pageName: body.name || undefined }
@@ -268,7 +269,7 @@ async function fetchPagedPages(firstUrl: string, throwOnError: boolean): Promise
   const out: FacebookPage[] = []
   let next: string | null = firstUrl
   for (let page = 0; next && page < 20; page++) {
-    const res: Response = await fetch(next)
+    const res: Response = await fetchWithTimeout(next)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const body: any = await res.json()
     if (!res.ok) {
@@ -300,7 +301,7 @@ async function fetchBusinessPages(userToken: string): Promise<FacebookPage[]> {
     bizUrl.searchParams.set('access_token', userToken)
     bizUrl.searchParams.set('fields', 'id')
     bizUrl.searchParams.set('limit', '50')
-    const bizRes = await fetch(bizUrl.toString())
+    const bizRes = await fetchWithTimeout(bizUrl.toString())
     const bizBody = await bizRes.json()
     if (!bizRes.ok) return []
     const businessIds: string[] = ((bizBody.data ?? []) as Array<{ id: string }>).map((b) => b.id)

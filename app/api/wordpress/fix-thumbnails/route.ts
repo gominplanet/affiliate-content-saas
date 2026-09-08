@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 300
 
@@ -10,7 +11,7 @@ const PLACEHOLDER_SIZE_THRESHOLD = 5000
 
 async function fetchWithSize(url: string): Promise<{ buffer: Buffer; size: number; contentType: string } | null> {
   try {
-    const res = await fetch(url)
+    const res = await fetchWithTimeout(url)
     if (!res.ok) return null
     const buffer = Buffer.from(await res.arrayBuffer())
     return { buffer, size: buffer.length, contentType: res.headers.get('content-type') || 'image/jpeg' }
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
     const allPosts: RawPost[] = []
     let page = 1
     while (true) {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${base}/wp-json/wp/v2/posts?per_page=100&page=${page}&status=publish&_fields=id,title,featured_media`,
         { headers },
       )
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
     for (let i = 0; i < mediaIds.length; i += 100) {
       const chunk = mediaIds.slice(i, i + 100)
       try {
-        const res = await fetch(
+        const res = await fetchWithTimeout(
           `${base}/wp-json/wp/v2/media?include=${chunk.join(',')}&per_page=100&_fields=id,source_url,slug`,
           { headers },
         )

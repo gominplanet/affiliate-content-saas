@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 10
 
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
     }
 
     // Check queue status
-    const statusRes = await fetch(
+    const statusRes = await fetchWithTimeout(
       `https://queue.fal.run/${model}/requests/${requestId}/status`,
       { headers: { Authorization: `Key ${falKey}` } }
     )
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
 
     if (queueStatus === 'COMPLETED') {
       // Fetch the actual result
-      const resultRes = await fetch(
+      const resultRes = await fetchWithTimeout(
         `https://queue.fal.run/${model}/requests/${requestId}`,
         { headers: { Authorization: `Key ${falKey}` } }
       )

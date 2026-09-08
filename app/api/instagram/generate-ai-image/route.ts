@@ -30,6 +30,7 @@ import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { composeWithGptImage, composeWithNanoBananaPro, composeWithNanoBanana, rehostToFal, rehostFacePhotos, applyMoodyGrade, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 /**
  * Look for an ASIN inside the FIRST TWO SENTENCES of the YouTube
@@ -64,7 +65,7 @@ async function findAsinInDescription(description: string): Promise<string | null
   const shortLink = head.match(/https?:\/\/(?:www\.)?(?:amzn\.to|geni\.us)\/[A-Za-z0-9]+/i)
   if (shortLink) {
     try {
-      const res = await fetch(shortLink[0], {
+      const res = await fetchWithTimeout(shortLink[0], {
         method: 'HEAD',
         redirect: 'follow',
         headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -91,7 +92,7 @@ async function describeProductVisually(opts: {
   ctx: AgentCtx
 }): Promise<string> {
   try {
-    const imgRes = await fetch(opts.imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+    const imgRes = await fetchWithTimeout(opts.imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
     if (!imgRes.ok) return ''
     const buf = await imgRes.arrayBuffer()
     const b64 = Buffer.from(buf).toString('base64')
@@ -536,7 +537,7 @@ Ultra-sharp, photorealistic, 4:5 portrait.`
       // colour, material, branding). Kontext takes the product image as
       // a visual reference and recomposes the scene around it.
       try {
-        const imgRes = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        const imgRes = await fetchWithTimeout(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
         if (!imgRes.ok) throw new Error(`Cannot fetch product image (${imgRes.status})`)
         const imgBlob = await imgRes.blob()
         const falImageUrl = await fal.storage.upload(imgBlob)

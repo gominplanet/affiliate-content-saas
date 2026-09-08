@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { maybeEncrypt } from '@/lib/secrets'
 import { normalizeTier } from '@/lib/tier'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
   let step = 'token_exchange'
   try {
     const redirectUri = `${appUrl}/api/auth/youtube/callback`
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    const tokenRes = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest) {
     let channelId: string | null = null
     let channelTitle: string | null = null
     try {
-      const chRes = await fetch(
+      const chRes = await fetchWithTimeout(
         'https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true',
         { headers: { Authorization: `Bearer ${tokens.access_token}` } },
       )

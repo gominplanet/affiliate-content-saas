@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 // Pinterest API host. Trial-access apps may NOT create pins against
 // production (api.pinterest.com) — Pinterest requires the Sandbox host
 // for that until Standard access is granted. Flip this via env to
@@ -13,7 +14,7 @@ export class PinterestService {
   constructor(private accessToken: string) {}
 
   async getBoards(): Promise<{ id: string; name: string }[]> {
-    const res = await fetch(`${BASE}/boards?page_size=100`, {
+    const res = await fetchWithTimeout(`${BASE}/boards?page_size=100`, {
       headers: { Authorization: `Bearer ${this.accessToken}` },
     })
     if (!res.ok) throw new Error(`Pinterest boards error: ${res.status}`)
@@ -200,7 +201,7 @@ export class PinterestService {
     let status = 'registered'
     for (let i = 0; i < 60 && status !== 'succeeded'; i++) {
       await new Promise(r => setTimeout(r, 2500))
-      const st = await fetch(`${BASE}/media/${media.media_id}`, { headers: auth })
+      const st = await fetchWithTimeout(`${BASE}/media/${media.media_id}`, { headers: auth })
       if (!st.ok) continue
       const j = await st.json() as { status?: string }
       status = j.status || status
@@ -240,7 +241,7 @@ export async function exchangeCodeForToken(code: string, redirectUri: string) {
   const appSecret = process.env.PINTEREST_APP_SECRET!
   const credentials = Buffer.from(`${appId}:${appSecret}`).toString('base64')
 
-  const res = await fetch(`${BASE}/oauth/token`, {
+  const res = await fetchWithTimeout(`${BASE}/oauth/token`, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${credentials}`,
@@ -278,7 +279,7 @@ export async function refreshPinterestToken(refreshToken: string): Promise<{ acc
   const appSecret = process.env.PINTEREST_APP_SECRET!
   const credentials = Buffer.from(`${appId}:${appSecret}`).toString('base64')
 
-  const res = await fetch(`${BASE}/oauth/token`, {
+  const res = await fetchWithTimeout(`${BASE}/oauth/token`, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${credentials}`,

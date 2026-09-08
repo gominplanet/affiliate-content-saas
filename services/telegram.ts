@@ -15,6 +15,7 @@
  *
  * Bot API docs: https://core.telegram.org/bots/api
  */
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 const TG_BASE = 'https://api.telegram.org'
 
@@ -42,7 +43,7 @@ export async function sendPhoto(
   photoUrl: string,
   caption: string,
 ): Promise<TelegramPostResult> {
-  const res = await fetch(`${TG_BASE}/bot${botToken}/sendPhoto`, {
+  const res = await fetchWithTimeout(`${TG_BASE}/bot${botToken}/sendPhoto`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -78,7 +79,7 @@ export async function sendMessage(
   chatId: string,
   text: string,
 ): Promise<TelegramPostResult> {
-  const res = await fetch(`${TG_BASE}/bot${botToken}/sendMessage`, {
+  const res = await fetchWithTimeout(`${TG_BASE}/bot${botToken}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -126,7 +127,7 @@ export function escapeMarkdownV2(text: string): string {
  * vs "❌ Add @BotName as admin first" signal before they try to publish.
  */
 export async function verifyBotInChannel(botToken: string, chatId: string): Promise<{ ok: true; title: string } | { ok: false; error: string }> {
-  const res = await fetch(`${TG_BASE}/bot${botToken}/getChat`, {
+  const res = await fetchWithTimeout(`${TG_BASE}/bot${botToken}/getChat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId }),

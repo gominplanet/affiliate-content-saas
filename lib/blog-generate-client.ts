@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // Client helper for blog generation (Phase 4 increment C). Lets the UI use the
@@ -6,7 +7,7 @@
 // until ENABLE_ASYNC_GENERATION is turned on server-side.
 //
 // Returns a Response-COMPATIBLE object ({ ok, status, json() }) so existing
-// handlers that do `const r = await fetch(...); const d = await r.json()` keep
+// handlers that do `const r = await fetchWithTimeout(...); const d = await r.json()` keep
 // working: just replace the `fetch('/api/blog/generate', …)` call with
 // `generateBlogRequest(body, signal)`.
 //
@@ -39,7 +40,7 @@ export async function generateBlogRequest(body: Record<string, any>, signal?: Ab
   // 1. Try to enqueue (async path).
   let enq: Response
   try {
-    enq = await fetch('/api/blog/enqueue', {
+    enq = await fetchWithTimeout('/api/blog/enqueue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -58,7 +59,7 @@ export async function generateBlogRequest(body: Record<string, any>, signal?: Ab
 
   // 2. Async disabled (kill-switch) → transparent sync fallback (real Response).
   if (enq.status === 503) {
-    const syncRes = await fetch('/api/blog/generate', {
+    const syncRes = await fetchWithTimeout('/api/blog/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -103,7 +104,7 @@ export async function generateBlogRequest(body: Record<string, any>, signal?: Ab
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
     let s: { status?: string; result?: unknown; error?: string } = {}
     try {
-      const sres = await fetch(`/api/blog/job/${jobId}`, { signal })
+      const sres = await fetchWithTimeout(`/api/blog/job/${jobId}`, { signal })
       s = await sres.json()
     } catch {
       // Transient poll error — keep polling (the abort check above is the exit).

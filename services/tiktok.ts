@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
@@ -111,7 +112,7 @@ export async function getValidTikTokToken(
   if (!clientKey || !clientSecret) return null
 
   try {
-    const res = await fetch(TT_TOKEN_URL, {
+    const res = await fetchWithTimeout(TT_TOKEN_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',

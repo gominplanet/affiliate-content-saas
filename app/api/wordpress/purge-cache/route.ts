@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { tryWpProxy } from '@/lib/wp-proxy'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 /**
  * Purge cache on a WordPress site. Multi-site: accepts `siteId` to target a
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
       purged = proxied.ok
     } else {
       try {
-        const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/purge`, {
+        const res = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/purge`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'User-Agent': UA0, Authorization: authHeader },
           body: '{}',
@@ -76,7 +77,7 @@ export async function POST(req: Request) {
 
   let existing: unknown = {}
   try {
-    const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+    const getRes = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
       headers: { 'User-Agent': UA, Authorization: authHeader },
     })
     if (getRes.ok) existing = await getRes.json()
@@ -108,7 +109,7 @@ export async function POST(req: Request) {
     status = proxied.status
     if (!ok) errText = typeof proxied.data === 'string' ? proxied.data : JSON.stringify(proxied.data)
   } else {
-    const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+    const res = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

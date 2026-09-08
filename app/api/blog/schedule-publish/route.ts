@@ -54,6 +54,7 @@ import { tierAllowsSocial, normalizeTier, type Tier } from '@/lib/tier'
 import type { ScheduleMode, SocialScheduleEntry, SchedulableSocial } from '@/lib/schedule-types'
 import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
 import { getConnectedPlatforms } from '@/lib/channel-health'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 const SUPPORTED_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
 const SUPPORTED_MODES: ScheduleMode[] = ['wp-native', 'draft-flip']
@@ -151,7 +152,7 @@ export async function POST(request: Request) {
     const url = new URL(request.url)
     const generateUrl = `${url.protocol}//${url.host}/api/blog/generate`
     const cookieHeader = request.headers.get('cookie') ?? ''
-    const genRes = await fetch(generateUrl, {
+    const genRes = await fetchWithTimeout(generateUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: cookieHeader },
       body: JSON.stringify({

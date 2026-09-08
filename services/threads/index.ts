@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 const BASE = 'https://graph.threads.net/v1.0'
 
 // A media container is not publishable the instant it's created — Meta has to
@@ -21,7 +22,7 @@ export class ThreadsService {
     let delay = 500
 
     for (;;) {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${BASE}/${containerId}?fields=status,error_message&access_token=${encodeURIComponent(this.accessToken)}`,
       )
       if (res.ok) {
@@ -62,7 +63,7 @@ export class ThreadsService {
       containerBody.media_type = 'TEXT'
     }
 
-    const containerRes = await fetch(`${BASE}/me/threads`, {
+    const containerRes = await fetchWithTimeout(`${BASE}/me/threads`, {
       method: 'POST',
       headers,
       body: JSON.stringify(containerBody),
@@ -79,7 +80,7 @@ export class ThreadsService {
     await this.waitForContainer(creationId)
 
     // Step 3: publish the container
-    const publishRes = await fetch(`${BASE}/me/threads_publish`, {
+    const publishRes = await fetchWithTimeout(`${BASE}/me/threads_publish`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ creation_id: creationId }),
@@ -96,7 +97,7 @@ export class ThreadsService {
     // permalink just means the recap omits the Threads link (prior behaviour).
     let permalink: string | undefined
     try {
-      const permRes = await fetch(`${BASE}/${id}?fields=permalink&access_token=${encodeURIComponent(this.accessToken)}`)
+      const permRes = await fetchWithTimeout(`${BASE}/${id}?fields=permalink&access_token=${encodeURIComponent(this.accessToken)}`)
       if (permRes.ok) {
         const d = await permRes.json() as { permalink?: string }
         if (d.permalink) permalink = d.permalink
@@ -110,14 +111,14 @@ export class ThreadsService {
 /** Fetch the connected Threads profile (id + username). Best-effort —
  *  used to display "Connected as @username" after OAuth. */
 export async function fetchThreadsProfile(accessToken: string): Promise<{ id: string; username: string | null }> {
-  const res = await fetch(`${BASE}/me?fields=id,username&access_token=${encodeURIComponent(accessToken)}`)
+  const res = await fetchWithTimeout(`${BASE}/me?fields=id,username&access_token=${encodeURIComponent(accessToken)}`)
   if (!res.ok) throw new Error(`Threads profile fetch failed: ${res.status}`)
   const data = await res.json() as { id?: string; username?: string }
   return { id: data.id ?? '', username: data.username ?? null }
 }
 
 export async function exchangeCodeForToken(code: string, redirectUri: string) {
-  const res = await fetch('https://graph.threads.net/oauth/access_token', {
+  const res = await fetchWithTimeout('https://graph.threads.net/oauth/access_token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -135,7 +136,7 @@ export async function exchangeCodeForToken(code: string, redirectUri: string) {
   const { access_token, user_id } = await res.json() as { access_token: string; user_id: string }
 
   // Exchange for long-lived token (60-day expiry)
-  const llRes = await fetch(
+  const llRes = await fetchWithTimeout(
     `https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=${process.env.THREADS_APP_SECRET}&access_token=${access_token}`,
   )
   if (!llRes.ok) return { access_token, user_id }
@@ -153,7 +154,7 @@ export async function exchangeCodeForToken(code: string, redirectUri: string) {
  * never have to reconnect Threads.
  */
 export async function refreshThreadsToken(currentToken: string): Promise<{ accessToken: string; expiresAt: number }> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://graph.threads.net/refresh_access_token?grant_type=th_refresh_token&access_token=${encodeURIComponent(currentToken)}`,
   )
   const data = await res.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error?: { message?: string } }

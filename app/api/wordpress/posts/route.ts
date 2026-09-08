@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { decodeHtmlEntities } from '@/lib/decode-entities'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 120
 
@@ -37,7 +38,7 @@ export async function GET(req: Request) {
     const rawPosts: RawPost[] = []
     let page = 1
     while (true) {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${base}/wp-json/wp/v2/posts?per_page=100&page=${page}&status=publish&orderby=date&order=desc&_fields=id,title,link,date,featured_media`,
         { headers },
       )
@@ -60,7 +61,7 @@ export async function GET(req: Request) {
     for (let i = 0; i < mediaIds.length; i += 100) {
       const chunk = mediaIds.slice(i, i + 100)
       try {
-        const mRes = await fetch(
+        const mRes = await fetchWithTimeout(
           `${base}/wp-json/wp/v2/media?include=${chunk.join(',')}&per_page=100&_fields=id,source_url`,
           { headers },
         )

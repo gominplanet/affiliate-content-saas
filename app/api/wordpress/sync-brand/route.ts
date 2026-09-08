@@ -12,6 +12,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { tryWpProxy } from '@/lib/wp-proxy'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { snapshotActiveBlogIdentity } from '@/lib/site-identity'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -97,7 +98,7 @@ export async function POST(request: Request) {
   try {
     // Update WP user display name
     if (authorName) {
-      const userRes = await fetch(`${wpBase}/wp-json/wp/v2/users/me`, {
+      const userRes = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/users/me`, {
         method: 'POST',
         headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: authorName, nickname: authorName }),
@@ -115,7 +116,7 @@ export async function POST(request: Request) {
       const settingsBody: Record<string, string> = {}
       if (brandName) settingsBody.title       = brandName
       if (tagline)   settingsBody.description = tagline
-      const settingsRes = await fetch(`${wpBase}/wp-json/wp/v2/settings`, {
+      const settingsRes = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/settings`, {
         method: 'POST',
         headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify(settingsBody),
@@ -141,7 +142,7 @@ export async function POST(request: Request) {
     // Merge into existing customizations
     let existing: Record<string, unknown> = {}
     try {
-      const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+      const getRes = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
         headers: { Authorization: authHeader },
       })
       if (getRes.ok) existing = await getRes.json() as Record<string, unknown>
@@ -217,7 +218,7 @@ export async function POST(request: Request) {
       postStatus = proxied.status
       if (!postOk) postText = typeof proxied.data === 'string' ? proxied.data : JSON.stringify(proxied.data)
     } else {
-      const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+      const postRes = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
         method: 'POST',
         headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify(merged),
@@ -244,7 +245,7 @@ export async function POST(request: Request) {
     if (brandName && frontPageId) {
       try {
         // Fetch the current page content
-        const pageRes = await fetch(`${wpBase}/wp-json/wp/v2/pages/${frontPageId}?context=edit`, {
+        const pageRes = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/pages/${frontPageId}?context=edit`, {
           headers: { Authorization: authHeader },
         })
         if (pageRes.ok) {
@@ -261,7 +262,7 @@ export async function POST(request: Request) {
             const escaped = previousBrand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
             newContent = oldContent.replace(new RegExp(escaped, 'g'), brandName)
           }
-          const updateRes = await fetch(`${wpBase}/wp-json/wp/v2/pages/${frontPageId}`, {
+          const updateRes = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/pages/${frontPageId}`, {
             method: 'POST',
             headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -297,7 +298,7 @@ export async function POST(request: Request) {
           if (!slug) continue
 
           // Check if a category with this slug already exists.
-          const checkRes = await fetch(
+          const checkRes = await fetchWithTimeout(
             `${wpBase}/wp-json/wp/v2/categories?slug=${encodeURIComponent(slug)}`,
             { headers: { Authorization: authHeader } },
           )
@@ -310,7 +311,7 @@ export async function POST(request: Request) {
           }
 
           // Create it.
-          const createRes = await fetch(`${wpBase}/wp-json/wp/v2/categories`, {
+          const createRes = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/categories`, {
             method: 'POST',
             headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: nicheLabel, slug }),

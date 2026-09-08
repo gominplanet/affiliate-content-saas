@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { generateHomePage } from '@/lib/wordpress-home-template'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 30
 
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
 
     // Verify credentials and role before doing anything
     const encoded = Buffer.from(`${wpSite.wordpress_username}:${wpSite.wordpress_app_password}`).toString('base64')
-    const meRes = await fetch(`${siteUrl}/wp-json/wp/v2/users/me`, {
+    const meRes = await fetchWithTimeout(`${siteUrl}/wp-json/wp/v2/users/me`, {
       headers: { Authorization: `Basic ${encoded}` },
     })
     if (!meRes.ok) {
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
 
     // Probe: verify POST requests actually work (LiteSpeed/Apache can strip
     // Authorization headers on POST even when GET succeeds).
-    const probeRes = await fetch(`${siteUrl}/wp-json/wp/v2/posts`, {
+    const probeRes = await fetchWithTimeout(`${siteUrl}/wp-json/wp/v2/posts`, {
       method: 'POST',
       headers: {
         Authorization: `Basic ${encoded}`,
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
     }
     // Clean up the probe post
     const probePost = await probeRes.json() as { id: number }
-    await fetch(`${siteUrl}/wp-json/wp/v2/posts/${probePost.id}?force=true`, {
+    await fetchWithTimeout(`${siteUrl}/wp-json/wp/v2/posts/${probePost.id}?force=true`, {
       method: 'DELETE',
       headers: { Authorization: `Basic ${encoded}` },
     }).catch(() => {/* non-fatal */})

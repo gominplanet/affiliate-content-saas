@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server'
 import { maybeDecrypt } from '@/lib/secrets'
 import { createServerClient } from '@/lib/supabase/server'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export async function POST() {
   const supabase = await createServerClient()
@@ -28,7 +29,7 @@ export async function POST() {
     const clientKey = process.env.TIKTOK_CLIENT_KEY
     const clientSecret = process.env.TIKTOK_CLIENT_SECRET
     if (token && clientKey && clientSecret) {
-      await fetch('https://open.tiktokapis.com/v2/oauth/revoke/', {
+      await fetchWithTimeout('https://open.tiktokapis.com/v2/oauth/revoke/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({

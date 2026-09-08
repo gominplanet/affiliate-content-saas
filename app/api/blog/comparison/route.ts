@@ -40,6 +40,7 @@ import { listYouTubeChannels } from '@/lib/youtube-channels'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { spendGate } from '@/lib/ai-spend'
 import { fal } from '@fal-ai/client'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 300
 
@@ -403,7 +404,7 @@ export async function POST(request: Request) {
       let sourceChannelUrl: string | null = null
       if (!videoTitle) {
         try {
-          const o = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
+          const o = await fetchWithTimeout(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
           if (o.ok) {
             const j = (await o.json()) as { title?: string; author_name?: string; author_url?: string }
             videoTitle = j?.title || ''

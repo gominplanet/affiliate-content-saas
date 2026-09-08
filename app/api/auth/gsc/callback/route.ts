@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { listGscSites, resolveGscProperty } from '@/lib/gsc'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
   let step = 'token_exchange'
   try {
     const redirectUri = `${appUrl}/api/auth/gsc/callback`
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    const tokenRes = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({

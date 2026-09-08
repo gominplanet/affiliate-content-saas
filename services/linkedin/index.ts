@@ -1,3 +1,4 @@
+import { fetchWithTimeout, UPLOAD_TIMEOUT_MS } from '@/lib/fetch-timeout'
 const LINKEDIN_API = 'https://api.linkedin.com/v2'
 const LINKEDIN_AUTH = 'https://www.linkedin.com/oauth/v2'
 
@@ -16,7 +17,7 @@ export class LinkedInService {
     articleTitle: string
     articleDescription: string
   }): Promise<{ id: string }> {
-    const res = await fetch(`${LINKEDIN_API}/ugcPosts`, {
+    const res = await fetchWithTimeout(`${LINKEDIN_API}/ugcPosts`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.accessToken}`,
@@ -67,7 +68,7 @@ export class LinkedInService {
     description?: string
   }): Promise<{ id: string }> {
     // 1. Register the upload — LinkedIn hands back an asset URN + an upload URL.
-    const reg = await fetch(`${LINKEDIN_API}/assets?action=registerUpload`, {
+    const reg = await fetchWithTimeout(`${LINKEDIN_API}/assets?action=registerUpload`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.accessToken}`,
@@ -91,10 +92,12 @@ export class LinkedInService {
     if (!asset || !uploadUrl) throw new Error('LinkedIn registerUpload returned no asset/uploadUrl')
 
     // 2. Fetch the image bytes and PUT them to the upload URL.
-    const imgRes = await fetch(opts.imageUrl)
+    const imgRes = await fetchWithTimeout(opts.imageUrl)
     if (!imgRes.ok) throw new Error(`Could not fetch image for LinkedIn (${imgRes.status})`)
     const bytes = new Uint8Array(await imgRes.arrayBuffer())
-    const up = await fetch(uploadUrl, {
+    const up = await fetchWithTimeout(uploadUrl, {
+      // Binary upload of the image bytes — longer ceiling than an API call.
+      timeoutMs: UPLOAD_TIMEOUT_MS,
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${this.accessToken}` },
       body: bytes,
@@ -102,7 +105,7 @@ export class LinkedInService {
     if (!up.ok) throw new Error(`LinkedIn image upload failed ${up.status}`)
 
     // 3. Create the post referencing the uploaded asset.
-    const res = await fetch(`${LINKEDIN_API}/ugcPosts`, {
+    const res = await fetchWithTimeout(`${LINKEDIN_API}/ugcPosts`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.accessToken}`,
@@ -134,7 +137,7 @@ export class LinkedInService {
 }
 
 export async function exchangeCodeForToken(code: string, redirectUri: string): Promise<string> {
-  const res = await fetch(`${LINKEDIN_AUTH}/accessToken`, {
+  const res = await fetchWithTimeout(`${LINKEDIN_AUTH}/accessToken`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -156,7 +159,7 @@ export async function exchangeCodeForToken(code: string, redirectUri: string): P
 }
 
 export async function getProfile(accessToken: string): Promise<LinkedInProfile> {
-  const res = await fetch(`${LINKEDIN_API}/userinfo`, {
+  const res = await fetchWithTimeout(`${LINKEDIN_API}/userinfo`, {
     headers: { 'Authorization': `Bearer ${accessToken}` },
   })
 

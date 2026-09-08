@@ -1,5 +1,6 @@
 // WordPress REST API service
 
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { WP_USER_AGENT } from '@/lib/wp-user-agent'
 import { repairCorruptedBlocks } from '@/lib/repair-blocks'
 
@@ -232,7 +233,7 @@ export class WordPressService {
     // Try dedicated nonce endpoint first; fall back to scraping WP admin HTML
     // (the custom endpoint only exists on sites that ran the full setup wizard)
     let nonce = ''
-    const nonceRes = await fetch(`${this.siteUrl}/wp-json/affiliateos/v1/nonce`, {
+    const nonceRes = await fetchWithTimeout(`${this.siteUrl}/wp-json/affiliateos/v1/nonce`, {
       headers: { Cookie: cookies },
     })
     if (nonceRes.ok) {
@@ -245,7 +246,7 @@ export class WordPressService {
       } catch { /* non-JSON — fall through to scraping wp-admin below */ }
     }
     if (!nonce) {
-      const adminRes = await fetch(`${this.siteUrl}/wp-admin/index.php`, {
+      const adminRes = await fetchWithTimeout(`${this.siteUrl}/wp-admin/index.php`, {
         headers: {
           Cookie: cookies,
           // Mimic a real browser so caching proxies don't serve a stripped page

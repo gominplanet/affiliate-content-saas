@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 const BASE = 'https://www.googleapis.com/youtube/v3'
 
 /**
@@ -36,7 +37,7 @@ export function decodeHtmlEntities(s: string): string {
  */
 export async function probeIsYouTubeShort(videoId: string): Promise<boolean> {
   try {
-    const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, {
+    const res = await fetchWithTimeout(`https://www.youtube.com/shorts/${videoId}`, {
       method: 'HEAD',
       redirect: 'manual',
       headers: {
@@ -89,7 +90,7 @@ export class YouTubeService {
     const url = new URL(`${BASE}${path}`)
     url.searchParams.set('key', this.apiKey)
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
-    const res = await fetch(url.toString())
+    const res = await fetchWithTimeout(url.toString())
     if (!res.ok) {
       const body = await res.text()
       throw new Error(`YouTube API error ${res.status}: ${body}`)
@@ -230,7 +231,7 @@ export async function fetchYouTubeVideoSnippet(
     url.searchParams.set('key', apiKey)
     url.searchParams.set('part', 'snippet,contentDetails')
     url.searchParams.set('id', videoId)
-    const res = await fetch(url.toString())
+    const res = await fetchWithTimeout(url.toString())
     if (!res.ok) return null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await res.json() as any
@@ -281,7 +282,7 @@ export async function resolveYouTubeChannel(
       url.searchParams.set('key', apiKey)
       url.searchParams.set('part', 'snippet')
       Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
-      const res = await fetch(url.toString())
+      const res = await fetchWithTimeout(url.toString())
       if (!res.ok) return null
       const data = await res.json() as any
       const item = data.items?.[0]
@@ -312,7 +313,7 @@ export async function resolveYouTubeChannel(
       url.searchParams.set('type', 'channel')
       url.searchParams.set('maxResults', '1')
       url.searchParams.set('q', term)
-      const res = await fetch(url.toString())
+      const res = await fetchWithTimeout(url.toString())
       if (res.ok) {
         const data = await res.json() as any
         const item = data.items?.[0]
@@ -352,7 +353,7 @@ export class YouTubeOAuthService {
   private async get<T>(path: string, params: Record<string, string> = {}): Promise<T> {
     const url = new URL(`${BASE}${path}`)
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
-    const res = await fetch(url.toString(), {
+    const res = await fetchWithTimeout(url.toString(), {
       headers: { Authorization: `Bearer ${this.accessToken}` },
     })
     if (!res.ok) {
@@ -648,7 +649,7 @@ export class YouTubeOAuthService {
     }
 
     // Attempt 1: with tags
-    const res = await fetch(`${BASE}/videos?part=snippet`, {
+    const res = await fetchWithTimeout(`${BASE}/videos?part=snippet`, {
       method: 'PUT',
       headers: putHeaders,
       body: JSON.stringify({ id: videoId, snippet: { ...baseSnippet, tags: finalTags } }),
@@ -661,7 +662,7 @@ export class YouTubeOAuthService {
     // If tags caused the 400, retry without them so title+description still apply
     if (res.status === 400 && body1.includes('invalidTags')) {
       console.warn('[youtube] Tags rejected, retrying without tags. Tags were:', JSON.stringify(finalTags))
-      const res2 = await fetch(`${BASE}/videos?part=snippet`, {
+      const res2 = await fetchWithTimeout(`${BASE}/videos?part=snippet`, {
         method: 'PUT',
         headers: putHeaders,
         body: JSON.stringify({ id: videoId, snippet: baseSnippet }),
@@ -701,7 +702,7 @@ export class YouTubeOAuthService {
     if (Array.isArray(snip.tags) && snip.tags.length) snippet.tags = snip.tags
     if (snip.defaultLanguage) snippet.defaultLanguage = snip.defaultLanguage
 
-    const res = await fetch(`${BASE}/videos?part=snippet`, {
+    const res = await fetchWithTimeout(`${BASE}/videos?part=snippet`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: videoId, snippet }),
@@ -740,7 +741,7 @@ export class YouTubeOAuthService {
 
   /** Add a video to a playlist. No-op if it's already there. */
   async addVideoToPlaylist(playlistId: string, videoId: string): Promise<void> {
-    const res = await fetch(`${BASE}/playlistItems?part=snippet`, {
+    const res = await fetchWithTimeout(`${BASE}/playlistItems?part=snippet`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.accessToken}`,
@@ -807,7 +808,7 @@ export class YouTubeOAuthService {
     const params = new URLSearchParams({ part: 'status' })
     if (args.notifySubscribers === false) params.set('notifySubscribers', 'false')
 
-    const res = await fetch(`${BASE}/videos?${params.toString()}`, {
+    const res = await fetchWithTimeout(`${BASE}/videos?${params.toString()}`, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${this.accessToken}`,
@@ -833,7 +834,7 @@ export class YouTubeOAuthService {
   // Upload a custom thumbnail to YouTube for a video.
   // imageBuffer: raw image bytes; mimeType: 'image/jpeg' or 'image/png'
   async uploadThumbnail(videoId: string, imageBuffer: Buffer, mimeType: string): Promise<void> {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}&uploadType=media`,
       {
         method: 'POST',
@@ -892,7 +893,7 @@ export class YouTubeOAuthService {
     const body = videoBytes.buffer.slice(videoBytes.byteOffset, videoBytes.byteOffset + videoBytes.byteLength) as ArrayBuffer
 
     // 1) Initiate a resumable upload session — the upload URL comes back in Location.
-    const initRes = await fetch(
+    const initRes = await fetchWithTimeout(
       'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
       {
         method: 'POST',
@@ -913,7 +914,7 @@ export class YouTubeOAuthService {
     if (!uploadUrl) throw new Error('YouTube upload: no resumable session URL returned.')
 
     // 2) PUT the bytes to the session URL.
-    const putRes = await fetch(uploadUrl, {
+    const putRes = await fetchWithTimeout(uploadUrl, {
       method: 'PUT',
       headers: { 'Content-Type': 'video/*', 'Content-Length': String(videoBytes.byteLength) },
       body,
@@ -1011,7 +1012,7 @@ export async function refreshYouTubeToken(refreshToken: string): Promise<{
   access_token: string
   expires_in: number
 }> {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
+  const res = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -1034,7 +1035,7 @@ export async function refreshYouTubeToken(refreshToken: string): Promise<{
 export async function classifyYouTubeRefresh(refreshToken: string): Promise<{ ok: boolean; dead: boolean; reason?: string }> {
   if (!refreshToken) return { ok: false, dead: true, reason: 'no refresh token' }
   try {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
+    const res = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({

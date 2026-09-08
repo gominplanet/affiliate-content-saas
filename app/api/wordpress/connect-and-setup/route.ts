@@ -6,6 +6,7 @@ import { generatePrivacyPolicy } from '@/lib/wordpress-privacy-template'
 import { wpLogin, getNonce } from '@/lib/wordpress-login'
 import { maybeEncrypt } from '@/lib/secrets'
 import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 60
 
@@ -25,7 +26,7 @@ function authHeaders(auth: AuthCtx, extra: Record<string, string> = {}): Record<
 function wpFetch(siteUrl: string, auth: AuthCtx) {
   return async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
     const isWrite = options.method === 'POST' || options.method === 'PATCH' || options.method === 'DELETE'
-    const res = await fetch(`${siteUrl}/wp-json/wp/v2${path}`, {
+    const res = await fetchWithTimeout(`${siteUrl}/wp-json/wp/v2${path}`, {
       ...options,
       headers: authHeaders(auth, {
         ...(isWrite ? { 'Content-Type': 'application/json' } : {}),
@@ -52,7 +53,7 @@ async function wpMediaUpload(
   filename: string,
 ): Promise<{ id: number; source_url: string }> {
   const buffer = Buffer.from(base64, 'base64')
-  const res = await fetch(`${siteUrl}/wp-json/wp/v2/media`, {
+  const res = await fetchWithTimeout(`${siteUrl}/wp-json/wp/v2/media`, {
     method: 'POST',
     headers: authHeaders(auth, {
       'Content-Type': mime,
@@ -383,7 +384,7 @@ export async function POST(request: Request) {
     // because WordPress only exposes whitelisted options via the REST settings API.
     try {
       const authHeader = { Authorization: `Basic ${Buffer.from(`${resolvedUsername}:${appPwClean}`).toString('base64')}` }
-      await fetch(`${siteUrl}/wp-json/affiliateos/v1/customizations`, {
+      await fetchWithTimeout(`${siteUrl}/wp-json/affiliateos/v1/customizations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify({

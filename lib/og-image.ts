@@ -1,6 +1,7 @@
 /**
  * Small helpers shared by the social-posting routes (manual + scheduled).
  */
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 /** Pull an article's og:image (the featured image) from its HTML. Best-effort —
  *  returns null on any failure. Used as the native thumbnail for posts that
@@ -22,7 +23,7 @@ function isSafePublicHttpUrl(raw: string): boolean {
 export async function fetchOgImage(url: string): Promise<string | null> {
   if (!url || !isSafePublicHttpUrl(url)) return null
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MVPAffiliate/1.0)' } })
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MVPAffiliate/1.0)' } })
     if (!res.ok) return null
     const html = await res.text()
     const m = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
@@ -85,7 +86,7 @@ export async function fetchLtkPreview(rawUrl: string): Promise<LtkPreview> {
       try { u = new URL(current) } catch { return empty }
       // Once the chain leaves LTK's own domains, stop — don't fetch the retailer.
       if (!LTK_HOSTS.test(u.hostname.toLowerCase())) return empty
-      const res = await fetch(current, {
+      const res = await fetchWithTimeout(current, {
         redirect: 'manual',
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MVPAffiliate/1.0; +https://www.mvpaffiliate.io)' },
       })

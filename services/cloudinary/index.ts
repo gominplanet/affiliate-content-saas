@@ -7,6 +7,7 @@
  * configured — or on ANY error — callers fall back to the original video, so
  * this can never break a publish.
  */
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { v2 as cloudinary } from 'cloudinary'
 import type { CaptionChunk, SubtitleStyle } from '@/lib/shorts-types'
 
@@ -95,7 +96,7 @@ const overlayText = (s?: string) => asciiSafe(s || '').replace(/[%,/\\]/g, ' ').
  *  accepted as media type"). */
 async function urlIsImage(url: string): Promise<boolean> {
   try {
-    const res = await fetch(url, { method: 'GET' })
+    const res = await fetchWithTimeout(url, { method: 'GET' })
     return res.ok && (res.headers.get('content-type') || '').startsWith('image/')
   } catch { return false }
 }
@@ -325,7 +326,7 @@ async function waitForVideo(url: string, timeoutMs: number): Promise<{ ready: bo
   let last = 'no response'
   while (Date.now() - start < timeoutMs) {
     try {
-      const res = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-1' } })
+      const res = await fetchWithTimeout(url, { method: 'GET', headers: { Range: 'bytes=0-1' } })
       if (res.status === 200 || res.status === 206) {
         const len = res.headers.get('content-length')
         if (!len || parseInt(len, 10) > 0) return { ready: true, detail: 'ok' }

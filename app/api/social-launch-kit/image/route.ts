@@ -23,6 +23,7 @@ import { buildCoverPrompt, buildAvatarPrompt, buildWideBannerPrompt } from '@/li
 import { composeWideBanner } from '@/lib/social-launch-kit-banner'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
 import { getDefaultSite } from '@/lib/wordpress-sites'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 180
 
@@ -218,7 +219,7 @@ export async function POST(request: Request) {
     const wideUrl = await generateWideBanner(widePrompt)
     if (wideUrl) {
       try {
-        const bg = Buffer.from(await (await fetch(wideUrl)).arrayBuffer())
+        const bg = Buffer.from(await (await fetchWithTimeout(wideUrl)).arrayBuffer())
         nativeWide = await composeWideBanner({
           background: bg,
           logo: compositeLogo?.data ?? null,
@@ -276,7 +277,7 @@ export async function POST(request: Request) {
       png = nativeWide
       mode = 'native-wide'
     } else {
-    const buf = sourceB64 ? Buffer.from(sourceB64, 'base64') : Buffer.from(await (await fetch(sourceUrl)).arrayBuffer())
+    const buf = sourceB64 ? Buffer.from(sourceB64, 'base64') : Buffer.from(await (await fetchWithTimeout(sourceUrl)).arrayBuffer())
     if (useContain) {
       // Extreme-wide banner: EXPAND-TO-FIT. Outpaint the design out to the full
       // banner width so it fills edge-to-edge — nothing cropped, no bars, native
@@ -286,7 +287,7 @@ export async function POST(request: Request) {
       const expandedUrl = await expandBannerToWidth(`data:image/png;base64,${buf.toString('base64')}`, target.w, target.h)
       if (expandedUrl) {
         try {
-          const eb = Buffer.from(await (await fetch(expandedUrl)).arrayBuffer())
+          const eb = Buffer.from(await (await fetchWithTimeout(expandedUrl)).arrayBuffer())
           expanded = await sharp(eb).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
           recordUsage({ userId: user.id, tier, feature: 'social-launch-kit-image', model: 'fal-ideogram-v3', images: 1 })
         } catch (e) { console.warn('[launch-kit] expand post-process failed:', e); expanded = null }

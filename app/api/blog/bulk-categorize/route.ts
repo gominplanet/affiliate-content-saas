@@ -5,6 +5,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { spendGate } from '@/lib/ai-spend'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 300
 
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
     const allPosts: { id: number; title: { rendered: string }; categories: number[] }[] = []
     let page = 1
     while (true) {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${wpBase}/wp-json/wp/v2/posts?per_page=100&page=${page}&status=publish&_fields=id,title,categories`,
         { headers: { Authorization: authHeader } },
       )
@@ -90,7 +91,7 @@ export async function POST(request: Request) {
     const allCats: { id: number; slug: string; name: string }[] = []
     let catPage = 1
     while (true) {
-      const cr = await fetch(
+      const cr = await fetchWithTimeout(
         `${wpBase}/wp-json/wp/v2/categories?per_page=100&page=${catPage}&_fields=id,slug,name`,
         { headers: { Authorization: authHeader } },
       )
