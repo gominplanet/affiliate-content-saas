@@ -8,12 +8,19 @@
 // product image (the AI thumbnail pipeline is single-product)". True when it
 // was written, and the shape of the whole problem.
 //
-// Counted across the codebase: nineteen routes create a WordPress post, and
-// three of them ever generated a designed hero. The other sixteen uploaded a
-// raw product photograph or nothing at all. Even on the one route that did it
-// properly it was opt-in per request, off unless a flag was passed, so most
-// posts never tried. A creator pasting their post URL into ChatGPT and getting
-// a better banner back in one shot is a fair verdict on that.
+// Nineteen routes publish a WordPress post. Three of them had no designed
+// image at all: the two roundups, and from-link, which generated a scene from a
+// written prompt that never contained the product. The rest already designed
+// something, through buildCampaignHero or the single-product hero.
+//
+// (An earlier count put the number at sixteen. It was measured by grepping for
+// three generator names and missed buildCampaignHero, which five more routes
+// use. Left on the record because a scan for known names is only ever a lower
+// bound on what exists, and reading it as the answer nearly caused a rewrite of
+// thirteen routes that were working.)
+//
+// A creator pasting their post URL into ChatGPT and getting a better banner
+// back in one shot is a fair verdict on the three that were broken.
 //
 // So this is the single place that answers "what image fronts this post", and
 // every route calls it instead of hand-rolling an upload. It:
