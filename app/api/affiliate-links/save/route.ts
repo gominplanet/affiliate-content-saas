@@ -30,12 +30,11 @@ import { encryptIntegrationWrite, decryptIntegrationRow } from '@/lib/integratio
 
 export const dynamic = 'force-dynamic'
 
-// 'passport' is a first-class choice now, not just a side effect of a toggle.
-// pickLinkStyle honours an explicit chooser value over the Passport switch, so
-// without this a creator had no way to SAY passport: the only route to it was
-// leaving the chooser unset, which is indistinguishable from never having
-// looked at it.
-const LINK_MODES = new Set(['direct', 'geniuslink', 'bitly', 'passport'])
+// Deliberately NOT including 'passport'. This set is the style used when
+// Passport is off; Passport itself is the separate toggle that overrides it,
+// and the UI renders it that way (brand/page.tsx: passportActive ? 'passport'
+// : blogSocialLinkMode). Adding it here invites the two controls to disagree.
+const LINK_MODES = new Set(['direct', 'geniuslink', 'bitly'])
 const PIN_PREFS = new Set(['auto', 'blog_post', 'youtube', 'homepage'])
 
 /**

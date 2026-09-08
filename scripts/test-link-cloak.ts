@@ -15,30 +15,21 @@ function check(name: string, cond: boolean, detail?: string) {
 
 console.log('pickLinkStyle — priority + credential fallbacks')
 {
-  // REVERSED DELIBERATELY. These two used to assert that Passport wins whatever
-  // the creator picked, and they passed while the behaviour they protected cost
-  // a creator his links: 113 working Geniuslink posts, Passport switched on, and
-  // from that day every post shipped a bare Amazon URL while his chooser still
-  // read Geniuslink and Co-Pilot told him to go and change it.
+  // Passport (eligible) wins, whatever the stored mode is.
   //
-  // An explicit choice is a decision and now outranks the toggle.
-  check('an explicit geniuslink choice beats the passport toggle',
-    pickLinkStyle({ passportEligible: true, mode: 'geniuslink', hasBitly: true, hasGeniuslink: true }) === 'geniuslink')
-  check('an explicit bitly choice beats the passport toggle',
-    pickLinkStyle({ passportEligible: true, mode: 'bitly', hasBitly: true, hasGeniuslink: true }) === 'bitly')
-  check('an explicit direct choice beats the passport toggle',
-    pickLinkStyle({ passportEligible: true, mode: 'direct', hasBitly: true, hasGeniuslink: true }) === 'direct',
-    'someone who picked plain tagged links meant it')
-
-  // The toggle still decides when nobody has chosen, which is the common case:
-  // a creator who has never opened the chooser and switches Passport on plainly
-  // means to use it.
-  check('an unset chooser + passport on → passport',
-    pickLinkStyle({ passportEligible: true, mode: '', hasBitly: true, hasGeniuslink: true }) === 'passport')
-  check('and passport is now something they can actually pick',
-    pickLinkStyle({ passportEligible: true, mode: 'passport', hasBitly: false, hasGeniuslink: false }) === 'passport')
-  check('but picking passport without eligibility falls back rather than lying',
-    pickLinkStyle({ passportEligible: false, mode: 'passport', hasBitly: false, hasGeniuslink: false }) === 'direct')
+  // These two were briefly reversed, on the reading that a stored chooser value
+  // is an explicit choice being overruled. It is not: blog_social_link_mode is
+  // the style used when Passport is OFF, the chooser cannot express Passport at
+  // all, and the settings screen writes its displayed value back on any save.
+  // The reversal would have switched Passport off for every Passport account on
+  // the platform. Restored, with the reasoning in lib/link-style.ts so it is not
+  // rediscovered a third time.
+  check('passport eligible wins over geniuslink mode',
+    pickLinkStyle({ passportEligible: true, mode: 'geniuslink', hasBitly: true, hasGeniuslink: true }) === 'passport')
+  check('passport eligible wins over bitly mode',
+    pickLinkStyle({ passportEligible: true, mode: 'bitly', hasBitly: true, hasGeniuslink: true }) === 'passport')
+  check('and over an explicit direct, which is the same kind of stored fallback',
+    pickLinkStyle({ passportEligible: true, mode: 'direct', hasBitly: true, hasGeniuslink: true }) === 'passport')
 
   // Passport not eligible → the stored mode decides.
   check('not eligible + geniuslink (with keys) → geniuslink',

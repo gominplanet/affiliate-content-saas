@@ -54,25 +54,29 @@ export function pickLinkStyle(o: {
   hasBitly: boolean
   hasGeniuslink: boolean
 }): LinkStyle {
+  // PASSPORT WINS WHEN IT IS ON, and the reason is worth writing down because
+  // it was briefly changed the other way and had to be put back.
+  //
+  // blog_social_link_mode reads like a competing choice and is not one. It is
+  // the style to use when Passport is OFF: the chooser deliberately offers only
+  // direct / geniuslink / bitly (see the passportEligible: false in the settings
+  // route), the UI renders `passportActive ? 'passport' : blogSocialLinkMode`,
+  // and the settings screen writes the displayed value back on any save. So a
+  // stored 'geniuslink' is frequently MVP's own computed default, not a
+  // decision a creator made.
+  //
+  // Treating it as an explicit choice that outranks the toggle read as a fix
+  // for a creator whose chooser said Geniuslink while Passport was in use. It
+  // would have switched Passport off for every Passport account on the
+  // platform: at the time, four of four had a stored mode and none was unset.
+  //
+  // What actually went wrong for that creator was two other things, both fixed:
+  // Passport minting never worked from the blog job (no session, so RLS hid
+  // their own row), and Co-Pilot told them to change a setting that could not
+  // express Passport in the first place.
+  if (o.passportEligible) return 'passport'
   const stored = (o.mode || '').trim().toLowerCase()
-
-  // THE CREATOR'S OWN CHOICE COMES FIRST.
-  //
-  // This used to read `if (o.passportEligible) return 'passport'` on the line
-  // above everything else, so the Passport toggle silently outranked the link
-  // style someone had deliberately picked. A creator with 113 working Geniuslink
-  // posts switched Passport on, and from that day MVP ignored his chooser, which
-  // still said Geniuslink, and stopped using the Geniuslink account he pays for.
-  // Co-Pilot then told him "your link style is Passport Links, change it in
-  // Brand Profile" — pointing at a setting that already said what he wanted, so
-  // there was no move he could make.
-  //
-  // A dropdown a person set is a decision. A toggle is a decision too, which is
-  // why Passport still wins when the chooser is UNSET: someone who has never
-  // touched it and switches Passport on plainly means to use it. What is not
-  // acceptable is one silently overruling the other.
-  if (stored === 'passport') return o.passportEligible ? 'passport' : 'direct'
-  if (!stored) return o.passportEligible ? 'passport' : (o.hasGeniuslink ? 'geniuslink' : 'direct')
+  if (!stored) return o.hasGeniuslink ? 'geniuslink' : 'direct'
   let style = stored
   if (style === 'bitly' && !o.hasBitly) style = 'direct'
   if (style === 'geniuslink' && !o.hasGeniuslink) style = 'direct'
