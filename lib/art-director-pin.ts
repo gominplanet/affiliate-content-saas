@@ -10,6 +10,7 @@ import { createOpenAIService, normalizeToPng } from '@/services/openai'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { NO_BRAND_IMAGE_CLAUSE, stripDesignBrands } from '@/lib/image-guard'
+import { badDealCopy, dealFallbackHeadline, DEAL_FALLBACK_SUBHEAD } from '@/lib/deal-pin-copy'
 import { scrubBanned } from '@/lib/scrub'
 
 interface Brief { line1: string; line2: string; callouts: string[]; concept: string; palette: string }
@@ -188,26 +189,47 @@ const COLLAGE_SYSTEM = `You are a world-class product-review ART DIRECTOR design
 - headline: a punchy ALL-CAPS roundup headline (≤ 22 chars) — e.g. the category + a "best of" angle. Specific to the category, never generic.
 - subhead: a short supporting line (≤ 26 chars), e.g. "COMPARED & RANKED" or a benefit angle. May be empty.
 - palette: the colour direction for the whole board.
-HARD RULES: never the word "Amazon" or a retailer name/logo. No people. Do NOT use "HIDDEN GEM", "GAME CHANGER", "MUST-HAVE", "YOU NEED THIS". JSON only, no markdown.`
+HARD RULES: never the word "Amazon" or a retailer name/logo. No people. NEVER a year or date. Do NOT use "HIDDEN GEM", "GAME CHANGER", "MUST-HAVE", "YOU NEED THIS". JSON only, no markdown.`
 
-async function designCollageBrief(category: string, productTitles: string[], userId?: string | null, tier?: string | null): Promise<{ headline: string; subhead: string; palette: string } | null> {
+// The deals variant. The buying-guide prompt above asks for "the category + a
+// best-of angle", and on a four-deal roundup that produced "COOL YOUR SPACE /
+// RANKED & READY TO BUY": a benefit line for one product, plus a ranking claim,
+// on a pin whose whole subject is that several separate things dropped in price
+// at the same time. Neither half was true of the post.
+//
+// So a deals pin gets its own brief. The news is the COUNT and the DROP, and
+// the headline has to say so on its own, because the headline is baked into the
+// image and is often the only thing anyone reads.
+const COLLAGE_SYSTEM_DEAL = `You are a world-class ART DIRECTOR designing ONE scroll-stopping vertical Pinterest pin for a DEALS ROUNDUP: several DIFFERENT products that have each dropped in price right now. Return STRICT JSON: {"headline","subhead","palette"}.
+- headline: a punchy ALL-CAPS headline (≤ 22 chars) that says this is a roundup of MULTIPLE current deals in this category. Lead with the count. Vibe: "4 KITCHEN PRICE DROPS", "6 HOME DEALS RIGHT NOW", "5 DESK DEALS TODAY". It must NOT read as a headline about one single product, and must NOT describe one product's benefit.
+- subhead: a short supporting line (≤ 26 chars) about the prices being down now, e.g. "ALL AT THEIR LOWEST", "PRICES DROPPED TODAY", "LIVE RIGHT NOW". May be empty.
+- palette: the colour direction for the whole board — bright retail-sale energy.
+HARD RULES: these are simultaneous price drops, NOT a ranking and NOT a review — never "RANKED", "RATED", "BEST", "TOP 5", "OUR PICKS", "#1", or any countdown framing. NEVER invent a discount figure: no percentages, no "% OFF", no currency amounts, because you have not been told what any of them cost. Never the word "Amazon" or a retailer name/logo. No people. NEVER a year or date. Do NOT use "HIDDEN GEM", "GAME CHANGER", "MUST-HAVE", "YOU NEED THIS". JSON only, no markdown.`
+
+async function designCollageBrief(category: string, productTitles: string[], userId?: string | null, tier?: string | null, kind: 'deal' | 'guide' = 'guide'): Promise<{ headline: string; subhead: string; palette: string } | null> {
   try {
+    const isDeal = kind === 'deal'
+    const n = productTitles.length
     const anthropic = createAnthropicClient()
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 400,
-      system: COLLAGE_SYSTEM,
-      messages: [{ role: 'user', content: `CATEGORY: ${category}\nPRODUCTS (${productTitles.length}):\n${productTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nDesign the roundup pin brief now.` }],
+      system: isDeal ? COLLAGE_SYSTEM_DEAL : COLLAGE_SYSTEM,
+      messages: [{ role: 'user', content: `CATEGORY: ${category}\n${isDeal ? `${n} PRODUCTS, EACH CURRENTLY DISCOUNTED` : `PRODUCTS (${n})`}:\n${productTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nDesign the ${isDeal ? 'deals ' : ''}roundup pin brief now.` }],
     })
     if (userId) { const u = usageFromAnthropic(msg); recordUsage({ userId, tier: tier ?? null, feature: 'pinterest_art_director', model: 'claude-sonnet-4-6', input: u.input, output: u.output }) }
     const raw = (msg.content[0] as { type: string; text?: string }).text || ''
     const j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as { headline?: string; subhead?: string; palette?: string }
-    const clean = (s: unknown, n: number) => stripDesignBrands(scrubBanned(String(s || '').trim())).slice(0, n)
-    return {
-      headline: clean(j.headline, 24).toUpperCase(),
-      subhead: clean(j.subhead, 28).toUpperCase(),
-      palette: String(j.palette || '').trim().slice(0, 140),
+    const clean = (s: unknown, len: number) => stripDesignBrands(scrubBanned(String(s || '').trim())).slice(0, len)
+    let headline = clean(j.headline, 24).toUpperCase()
+    let subhead = clean(j.subhead, 28).toUpperCase()
+    // A prompt rule is a request; this is the check. Text that gets past it is
+    // baked into a JPEG and posted, where nobody can edit it after the fact.
+    if (isDeal) {
+      if (badDealCopy(headline)) headline = dealFallbackHeadline(n, stripDesignBrands(category))
+      if (badDealCopy(subhead)) subhead = DEAL_FALLBACK_SUBHEAD
     }
+    return { headline, subhead, palette: String(j.palette || '').trim().slice(0, 140) }
   } catch { return null }
 }
 
@@ -245,9 +267,13 @@ export async function generateArtDirectorCollagePin(opts: {
 
     const n = pngs.length
     const isDeal = opts.kind === 'deal'
-    const brief = await designCollageBrief(opts.category, pngs.map((p) => p.title), opts.userId, opts.tier)
-    const headline = brief?.headline || `TOP ${n} ${stripDesignBrands(opts.category).toUpperCase()}`.slice(0, 24)
-    const subhead = brief?.subhead || 'COMPARED & RANKED'
+    const brief = await designCollageBrief(opts.category, pngs.map((p) => p.title), opts.userId, opts.tier, isDeal ? 'deal' : 'guide')
+    // The fallbacks matter as much as the brief: when the copy call fails, this
+    // text is what gets printed on the pin. "TOP 4 … / COMPARED & RANKED" on a
+    // set of simultaneous price drops is the same wrong claim, just ours.
+    const headline = brief?.headline
+      || (isDeal ? dealFallbackHeadline(n, stripDesignBrands(opts.category)) : `TOP ${n} ${stripDesignBrands(opts.category).toUpperCase()}`.slice(0, 24))
+    const subhead = brief?.subhead || (isDeal ? DEAL_FALLBACK_SUBHEAD : 'COMPARED & RANKED')
     const layout = n >= 4 ? 'a clean 2×2 grid of four tiles' : n === 3 ? 'three tiles (one wider feature tile on top, two below)' : 'two bold side-by-side tiles'
 
     const prompt = [
@@ -260,6 +286,13 @@ export async function generateArtDirectorCollagePin(opts: {
       isDeal
         ? `FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait) for a ROUNDUP OF ${n} CURRENT PRICE DROPS. Show ALL ${n} products TOGETHER on ONE design as ${layout}, each in its own clearly separated tile. This is a DEALS board, not a review: energetic, retail-sale feel, with a bold headline band across the TOP and a shop-style call-to-action near the BOTTOM (e.g. "SEE ALL DEALS", "TAP TO SHOP"). Bright, high-contrast, urgent without being tacky. No numbered ranking badges — these are simultaneous deals, not a countdown.`
         : `FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait) for a MULTI-PRODUCT buying guide. Show ALL ${n} products TOGETHER on ONE design as ${layout}, each product in its own clearly separated tile with a small round number badge (1, 2, 3${n >= 4 ? ', 4' : ''}). A bold headline band across the TOP and a shop-style call-to-action near the BOTTOM (e.g. "SEE ALL PICKS"). Vibrant, modern, high-contrast, magazine-roundup feel — never flat or template-like.`,
+      // An image model reaches for a sale starburst the moment it is told
+      // "deals", and it has no idea what anything costs. A made-up "50% OFF"
+      // baked into a published pin is a price claim we cannot stand behind, so
+      // it is forbidden in the image as well as in the copy.
+      isDeal
+        ? 'NO INVENTED NUMBERS: do not draw any discount percentage, price, "% OFF" starburst, currency amount, or ranking word ("BEST", "TOP", "RANKED", "#1") anywhere. The only words in the image are the headline, the sub-line, and the call to action.'
+        : '',
       brief?.palette ? `COLOUR PALETTE: ${brief.palette}.` : '',
       `PRODUCTS (the heroes): the ${n} attached images are the ${n} products IN ORDER. Recreate EACH one accurately in its own tile — its true shape, colours and its own printed branding — one product per tile, equally prominent, crisp and centred, on a clean neutral or soft-gradient tile background. Do NOT merge, duplicate, or invent extra products; exactly ${n} distinct products, matching the ${n} references.`,
       'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections anywhere. If a reference shows a model or hands, keep ONLY the product.',
