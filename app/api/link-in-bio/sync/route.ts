@@ -61,7 +61,7 @@ export async function POST() {
     .select('title, published_at, youtube_videos(product_url, product_image_url, blog_thumbnail_url, thumbnail_url, title)')
     .eq('user_id', user.id)
     .not('video_id', 'is', null)
-    .order('published_at', { ascending: false })
+    .order('published_at', { ascending: false, nullsFirst: false })
     .limit(IMPORT_MAX)
   // A product link we can use as-is for a tile even when we can't read an ASIN
   // out of it (the common case: MVP already wrapped it into a geni.us short link).

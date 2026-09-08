@@ -72,7 +72,7 @@ export async function maybeEvolveLearnProfile(
       .select('title,content')
       .eq('user_id', ctx.userId)
       .eq('status', 'published')
-      .order('published_at', { ascending: false })
+      .order('published_at', { ascending: false, nullsFirst: false })
       .limit(5)
 
     const examples = (posts as Array<{ title: string; content: string }> | null)

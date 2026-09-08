@@ -74,7 +74,7 @@ export async function maybeLearnFromEdits(
       .eq('user_id', ctx.userId)
       .eq('status', 'published')
       .not('wordpress_post_id', 'is', null)
-      .order('published_at', { ascending: false })
+      .order('published_at', { ascending: false, nullsFirst: false })
       .limit(MAX_POSTS)
 
     const posts = ((postRows ?? []) as Array<{

@@ -81,7 +81,7 @@ export async function POST(request: Request) {
       .eq('user_id', ownerId)
       .eq('status', 'published')
       .not('content', 'is', null)
-      .order('published_at', { ascending: false })
+      .order('published_at', { ascending: false, nullsFirst: false })
       .range(offset, offset + limit - 1)
     if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 })
 

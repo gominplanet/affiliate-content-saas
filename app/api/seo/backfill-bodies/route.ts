@@ -48,7 +48,7 @@ export async function POST() {
     .select('id,title,content,wordpress_post_id,wordpress_site_id')
     .eq('user_id', ownerId)
     .not('wordpress_post_id', 'is', null)
-    .order('published_at', { ascending: false })
+    .order('published_at', { ascending: false, nullsFirst: false })
     .limit(800)
   const all = (rows as Candidate[] | null) ?? []
   const empties = all.filter(p => p.wordpress_post_id != null && (!p.content || !String(p.content).trim()))

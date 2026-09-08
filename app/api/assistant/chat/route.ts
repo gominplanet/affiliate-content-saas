@@ -146,7 +146,7 @@ export async function POST(request: Request) {
   const [{ data: brand }, { data: posts }, { data: campaigns }, memory] = await Promise.all([
     sb.from('brand_profiles').select('name,author_name,niches,tone').eq('user_id', user.id).single(),
     sb.from('blog_posts').select('title').eq('user_id', user.id).eq('status', 'published')
-      .order('published_at', { ascending: false }).limit(10),
+      .order('published_at', { ascending: false, nullsFirst: false }).limit(10),
     sb.from('campaigns').select('product_title,campaign_name').eq('user_id', user.id)
       .order('created_at', { ascending: false }).limit(8),
     getAssistantMemory(sb, user.id),

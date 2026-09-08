@@ -66,7 +66,7 @@ export async function maybeDistillFeedback(
         .select('last_rewrite_feedback,published_at')
         .eq('user_id', ctx.userId)
         .not('last_rewrite_feedback', 'is', null)
-        .order('published_at', { ascending: false })
+        .order('published_at', { ascending: false, nullsFirst: false })
         .limit(30),
     ])
 

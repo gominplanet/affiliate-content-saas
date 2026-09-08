@@ -307,7 +307,7 @@ export default function CustomizePage() {
         .eq('user_id', user.id)
         .eq('status', 'published')
         .not('wordpress_url', 'is', null)
-        .order('published_at', { ascending: false })
+        .order('published_at', { ascending: false, nullsFirst: false })
         .limit(200)
       setPubPosts(((postRows ?? []) as Array<{ title: string | null; wordpress_url: string | null }>)
         .filter(p => p.title && p.wordpress_url)

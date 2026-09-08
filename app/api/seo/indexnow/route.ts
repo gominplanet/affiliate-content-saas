@@ -31,7 +31,7 @@ export async function POST() {
     .select('slug,wordpress_site_id')
     .eq('user_id', user.id)
     .not('wordpress_post_id', 'is', null)
-    .order('published_at', { ascending: false })
+    .order('published_at', { ascending: false, nullsFirst: false })
     .limit(2000)
   const allPosts = ((posts ?? []) as { slug: string | null; wordpress_site_id: string | null }[])
     .filter(p => !!p.slug)

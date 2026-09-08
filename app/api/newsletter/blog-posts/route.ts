@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     .select('id,title,excerpt,wordpress_url,published_at,youtube_videos(thumbnail_url,description,youtube_video_id)')
     .eq('user_id', user.id)
     .eq('status', 'published')
-    .order('published_at', { ascending: false })
+    .order('published_at', { ascending: false, nullsFirst: false })
     .limit(limit)
 
   if (q) {

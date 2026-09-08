@@ -863,7 +863,7 @@ async function handleGenerate(request: Request) {
       .select('last_rewrite_feedback,published_at')
       .eq('user_id', ownerId)
       .not('last_rewrite_feedback', 'is', null)
-      .order('published_at', { ascending: false })
+      .order('published_at', { ascending: false, nullsFirst: false })
       .limit(8)
     persistentFeedback = (feedbackRows as Array<{ last_rewrite_feedback: string | null }> | null)
       ?.map(r => (r.last_rewrite_feedback || '').trim())
@@ -894,13 +894,18 @@ async function handleGenerate(request: Request) {
   // mirror) and posts without content. Shortened to ~1200 chars each
   // to keep the prompt budget reasonable.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // nullsFirst: false is doing real work here. published_at is nullable with no
+  // database default, and Postgres sorts NULLs FIRST on `desc`, so a single
+  // published row without a date would take both of these two slots and keep
+  // them. Every draft this creator ever generated afterwards would be voice
+  // matched against that one post, and nothing on screen would say so.
   const { data: priorRows } = await supabase
     .from('blog_posts')
     .select('title,content,video_id')
     .eq('user_id', ownerId)
     .eq('status', 'published')
     .neq('video_id', videoId)
-    .order('published_at', { ascending: false })
+    .order('published_at', { ascending: false, nullsFirst: false })
     .limit(2)
   const priorExamples = (priorRows as Array<{ title: string; content: string }> | null)?.map(p => ({
     title: p.title,
@@ -926,7 +931,7 @@ async function handleGenerate(request: Request) {
     .eq('status', 'published')
     .neq('video_id', videoId)
     .not('wordpress_url', 'is', null)
-    .order('published_at', { ascending: false })
+    .order('published_at', { ascending: false, nullsFirst: false })
     .limit(20)
   // Include a stripped content snippet + post_type so the topical matcher has
   // body-text and type signal to score on, not just title overlap (which is

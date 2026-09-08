@@ -77,7 +77,7 @@ export async function GET(request: Request) {
     .select('id,title,slug,content,seo_keyword,post_type,wordpress_post_id,wordpress_site_id,published_at,wordpress_url')
     .eq('user_id', ownerId)
     .not('wordpress_post_id', 'is', null)
-    .order('published_at', { ascending: false })
+    .order('published_at', { ascending: false, nullsFirst: false })
     .limit(POSTS_OVERVIEW_CAP)
   type Post = { id: string; title: string; slug: string; content: string; seo_keyword: string | null; post_type: string | null; wordpress_post_id: number | null; wordpress_site_id: string | null; published_at: string | null; wordpress_url: string | null }
   const posts = (postsRaw as Post[] | null) ?? []
