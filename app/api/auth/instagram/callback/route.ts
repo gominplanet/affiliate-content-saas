@@ -49,7 +49,13 @@ export async function GET(request: NextRequest) {
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase.from('integrations').upsert(
+    // THE ERROR IS READ, and a failure throws to the catch below so the user
+    // lands on the error screen rather than a "Connected" one. An account that
+    // reports connected but was never saved fails later, silently, on the first
+    // post. PostgREST also rejects an entire write over one unknown column, so a
+    // column shipped ahead of its migration would no-op every connect while
+    // every screen still said Connected.
+    const { error: saveErr } = await supabase.from('integrations').upsert(
       encryptIntegrationWrite({
         user_id: user.id,
         instagram_user_id: tokens.userId,
@@ -59,6 +65,7 @@ export async function GET(request: NextRequest) {
       }),
       { onConflict: 'user_id' },
     )
+    if (saveErr) throw new Error(`could not save the connection: ${saveErr.message}`)
 
     // Mirror into social_accounts (single IG account, always default).
     try {

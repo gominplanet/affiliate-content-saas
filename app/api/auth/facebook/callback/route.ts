@@ -65,7 +65,14 @@ export async function GET(request: NextRequest) {
     // Encrypt access token at rest (2026-06-02). Page id/name remain
     // plaintext — they're not secrets.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase.from('integrations').upsert(
+    // THE ERROR IS READ, and a failure throws to the catch below so the user
+    // lands on the error screen rather than a "Connected" one. Reporting a
+    // connection that was never saved sends someone away believing their Page
+    // is wired up, and they find out when a scheduled post silently does
+    // nothing. PostgREST rejects an entire write over one unknown column too, so
+    // a column shipped ahead of its migration would no-op every connect on the
+    // platform while every screen still said Connected.
+    const { error: saveErr } = await supabase.from('integrations').upsert(
       encryptIntegrationWrite({
         user_id: user.id,
         facebook_page_id: page.id,
@@ -75,6 +82,7 @@ export async function GET(request: NextRequest) {
       }),
       { onConflict: 'user_id' },
     )
+    if (saveErr) throw new Error(`could not save the connection: ${saveErr.message}`)
 
     // Mirror ALL pages into social_accounts for the multi-account picker,
     // marking the active one as default. Best-effort — never block connect.

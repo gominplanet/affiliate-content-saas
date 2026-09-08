@@ -61,7 +61,13 @@ export async function GET(request: NextRequest) {
     // non-secret fields like twitter_handle pass through unchanged.
     // Reads transparently decrypt via decryptIntegrationRow().
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase.from('integrations').upsert(
+    // THE ERROR IS READ, and a failure throws to the catch below so the user
+    // lands on the error screen rather than a "Connected" one. Silently losing
+    // these tokens means every later post fails against an account the UI still
+    // shows as connected. PostgREST also rejects an entire write over one
+    // unknown column, so a column shipped ahead of its migration would no-op
+    // every connect while every screen still said Connected.
+    const { error: saveErr } = await supabase.from('integrations').upsert(
       encryptIntegrationWrite({
         user_id: userId,
         twitter_access_token: tokens.access_token,
@@ -72,6 +78,7 @@ export async function GET(request: NextRequest) {
       }),
       { onConflict: 'user_id' },
     )
+    if (saveErr) throw new Error(`could not save the connection: ${saveErr.message}`)
 
     // Clear the verifier cookie — it's single-use.
     cookieStore.delete('twitter_pkce_verifier')

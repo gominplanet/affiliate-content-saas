@@ -565,8 +565,13 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   } catch { /* published post stands */ }
 
   // ── 10. Save the blog_posts row (no video; treated as a normal review) ──────
+  // THE ERROR IS READ. The post is already live on WordPress by this point, and
+  // that is exactly what makes losing this row expensive rather than harmless:
+  // without it MVP has no record of the post, so no Passport links, no SEO
+  // tracking, no social push, and no way to find it again from the dashboard.
+  // Regenerating is not a fix either, because it would publish a duplicate.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('blog_posts').insert({
+  const { error: saveErr } = await (supabase as any).from('blog_posts').insert({
     user_id: ownerId,
     video_id: null,
     title,
@@ -583,5 +588,22 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     published_at: new Date().toISOString(),
   })
 
-  return NextResponse.json({ ok: true, url: wpPost.link, postId: wpPost.id, title, targetKeyword: parsed.target_keyword ?? null })
+  if (saveErr) {
+    console.error('[blog/from-link] post is live but the row was not saved:', saveErr.message)
+  }
+
+  return NextResponse.json({
+    ok: true,
+    url: wpPost.link,
+    postId: wpPost.id,
+    title,
+    targetKeyword: parsed.target_keyword ?? null,
+    // Reported, not hidden. The post IS live, so this is not a failure of the
+    // request, but MVP does not know about it and the creator needs to hear
+    // that from the screen rather than discover it when the post is missing
+    // from their content list a week later.
+    note: saveErr
+      ? 'The post is live on your site, but MVP could not save its record, so it will not appear in your content list or get social pushes. Re-sync your posts from the Content page to pick it up.'
+      : null,
+  })
 }

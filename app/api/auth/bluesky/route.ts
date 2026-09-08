@@ -32,7 +32,13 @@ export async function POST(request: NextRequest) {
 
     // Encrypt the app password at rest (2026-06-02).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase.from('integrations').upsert(
+    // THE ERROR IS READ. Telling someone their account is connected when the
+    // write failed is worse than telling them it did not work: they publish,
+    // nothing goes out, and the screen said Connected the whole time. PostgREST
+    // also rejects an entire write over one column it does not recognise, so a
+    // column added ahead of its migration would silently no-op every connect on
+    // the platform while still reporting success.
+    const { error: saveErr } = await supabase.from('integrations').upsert(
       encryptIntegrationWrite({
         user_id: user.id,
         bluesky_handle: session.handle,
@@ -41,6 +47,13 @@ export async function POST(request: NextRequest) {
       }),
       { onConflict: 'user_id' },
     )
+    if (saveErr) {
+      console.error('[auth/bluesky] connect succeeded but the save failed:', saveErr.message)
+      return NextResponse.json(
+        { error: 'Signed in to Bluesky, but we could not save the connection. Please try again.' },
+        { status: 500 },
+      )
+    }
 
     return NextResponse.json({ ok: true, handle: session.handle, did: session.did })
   } catch (e) {

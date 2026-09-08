@@ -201,15 +201,29 @@ export async function POST(request: NextRequest) {
       } catch { /* non-fatal */ }
     }
 
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('blog_posts').insert({
-        user_id: user.id, title,
-        status: status === 'draft' ? 'draft' : 'published',
-        post_type: 'review',
-        wordpress_url: wpPost.link, wordpress_post_id: wpPost.id,
-      })
-    } catch { /* non-fatal — post is already live */ }
+    // THE ERROR IS READ. This used to be swallowed with the note "non-fatal,
+    // post is already live", which has the reasoning backwards: the post being
+    // live is what makes losing the row costly, since MVP then has no record of
+    // it and republishing would duplicate it on the site.
+    //
+    // published_at is set explicitly. The column is nullable with no database
+    // default, and Postgres sorts NULLs FIRST on `order by published_at desc`,
+    // so a published row without a date wins every "most recent post" query
+    // going. Two of those pick the voice anchors and the internal-link
+    // candidates for every future draft, which would quietly lock this one post
+    // in as the model for everything the creator writes afterwards.
+    const isDraft = status === 'draft'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: saveErr } = await (supabase as any).from('blog_posts').insert({
+      user_id: user.id, title,
+      status: isDraft ? 'draft' : 'published',
+      post_type: 'review',
+      wordpress_url: wpPost.link, wordpress_post_id: wpPost.id,
+      published_at: isDraft ? null : new Date().toISOString(),
+    })
+    if (saveErr) {
+      console.error('[ltk/generate] post is live but the row was not saved:', saveErr.message)
+    }
 
     await writeContentSchema(supabase, wpService, {
       userId: user.id,
@@ -225,7 +239,12 @@ export async function POST(request: NextRequest) {
     })
 
     const editUrl = `${wpCreds.wordpress_url.replace(/\/+$/, '')}/wp-admin/post.php?post=${wpPost.id}&action=edit`
-    return NextResponse.json({ ok: true, wordpressUrl: wpPost.link, editUrl, draft: status === 'draft', title })
+    return NextResponse.json({
+      ok: true, wordpressUrl: wpPost.link, editUrl, draft: isDraft, title,
+      note: saveErr
+        ? 'The post is live on your site, but MVP could not save its record, so it will not appear in your content list. Re-sync your posts from the Content page to pick it up.'
+        : null,
+    })
   } catch (e) {
     console.error('[ltk/generate]', e instanceof Error ? e.message : e)
     return NextResponse.json({ ok: false, error: toUserMessage(e, 'Couldn’t generate that just now. Please try again in a moment.') }, { status: 500 })
