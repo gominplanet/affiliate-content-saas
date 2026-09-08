@@ -220,6 +220,11 @@ async function designCollageBrief(category: string, productTitles: string[], use
 export async function generateArtDirectorCollagePin(opts: {
   products: Array<{ imageUrl: string; title: string }>
   category: string
+  /** 'deal' = a Deal Radar roundup of price drops; 'guide' = a buying guide.
+   *  They are different posts and should not produce the same pin: on a deals
+   *  roundup the news is the price, not the verdict, so the design leads with
+   *  the saving rather than with "our picks". */
+  kind?: 'deal' | 'guide'
   userId?: string | null
   tier?: string | null
 }): Promise<{ data: string; mediaType: string } | null> {
@@ -239,13 +244,22 @@ export async function generateArtDirectorCollagePin(opts: {
     if (pngs.length < 2) return null
 
     const n = pngs.length
+    const isDeal = opts.kind === 'deal'
     const brief = await designCollageBrief(opts.category, pngs.map((p) => p.title), opts.userId, opts.tier)
     const headline = brief?.headline || `TOP ${n} ${stripDesignBrands(opts.category).toUpperCase()}`.slice(0, 24)
     const subhead = brief?.subhead || 'COMPARED & RANKED'
     const layout = n >= 4 ? 'a clean 2×2 grid of four tiles' : n === 3 ? 'three tiles (one wider feature tile on top, two below)' : 'two bold side-by-side tiles'
 
     const prompt = [
-      `FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait) for a MULTI-PRODUCT buying guide. Show ALL ${n} products TOGETHER on ONE design as ${layout}, each product in its own clearly separated tile with a small round number badge (1, 2, 3${n >= 4 ? ', 4' : ''}). A bold headline band across the TOP and a shop-style call-to-action near the BOTTOM (e.g. "SEE ALL PICKS"). Vibrant, modern, high-contrast, magazine-roundup feel — never flat or template-like.`,
+      // A deals roundup and a buying guide are different posts and must not
+      // produce the same pin. On a deals post the news is the PRICE: what a
+      // shopper is scanning for is "several things are cheap right now", not
+      // "here are my considered picks". Numbered ranking badges belong on a
+      // guide, where the order means something; on a deals grid they imply a
+      // ranking that does not exist.
+      isDeal
+        ? `FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait) for a ROUNDUP OF ${n} CURRENT PRICE DROPS. Show ALL ${n} products TOGETHER on ONE design as ${layout}, each in its own clearly separated tile. This is a DEALS board, not a review: energetic, retail-sale feel, with a bold headline band across the TOP and a shop-style call-to-action near the BOTTOM (e.g. "SEE ALL DEALS", "TAP TO SHOP"). Bright, high-contrast, urgent without being tacky. No numbered ranking badges — these are simultaneous deals, not a countdown.`
+        : `FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait) for a MULTI-PRODUCT buying guide. Show ALL ${n} products TOGETHER on ONE design as ${layout}, each product in its own clearly separated tile with a small round number badge (1, 2, 3${n >= 4 ? ', 4' : ''}). A bold headline band across the TOP and a shop-style call-to-action near the BOTTOM (e.g. "SEE ALL PICKS"). Vibrant, modern, high-contrast, magazine-roundup feel — never flat or template-like.`,
       brief?.palette ? `COLOUR PALETTE: ${brief.palette}.` : '',
       `PRODUCTS (the heroes): the ${n} attached images are the ${n} products IN ORDER. Recreate EACH one accurately in its own tile — its true shape, colours and its own printed branding — one product per tile, equally prominent, crisp and centred, on a clean neutral or soft-gradient tile background. Do NOT merge, duplicate, or invent extra products; exactly ${n} distinct products, matching the ${n} references.`,
       'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections anywhere. If a reference shows a model or hands, keep ONLY the product.',

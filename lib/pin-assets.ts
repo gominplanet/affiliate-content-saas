@@ -144,7 +144,21 @@ Return ONLY valid JSON with these exact keys:
 
   // Multi-product guide/comparison posts get a PRODUCT-COLLAGE pin (a distinct
   // design in the rotation); single-product reviews use the scene rotation.
-  const isRoundup = ['guide', 'comparison'].includes(String(p.post_type || '').toLowerCase())
+  // 'deal' is a Deal Radar roundup: several hand-picked price drops in one post.
+  // It was missing here, so every multi-deal roundup took the SINGLE-product
+  // path and came back as a review pin for whichever product happened to be
+  // first, complete with that one product's callouts and a "does it work?"
+  // headline, on a post about four different things.
+  //
+  // 'comparison' is kept although nothing currently writes it, since removing it
+  // would be a separate decision from fixing this.
+  //
+  // A single-deal post is still safe here: useCollage also requires two or more
+  // products to have been found, so a deal post about one thing stays single.
+  const isRoundup = ['guide', 'comparison', 'deal'].includes(String(p.post_type || '').toLowerCase())
+  /** Deals read differently from a buying guide: the news is the price, not the
+   *  verdict. Passed down so the design says so. */
+  const roundupKind: 'deal' | 'guide' = String(p.post_type || '').toLowerCase() === 'deal' ? 'deal' : 'guide'
   const collageProducts = (Array.isArray(parsed.collage_products) ? parsed.collage_products : [])
     .map((s: unknown) => scrubBanned(String(s)).trim()).filter(Boolean).slice(0, 4)
   const useCollage = isRoundup && collageProducts.length >= 2
@@ -276,6 +290,7 @@ Return ONLY valid JSON with these exact keys:
         artDirected = await generateArtDirectorCollagePin({
           products: resolved,
           category: fields.product_category,
+          kind: roundupKind,
           userId: ctx.userId,
           tier: ctx.tier,
         })
