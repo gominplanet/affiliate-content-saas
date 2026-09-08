@@ -315,3 +315,87 @@ export async function generateArtDirectorCollagePin(opts: {
     return { data: jpeg.toString('base64'), mediaType: 'image/jpeg' }
   } catch { return null }
 }
+
+/**
+ * Generate a designed 16:9 ROUNDUP HERO (1280×720) showing 2–4 real product
+ * photos together, for a multi-product blog post's featured image.
+ *
+ * This exists because of a comment in the Deal Radar roundup route that read
+ * "a roundup spans multiple products, so use the lead deal's product image (the
+ * AI thumbnail pipeline is single-product)". That was true when written, and it
+ * meant a four-product deals roundup went to the site fronted by one bare
+ * Amazon photo of a beverage fridge. The single-product hero above cannot serve
+ * a roundup, and the multi-product designer next to it only made vertical pins.
+ * This is the missing third case: multi-product, landscape.
+ *
+ * Returns base64 JPEG or null on any failure, so a caller can fall back to
+ * whatever it would have used before.
+ */
+export async function generateArtDirectorRoundupHero(opts: {
+  products: Array<{ imageUrl: string; title: string }>
+  category: string
+  /** 'deal' = current price drops; 'guide' = considered picks. Drives both the
+   *  copy and the layout, the same split the pin makes. */
+  kind?: 'deal' | 'guide'
+  /** The creator's site name, drawn small as a wordmark so the hero reads as
+   *  theirs rather than as generic stock. Omitted when unknown. */
+  brandName?: string | null
+  userId?: string | null
+  tier?: string | null
+}): Promise<{ data: string; mediaType: string } | null> {
+  try {
+    const items = (opts.products || []).filter((p) => p.imageUrl && p.title).slice(0, 4)
+    if (items.length < 2) return null
+
+    const pngs = (await Promise.all(items.map(async (it) => {
+      const ab = await fetch(it.imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
+        .then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null)
+      if (!ab) return null
+      const png = await normalizeToPng(new Uint8Array(ab)).catch(() => null)
+      return png ? { data: png, title: it.title } : null
+    }))).filter(Boolean) as Array<{ data: Uint8Array; title: string }>
+    if (pngs.length < 2) return null
+
+    const n = pngs.length
+    const isDeal = opts.kind === 'deal'
+    const brief = await designCollageBrief(opts.category, pngs.map((p) => p.title), opts.userId, opts.tier, isDeal ? 'deal' : 'guide')
+    const headline = brief?.headline
+      || (isDeal ? dealFallbackHeadline(n, stripDesignBrands(opts.category)) : `TOP ${n} ${stripDesignBrands(opts.category).toUpperCase()}`.slice(0, 24))
+    const subhead = brief?.subhead || (isDeal ? DEAL_FALLBACK_SUBHEAD : 'COMPARED & PICKED')
+    const brand = (opts.brandName || '').trim().slice(0, 40)
+
+    const prompt = [
+      isDeal
+        ? `FORMAT — READ FIRST: a 16:9 LANDSCAPE blog article hero (1536×864, wide) for a ROUNDUP OF ${n} CURRENT PRICE DROPS. Show ALL ${n} products TOGETHER across one wide composition, each clearly separated and readable at a glance. This is a DEALS header, not a review: energetic, retail-sale feel, bright and high-contrast, urgent without being tacky. No numbered ranking badges — these are simultaneous deals, not a countdown.`
+        : `FORMAT — READ FIRST: a 16:9 LANDSCAPE blog article hero (1536×864, wide) for a MULTI-PRODUCT buying guide. Show ALL ${n} products TOGETHER across one wide composition, each clearly separated, with a small round number badge (1, 2, 3${n >= 4 ? ', 4' : ''}). Vibrant, modern, magazine-roundup feel — never flat or template-like.`,
+      brief?.palette ? `COLOUR PALETTE: ${brief.palette}.` : '',
+      `PRODUCTS (the heroes): the ${n} attached images are the ${n} products IN ORDER. Recreate EACH one accurately — its true shape, colours and its own printed branding — one per slot, equally prominent and crisp. Do NOT merge, duplicate, or invent extra products; exactly ${n} distinct products, matching the ${n} references.`,
+      // A wide frame reads better with somewhere for the products to sit than
+      // floating on flat colour, and it is what makes the difference between a
+      // template and a header someone would put on their own site.
+      'SETTING: ground the products in a light, tidy, realistic scene appropriate to the category (a clean room, counter or desk) with soft daylight, rather than floating them on flat colour. Keep it uncluttered so the products and headline stay the subject.',
+      'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections anywhere. If a reference shows a model or hands, keep ONLY the product.',
+      isDeal
+        ? 'NO INVENTED NUMBERS: do not draw any discount percentage, price, "% OFF" starburst, currency amount, or ranking word ("BEST", "TOP", "RANKED", "#1") anywhere beyond the headline text given below.'
+        : '',
+      `MAIN HEADLINE — render EXACTLY, spelling perfect: "${headline}"${subhead ? ` with a smaller sub-line "${subhead}"` : ''}. Big, designed and layered, in a clear band that does NOT cover any product.`,
+      brand ? `BRAND WORDMARK: set the words "${brand}" small and tidy in one corner, like a publication's masthead. Spelled exactly, never larger than the headline.` : '',
+      'NO YEARS OR DATES anywhere in the image (no "2025", "2026") — keep it evergreen so it never looks dated.',
+      NO_BRAND_IMAGE_CLAUSE,
+      'FRAMING: the entire canvas is shown — nothing cropped. Keep every product, badge and line of text inside a ~5% safe margin on all four sides.',
+    ].filter(Boolean).join('\n')
+
+    const openai = createOpenAIService()
+    const b64 = await openai.generateWithReferences({
+      prompt,
+      images: pngs.map((p, i) => ({ data: p.data, filename: `product-${i + 1}.png`, mime: 'image/png' })),
+      size: '1536x864',
+      quality: 'medium',
+    })
+    if (!b64) return null
+    if (opts.userId) recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'yt_thumb_graphic', model: 'gpt-image-2', images: 1 })
+
+    const jpeg = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
+    return { data: jpeg.toString('base64'), mediaType: 'image/jpeg' }
+  } catch { return null }
+}

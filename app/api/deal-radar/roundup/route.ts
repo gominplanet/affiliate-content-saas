@@ -21,6 +21,7 @@ import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
 import { writeContentSchema } from '@/lib/content-schema'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { attachPostHero } from '@/lib/post-hero'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
     const sb = supabase as any
 
     const { data: intRowRaw } = await sb.from('integrations')
-      .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
+      .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret,subscription_period_start,subscription_period_end')
       .eq('user_id', user.id).maybeSingle()
     // Secret columns on this row are encrypted at rest. Decrypt before use:
     // handing the stored ciphertext to the provider as a key fails as
@@ -116,23 +117,31 @@ export async function POST(request: Request) {
     // in the site's default "Blog"/"Uncategorized" bucket.
     let categoryIds: number[] = []
     try { const id = await wpService.createCategory('Deals'); if (id) categoryIds = [id] } catch { /* leave as-is rather than fail the post */ }
-    // Featured thumbnail — a roundup spans multiple products, so use the lead
-    // deal's product image (the AI thumbnail pipeline is single-product). Gives
-    // the post a real thumbnail instead of the theme's blank fallback.
-    let featuredMediaId: number | null = null
-    const heroImage = dealRows.find((r) => r.image_url)?.image_url
-    if (heroImage) {
-      try {
-        const media = await wpService.uploadImageFromUrl(heroImage, `${(theme || 'deals').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deals'}-roundup.jpg`)
-        featuredMediaId = (media?.id as number | undefined) ?? null
-      } catch (err) { console.warn('[deal-radar/roundup] featured image upload failed:', err instanceof Error ? err.message : err) }
-    }
     const slug = keywordSlug(title, theme)
+
+    // A DESIGNED header showing every deal in the roundup, not one product's
+    // stock photo. This route used to take the lead deal's Amazon image, on the
+    // reasoning that the thumbnail pipeline was single-product, so a four-deal
+    // post went up fronted by a photo of one beverage fridge. attachPostHero
+    // picks the multi-product designer, honours the plan's image allowance and
+    // the spend ceiling, and falls back to exactly that lead photo if the render
+    // is unavailable, so this is never worse than it was.
+    const hero = await attachPostHero({
+      wpService, db: sb, userId: user.id, tier,
+      subscriptionStart: (intRow?.subscription_period_start as string | null) ?? null,
+      subscriptionEnd: (intRow?.subscription_period_end as string | null) ?? null,
+      products: dealRows.map((r) => ({ imageUrl: r.image_url, title: r.title })),
+      title, slug, kind: 'deal',
+      category: theme || nicheLabel,
+      brandName: (brand?.name as string | null) ?? null,
+    })
+    if (hero.note) console.warn('[deal-radar/roundup] hero:', hero.note)
+
     const wpPost = await wpService.createPost({
       title, slug, content: bodyHtml, excerpt,
       status: 'publish', comment_status: 'closed', ping_status: 'closed',
       ...(categoryIds.length ? { categories: categoryIds } : {}),
-      ...(featuredMediaId ? { featured_media: featuredMediaId } : {}),
+      ...(hero.mediaId ? { featured_media: hero.mediaId } : {}),
     })
 
     const seoKeyword = theme || nicheLabel
@@ -164,7 +173,7 @@ export async function POST(request: Request) {
       title,
       description: excerpt,
       html: bodyHtml,
-      imageUrl: heroImage || null,
+      imageUrl: hero.sourceUrl,
       pageType: 'BlogPosting',
       category: 'Deals',
     })
