@@ -2,9 +2,13 @@
 //
 // Launchpad — the origin pipeline for a video that is NOT on YouTube yet.
 // Upload the file, design + burn a CTA, optionally publish to YouTube (or skip),
-// then take the SAME uploaded video to every Amazon storefront: MVP uses the
-// product ASIN to write each market's title and thumbnail, and dubs the video
-// (generic voice free; the creator's own voice is the optional upgrade).
+// then take the SAME uploaded video to the English Amazon storefronts (US, CA,
+// UK, AU): MVP uses the product ASIN to write each market's title and thumbnail.
+//
+// English only, on purpose. This is the one-click path, and those four take the
+// master audio as it is, so nothing waits. The non-English markets and their
+// dubs still exist in full on the standalone Storefront Sync page, where
+// localizing is the job rather than a detour. See lib/markets.
 'use client'
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -18,6 +22,7 @@ import { requestStudioFinish, requestFindCampaign, requestAcceptCampaign, reques
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { normalizeAsinInput } from '@/lib/asin'
+import { isEnglishMarket } from '@/lib/markets'
 import ThumbnailBoostPanel, { useThumbnailBoost } from '@/components/thumbnails/ThumbnailBoostPanel'
 
 const label = { color: 'var(--text)' } as const
@@ -921,7 +926,8 @@ export default function LaunchpadPage() {
           title="Amazon storefronts, every geo"
           hint="Unlocks after the ASIN is set and you’ve published to YouTube (or hit Skip) above.">
           <>
-            <p className="text-[12px] mb-3" style={muted}>Your clean video (no CTA) goes to Amazon. MVP checks where this product is listed and pre-selects the English stores where it&apos;s found (US, Canada, UK, Australia). Non-English stores are optional: tick one and MVP adds a free dub in that language (or your own voice, with credits). Uploads run through your logged-in Amazon Creator account, so sign in to each store first.</p>
+            <p className="text-[12px] mb-3" style={muted}>Your clean video (no CTA) goes to Amazon. MVP checks where this product is listed across the English stores (US, Canada, UK, Australia) and pre-selects the ones it&apos;s found in. Your English audio goes out as it is, so there&apos;s nothing to translate and nothing to wait for. Uploads run through your logged-in Amazon Creator account, so sign in to each store first.</p>
+            <p className="text-[12px] mb-3" style={muted}>Want Germany, France, Spain, Italy or Japan, with a dub in that language? That lives on <a href="/global-sync" className="underline" style={{ color: '#0EA5A4' }}>Storefront Sync</a>, where localizing is the job rather than a detour.</p>
             {!masterId ? (
               <button onClick={() => void toStorefronts()} disabled={creatingMaster || !asinOk}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
@@ -931,8 +937,14 @@ export default function LaunchpadPage() {
               <StorefrontStage
                 presetVideoId={masterId}
                 presetAsin={asinClean || ''}
-                allowedDomains={geoCheck ? geoCheck.map(g => g.domain) : ['amazon.com']}
-                defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain) : ['amazon.com']}
+                // English storefronts only on this path. geo-check already
+                // returns just these four, and the intersection keeps that true
+                // even if it ever returns more, so the fast lane cannot acquire
+                // a market that needs a dub it no longer offers.
+                allowedDomains={geoCheck ? geoCheck.map(g => g.domain).filter(isEnglishMarket) : ['amazon.com']}
+                defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain).filter(isEnglishMarket) : ['amazon.com']}
+                // No dubbing here. The audio is already English for all four.
+                allowDubbing={false}
                 geoBadges={geoCheck ? Object.fromEntries(geoCheck.map(g => [g.domain, g.status === 'found' ? 'Product found' : g.status === 'not-listed' ? 'Not listed here' : 'Not confirmed'])) : undefined}
                 marketAsins={marketAsins}
                 presetThumbnailUrl={thumbUrl}

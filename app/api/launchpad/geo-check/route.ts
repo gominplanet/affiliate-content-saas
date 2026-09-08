@@ -31,16 +31,31 @@ export const maxDuration = 60
 // The marketplaces MVP delivers to. `domain` matches the global-sync /
 // storefront-upload key (no www); `keepa` is the Keepa domainId (null = not on
 // Keepa → SCOUT browser check on the client); `host` is the store host.
+//
+// ENGLISH ONLY, for now. Video Launchpad is the one-click path and it ships the
+// four storefronts whose audio is already right: US, Canada, UK, Australia. The
+// master video goes to each of them as it is, so nothing waits on a translation
+// or a dub before the first upload starts.
+//
+// The other five are commented out rather than deleted: they are still fully
+// supported on the standalone Storefront Sync page, and this is a product
+// decision that will be revisited, not a capability that went away. Deleting
+// them would lose the Keepa domain ids, which are the only fiddly part.
+//
+//   { domain: 'amazon.de', host: 'www.amazon.de', code: 'DE', country: 'Germany', keepa: 3 },
+//   { domain: 'amazon.fr', host: 'www.amazon.fr', code: 'FR', country: 'France', keepa: 4 },
+//   { domain: 'amazon.es', host: 'www.amazon.es', code: 'ES', country: 'Spain', keepa: 9 },
+//   { domain: 'amazon.it', host: 'www.amazon.it', code: 'IT', country: 'Italy', keepa: 8 },
+//   { domain: 'amazon.co.jp', host: 'www.amazon.co.jp', code: 'JP', country: 'Japan', keepa: 5 },
+//
+// Narrowing this also stops five Keepa lookups per check that nothing could act
+// on, which is the kind of spend that survives for months precisely because
+// nobody sees it.
 const GEOS = [
   { domain: 'amazon.com', host: 'www.amazon.com', code: 'US', country: 'United States', keepa: 1 },
   { domain: 'amazon.ca', host: 'www.amazon.ca', code: 'CA', country: 'Canada', keepa: 6 },
   { domain: 'amazon.co.uk', host: 'www.amazon.co.uk', code: 'GB', country: 'United Kingdom', keepa: 2 },
   { domain: 'amazon.com.au', host: 'www.amazon.com.au', code: 'AU', country: 'Australia', keepa: null },
-  { domain: 'amazon.de', host: 'www.amazon.de', code: 'DE', country: 'Germany', keepa: 3 },
-  { domain: 'amazon.fr', host: 'www.amazon.fr', code: 'FR', country: 'France', keepa: 4 },
-  { domain: 'amazon.es', host: 'www.amazon.es', code: 'ES', country: 'Spain', keepa: 9 },
-  { domain: 'amazon.it', host: 'www.amazon.it', code: 'IT', country: 'Italy', keepa: 8 },
-  { domain: 'amazon.co.jp', host: 'www.amazon.co.jp', code: 'JP', country: 'Japan', keepa: 5 },
 ] as const
 
 function asinFrom(v: string): string | null {

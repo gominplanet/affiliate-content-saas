@@ -43,12 +43,26 @@ const muted = { color: 'var(--text-2)' } as const
 
 /** presetVideoId: when set, the stage syncs THAT video and hides its own picker
  *  (Launchpad passes the already-picked video). */
-export default function StorefrontStage({ presetVideoId, presetAsin, allowedDomains, defaultChosen, geoBadges, marketAsins, presetThumbnailUrl }: {
+export default function StorefrontStage({ presetVideoId, presetAsin, allowedDomains, defaultChosen, geoBadges, marketAsins, presetThumbnailUrl, allowDubbing = true }: {
   presetVideoId?: string | null
   presetAsin?: string | null
-  /** Video Launchpad restricts to a subset of marketplaces (Phase 1: the English
-   *  geos). When set, only these domains are shown/selectable. */
+  /** Video Launchpad restricts to a subset of marketplaces (the English geos).
+   *  When set, only these domains are shown/selectable. */
   allowedDomains?: string[] | null
+  /** Whether this surface offers dubbing at all.
+   *
+   *  Video Launchpad passes false. It ships the four English storefronts, whose
+   *  audio is already right, so there is nothing to dub and every control for it
+   *  is noise on the one-click path. The dubbing CODE is untouched: the API
+   *  route, the voice cloning, the credits and the standalone Storefront Sync
+   *  page all still work, and that page still offers all nine markets.
+   *
+   *  This is a switch rather than "no non-English market is selected here, so
+   *  the UI happens to stay hidden". Those are different statements, and the
+   *  second one quietly stops being true the day somebody widens the allow-list.
+   *  With this off, a non-English market that reaches delivery gets the English
+   *  master rather than sitting in a dub queue nothing can start. */
+  allowDubbing?: boolean
   /** Which of the allowed domains start checked (Phase 1: the ones the product
    *  was found in). Omit to check all. */
   defaultChosen?: string[] | null
@@ -420,7 +434,10 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       // Now the English geos upload while the dubs render, and dubbed markets
       // follow as soon as their audio is ready.
       const readyTargets = targets.filter(t => readyDomains.has(t.domain))
-      const needDub = readyTargets.filter(t => t.dub && !t.videoUrl && !skipDub.has(t.domain))
+      // With dubbing off, nothing waits: every market delivers the English
+      // master in wave 1. A non-English target that somehow got here is treated
+      // as skip-dub below rather than queued for a dub this surface won't run.
+      const needDub = allowDubbing ? readyTargets.filter(t => t.dub && !t.videoUrl && !skipDub.has(t.domain)) : []
       const dubDomains = new Set(needDub.map(t => t.domain))
       const uploadNow = readyTargets.filter(t => !dubDomains.has(t.domain))
       const useClone = !!(voice?.hasVoice && useMyVoice)
@@ -454,7 +471,9 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         // Honor "skip dub": deliver the English master to those markets even if a
         // dub was generated earlier. Only keep markets in THIS wave.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return arr.map((i: any) => (skipDub.has(i.domain) && i.masterUrl) ? { ...i, videoUrl: i.masterUrl } : i)
+        // Dubbing off means every market takes the master, so the same rule that
+        // serves an explicit "skip dub" serves the whole surface.
+        return arr.map((i: any) => ((!allowDubbing || skipDub.has(i.domain)) && i.masterUrl) ? { ...i, videoUrl: i.masterUrl } : i)
           .filter((i: { domain: string }) => only.has(i.domain))
       }
 
@@ -596,7 +615,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       {/* Dub voice — collapsed to one line. Free generic voice is the default; the
           cloned-voice upgrade (credits) lives behind "change" so it never clutters
           the fast path. */}
-      {voice?.enabled && (
+      {allowDubbing && voice?.enabled && (
         <details className="card p-4 group" style={{ background: 'rgba(14,165,164,0.04)' }}>
           <summary className="flex items-center gap-2 cursor-pointer list-none text-[12px]" style={muted}>
             <Mic size={14} style={{ color: '#0EA5A4' }} />
@@ -940,7 +959,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                 {t.description && <p className="text-[12px] mt-0.5 line-clamp-3" style={muted}>{t.description}</p>}
                 {t.detail && t.state !== 'delivered' && <p className="text-[11px] mt-1" style={muted}>{t.detail}</p>}
                 {/* Skip dub: deliver the English master to this market on purpose. */}
-                {t.dub && t.state !== 'delivered' && (
+                {allowDubbing && t.dub && t.state !== 'delivered' && (
                   <label className="flex items-center gap-1.5 text-[11px] mt-1.5 cursor-pointer" style={muted}>
                     <input type="checkbox" checked={skipDub.has(t.domain)}
                       onChange={() => setSkipDub(prev => { const n = new Set(prev); n.has(t.domain) ? n.delete(t.domain) : n.add(t.domain); return n })}
@@ -948,7 +967,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                     Skip dub, upload with English audio
                   </label>
                 )}
-                {t.dub && !skipDub.has(t.domain) && t.videoUrl && (
+                {allowDubbing && t.dub && !skipDub.has(t.domain) && t.videoUrl && (
                   // Listen to the generated dub in-page. Stays available after the
                   // market is delivered so you can always check how it sounds. A
                   // voiceover-only result is an .mp3; a muxed dub is an .mp4.
@@ -970,7 +989,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                     )}
                   </div>
                 )}
-                {t.dub && !skipDub.has(t.domain) && !t.videoUrl && (t.state === 'localized' || t.state === 'failed' || t.state === 'dubbing') && (
+                {allowDubbing && t.dub && !skipDub.has(t.domain) && !t.videoUrl && (t.state === 'localized' || t.state === 'failed' || t.state === 'dubbing') && (
                   <div className="flex items-center gap-3 mt-2">
                     <button type="button" onClick={() => void dubOne(t.domain)} disabled={dubbing === t.domain}
                       className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border disabled:opacity-60"
