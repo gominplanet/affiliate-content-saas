@@ -568,7 +568,7 @@ export async function POST(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any)
         .from('integrations')
-        .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag,passport_links_enabled,tier,subscription_period_start,subscription_period_end')
+        .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag,amazon_country_tags,passport_links_enabled,tier,subscription_period_start,subscription_period_end')
         .eq('user_id', ownerId)
         .single(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -901,6 +901,23 @@ export async function POST(request: Request) {
         // there's no error to surface and we stay quiet.
         if (geniuslinkError) {
           geniuslinkError = `Geniuslink call failed: ${geniuslinkError}. Used your Amazon Associates tag as fallback.`
+        }
+      } else if (passportUsed) {
+        // A Passport link was built, so "no affiliate link configured" would be
+        // wrong. But a Passport link is only worth having if a tag exists for
+        // the country it lands in: buildPassportDestination sends the visitor to
+        // their local store with the local tag, falls back to the US store with
+        // the default tag, and if NEITHER exists it sends them to Amazon with no
+        // tag at all. The link works, the viewer buys, the creator earns
+        // nothing, and every screen says Passport is on.
+        //
+        // That is the worst shape a bug can have here, so it is said plainly.
+        const countryTags = (intRow?.amazon_country_tags as Record<string, string> | null) ?? {}
+        const hasAnyTag = !!String(intRow?.amazon_associates_tag ?? '').trim()
+          || Object.values(countryTags).some((t) => String(t ?? '').trim())
+        if (!hasAnyTag) {
+          geniuslinkError = geniuslinkError
+            || 'Your Passport link was created, but you have no Amazon Associates tag saved, so it sends people to Amazon untagged and earns you nothing. Add your tag in Brand Profile → Affiliate Link Routing.'
         }
       } else if (!geniuslinkUsed && !intRow?.amazon_associates_tag) {
         geniuslinkError = geniuslinkError || 'No affiliate link configured — add Geniuslink or Amazon Associates tag in Brand Profile → Affiliate Link Routing'
