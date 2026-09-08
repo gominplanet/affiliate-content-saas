@@ -18,6 +18,7 @@ import { resolveAffiliateUrl } from '@/lib/weekly-digest'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { asinFromAmazonUrl } from '@/lib/product-link'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -31,7 +32,12 @@ export async function POST() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
 
-  const { data: intRow } = await sb.from('integrations').select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret').eq('user_id', user.id).maybeSingle()
+  const { data: intRowRaw } = await sb.from('integrations').select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret').eq('user_id', user.id).maybeSingle()
+  // Secret columns on this row are encrypted at rest. Decrypt before use:
+  // handing the stored ciphertext to the provider as a key fails as
+  // "my links stopped working", with nothing near the cause.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const intRow = decryptIntegrationRow(intRowRaw as any)
   const tier = normalizeTier(intRow?.tier) as Tier
   if (!canUseDealRadar(tier)) return NextResponse.json({ error: 'Link in Bio is available on paid plans.' }, { status: 403 })
   const tag = ((intRow?.amazon_associates_tag as string | null) || '').trim() || null

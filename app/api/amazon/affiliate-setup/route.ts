@@ -11,7 +11,7 @@
 //          new value is sent (blank keeps the stored one).
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { encryptIntegrationWrite, decryptIntegrationRow } from '@/lib/integration-secrets'
 import { snapshotActiveBlogIdentity } from '@/lib/site-identity'
 
 export const dynamic = 'force-dynamic'
@@ -62,7 +62,9 @@ export async function POST(request: Request) {
   // Clearing the key clears the secret too (an orphan secret is useless).
   if (!geniuslinkKey) patch.geniuslink_api_secret = null
 
-  const { error } = await supabase.from('integrations').upsert(patch, { onConflict: 'user_id' })
+  // The Geniuslink key and secret are encrypted at rest with every other
+  // credential in this row.
+  const { error } = await supabase.from('integrations').upsert(encryptIntegrationWrite(patch), { onConflict: 'user_id' })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Capture the tag onto the active site's row (per-site Associates tags, 280).

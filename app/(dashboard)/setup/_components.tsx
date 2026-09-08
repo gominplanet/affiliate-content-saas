@@ -325,17 +325,34 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
     setSaving(true); setError(null)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+    // The Geniuslink key and secret go through the server, NOT straight from
+    // the browser. They are encrypted at rest, and a browser has no access to
+    // the encryption key, so a direct upsert from here would quietly store them
+    // in plain text and defeat the encryption for anyone who used this screen.
+    const res = await fetch('/api/affiliate-links/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        geniuslinkKey: geniuslinkKey || '',
+        geniuslinkSecret: geniuslinkSecret || '',
+        amazonTag: amazonAssociatesTag || '',
+      }),
+    }).catch(() => null)
+    const saveJson = await res?.json().catch(() => null)
+
+    // youtube_channel_id is not a secret, so it stays a direct write.
     // WordPress credentials are managed via the token flow now; don't overwrite them here.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: err } = await supabase.from('integrations').upsert({
       user_id: user.id,
       youtube_channel_id: youtubeChannelId || null,
-      geniuslink_api_key: geniuslinkKey || null,
-      geniuslink_api_secret: geniuslinkSecret || null,
-      amazon_associates_tag: amazonAssociatesTag || null,
     }, { onConflict: 'user_id' })
     setSaving(false)
-    if (err) { setError(err.message) } else { setSaved(true); setTimeout(() => setSaved(false), 2500) }
+
+    const credErr = !res?.ok || saveJson?.error
+    if (credErr) setError(String(saveJson?.error || 'Could not save your affiliate settings. Please try again.'))
+    else if (err) { setError(err.message) }
+    else { setSaved(true); setTimeout(() => setSaved(false), 2500) }
   }
 
   async function testWordPress() {

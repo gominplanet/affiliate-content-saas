@@ -22,6 +22,7 @@ import { asinFromAmazonUrl } from '@/lib/product-link'
 import { isValidAsin } from '@/services/amazon'
 import { resolveAffiliateUrl, resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export const maxDuration = 300
 
@@ -73,11 +74,16 @@ export async function POST(request: Request) {
     // are resolved per-post below — multi-site users have posts on different
     // sites and we need the SAME site's WP API for each write.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: integration } = await supabase
+    const { data: integrationRaw } = await supabase
       .from('integrations')
       .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
       .single()
+    // Secret columns on this row are encrypted at rest. Decrypt before use:
+    // handing the stored ciphertext to the provider as a key fails as
+    // "my links stopped working", with nothing near the cause.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const integration = decryptIntegrationRow(integrationRaw as any)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const wp = integration as Record<string, any> | null
 

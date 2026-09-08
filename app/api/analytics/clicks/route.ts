@@ -38,6 +38,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { CHANNEL_LABELS } from '@/lib/geniuslink-group'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 interface BlogPostRow {
   id: string
@@ -87,11 +88,16 @@ export async function GET() {
 
     // Geniuslink creds
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await supabase
+    const { data: intRowRaw } = await supabase
       .from('integrations')
       .select('geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
       .single()
+    // Secret columns on this row are encrypted at rest. Decrypt before use:
+    // handing the stored ciphertext to the provider as a key fails as
+    // "my links stopped working", with nothing near the cause.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const intRow = decryptIntegrationRow(intRowRaw as any)
 
     if (!intRow?.geniuslink_api_key || !intRow?.geniuslink_api_secret) {
       return NextResponse.json({

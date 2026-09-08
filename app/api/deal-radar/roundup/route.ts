@@ -20,6 +20,7 @@ import { getLinkStyle } from '@/lib/link-cloak'
 import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
 import { writeContentSchema } from '@/lib/content-schema'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -35,9 +36,14 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
 
-    const { data: intRow } = await sb.from('integrations')
+    const { data: intRowRaw } = await sb.from('integrations')
       .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id).maybeSingle()
+    // Secret columns on this row are encrypted at rest. Decrypt before use:
+    // handing the stored ciphertext to the provider as a key fails as
+    // "my links stopped working", with nothing near the cause.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const intRow = decryptIntegrationRow(intRowRaw as any)
     const tier = normalizeTier(intRow?.tier) as Tier
     if (!canUseDealRadar(tier)) {
       return NextResponse.json({ error: 'Amazon Deal Radar is available on paid plans.' }, { status: 403 })

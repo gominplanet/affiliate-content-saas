@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createHostingerService } from '@/services/hostinger'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -9,11 +10,16 @@ export async function GET() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
-  const { data: integration } = await sb
+  const { data: integrationRaw } = await sb
     .from('integrations')
     .select('hostinger_api_key, setup_job_id, setup_subscription_id, setup_status, wordpress_url')
     .eq('user_id', user.id)
     .single()
+  // Secret columns on this row are encrypted at rest. Decrypt before use:
+  // handing the stored ciphertext to the provider as a key fails as
+  // "my links stopped working", with nothing near the cause.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const integration = decryptIntegrationRow(integrationRaw as any)
 
   if (!integration?.setup_job_id) {
     return NextResponse.json({ status: 'no_job' })

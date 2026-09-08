@@ -22,6 +22,7 @@ import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishMedia, refreshLongLivedToken, subscribeToComments } from '@/services/instagram'
 import { generateDmCampaignCaption } from '@/lib/direct-caption'
 import { resolveProductForCampaign } from '@/lib/ig-dm-resolve'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export const maxDuration = 300
 
@@ -99,10 +100,14 @@ export async function POST(request: Request) {
     const keyword = cleanKeyword(body.keyword)
     if (!/^https?:\/\//i.test(url)) return NextResponse.json({ error: 'Paste a full product link (https://…).' }, { status: 400 })
 
-    const [{ data: integ }, { data: brand }] = await Promise.all([
+    const [{ data: integRaw }, { data: brand }] = await Promise.all([
       sb.from('integrations').select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret').eq('user_id', user.id).maybeSingle(),
       sb.from('brand_profiles').select('niches,words_to_avoid,affiliate_disclaimer').eq('user_id', user.id).maybeSingle(),
     ])
+    // The Geniuslink credentials are encrypted at rest, and this hands them
+    // straight to the link resolver, so the ciphertext would be used as a key.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const integ = decryptIntegrationRow(integRaw as any)
     const tier: Tier = normalizeTier(integ?.tier)
 
     const resolved = await resolveProductForCampaign(url, {

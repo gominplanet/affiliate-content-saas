@@ -26,6 +26,7 @@ import { getOwnerUserId } from '@/lib/agency'
 import { pickLinkStyle } from '@/lib/link-style'
 import { canUsePassport } from '@/lib/feature-access'
 import { normalizeTier } from '@/lib/tier'
+import { encryptIntegrationWrite, decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,7 +56,12 @@ export async function GET() {
     const admin = createAdminClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (admin as any).from('integrations').select('*').eq('user_id', ownerId).maybeSingle()
-    const row = (data || {}) as Record<string, unknown>
+    // Decrypted before anything reads it. This response populates the settings
+    // fields, so without it the creator would open the page and find ciphertext
+    // sitting where their Geniuslink key used to be, and saving would store that
+    // as their key.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = (decryptIntegrationRow(data as any) || {}) as Record<string, unknown>
 
     const modeRaw = String(row.blog_social_link_mode ?? '')
     // With no stored mode the chooser must show what generation will ACTUALLY
@@ -125,7 +131,11 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: existing } = await (admin as any).from('integrations')
       .select('*').eq('user_id', ownerId).maybeSingle()
-    const prev = (existing || {}) as Record<string, unknown>
+    // Decrypted for the same reason: keep() carries an unsent value forward from
+    // this row, and re-encrypting is idempotent, but the comparison and the
+    // hasGeniuslink checks below need the real value rather than ciphertext.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prev = (decryptIntegrationRow(existing as any) || {}) as Record<string, unknown>
     /** The sent value, trimmed; an absent field keeps what is stored. Sending an
      *  empty string is an explicit clear, which is how a creator removes a key. */
     const keep = (sent: string | undefined, col: string): string | null =>
@@ -141,7 +151,11 @@ export async function POST(request: Request) {
     // ── Core columns — these always exist. If this fails, the save truly failed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: coreErr } = await (admin as any).from('integrations').upsert(
-      {
+      // encryptIntegrationWrite covers the Geniuslink key and secret, which are
+      // encrypted at rest alongside every OAuth token in this row. It is
+      // idempotent, so a value carried over unchanged by keep() (already
+      // ciphertext) passes through rather than being wrapped twice.
+      encryptIntegrationWrite({
         user_id: ownerId,
         geniuslink_api_key: keep(b.geniuslinkKey, 'geniuslink_api_key'),
         geniuslink_api_secret: keep(b.geniuslinkSecret, 'geniuslink_api_secret'),
@@ -149,7 +163,7 @@ export async function POST(request: Request) {
         // Keep the legacy boolean in sync for any older reader. An unset mode
         // leaves it alone rather than asserting "not geniuslink".
         ...(mode ? { wrap_blog_geniuslink: mode === 'geniuslink' } : {}),
-      },
+      }),
       { onConflict: 'user_id' },
     )
     if (coreErr) {

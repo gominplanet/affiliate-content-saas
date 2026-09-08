@@ -63,6 +63,17 @@ export const INTEGRATION_SECRET_COLUMNS = [
   // GSC OAuth
   'gsc_oauth_access_token',
   'gsc_oauth_refresh_token',
+  // Hostinger — controls the owner's hosting account (create and delete sites),
+  // so arguably the most consequential key in the row. Was stored in plain text
+  // while every OAuth token beside it was encrypted.
+  'hostinger_api_key',
+  // Geniuslink — the API key and secret for the creator's own link account.
+  // Also plain text until now. Note the read side: these two are read in ~25
+  // routes, so scripts/test-integration-secrets.ts holds every one of them to
+  // decrypting, because a route that reads the ciphertext and sends it to
+  // Geniuslink as a key fails as "your links stopped working".
+  'geniuslink_api_key',
+  'geniuslink_api_secret',
   // WordPress (handled separately by rowToSite, but inclusive here so
   // a freshly-pulled integrations row is fully decrypted for routes
   // that read both kinds of secrets at once).

@@ -19,6 +19,7 @@ import { resolveAffiliateUrl } from '@/lib/weekly-digest'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { asinFromAmazonUrl } from '@/lib/product-link'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -72,9 +73,14 @@ async function appendProductToBio(
   // product (already geni.us) is used as-is.
   let url = purl
   if (asinU) {
-    const { data: intRow } = await sb.from('integrations')
+    const { data: intRowRaw } = await sb.from('integrations')
       .select('amazon_associates_tag, geniuslink_api_key, geniuslink_api_secret')
       .eq('user_id', userId).maybeSingle()
+    // Secret columns on this row are encrypted at rest. Decrypt before use:
+    // handing the stored ciphertext to the provider as a key fails as
+    // "my links stopped working", with nothing near the cause.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const intRow = decryptIntegrationRow(intRowRaw as any)
     const tag = ((intRow?.amazon_associates_tag as string | null) || '').trim() || null
     const gKey = ((intRow?.geniuslink_api_key as string | null) || '').trim() || null
     const gSecret = ((intRow?.geniuslink_api_secret as string | null) || '').trim() || null

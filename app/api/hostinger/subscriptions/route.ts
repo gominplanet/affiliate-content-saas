@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createHostingerService } from '@/services/hostinger'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -28,10 +29,18 @@ export async function POST(request: Request) {
 
     // Save the API key to integrations
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase.from('integrations').upsert(
-      { user_id: user.id, hostinger_api_key: apiKey },
+    // The Hostinger key controls the owner's hosting account, so it is
+    // encrypted at rest like every other credential in this row. THE ERROR IS
+    // READ too: a silent failure here means the connect screen says it worked
+    // and the next step cannot find a key.
+    const { error: saveErr } = await supabase.from('integrations').upsert(
+      encryptIntegrationWrite({ user_id: user.id, hostinger_api_key: apiKey }),
       { onConflict: 'user_id' },
     )
+    if (saveErr) {
+      console.error('[hostinger/subscriptions] could not save the API key:', saveErr.message)
+      return NextResponse.json({ error: 'Connected to Hostinger, but we could not save the key. Please try again.' }, { status: 500 })
+    }
 
     return NextResponse.json({ subscriptions: withVhosts })
   } catch (err: unknown) {

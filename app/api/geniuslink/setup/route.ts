@@ -35,6 +35,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { listSites } from '@/lib/wordpress-sites'
 import { groupNameForSiteUrl, YOUTUBE_COPILOT_GROUP_NAME } from '@/lib/geniuslink-group'
 import { getOwnerUserId } from '@/lib/agency'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -79,11 +80,17 @@ async function build(write: boolean): Promise<SetupResponse> {
   const ownerId = await getOwnerUserId(user.id)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await supabase
+  const { data: intRowRaw } = await supabase
     .from('integrations')
     .select('geniuslink_api_key, geniuslink_api_secret, geniuslink_youtube_group_id')
     .eq('user_id', ownerId)
-    .maybeSingle() as unknown as { data: { geniuslink_api_key: string | null; geniuslink_api_secret: string | null; geniuslink_youtube_group_id: number | null } | null }
+    .maybeSingle()
+  // Secret columns on this row are encrypted at rest. Decrypt before use:
+  // handing the stored ciphertext to the provider as a key fails as
+  // "my links stopped working", with nothing near the cause.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const intRow = decryptIntegrationRow(intRowRaw as any) as unknown as
+    { geniuslink_api_key: string | null; geniuslink_api_secret: string | null; geniuslink_youtube_group_id: number | null } | null
 
   const apiKey = intRow?.geniuslink_api_key ?? null
   const apiSecret = intRow?.geniuslink_api_secret ?? null

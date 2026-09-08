@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createHostingerService } from '@/services/hostinger'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -13,11 +14,16 @@ export async function POST(request: Request) {
   // Load saved Hostinger API key
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
-  const { data: integration } = await sb
+  const { data: integrationRaw } = await sb
     .from('integrations')
     .select('hostinger_api_key')
     .eq('user_id', user.id)
     .single()
+  // Secret columns on this row are encrypted at rest. Decrypt before use:
+  // handing the stored ciphertext to the provider as a key fails as
+  // "my links stopped working", with nothing near the cause.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const integration = decryptIntegrationRow(integrationRaw as any)
 
   if (!integration?.hostinger_api_key) {
     return NextResponse.json({ error: 'Hostinger API key not found. Please reconnect.' }, { status: 400 })

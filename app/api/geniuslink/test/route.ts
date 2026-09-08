@@ -23,6 +23,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getOwnerUserId } from '@/lib/agency'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -42,11 +43,17 @@ export async function POST(request: NextRequest) {
     if (!apiKey || !apiSecret) {
       const ownerId = await getOwnerUserId(user.id)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase as any)
+      const { data: raw } = await (supabase as any)
         .from('integrations')
         .select('geniuslink_api_key, geniuslink_api_secret')
         .eq('user_id', ownerId)
         .maybeSingle()
+      // Encrypted at rest. Without this the saved-credentials path would send
+      // ciphertext to Geniuslink and report "your key does not work" about a
+      // key that is perfectly fine, which is the worst possible message here:
+      // this route exists to tell someone whether their key works.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = decryptIntegrationRow(raw as any)
       apiKey = (data?.geniuslink_api_key || '').trim()
       apiSecret = (data?.geniuslink_api_secret || '').trim()
     }

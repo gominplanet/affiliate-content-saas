@@ -981,15 +981,16 @@ function AffiliateStep({ done, onSaved }: { done: boolean; onSaved: () => void }
       const supabase = createBrowserClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { toast.error('Session expired — refresh and try again.'); return }
-      // Mirrors how /brand persists these (client-side update on integrations).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any).from('integrations').upsert({
-        user_id: user.id,
-        geniuslink_api_key: key.trim() || null,
-        geniuslink_api_secret: secret.trim() || null,
-        amazon_associates_tag: tag.trim() || null,
-      }, { onConflict: 'user_id' })
-      if (error) { toast.error(error.message || 'Could not save.'); return }
+      // Through the server, not straight from the browser. These credentials are
+      // encrypted at rest and a browser cannot encrypt, so a direct upsert here
+      // would store them in plain text for everyone who onboards.
+      const res = await fetch('/api/affiliate-links/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ geniuslinkKey: key.trim(), geniuslinkSecret: secret.trim(), amazonTag: tag.trim() }),
+      })
+      const j = await res.json().catch(() => null)
+      if (!res.ok || j?.error) { toast.error(String(j?.error || 'Could not save.')); return }
       toast.success('Affiliate settings saved.')
       onSaved()
     } catch { toast.error('Something went wrong. Try again.') }
@@ -1005,17 +1006,19 @@ function AffiliateStep({ done, onSaved }: { done: boolean; onSaved: () => void }
       // silently hit an empty account — the step never completed. Persisting
       // here means one click both saves and verifies, and marks the step done
       // (completion = key/tag present on the integrations row).
-      const supabase = createBrowserClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { toast.error('Session expired — refresh and try again.'); return }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: saveErr } = await (supabase as any).from('integrations').upsert({
-        user_id: user.id,
-        geniuslink_api_key: key.trim(),
-        geniuslink_api_secret: secret.trim(),
-        ...(tag.trim() ? { amazon_associates_tag: tag.trim() } : {}),
-      }, { onConflict: 'user_id' })
-      if (saveErr) { toast.error(saveErr.message || 'Could not save your Geniuslink key.'); return }
+      // Same route as the Save button above, for the same reason: the server
+      // holds the encryption key, the browser does not.
+      const saveRes = await fetch('/api/affiliate-links/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          geniuslinkKey: key.trim(),
+          geniuslinkSecret: secret.trim(),
+          ...(tag.trim() ? { amazonTag: tag.trim() } : {}),
+        }),
+      })
+      const saveJson = await saveRes.json().catch(() => null)
+      if (!saveRes.ok || saveJson?.error) { toast.error(String(saveJson?.error || 'Could not save your Geniuslink key.')); return }
 
       // Now verify + create groups against the just-saved credentials.
       const res = await fetch('/api/geniuslink/setup', { method: 'POST' })

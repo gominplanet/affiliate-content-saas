@@ -25,6 +25,7 @@ import { getAuthAndOwner } from '@/lib/agency-auth'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { scoreTitle } from '@/lib/thumbnail-score'
 import { deriveProductName } from '@/lib/product-name'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export const maxDuration = 120
 
@@ -581,7 +582,12 @@ export async function POST(request: Request) {
     ])
 
     const brand = brandResult.data as Record<string, unknown> | null
-    const intRow = intResult.data
+    // Geniuslink credentials on this row are encrypted at rest, and the
+    // description builder below hands them to the link wrapper, so ciphertext
+    // would be used as the API key and every link in the description would come
+    // back unwrapped with no error to show for it.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const intRow = decryptIntegrationRow(intResult.data as any)
     // The affiliate/product link the blog already resolved for this video (stored
     // on youtube_videos.product_url at blog time). Reused so a REVIEW video keeps
     // its affiliate link + disclaimer in the YouTube description even when the

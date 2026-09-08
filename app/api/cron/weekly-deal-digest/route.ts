@@ -24,6 +24,7 @@ import { checkSpendCeiling } from '@/lib/ai-spend'
 import { pickDigestDeals, resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, buildDigestThumbnail, type DigestDeal } from '@/lib/weekly-digest'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { writeContentSchema } from '@/lib/content-schema'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -56,7 +57,14 @@ export async function GET(req: Request) {
     .order('last_weekly_digest_at', { ascending: true, nullsFirst: true })
     .limit(200)
 
-  const optedIn = ((users ?? []) as UserRow[]).filter((u) => {
+  // Secret columns are encrypted at rest, and this is a list rather than a
+  // single row, so every row is decrypted before the digest uses its Geniuslink
+  // credentials. Handing the stored ciphertext to Geniuslink as a key would fail
+  // per creator, silently, inside a cron nobody is watching.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const decrypted = ((users ?? []) as any[]).map((u) => decryptIntegrationRow(u))
+
+  const optedIn = (decrypted as UserRow[]).filter((u) => {
     const p = u.notification_preferences
     return p && typeof p === 'object' && (p as Record<string, unknown>).weekly_digest === true
   })

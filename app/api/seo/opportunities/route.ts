@@ -24,6 +24,7 @@ import { getAuthAndOwner } from '@/lib/agency-auth'
 import { getValidGscToken, querySearchAnalytics } from '@/lib/gsc'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportCodeFromUrl } from '@/lib/passport-links'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import {
   classifyPostOpportunity,
   rankOpportunities,
@@ -110,11 +111,16 @@ export async function GET() {
 
     // ── Integrations: GSC property + Geniuslink creds (owner-scoped) ──────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRowRaw } = await (supabase as any)
       .from('integrations')
       .select('gsc_property,geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', ownerId)
       .maybeSingle()
+    // Secret columns on this row are encrypted at rest. Decrypt before use:
+    // handing the stored ciphertext to the provider as a key fails as
+    // "my links stopped working", with nothing near the cause.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const intRow = decryptIntegrationRow(intRowRaw as any)
 
     const gscProperty = (intRow?.gsc_property as string | null) ?? null
 
