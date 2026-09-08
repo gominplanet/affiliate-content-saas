@@ -2376,16 +2376,13 @@ function epcFetchPageInPage(opts) {
           o.pagination.pageNumber = o.pageNumber
           o.pagination.nextToken = opts.nextToken || null
         }
-        // Status override: the grid's "New Opportunities" query filters to
-        // OFFER_AVAILABLE, which is empty once a creator has accepted everything.
-        // To reach the ACCEPTED set (what we actually want) we retry with other
-        // status filters until one returns rows. null = no status filter (all).
-        if (opts.hasStatusOverride) {
-          if (!o.filterOptions || typeof o.filterOptions !== 'object') o.filterOptions = {}
-          o.filterOptions.statuses = opts.statusesValue == null ? null : opts.statusesValue
-        }
-        // Generic filter patch (e.g. budgetAvailabilityScoreList) merged into
-        // filterOptions — used to partition a query past the 2048 deep-paging cap.
+        // Generic filter patch merged into filterOptions. Two users: partitioning
+        // a query past the 2048 deep-paging cap (budgetAvailabilityScoreList),
+        // and the status override the loader falls back to. There used to be a
+        // separate hasStatusOverride/statusesValue pair here doing the second
+        // job, and nothing ever set it, so the fallback it was written for never
+        // ran; statuses is just another key in filterOptions and goes through
+        // the same patch as everything else.
         if (opts.filterPatch && typeof opts.filterPatch === 'object') {
           if (!o.filterOptions || typeof o.filterOptions !== 'object') o.filterOptions = {}
           for (const k in opts.filterPatch) o.filterOptions[k] = opts.filterPatch[k]
@@ -2672,11 +2669,62 @@ async function loadEpcViaApi() {
       const optedInCount = items.reduce((n, x) => n + (x && x.optedIn === true ? 1 : 0), 0)
       probe.push({ try: `cap:${c.label}`, http: r ? r.status : 0, total: r ? r.total : null, items: items.length, optedIn: optedInCount })
       if (r && (r.status === 401 || r.status === 403)) { job.error = 'unauthorized'; break }
-      if (items.length) { liveCaps.push(c); if (!job.sample) { try { job.sample = JSON.stringify(items[0]).slice(0, 1800) } catch (e) {} } }
+      if (items.length) { liveCaps.push({ cap: c, patch: null, label: c.label }); if (!job.sample) { try { job.sample = JSON.stringify(items[0]).slice(0, 1800) } catch (e) {} } }
       await _sleep(250)
     }
+
+    // ── ASK FOR THE OTHER STATUS, RATHER THAN GIVING UP ─────────────────────
+    // Every captured query came back 200 with zero rows. That is the normal
+    // state of a creator who has ACCEPTED all their offers: the grid's "New
+    // Opportunities" tab filters to OFFER_AVAILABLE, and there are none left.
+    // Their accepted campaigns are all still there, behind a different value of
+    // filterOptions.statuses.
+    //
+    // The loader used to stop here and report no-rows, which reads as "Amazon
+    // gave us nothing" when what actually happened is that nobody asked for the
+    // right thing. Capturing the Accepted tab's own query depends on clicking a
+    // tab in a page whose markup Amazon changes; when that click misses, the
+    // whole load dies even though the URL, the headers and the session are all
+    // fine and one field in the body is wrong.
+    //
+    // So: replay the captured query with each status the program uses until one
+    // returns rows. Same URL, same credentials, one changed filter. Ordered
+    // accepted-first, with the unfiltered ask last, so a creator's library fills
+    // with their live campaigns before it fills with everything Amazon knows.
+    if (!liveCaps.length && !job.error && !job.canceled) {
+      const STATUS_TRIES = [
+        ['OPTED_IN'], ['ACCEPTED'], ['OFFER_ACCEPTED'], ['ACTIVE'], ['ENROLLED'],
+        null, // no status filter at all: whatever the account has
+      ]
+      for (const c of caps) {
+        if (job.canceled || job.error || liveCaps.length) break
+        for (const st of STATUS_TRIES) {
+          if (job.canceled || job.error) break
+          const patch = { statuses: st }
+          const r = await fetchPageFor(c, 1, null, patch)
+          const items = r && Array.isArray(r.items) ? r.items : []
+          const optedInCount = items.reduce((n, x) => n + (x && x.optedIn === true ? 1 : 0), 0)
+          const stLabel = st ? st.join('+') : 'all'
+          probe.push({ try: `cap:${c.label}→statuses:${stLabel}`, http: r ? r.status : 0, total: r ? r.total : null, items: items.length, optedIn: optedInCount })
+          if (r && (r.status === 401 || r.status === 403)) { job.error = 'unauthorized'; break }
+          if (items.length) {
+            liveCaps.push({ cap: c, patch, label: `${c.label}→${stLabel}` })
+            if (!job.sample) { try { job.sample = JSON.stringify(items[0]).slice(0, 1800) } catch (e) {} }
+            break
+          }
+          await _sleep(250)
+        }
+      }
+    }
+
     job.diag.probe = probe
-    if (!liveCaps.length) { job.error = job.error || 'no-rows'; job.done = true; job.finishedAt = Date.now(); return }
+    if (!liveCaps.length) {
+      // Still nothing, and now that means something specific: the queries were
+      // reached (HTTP 200) and the account genuinely has no campaigns in any
+      // status we know how to ask for. Say which is which rather than one word.
+      job.error = job.error || (probe.some((p) => p.http === 200) ? 'no-rows-any-status' : 'no-rows')
+      job.done = true; job.finishedAt = Date.now(); return
+    }
     job.total = null // no reliable total; show "Loaded N" only
 
     let pace = 700   // between bursts (each burst already spaces its own pages)
@@ -2723,9 +2771,14 @@ async function loadEpcViaApi() {
     // is NOT subject to the 2048 ranked-feed cap and returns the whole set on its
     // own, so we don't bother splitting the capped New-Opportunities feed by budget
     // (that just churns dupes and trips Amazon's throttle for ~zero new rows).
-    for (const c of liveCaps) {
+    // Each live entry carries the filter patch that MADE it live (a status
+    // override, or null when the captured query worked as-is), so pagination
+    // asks the same question page 1 answered. Paging with the original body
+    // after probing with an override was the version of this that quietly
+    // returned to the empty feed.
+    for (const e of liveCaps) {
       if (job.canceled || job.error) break
-      await paginateQuery(c, null, c.label)
+      await paginateQuery(e.cap, e.patch, e.label)
     }
     job.diag.stop = 'done'
     job.diag.stopLoaded = job.loaded

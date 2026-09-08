@@ -591,6 +591,16 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // description (server double-checks this). Defaults true (nothing to flag).
   const [geniuslinkVerified, setGeniuslinkVerified] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
+  /** A step that is STILL RUNNING, not a failure.
+   *
+   *  "Amazon blocked our server, grabbing the product through SCOUT…" used to be
+   *  pushed through setError, so the recovery working printed in the same red as
+   *  a generation that had died. It reads as the product falling over at the
+   *  exact moment it is routing around a block, and it was reported as one. The
+   *  rule this encodes is the same one the badges follow: a state has to look
+   *  like what it is. Progress is violet and sits with the running swarm; only
+   *  a real stop is red. */
+  const [progress, setProgress] = useState<string | null>(null)
   // True when the last generate failed the ASIN-mismatch tripwire → show "Generate anyway".
   const [asinMismatch, setAsinMismatch] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
@@ -1028,6 +1038,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   async function generate(skipAsinCheck = false) {
     setGenerating(true)
     setError(null)
+    setProgress(null)
     setAsinMismatch(false)
     setGenerated(null)
     setApplied(false)
@@ -1045,9 +1056,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       let scoutTranscript = ''
       try {
         if (video.youtubeVideoId && await isExtensionAvailable()) {
-          setError('Reading the video transcript through SCOUT…')
+          setProgress('Reading the video transcript through SCOUT…')
           scoutTranscript = await requestVideoTranscript(video.youtubeVideoId)
-          setError(null)
+          setProgress(null)
         }
       } catch { /* no transcript available — proceed with product grounding */ }
 
@@ -1078,7 +1089,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       const isOverload = (d: Record<string, unknown>) =>
         typeof d.error === 'string' && /overload/i.test(d.error as string)
       for (let i = 0; !res.ok && isOverload(data) && i < 2; i++) {
-        setError(`MVP is overloaded — auto-retrying (${i + 1}/2)…`)
+        setProgress(`MVP is overloaded, auto-retrying (${i + 1}/2)…`)
         await new Promise(r => setTimeout(r, 8000 + i * 4000))
         res = await callOnce()
         data = await safeJson(res)
@@ -1090,15 +1101,21 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       if (!res.ok && data.scrapeFailed && video.detectedAsin) {
         try {
           if (await isExtensionAvailable()) {
-            setError('Amazon blocked our server — grabbing the product through SCOUT…')
+            setProgress('Amazon blocked our server, so SCOUT is fetching the product from your browser…')
             const prod = await requestAmazonProduct(video.detectedAsin)
             if (prod.ok && prod.product?.title) {
               res = await callOnce(prod.product)
               data = await safeJson(res)
+            } else {
+              // SCOUT was there and still could not get the product. Say that,
+              // rather than leaving the "fetching…" line up while the real error
+              // arrives from somewhere else and reads as unrelated.
+              setProgress(null)
             }
           }
         } catch { /* fall through to the normal error handling below */ }
       }
+      setProgress(null)
       if (data.limitReached) {
         setCapError({
           message: (data.error as string) || 'You\'ve hit your usage cap for this period.',
@@ -1160,6 +1177,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         : msg)
     } finally {
       setGenerating(false)
+      setProgress(null)
     }
   }
 
@@ -2299,6 +2317,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               <ExternalLink size={11} /> Open in YouTube
             </a>
           </div>
+          {progress && (
+            <p className="text-xs text-[#7C3AED] mt-2 flex items-center gap-1.5">
+              <Loader2 size={11} className="animate-spin flex-shrink-0" />
+              {progress}
+            </p>
+          )}
           {error && <p className="text-xs text-[#ff3b30] mt-2">{typeof error === 'string' ? error : 'Something went wrong'}</p>}
           {asinMismatch && !generating && (
             <button

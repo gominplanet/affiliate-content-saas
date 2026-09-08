@@ -305,6 +305,12 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
         toast.info(`Stopped. Loaded ${res.loaded.toLocaleString()} so far — they're saved.`)
       } else if (!res.ok) {
         const why = res.error === 'not-installed' ? 'SCOUT isn’t installed.'
+          // Two different empties, and they need two different answers. Amazon
+          // answering with zero rows in every status is a real "you have no
+          // campaigns"; not being able to ask at all is a "open the tab once".
+          // One message covered both and sent creators to re-open a tab that
+          // was never the problem.
+          : res.error === 'no-rows-any-status' ? 'Amazon answered, and reported no Sponsored Products campaigns in any status — not new, not accepted, not active. If you know you have accepted campaigns, open your Sponsored Products tab on Amazon, check they are listed there, then try again.'
           : (res.error === 'no-rows' || res.error === 'no-accepted-set') ? 'Couldn’t read any EPC rows (see the details line below). Open your Sponsored Products tab on Amazon once, then try again.'
           : res.error === 'no-capture' ? 'Couldn’t read Amazon’s list request. Open your Sponsored Products tab on Amazon once, then try again.'
           : res.error === 'unauthorized' ? 'Amazon rejected the request. Sign in to Creator Connections on Amazon, then retry.'

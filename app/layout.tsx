@@ -41,14 +41,16 @@ export const metadata: Metadata = {
     description: 'Run your whole Amazon affiliate business, written in your real voice.',
     url: 'https://www.mvpaffiliate.io',
     siteName: 'MVP Affiliate',
-    images: [{ url: '/png/mvp-video-to-blog.png', width: 1200, height: 630, alt: 'MVP Affiliate turns your video into a published, SEO optimized blog post' }],
+    // No images here on purpose. app/opengraph-image.tsx generates the card,
+    // and file-based metadata takes precedence, so listing a second image would
+    // only leave a stale path to trip over later.
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
     title: 'MVP Affiliate',
     description: 'Run your whole Amazon affiliate business, written in your real voice.',
-    images: ['/png/mvp-video-to-blog.png'],
+    // Same card as Open Graph, from app/opengraph-image.tsx.
   },
   other: {
     // Pinterest domain verification — links mvpaffiliate.io to our Pinterest

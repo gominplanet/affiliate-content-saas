@@ -1,18 +1,29 @@
 /**
  * POST /api/blog/fix-affiliate-links
  *
- * Scans the user's published posts for BROKEN affiliate links and repairs
- * them. The classic failure: a 10-letter title word (e.g. "UNDERWATER") was
+ * Scans the user's published posts for buy links that are wrong, and repairs
+ * them. Two different kinds of wrong:
+ *
+ * BROKEN. The classic failure: a 10-letter title word (e.g. "UNDERWATER") was
  * mistaken for an Amazon ASIN, so the post links to a dead
  * amazon.com/dp/UNDERWATER (often hidden behind the creator's Geniuslink).
  *
- * For each post we resolve the CURRENT affiliate link to its true destination;
- * if it lands on an Amazon page with a junk ASIN, we re-resolve the right
- * product from the source video (hardened ASIN matcher + Amazon discovery) and
- * rebuild the user's OWN affiliate link (their Geniuslink or Associates tag),
- * then swap it everywhere in the post body + WordPress.
+ * OFF-STYLE. The link works, and it is not the one the creator asked for. A
+ * creator with Geniuslink selected in Brand Profile whose posts carry plain
+ * tagged amazon.com/dp/ links still earns, so nothing looks broken, and he
+ * loses the geo-routing and the click data he pays Geniuslink for. This was
+ * invisible for a long time and the tool made it worse: it only ever looked for
+ * broken links, so the scan came back "no broken affiliate links found" and
+ * read as a clean bill of health.
  *
- * Body: { dryRun?: boolean } — dryRun returns a preview without writing.
+ * For each candidate we resolve the CURRENT affiliate link to its true
+ * destination, re-resolve the right product from the source video (hardened
+ * ASIN matcher + Amazon discovery), rebuild the user's OWN affiliate link
+ * through the ONE style they chose, then swap it everywhere in the post body +
+ * WordPress.
+ *
+ * Body: { dryRun?: boolean, mode?: 'broken' | 'regroup' | 'restyle' | 'all' }
+ * dryRun returns a preview without writing.
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -23,13 +34,16 @@ import { isValidAsin } from '@/services/amazon'
 import { resolveAffiliateUrl, resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { getLinkStyle } from '@/lib/link-cloak'
+import { styleOfUrl, type LinkStyle } from '@/lib/link-style'
 
 export const maxDuration = 300
 
 const GENIUSLINK = /(?:geni\.us|\bgnz\.)/i
-// A Passport Link (branded short domain or the app-origin /go/ fallback). Switching
-// a geni.us link to Passport is an UPGRADE the creator chose, not a downgrade.
-const PASSPORT = /mvpl\.ink|\/go\//i
+// Passport used to be matched here by its own regex, to allow geni.us →
+// Passport as an upgrade. lib/link-style's styleOfUrl now names every style
+// including Passport, and the downgrade guard reads styles rather than domains,
+// so the special case is gone with it.
 const SHORTENERS = /(?:amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i
 const AFFILIATE_HREF = /href="(https?:\/\/[^"]*(?:geni\.us|gnz\.|amzn\.to|a\.co|amazon\.[a-z.]+)[^"]*)"/i
 
@@ -57,18 +71,24 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({})) as {
       dryRun?: boolean
       fixes?: { postId: string; oldUrl: string; newUrl: string }[]
-      /** 'broken' (default): only repair dead/junk-ASIN links — the original
-       *  use case. 'regroup': also re-wrap WORKING geni.us links, used when
-       *  the per-site Geniuslink group rule was added and existing posts
-       *  carry links that landed in MVP-YOUTUBE before the routing fix.
-       *  In regroup mode every blog post with a geni.us link gets a fresh
-       *  shortcode in the per-site group, even if the old one resolves
-       *  cleanly. 2026-06-09. */
-      mode?: 'broken' | 'regroup'
+      /** 'broken': only repair dead/junk-ASIN links — the original use case.
+       *  'regroup': also re-wrap WORKING geni.us links, used when the per-site
+       *  Geniuslink group rule was added and existing posts carry links that
+       *  landed in MVP-YOUTUBE before the routing fix. In regroup mode every
+       *  blog post with a geni.us link gets a fresh shortcode in the per-site
+       *  group, even if the old one resolves cleanly. 2026-06-09.
+       *  'restyle': repoint links that work but are not the style the creator
+       *  chose. 'all' (default) is broken + restyle in one pass, because those
+       *  are the two questions a creator is actually asking when they click a
+       *  button called Fix Affiliate Links, and making them pick a mode first
+       *  is asking them to already know which fault they have. */
+      mode?: 'broken' | 'regroup' | 'restyle' | 'all'
     }
     const dryRun = body.dryRun === true
     const selectedFixes = Array.isArray(body.fixes) ? body.fixes : null
-    const mode: 'broken' | 'regroup' = body.mode === 'regroup' ? 'regroup' : 'broken'
+    const MODES = ['broken', 'regroup', 'restyle', 'all'] as const
+    type Mode = (typeof MODES)[number]
+    const mode: Mode = (MODES as readonly string[]).includes(body.mode || '') ? (body.mode as Mode) : 'all'
 
     // Per-user settings (tier, Amazon tag, Geniuslink keys). WP credentials
     // are resolved per-post below — multi-site users have posts on different
@@ -86,6 +106,15 @@ export async function POST(request: Request) {
     const integration = decryptIntegrationRow(integrationRaw as any)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const wp = integration as Record<string, any> | null
+
+    // The ONE style this creator picked, read through the same function every
+    // generator uses. Named here rather than inferred per post so the answer in
+    // the preview is the same answer the next generation will produce.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chosenStyle: LinkStyle = (await getLinkStyle(supabase as any, user.id)).style
+    const STYLE_LABEL: Record<LinkStyle, string> = {
+      passport: 'Passport links', geniuslink: 'Geniuslink', bitly: 'Bitly', direct: 'plain Amazon links',
+    }
 
     // Per-site service cache so we resolve credentials + build wpService once
     // per site, not once per post (could be hundreds in a bulk fix).
@@ -196,11 +225,29 @@ export async function POST(request: Request) {
       return m ? m[1] : vidUrl || null
     }
 
+    /** The link a READER actually clicks: the first affiliate href in the post
+     *  body. currentLinkFor prefers the URL stored on the video row, which is
+     *  the right answer for finding a dead product but the wrong one for asking
+     *  "is what is published the style this creator chose". The two can differ,
+     *  and when they do it is the page that is wrong or right, not the row. It
+     *  also has to be the string that gets swapped, because a replace of a URL
+     *  that is not in the body changes nothing and would be counted as a fix. */
+    const bodyLinkOf = (content: string): string | null => content.match(AFFILIATE_HREF)?.[1] ?? null
+
     // ── Detect broken links (bounded concurrency on the network resolve) ─────
-    type Candidate = { post: PostRow; video: NonNullable<Awaited<ReturnType<typeof resolveVideo>>>; oldUrl: string; newUrl: string }
+    type Reason = 'broken' | 'regroup' | 'restyle'
+    type Candidate = { post: PostRow; video: NonNullable<Awaited<ReturnType<typeof resolveVideo>>>; oldUrl: string; newUrl: string; reason: Reason }
     const candidates: Candidate[] = []
     const errors: string[] = []
     const unresolved: string[] = []
+    // Why each scanned post was NOT offered as a fix. A count of "nothing to do"
+    // is the same screen whether every link is perfect or every link failed to
+    // rebuild, and the difference is the whole answer, so it is counted.
+    const skipped = { noVideo: 0, noLink: 0, alreadyRight: 0, couldNotRebuild: 0, wouldDowngrade: 0 }
+    // Posts that ARE off-style and that the tool could not convert. These are
+    // the ones a creator most needs named: their link is not the one they chose
+    // and clicking again will not change that.
+    const stuckOffStyle: string[] = []
 
     const CHUNK = 6
     for (let i = 0; i < rows.length; i += CHUNK) {
@@ -208,10 +255,11 @@ export async function POST(request: Request) {
       await Promise.all(chunk.map(async (post) => {
         try {
           const video = await resolveVideo(post.video_id)
-          if (!video) return
+          if (!video) { skipped.noVideo++; return }
           const content = post.content || ''
-          const oldUrl = currentLinkFor(video.product_url, content)
-          if (!oldUrl) return
+          let oldUrl = currentLinkFor(video.product_url, content)
+          if (!oldUrl) { skipped.noLink++; return }
+          const bodyUrl = bodyLinkOf(content)
 
           // Is the current link broken? Direct bad /dp/ ASIN, or a
           // geni.us/short link that resolves to one.
@@ -220,16 +268,40 @@ export async function POST(request: Request) {
             const finalUrl = await resolveTrueDestination(oldUrl)
             broken = badAmazonAsin(finalUrl)
           }
-          // 'broken' mode: only proceed when the link is actually broken.
-          // 'regroup' mode: proceed when the link is broken OR when it's a
-          // geni.us link (which may be in the wrong group). Non-geni.us
-          // working links are left alone — they have no group concept.
-          if (mode === 'broken') {
-            if (!broken) return
-          } else { // regroup
-            const isGeniuslink = GENIUSLINK.test(oldUrl)
-            if (!broken && !isGeniuslink) return
+
+          // Does the link that is live on the page match the style the creator
+          // chose? A null style is a link with nothing to read (a non-Amazon
+          // store page), and stays out of it: a rewrite of somebody's published
+          // post needs certainty, not an inference.
+          const liveStyle = styleOfUrl(bodyUrl || oldUrl)
+          const offStyle = liveStyle !== null && liveStyle !== chosenStyle
+
+          // 'broken': only repair links that are actually dead.
+          // 'regroup': broken, or a geni.us link that may be in the wrong group.
+          // 'restyle': broken, or a working link that is not the chosen style.
+          // 'all': all of the above except regrouping working geni.us links,
+          //   which mints a new shortcode for every post and is a deliberate
+          //   act, not something to fold into a general Fix button.
+          let reason: Reason
+          if (broken) {
+            reason = 'broken'
+          } else if ((mode === 'restyle' || mode === 'all') && offStyle) {
+            reason = 'restyle'
+          } else if (mode === 'regroup' && GENIUSLINK.test(oldUrl)) {
+            reason = 'regroup'
+          } else {
+            // Nothing to do for this post, and WHY matters: a link that is
+            // already right reads very differently from one this mode does not
+            // look at.
+            if (offStyle) stuckOffStyle.push(post.title || post.slug || post.id)
+            else skipped.alreadyRight++
+            return
           }
+          // Swap the string that is actually in the post. For a style change
+          // that is the href a reader clicks; the video row can hold something
+          // else entirely, and replacing a URL the body does not contain writes
+          // nothing while reporting a fix.
+          if (reason === 'restyle' && bodyUrl) oldUrl = bodyUrl
 
           // Re-resolve the RIGHT product + the user's own affiliate link.
           // ownSite = THIS post's site (multi-site self-link filter). Fall
@@ -261,24 +333,45 @@ export async function POST(request: Request) {
               : null,
           })
           if (!affiliateUrl || affiliateUrl === oldUrl || badAmazonAsin(affiliateUrl)) {
+            skipped.couldNotRebuild++
+            unresolved.push(post.title || post.slug || post.id)
+            if (reason === 'restyle') stuckOffStyle.push(post.title || post.slug || post.id)
+            return
+          }
+
+          // RESTYLE HONESTY. The rebuild ran and came back in the wrong style
+          // anyway, which means the mint failed and resolveAffiliateUrl fell
+          // back to a plain tagged link. Swapping one plain link for another
+          // plain link would count as a fix on screen and change nothing the
+          // creator asked about, so it is refused and named instead. This is the
+          // failure that has to look different from success: the whole reason
+          // the tool needed rewriting is that it reported a clean scan while
+          // every link was the wrong kind.
+          if (reason === 'restyle' && styleOfUrl(affiliateUrl) !== chosenStyle) {
+            skipped.couldNotRebuild++
+            stuckOffStyle.push(post.title || post.slug || post.id)
+            return
+          }
+          // NEVER DOWNGRADE A WORKING CLOAKED LINK TO A RAW TAGGED URL.
+          // resolveAffiliateUrl falls back to a plain tagged amazon.com link
+          // whenever minting fails (API error, or the new link doesn't validate
+          // to the product). That fallback is the right answer for a BROKEN
+          // link, where anything beats a dead page. Applied to a working
+          // geni.us or Passport link it silently strips the geo-routing and the
+          // click data the creator pays for, and the screen would call it a fix.
+          //
+          // Read against the CHOSEN style, not against a list of domains: moving
+          // geni.us → Passport, or Geniuslink → Bitly, is the creator changing
+          // their mind and is exactly what restyle is for. Only a fall to
+          // 'direct' that the creator did not ask for is refused.
+          const newStyle = styleOfUrl(affiliateUrl)
+          const oldWasCloaked = liveStyle !== null && liveStyle !== 'direct'
+          if (reason !== 'broken' && oldWasCloaked && newStyle === 'direct' && chosenStyle !== 'direct') {
+            skipped.wouldDowngrade++
             unresolved.push(post.title || post.slug || post.id)
             return
           }
-          // REGROUP SAFETY: never DOWNGRADE a working geni.us link to a raw
-          // Amazon-tag URL. resolveAffiliateUrl falls back to a tagged
-          // amazon.com link when Geniuslink minting fails (API error) or the
-          // new link doesn't validate to the product — that fallback is right
-          // for BROKEN links, but applying it to a working geni.us link would
-          // strip its geo-routing + click tracking. Skip instead; leave the
-          // live link as-is and report it so the user can retry.
-          // EXCEPTION: converting geni.us → a Passport link is an UPGRADE the
-          // creator chose (Passport keeps geo-routing + tracking), so allow it —
-          // this is how a creator who switched to Passport re-links old posts.
-          if (mode === 'regroup' && GENIUSLINK.test(oldUrl) && !GENIUSLINK.test(affiliateUrl) && !PASSPORT.test(affiliateUrl)) {
-            unresolved.push(post.title || post.slug || post.id)
-            return
-          }
-          candidates.push({ post, video, oldUrl, newUrl: affiliateUrl })
+          candidates.push({ post, video, oldUrl, newUrl: affiliateUrl, reason })
         } catch (err) {
           errors.push(`${post.title || post.id}: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -294,14 +387,24 @@ export async function POST(request: Request) {
     void errors
     return NextResponse.json({
       dryRun: true,
+      mode,
       total: rows.length,
       toFix: candidates.length,
       unresolved: unresolved.length,
+      // What the scan actually established, so an empty preview can say which
+      // kind of empty it is. "No broken links found" was true for a creator
+      // whose every link was the wrong style, and it read as all-clear.
+      chosenStyle,
+      chosenStyleLabel: STYLE_LABEL[chosenStyle],
+      skipped,
+      offStyleStuck: stuckOffStyle.slice(0, 20),
+      offStyleStuckCount: stuckOffStyle.length,
       preview: candidates.map((c) => ({
         postId: c.post.id,
         title: (c.post.title || c.post.slug || '').replace(/<[^>]+>/g, ''),
         oldUrl: c.oldUrl,
         newUrl: c.newUrl,
+        reason: c.reason,
       })),
     })
   } catch (err: unknown) {

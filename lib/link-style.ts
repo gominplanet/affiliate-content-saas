@@ -36,6 +36,36 @@ export function geniuslinkCreds(
 }
 
 /**
+ * The style a link ALREADY uses, read off the URL itself.
+ *
+ * pickLinkStyle answers "what should this creator get". This answers "what did
+ * they actually get", and the pair is the only way to see a post that disagrees
+ * with its own settings. Until this existed the repair tool could only find
+ * links that were BROKEN, so a creator whose posts carried plain tagged Amazon
+ * links while their profile said Geniuslink clicked Fix Affiliate Links, was
+ * told "no broken affiliate links found", and reasonably read that as "you are
+ * fine". Every link worked. None of them was the one he chose.
+ *
+ * Returns null for a URL with no style to read: a non-Amazon store page, a
+ * relative href, anything that is not a buy link. Null means "not a candidate",
+ * never "wrong", because a mismatch has to be certain before the tool offers to
+ * rewrite somebody's published post.
+ */
+export function styleOfUrl(url: string | null | undefined): LinkStyle | null {
+  const s = String(url ?? '').trim()
+  if (!/^https?:\/\//i.test(s)) return null
+  if (/(?:geni\.us|\bgnz\.)/i.test(s)) return 'geniuslink'
+  // Passport links are either the creator's branded short domain or the
+  // app-origin /go/ fallback. Both are minted by MVP and by nothing else.
+  if (/mvpl\.ink/i.test(s) || /\/go\/[A-Za-z0-9_-]+/.test(s)) return 'passport'
+  if (/\bbit\.ly\//i.test(s)) return 'bitly'
+  // amzn.to and a.co are Amazon's OWN shorteners, not a cloaker the creator
+  // picked. They read as direct: the tag rides inside them.
+  if (/amazon\.[a-z.]+/i.test(s) || /(?:amzn\.to|a\.co)\//i.test(s)) return 'direct'
+  return null
+}
+
+/**
  * Passport (eligible) wins; else the stored mode; a mode whose credentials are
  * missing downgrades to 'direct' so a link is never left unmade.
  *

@@ -2456,12 +2456,18 @@ export default function ContentPage() {
     return () => { cancelled = true }
   }, [])
   const [linkModeOpen, setLinkModeOpen] = useState(false)
-  // Affiliate-link repair — dryRun finds posts with a broken affiliate link
-  // (e.g. a dead amazon.com/dp/UNDERWATER) and previews old→new before writing.
-  const [affPreview, setAffPreview] = useState<{ postId: string; title: string; oldUrl: string; newUrl: string }[] | null>(null)
+  // Affiliate-link repair — dryRun finds posts whose buy link is broken (a dead
+  // amazon.com/dp/UNDERWATER) or is not the style the creator chose, and
+  // previews old→new before writing. `reason` says which of the two, so the
+  // modal can tell a repair apart from a switch.
+  const [affPreview, setAffPreview] = useState<{ postId: string; title: string; oldUrl: string; newUrl: string; reason?: string }[] | null>(null)
   const [affSelected, setAffSelected] = useState<Set<string>>(new Set())
   const [affPreviewLoading, setAffPreviewLoading] = useState(false)
   const [affApplying, setAffApplying] = useState(false)
+  /** The creator's chosen style, named by the server ("Geniuslink", "Passport
+   *  links"), so the modal states what the links are being moved TO rather than
+   *  leaving them to read it off two URLs. */
+  const [affStyleLabel, setAffStyleLabel] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'horizontal' | 'vertical' | 'posts' | 'scheduled'>('horizontal')
   // Multi-site (Pro): the blog fresh generations + scheduled posts target.
   // SitePicker auto-selects the default for 2+ site users; null (single-site)
@@ -3691,8 +3697,8 @@ export default function ContentPage() {
   // Track which mode triggered the preview so the apply step + UI copy
   // can show the right wording ("Fix" vs "Re-route to per-site groups").
   // 2026-06-09 — added when the regroup mode landed on the route.
-  const [affMode, setAffMode] = useState<'broken' | 'regroup'>('broken')
-  async function previewFixAffiliate(mode: 'broken' | 'regroup' = 'broken') {
+  const [affMode, setAffMode] = useState<'broken' | 'regroup' | 'restyle' | 'all'>('all')
+  async function previewFixAffiliate(mode: 'broken' | 'regroup' | 'restyle' | 'all' = 'all') {
     setAffMode(mode)
     setAffPreviewLoading(true)
     setFixCatResult(null)
@@ -3706,18 +3712,47 @@ export default function ContentPage() {
       if (data.error) {
         setFixCatResult(`Error: ${data.error}`)
       } else if (!Array.isArray(data.preview) || data.preview.length === 0) {
-        const tail = data.unresolved ? ` (${data.unresolved} couldn't be auto-resolved — check those manually).` : ''
-        setFixCatResult(`No broken affiliate links found across ${data.total ?? 0} posts.${tail}`)
+        // AN EMPTY SCAN HAS TO SAY WHICH KIND OF EMPTY IT IS.
+        // This message used to be "No broken affiliate links found across N
+        // posts." It was true, it was reassuring, and it was shown to a creator
+        // whose every published link was a plain Amazon URL while his profile
+        // said Geniuslink. He clicked the button, read that, and had no way to
+        // know the tool had never looked at the thing that was wrong.
+        setFixCatResult(emptyScanMessage(data))
       } else {
-        const rows = data.preview as { postId: string; title: string; oldUrl: string; newUrl: string }[]
+        const rows = data.preview as { postId: string; title: string; oldUrl: string; newUrl: string; reason?: string }[]
         setAffPreview(rows)
         setAffSelected(new Set(rows.map(r => r.postId))) // default: all checked
+        setAffStyleLabel((data.chosenStyleLabel as string) || null)
       }
     } catch {
       setFixCatResult('Something went wrong.')
     } finally {
       setAffPreviewLoading(false)
     }
+  }
+
+  /** What the scan established, in a sentence, when there is nothing to fix. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function emptyScanMessage(data: any): string {
+    const total = data.total ?? 0
+    const style = (data.chosenStyleLabel as string) || 'your chosen link style'
+    const stuck = (data.offStyleStuckCount as number) || 0
+    const parts: string[] = []
+    if (total === 0) return 'No published posts to scan yet.'
+    parts.push(`Checked ${total} post${total !== 1 ? 's' : ''}.`)
+    if (stuck > 0) {
+      // The important case. Nothing was fixed AND something is wrong.
+      const names = (data.offStyleStuck as string[] | undefined)?.slice(0, 3).join(', ')
+      parts.push(
+        `${stuck} still ${stuck === 1 ? 'does' : 'do'} not use ${style} and could not be converted automatically${names ? ` (${names}${stuck > 3 ? ', …' : ''})` : ''}.`,
+        'That usually means the link could not be minted. Check your link credentials in Brand Profile, then run this again.',
+      )
+    } else {
+      parts.push(`Every buy link works and already uses ${style}.`)
+    }
+    if (data.unresolved) parts.push(`${data.unresolved} could not be auto-resolved, so ${data.unresolved === 1 ? 'it was' : 'they were'} left alone.`)
+    return parts.join(' ')
   }
 
   /** Step 2 — apply ONLY the fixes the user kept checked. */
@@ -3738,16 +3773,24 @@ export default function ContentPage() {
       if (data.error) {
         setFixCatResult(`Error: ${data.error}`)
       } else if (data.fixed === 0) {
-        setFixCatResult('No affiliate links needed fixing.')
+        // NOT "nothing needed fixing". The user just ticked boxes and pressed
+        // apply, so zero written means the writes failed, and saying otherwise
+        // turns a failure into a shrug.
+        const why = Array.isArray(data.errors) && data.errors.length ? ` First error: ${String(data.errors[0]).slice(0, 160)}` : ''
+        setFixCatResult(`Nothing was written. ${data.attempted ?? 0} post${(data.attempted ?? 0) !== 1 ? 's were' : ' was'} attempted and the link in the post body did not change.${why}`)
       } else {
-        const failed = Array.isArray(data.errors) && data.errors.length ? ` — ${data.errors.length} failed` : ''
-        setFixCatResult(`Done — fixed the affiliate link on ${data.fixed} post${data.fixed !== 1 ? 's' : ''}${failed}.`)
+        const failed = Array.isArray(data.errors) && data.errors.length ? `, ${data.errors.length} failed` : ''
+        const missed = typeof data.attempted === 'number' && data.attempted > data.fixed && !failed
+          ? `, ${data.attempted - data.fixed} left unchanged`
+          : ''
+        setFixCatResult(`Done. Fixed the affiliate link on ${data.fixed} post${data.fixed !== 1 ? 's' : ''}${failed}${missed}.`)
       }
     } catch {
       setFixCatResult('Something went wrong.')
     } finally {
       setAffApplying(false)
       setAffPreview(null)
+      setAffStyleLabel(null)
     }
   }
 
@@ -4079,9 +4122,9 @@ export default function ContentPage() {
           onClick={previewFixCategories} loading={catPreviewLoading} disabled={catPreviewLoading || fixingCategories}
           title="Preview which category each post will be assigned to before applying" />
         <ToolButton tint="rose" icon={<Wrench size={18} />} label="Fix Affiliate Links"
-          desc={affPreviewLoading && affMode === 'broken' ? 'Scanning links…' : 'Find & repair broken'}
-          onClick={() => previewFixAffiliate('broken')} loading={affPreviewLoading && affMode === 'broken'} disabled={affPreviewLoading || affApplying}
-          title="Scan published posts for broken affiliate links and repair them" />
+          desc={affPreviewLoading ? 'Scanning links…' : 'Repair broken & off-style'}
+          onClick={() => previewFixAffiliate('all')} loading={affPreviewLoading} disabled={affPreviewLoading || affApplying}
+          title="Scan published posts for buy links that are broken, or that aren't the link style you chose in Brand Profile, and repair them" />
 
         <ToolButton tint="blue" icon={<Handshake size={18} />} label="Brand message" desc="Edit the recap you send"
           onClick={() => setBrandSettingsOpen(true)}
@@ -4942,8 +4985,20 @@ export default function ContentPage() {
                 </h3>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
                   {affMode === 'regroup'
-                    ? `${affPreview.length} post${affPreview.length !== 1 ? 's' : ''} carry a geni.us link that will be re-wrapped in the correct per-site group. Each link gets a NEW shortcode — the old one stays alive in your Geniuslink dashboard but is no longer in your post. Uncheck any you want to skip.`
-                    : `${affPreview.length} post${affPreview.length !== 1 ? 's' : ''} have a broken buy link. Uncheck any you don't want to change — nothing's saved yet.`}
+                    ? `${affPreview.length} post${affPreview.length !== 1 ? 's' : ''} carry a geni.us link that will be re-wrapped in the correct per-site group. Each link gets a NEW shortcode. The old one stays alive in your Geniuslink dashboard but is no longer in your post. Uncheck any you want to skip.`
+                    : (() => {
+                        // Say what each half of the list is. A broken link and a
+                        // working link in the wrong style are different things
+                        // to agree to, and a creator deserves to see which is
+                        // which before ticking the box.
+                        const broke = affPreview.filter(r => r.reason === 'broken').length
+                        const styled = affPreview.filter(r => r.reason === 'restyle').length
+                        const bits: string[] = []
+                        if (broke) bits.push(`${broke} ${broke === 1 ? 'has a broken buy link' : 'have a broken buy link'}`)
+                        if (styled) bits.push(`${styled} ${styled === 1 ? 'uses a link style' : 'use a link style'} you didn't choose${affStyleLabel ? ` and will move to ${affStyleLabel}` : ''}`)
+                        const lead = bits.length ? bits.join(', and ') : `${affPreview.length} need${affPreview.length === 1 ? 's' : ''} a new buy link`
+                        return `${lead}. Uncheck any you don't want to change. Nothing's saved yet.`
+                      })()}
                 </p>
               </div>
               <button
@@ -4979,7 +5034,15 @@ export default function ContentPage() {
                         className="mt-0.5 h-4 w-4 flex-shrink-0 accent-[#7C3AED] cursor-pointer"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-1 line-clamp-2">{row.title}</p>
+                        <div className="flex items-start gap-2 mb-1">
+                          <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2 flex-1">{row.title}</p>
+                          {row.reason === 'restyle' && (
+                            <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-[#7C3AED]/10 text-[#7C3AED] font-semibold">Wrong style</span>
+                          )}
+                          {row.reason === 'broken' && (
+                            <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-[#ff3b30]/10 text-[#ff3b30] font-semibold">Broken</span>
+                          )}
+                        </div>
                         <p className="text-[11px] text-[#ff3b30] break-all font-mono">− {row.oldUrl}</p>
                         <p className="text-[11px] text-[#34c759] break-all font-mono">+ {row.newUrl}</p>
                       </div>
