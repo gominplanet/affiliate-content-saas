@@ -25,6 +25,7 @@ import { getExternalKey } from '@/lib/external-keys'
 import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
 import { writeContentSchema } from '@/lib/content-schema'
+import { attachPostHero } from '@/lib/post-hero'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     const sb = supabase as any
 
     const { data: intRow } = await sb.from('integrations')
-      .select('tier,geniuslink_api_key,geniuslink_api_secret')
+      .select('tier,geniuslink_api_key,geniuslink_api_secret,subscription_period_start,subscription_period_end')
       .eq('user_id', user.id).maybeSingle()
     const tier = normalizeTier(intRow?.tier) as Tier
     if (!canUseDealRadar(tier)) {
@@ -134,20 +135,27 @@ export async function POST(request: Request) {
     const wpService = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
     let categoryIds: number[] = []
     try { const id = await wpService.createCategory('Deals'); if (id) categoryIds = [id] } catch { /* leave as-is */ }
-    let featuredMediaId: number | null = null
-    const heroImage = items.find((it) => it.image)?.image
-    if (heroImage) {
-      try {
-        const media = await wpService.uploadImageFromUrl(heroImage, `${(theme || 'deals').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deals'}-walmart-roundup.jpg`)
-        featuredMediaId = (media?.id as number | undefined) ?? null
-      } catch (err) { console.warn('[walmart/roundup] featured image upload failed:', err instanceof Error ? err.message : err) }
-    }
     const slug = keywordSlug(title, theme)
+
+    // Same fix as the Amazon roundup: a post about several products gets a
+    // header showing several products, not the first one's stock photo.
+    // attachPostHero falls back to exactly that photo when the render is
+    // unavailable, so this is never worse than what it replaced.
+    const hero = await attachPostHero({
+      wpService, db: sb, userId: user.id, tier,
+      subscriptionStart: (intRow?.subscription_period_start as string | null) ?? null,
+      subscriptionEnd: (intRow?.subscription_period_end as string | null) ?? null,
+      products: items.map((it) => ({ imageUrl: it.image, title: it.name || '' })),
+      title, slug, kind: 'deal',
+      category: theme || nicheLabel,
+      brandName: (brand?.name as string | null) ?? null,
+    })
+    if (hero.note) console.warn('[walmart/roundup] hero:', hero.note)
     const wpPost = await wpService.createPost({
       title, slug, content: bodyHtml, excerpt,
       status: 'publish', comment_status: 'closed', ping_status: 'closed',
       ...(categoryIds.length ? { categories: categoryIds } : {}),
-      ...(featuredMediaId ? { featured_media: featuredMediaId } : {}),
+      ...(hero.mediaId ? { featured_media: hero.mediaId } : {}),
     })
 
     const seoKeyword = theme || nicheLabel
@@ -177,7 +185,7 @@ export async function POST(request: Request) {
       title,
       description: excerpt,
       html: bodyHtml,
-      imageUrl: heroImage || null,
+      imageUrl: hero.sourceUrl,
       pageType: 'BlogPosting',
       category: 'Deals',
     })

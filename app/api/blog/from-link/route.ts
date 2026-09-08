@@ -43,6 +43,7 @@ import { getAuthAndOwner } from '@/lib/agency-auth'
 import { spendGate } from '@/lib/ai-spend'
 import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
 import { fal } from '@fal-ai/client'
+import { attachPostHero } from '@/lib/post-hero'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -469,10 +470,30 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     }
   }
 
-  // ── 5. Hero / featured image (text-free, brand-free) ────────────────────────
+  // ── 5. Hero / featured image ────────────────────────────────────────────────
+  // The Art Director hero FIRST, because it is built from the real product
+  // photograph and therefore actually shows the product this post is about.
+  // What follows it is a text-to-image scene generated from a written prompt:
+  // pretty, on-topic, and containing no trace of the product itself. That was
+  // the best available before there was a reference-based designer, and it is
+  // now the second choice rather than the first.
   let featuredMedia: number | undefined
+  let heroSourceUrl: string | null = null
+  if (productImageUrl) {
+    const designed = await attachPostHero({
+      wpService, db: supabase, userId: user.id, tier,
+      subscriptionStart: null, subscriptionEnd: null,
+      products: [{ imageUrl: productImageUrl, title: productName || title }],
+      title, slug, kind: 'review',
+      category: parsed.target_keyword || title,
+      productContext: (pDescription || '').slice(0, 700),
+      brandName: null,
+    })
+    if (designed.mediaId) { featuredMedia = designed.mediaId; heroSourceUrl = designed.sourceUrl }
+    if (designed.note) console.warn('[blog/from-link] hero:', designed.note)
+  }
   try {
-    if (process.env.FAL_KEY) {
+    if (!featuredMedia && process.env.FAL_KEY) {
       fal.config({ credentials: process.env.FAL_KEY })
       const heroPrompt = `${parsed.hero_prompt || `An editorial hero photo representing ${title}`}. Bright, aspirational, magazine-style editorial photography, clean composition, premium lighting, photorealistic. ${NO_BRAND_IMAGE_CLAUSE} No text, no words, no letters, no logos anywhere.`
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
