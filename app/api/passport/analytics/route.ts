@@ -8,7 +8,7 @@
 // the dashboard consumes stays the same.
 import { NextResponse } from 'next/server'
 import {
-  sourceLabel, cleanProductLabel, isYouTubeVideoId, coverage, coverageNote,
+  sourceLabel, cleanProductLabel, isYouTubeVideoId, coverage, coverageNote, truncationNote,
 } from '@/lib/passport-analytics-labels'
 import { createServerClient } from '@/lib/supabase/server'
 import { AMAZON_MARKETPLACES as MARKETPLACES } from '@/lib/passport-links'
@@ -63,7 +63,11 @@ export async function GET(request: Request) {
     }
     if (error) {
       // Table missing (migration 282 not run) → empty dashboard, not an error.
-      return NextResponse.json({ ok: true, total: 0, botClicks: 0, byGroup: [], byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, coverage: { known: 0, unclassified: 0 }, coverageNote: null, days })
+      // Said out loud rather than rendered as a confident zero: an account with
+      // no table and an account with no clicks look the same on screen, and only
+      // one of them is something the creator can act on.
+      console.warn('[passport/analytics] click table unreadable:', error.message)
+      return NextResponse.json({ ok: true, unavailable: true, total: 0, botClicks: 0, byGroup: [], byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, coverage: { known: 0, unclassified: 0 }, coverageNote: null, days })
     }
     const allRows = (rows ?? []) as { code: string; country: string | null; marketplace: string | null; source: string | null; device?: string | null; browser?: string | null; os?: string | null; created_at: string }[]
     // Bots (crawlers + social link-preview fetchers like facebookexternalhit /
@@ -192,7 +196,16 @@ export async function GET(request: Request) {
       // panel that silently describes a quarter of the data is worse than one
       // that says so.
       coverage: cov,
-      coverageNote: coverageNote(cov),
+      // The row cap is part of what these numbers mean, so it is said in the
+      // same place the device coverage caveat is said. At MAX_ROWS the query
+      // stops being "your last N days" and quietly becomes "your most recent
+      // 20,000 clicks", and every total, split and chart below is computed on
+      // that truncated set. Silence there would make the dashboard wrong in a
+      // way nobody could see.
+      coverageNote: [
+        truncationNote(allRows.length, MAX_ROWS, days),
+        coverageNote(cov),
+      ].filter(Boolean).join(' ') || null,
       // Sources carry a video id, 'blog', 'direct' or a referrer host in one
       // column. The id stays (it is what makes a row traceable) and the label is
       // what a person reads.
@@ -210,7 +223,20 @@ export async function GET(request: Request) {
       })),
       byDay,
     })
-  } catch {
-    return NextResponse.json({ ok: true, total: 0, botClicks: 0, byGroup: [], byCountry: [], byMarketplace: [], byDevice: [], byBrowser: [], byDay: [], topProducts: [], bySource: [], uniqueProducts: 0, uniqueCountries: 0, coverage: { known: 0, unclassified: 0 }, coverageNote: null, days })
+  } catch (e) {
+    // NOT a zero. This used to return ok:true with every total set to zero,
+    // which renders a dashboard identical to a creator who has never had a
+    // click. A chart that reports a confident zero when it actually failed is
+    // worse than one that says it failed, because nobody goes looking.
+    //
+    // The bare catch also swallowed the reason, so there was nothing in the
+    // logs to work back from afterwards. Both halves are fixed here.
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[passport/analytics] failed to build the dashboard:', msg)
+    return NextResponse.json({
+      ok: false,
+      error: 'We could not load your click data just now. This is a problem on our side, not a sign that your links have no clicks. Try again in a moment.',
+      days,
+    }, { status: 500 })
   }
 }

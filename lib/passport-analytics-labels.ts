@@ -120,3 +120,19 @@ export function coverageNote(c: ClassifiedTotals): string | null {
   const pct = Math.round((c.known / total) * 100)
   return `Device and browser are known for ${c.known} of ${total} clicks (${pct}%). The rest arrived with an agent MVP could not read and are not counted in this panel.`
 }
+
+/** The sentence that admits the dashboard read only part of the period.
+ *
+ *  The analytics query takes at most MAX_ROWS clicks, newest first. Past that
+ *  point "your last 30 days" quietly becomes "your most recent 20,000 clicks",
+ *  and every total, country split, device split and daily chart below is
+ *  computed on the truncated set. Nothing said so, which made the dashboard
+ *  wrong in the one way a creator could never notice: the numbers still looked
+ *  like numbers.
+ *
+ *  Returns null below the cap so an account nowhere near it is not nagged. */
+export function truncationNote(rowsRead: number, max: number, days: number): string | null {
+  if (rowsRead < max) return null
+  const n = max.toLocaleString('en-US')
+  return `You have more than ${n} clicks in this period, which is the most this view can read at once. The figures below cover your most recent ${n} clicks rather than the full ${days} days. Choose a shorter period for exact totals.`
+}

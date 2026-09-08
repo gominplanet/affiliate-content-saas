@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { countryName, countryFlag } from '@/lib/passport-analytics-labels'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, Globe, MousePointerClick, MapPin, Package, TrendingUp, Store, Smartphone, Monitor, Tablet } from 'lucide-react'
+import { Loader2, Globe, MousePointerClick, MapPin, Package, TrendingUp, Store, Smartphone, Monitor, Tablet, TriangleAlert } from 'lucide-react'
 import PassportLinksCard from '@/components/brand/PassportLinksCard'
 import PassportQuickLink from '@/components/passport/PassportQuickLink'
 import PassportPowerToggle from '@/components/passport/PassportPowerToggle'
@@ -52,6 +52,9 @@ interface Analytics {
   /** How much of the traffic the device/browser panel actually accounts for. */
   coverage?: { known: number; unclassified: number }
   coverageNote?: string | null
+  /** True when the click table itself could not be read. The totals in this
+   *  response are placeholders, not measurements. */
+  unavailable?: boolean
   byDay: { date: string; count: number }[]
 }
 
@@ -61,6 +64,9 @@ const DEVICE_ICON: Record<string, React.ReactNode> = {
 
 export default function PassportPage() {
   const [data, setData] = useState<Analytics | null>(null)
+  /** Set when the numbers could not be loaded, so the page can say so instead
+   *  of rendering zeros that read as a real answer. */
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [days, setDays] = useState(30)
   const [group, setGroup] = useState('') // '' all · 'none' ungrouped · else group id
@@ -74,11 +80,27 @@ export default function PassportPage() {
 
   const load = useCallback(async (d: number, g: string) => {
     setLoading(true)
+    // A failed load and an account with no clicks used to render identically,
+    // as a confident row of zeros. They are different things and the creator
+    // can only act on one of them, so the error is now kept and shown.
+    setLoadError(null)
     try {
       const res = await fetch(`/api/passport/analytics?days=${d}${g ? `&group=${encodeURIComponent(g)}` : ''}`)
       const j = await res.json()
-      setData(j?.ok ? j : null)
-    } catch { setData(null) } finally { setLoading(false) }
+      if (j?.ok) {
+        setData(j)
+        // The table itself could not be read. Not a zero either, and not
+        // something a creator can fix, but they should not be told they have
+        // no clicks when nobody actually looked.
+        if (j.unavailable) setLoadError('Your click data is not available right now. This is a problem on our side, not a sign that your links have no clicks.')
+      } else {
+        setData(null)
+        setLoadError(typeof j?.error === 'string' ? j.error : 'We could not load your click data just now. This is a problem on our side, not a sign that your links have no clicks.')
+      }
+    } catch {
+      setData(null)
+      setLoadError('We could not reach the server to load your click data. Check your connection and try again.')
+    } finally { setLoading(false) }
   }, [])
   useEffect(() => { if (canUse) void load(days, group) }, [days, group, load, canUse])
 
@@ -105,6 +127,31 @@ export default function PassportPage() {
         </div>
       ) : (
       <>
+      {/* The numbers could not be loaded. Shown ABOVE the stats rather than in
+          place of them, because the rest of the page (the toggle, link
+          creation, the link list) still works and is still worth having. The
+          point is only that the figures below are not an answer. */}
+      {loadError && !loading && (
+        <div
+          className="mb-5 rounded-lg px-4 py-3 flex items-start gap-2.5"
+          role="status"
+          style={{ background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)' }}
+        >
+          <TriangleAlert size={15} className="mt-0.5 shrink-0" style={{ color: '#DC2626' }} />
+          <div>
+            <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Click data did not load</p>
+            <p className="text-[12.5px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-3)' }}>{loadError}</p>
+            <button
+              onClick={() => void load(days, group)}
+              className="mt-2 text-[12px] font-semibold underline underline-offset-2"
+              style={{ color: '#7C3AED' }}
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Big, obvious ON/OFF switch — the primary control. */}
       <div className="mb-5">
         <PassportPowerToggle />
