@@ -964,6 +964,10 @@ export async function POST(request: Request) {
       bitly: 'a Bitly short link', direct: 'a plain tagged Amazon link',
     }
     let geniuslinkSkippedByStyle = false
+    // True when the creator's chosen style was actually delivered. Separates
+    // "your setup is working and here is a detail" from "we could not build the
+    // link you asked for", which the UI must not render the same way.
+    let linkStyleHonoured = false
     const hasGeniuslinkKeys = !!((intRow?.geniuslink_api_key || ytStyle.geniuslinkKey)
       && (intRow?.geniuslink_api_secret || ytStyle.geniuslinkSecret))
     if (affiliateUrl && !geniuslinkError && ytStyle.style !== linkStyleUsed) {
@@ -979,12 +983,26 @@ export async function POST(request: Request) {
             ? 'The Bitly shorten did not come back. Hit Regenerate, and check your Bitly connection in Brand Profile → Affiliate Link Routing if it keeps happening.'
             : 'Hit Regenerate, and check Brand Profile → Affiliate Link Routing if it keeps happening.')
     } else if (affiliateUrl && !geniuslinkError && !geniuslinkUsed && hasGeniuslinkKeys) {
-      // Nothing failed: their Geniuslink keys simply are not the chosen style.
-      // Worth saying, because a paid service sitting idle looks like a bug.
+      // NOTHING IS WRONG HERE. The creator picked a style, MVP delivered that
+      // style, and their old Geniuslink keys are simply idle because this style
+      // does not use them. Worth mentioning once, because a paid service
+      // sitting unused is worth knowing about.
+      //
+      // It used to be phrased and rendered exactly like the failure above: an
+      // amber box, a warning triangle, opening with "Geniuslink not used", and
+      // closing by telling them to go and change the setting. For a creator who
+      // deliberately moved to Passport and left the keys behind, that fires on
+      // EVERY generation, for ever, and reads as "your links are broken". One
+      // did read it that way and reported the product as still wrong.
+      //
+      // So it now leads with what was used rather than what was not, drops the
+      // instruction to change a setting that is already correct, and is flagged
+      // as honoured so the UI can render it as information instead of alarm.
       geniuslinkSkippedByStyle = true
+      linkStyleHonoured = true
       geniuslinkError = ytStyle.style === 'direct'
-        ? 'Your Geniuslink keys are saved but your link style is Direct, so this description uses a plain Amazon link. Switch it in Brand Profile → Affiliate Link Routing.'
-        : `Your link style is ${STYLE_LABEL[ytStyle.style]}, so this description uses ${GOT_LABEL[linkStyleUsed]} rather than Geniuslink. Change it in Brand Profile → Affiliate Link Routing.`
+        ? 'This description uses a plain tagged Amazon link, which is your Direct link style. Your saved Geniuslink keys are not used by that style.'
+        : `This description uses ${GOT_LABEL[linkStyleUsed]}, which is your ${STYLE_LABEL[ytStyle.style]} setting working as chosen. Your saved Geniuslink keys are not used by this style.`
     }
 
     // Build subject context for the agent swarm. In product mode this is
@@ -1146,7 +1164,15 @@ export async function POST(request: Request) {
     // got the same address printed twice, three lines apart. Neither line was
     // wrong alone; it was only visible in the assembled description. They are
     // now built together, by a module that can be read and tested as one block.
-    const footer = footerBlocks({ websiteUrl, contactEmail, contactPreference })
+    // promoted: an affiliate description has a slot high up, under the
+    // disclosure and above the hashtags, where the blog link is actually seen.
+    // existingText: the creator's own custom block, so MVP never adds a link
+    // they already wrote themselves.
+    const footer = footerBlocks({
+      websiteUrl, contactEmail, contactPreference,
+      promoted: !!affiliateUrl,
+      existingText: customBlock || null,
+    })
     const collabLine = footer.collabLine ?? ''
 
     const gearBlock = gearSections.map(section => {
@@ -1174,10 +1200,15 @@ export async function POST(request: Request) {
       )
       // Blog backlink, promoted HIGH — right under the disclosure, above the
       // hashtags — with an arrow so it lands above YouTube's "...more" fold
-      // where viewers actually see it. A shorter punchy version up here; the
-      // fuller line still appears lower down. Only when a Blog URL is saved.
-      if (websiteUrl) {
-        descParts.push(`----------`, `👉 For more in-depth reviews, check out my blog: ${websiteUrl}`)
+      // where viewers actually see it.
+      //
+      // This is now the ONLY place the blog link is printed in an affiliate
+      // description. It used to be a "shorter punchy version up here" with the
+      // fuller line repeated lower down, which read as the same address twice
+      // to the creator whose description it was. footerBlocks decides which
+      // slot wins and blanks the other, so the two can never both fire.
+      if (footer.promotedBlogLine) {
+        descParts.push(`----------`, footer.promotedBlogLine)
       }
       descParts.push(
         `----------`,
@@ -1324,6 +1355,7 @@ export async function POST(request: Request) {
       geniuslinkVerified,
       linkStyle: linkStyleUsed,
       geniuslinkSkippedByStyle,
+      linkStyleHonoured,
       agentInsights: {
         targetBuyer: productAnalysis.targetBuyer,
         topBenefits: productAnalysis.topBenefits,

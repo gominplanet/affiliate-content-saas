@@ -581,6 +581,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    *  setting is pointing somewhere else, and telling them to check their
    *  credentials would send them looking for a fault that isn't there. */
   const [geniuslinkSkippedByStyle, setGeniuslinkSkippedByStyle] = useState(false)
+  /** The chosen link style was actually delivered. The note below is then a
+   *  fact about the creator's setup, not a failure, and must not be dressed as
+   *  one: an amber box with a warning triangle on every single generation is
+   *  how a correct configuration got reported as a broken product. */
+  const [linkStyleHonoured, setLinkStyleHonoured] = useState(false)
   // False only when the affiliate link is somehow missing from the assembled
   // description (server double-checks this). Defaults true (nothing to flag).
   const [geniuslinkVerified, setGeniuslinkVerified] = useState<boolean>(true)
@@ -1104,6 +1109,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       setProductDiscoverySource((data.productDiscoverySource ?? null) as typeof productDiscoverySource)
       setGeniuslinkError((data.geniuslinkError ?? null) as string | null)
       setGeniuslinkSkippedByStyle((data.geniuslinkSkippedByStyle ?? false) as boolean)
+      setLinkStyleHonoured((data.linkStyleHonoured ?? false) as boolean)
       setGeniuslinkVerified((data.geniuslinkVerified ?? true) as boolean)
 
       // ── Thumbnail no longer auto-fires after metadata generation ─────────
@@ -2331,8 +2337,13 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               blip — don't tell the user to fix their credentials for that (it's
               misleading). Only point at credentials for a real auth/config error. */}
           {geniuslinkUsed === false && geniuslinkError && (
-            <div className="mx-5 mb-3 px-3 py-2 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/20 text-xs text-[#ff9500]">
-              {geniuslinkSkippedByStyle
+            <div className={linkStyleHonoured
+              // Nothing failed: neutral, no triangle, no alarm colour.
+              ? 'mx-5 mb-3 px-3 py-2 rounded-lg bg-[#8e8e93]/10 border border-[#8e8e93]/20 text-xs text-[#6e6e73] dark:text-[#a1a1a6]'
+              : 'mx-5 mb-3 px-3 py-2 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/20 text-xs text-[#ff9500]'}>
+              {linkStyleHonoured
+                ? <>{geniuslinkError}</>
+                : geniuslinkSkippedByStyle
                 ? <>⚠️ Geniuslink not used. {geniuslinkError}</>
                 : <>⚠️ Geniuslink not used — {geniuslinkError}.{' '}
                     {/timeout|aborted|transient|temporar|\b5\d\d\b/i.test(geniuslinkError)

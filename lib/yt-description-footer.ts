@@ -41,10 +41,22 @@ export interface FooterInput {
   contactEmail?: string | null
   /** The creator's explicit pick in Brand Profile → Brand Outreach Contact. */
   contactPreference?: 'website' | 'email' | null
+  /** True when the description has an affiliate link, and therefore a slot high
+   *  up (under the disclosure, above the hashtags) where the blog link earns
+   *  its place. The blog link then goes THERE and nowhere else. */
+  promoted?: boolean
+  /** Anything the creator wrote themselves that will appear in the same
+   *  description, e.g. their custom block. If their own text already carries
+   *  the website, MVP does not add it again on top. */
+  existingText?: string | null
 }
 
 export interface FooterBlocks {
-  /** "For more in depth reviews…", or null when there is no website. */
+  /** The short arrow version that sits high in the description, above YouTube's
+   *  "…more" fold. Null unless `promoted` was asked for. */
+  promotedBlogLine: string | null
+  /** The fuller line further down. Null when the promoted one is being used, so
+   *  the address is printed once rather than in both places. */
   blogLine: string | null
   /** "Let's Work Together!…", or null when there is no contact route at all. */
   collabLine: string | null
@@ -55,7 +67,22 @@ export function footerBlocks(input: FooterInput): FooterBlocks {
   const email = String(input.contactEmail ?? '').trim()
   const pref = input.contactPreference
 
-  const blogLine = site
+  // The creator's own text wins. If they already link their site in their
+  // custom block, MVP adding two more copies of it is not promotion, it is
+  // clutter in someone else's description.
+  const alreadyTheirs = !!site && urlAppearsIn(String(input.existingText ?? ''), site)
+
+  // ONE blog link, in ONE place. The route used to push a short arrow version
+  // high up AND this fuller version lower down, on the reasoning that the first
+  // lands above the fold and the second is more complete. Read as a finished
+  // description that is simply the same address twice, which is what a creator
+  // reported: "the website is still wrong, is there a way I can edit the
+  // description?". Above the fold is the better slot, so when it exists the
+  // link goes there and the lower line stands down.
+  const promotedBlogLine = site && input.promoted && !alreadyTheirs
+    ? `👉 For more in-depth reviews, check out my blog: ${site}`
+    : null
+  const blogLine = site && !promotedBlogLine && !alreadyTheirs
     ? `For more in depth reviews, make sure to check out my blog: ${site}`
     : null
 
@@ -72,9 +99,12 @@ export function footerBlocks(input: FooterInput): FooterBlocks {
     collabLine = `Let's Work Together! Email me for collaborations: ${email}`
   }
 
-  // THE DUPLICATE. The collaboration line is about to print a URL the blog line
-  // printed three lines earlier.
-  if (blogLine && collabLine && sameUrl(site, extractUrl(collabLine))) {
+  // THE DUPLICATE. The collaboration line is about to print a URL that already
+  // appears above it: from one of the blog lines, whichever ran, or from the
+  // creator's own custom block. Their own mention counts. The rule is that a
+  // reader sees the address once, not that MVP printed it once.
+  const siteAlreadyShown = !!blogLine || !!promotedBlogLine || alreadyTheirs
+  if (siteAlreadyShown && collabLine && sameUrl(site, extractUrl(collabLine))) {
     if (email && pref !== 'website') {
       // Two real routes exist and only one was being used. Use both.
       collabLine = `Let's Work Together! Email me for collaborations: ${email}`
@@ -84,7 +114,14 @@ export function footerBlocks(input: FooterInput): FooterBlocks {
     }
   }
 
-  return { blogLine, collabLine }
+  return { promotedBlogLine, blogLine, collabLine }
+}
+
+/** Does `text` already link `site`? Compares the way sameUrl does, so a
+ *  creator writing "www.example.com/" counts as linking https://example.com. */
+function urlAppearsIn(text: string, site: string): boolean {
+  if (!text.trim()) return false
+  return (text.match(/https?:\/\/\S+/g) || []).some((u) => sameUrl(u.replace(/[),.]+$/, ''), site))
 }
 
 /** The first http(s) URL in a line, or ''. */
