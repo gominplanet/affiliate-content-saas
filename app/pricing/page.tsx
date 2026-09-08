@@ -16,6 +16,7 @@ import { CheckCircle, Zap, PackageSearch, Radar, ShoppingBag, Store, Wand2, Layo
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import NextImage from 'next/image'
 import { CheckoutButton } from './CheckoutButton'
+import MetaTrack from '@/components/analytics/MetaTrack'
 
 export const metadata: Metadata = { title: 'Pricing · MVP Affiliate' }
 
@@ -146,6 +147,12 @@ const plans: PlanExt[] = [
 export default function PricingPage() {
   return (
     <div className="min-h-screen bg-[#FAFAFA] dark:bg-[#0A0A0B] flex flex-col items-center px-4 py-16">
+      {/* Reaching pricing is the first real buying signal on the site, and it
+          happens far more often than a sale. Without it the funnel jumps
+          straight from an undifferentiated PageView to CompleteRegistration,
+          so there was no way to tell an ad that drives interest from one that
+          drives nothing. No onceKey: a repeat pricing visit is itself signal. */}
+      <MetaTrack event="ViewContent" params={{ content_name: 'Pricing', content_category: 'pricing' }} />
       <div className="text-center mb-12 max-w-3xl">
         <p className="text-xs font-semibold text-[#7C3AED] uppercase tracking-widest mb-3">
           Free Amazon research · no card · no setup

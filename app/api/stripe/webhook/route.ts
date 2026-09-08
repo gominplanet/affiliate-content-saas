@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getStripe, creditsForPriceId } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { alertOps } from '@/lib/ops-alert'
-import type { Tier } from '@/lib/tier'
+import { sendMetaEvent, purchaseEventId } from '@/lib/meta-capi'
+import { TIERS, type Tier } from '@/lib/tier'
 
 /**
  * A tier-write failed. Release this event's idempotency claim so Stripe's retry
@@ -243,7 +244,7 @@ export async function POST(request: NextRequest) {
     const session = event.data.object as unknown as {
       id: string
       mode?: string
-      metadata: { user_id: string; tier: Tier }
+      metadata: { user_id?: string; tier?: Tier; fbp?: string; fbc?: string }
       customer: string
       subscription: string
       // The price id is the SOURCE OF TRUTH for the tier (rather than
@@ -253,6 +254,10 @@ export async function POST(request: NextRequest) {
       line_items?: { data?: { price?: { id?: string } }[] }
       customer_email?: string | null
       customer_details?: { email?: string | null }
+      /** What they ACTUALLY paid, in cents, after any promo/affiliate coupon.
+       *  Meta optimizes on this, so a discounted sale must not report as the
+       *  list price. */
+      amount_total?: number | null
     }
     // Fetch the purchased price id (Stripe doesn't expand line_items on the
     // event object; only a listLineItems call returns it).
@@ -291,10 +296,11 @@ export async function POST(request: NextRequest) {
       // it as a subscription.
       return NextResponse.json({ received: true, ignored: 'unrecognized_payment' })
     }
-    const tier: Tier = (priceId && PRICE_TO_TIER[priceId]) || session.metadata?.tier
-    // Runtime guard (TS types tier as Tier, but a Payment-Link session can have
-    // empty metadata AND an unmapped price → undefined at runtime). Never write a
-    // blank tier; alert so the price→tier env mapping gets fixed.
+    const tier: Tier | undefined = (priceId && PRICE_TO_TIER[priceId]) || session.metadata?.tier
+    // Runtime guard: a Payment-Link session can have empty metadata AND an
+    // unmapped price, leaving this undefined. The type says so now, so the
+    // narrowing below is what makes `tier` a Tier for everything after it.
+    // Never write a blank tier; alert so the price→tier env mapping gets fixed.
     if (!tier) {
       console.warn('[stripe-webhook] checkout.session.completed with no resolvable tier', { priceId, customer: session.customer })
       await alertOps('Stripe checkout completed but tier could not be resolved', `customer ${session.customer}, price ${priceId} not in STRIPE_PRICE_* env map. Set their tier manually in /admin/users and add the price ID to the env mapping.`)
@@ -326,6 +332,29 @@ export async function POST(request: NextRequest) {
       { onConflict: 'user_id' },
     )
     if (error) return releaseAndRetry(admin, event.id, 'checkout.session.completed', error)
+
+    // ── Meta Purchase (server side) ────────────────────────────────────────
+    // Fired AFTER the tier write succeeds, so we never report a sale that
+    // didn't land. The browser fires the same event_id from /billing on the
+    // Checkout redirect; Meta keeps whichever arrives first and drops the
+    // duplicate. Awaited (not fire-and-forget) because a serverless function
+    // can be frozen the moment the response is returned, which would drop the
+    // request mid-flight and lose the conversion.
+    await sendMetaEvent({
+      eventName: 'Purchase',
+      eventId: purchaseEventId(session.id),
+      // amount_total is what actually cleared, in cents. Falls back to the
+      // plan's list price only if Stripe omitted it.
+      value: typeof session.amount_total === 'number'
+        ? session.amount_total / 100
+        : TIERS[tier].price,
+      currency: 'USD',
+      email: session.customer_details?.email || session.customer_email,
+      externalId: user_id,
+      fbp: session.metadata?.fbp || null,
+      fbc: session.metadata?.fbc || null,
+      custom: { tier, content_name: TIERS[tier].label },
+    })
   }
 
   // Handle .created the same as .updated so a fresh Pro signup gets

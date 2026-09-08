@@ -9,11 +9,20 @@
 
 type Fbq = (...args: unknown[]) => void
 
-/** Fire a Meta standard event (e.g. 'Purchase', 'CompleteRegistration'). */
-export function trackMeta(event: string, params?: Record<string, unknown>): void {
+/**
+ * Fire a Meta standard event (e.g. 'Purchase', 'CompleteRegistration').
+ *
+ * Pass `eventId` for anything the server ALSO reports through the Conversions
+ * API (see lib/meta-capi.ts). Meta collapses a browser event and a server
+ * event sharing an id into one conversion; without it the same sale is
+ * counted twice and every cost-per-acquisition number reads half of reality.
+ */
+export function trackMeta(event: string, params?: Record<string, unknown>, eventId?: string): void {
   if (typeof window === 'undefined') return
   try {
     const fbq = (window as unknown as { fbq?: Fbq }).fbq
-    if (typeof fbq === 'function') fbq('track', event, params)
+    if (typeof fbq !== 'function') return
+    if (eventId) fbq('track', event, params, { eventID: eventId })
+    else fbq('track', event, params)
   } catch { /* pixel absent / blocked → no-op */ }
 }

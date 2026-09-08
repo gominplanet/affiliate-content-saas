@@ -103,7 +103,22 @@ export default function BillingPage() {
       // Meta Pixel: this is the purchase-completion page (Stripe redirects here
       // after a successful subscription). Fire once — the param is stripped below
       // so a refresh won't re-fire.
-      trackMeta('Purchase', { currency: 'USD' })
+      //
+      // The checkout route puts the plan and the Checkout session id in the
+      // success URL. `plan` gives this event a real value (a $49 Creator and a
+      // $199 Pro used to look identical to Meta, so it could not optimize for
+      // revenue). `cs` produces the same event id the Stripe webhook uses for
+      // its server-side Purchase, so Meta counts the sale once rather than
+      // twice. Both are absent on an older link, and the event still fires.
+      const q = new URLSearchParams(window.location.search)
+      const plan = q.get('plan') as Tier | null
+      const cs = q.get('cs')
+      const value = plan && TIERS[plan] ? TIERS[plan].price : undefined
+      trackMeta(
+        'Purchase',
+        { currency: 'USD', ...(value ? { value } : {}), ...(plan ? { tier: plan } : {}) },
+        cs ? `stripe_${cs}` : undefined,
+      )
       window.history.replaceState({}, '', '/billing')
     }
   }, [])

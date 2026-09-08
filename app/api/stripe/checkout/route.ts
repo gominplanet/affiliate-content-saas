@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getStripe, PRICE_IDS, isValidPriceId } from '@/lib/stripe'
-import type { Tier } from '@/lib/tier'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
+import { sendMetaEvent, purchaseEventId } from '@/lib/meta-capi'
+import { TIERS, type Tier } from '@/lib/tier'
 
 export async function POST(request: NextRequest) {
   // Hard stop: bulletproof gate that runs no matter how the user got
@@ -43,6 +44,17 @@ export async function POST(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
 
   const stripe = getStripe()
+
+  // Meta match-quality signals. `_fbp` is the pixel's browser id and `_fbc`
+  // encodes the ad click that brought them here. Server-side Purchase events
+  // sent without these match far fewer people back to an ad, which is what
+  // makes a campaign look unprofitable when it isn't. Read them here (the last
+  // point where we still have the user's cookies) and carry them to Stripe so
+  // the webhook, which has no cookies at all, can attach them.
+  const fbp = request.cookies.get('_fbp')?.value || ''
+  const fbc = request.cookies.get('_fbc')?.value || ''
+  const clientUserAgent = request.headers.get('user-agent') || ''
+  const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || ''
 
   // ── Existing subscriber → change plan IN PLACE with proration ────────────
   // Spinning up a fresh Checkout subscription for someone who already pays
@@ -204,6 +216,32 @@ export async function POST(request: NextRequest) {
         await (supabase as any).from('integrations')
           .update(chargeCleared ? { tier } : { subscription_status: 'past_due' })
           .eq('user_id', user.id)
+
+        // ── Meta Purchase for an IN-PLACE upgrade ──────────────────────────
+        // This branch never touches Checkout, so it produces no
+        // checkout.session.completed and no /billing?upgraded=1 redirect.
+        // Before this, every upgrade (Creator → Studio → Pro) was invisible to
+        // Meta, which meant ad optimization only ever saw first-time buyers and
+        // none of the expansion revenue they lead to.
+        //
+        // Only fires when the proration charge actually CLEARED. Reporting a
+        // declined upgrade as revenue would teach Meta to buy more of exactly
+        // the traffic that fails to pay.
+        if (isUpgrade && chargeCleared && chargedAmount > 0) {
+          await sendMetaEvent({
+            eventName: 'Purchase',
+            // Keyed on the proration invoice: stable, and unique per upgrade.
+            eventId: purchaseEventId(inv?.id || `${live.id}_${priceId}`),
+            value: chargedAmount,
+            currency: 'USD',
+            email: user.email,
+            externalId: user.id,
+            fbp, fbc,
+            clientIpAddress: clientIp,
+            clientUserAgent,
+            custom: { tier, content_name: TIERS[tier].label, upgrade: true },
+          })
+        }
         return NextResponse.json({
           updated: true,
           tier,
@@ -228,7 +266,9 @@ export async function POST(request: NextRequest) {
     payment_method_types: ['card'],
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: user.email,
-    metadata: { user_id: user.id, tier },
+    // fbp/fbc ride along so the webhook can attach them to the server-side
+    // Purchase. Empty strings are omitted rather than stored blank.
+    metadata: { user_id: user.id, tier, ...(fbp ? { fbp } : {}), ...(fbc ? { fbc } : {}) },
     // Also stamp the SUBSCRIPTION with the same metadata. Stripe does NOT copy
     // checkout-session metadata onto the subscription, so without this the
     // customer.subscription.created/updated events carry no user_id and the
@@ -251,8 +291,30 @@ export async function POST(request: NextRequest) {
     // client_reference_id, which Rewardful's Stripe webhook reads to
     // attribute the conversion to the correct affiliate.
     ...(referral ? { client_reference_id: referral } : {}),
-    success_url: `${appUrl}/billing?upgraded=1`,
+    // `cs` carries the Checkout session id back so the browser can derive the
+    // SAME Meta event_id the webhook uses and the two Purchase events
+    // deduplicate. `plan` lets the browser report a real value instead of the
+    // valueless Purchase it fired before.
+    success_url: `${appUrl}/billing?upgraded=1&plan=${tier}&cs={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appUrl}/pricing`,
+  })
+
+  // Reaching Stripe's card form is the strongest pre-purchase intent signal we
+  // have, and there are far more of these than sales. At MVP's volume that
+  // matters: Purchase alone will never reach the ~50/week an ad set needs to
+  // leave Meta's learning phase, so this is the event campaigns can optimize
+  // on while Purchase stays the one we judge them by.
+  await sendMetaEvent({
+    eventName: 'InitiateCheckout',
+    eventId: `cs_init_${session.id}`,
+    value: TIERS[tier].price,
+    currency: 'USD',
+    email: user.email,
+    externalId: user.id,
+    fbp, fbc,
+    clientIpAddress: clientIp,
+    clientUserAgent,
+    custom: { tier, content_name: TIERS[tier].label },
   })
 
   return NextResponse.json({ url: session.url })
