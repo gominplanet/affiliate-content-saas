@@ -20,6 +20,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getOwnerUserId } from '@/lib/agency'
 import { getLinkStyle } from '@/lib/link-cloak'
@@ -42,8 +43,13 @@ export async function POST(request: NextRequest) {
     // (VAs test the owner's account, matching how generation reads them).
     if (!apiKey || !apiSecret) {
       const ownerId = await getOwnerUserId(user.id)
+      // Service role for the owner-scoped read. integrations is no longer
+      // readable by a VA under RLS (migration 320), because that row holds
+      // credentials and a browser should never receive them. A VA testing the
+      // owner's Geniuslink key is a legitimate action, so it happens here on
+      // the server where the key is used and not handed out.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: raw } = await (supabase as any)
+      const { data: raw } = await (createAdminClient() as any)
         .from('integrations')
         .select('geniuslink_api_key, geniuslink_api_secret')
         .eq('user_id', ownerId)

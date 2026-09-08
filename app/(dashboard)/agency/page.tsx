@@ -12,10 +12,24 @@
  *
  * Non-Pro users get the paywall card — same pattern as /developers + /branding.
  *
- * IMPORTANT: This is Phase 1 — VAs can be invited and accept the
- * invite (creating the agency_members row), but they don't yet inherit
- * the owner's resources. Phase 2 wires getOwnerUserId() into every
- * route that filters by user_id.
+ * WHERE THIS ACTUALLY STANDS (kept accurate deliberately — the comment said
+ * "Phase 1, VAs don't inherit anything" while the banner on the page said
+ * "Phase 2 live, full workspace sharing", and both cannot be true):
+ *
+ *   - Resource SHARING is live for content: migration 116 widened the SELECT
+ *     policy on youtube_videos, blog_posts, brand_profiles and wordpress_sites
+ *     so a VA sees the owner's workspace.
+ *   - integrations is deliberately NOT shared (migration 320). It holds OAuth
+ *     tokens and API keys, and a route block only hides a page: a VA is an
+ *     authenticated user and could read the row straight from the browser.
+ *     Routes that legitimately need the owner's credentials use the service
+ *     role, so the key is used server-side and never sent to a client.
+ *   - PERMISSIONS are only partly enforced. manage_newsletter gates the
+ *     newsletter write routes via denyNewsletterWrite. The other five keys are
+ *     stored and displayed but not checked anywhere, which the page now says
+ *     out loud rather than presenting six switches that look equally real.
+ *   - Owner-scoped WRITES are still thin: getOwnerUserId is wired into four
+ *     routes, not every route that filters by user_id.
  */
 
 import { useEffect, useState } from 'react'
@@ -232,12 +246,12 @@ export default function AgencyPage() {
       <FeatureLockedCard
         icon={<Users size={28} strokeWidth={1.8} />}
         feature="Virtual Assistants"
-        description="Invite VAs or contractors to your workspace with scoped permissions. Each VA gets their own login on your single Pro subscription — but only the access you explicitly grant. They never see your billing, brand profile, integrations, API keys, or this settings page."
+        description="Invite VAs or contractors to your workspace. Each VA gets their own login on your single Pro subscription, and never sees your billing, brand profile, integrations, API keys, or this settings page."
         bullets={[
           'Up to 3 VA seats included with Pro',
-          'Per-VA permission scopes: blog posts, socials, newsletter, YouTube Co-Pilot, library, analytics',
+          'Newsletter access controlled per VA; other scopes recorded for each person',
           'VAs work under your account (single subscription, multiple logins)',
-          'Revoke or edit permissions instantly — no downtime',
+          'Revoke access instantly — no downtime',
           'Owner-only routes: billing, brand profile, integrations, WordPress, API keys',
         ]}
         requiredTier="pro"
@@ -260,11 +274,11 @@ export default function AgencyPage() {
       <FeatureLockedCard
         icon={<Users size={28} strokeWidth={1.8} />}
         feature="Virtual Assistants"
-        description="Invite VAs or contractors to your workspace with scoped permissions. Each VA gets their own login on your single Pro subscription — but only the access you explicitly grant."
+        description="Invite VAs or contractors to your workspace. Each VA gets their own login on your single Pro subscription, and never sees your billing, integrations or API keys."
         bullets={[
           'Up to 3 VA seats included with Pro',
-          'Per-VA permission scopes: blog posts, socials, newsletter, YouTube Co-Pilot, library, analytics',
-          'Revoke or edit permissions instantly',
+          'Newsletter access controlled per VA; other scopes recorded for each person',
+          'Revoke access instantly',
         ]}
         requiredTier="pro"
         currentTier={previewTier ?? 'trial'}
@@ -285,22 +299,32 @@ export default function AgencyPage() {
           <VirtualAssistantsGuide />
         </h1>
         <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
-          Invite VAs or contractors with scoped permissions. They get their own login on your
+          Invite VAs or contractors to work in your workspace. They get their own login on your
           single Pro subscription. <b>{seatsCopy}</b>.
         </p>
       </div>
 
-      {/* Roll-out banner — 2026-06-09 Phase 2 live: resource sharing now
-          extends across the major routes (Library, blog generation, YT
-          Co-Pilot, SEO dashboard, Brainstorm, Collaborations, WP sites,
-          LEARN profile, face/style libraries). VAs see your workspace
-          everywhere they generate. Write-restricted pages (brand,
-          billing, integrations setup) remain blocked. */}
+      {/* What a VA can reach. Content sharing is real (migration 116 widened
+          SELECT on the content tables). The credential row is deliberately not
+          shared, and that is worth stating here rather than only in a
+          migration nobody reads. */}
       <div className="bg-emerald-50 dark:bg-emerald-900/25 border border-emerald-200 dark:border-emerald-500/30 rounded-lg p-3 text-xs text-emerald-900 dark:text-emerald-100">
-        <b>Phase 2 live — full workspace sharing:</b> VAs you invite now see your videos, posts,
-        WordPress sites, brand voice, Geniuslink tracking, face library, and everything else
-        they need to ship content. Usage caps + AI cost still bill against your single Pro plan.
-        VAs CANNOT access: brand profile editor, billing, integrations setup, or this page.
+        <b>Workspace sharing is live:</b> VAs you invite see your videos, posts, WordPress sites,
+        brand voice and face library, so they can ship content. Usage caps and AI cost bill
+        against your single Pro plan. VAs cannot reach your brand profile editor, billing,
+        integrations setup, or this page, and they can no longer read your stored API keys.
+      </div>
+
+      {/* Said plainly, because the toggles below look like six working switches
+          and only one of them currently stops anything. A permission screen that
+          overstates what it enforces is worse than no permission screen: an
+          owner unticks "Publish to socials", believes their accounts are
+          protected, and nothing changed. */}
+      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-500/30 rounded-lg p-3 text-xs text-amber-900 dark:text-amber-100">
+        <b>What these permissions do today:</b> “Manage newsletter” is enforced now — a VA without
+        it cannot send or edit your list. The other five are recorded on the VA and shown here,
+        but are not yet enforced at every route, so treat them as your intent for a VA rather
+        than a lock. Invite people you trust with the workspace, and revoke to remove access.
       </div>
 
       {/* Invite form */}

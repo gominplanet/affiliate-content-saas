@@ -31,6 +31,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { listSites } from '@/lib/wordpress-sites'
 import { groupNameForSiteUrl, YOUTUBE_COPILOT_GROUP_NAME } from '@/lib/geniuslink-group'
@@ -80,7 +81,11 @@ async function build(write: boolean): Promise<SetupResponse> {
   const ownerId = await getOwnerUserId(user.id)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRowRaw } = await supabase
+  // Service role: integrations is owner-only under RLS (migration 320) because
+  // it holds credentials, and a VA setting up the owner's Geniuslink groups is
+  // a legitimate server-side action.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: intRowRaw } = await (createAdminClient() as any)
     .from('integrations')
     .select('geniuslink_api_key, geniuslink_api_secret, geniuslink_youtube_group_id')
     .eq('user_id', ownerId)
@@ -227,10 +232,15 @@ async function persistGroupId(supabase: any, target: TargetReport, groupId: numb
       // no agency membership exists.
       const callerId = (await supabase.auth.getUser()).data.user!.id
       const ownerId = await getOwnerUserId(callerId)
-      await supabase
+      // Service role for the same reason, and because writes to the owner's row
+      // were never widened by migration 116 at all: under the session client
+      // this update silently did nothing for a VA.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: cacheErr } = await (createAdminClient() as any)
         .from('integrations')
         .update({ geniuslink_youtube_group_id: groupId })
         .eq('user_id', ownerId)
+      if (cacheErr) console.warn('[geniuslink/setup] group id cache write failed:', cacheErr.message)
     } else if (target.kind === 'site' && target.siteId) {
       await supabase
         .from('wordpress_sites')
