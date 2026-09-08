@@ -161,7 +161,28 @@ Return ONLY valid JSON with these exact keys:
   const roundupKind: 'deal' | 'guide' = String(p.post_type || '').toLowerCase() === 'deal' ? 'deal' : 'guide'
   const collageProducts = (Array.isArray(parsed.collage_products) ? parsed.collage_products : [])
     .map((s: unknown) => scrubBanned(String(s)).trim()).filter(Boolean).slice(0, 4)
-  const useCollage = isRoundup && collageProducts.length >= 2
+  // THE GATE READS THE POST, NOT A GUESS ABOUT IT.
+  //
+  // collage_products is an AI field: the copy step is shown the title and
+  // excerpt and asked to name the products. On a Deal Radar roundup it came
+  // back with fewer than two, so this gate stayed shut and a four-deal post got
+  // a single-product review pin, with one product's callouts and a "does it
+  // really stay ice cold?" headline.
+  //
+  // The post itself is not ambiguous. It carries an affiliate link per product
+  // in its body, and the very next block already reads them with
+  // allProductUrls() to resolve real photos. That evidence was sitting one step
+  // BEHIND the gate that needed it. So the links now open the gate too, and the
+  // AI's list stays as a second way in rather than the only one.
+  //
+  // Content only, no network fetch: this runs for every pin, and a single
+  // review must not pay for a page load to be told it is a single review. The
+  // existing fetch-the-published-page fallback still happens inside the branch
+  // below, where it is worth it.
+  const bodyProductLinks = isRoundup
+    ? allProductUrls(String(p.content || ''), (p.wordpress_url as string | null) ?? null, 4).length
+    : 0
+  const useCollage = isRoundup && (collageProducts.length >= 2 || bodyProductLinks >= 2)
 
   // Ground the pin's IMAGE on the REAL product — not a name-guess. The blog
   // post links to a product via its source video, whose row stores the clean,

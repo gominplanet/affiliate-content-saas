@@ -74,13 +74,31 @@ function writtenPostTypes(): Set<string> {
   }
 }
 
-// ── two products are still required ─────────────────────────────────────────
-// Routing a deal post to the roundup path must not put a one-product deal into
-// a grid of one.
+// ── the gate reads the post, not a guess about it ───────────────────────────
+// Fixing the post-type list was not enough. The gate ALSO required an AI field,
+// collage_products, which the copy step fills in from the title and excerpt. On
+// the same four-deal roundup it came back with fewer than two, so the door
+// stayed shut and the pin was a single-product review again.
+//
+// The post is not ambiguous: it carries an affiliate link per product, and the
+// block immediately after the gate already reads them to resolve real photos.
+// That evidence was sitting one step behind the gate that needed it.
 {
-  check('a roundup still needs two or more products',
-    /useCollage = isRoundup && collageProducts\.length >= 2/.test(PIN_ASSETS),
-    'without this, a single-deal post would be designed as a collage of one')
+  check('the post\'s own product links can open the gate',
+    /bodyProductLinks/.test(PIN_ASSETS),
+    'the links in the body are the evidence; the AI list is a guess about it')
+  check('and either signal is enough',
+    /collageProducts\.length >= 2 \|\| bodyProductLinks >= 2/.test(PIN_ASSETS),
+    'the AI list stays as a second way in, not the only one')
+  check('two products are still required either way',
+    />= 2/.test(PIN_ASSETS),
+    'a single-deal post must not be designed as a collage of one')
+  check('the link count is only computed for a roundup',
+    /isRoundup\s*\n?\s*\? allProductUrls/.test(PIN_ASSETS),
+    'a single review must not pay to be told it is a single review')
+  check('and it reads stored content rather than fetching the page',
+    /allProductUrls\(String\(p\.content/.test(PIN_ASSETS),
+    'this runs for every pin; a network fetch here would cost every single review a page load')
 }
 
 // ── a deals roundup does not look like a buying guide ───────────────────────
