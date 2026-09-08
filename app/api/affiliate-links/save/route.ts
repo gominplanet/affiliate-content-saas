@@ -30,7 +30,12 @@ import { encryptIntegrationWrite, decryptIntegrationRow } from '@/lib/integratio
 
 export const dynamic = 'force-dynamic'
 
-const LINK_MODES = new Set(['direct', 'geniuslink', 'bitly'])
+// 'passport' is a first-class choice now, not just a side effect of a toggle.
+// pickLinkStyle honours an explicit chooser value over the Passport switch, so
+// without this a creator had no way to SAY passport: the only route to it was
+// leaving the chooser unset, which is indistinguishable from never having
+// looked at it.
+const LINK_MODES = new Set(['direct', 'geniuslink', 'bitly', 'passport'])
 const PIN_PREFS = new Set(['auto', 'blog_post', 'youtube', 'homepage'])
 
 /**

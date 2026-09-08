@@ -54,9 +54,25 @@ export function pickLinkStyle(o: {
   hasBitly: boolean
   hasGeniuslink: boolean
 }): LinkStyle {
-  if (o.passportEligible) return 'passport'
   const stored = (o.mode || '').trim().toLowerCase()
-  if (!stored) return o.hasGeniuslink ? 'geniuslink' : 'direct'
+
+  // THE CREATOR'S OWN CHOICE COMES FIRST.
+  //
+  // This used to read `if (o.passportEligible) return 'passport'` on the line
+  // above everything else, so the Passport toggle silently outranked the link
+  // style someone had deliberately picked. A creator with 113 working Geniuslink
+  // posts switched Passport on, and from that day MVP ignored his chooser, which
+  // still said Geniuslink, and stopped using the Geniuslink account he pays for.
+  // Co-Pilot then told him "your link style is Passport Links, change it in
+  // Brand Profile" — pointing at a setting that already said what he wanted, so
+  // there was no move he could make.
+  //
+  // A dropdown a person set is a decision. A toggle is a decision too, which is
+  // why Passport still wins when the chooser is UNSET: someone who has never
+  // touched it and switches Passport on plainly means to use it. What is not
+  // acceptable is one silently overruling the other.
+  if (stored === 'passport') return o.passportEligible ? 'passport' : 'direct'
+  if (!stored) return o.passportEligible ? 'passport' : (o.hasGeniuslink ? 'geniuslink' : 'direct')
   let style = stored
   if (style === 'bitly' && !o.hasBitly) style = 'direct'
   if (style === 'geniuslink' && !o.hasGeniuslink) style = 'direct'

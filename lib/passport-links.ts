@@ -8,6 +8,7 @@
 // get-or-create for a link's short code. The redirect route (app/go/[code]) and
 // the link-builders (blog / social) use it.
 
+import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePassport } from '@/lib/feature-access'
 import { mintVerdict } from '@/lib/passport-abuse'
 import { normalizeTier } from '@/lib/tier'
@@ -251,11 +252,32 @@ export function buildPassportDestination(
  * the admin client.
  */
 export async function passportLinkForUser(
-  db: Db, userId: string, asin: string, opts?: { source?: string | null; title?: string | null },
+  _db: Db, userId: string, asin: string, opts?: { source?: string | null; title?: string | null },
 ): Promise<string | null> {
   const a = (asin || '').trim().toUpperCase()
   if (!/^[A-Z0-9]{10}$/.test(a)) return null
   try {
+    // SERVICE ROLE, not the caller's client, and this is the whole reason
+    // Passport never reached a single blog post.
+    //
+    // Blog generation runs through the job queue, which calls /api/blog/generate
+    // internally with a service header and NO user session. The client handed in
+    // here therefore has no auth.uid(), so RLS on integrations returned nothing,
+    // the eligibility check read that as "Passport is off", and the route fell
+    // back to a plain tagged Amazon link. The insert into passport_links would
+    // have failed the same way a moment later.
+    //
+    // Nothing was logged and nothing was on screen. One creator with Passport ON
+    // had 113 working Geniuslink posts, switched Passport on, and every post
+    // after that shipped a bare Amazon URL. His Co-Pilot said Passport Links was
+    // his style the whole time, because THAT path already used the admin client
+    // (see generate-metadata) and minted fine.
+    //
+    // Minting a link is a system action taken on the creator's behalf, so it
+    // belongs on the service role in every caller, exactly as the YouTube path
+    // has always done it. userId is resolved from auth by every caller before it
+    // reaches here.
+    const db = createAdminClient() as unknown as Db
     const { data: ig } = await db.from('integrations').select('passport_links_enabled, tier').eq('user_id', userId).maybeSingle()
     if (!ig?.passport_links_enabled) return null
     // Studio + Pro only — even if the flag is set, a lower tier gets no link.
@@ -284,11 +306,15 @@ export async function passportLinkForUser(
  * the open-redirect guard, else null so the caller keeps its existing behavior.
  */
 export async function passportLinkForDestination(
-  db: Db, userId: string, destinationUrl: string, opts?: { source?: string | null; title?: string | null },
+  _db: Db, userId: string, destinationUrl: string, opts?: { source?: string | null; title?: string | null },
 ): Promise<string | null> {
   const dest = (destinationUrl || '').trim()
   if (!isSafePassportDestination(dest)) return null
   try {
+    // Service role, for the same reason as passportLinkForUser above: the blog
+    // job has no user session, so RLS hides the creator's own row from their own
+    // generation and Passport silently never happens.
+    const db = createAdminClient() as unknown as Db
     const { data: ig } = await db.from('integrations').select('passport_links_enabled, tier').eq('user_id', userId).maybeSingle()
     if (!ig?.passport_links_enabled) return null
     if (!canUsePassport(normalizeTier(ig?.tier))) return null

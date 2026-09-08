@@ -48,11 +48,18 @@ const caseBlock = sql.slice(sql.indexOf('select case'), sql.indexOf('end\n$$'))
   }
 }
 
-// ── the precedence matches the code that CHOOSES the style ──────────────────
-// pickLinkStyle resolves Passport first. If the migration read the content in a
-// different order, a post carrying a Passport CTA and a bare Amazon mention
-// would be labelled 'direct' while every other surface called it 'passport',
-// and the column would be actively misleading.
+// ── the trigger reads the most specific link in the body first ──────────────
+// A post can mention amazon.com in prose while its CTA is an mvpl.ink link, so
+// the cloaked domains are checked before the bare retailer. Otherwise a working
+// Passport post would be labelled 'direct' and the column would be misleading.
+//
+// This USED to be justified as "precedence must match pickLinkStyle, where
+// Passport wins outright", and that reasoning was wrong even while it passed.
+// The two orderings answer different questions: the trigger reads what is IN
+// the published body, pickLinkStyle decides what the creator asked for. Tying
+// them together was what made the assertion below break when the chooser
+// started outranking the Passport toggle, despite nothing about the trigger
+// being wrong.
 {
   const order = ['mvpl', 'geni', 'bit', 'amazon']
     .map(h => ({ h, at: caseBlock.indexOf(h) }))
@@ -60,12 +67,9 @@ const caseBlock = sql.slice(sql.indexOf('select case'), sql.indexOf('end\n$$'))
   for (let i = 1; i < order.length; i++) {
     check(`${order[i - 1].h} is checked before ${order[i].h}`,
       order[i - 1].at < order[i].at,
-      'precedence must match pickLinkStyle, where Passport wins outright')
+      'a cloaked CTA must win over a bare retailer mentioned in the prose')
   }
-  // The claim above, stated against the real function rather than a comment.
-  check('pickLinkStyle really does put Passport first',
-    pickLinkStyle({ passportEligible: true, mode: 'geniuslink', hasBitly: true, hasGeniuslink: true }) === 'passport')
-  check('and really does fall to direct when a style has no credentials',
+  check('a style with no credentials really does fall to direct',
     pickLinkStyle({ passportEligible: false, mode: 'geniuslink', hasBitly: false, hasGeniuslink: false }) === 'direct',
     'which is why a post can read "direct" while the settings say Geniuslink, exactly as one account did')
 }
