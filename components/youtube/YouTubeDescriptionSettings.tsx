@@ -37,6 +37,16 @@ export function YouTubeDescriptionSettings() {
   const [sections, setSections] = useState<GearSection[]>([])
   const [customBlock, setCustomBlock] = useState('')
   const [lines, setLines] = useState<Partial<Record<LineKey, string>>>({})
+  /** The three brand-profile values MVP's own lines actually print.
+   *
+   *  They live on Brand Profile and they are edited here as well, on purpose.
+   *  A creator on this screen is deciding what their descriptions say; being
+   *  told the wording is here but the addresses are on another page is how
+   *  somebody ends up asking where to change the website link in their
+   *  descriptions. Same columns, same values, two doors. */
+  const [siteUrl, setSiteUrl] = useState('')
+  const [collabUrl, setCollabUrl] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
   const [linesOpen, setLinesOpen] = useState(false)
 
   const load = useCallback(async () => {
@@ -46,11 +56,14 @@ export function YouTubeDescriptionSettings() {
       if (!user) { setLoading(false); return }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data } = await (supabase as any).from('brand_profiles')
-        .select('gear_sections, youtube_description_block, yt_description_lines')
+        .select('gear_sections, youtube_description_block, yt_description_lines, website_url, collab_url, contact_email')
         .eq('user_id', user.id).maybeSingle()
       setSections((data?.gear_sections ?? []) as GearSection[])
       setCustomBlock((data?.youtube_description_block as string | null) ?? '')
       setLines((data?.yt_description_lines as Partial<Record<LineKey, string>> | null) ?? {})
+      setSiteUrl((data?.website_url as string | null) ?? '')
+      setCollabUrl((data?.collab_url as string | null) ?? '')
+      setContactEmail((data?.contact_email as string | null) ?? '')
     } catch { /* leave empty */ }
     finally { setLoading(false) }
   }, [])
@@ -81,6 +94,12 @@ export function YouTubeDescriptionSettings() {
           yt_description_lines: Object.fromEntries(
             Object.entries(lines).filter(([, v]) => String(v ?? '').trim()),
           ),
+          // Saved as typed, trimmed. An empty box genuinely means "I have none",
+          // which for the collaborations URL means "use my blog", so it is
+          // stored as empty rather than dropped.
+          website_url: siteUrl.trim(),
+          collab_url: collabUrl.trim(),
+          contact_email: contactEmail.trim(),
         },
         { onConflict: 'user_id' },
       )
@@ -212,6 +231,64 @@ export function YouTubeDescriptionSettings() {
       </div>
 
       {/* Divider between the two sub-sections. */}
+      <div className="border-t border-gray-200 dark:border-white/10 my-6" />
+
+      {/* Sub-section: the addresses MVP's own lines print.
+          These are Brand Profile columns, edited here too. A creator on this
+          screen is deciding what their descriptions say, and sending them to
+          another page for the addresses is how somebody ends up asking where to
+          change the website link in their YouTube descriptions. */}
+      <h3 className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your links</h3>
+      <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+        The addresses MVP puts in the lines below. These are the same fields as{' '}
+        <a href="/brand" className="text-[#7C3AED] hover:underline">Brand Profile</a>, so a change here shows up there too.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
+        <div>
+          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Blog URL</label>
+          <input
+            type="text"
+            value={siteUrl}
+            onChange={(e) => setSiteUrl(e.target.value)}
+            placeholder="https://yourblog.com"
+            className="input-field"
+          />
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+            The blog backlink. Fills <span className="font-mono">{'{site}'}</span>.
+          </p>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">
+            URL for brand collaborations <span className="text-[#86868b] font-normal">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={collabUrl}
+            onChange={(e) => setCollabUrl(e.target.value)}
+            placeholder="https://your-services-site.com"
+            className="input-field"
+          />
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+            Where brands should go to work with you, when that is not your blog. Fills <span className="font-mono">{'{collab}'}</span>. Empty uses your Blog URL.
+          </p>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">
+            Contact email <span className="text-[#86868b] font-normal">(optional)</span>
+          </label>
+          <input
+            type="email"
+            value={contactEmail}
+            onChange={(e) => setContactEmail(e.target.value)}
+            placeholder="you@yourdomain.com"
+            className="input-field"
+          />
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+            Fills <span className="font-mono">{'{email}'}</span>. With this set, the collaboration line can offer email instead of repeating a URL already on screen.
+          </p>
+        </div>
+      </div>
+
       <div className="border-t border-gray-200 dark:border-white/10 my-6" />
 
       {/* Sub-section: free-text custom block — Co-Pilot appends it verbatim. */}

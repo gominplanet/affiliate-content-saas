@@ -41,6 +41,10 @@ export interface FooterInput {
   contactEmail?: string | null
   /** The creator's explicit pick in Brand Profile → Brand Outreach Contact. */
   contactPreference?: 'website' | 'email' | null
+  /** Where brands should go to work with this creator, when that is NOT the
+   *  blog. Empty falls back to websiteUrl, which is what every account did
+   *  before the field existed. */
+  collabUrl?: string | null
   /** True when the description has an affiliate link, and therefore a slot high
    *  up (under the disclosure, above the hashtags) where the blog link earns
    *  its place. The blog link then goes THERE and nowhere else. */
@@ -70,6 +74,9 @@ export interface FooterBlocks {
 
 export function footerBlocks(input: FooterInput): FooterBlocks {
   const site = String(input.websiteUrl ?? '').trim()
+  // The blog line always uses `site`. The collaboration line uses this, which is
+  // the same thing until a creator says otherwise.
+  const collab = String(input.collabUrl ?? '').trim() || site
   const email = String(input.contactEmail ?? '').trim()
   const pref = input.contactPreference
 
@@ -97,12 +104,12 @@ export function footerBlocks(input: FooterInput): FooterBlocks {
   // wins; otherwise whichever they actually filled in.
   let collabLine: string | null = null
   const collabEmailLine = L.collabEmail || `Let's Work Together! Email me for collaborations: ${email}`
-  const collabSiteLine = L.collabWebsite || `Let's Work Together! Check my WEBSITE for collaborations: ${site}`
+  const collabSiteLine = L.collabWebsite || `Let's Work Together! Check my WEBSITE for collaborations: ${collab}`
   if (pref === 'email' && email) {
     collabLine = collabEmailLine
-  } else if (pref === 'website' && site) {
+  } else if (pref === 'website' && collab) {
     collabLine = collabSiteLine
-  } else if (site) {
+  } else if (collab) {
     collabLine = collabSiteLine
   } else if (email) {
     collabLine = collabEmailLine
