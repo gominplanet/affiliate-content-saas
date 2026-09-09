@@ -3812,7 +3812,18 @@ export default function ContentPage() {
         const partialNote = partial
           ? ` ${partial} of them still carr${partial === 1 ? 'ies' : 'y'} another link that isn't ${styleLabel || 'your chosen style'}, so run this again to catch the rest.`
           : ''
-        setFixCatResult(`Done. Fixed the affiliate link on ${fixed} post${fixed !== 1 ? 's' : ''}${failed}${missed}.${partialNote}`)
+        // THE FLOATING BAR IS NOT IN THE POST BODY.
+        // The WordPress plugin renders it and picks its own URL by scanning the
+        // content. Before plugin 1.0.94 that scan did not know Passport, so on a
+        // post just re-pointed to Passport the bar skipped the new link and fell
+        // through to whatever Amazon URL it found first. The article button was
+        // right and the most prominent button on the page was wrong, and this
+        // screen said "Done" either way, because the content it checked really
+        // had been fixed. Say the part it cannot see.
+        const barNote = styleLabel === 'Passport links'
+          ? ' The floating bar at the bottom of each post is drawn by the WordPress plugin, not the post body: update it to 1.0.94 on your site so that button uses your Passport links too.'
+          : ''
+        setFixCatResult(`Done. Fixed the affiliate link on ${fixed} post${fixed !== 1 ? 's' : ''}${failed}${missed}.${partialNote}${barNote}`)
       }
     } catch {
       setFixCatResult(`Something went wrong after ${fixed} post${fixed !== 1 ? 's' : ''}. Those are saved; run it again to continue.`)

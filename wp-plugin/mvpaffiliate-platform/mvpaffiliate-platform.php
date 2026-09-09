@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.93
+ * Version: 1.0.94
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -4363,13 +4363,26 @@ if (!function_exists('mvp_affiliate_render_sticky_cta')) {
         $post = get_post();
         if (!$post) return;
 
-        // First affiliate URL wins (geni.us → amzn.to → amazon.* TLD).
-        // We deliberately don't surface arbitrary outbound links — only
-        // links the user wrote with an affiliate-tracking purpose.
+        // First affiliate URL wins. ORDER MATTERS, and this list has been wrong
+        // twice in ways that pointed the bar at the wrong place.
+        //
+        // PASSPORT FIRST. mvpl.ink was missing entirely, so on a post whose buy
+        // button had been re-pointed to Passport the bar skipped it, fell through
+        // to the amazon.* rule, and grabbed a comparison-block SEARCH link. The
+        // article button went to the product and the bar went to a search page.
+        //
+        // And the amazon.* rule now requires a PRODUCT path. A post can carry
+        // amazon.com/s?k=...&tag=... in a comparison block: a real Amazon URL,
+        // with the creator's tag on it, that is not a buy link for anything.
+        // Matching "any amazon URL" made the most prominent button on the page
+        // point at a search box.
         $url = null;
-        if (preg_match('#https?://(?:www\\.)?geni\\.us/[A-Za-z0-9]+#', $post->post_content, $m)) $url = $m[0];
+        // Passport: the branded short domain, or the app-origin /go/ fallback.
+        if (preg_match('#https?://(?:www\\.)?mvpl\\.ink/[A-Za-z0-9]{4,16}#', $post->post_content, $m)) $url = $m[0];
+        if (!$url && preg_match('#https?://[^\\s"\'<>]+/go/[A-Za-z0-9]{4,16}#', $post->post_content, $m)) $url = $m[0];
+        if (!$url && preg_match('#https?://(?:www\\.)?geni\\.us/[A-Za-z0-9]+#', $post->post_content, $m)) $url = $m[0];
         if (!$url && preg_match('#https?://(?:www\\.)?amzn\\.to/[A-Za-z0-9]+#', $post->post_content, $m)) $url = $m[0];
-        if (!$url && preg_match('#https?://(?:www\\.)?amazon\\.[a-z.]+/[^\\s"\'<>]+#', $post->post_content, $m)) $url = rtrim($m[0], '.,;');
+        if (!$url && preg_match('#https?://(?:www\\.)?amazon\\.[a-z.]+/(?:[^\\s"\'<>]*/)?(?:dp|gp/product|gp/aw/d|clp)/[A-Z0-9]{10}[^\\s"\'<>]*#i', $post->post_content, $m)) $url = rtrim($m[0], '.,;');
         if (!$url) return;
 
         $is_amazon = (bool) preg_match('/amazon\\.|amzn\\.to|geni\\.us/i', $url);
