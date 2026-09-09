@@ -150,16 +150,16 @@ export async function POST(request: Request) {
       if (!videoId) return null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let { data } = await supabase
-        .from('youtube_videos').select('id,title,description,product_url,youtube_video_id')
+        .from('youtube_videos').select('*')
         .eq('user_id', user.id).eq('id', videoId).maybeSingle()
       if (!data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = await supabase
-          .from('youtube_videos').select('id,title,description,product_url,youtube_video_id')
+          .from('youtube_videos').select('*')
           .eq('user_id', user.id).eq('youtube_video_id', videoId).maybeSingle()
         data = r.data
       }
-      return data as { id: string; title: string; description: string; product_url: string | null; youtube_video_id: string | null } | null
+      return data as unknown as { id: string; title: string; description: string; product_url: string | null; youtube_video_id: string | null; asin?: string | null } | null
     }
 
     // The link currently used by the post (stored on the video, else first
@@ -179,6 +179,46 @@ export async function POST(request: Request) {
      *  that is not in the body changes nothing and would be counted as a fix. */
     const bodyLinkOf = (content: string): string | null => content.match(AFFILIATE_HREF)?.[1] ?? null
 
+    /** Which product this post is about, WITHOUT rediscovering it.
+     *
+     *  A published post already links to its product. Re-pointing it is not the
+     *  same problem as writing a new one, and treating it as such is what broke
+     *  the first real run: the generic resolver re-derives the product from the
+     *  video's title and description, which for a geni.us post means following
+     *  the geni.us link in the DESCRIPTION. A creator migrating off Geniuslink
+     *  was therefore blocked by Geniuslink, and got "could not resolve a product
+     *  for this post" on a post whose product was sitting in its own href.
+     *
+     *  Cheapest first, and the network only as a last resort:
+     *    1. an Amazon /dp/ link already in the post body
+     *    2. the ASIN stored on the video row (migration 204)
+     *    3. the video's stored product_url
+     *    4. follow the post's OWN current link, which is the one that works
+     *
+     *  Step 4 is the creator's own description of the fix: the geni.us link
+     *  still points at a real product, so resolve it and cloak that. */
+    async function asinForRestyle(
+      content: string,
+      video: { product_url?: string | null; asin?: string | null },
+      currentUrl: string,
+    ): Promise<string | null> {
+      const ok = (a: string | null | undefined) => {
+        const v = (a || '').trim().toUpperCase()
+        return v && isValidAsin(v) ? v : null
+      }
+      const inBody = content.match(/amazon\.[a-z.]+\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]
+      const fromBody = ok(inBody)
+      if (fromBody) return fromBody
+      const stored = ok(video.asin)
+      if (stored) return stored
+      const fromProductUrl = ok(asinFromAmazonUrl(String(video.product_url || '')))
+      if (fromProductUrl) return fromProductUrl
+      try {
+        const finalUrl = await resolveTrueDestination(currentUrl)
+        return ok(asinFromAmazonUrl(finalUrl))
+      } catch { return null }
+    }
+
     /** Build this post's correct affiliate link, in the creator's chosen style.
      *
      *  THIS MINTS. For a Geniuslink creator it creates a real shortcode; for a
@@ -189,6 +229,7 @@ export async function POST(request: Request) {
     async function buildLinkFor(
       post: { id: string; title?: string | null; slug?: string | null; video_id: string | null; wordpress_site_id?: string | null },
       video: { title: string; description: string; youtube_video_id: string | null },
+      knownAsin?: string | null,
     ): Promise<string | null> {
       const postSite = await siteFor(post.wordpress_site_id ?? null)
       const { affiliateUrl } = await resolveAffiliateUrl({
@@ -201,6 +242,7 @@ export async function POST(request: Request) {
         geniuslinkApiKey: wp?.geniuslink_api_key,
         geniuslinkApiSecret: wp?.geniuslink_api_secret,
         unwrapSourceLinks: true,
+        knownAsin: knownAsin ?? null,
         videoId: video.youtube_video_id,
         geniuslinkGroupId: postSite?.siteId
           ? await resolveGeniuslinkGroupId({
@@ -248,8 +290,15 @@ export async function POST(request: Request) {
           if (!/^https?:\/\//i.test(newUrl)) {
             const video = await resolveVideo(row.video_id as string | null)
             if (!video) { errs.push(`${f.postId}: no source video, cannot rebuild the link`); continue }
-            const built = await buildLinkFor(row as never, video)
-            if (!built) { errs.push(`${f.postId}: could not resolve a product for this post`); continue }
+            const currentUrl = bodyLinkOf(original) || f.oldUrl
+            const knownAsin = await asinForRestyle(original, video, currentUrl)
+            const built = await buildLinkFor(row as never, video, knownAsin)
+            if (!built) {
+              errs.push(knownAsin
+                ? `${f.postId}: found product ${knownAsin} but could not build a ${chosenStyle} link for it`
+                : `${f.postId}: could not work out which product this post is about`)
+              continue
+            }
             // The same honesty check the scan does: a mint that failed falls back
             // to a plain tagged link, and swapping one plain link for another is
             // not the fix the creator asked for.

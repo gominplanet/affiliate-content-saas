@@ -80,6 +80,21 @@ export interface AffiliateResolveOpts {
    *  a richer string (e.g. "{post-slug} | {site-domain}") for filterable
    *  rows in Geniuslink's link list. */
   geniuslinkNote?: string | null
+  /** The product, already known. Skips discovery entirely.
+   *
+   *  Everything below this exists to ANSWER "which product is this video
+   *  about" for a post that does not exist yet. Re-pointing an existing post is
+   *  the opposite problem: the product was settled when it was published and is
+   *  sitting in the post's own link. Asking the discovery chain again is slower,
+   *  costs an AI call, and can return a DIFFERENT product than the one the post
+   *  is actually about.
+   *
+   *  It can also simply fail, which is how this was found. Rebuilding a post
+   *  whose link is a geni.us URL starts by following that URL to read the ASIN
+   *  off the destination. For a creator who has stopped paying for Geniuslink
+   *  that lookup returns nothing, discovery-by-title finds nothing either, and
+   *  the migration off Geniuslink is blocked by Geniuslink. */
+  knownAsin?: string | null
 }
 
 export interface AffiliateResolveResult {
@@ -105,6 +120,13 @@ export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<A
 
   let asin: string | null = null
   let destination: string | null = null
+
+  // ── Step 0 — the caller already knows the product ────────────────────────
+  // Nothing below needs to run. See knownAsin on the options type.
+  const known = (opts.knownAsin || '').trim().toUpperCase()
+  if (known && isValidAsin(known)) {
+    asin = known
+  } else {
 
   // ── Step 1 — find a VALID ASIN or a real store destination ───────────────
   const titleAsin = extractAsin(title) // hardened: rejects 10-letter words
@@ -150,6 +172,8 @@ export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<A
       } catch { /* discovery failed — leave unresolved */ }
     }
   }
+
+  } // end of the discovery branch skipped by knownAsin
 
   if (asin) destination = `https://www.amazon.com/dp/${asin}`
   if (!destination) return { affiliateUrl: null, asin, destination: null }

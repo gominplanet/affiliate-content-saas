@@ -27,6 +27,7 @@ const root = new URL('..', import.meta.url).pathname
 const read = (rel: string) => readFileSync(join(root, rel), 'utf8')
 const ROUTE = read('app/api/blog/fix-affiliate-links/route.ts')
 const CONTENT = read('app/(dashboard)/content/page.tsx')
+const RESOLVE = read('lib/affiliate-resolve.ts')
 
 // ── reading the style off a live URL ────────────────────────────────────────
 {
@@ -128,6 +129,38 @@ const CONTENT = read('app/(dashboard)/content/page.tsx')
   check('the apply re-reads the link a reader actually clicks',
     /const oldUrl = bodyLinkOf\(original\) \|\| f\.oldUrl/.test(ROUTE),
     'so a post edited between preview and apply is still matched')
+
+  // ── re-pointing is not re-discovering ─────────────────────────────────────
+  // The first real run failed with "could not resolve a product for this post"
+  // on a post whose product was sitting in its own href. The apply called the
+  // generic resolver, which re-derives the product from the video's title and
+  // description as though writing a fresh post. For a geni.us post that means
+  // following the geni.us link in the DESCRIPTION, so a creator migrating OFF
+  // Geniuslink was blocked BY Geniuslink, which is the one dependency the whole
+  // migration exists to remove.
+  //
+  // A published post already links to its product. Read it, do not rediscover it.
+  check('the apply works out the product from the post itself',
+    /async function asinForRestyle\(/.test(ROUTE))
+  check('cheapest source first: an Amazon link already in the post body',
+    /const inBody = content\.match\(/.test(ROUTE),
+    'free, no network, and it is right there')
+  check('then the ASIN stored on the video row',
+    /const stored = ok\(video\.asin\)/.test(ROUTE))
+  check('and only then follow the post\'s OWN current link',
+    /const finalUrl = await resolveTrueDestination\(currentUrl\)/.test(ROUTE),
+    'the creator\'s own description of the fix: the geni.us link still points at a real product, so resolve it and cloak that')
+  check('the video row is read with select(*), not named columns',
+    /\.from\('youtube_videos'\)\.select\('\*'\)/.test(ROUTE),
+    'asin ships in migration 204, and naming a column a database lacks makes PostgREST reject the whole read')
+  check('the resolver can be told the product and skip discovery',
+    /knownAsin\?: string \| null/.test(RESOLVE) && /if \(known && isValidAsin\(known\)\)/.test(RESOLVE),
+    'rediscovery is slower, costs an AI call, and can return a DIFFERENT product than the post is about')
+  check('and the apply passes it through',
+    /knownAsin: knownAsin \?\? null/.test(ROUTE))
+  check('a failure says which half failed',
+    /found product \$\{knownAsin\} but could not build/.test(ROUTE),
+    '"could not resolve a product" for a post that HAS a product sent the debugging in the wrong direction')
 
   // ── one click, however many posts ─────────────────────────────────────────
   check('the client applies in batches',
