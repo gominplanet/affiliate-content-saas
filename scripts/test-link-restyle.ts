@@ -46,6 +46,14 @@ const RESOLVE = read('lib/affiliate-resolve.ts')
     ['https://a.co/d/abcd', 'direct'],
     // Nothing to read. Must be null, never a guess: a wrong answer here
     // rewrites somebody's published post.
+    // An Amazon SEARCH link with the creator's tag on it. A real Amazon URL,
+    // and not a buy link for anything. Reading it as 'direct' made a post whose
+    // actual button is a geni.us link report as the wrong style, and sent the
+    // repair tool hunting for a product id on a search page. Seen live on
+    // "Goodeco Dog Statue with Solar Lantern Review".
+    ['https://www.amazon.com/s?k=Solar%20Dog%20Statue&tag=gomin0e-20', null],
+    ['https://www.amazon.com/stores/page/ABC123', null],
+    ['https://www.amazon.com/dp/B0H986NKLH', 'direct'],
     ['https://brandstore.com/products/thing', null],
     ['/relative/path', null],
     ['', null],
@@ -147,8 +155,8 @@ const RESOLVE = read('lib/affiliate-resolve.ts')
     'free, no network, and it is right there')
   check('then the ASIN stored on the video row',
     /const stored = ok\(video\.asin\)/.test(ROUTE))
-  check('and only then follow the post\'s OWN current link',
-    /const finalUrl = await resolveTrueDestination\(currentUrl\)/.test(ROUTE),
+  check('and only then follow the post\'s OWN links',
+    /const finalUrl = await resolveTrueDestination\(candidate\)/.test(ROUTE),
     'the creator\'s own description of the fix: the geni.us link still points at a real product, so resolve it and cloak that')
   check('the video row is read with select(*), not named columns',
     /\.from\('youtube_videos'\)\.select\('\*'\)/.test(ROUTE),
@@ -161,6 +169,17 @@ const RESOLVE = read('lib/affiliate-resolve.ts')
   check('a failure says which half failed',
     /found product \$\{knownAsin\} but could not build/.test(ROUTE),
     '"could not resolve a product" for a post that HAS a product sent the debugging in the wrong direction')
+
+  check('the post\'s links are ranked, cloaked buy button first',
+    /const bodyLinksOf = \(content: string\): string\[\] =>/.test(ROUTE)
+      && /if \(GENIUSLINK\.test\(u\) \|\| SHORTENERS\.test\(u\) \|\| styleOfUrl\(u\) === 'passport'\) return 0/.test(ROUTE),
+    'taking the first href in document order picked a comparison-block search link over the actual buy button')
+  check('search and storefront URLs are dropped, not ranked last',
+    /rank\(u\) < 2/.test(ROUTE),
+    'they are navigation; nothing in a link repair should reason about them')
+  check('and the product lookup tries every candidate link',
+    /for \(const candidate of \[currentUrl, \.\.\.extraLinks\]/.test(ROUTE),
+    'giving up after the first is how a post with a good geni.us button reported that nobody could tell what it was about')
 
   // ── one click, however many posts ─────────────────────────────────────────
   check('the client applies in batches',

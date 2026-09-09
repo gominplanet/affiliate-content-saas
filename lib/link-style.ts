@@ -59,8 +59,25 @@ export function styleOfUrl(url: string | null | undefined): LinkStyle | null {
   if (/\bbit\.ly\//i.test(s)) return 'bitly'
   // amzn.to and a.co are Amazon's OWN shorteners, not a cloaker the creator
   // picked. They read as direct: the tag rides inside them.
-  if (/amazon\.[a-z.]+/i.test(s) || /(?:amzn\.to|a\.co)\//i.test(s)) return 'direct'
+  if (/amazon\.[a-z.]+/i.test(s)) return isAmazonProductUrl(s) ? 'direct' : null
+  if (/(?:amzn\.to|a\.co)\//i.test(s)) return 'direct'
   return null
+}
+
+/** An Amazon PRODUCT page, as opposed to a search, a storefront or a category.
+ *
+ *  A post can carry `amazon.com/s?k=Solar+Dog+Statue&tag=…` in a comparison
+ *  block: a real Amazon link, with the creator's tag on it, that is not a buy
+ *  link for anything. Reading it as a style is wrong twice over. It makes a post
+ *  whose actual buy button is a geni.us link report as `direct`, and it sends the
+ *  repair tool off to resolve a search page for a product id that was never
+ *  there. Both were seen on the same post. */
+function isAmazonProductUrl(s: string): boolean {
+  try {
+    const u = new URL(s)
+    if (!/amazon\.[a-z.]+$/i.test(u.hostname.replace(/^www\./i, ''))) return false
+    return /\/(?:dp|gp\/product|gp\/aw\/d)\/[A-Z0-9]{10}/i.test(u.pathname)
+  } catch { return false }
 }
 
 /** The two shapes a Passport Link comes in: a code at the root of the branded

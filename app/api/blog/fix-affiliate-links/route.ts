@@ -177,7 +177,33 @@ export async function POST(request: Request) {
      *  and when they do it is the page that is wrong or right, not the row. It
      *  also has to be the string that gets swapped, because a replace of a URL
      *  that is not in the body changes nothing and would be counted as a fix. */
-    const bodyLinkOf = (content: string): string | null => content.match(AFFILIATE_HREF)?.[1] ?? null
+    const bodyLinkOf = (content: string): string | null => bodyLinksOf(content)[0] ?? null
+
+    /** EVERY affiliate href in the post, best buy-link first.
+     *
+     *  Taking the first match in document order was wrong, and the post that
+     *  exposed it carries three `amazon.com/s?k=…&tag=…` SEARCH links in a
+     *  comparison block plus one geni.us buy button. The search link came first
+     *  in the HTML, so the tool read the post's style off a search page and then
+     *  tried to resolve a product id out of it. There was never one there.
+     *
+     *  Order: a cloaked link (geni.us, Passport, a shortener) is what the buy
+     *  button uses, so it wins. Then a real Amazon /dp/ product. Search and
+     *  storefront URLs are dropped entirely: they are navigation, not a buy
+     *  link, and nothing here should reason about them. */
+    const bodyLinksOf = (content: string): string[] => {
+      const hrefs = (content.match(new RegExp(AFFILIATE_HREF.source, 'gi')) || [])
+        .map((h) => h.match(/href="([^"]+)"/i)?.[1] || '')
+        .filter(Boolean)
+      const seen = new Set<string>()
+      const uniq = hrefs.filter((u) => (seen.has(u) ? false : (seen.add(u), true)))
+      const rank = (u: string): number => {
+        if (GENIUSLINK.test(u) || SHORTENERS.test(u) || styleOfUrl(u) === 'passport') return 0
+        if (/amazon\.[a-z.]+\/(?:dp|gp\/product|gp\/aw\/d)\/[A-Z0-9]{10}/i.test(u)) return 1
+        return 2 // a search or storefront URL — kept last, and filtered below
+      }
+      return uniq.filter((u) => rank(u) < 2).sort((a, b) => rank(a) - rank(b))
+    }
 
     /** Which product this post is about, WITHOUT rediscovering it.
      *
@@ -201,6 +227,7 @@ export async function POST(request: Request) {
       content: string,
       video: { product_url?: string | null; asin?: string | null },
       currentUrl: string,
+      extraLinks: string[] = [],
     ): Promise<string | null> {
       const ok = (a: string | null | undefined) => {
         const v = (a || '').trim().toUpperCase()
@@ -213,10 +240,18 @@ export async function POST(request: Request) {
       if (stored) return stored
       const fromProductUrl = ok(asinFromAmazonUrl(String(video.product_url || '')))
       if (fromProductUrl) return fromProductUrl
-      try {
-        const finalUrl = await resolveTrueDestination(currentUrl)
-        return ok(asinFromAmazonUrl(finalUrl))
-      } catch { return null }
+      // Follow the post's own links until one yields a product. Plural on
+      // purpose: a post can carry several, and giving up after the first is how
+      // a post with a perfectly good geni.us button reported that nobody could
+      // tell what it was about.
+      for (const candidate of [currentUrl, ...extraLinks].filter(Boolean)) {
+        try {
+          const finalUrl = await resolveTrueDestination(candidate)
+          const found = ok(asinFromAmazonUrl(finalUrl))
+          if (found) return found
+        } catch { /* try the next one */ }
+      }
+      return null
     }
 
     /** Build this post's correct affiliate link, in the creator's chosen style.
@@ -291,7 +326,13 @@ export async function POST(request: Request) {
             const video = await resolveVideo(row.video_id as string | null)
             if (!video) { errs.push(`${f.postId}: no source video, cannot rebuild the link`); continue }
             const currentUrl = bodyLinkOf(original) || f.oldUrl
-            const knownAsin = await asinForRestyle(original, video, currentUrl)
+            const knownAsin = await asinForRestyle(
+              original, video, currentUrl,
+              // Everything else worth following: the post's other buy links, and
+              // the URL stored on the video row (a geni.us link for most of
+              // these posts, which is exactly the thing that still resolves).
+              [...bodyLinksOf(original), String(video.product_url || '')],
+            )
             const built = await buildLinkFor(row as never, video, knownAsin)
             if (!built) {
               errs.push(knownAsin
