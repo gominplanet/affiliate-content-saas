@@ -11,6 +11,7 @@ import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { rehostAll, composeWithNanoBananaPro, composeWithNanoBanana } from '@/lib/thumbnail-generators'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -109,7 +110,7 @@ ${faceLine}${productLine}${textLine}Bright, punchy, modern, saturated colours, c
     // Rehost the ephemeral fal URL to our storage so it's a stable thumbnail.
     let hosted: string | null = null
     try {
-      const res = await fetch(imgs[0])
+      const res = await fetchWithTimeout(imgs[0])
       if (res.ok) {
         const bytes = new Uint8Array(await res.arrayBuffer())
         const path = `${opts.userId}/thumb-${withText ? '' : 'clean-'}${opts.asin}-${Date.now()}.png`

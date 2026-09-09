@@ -8,6 +8,7 @@
  * plan claim. Never throws; failures are swallowed so the caller is never
  * blocked on Discord being reachable.
  */
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 export function isDiscordConfigured(): boolean {
   return !!process.env.DISCORD_WEBHOOK_URL
 }
@@ -16,7 +17,8 @@ export async function notifyDiscord(content: string): Promise<void> {
   const url = process.env.DISCORD_WEBHOOK_URL
   if (!url || !content.trim()) return
   try {
-    await fetch(url, {
+    await fetchWithTimeout(url, {
+      timeoutMs: 8_000,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // Discord caps message content at 2000 chars — trim defensively.

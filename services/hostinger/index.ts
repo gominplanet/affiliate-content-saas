@@ -2,6 +2,7 @@
 // Docs: https://developers.hostinger.com
 // API key: hPanel → Account → API → Generate token
 
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 // VPS API only — shared hosting plans do not support API-based WordPress installation
 const BASE = 'https://developers.hostinger.com/api/vps/v1'
 
@@ -32,7 +33,7 @@ export class HostingerService {
   constructor(private apiKey: string) {}
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await fetchWithTimeout(`${BASE}${path}`, {
       ...options,
       headers: {
         Authentication: `Bearer ${this.apiKey}`,

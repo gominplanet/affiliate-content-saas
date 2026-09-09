@@ -24,6 +24,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 // youtube_channels + wordpress_sites.default_youtube_channel_id aren't in the
 // generated types yet (Phase 1) — use a loose client so queries compile until
@@ -343,7 +344,7 @@ async function refreshGoogleToken(
   if (Date.now() < Number(o.expiry || 0) - 60_000) return accessToken
   if (!refreshToken) return accessToken
   try {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
+    const res = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({

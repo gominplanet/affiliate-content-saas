@@ -3,6 +3,7 @@ import sharp from 'sharp'
 import { createOpenAIService } from '@/services/openai'
 import { recordUsage } from '@/lib/ai-usage'
 import { verifyProductMatchConsensus, verifyNoBrandLeak } from '@/lib/product-image'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 /**
  * Builds the 16:9 featured image for a campaign post.
@@ -97,7 +98,7 @@ export async function buildCampaignHero(opts: {
   // ── Fallback: product photo, letterboxed to a clean 16:9 canvas ───
   if (productImageUrl) {
     try {
-      const res = await fetch(productImageUrl)
+      const res = await fetchWithTimeout(productImageUrl)
       if (res.ok) {
         const src = Buffer.from(await res.arrayBuffer())
         const fitted = await sharp(src)

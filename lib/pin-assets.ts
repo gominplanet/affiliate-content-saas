@@ -21,6 +21,7 @@ import { resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { asinFromAmazonUrl, allProductUrls } from '@/lib/product-link'
 import { generateArtDirectorPin, generateArtDirectorCollagePin } from '@/lib/art-director-pin'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
 export const COMPLIANCE_TAGS = '#ad #affiliate'
@@ -505,7 +506,7 @@ async function generatePinImage(prompt: string, referenceImageUrl?: string | nul
   let inlineRef: { mimeType: string; data: string } | null = null
   if (referenceImageUrl && /^https?:\/\//i.test(referenceImageUrl)) {
     try {
-      const res = await fetch(referenceImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      const res = await fetchWithTimeout(referenceImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
       if (res.ok) {
         const buf = Buffer.from(await res.arrayBuffer())
         // Skip absurdly large refs; Gemini inline limit is generous but be safe.
