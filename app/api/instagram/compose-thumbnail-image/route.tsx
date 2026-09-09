@@ -3,6 +3,7 @@ import { ImageResponse } from 'next/og'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 /**
  * Compose a 1080×1350 (4:5) Instagram image from a horizontal YouTube
@@ -93,7 +94,11 @@ export async function POST(request: Request) {
   let thumbToUse = thumbnailUrl
   if (candidate) {
     try {
-      const head = await fetch(candidate, { method: 'HEAD' })
+      // A HEAD probe against YouTube's CDN, on the path to composing an image
+      // the creator is waiting on. Node's fetch has no default deadline, so a
+      // silent CDN would hold this whole route open rather than falling through
+      // to the thumbnail already in the DB, which is what the catch is for.
+      const head = await fetchWithTimeout(candidate, { method: 'HEAD', timeoutMs: 10_000 })
       // Real thumbs are usually 30-200kb. YouTube's "missing" placeholder
       // is < 2kb. Filter out the placeholder via Content-Length.
       const len = parseInt(head.headers.get('content-length') ?? '0', 10)
