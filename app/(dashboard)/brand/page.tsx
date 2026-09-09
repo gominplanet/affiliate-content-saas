@@ -1521,7 +1521,7 @@ export default function BrandPage() {
           <div className="card p-6">
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Brand Outreach Contact</h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              How should brands reach you when they want to collaborate? This is what gets put in your YouTube descriptions and collab emails.
+              Which route should brands see first? Fill in both a collaborations URL and a contact email and your descriptions offer both, in this order. Fill in one and they show that one.
             </p>
             <div className="flex flex-col gap-3">
               <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:border-[#7C3AED]/40"
@@ -1534,9 +1534,9 @@ export default function BrandPage() {
                   className="mt-1"
                 />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Send them to my blog</p>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Send them to my site first</p>
                   <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                    Uses the <span className="font-mono text-[11px]">Blog URL</span> field above ({data.website_url || <em className="opacity-60">not set yet</em>}).
+                    Uses your <span className="font-mono text-[11px]">URL for brand collaborations</span> ({data.collab_url || data.website_url || <em className="opacity-60">not set yet</em>}){data.collab_url ? '' : ', which falls back to your Blog URL'}.
                   </p>
                 </div>
               </label>
@@ -1550,7 +1550,7 @@ export default function BrandPage() {
                   className="mt-1"
                 />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Email me directly</p>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Email me first</p>
                   <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
                     Uses the <span className="font-mono text-[11px]">Contact email</span> field below ({data.contact_email || <em className="opacity-60">not set yet</em>}).
                   </p>

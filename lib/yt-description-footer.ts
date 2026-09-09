@@ -58,7 +58,7 @@ export interface FooterInput {
    *  This module decides WHICH lines appear; it no longer decides what they
    *  say, because that is the creator's to change. Omitted in tests and older
    *  callers, which then get MVP's defaults. */
-  lines?: Partial<Record<'blogPromoted' | 'blogFull' | 'collabWebsite' | 'collabEmail' | 'collabNoLink', string>>
+  lines?: Partial<Record<'blogPromoted' | 'blogFull' | 'collabWebsite' | 'collabEmail' | 'collabBoth' | 'collabBothEmailFirst' | 'collabNoLink', string>>
 }
 
 export interface FooterBlocks {
@@ -93,6 +93,8 @@ export function footerBlocks(input: FooterInput): FooterBlocks {
   // description?". Above the fold is the better slot, so when it exists the
   // link goes there and the lower line stands down.
   const L = input.lines ?? {}
+  // Whether the blog address is already on screen above the collaboration line.
+  // Computed here because the collaboration branch below needs it too.
   const promotedBlogLine = site && input.promoted && !alreadyTheirs
     ? (L.blogPromoted || `👉 For more in-depth reviews, check out my blog: ${site}`)
     : null
@@ -100,15 +102,33 @@ export function footerBlocks(input: FooterInput): FooterBlocks {
     ? (L.blogFull || `For more in depth reviews, make sure to check out my blog: ${site}`)
     : null
 
-  // Which route the collaboration line should use. The creator's explicit pick
-  // wins; otherwise whichever they actually filled in.
+  const siteShownAbove = !!blogLine || !!promotedBlogLine || alreadyTheirs
+
+  // Which route(s) the collaboration line offers.
+  //
+  // BOTH, WHEN THERE ARE BOTH. This used to pick one and drop the other, and
+  // that was an over-correction. The bug it came from was the same URL printed
+  // twice, three lines apart. A collaborations URL and an email are not a
+  // repeat: they are two different doors, a creator who filled in both wants
+  // brands to have both, and hiding one because the other exists is the product
+  // deciding something the creator already decided.
+  //
+  // Brand Outreach Contact now orders them rather than choosing between them,
+  // so an explicit pick still leads. One route filled means one route printed.
   let collabLine: string | null = null
   const collabEmailLine = L.collabEmail || `Let's Work Together! Email me for collaborations: ${email}`
   const collabSiteLine = L.collabWebsite || `Let's Work Together! Check my WEBSITE for collaborations: ${collab}`
-  if (pref === 'email' && email) {
+  const collabBothLine = L.collabBoth || `Let's Work Together! Check my WEBSITE for collaborations: ${collab} or email me: ${email}`
+  const collabBothEmailFirstLine = L.collabBothEmailFirst || `Let's Work Together! Email me for collaborations: ${email} or check my WEBSITE: ${collab}`
+
+  // A collaborations URL that merely repeats the blog link already on screen is
+  // not a second door, so it does not count as "both".
+  const collabIsARepeat = !!collab && siteShownAbove && sameUrl(site, collab)
+
+  if (collab && email && !collabIsARepeat) {
+    collabLine = pref === 'email' ? collabBothEmailFirstLine : collabBothLine
+  } else if (pref === 'email' && email) {
     collabLine = collabEmailLine
-  } else if (pref === 'website' && collab) {
-    collabLine = collabSiteLine
   } else if (collab) {
     collabLine = collabSiteLine
   } else if (email) {
@@ -119,7 +139,7 @@ export function footerBlocks(input: FooterInput): FooterBlocks {
   // appears above it: from one of the blog lines, whichever ran, or from the
   // creator's own custom block. Their own mention counts. The rule is that a
   // reader sees the address once, not that MVP printed it once.
-  const siteAlreadyShown = !!blogLine || !!promotedBlogLine || alreadyTheirs
+  const siteAlreadyShown = siteShownAbove
   if (siteAlreadyShown && collabLine && sameUrl(site, extractUrl(collabLine))) {
     if (email && pref !== 'website') {
       // Two real routes exist and only one was being used. Use both.

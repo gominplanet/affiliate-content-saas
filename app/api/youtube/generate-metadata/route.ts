@@ -1212,6 +1212,8 @@ export async function POST(request: Request) {
         blogFull: LINES.blogFull,
         collabWebsite: LINES.collabWebsite,
         collabEmail: LINES.collabEmail,
+        collabBoth: LINES.collabBoth,
+        collabBothEmailFirst: LINES.collabBothEmailFirst,
         collabNoLink: LINES.collabNoLink,
       },
     })

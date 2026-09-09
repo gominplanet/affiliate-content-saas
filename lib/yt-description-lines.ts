@@ -36,6 +36,8 @@ export const LINE_KEYS = [
   'blogFull',
   'collabWebsite',
   'collabEmail',
+  'collabBoth',
+  'collabBothEmailFirst',
   'collabNoLink',
   'signOff',
 ] as const
@@ -54,6 +56,8 @@ export const DEFAULT_LINES: Record<LineKey, string> = {
   blogFull: 'For more in depth reviews, make sure to check out my blog: {site}',
   collabWebsite: "Let's Work Together! Check my WEBSITE for collaborations: {collab}",
   collabEmail: "Let's Work Together! Email me for collaborations: {email}",
+  collabBoth: "Let's Work Together! Check my WEBSITE for collaborations: {collab} or email me: {email}",
+  collabBothEmailFirst: "Let's Work Together! Email me for collaborations: {email} or check my WEBSITE: {collab}",
   collabNoLink: "Let's Work Together! Brand collaborations welcome — reach me through the website linked above.",
   signOff: 'Thank you for watching! If you enjoyed this video review and found it useful, please subscribe and like for more product reviews :)',
 }
@@ -69,6 +73,8 @@ export const LINE_META: Record<LineKey, { label: string; help: string; tokens: s
   blogFull: { label: 'Blog link (lower)', help: 'Used instead of the top one on videos with no product link.', tokens: ['{site}'] },
   collabWebsite: { label: 'Collaboration line (website)', help: 'Used when brands should reach you via your site. {collab} is your Brand collaborations URL, and falls back to your Blog URL when you have not set one.', tokens: ['{collab}', '{site}'] },
   collabEmail: { label: 'Collaboration line (email)', help: 'Used when brands should email you.', tokens: ['{email}'] },
+  collabBoth: { label: 'Collaboration line (site + email)', help: 'Used when you have BOTH a collaborations URL and a contact email, and the URL is not already printed above. Brands get two ways to reach you.', tokens: ['{collab}', '{email}'] },
+  collabBothEmailFirst: { label: 'Collaboration line (email first)', help: 'The same two routes, ordered the other way. Used when Brand Outreach Contact is set to email.', tokens: ['{email}', '{collab}'] },
   collabNoLink: { label: 'Collaboration line (no repeat)', help: 'Used when your site is already linked above, so the address is not printed twice.', tokens: [] },
   signOff: { label: 'Sign-off', help: 'The thank-you and subscribe line.', tokens: [] },
 }
