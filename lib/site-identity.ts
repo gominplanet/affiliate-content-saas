@@ -34,6 +34,38 @@ type Client = SupabaseClient<Database>
 // snapshot (so a restore can't rewrite the owner or clobber timestamps).
 const BRAND_ROW_KEYS = new Set(['id', 'user_id', 'created_at', 'updated_at'])
 
+/** Keys inside blog_customizations that belong to the SITE ROW and must never
+ *  travel through the per-user tables.
+ *
+ *  THIS IS THE AUTO-PILOT BUG. blog_customizations exists in two places:
+ *  integrations.blog_customizations is the live per-user set that the Customize,
+ *  Ads and Brand Inquiries screens write, and wordpress_sites.blog_customizations
+ *  is that blog's snapshot. Auto-pilot stores its state as `autoBlog`, and it
+ *  writes it ONLY to the site row, because "one post a day" is a fact about one
+ *  blog rather than about the account.
+ *
+ *  The snapshot below used to copy integrations.blog_customizations over the site
+ *  row wholesale. integrations has never contained autoBlog, so every save on
+ *  Customize, Ads or Brand Inquiries deleted it, and readState treats an absent
+ *  key as `enabled: false`. The creator turned auto-pilot on, saved something
+ *  unrelated hours later, and found it off the next day with nothing on screen
+ *  connecting the two.
+ *
+ *  So the snapshot now preserves these keys from the site row, and the restore
+ *  strips them on the way into the per-user table, where they would otherwise
+ *  leak one blog's schedule onto every other blog. */
+const SITE_OWNED_CUSTOMIZATION_KEYS = ['autoBlog'] as const
+
+/** Everything except the site-owned keys. Used when copying a customizations
+ *  blob INTO the per-user table. */
+function withoutSiteOwnedKeys(bc: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(bc)) {
+    if (!(SITE_OWNED_CUSTOMIZATION_KEYS as readonly string[]).includes(k)) out[k] = v
+  }
+  return out
+}
+
 /** Snapshot the user's ACTIVE blog identity (brand_profiles +
  *  integrations.blog_customizations) onto that blog's own wordpress_sites row.
  *  Call after any brand or Customize save, and before switching away from a
@@ -68,10 +100,39 @@ export async function snapshotActiveBlogIdentity(supabase: Client, userId: strin
       .maybeSingle()
     const blogCustomizations = intRow?.blog_customizations ?? null
 
+    // What the SITE row holds right now. Its site-owned keys (auto-pilot) are
+    // not represented in the per-user blob at all, so writing that blob over the
+    // top would silently delete them. Read them back and carry them across.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: siteRow } = await (supabase as any)
+      .from('wordpress_sites')
+      .select('blog_customizations')
+      .eq('user_id', userId)
+      .eq('id', site.id)
+      .maybeSingle()
+    const siteOwned: Record<string, unknown> = {}
+    const existingSiteBc = siteRow?.blog_customizations
+    if (existingSiteBc && typeof existingSiteBc === 'object') {
+      for (const k of SITE_OWNED_CUSTOMIZATION_KEYS) {
+        const v = (existingSiteBc as Record<string, unknown>)[k]
+        if (v !== undefined) siteOwned[k] = v
+      }
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const patch: Record<string, unknown> = {}
     if (Object.keys(brandSnapshot).length > 0) patch.brand_snapshot = brandSnapshot
-    if (blogCustomizations != null) patch.blog_customizations = blogCustomizations
+    if (blogCustomizations != null) {
+      patch.blog_customizations = {
+        ...(blogCustomizations as Record<string, unknown>),
+        ...siteOwned,
+      }
+    } else if (Object.keys(siteOwned).length > 0) {
+      // Nothing user-level to snapshot, but the site has auto-pilot set. Leaving
+      // the row untouched is correct; writing {} here would be the same deletion
+      // by a different route.
+      patch.blog_customizations = { ...(existingSiteBc as Record<string, unknown>) }
+    }
     if (Object.keys(patch).length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (supabase as any)
@@ -121,10 +182,13 @@ export async function restoreBlogIdentity(supabase: Client, userId: string, site
 
     const bc = row.blog_customizations
     if (bc != null && typeof bc === 'object') {
+      // Strip the site-owned keys on the way in. auto-pilot belongs to ONE blog;
+      // copying it into the per-user row would carry blog A's schedule into the
+      // account, and the next snapshot would then stamp it onto blog B.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (supabase as any)
         .from('integrations')
-        .update({ blog_customizations: bc as never })
+        .update({ blog_customizations: withoutSiteOwnedKeys(bc as Record<string, unknown>) as never })
         .eq('user_id', userId)
     }
 

@@ -134,3 +134,48 @@ where case
     where c.table_schema='public' and c.table_name=p.tbl and c.column_name=p.col)
 end
 order by p.mig::int, p.tbl, p.col;`)
+
+// ── Indexes: what the database HAS, not what we asked for ───────────────────
+//
+// The audit above answers "is anything we promised missing". This second query
+// answers the opposite question, and it exists because getting that backwards
+// cost a duplicate index in production.
+//
+// An index was reported as missing on the strength of a grep over this folder.
+// It was not missing. It had been created directly in Supabase, so no migration
+// file mentioned it, and a second identical one got added on top. Every write to
+// that table then maintained both for no gain.
+//
+// The migrations folder records what we asked for. Only the database knows what
+// it has, and indexes are the part most likely to differ, because they get added
+// by hand in the SQL editor during a slow-query hunt and never written back.
+//
+// So: print every index, and flag the pairs covering the same columns on the
+// same table. Duplicates come back as a DUPLICATE row.
+console.log(`
+
+-- ── Indexes actually in the database ────────────────────────────────────────
+-- Read-only. Run this BEFORE concluding an index is missing: a grep over
+-- supabase/migrations only shows what was asked for through a migration, and an
+-- index added by hand in the SQL editor appears in neither.
+-- Any row marked DUPLICATE is two indexes doing one job; drop the redundant one.
+with idx as (
+  select
+    i.tablename,
+    i.indexname,
+    i.indexdef,
+    -- the column list, normalised, so two indexes over the same columns match
+    -- even when their names follow different conventions
+    regexp_replace(i.indexdef, '^.*USING [a-z]+ \\((.*)\\)$', '\\1') as cols
+  from pg_indexes i
+  where i.schemaname = 'public'
+)
+select
+  tablename,
+  indexname,
+  cols as indexed_columns,
+  case when count(*) over (partition by tablename, cols) > 1
+       then 'DUPLICATE' else '' end as flag
+from idx
+order by (case when count(*) over (partition by tablename, cols) > 1 then 0 else 1 end),
+         tablename, cols, indexname;`)
