@@ -36,6 +36,8 @@ export const LINE_KEYS = [
   'blogFull',
   'collabWebsite',
   'collabEmail',
+  'collabBoth',
+  'collabBothEmailFirst',
   'collabNoLink',
   'signOff',
 ] as const
@@ -52,8 +54,10 @@ export const DEFAULT_LINES: Record<LineKey, string> = {
   disclosureGeneral: 'Disclosure: This video contains affiliate links. I may earn a commission at no extra cost to you.',
   blogPromoted: '👉 For more in-depth reviews, check out my blog: {site}',
   blogFull: 'For more in depth reviews, make sure to check out my blog: {site}',
-  collabWebsite: "Let's Work Together! Check my WEBSITE for collaborations: {site}",
+  collabWebsite: "Let's Work Together! Check my WEBSITE for collaborations: {collab}",
   collabEmail: "Let's Work Together! Email me for collaborations: {email}",
+  collabBoth: "Let's Work Together! Check my WEBSITE for collaborations: {collab} or email me: {email}",
+  collabBothEmailFirst: "Let's Work Together! Email me for collaborations: {email} or check my WEBSITE: {collab}",
   collabNoLink: "Let's Work Together! Brand collaborations welcome — reach me through the website linked above.",
   signOff: 'Thank you for watching! If you enjoyed this video review and found it useful, please subscribe and like for more product reviews :)',
 }
@@ -67,8 +71,10 @@ export const LINE_META: Record<LineKey, { label: string; help: string; tokens: s
   disclosureGeneral: { label: 'Disclosure (other links)', help: 'Shown when the link is not an Amazon product. Required by the FTC.', tokens: [] },
   blogPromoted: { label: 'Blog link (top)', help: 'Sits high in the description, above the fold, on videos with a product link.', tokens: ['{site}'] },
   blogFull: { label: 'Blog link (lower)', help: 'Used instead of the top one on videos with no product link.', tokens: ['{site}'] },
-  collabWebsite: { label: 'Collaboration line (website)', help: 'Used when brands should reach you via your site.', tokens: ['{site}'] },
+  collabWebsite: { label: 'Collaboration line (website)', help: 'Used when brands should reach you via your site. {collab} is your Brand collaborations URL, and falls back to your Blog URL when you have not set one.', tokens: ['{collab}', '{site}'] },
   collabEmail: { label: 'Collaboration line (email)', help: 'Used when brands should email you.', tokens: ['{email}'] },
+  collabBoth: { label: 'Collaboration line (site + email)', help: 'Used when you have BOTH a collaborations URL and a contact email, and the URL is not already printed above. Brands get two ways to reach you.', tokens: ['{collab}', '{email}'] },
+  collabBothEmailFirst: { label: 'Collaboration line (email first)', help: 'The same two routes, ordered the other way. Used when Brand Outreach Contact is set to email.', tokens: ['{email}', '{collab}'] },
   collabNoLink: { label: 'Collaboration line (no repeat)', help: 'Used when your site is already linked above, so the address is not printed twice.', tokens: [] },
   signOff: { label: 'Sign-off', help: 'The thank-you and subscribe line.', tokens: [] },
 }
@@ -107,11 +113,15 @@ export function resolveLine(key: LineKey, overrides: LineOverrides | null | unde
 /** Fill the tokens. Unknown tokens are left alone rather than blanked, so a
  *  creator seeing "{shopp}" in their description can spot their own typo
  *  instead of finding a silent gap. */
-export function fillTokens(line: string, values: { shop?: string; link?: string; site?: string; email?: string }): string {
+export function fillTokens(line: string, values: { shop?: string; link?: string; site?: string; email?: string; collab?: string }): string {
   return line
     .replace(/\{shop\}/g, values.shop ?? '')
     .replace(/\{link\}/g, values.link ?? '')
     .replace(/\{site\}/g, values.site ?? '')
+    // {collab} is where brands should go, which is not always the blog. The
+    // caller resolves the fallback to {site}, so a creator who has not set a
+    // separate collaborations URL sees exactly what they saw before.
+    .replace(/\{collab\}/g, values.collab ?? values.site ?? '')
     .replace(/\{email\}/g, values.email ?? '')
     .replace(/[ \t]{2,}/g, ' ')
     .trim()
@@ -120,7 +130,7 @@ export function fillTokens(line: string, values: { shop?: string; link?: string;
 /** One call for the route: every line, resolved and filled. */
 export function descriptionLines(
   overrides: LineOverrides | null | undefined,
-  values: { shop?: string; link?: string; site?: string; email?: string },
+  values: { shop?: string; link?: string; site?: string; email?: string; collab?: string },
 ): Record<LineKey, string> {
   const out = {} as Record<LineKey, string>
   for (const key of LINE_KEYS) out[key] = fillTokens(resolveLine(key, overrides), values)
@@ -139,7 +149,7 @@ export function detectLineEdit(
   generated: string,
   edited: string,
   overrides: LineOverrides | null | undefined,
-  values: { shop?: string; link?: string; site?: string; email?: string },
+  values: { shop?: string; link?: string; site?: string; email?: string; collab?: string },
 ): { key: LineKey; text: string } | null {
   if (!generated.trim() || !edited.trim() || generated === edited) return null
   const genLines = generated.split('\n')
@@ -160,7 +170,9 @@ export function detectLineEdit(
     // Put the tokens back, so saving "check my blog: https://x.com" stores
     // "check my blog: {site}" and keeps working if they change their site.
     let text = after
-    for (const [token, value] of [['{link}', values.link], ['{site}', values.site], ['{email}', values.email], ['{shop}', values.shop]] as const) {
+    // {collab} first: when the two URLs are equal, the more specific token wins
+    // so a creator's edit to the collaboration line keeps following that field.
+    for (const [token, value] of [['{link}', values.link], ['{collab}', values.collab], ['{site}', values.site], ['{email}', values.email], ['{shop}', values.shop]] as const) {
       if (value && text.includes(value)) text = text.split(value).join(token)
     }
     if ((key === 'disclosureProduct' || key === 'disclosureGeneral') && !disclosureIsValid(text)) return null

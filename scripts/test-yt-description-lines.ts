@@ -17,10 +17,14 @@
 // So detection is exact-match against the lines MVP knows it emitted, never a
 // diff. That is what most of this file is about: the things it must NOT offer
 // to save.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   DEFAULT_LINES, LINE_KEYS, resolveLine, fillTokens, descriptionLines,
   detectLineEdit, disclosureIsValid,
 } from '../lib/yt-description-lines'
+
+const root = new URL('..', import.meta.url).pathname
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -151,6 +155,40 @@ const VALUES = { shop: 'AMAZON', link: 'https://mvpl.ink/x7k', site: 'https://re
   check('their saved line is what MVP emitted', generated.includes('Cheers, see you next week.'))
   const hit = detectLineEdit(generated, generated.replace('Cheers, see you next week.', 'Cheers, back Thursday.'), overrides, VALUES)
   check('and editing it again is still detected', hit?.key === 'signOff' && hit.text === 'Cheers, back Thursday.')
+}
+
+// ── the addresses are editable where the wording is ─────────────────────────
+// A creator asked where to change the website link in his YouTube descriptions.
+// The wording lived on the YouTube page and the addresses lived on Brand
+// Profile, so neither screen answered the question on its own.
+{
+  const UI = readFileSync(join(root, 'components/youtube/YouTubeDescriptionSettings.tsx'), 'utf8')
+  check('the YouTube page loads the addresses the lines print',
+    /website_url, collab_url, contact_email/.test(UI))
+  check('and saves them back to the same columns',
+    /website_url: siteUrl\.trim\(\)/.test(UI) && /collab_url: collabUrl\.trim\(\)/.test(UI),
+    'two doors onto one set of values, not a second copy')
+  check('and says so, so nobody thinks they are separate settings',
+    /same fields as/.test(UI))
+
+  const BRAND = readFileSync(join(root, 'app/(dashboard)/brand/page.tsx'), 'utf8')
+  check('Brand Profile carries the collaborations URL too',
+    /collab_url/.test(BRAND))
+  check('and normalizes it on save like every other URL field',
+    /collab_url:\s+normalizeUrl\(data\.collab_url\)/.test(BRAND))
+}
+
+// ── {collab} falls back, so nothing changes until someone opts in ───────────
+{
+  const line = "Let's Work Together! Check my WEBSITE for collaborations: {collab}"
+  check('a creator with no collaborations URL sees their blog, as before',
+    fillTokens(line, { site: 'https://blog.com' }).includes('https://blog.com'))
+  check('and one with a collaborations URL sees that instead',
+    fillTokens(line, { site: 'https://blog.com', collab: 'https://services.com' })
+      .includes('https://services.com'))
+  check('the blog does not leak into it',
+    !fillTokens(line, { site: 'https://blog.com', collab: 'https://services.com' })
+      .includes('blog.com'))
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

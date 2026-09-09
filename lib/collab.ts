@@ -121,6 +121,11 @@ Return a tight markdown brief under 250 words. No fluff.`,
     brand?.niches?.length ? `Niches: ${(brand.niches as string[]).join(', ')}` : '',
     brand?.tone?.length ? `Voice: ${(brand.tone as string[]).join(', ')}` : '',
     input.websiteUrl || brand?.website_url ? `Blog: ${input.websiteUrl || brand.website_url}` : '',
+    // The creator's business front door, when that is not the blog. Named
+    // distinctly so the model pitches the SERVICES site rather than treating it
+    // as a second blog link.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (brand as any)?.collab_url ? `Where brands work with them (lead with this, not the blog, when pitching services): ${(brand as any).collab_url}` : '',
     input.youtubeUrl || brand?.youtube_channel_url ? `YouTube: ${input.youtubeUrl || brand.youtube_channel_url}` : '',
     input.amazonStorefront ? `Amazon storefront: ${input.amazonStorefront}` : '',
     input.portfolioUrl ? `Portfolio / link hub (all channels): ${input.portfolioUrl}` : '',

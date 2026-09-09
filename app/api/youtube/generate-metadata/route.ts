@@ -654,6 +654,10 @@ export async function POST(request: Request) {
     const niches = ((brand?.niches as string[]) || []).join(', ') || 'consumer products'
     const tone = ((brand?.tone as string[]) || []).join(', ') || 'conversational, friendly'
     const websiteUrl = (brand?.website_url as string) || ''
+    // Where brands should go to work with this creator, when that is NOT the
+    // blog. Empty means "same as the blog", which is the common case and the
+    // behaviour before the field existed.
+    const collabUrl = (brand?.collab_url as string) || ''
     const contactEmail = (brand?.contact_email as string) || ''
     const contactPreference: 'website' | 'email' =
       (brand?.contact_preference as string) === 'email' ? 'email' : 'website'
@@ -1194,12 +1198,13 @@ export async function POST(request: Request) {
       shop: isProduct ? 'AMAZON' : 'the product',
       link: affiliateUrl || '',
       site: websiteUrl || '',
+      collab: collabUrl || websiteUrl || '',
       email: contactEmail || '',
     }
     const LINES = descriptionLines(lineOverrides, lineValues)
 
     const footer = footerBlocks({
-      websiteUrl, contactEmail, contactPreference,
+      websiteUrl, contactEmail, contactPreference, collabUrl,
       promoted: !!affiliateUrl,
       existingText: customBlock || null,
       lines: {
@@ -1207,6 +1212,8 @@ export async function POST(request: Request) {
         blogFull: LINES.blogFull,
         collabWebsite: LINES.collabWebsite,
         collabEmail: LINES.collabEmail,
+        collabBoth: LINES.collabBoth,
+        collabBothEmailFirst: LINES.collabBothEmailFirst,
         collabNoLink: LINES.collabNoLink,
       },
     })

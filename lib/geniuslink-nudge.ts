@@ -7,6 +7,7 @@
 
 import { toast } from 'sonner'
 import { GENIUSLINK_SIGNUP_URL } from '@/lib/geniuslink-signup'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 const SEEN_KEY = 'mvp_gl_nudge_v1'
 
@@ -19,7 +20,7 @@ export async function nudgeGeniuslinkAfterPublish(): Promise<void> {
   try {
     if (typeof window === 'undefined') return
     if (localStorage.getItem(SEEN_KEY)) return
-    const res = await fetch('/api/integrations/geniuslink-status')
+    const res = await fetchWithTimeout('/api/integrations/geniuslink-status', { timeoutMs: 15_000 })
     const d = (await res.json().catch(() => ({}))) as { connected?: boolean }
     if (d?.connected) { localStorage.setItem(SEEN_KEY, 'connected'); return }
     // Not connected → show it once and remember.

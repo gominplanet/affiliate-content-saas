@@ -223,6 +223,7 @@ interface BrandData {
    *  /collaborations form so brands get the kit link in every pitch
    *  email. Set once here; the collab form can override per-pitch. */
   media_kit_url: string
+  collab_url: string
   contact_email: string
   /** Channel the creator wants brands to reach them through. Drives the
    *  "Let's Work Together" line in generated YouTube descriptions and the
@@ -311,6 +312,7 @@ const DEFAULT: BrandData = {
   amazon_storefront_url: '',
   linktree_url: '',
   media_kit_url: '',
+  collab_url: '',
   contact_email: '',
   contact_preference: 'website',
   sample_full_name: '',
@@ -676,6 +678,8 @@ export default function BrandPage() {
         linktree_url: row.linktree_url ?? '',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         media_kit_url: ((row as any).media_kit_url as string | null | undefined) ?? '',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        collab_url: ((row as any).collab_url as string | null | undefined) ?? '',
         contact_email: row.contact_email ?? '',
         contact_preference: (row.contact_preference === 'email' ? 'email' : 'website'),
         sample_full_name: row.sample_full_name ?? '',
@@ -715,6 +719,7 @@ export default function BrandPage() {
       threads_url:         normalizeUrl(data.threads_url),
       amazon_storefront_url: normalizeUrl(data.amazon_storefront_url),
       media_kit_url:       normalizeUrl(data.media_kit_url),
+      collab_url:          normalizeUrl(data.collab_url),
       linktree_url: normalizeUrl(data.linktree_url),
     }
     // Update local state so the user sees their normalized URLs after save
@@ -998,6 +1003,19 @@ export default function BrandPage() {
                   placeholder="https://yourblog.com"
                   className="input-field"
                 />
+                {/* SAY WHERE THIS ENDS UP. A creator asked where to change the
+                    website link in his YouTube descriptions, because he wanted
+                    them pointing at his portfolio instead of his blog. This is
+                    the field, and nothing on the screen said so: it is labelled
+                    Blog URL and reads as a detail about the blog. He looked
+                    here, found no answer, and had to ask. */}
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+                  The link MVP puts in your YouTube descriptions and your
+                  &ldquo;Let&rsquo;s Work Together&rdquo; line. Point it anywhere you
+                  like, a portfolio or a link hub, not only a blog. To change the
+                  wording around it, or use a different link for each,{' '}
+                  <a href="/connect-youtube" className="text-[#7C3AED] hover:underline">edit your description lines</a>.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Amazon storefront</label>
@@ -1039,6 +1057,28 @@ export default function BrandPage() {
                 />
                 <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
                   The quick and polished way to show your stats to curious brands — one clickable link instead of typing reach numbers into every reply. Paste yours here and every pitch email from /collaborations includes the link automatically. Don&apos;t have one? <a href="https://oinkforinfluencers.com/get-your-free-media-kit/" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Grab Oink&apos;s free template</a>.
+                </p>
+              </div>
+
+              {/* Brands need a front door, and it is not always the blog.
+                  website_url was doing both jobs: the site MVP writes for, and
+                  the address the "Let's Work Together!" line hands to brands.
+                  A creator with a review blog and a separate business site had
+                  no way to say so, so his descriptions invited brands to the
+                  review blog. */}
+              <div>
+                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">
+                  URL for brand collaborations <span className="text-[#86868b]">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={data.collab_url}
+                  onChange={(e) => set('collab_url', e.target.value)}
+                  placeholder="https://your-agency-or-services-site.com"
+                  className="input-field"
+                />
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+                  Where brands should go to work with you, when that is not your blog: an agency site, a services page, a portfolio. It replaces your Blog URL in the &ldquo;Let&rsquo;s Work Together&rdquo; line of every YouTube description, and it goes into your Collaborations pitch emails. Leave it empty and MVP keeps using your Blog URL, exactly as before.
                 </p>
               </div>
             </div>
@@ -1481,7 +1521,7 @@ export default function BrandPage() {
           <div className="card p-6">
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Brand Outreach Contact</h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              How should brands reach you when they want to collaborate? This is what gets put in your YouTube descriptions and collab emails.
+              Which route should brands see first? Fill in both a collaborations URL and a contact email and your descriptions offer both, in this order. Fill in one and they show that one.
             </p>
             <div className="flex flex-col gap-3">
               <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:border-[#7C3AED]/40"
@@ -1494,9 +1534,9 @@ export default function BrandPage() {
                   className="mt-1"
                 />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Send them to my blog</p>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Send them to my site first</p>
                   <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                    Uses the <span className="font-mono text-[11px]">Blog URL</span> field above ({data.website_url || <em className="opacity-60">not set yet</em>}).
+                    Uses your <span className="font-mono text-[11px]">URL for brand collaborations</span> ({data.collab_url || data.website_url || <em className="opacity-60">not set yet</em>}){data.collab_url ? '' : ', which falls back to your Blog URL'}.
                   </p>
                 </div>
               </label>
@@ -1510,7 +1550,7 @@ export default function BrandPage() {
                   className="mt-1"
                 />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Email me directly</p>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Email me first</p>
                   <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
                     Uses the <span className="font-mono text-[11px]">Contact email</span> field below ({data.contact_email || <em className="opacity-60">not set yet</em>}).
                   </p>

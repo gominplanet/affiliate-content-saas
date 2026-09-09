@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.18.6'
+export const SCOUT_LATEST_VERSION = '1.18.7'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Loads your accepted EPC campaigns instead of stopping at the empty New Opportunities feed.'
+  'Sets YouTube Studio\'s paid-promotion answer correctly now that it is a Yes/No radio rather than a checkbox.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

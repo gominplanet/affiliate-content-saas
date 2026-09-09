@@ -9,6 +9,7 @@
 
 import { toast } from 'sonner'
 import { requestAcceptCampaign } from '@/lib/extension-frame'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export interface AcceptParams {
   detailsUrl: string
@@ -52,7 +53,7 @@ export async function recordAccept(p: AcceptParams): Promise<boolean> {
   })
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const r = await fetch('/api/campaigns/mark-accepted', {
+      const r = await fetchWithTimeout('/api/campaigns/mark-accepted', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
       })
       if (r.ok) return true

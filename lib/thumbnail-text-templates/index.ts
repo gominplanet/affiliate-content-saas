@@ -23,6 +23,7 @@ import { pickTemplate } from './picker'
 import { templateById, randomTemplate } from './templates'
 import { fontsFor } from './fonts'
 import type { PickedTemplate, Side, VerticalAnchor } from './types'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export { TEMPLATES, randomTemplate, templateById } from './templates'
 
@@ -203,7 +204,7 @@ async function fetchBaseAsPng(url: string, width: number, height: number): Promi
     const comma = url.indexOf(',')
     imgBuf = Buffer.from(url.slice(comma + 1), 'base64')
   } else {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
     imgBuf = Buffer.from(await res.arrayBuffer())
   }
   return sharp(imgBuf).resize(width, height, { fit: 'cover' }).png().toBuffer()

@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // Bitly v4 — a FREE alternative to Geniuslink for the social→blog link. A
@@ -14,7 +15,7 @@ export async function shortenBitly(token: string, longUrl: string): Promise<stri
   const url = (longUrl || '').trim()
   if (!t || !/^https?:\/\//i.test(url)) return null
   try {
-    const res = await fetch('https://api-ssl.bitly.com/v4/shorten', {
+    const res = await fetchWithTimeout('https://api-ssl.bitly.com/v4/shorten', {
       method: 'POST',
       headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ long_url: url }),

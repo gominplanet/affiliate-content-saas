@@ -7,6 +7,7 @@
 // (GOOGLE_CLIENT_ID/SECRET); tokens live on integrations.gsc_oauth_*.
 
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 const WEBMASTERS = 'https://www.googleapis.com/webmasters/v3'
 const URL_INSPECTION = 'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect'
@@ -38,7 +39,7 @@ export async function getValidGscToken(
   if (!refreshToken) return accessToken // can't refresh; try as-is
 
   try {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
+    const res = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({

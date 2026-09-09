@@ -180,6 +180,119 @@ const urls = (s: string) => (s.match(/https?:\/\/\S+/g) || []).map(u => u.replac
   check('a real style failure keeps its warning', /ff9500/.test(PAGE))
 }
 
+// ── a separate address for brand collaborations ─────────────────────────────
+// website_url was doing two jobs: the blog MVP writes for, and the address the
+// "Let's Work Together!" line hands to brands. For a creator with a review blog
+// and a separate business site those differ, and there was no way to say so, so
+// the description invited brands to the review blog.
+{
+  const out = footerBlocks({
+    websiteUrl: 'https://www.gominreviews.com',
+    collabUrl: 'https://www.gominplanet.com',
+    contactEmail: '',
+    contactPreference: 'website',
+    promoted: true,
+  })
+  check('the blog line keeps the blog',
+    (out.promotedBlogLine || '').includes('gominreviews.com'))
+  check('and the collaboration line uses the collaborations URL',
+    (out.collabLine || '').includes('gominplanet.com'),
+    'this is the whole point of the field')
+  check('two different addresses both print in full',
+    !!out.promotedBlogLine && !!out.collabLine
+      && !(out.collabLine || '').includes('gominreviews.com'),
+    'the de-dupe must only fire on a REPEAT, not on a second, different URL')
+
+  // Empty means "same as the blog", which is what every account did before the
+  // field existed, so the collapse still has to fire.
+  const same = footerBlocks({
+    websiteUrl: 'https://www.gominreviews.com',
+    collabUrl: '',
+    contactEmail: '',
+    contactPreference: 'website',
+    promoted: true,
+  })
+  check('an empty collaborations URL falls back to the blog',
+    !!same.promotedBlogLine)
+  check('and the address is still not printed twice',
+    !(same.collabLine || '').includes('gominreviews.com'),
+    'the original complaint: the same URL, three lines apart')
+  check('while keeping the invitation',
+    (same.collabLine || '').toLowerCase().includes('work together'))
+
+  // An explicit collaborations URL that HAPPENS to equal the blog is a repeat.
+  const dup = footerBlocks({
+    websiteUrl: 'https://www.gominreviews.com',
+    collabUrl: 'https://gominreviews.com/',
+    contactEmail: '',
+    contactPreference: 'website',
+    promoted: true,
+  })
+  check('the same address in both fields still collapses',
+    !(dup.collabLine || '').includes('gominreviews.com'),
+    'scheme, www and a trailing slash are noise, not a different site')
+}
+
+// ── two routes filled means two routes offered ──────────────────────────────
+// This used to pick one and drop the other, which was an over-correction. The
+// bug it came from was the same URL printed twice, three lines apart. A
+// collaborations URL and an email are not a repeat, they are two different
+// doors, and a creator who filled in both wants brands to have both.
+{
+  const both = footerBlocks({
+    websiteUrl: 'https://www.gominreviews.com',
+    collabUrl: 'https://www.gominplanet.com',
+    contactEmail: 'us@gominplanet.com',
+    contactPreference: null,
+    promoted: true,
+  })
+  check('the collaboration line carries the URL',
+    (both.collabLine || '').includes('gominplanet.com'))
+  check('and the email',
+    (both.collabLine || '').includes('us@gominplanet.com'),
+    'hiding one because the other exists is the product overriding the creator')
+  check('and the blog line above is untouched',
+    (both.promotedBlogLine || '').includes('gominreviews.com'))
+
+  // The preference now ORDERS them rather than choosing between them.
+  const emailFirst = footerBlocks({
+    websiteUrl: 'https://www.gominreviews.com',
+    collabUrl: 'https://www.gominplanet.com',
+    contactEmail: 'us@gominplanet.com',
+    contactPreference: 'email',
+    promoted: true,
+  })
+  check('an email preference still shows both',
+    emailFirst.collabLine!.includes('gominplanet.com') && emailFirst.collabLine!.includes('us@gominplanet.com'))
+  check('and leads with the email',
+    emailFirst.collabLine!.indexOf('us@gominplanet.com') < emailFirst.collabLine!.indexOf('www.gominplanet.com'),
+    'an explicit pick should still come first')
+
+  // One route filled, one route printed.
+  const siteOnly = footerBlocks({
+    websiteUrl: 'https://www.gominreviews.com',
+    collabUrl: 'https://www.gominplanet.com',
+    contactEmail: '',
+    promoted: true,
+  })
+  check('a URL with no email prints just the URL',
+    siteOnly.collabLine!.includes('gominplanet.com') && !siteOnly.collabLine!.includes('email me'))
+
+  // And the original bug stays fixed: a collaborations URL that merely repeats
+  // the blog link is not a second door.
+  const repeat = footerBlocks({
+    websiteUrl: 'https://www.gominreviews.com',
+    collabUrl: 'https://gominreviews.com/',
+    contactEmail: 'us@gominplanet.com',
+    promoted: true,
+  })
+  check('a repeated URL does not count as both',
+    !(repeat.collabLine || '').includes('gominreviews.com'),
+    'that is the duplicate this whole module was written for')
+  check('and the email carries the invitation instead',
+    (repeat.collabLine || '').includes('us@gominplanet.com'))
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)
