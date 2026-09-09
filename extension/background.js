@@ -7709,6 +7709,35 @@ function studioFinishDetailsInPage(notifySubscribers) {
       if (cur !== desired) { click(el); out.actions[key] = desired ? 'turned-on' : 'turned-off' }
       else { out.actions[key] = desired ? 'already-on' : 'already-off' }
     }
+
+    // A RADIO PAIR is not a checkbox, and treating one as the other is worse
+    // than failing to find it.
+    //
+    // Paid promotion used to be a single checkbox labelled "This video contains
+    // paid promotion like a paid product placement, sponsorship, or
+    // endorsement". Studio replaced it with two radios: "Yes, my video includes
+    // paid promotion" and "No, my video doesn't include paid promotion". BOTH
+    // contain the words "paid promotion", so a checkbox-style search matched
+    // whichever came first, found it unchecked, and clicked it. Landing on the
+    // "No" radio does not merely miss the setting, it answers a compliance
+    // question wrongly on the creator's behalf.
+    //
+    // So: find radios by their OWN text within the right section, and only ever
+    // click the one that IS the wanted answer. Never toggle.
+    const setRadio = (sectionRe, choiceRe, key) => {
+      const ctrls = deepAll().filter(isCtrl)
+      let el = null
+      for (const c of ctrls) {
+        const own = visText(c)
+        if (!own || !choiceRe.test(own)) continue
+        if (!sectionRe.test(ctx(c, 8))) continue
+        el = c
+        break
+      }
+      if (!el) { out.actions[key] = 'not-found'; return false }
+      if (isChecked(el)) { out.actions[key] = 'already-set' } else { click(el); out.actions[key] = 'set' }
+      return true
+    }
     const snapshot = () => Array.from(new Set(deepAll().filter(isCtrl).map((el) => `${visText(el).slice(0, 40)}=${isChecked(el) ? 'on' : 'off'}`))).slice(0, 60)
 
     try {
@@ -7781,8 +7810,15 @@ function studioFinishDetailsInPage(notifySubscribers) {
         return out
       }
 
-      // 1) Paid promotion ON
-      setCheckbox(/paid promotion|product placement|sponsorship|endorsement/i, true, 'paidPromotion')
+      // 1) Paid promotion → YES.
+      // Radio layout first (current Studio). Only if no "Yes…" radio exists in
+      // a paid-promotion section do we fall back to the old single checkbox,
+      // which some accounts may still be served.
+      const paidRadio = setRadio(/paid promotion/i, /^yes\b/i, 'paidPromotion')
+      if (!paidRadio) {
+        setCheckbox(/contains paid promotion|product placement|sponsorship|endorsement/i, true, 'paidPromotion')
+      }
+      out.debug.paidLayout = paidRadio ? 'radio' : 'checkbox-fallback'
       await sleep(300)
       // 2) Allow embedding ON
       setCheckbox(/allow embedding/i, true, 'embedding')
@@ -7791,9 +7827,10 @@ function studioFinishDetailsInPage(notifySubscribers) {
       //    Yes/No choice (defaults OFF when not supplied).
       setCheckbox(/publish to subscriptions feed|notify subscribers/i, notifySubscribers === true, 'notify')
       await sleep(300)
-      // 4) AI use / altered content → "No"
-      const noRadio = findCtrl(/\bai\b|alter|synthetic|realistic-looking|didn'?t actually occur|generate or edit/i, /^no$/i)
-      if (noRadio) { if (!isChecked(noRadio)) click(noRadio); out.actions.aiUse = 'no' } else { out.actions.aiUse = 'not-found' }
+      // 4) AI use → "No". Its radios are labelled with a bare "Yes" / "No", so
+      // the section text is the only thing that identifies them. Scoped through
+      // the same radio helper so it can never pick the wrong one either.
+      setRadio(/ai use|generate or edit your content|realistic-looking|didn'?t actually occur|altered content/i, /^no$/i, 'aiUse')
       await sleep(400)
 
       // Save
@@ -7806,7 +7843,8 @@ function studioFinishDetailsInPage(notifySubscribers) {
       // Success = paid promotion was actually set (the field that matters for a
       // review) AND we saved. Notify / embedding / AI-use are recorded in detail
       // but a missing notify control must NOT fail the whole step.
-      const paidHandled = out.actions.paidPromotion && out.actions.paidPromotion !== 'not-found'
+      const paidHandled = out.actions.paidPromotion === 'set' || out.actions.paidPromotion === 'already-set'
+        || out.actions.paidPromotion === 'turned-on' || out.actions.paidPromotion === 'already-on'
       out.ok = !!save && !!paidHandled
       out.detail = `paid:${out.actions.paidPromotion || '?'} · embed:${out.actions.embedding || '?'} · notify:${out.actions.notify || '?'} · AI-use:${out.actions.aiUse || '?'}`
       if (!save) out.detail += ' · Save not found'
@@ -8157,7 +8195,25 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
     if (want.endScreen) {
       steps.push(await runPanel('endscreens', studioFinishEndScreenInPage, [], 'endscreen'))
     }
-    return { ok: steps.some((s) => s && s.ok), steps }
+    // ONE STEP WORKING IS NOT "IT WORKED".
+    // This used to be steps.some(), so a run where details failed and end
+    // screens happened to succeed reported success. "It doesn't work" and "it
+    // said it worked" were both true at the same time, which is the fastest way
+    // to lose a creator's trust in the whole feature.
+    //
+    // Details carries the compliance answers and is the step that matters, so
+    // the run is a success when every step that was ASKED FOR came back ok, and
+    // a partial otherwise. The per-step list is what the screen renders either
+    // way; this flag only decides the headline.
+    const asked = steps.filter((s) => s && !s.skipped)
+    const good = asked.filter((s) => s.ok)
+    return {
+      ok: asked.length > 0 && good.length === asked.length,
+      partial: good.length > 0 && good.length < asked.length,
+      okCount: good.length,
+      askedCount: asked.length,
+      steps,
+    }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'finish-failed', steps }
   } finally {
