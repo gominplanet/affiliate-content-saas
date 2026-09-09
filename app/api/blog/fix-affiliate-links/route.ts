@@ -141,86 +141,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'WordPress not connected.' }, { status: 400 })
     }
 
-    // ── Targeted apply ───────────────────────────────────────────────────────
-    // The client sends back ONLY the previewed fixes the user kept checked
-    // (postId + old→new). We swap those exact links — no re-scan, no
-    // re-resolution — so deselected posts are untouched and we don't mint
-    // duplicate Geniuslinks. The post is re-loaded server-side by id (RLS) so
-    // we never trust client-supplied content/WP ids.
-    if (!dryRun && selectedFixes) {
-      let fixed = 0
-      const errs: string[] = []
-      // Posts that were written and STILL carry a link in some other style.
-      // The swap replaces one exact URL; a roundup with five products, or a
-      // post whose sticky bar and hero button were built at different times,
-      // holds more than one. Counting a post as fixed while a reader can still
-      // click the wrong kind of link is the same lie in a smaller place, so it
-      // is checked after the write and reported.
-      const partiallyFixed: string[] = []
-      for (const f of selectedFixes) {
-        try {
-          if (!f?.postId || !f?.oldUrl || !/^https?:\/\//i.test(f?.newUrl || '')) continue
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: row } = await supabase
-            .from('blog_posts').select('id,content,wordpress_post_id,video_id,wordpress_site_id')
-            .eq('user_id', user.id).eq('id', f.postId).maybeSingle()
-          if (!row?.content) continue
-          const original = row.content as string
-          let updated = original.split(f.oldUrl).join(f.newUrl)
-          updated = updated.replace(
-            /href="https?:\/\/(?:www\.)?amazon\.[a-z.]+\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^"]*"/gi,
-            (href) => (badAmazonAsin(href) ? `href="${f.newUrl}"` : href),
-          )
-          if (updated === original) continue
-          if (row.wordpress_post_id) {
-            // Push the update to the SAME site this post lives on (multi-site).
-            const ctx = await siteFor((row as { wordpress_site_id?: string | null }).wordpress_site_id)
-            if (ctx) await ctx.wpService.updatePost(row.wordpress_post_id, { content: updated } as never)
-          }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await supabase.from('blog_posts').update({ content: updated }).eq('id', row.id)
-          fixed++
-          // Read the post back as a reader sees it: every affiliate href, not
-          // just the one that was swapped.
-          const leftovers = (updated.match(new RegExp(AFFILIATE_HREF.source, 'gi')) || [])
-            .map((h) => h.match(/href="([^"]+)"/i)?.[1] || '')
-            .filter((u) => { const st = styleOfUrl(u); return st !== null && st !== chosenStyle })
-          if (leftovers.length) partiallyFixed.push(f.postId)
-          // Best-effort: refresh the video's stored product link (single reviews
-          // store the UUID in video_id; comparison posts store a youtube id and
-          // simply won't match — harmless).
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          try { if (row.video_id) await supabase.from('youtube_videos').update({ product_url: f.newUrl }).eq('user_id', user.id).eq('id', row.video_id) } catch { /* non-fatal */ }
-        } catch (err) {
-          errs.push(`${f.postId}: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
-      return NextResponse.json({
-        success: true,
-        fixed,
-        attempted: selectedFixes.length,
-        errors: errs.slice(0, 10),
-        partiallyFixed: partiallyFixed.length,
-        chosenStyleLabel: STYLE_LABEL[chosenStyle],
-      })
-    }
-
-    // ── Load published posts that have a body + a WP id ──────────────────────
-    // wordpress_site_id is pulled so each post resolves its OWN ownSite below
-    // (multi-site users have posts on different sites — self-link filtering
-    // must compare against the post's actual site, not the user's default).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: posts } = await supabase
-      .from('blog_posts')
-      .select('id,video_id,title,slug,content,wordpress_post_id,wordpress_site_id')
-      .eq('user_id', user.id)
-      .not('wordpress_post_id', 'is', null)
-      .not('content', 'is', null)
-      .order('created_at', { ascending: false })
-    const rows = (posts as PostRow[] | null) ?? []
-    if (rows.length === 0) return NextResponse.json({ fixed: 0, total: 0, preview: [], message: 'No published posts found.' })
-
-    // ── Resolve the source video + the current affiliate link for each post ─
+    // ── Shared resolution helpers ───────────────────────────────────────────
+    // Defined ABOVE the apply branch because both branches need them now. The
+    // apply step rebuilds a restyle link itself rather than trusting one the
+    // client was handed at preview time, and it needs the same video lookup and
+    // the same idea of "the link a reader clicks" that the scan used.
     const resolveVideo = async (videoId: string | null) => {
       if (!videoId) return null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -254,9 +179,152 @@ export async function POST(request: Request) {
      *  that is not in the body changes nothing and would be counted as a fix. */
     const bodyLinkOf = (content: string): string | null => content.match(AFFILIATE_HREF)?.[1] ?? null
 
+    /** Build this post's correct affiliate link, in the creator's chosen style.
+     *
+     *  THIS MINTS. For a Geniuslink creator it creates a real shortcode; for a
+     *  Passport creator it is a get-or-create against their own link table. That
+     *  is why it now runs at APPLY time and not during a preview: a scan of 267
+     *  off-style posts used to mint 267 links before the creator had agreed to
+     *  anything, and every row they unticked left an orphan behind. */
+    async function buildLinkFor(
+      post: { id: string; title?: string | null; slug?: string | null; video_id: string | null; wordpress_site_id?: string | null },
+      video: { title: string; description: string; youtube_video_id: string | null },
+    ): Promise<string | null> {
+      const postSite = await siteFor(post.wordpress_site_id ?? null)
+      const { affiliateUrl } = await resolveAffiliateUrl({
+        title: video.title || post.title || '',
+        description: video.description || '',
+        ownSite: postSite?.ownSite ?? defaultEntry!.ownSite,
+        userId: user!.id,
+        tier: wp?.tier,
+        amazonTag: wp?.amazon_associates_tag,
+        geniuslinkApiKey: wp?.geniuslink_api_key,
+        geniuslinkApiSecret: wp?.geniuslink_api_secret,
+        unwrapSourceLinks: true,
+        videoId: video.youtube_video_id,
+        geniuslinkGroupId: postSite?.siteId
+          ? await resolveGeniuslinkGroupId({
+              supabase,
+              siteId: postSite.siteId,
+              siteUrl: postSite.ownSite,
+              apiKey: wp?.geniuslink_api_key,
+              apiSecret: wp?.geniuslink_api_secret,
+            })
+          : null,
+      })
+      return affiliateUrl || null
+    }
+
+    // ── Targeted apply ───────────────────────────────────────────────────────
+    // The client sends back ONLY the previewed fixes the user kept checked
+    // (postId + old→new). We swap those exact links — no re-scan, no
+    // re-resolution — so deselected posts are untouched and we don't mint
+    // duplicate Geniuslinks. The post is re-loaded server-side by id (RLS) so
+    // we never trust client-supplied content/WP ids.
+    if (!dryRun && selectedFixes) {
+      let fixed = 0
+      const errs: string[] = []
+      // Posts that were written and STILL carry a link in some other style.
+      // The swap replaces one exact URL; a roundup with five products, or a
+      // post whose sticky bar and hero button were built at different times,
+      // holds more than one. Counting a post as fixed while a reader can still
+      // click the wrong kind of link is the same lie in a smaller place, so it
+      // is checked after the write and reported.
+      const partiallyFixed: string[] = []
+      for (const f of selectedFixes) {
+        try {
+          if (!f?.postId || !f?.oldUrl) continue
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: row } = await supabase
+            .from('blog_posts').select('id,title,slug,content,wordpress_post_id,video_id,wordpress_site_id')
+            .eq('user_id', user.id).eq('id', f.postId).maybeSingle()
+          if (!row?.content) continue
+          const original = row.content as string
+
+          // A restyle row arrives with no newUrl, because the preview refused to
+          // mint one. Build it now, for this post only, now that the creator has
+          // actually ticked it.
+          let newUrl = f.newUrl || ''
+          if (!/^https?:\/\//i.test(newUrl)) {
+            const video = await resolveVideo(row.video_id as string | null)
+            if (!video) { errs.push(`${f.postId}: no source video, cannot rebuild the link`); continue }
+            const built = await buildLinkFor(row as never, video)
+            if (!built) { errs.push(`${f.postId}: could not resolve a product for this post`); continue }
+            // The same honesty check the scan does: a mint that failed falls back
+            // to a plain tagged link, and swapping one plain link for another is
+            // not the fix the creator asked for.
+            if (styleOfUrl(built) !== chosenStyle) {
+              errs.push(`${f.postId}: rebuilt link came back as ${styleOfUrl(built) ?? 'unknown'}, not ${chosenStyle}`)
+              continue
+            }
+            newUrl = built
+          }
+
+          // Swap the link a READER clicks. The row the client sent carries the
+          // href seen at preview time; re-read it here so a post edited since
+          // then is still matched.
+          const oldUrl = bodyLinkOf(original) || f.oldUrl
+          let updated = original.split(oldUrl).join(newUrl)
+          updated = updated.replace(
+            /href="https?:\/\/(?:www\.)?amazon\.[a-z.]+\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^"]*"/gi,
+            (href) => (badAmazonAsin(href) ? `href="${newUrl}"` : href),
+          )
+          if (updated === original) continue
+          if (row.wordpress_post_id) {
+            // Push the update to the SAME site this post lives on (multi-site).
+            const ctx = await siteFor((row as { wordpress_site_id?: string | null }).wordpress_site_id)
+            if (ctx) await ctx.wpService.updatePost(row.wordpress_post_id, { content: updated } as never)
+          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await supabase.from('blog_posts').update({ content: updated }).eq('id', row.id)
+          fixed++
+          // Read the post back as a reader sees it: every affiliate href, not
+          // just the one that was swapped.
+          const leftovers = (updated.match(new RegExp(AFFILIATE_HREF.source, 'gi')) || [])
+            .map((h) => h.match(/href="([^"]+)"/i)?.[1] || '')
+            .filter((u) => { const st = styleOfUrl(u); return st !== null && st !== chosenStyle })
+          if (leftovers.length) partiallyFixed.push(f.postId)
+          // Best-effort: refresh the video's stored product link (single reviews
+          // store the UUID in video_id; comparison posts store a youtube id and
+          // simply won't match — harmless).
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          try { if (row.video_id) await supabase.from('youtube_videos').update({ product_url: newUrl }).eq('user_id', user.id).eq('id', row.video_id) } catch { /* non-fatal */ }
+        } catch (err) {
+          errs.push(`${f.postId}: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+      return NextResponse.json({
+        success: true,
+        fixed,
+        attempted: selectedFixes.length,
+        errors: errs.slice(0, 10),
+        partiallyFixed: partiallyFixed.length,
+        chosenStyleLabel: STYLE_LABEL[chosenStyle],
+      })
+    }
+
+    // ── Load published posts that have a body + a WP id ──────────────────────
+    // wordpress_site_id is pulled so each post resolves its OWN ownSite below
+    // (multi-site users have posts on different sites — self-link filtering
+    // must compare against the post's actual site, not the user's default).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: posts } = await supabase
+      .from('blog_posts')
+      .select('id,video_id,title,slug,content,wordpress_post_id,wordpress_site_id')
+      .eq('user_id', user.id)
+      .not('wordpress_post_id', 'is', null)
+      .not('content', 'is', null)
+      .order('created_at', { ascending: false })
+    const rows = (posts as PostRow[] | null) ?? []
+    if (rows.length === 0) return NextResponse.json({ fixed: 0, total: 0, preview: [], message: 'No published posts found.' })
+
+    // ── Resolve the source video + the current affiliate link for each post ─
+
+
     // ── Detect broken links (bounded concurrency on the network resolve) ─────
     type Reason = 'broken' | 'regroup' | 'restyle'
-    type Candidate = { post: PostRow; video: NonNullable<Awaited<ReturnType<typeof resolveVideo>>>; oldUrl: string; newUrl: string; reason: Reason }
+    /** newUrl is null for a restyle row: the replacement is minted at apply time. */
+    type Candidate = { post: PostRow; video: NonNullable<Awaited<ReturnType<typeof resolveVideo>>>; oldUrl: string; newUrl: string | null; reason: Reason }
     const candidates: Candidate[] = []
     const errors: string[] = []
     const unresolved: string[] = []
@@ -269,28 +337,6 @@ export async function POST(request: Request) {
     // and clicking again will not change that.
     const stuckOffStyle: string[] = []
 
-    // ── THE PREVIEW MINTS, SO THE PREVIEW IS BOUNDED ────────────────────────
-    // Building a candidate's new link means calling resolveAffiliateUrl, and for
-    // a Geniuslink creator that CREATES A REAL SHORTCODE in their account. On
-    // the old default (broken links only) that was fine: a scan found two or
-    // three dead links and minting a replacement for each was the work.
-    //
-    // Restyling is a different scale. A creator who switches to Geniuslink with
-    // 500 plain-Amazon posts would, just by clicking a button labelled Fix
-    // Affiliate Links, mint 500 shortcodes before deciding anything, and every
-    // one they then unticked would be left orphaned in their Geniuslink
-    // dashboard. The same run would also be 500 sequential network round trips
-    // against a 300-second function.
-    //
-    // So a scan resolves at most this many off-style posts and says how many it
-    // did not reach. Applying and running again continues from where it stopped,
-    // because the applied ones are no longer off-style. The proper fix is to
-    // defer minting to the apply step entirely, which is a bigger change to how
-    // preview rows are shaped and is worth doing deliberately rather than at the
-    // end of a session.
-    const RESTYLE_BUDGET = 25
-    let restyleResolved = 0
-    let restyleDeferred = 0
 
     const CHUNK = 6
     for (let i = 0; i < rows.length; i += CHUNK) {
@@ -306,18 +352,24 @@ export async function POST(request: Request) {
 
           // Is the current link broken? Direct bad /dp/ ASIN, or a
           // geni.us/short link that resolves to one.
+          const liveStyle = styleOfUrl(bodyUrl || oldUrl)
+          const offStyle = liveStyle !== null && liveStyle !== chosenStyle
+          const restyleMode = mode === 'restyle' || mode === 'all'
+
           let broken = badAmazonAsin(oldUrl)
-          if (!broken && (GENIUSLINK.test(oldUrl) || SHORTENERS.test(oldUrl))) {
+          // The probe below FOLLOWS the link over the network to see where it
+          // really lands. Skip it when the post is already a restyle candidate:
+          // the link is being rebuilt either way, so following 250 geni.us
+          // redirects would buy nothing and is the difference between a scan
+          // that takes seconds and one that times out.
+          if (!broken && !(restyleMode && offStyle) && (GENIUSLINK.test(oldUrl) || SHORTENERS.test(oldUrl))) {
             const finalUrl = await resolveTrueDestination(oldUrl)
             broken = badAmazonAsin(finalUrl)
           }
 
-          // Does the link that is live on the page match the style the creator
-          // chose? A null style is a link with nothing to read (a non-Amazon
-          // store page), and stays out of it: a rewrite of somebody's published
-          // post needs certainty, not an inference.
-          const liveStyle = styleOfUrl(bodyUrl || oldUrl)
-          const offStyle = liveStyle !== null && liveStyle !== chosenStyle
+          // A null live style is a link with nothing to read (a non-Amazon store
+          // page). It stays out of this: rewriting somebody's published post
+          // needs certainty, not an inference.
 
           // 'broken': only repair links that are actually dead.
           // 'regroup': broken, or a geni.us link that may be in the wrong group.
@@ -346,11 +398,17 @@ export async function POST(request: Request) {
           // nothing while reporting a fix.
           if (reason === 'restyle' && bodyUrl) oldUrl = bodyUrl
 
-          // Out of budget: count it and leave it alone. Nothing is minted for a
-          // post this run will not show, which is the whole point.
+          // A RESTYLE ROW IS NOT BUILT HERE.
+          // Its replacement is minted at apply time, for the posts the creator
+          // actually ticks. That is what lets this scan cover every post in one
+          // pass instead of 25 at a time: previewing is now a database read, and
+          // the expensive, account-touching half happens once, on demand, to a
+          // known list. A broken row still resolves below, because there the
+          // corrected DESTINATION is the thing being agreed to and there are only
+          // ever a handful of them.
           if (reason === 'restyle') {
-            if (restyleResolved >= RESTYLE_BUDGET) { restyleDeferred++; return }
-            restyleResolved++
+            candidates.push({ post, video, oldUrl, newUrl: null, reason })
+            return
           }
 
           // Re-resolve the RIGHT product + the user's own affiliate link.
@@ -385,23 +443,12 @@ export async function POST(request: Request) {
           if (!affiliateUrl || affiliateUrl === oldUrl || badAmazonAsin(affiliateUrl)) {
             skipped.couldNotRebuild++
             unresolved.push(post.title || post.slug || post.id)
-            if (reason === 'restyle') stuckOffStyle.push(post.title || post.slug || post.id)
             return
           }
 
-          // RESTYLE HONESTY. The rebuild ran and came back in the wrong style
-          // anyway, which means the mint failed and resolveAffiliateUrl fell
-          // back to a plain tagged link. Swapping one plain link for another
-          // plain link would count as a fix on screen and change nothing the
-          // creator asked about, so it is refused and named instead. This is the
-          // failure that has to look different from success: the whole reason
-          // the tool needed rewriting is that it reported a clean scan while
-          // every link was the wrong kind.
-          if (reason === 'restyle' && styleOfUrl(affiliateUrl) !== chosenStyle) {
-            skipped.couldNotRebuild++
-            stuckOffStyle.push(post.title || post.slug || post.id)
-            return
-          }
+          // The restyle honesty check that used to live here moved to the apply
+          // step along with the minting: a rebuild that comes back in the wrong
+          // style is refused there and named, rather than counted as a fix.
           // NEVER DOWNGRADE A WORKING CLOAKED LINK TO A RAW TAGGED URL.
           // resolveAffiliateUrl falls back to a plain tagged amazon.com link
           // whenever minting fails (API error, or the new link doesn't validate
@@ -449,9 +496,6 @@ export async function POST(request: Request) {
       skipped,
       offStyleStuck: stuckOffStyle.slice(0, 20),
       offStyleStuckCount: stuckOffStyle.length,
-      // Off-style posts this run deliberately did not build a link for. Named so
-      // a creator with hundreds knows the list is a page, not the whole truth.
-      restyleDeferred,
       preview: candidates.map((c) => ({
         postId: c.post.id,
         title: (c.post.title || c.post.slug || '').replace(/<[^>]+>/g, ''),

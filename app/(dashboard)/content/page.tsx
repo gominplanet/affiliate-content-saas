@@ -2468,10 +2468,9 @@ export default function ContentPage() {
    *  links"), so the modal states what the links are being moved TO rather than
    *  leaving them to read it off two URLs. */
   const [affStyleLabel, setAffStyleLabel] = useState<string | null>(null)
-  /** Off-style posts the scan deliberately did not build a link for this run.
-   *  The scan mints a real link per candidate, so it is capped; showing 25 of
-   *  140 without saying so would read as "you have 25". */
-  const [affDeferred, setAffDeferred] = useState(0)
+  /** How far the batched apply has got. Hundreds of posts take minutes, and a
+   *  button that just sits there is how someone concludes it has hung. */
+  const [affProgress, setAffProgress] = useState<{ done: number; total: number } | null>(null)
   const [activeTab, setActiveTab] = useState<'horizontal' | 'vertical' | 'posts' | 'scheduled'>('horizontal')
   // Multi-site (Pro): the blog fresh generations + scheduled posts target.
   // SitePicker auto-selects the default for 2+ site users; null (single-site)
@@ -3728,7 +3727,6 @@ export default function ContentPage() {
         setAffPreview(rows)
         setAffSelected(new Set(rows.map(r => r.postId))) // default: all checked
         setAffStyleLabel((data.chosenStyleLabel as string) || null)
-        setAffDeferred((data.restyleDeferred as number) || 0)
       }
     } catch {
       setFixCatResult('Something went wrong.')
@@ -3760,7 +3758,16 @@ export default function ContentPage() {
     return parts.join(' ')
   }
 
-  /** Step 2 — apply ONLY the fixes the user kept checked. */
+  /** Step 2 — apply ONLY the fixes the user kept checked.
+   *
+   *  IN BATCHES, because "fix all my links" means all of them. A creator who
+   *  moved off Geniuslink has every published post to re-point, which for one
+   *  of ours is 267. One request cannot do that: each post mints a link and
+   *  writes to WordPress, and the function ceiling is 300 seconds.
+   *
+   *  So the client walks the list 20 at a time and shows how far it has got.
+   *  The server rebuilds each link itself, so a batch that fails takes only its
+   *  own 20 with it and the ones already written stay written. */
   async function applyFixAffiliate() {
     if (!affPreview) return
     const fixes = affPreview
@@ -3768,41 +3775,52 @@ export default function ContentPage() {
       .map(({ postId, oldUrl, newUrl }) => ({ postId, oldUrl, newUrl }))
     if (fixes.length === 0) return
     setAffApplying(true)
+    const BATCH = 20
+    let fixed = 0
+    let attempted = 0
+    let partial = 0
+    const errors: string[] = []
+    let styleLabel: string | null = affStyleLabel
     try {
-      const res = await fetch('/api/blog/fix-affiliate-links', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fixes, mode: affMode }),
-      })
-      const data = await res.json()
-      if (data.error) {
-        setFixCatResult(`Error: ${data.error}`)
-      } else if (data.fixed === 0) {
-        // NOT "nothing needed fixing". The user just ticked boxes and pressed
-        // apply, so zero written means the writes failed, and saying otherwise
-        // turns a failure into a shrug.
-        const why = Array.isArray(data.errors) && data.errors.length ? ` First error: ${String(data.errors[0]).slice(0, 160)}` : ''
-        setFixCatResult(`Nothing was written. ${data.attempted ?? 0} post${(data.attempted ?? 0) !== 1 ? 's were' : ' was'} attempted and the link in the post body did not change.${why}`)
+      for (let i = 0; i < fixes.length; i += BATCH) {
+        const slice = fixes.slice(i, i + BATCH)
+        setAffProgress({ done: i, total: fixes.length })
+        const res = await fetch('/api/blog/fix-affiliate-links', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fixes: slice, mode: affMode }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (data.error) { errors.push(String(data.error)); break }
+        fixed += Number(data.fixed) || 0
+        attempted += Number(data.attempted) || slice.length
+        partial += Number(data.partiallyFixed) || 0
+        if (Array.isArray(data.errors)) errors.push(...data.errors.map(String))
+        if (data.chosenStyleLabel) styleLabel = data.chosenStyleLabel as string
+      }
+      setAffProgress({ done: fixes.length, total: fixes.length })
+
+      // Report the artifact. "Done" over a run where nothing was written, or
+      // where half the posts still carry the wrong link, is the failure this
+      // whole tool was rewritten to stop.
+      if (fixed === 0) {
+        const why = errors.length ? ` First error: ${errors[0].slice(0, 160)}` : ''
+        setFixCatResult(`Nothing was written. ${attempted} post${attempted !== 1 ? 's were' : ' was'} attempted and the link in the post body did not change.${why}`)
       } else {
-        const failed = Array.isArray(data.errors) && data.errors.length ? `, ${data.errors.length} failed` : ''
-        const missed = typeof data.attempted === 'number' && data.attempted > data.fixed && !failed
-          ? `, ${data.attempted - data.fixed} left unchanged`
+        const failed = errors.length ? `, ${errors.length} failed` : ''
+        const missed = attempted > fixed && !errors.length ? `, ${attempted - fixed} left unchanged` : ''
+        const partialNote = partial
+          ? ` ${partial} of them still carr${partial === 1 ? 'ies' : 'y'} another link that isn't ${styleLabel || 'your chosen style'}, so run this again to catch the rest.`
           : ''
-        // A post can be written and still hold another link in the wrong style
-        // (a roundup with several products). Saying it plainly beats a green
-        // "Done" over a page a reader can still click the wrong link on.
-        const partial = data.partiallyFixed
-          ? ` ${data.partiallyFixed} of them still carr${data.partiallyFixed === 1 ? 'ies' : 'y'} another link that isn't ${data.chosenStyleLabel || 'your chosen style'}, so run this again to catch the rest.`
-          : ''
-        setFixCatResult(`Done. Fixed the affiliate link on ${data.fixed} post${data.fixed !== 1 ? 's' : ''}${failed}${missed}.${partial}`)
+        setFixCatResult(`Done. Fixed the affiliate link on ${fixed} post${fixed !== 1 ? 's' : ''}${failed}${missed}.${partialNote}`)
       }
     } catch {
-      setFixCatResult('Something went wrong.')
+      setFixCatResult(`Something went wrong after ${fixed} post${fixed !== 1 ? 's' : ''}. Those are saved; run it again to continue.`)
     } finally {
       setAffApplying(false)
+      setAffProgress(null)
       setAffPreview(null)
       setAffStyleLabel(null)
-      setAffDeferred(0)
     }
   }
 
@@ -5009,11 +5027,9 @@ export default function ContentPage() {
                         if (broke) bits.push(`${broke} ${broke === 1 ? 'has a broken buy link' : 'have a broken buy link'}`)
                         if (styled) bits.push(`${styled} ${styled === 1 ? 'uses a link style' : 'use a link style'} you didn't choose${affStyleLabel ? ` and will move to ${affStyleLabel}` : ''}`)
                         const lead = bits.length ? bits.join(', and ') : `${affPreview.length} need${affPreview.length === 1 ? 's' : ''} a new buy link`
-                        // A capped scan showing 25 of 140 must not read as 25 of 25.
-                        const more = affDeferred > 0
-                          ? ` ${affDeferred} more off-style post${affDeferred === 1 ? '' : 's'} weren't checked this run: apply these, then run it again to continue.`
-                          : ''
-                        return `${lead}. Uncheck any you don't want to change. Nothing's saved yet.${more}`
+                        // The scan covers every post now, so there is no
+                        // "and some more you can't see" to disclose.
+                        return `${lead}. Uncheck any you don't want to change. Nothing's saved yet.`
                       })()}
                 </p>
               </div>
@@ -5060,7 +5076,9 @@ export default function ContentPage() {
                           )}
                         </div>
                         <p className="text-[11px] text-[#ff3b30] break-all font-mono">− {row.oldUrl}</p>
-                        <p className="text-[11px] text-[#34c759] break-all font-mono">+ {row.newUrl}</p>
+                        {row.newUrl
+                          ? <p className="text-[11px] text-[#34c759] break-all font-mono">+ {row.newUrl}</p>
+                          : <p className="text-[11px] text-[#34c759]">+ a new {affStyleLabel ? affStyleLabel.replace(/s$/, '') : 'link'}, created when you apply</p>}
                       </div>
                     </li>
                   )
@@ -5082,7 +5100,7 @@ export default function ContentPage() {
                 className="btn-primary text-sm"
               >
                 {affApplying
-                  ? <><Loader2 size={14} className="animate-spin" /> Fixing…</>
+                  ? <><Loader2 size={14} className="animate-spin" /> {affProgress ? `Fixing ${affProgress.done} of ${affProgress.total}…` : 'Fixing…'}</>
                   : `Fix ${affSelected.size} link${affSelected.size !== 1 ? 's' : ''}`}
               </button>
             </div>

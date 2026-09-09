@@ -101,28 +101,46 @@ const CONTENT = read('app/(dashboard)/content/page.tsx')
     'not its own idea of the style, or the preview disagrees with the next generation')
   check('it compares that against the style live on the page',
     /styleOfUrl\(/.test(ROUTE))
-  check('a rebuild that comes back in the wrong style is refused, not counted as a fix',
-    /reason === 'restyle' && styleOfUrl\(affiliateUrl\) !== chosenStyle/.test(ROUTE),
+  // ── the preview does not mint, the apply does ─────────────────────────────
+  // Building a candidate creates a real link: a Geniuslink shortcode, or a
+  // Passport get-or-create. Doing that during a PREVIEW meant a creator with 267
+  // off-style posts minted 267 links before agreeing to anything, and every row
+  // they unticked left an orphan. It also forced a 25-per-run cap, which turned
+  // "fix all my links" into eleven rounds of clicking.
+  //
+  // So a restyle row is previewed with no link at all and built at apply time,
+  // for the posts actually ticked. That is what lets one scan cover every post.
+  check('a restyle row is previewed WITHOUT building its link',
+    /candidates\.push\(\{ post, video, oldUrl, newUrl: null, reason \}\)/.test(ROUTE),
+    'a preview that mints is a preview that has to be capped, and the cap is the eleven-rounds problem')
+  check('and the cap is gone with it',
+    !/RESTYLE_BUDGET/.test(ROUTE),
+    'covering every post in one pass is the whole point of moving the mint')
+  check('the apply builds the link itself',
+    /async function buildLinkFor\(/.test(ROUTE) && /const built = await buildLinkFor\(/.test(ROUTE),
+    'the client must never hand back a URL the server did not make')
+  check('a rebuild that comes back in the wrong style is refused there, not counted as a fix',
+    /styleOfUrl\(built\) !== chosenStyle/.test(ROUTE),
     'swapping a plain link for another plain link would report success and change nothing')
-  check('a working cloaked link is never quietly downgraded to a raw tagged URL',
-    /newStyle === 'direct' && chosenStyle !== 'direct'/.test(ROUTE))
-  check('and the guard reads styles, not a hardcoded domain list',
-    !/const PASSPORT = \//.test(ROUTE),
-    'geni.us to Bitly is a creator changing their mind, and a domain list refuses it')
-  // Building a candidate MINTS a real link. A creator switching to Geniuslink
-  // with 500 plain-Amazon posts would mint 500 shortcodes just by clicking a
-  // button called Fix Affiliate Links, before agreeing to anything, and every
-  // one they unticked would be orphaned in their account.
-  check('the scan caps how many off-style posts it builds links for',
-    /RESTYLE_BUDGET/.test(ROUTE),
-    'a preview that mints is a preview that has to be bounded')
-  check('and it does not mint for the ones it skips',
-    /restyleResolved >= RESTYLE_BUDGET \) \{ restyleDeferred\+\+; return \}/.test(ROUTE.replace(/\s+/g, ' ')) ||
-    /restyleDeferred\+\+; return/.test(ROUTE),
-    'the budget has to stop the work, not just the display')
-  check('the screen says how many were not reached',
-    /affDeferred/.test(CONTENT),
-    'showing 25 of 140 without saying so reads as "you have 25"')
+  check('the scan skips the network probe for a post it is rebuilding anyway',
+    /!\(restyleMode && offStyle\)/.test(ROUTE),
+    'following 250 geni.us redirects to learn something the rebuild makes moot is how the scan times out')
+  check('the apply re-reads the link a reader actually clicks',
+    /const oldUrl = bodyLinkOf\(original\) \|\| f\.oldUrl/.test(ROUTE),
+    'so a post edited between preview and apply is still matched')
+
+  // ── one click, however many posts ─────────────────────────────────────────
+  check('the client applies in batches',
+    /const BATCH = 20/.test(CONTENT),
+    'one request cannot mint and publish hundreds of posts inside a 300s function')
+  check('and shows how far it has got',
+    /affProgress/.test(CONTENT),
+    'a button that just sits there for minutes reads as hung')
+  check('a failed batch keeps what already succeeded',
+    /Those are saved; run it again to continue/.test(CONTENT))
+  check('a row with no built link says what it will become',
+    /created when you apply/.test(CONTENT),
+    'rather than printing an empty line where a URL should be')
 
   check('the scan reports what it established',
     /chosenStyleLabel/.test(ROUTE) && /offStyleStuck/.test(ROUTE),
