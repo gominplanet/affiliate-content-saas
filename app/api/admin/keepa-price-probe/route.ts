@@ -54,7 +54,7 @@ export async function GET(request: Request) {
       .from('cc_campaign_catalog')
       .select('campaign_id, campaign_name, brand_name, asins, rep_asin, price_now_cents, product_verified_at')
       .not('rep_asin', 'is', null)
-      .order('commission_pct', { ascending: false })
+      .order('commission_pct', { ascending: false, nullsFirst: false })
       .limit(PROBE_CAP)
     if (q) query = query.textSearch('search_vec', q, { type: 'websearch' })
     const { data, error } = await query
