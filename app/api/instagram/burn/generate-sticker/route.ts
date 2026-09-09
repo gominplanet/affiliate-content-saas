@@ -31,6 +31,7 @@ import {
   ctaStickerUrl, platformBadges,
   type CtaDestination, type CtaMode,
 } from '@/lib/cta-stickers'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 120
 
@@ -220,7 +221,7 @@ The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE b
 
     // Persist to storage so the burner has a stable public URL (the fal URL is
     // ephemeral). Same bucket + {uid}/ path shape as the burner's own uploads.
-    const imgRes = await fetch(cutout)
+    const imgRes = await fetchWithTimeout(cutout)
     if (!imgRes.ok) return NextResponse.json({ error: 'Could not fetch the generated badge.' }, { status: 502 })
     let inputBuf: Buffer = Buffer.from(await imgRes.arrayBuffer())
     // Safety net: if rembg FAILED, the badge is still on its white background —

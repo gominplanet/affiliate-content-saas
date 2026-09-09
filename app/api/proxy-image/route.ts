@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 // Simple image proxy to enable client-side canvas compositing for thumbnail text overlays.
 // External CDN images (fal.media, etc.) don't have CORS headers, so canvas.drawImage()
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'URL not allowed' }, { status: 403 })
   }
 
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+  const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
   if (!res.ok) {
     return NextResponse.json({ error: `Upstream ${res.status}` }, { status: 502 })
   }

@@ -4,6 +4,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { tryWpProxy } from '@/lib/wp-proxy'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { snapshotActiveBlogIdentity } from '@/lib/site-identity'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
       // Fetch existing data so we only override footer-related fields
       let existing: Record<string, unknown> = {}
       try {
-        const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+        const getRes = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
           headers: { Authorization: authHeader },
           signal: AbortSignal.timeout(15_000),
         })
@@ -283,7 +284,7 @@ export async function POST(req: Request) {
           postText = typeof proxied.data === 'string' ? proxied.data : JSON.stringify(proxied.data)
         }
       } else {
-        const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+        const postRes = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

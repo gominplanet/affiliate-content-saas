@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { tryWpProxy } from '@/lib/wp-proxy'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 120
 
@@ -60,7 +61,7 @@ export async function POST(req: Request) {
   const auth = `Basic ${Buffer.from(`${site.wordpress_username}:${cleanPw}`).toString('base64')}`
 
   try {
-    const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/self-update`, {
+    const res = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/self-update`, {
       method: 'POST',
       headers: { Authorization: auth, 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(110_000),

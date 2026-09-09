@@ -16,6 +16,7 @@
  * re-stream it with our headers rather than read from disk.
  */
 import { NextResponse } from 'next/server'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,7 +34,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ asset: s
   // works on prod + preview deploys without a hardcoded URL).
   let upstream: Response
   try {
-    upstream = await fetch(new URL(asset.path, req.url), { cache: 'no-store' })
+    upstream = await fetchWithTimeout(new URL(asset.path, req.url), { cache: 'no-store' })
   } catch {
     return NextResponse.json({ error: 'Download temporarily unavailable — try again shortly.' }, { status: 502 })
   }

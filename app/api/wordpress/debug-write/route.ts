@@ -22,6 +22,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export async function GET(req: Request) {
   const supabase = await createServerClient()
@@ -170,7 +171,7 @@ interface ProbeResult {
 
 async function probe(url: string, init?: RequestInit): Promise<ProbeResult> {
   try {
-    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(15_000), redirect: 'follow' })
+    const res = await fetchWithTimeout(url, { ...init, signal: AbortSignal.timeout(15_000), redirect: 'follow' })
     const text = await res.text()
     let json: unknown
     try { json = JSON.parse(text) } catch { json = null }

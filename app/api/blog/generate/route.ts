@@ -55,6 +55,7 @@ import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { toUserMessage } from '@/lib/friendly-error'
 import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 /** Distinct camera perspectives cycled across a post's in-body images so
  *  no two shots look alike — each Kontext/flux call gets a different angle
@@ -2366,7 +2367,7 @@ async function handleGenerate(request: Request) {
           if (ref.productImageUrl) {
             schemaProductImage = schemaProductImage || ref.productImageUrl
             try {
-              const imgRes = await fetch(ref.productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
+              const imgRes = await fetchWithTimeout(ref.productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
               if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
               console.log(`${traceTag} step:fal-upload`, { ok: !!falProductImageUrl })
             } catch (e) {

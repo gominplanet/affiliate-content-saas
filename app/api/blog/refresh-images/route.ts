@@ -23,6 +23,7 @@ import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
 import { fal } from '@fal-ai/client'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 300
 
@@ -168,7 +169,7 @@ export async function POST(request: Request) {
   let falProductRef: string | null = null
   if (productImageUrl) {
     try {
-      const r = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
+      const r = await fetchWithTimeout(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
       if (!r.ok) {
         console.warn(`${traceTag} step:fetch-product-image NON-OK`, { productImageUrl, httpStatus: r.status })
       } else {

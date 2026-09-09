@@ -23,6 +23,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 30
 export const runtime = 'nodejs'
@@ -141,7 +142,7 @@ export async function POST(req: Request) {
   //     metadata IP. Sourcing from the DB closes that SSRF entirely.
   try {
     const wpBase = (match.wordpress_url as string).replace(/\/+$/, '')
-    const wpRes = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=100&_embed=wp:featuredmedia&_fields=link,title,excerpt,_links,_embedded`, {
+    const wpRes = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/posts?per_page=100&_embed=wp:featuredmedia&_fields=link,title,excerpt,_links,_embedded`, {
       signal: AbortSignal.timeout(8000),
       headers: { Accept: 'application/json' },
     })

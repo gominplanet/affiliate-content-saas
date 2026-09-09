@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -25,7 +26,7 @@ export async function GET() {
     url.searchParams.set('id', channelId)
     url.searchParams.set('key', apiKey)
 
-    const res = await fetch(url.toString())
+    const res = await fetchWithTimeout(url.toString())
     if (!res.ok) return NextResponse.json(null)
 
     const json = await res.json()

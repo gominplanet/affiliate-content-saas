@@ -59,6 +59,7 @@ import { canUseDealRadar } from '@/lib/feature-access'
 import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
 import { writeContentSchema } from '@/lib/content-schema'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 300
 
@@ -752,7 +753,7 @@ export async function POST(req: Request) {
   const categoryPromise: Promise<number[]> = (async () => {
     try {
       const wpBase = site.wordpress_url.replace(/\/+$/, '')
-      const catRes = await fetch(`${wpBase}/wp-json/wp/v2/categories?per_page=100&_fields=id,name,slug`, {
+      const catRes = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/categories?per_page=100&_fields=id,name,slug`, {
         signal: AbortSignal.timeout(3000),
         headers: { Accept: 'application/json' },
         next: { revalidate: 300 },

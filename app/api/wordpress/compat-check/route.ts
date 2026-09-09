@@ -22,6 +22,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { detectWpCompat, sortFixes, type CompatDetection } from '@/lib/wp-compat'
 import { tryWpProxy } from '@/lib/wp-proxy'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 60
 
@@ -119,7 +120,7 @@ export async function GET(req: Request) {
   //     the host doesn't strip Authorization on GET (most don't).
   let readOk = false
   try {
-    const r = await fetch(`${wpBase}/wp-json/wp/v2/users/me`, {
+    const r = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/users/me`, {
       headers: { Authorization: basic, 'User-Agent': ua },
       signal: AbortSignal.timeout(10_000),
     })
@@ -158,7 +159,7 @@ export async function GET(req: Request) {
   let writeDetail: string | undefined
   let probeTagId: number | undefined
   try {
-    const r = await fetch(`${wpBase}/wp-json/wp/v2/tags`, {
+    const r = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/tags`, {
       method: 'POST',
       headers: {
         Authorization: basic,
@@ -193,7 +194,7 @@ export async function GET(req: Request) {
   // Cleanup the probe tag — best effort; if it fails the tag sits in
   // their tags list with a clear "safe to delete" description.
   if (probeTagId) {
-    await fetch(`${wpBase}/wp-json/wp/v2/tags/${probeTagId}?force=true`, {
+    await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/tags/${probeTagId}?force=true`, {
       method: 'DELETE',
       headers: { Authorization: basic, 'User-Agent': ua },
     }).catch(() => {/* non-fatal */})
@@ -259,11 +260,11 @@ export async function GET(req: Request) {
   let llmsOk = false
   let robotsAllow = false
   try {
-    const r = await fetch(`${aiBase}/llms.txt`, { headers: { 'User-Agent': aiUa }, signal: AbortSignal.timeout(12_000), redirect: 'follow' })
+    const r = await fetchWithTimeout(`${aiBase}/llms.txt`, { headers: { 'User-Agent': aiUa }, signal: AbortSignal.timeout(12_000), redirect: 'follow' })
     llmsOk = r.status === 200
   } catch { /* network — leave false */ }
   try {
-    const r = await fetch(`${aiBase}/robots.txt`, { headers: { 'User-Agent': aiUa }, signal: AbortSignal.timeout(12_000), redirect: 'follow' })
+    const r = await fetchWithTimeout(`${aiBase}/robots.txt`, { headers: { 'User-Agent': aiUa }, signal: AbortSignal.timeout(12_000), redirect: 'follow' })
     const robotsBody = await r.text()
     robotsAllow = /MVP Affiliate AI-readiness|GPTBot/i.test(robotsBody)
   } catch { /* network — leave false */ }

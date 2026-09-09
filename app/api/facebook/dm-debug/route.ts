@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +27,7 @@ const MESSAGING_SCOPES = ['pages_messaging', 'pages_read_engagement', 'pages_man
 
 async function graphJson(url: string): Promise<{ ok: boolean; body: unknown }> {
   try {
-    const res = await fetch(url)
+    const res = await fetchWithTimeout(url)
     const body = await res.json().catch(() => ({}))
     return { ok: res.ok, body }
   } catch (e) {

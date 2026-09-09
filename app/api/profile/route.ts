@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 // GET — load profile + brand data
 export async function GET() {
@@ -134,7 +135,7 @@ async function pushProfileToWordPress({
     ? { 'X-API-Key': apiToken }
     : { Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}` }
 
-  await fetch(`${siteUrl}/wp-json/affiliateos/v1/customizations`, {
+  await fetchWithTimeout(`${siteUrl}/wp-json/affiliateos/v1/customizations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify({

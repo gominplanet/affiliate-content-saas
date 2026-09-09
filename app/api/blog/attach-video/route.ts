@@ -24,6 +24,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 60
 
@@ -83,7 +84,7 @@ async function fetchYouTubeMetadata(apiKey: string, videoId: string) {
   url.searchParams.set('part', 'snippet,contentDetails,statistics')
   url.searchParams.set('id', videoId)
   url.searchParams.set('key', apiKey)
-  const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) })
+  const res = await fetchWithTimeout(url.toString(), { signal: AbortSignal.timeout(10_000) })
   if (!res.ok) return null
   const data = await res.json() as YtSnippetResponse
   const item = data.items?.[0]
@@ -136,13 +137,13 @@ async function fetchLegacyWpPost(
     Authorization: authHeader,
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
   }
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${base}/wp-json/wp/v2/posts/${postId}?_fields=id,title,slug,content,excerpt,link,date,featured_media&context=edit`,
     { headers, signal: AbortSignal.timeout(15_000) },
   )
   if (!res.ok) {
     // Retry without `context=edit` — some hosts strip the param.
-    const r2 = await fetch(
+    const r2 = await fetchWithTimeout(
       `${base}/wp-json/wp/v2/posts/${postId}?_fields=id,title,slug,content,excerpt,link,date,featured_media`,
       { headers, signal: AbortSignal.timeout(15_000) },
     )

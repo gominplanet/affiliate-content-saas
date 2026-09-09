@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { maybeDecrypt } from '@/lib/secrets'
 import { createServerClient } from '@/lib/supabase/server'
 import { checkedWrite } from '@/lib/db-error'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export async function POST() {
   const supabase = await createServerClient()
@@ -27,7 +28,7 @@ export async function POST() {
   const token = maybeDecrypt(row?.gsc_oauth_refresh_token) || maybeDecrypt(row?.gsc_oauth_access_token)
   if (token) {
     try {
-      await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, {
+      await fetchWithTimeout(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         signal: AbortSignal.timeout(8000),

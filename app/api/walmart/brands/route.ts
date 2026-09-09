@@ -19,6 +19,7 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getExternalKey } from '@/lib/external-keys'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
     const timer = setTimeout(() => ctrl.abort(), 30_000)
     let res: Response
     try {
-      res = await fetch(`${PB_ENDPOINT}?${qs.toString()}`, {
+      res = await fetchWithTimeout(`${PB_ENDPOINT}?${qs.toString()}`, {
         method: 'GET',
         headers: { Accept: 'application/json' },
         cache: 'no-store',

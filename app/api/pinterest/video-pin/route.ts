@@ -18,6 +18,7 @@ import { remoteVideoPosterUrl } from '@/services/cloudinary'
 import { scrubBanned } from '@/lib/scrub'
 import { recordUsage } from '@/lib/ai-usage'
 import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
+import { fetchWithTimeout, UPLOAD_TIMEOUT_MS } from '@/lib/fetch-timeout'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -110,7 +111,8 @@ export async function POST(request: Request) {
   // Pull the video bytes (the render lives on our storage / Cloudinary).
   let bytes: Uint8Array
   try {
-    const res = await fetch(videoUrl)
+    // A whole video off a CDN — upload budget, not the API-call default.
+    const res = await fetchWithTimeout(videoUrl, { timeoutMs: UPLOAD_TIMEOUT_MS })
     if (!res.ok) throw new Error(`fetch ${res.status}`)
     const buf = Buffer.from(await res.arrayBuffer())
     if (buf.byteLength > MAX_BYTES) return NextResponse.json({ error: 'Video is over 300MB.' }, { status: 400 })

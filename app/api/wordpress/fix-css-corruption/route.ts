@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 300
 
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
     let page = 1
 
     while (true) {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${base}/wp-json/wp/v2/posts?per_page=100&page=${page}&status=publish&context=edit&_fields=id,title,content`,
         { headers },
       )

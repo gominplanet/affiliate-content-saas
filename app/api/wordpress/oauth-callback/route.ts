@@ -18,6 +18,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
 import { verifyState } from '@/lib/wp-oauth'
 import { maybeEncrypt } from '@/lib/secrets'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -132,7 +133,7 @@ export async function GET(request: Request) {
   const basic = `Basic ${Buffer.from(`${userLogin}:${cleanPw}`).toString('base64')}`
   let testOk = false
   try {
-    const res = await fetch(`${wpSiteUrl}/wp-json/wp/v2/users/me`, {
+    const res = await fetchWithTimeout(`${wpSiteUrl}/wp-json/wp/v2/users/me`, {
       headers: {
         Authorization: basic,
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',

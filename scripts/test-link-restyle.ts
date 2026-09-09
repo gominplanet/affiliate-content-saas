@@ -109,6 +109,21 @@ const CONTENT = read('app/(dashboard)/content/page.tsx')
   check('and the guard reads styles, not a hardcoded domain list',
     !/const PASSPORT = \//.test(ROUTE),
     'geni.us to Bitly is a creator changing their mind, and a domain list refuses it')
+  // Building a candidate MINTS a real link. A creator switching to Geniuslink
+  // with 500 plain-Amazon posts would mint 500 shortcodes just by clicking a
+  // button called Fix Affiliate Links, before agreeing to anything, and every
+  // one they unticked would be orphaned in their account.
+  check('the scan caps how many off-style posts it builds links for',
+    /RESTYLE_BUDGET/.test(ROUTE),
+    'a preview that mints is a preview that has to be bounded')
+  check('and it does not mint for the ones it skips',
+    /restyleResolved >= RESTYLE_BUDGET \) \{ restyleDeferred\+\+; return \}/.test(ROUTE.replace(/\s+/g, ' ')) ||
+    /restyleDeferred\+\+; return/.test(ROUTE),
+    'the budget has to stop the work, not just the display')
+  check('the screen says how many were not reached',
+    /affDeferred/.test(CONTENT),
+    'showing 25 of 140 without saying so reads as "you have 25"')
+
   check('the scan reports what it established',
     /chosenStyleLabel/.test(ROUTE) && /offStyleStuck/.test(ROUTE),
     'so an empty result can say which kind of empty it is')

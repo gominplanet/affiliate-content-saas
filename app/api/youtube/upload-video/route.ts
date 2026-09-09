@@ -19,6 +19,7 @@ import { YouTubeOAuthService } from '@/services/youtube'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { recordUsage } from '@/lib/ai-usage'
 import { recordReachSample } from '@/lib/reach-pulse'
+import { fetchWithTimeout, UPLOAD_TIMEOUT_MS } from '@/lib/fetch-timeout'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -70,7 +71,9 @@ async function handleUpload(request: Request) {
   // Pull the rendered video bytes (the CTA render lives on our storage).
   let bytes: Uint8Array
   try {
-    const res = await fetch(videoUrl)
+    // A whole video off a CDN. The 30s default is an API-call ceiling and would
+    // abort a legitimate large download, so this gets the upload budget.
+    const res = await fetchWithTimeout(videoUrl, { timeoutMs: UPLOAD_TIMEOUT_MS })
     if (!res.ok) throw new Error(`fetch ${res.status}`)
     const len = Number(res.headers.get('content-length') || 0)
     if (len && len > MAX_BYTES) return NextResponse.json({ error: 'Video is over 500MB.' }, { status: 400 })

@@ -17,6 +17,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 45
 
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
     const wpBase = creds.wordpress_url.replace(/\/$/, '')
     const authHeader = `Basic ${Buffer.from(`${creds.wordpress_username}:${(creds.wordpress_app_password || '').replace(/\s+/g, '')}`).toString('base64')}`
     try {
-      const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/redirects`, {
+      const res = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/redirects`, {
         method: 'POST',
         headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: creds.wordpress_api_token || '', redirects }),

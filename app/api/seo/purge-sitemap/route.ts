@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { listSites, getWordPressCredentials } from '@/lib/wordpress-sites'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 60
 
@@ -34,7 +35,7 @@ async function purgeOne(
   const wpBase = creds.wordpress_url.replace(/\/$/, '')
   const auth = `Basic ${Buffer.from(`${creds.wordpress_username}:${creds.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')}`
   try {
-    const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/purge-sitemap`, {
+    const res = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/purge-sitemap`, {
       method: 'POST',
       headers: { Authorization: auth, 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(20_000),

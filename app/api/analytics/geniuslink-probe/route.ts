@@ -15,6 +15,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 const GENIUSLINK_API = 'https://api.geni.us'
 
@@ -96,7 +97,7 @@ export async function GET(request: Request) {
     })
     const url = `${GENIUSLINK_API}/v1/reports/link-click-trend-by-resolution?${params.toString()}`
     try {
-      const res = await fetch(url, { headers: authHeaders, signal: AbortSignal.timeout(15_000) })
+      const res = await fetchWithTimeout(url, { headers: authHeaders, signal: AbortSignal.timeout(15_000) })
       const text = await res.text()
       let json: unknown
       try { json = JSON.parse(text) } catch { json = null }

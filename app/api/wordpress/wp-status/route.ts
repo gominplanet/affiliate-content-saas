@@ -18,6 +18,7 @@ import { WP_VERSIONS } from '@/lib/wp-versions'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { maybeEncrypt } from '@/lib/secrets'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 function gt(a: string | null, b: string): boolean {
   if (!a) return false
@@ -53,7 +54,7 @@ export async function GET(req: Request) {
   const auth = `Basic ${Buffer.from(`${site.wordpress_username}:${cleanPw}`).toString('base64')}`
 
   try {
-    const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/status`, {
+    const res = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/status`, {
       headers: { Authorization: auth },
       // Don't let a slow WP host hang the dashboard.
       signal: AbortSignal.timeout(10_000),

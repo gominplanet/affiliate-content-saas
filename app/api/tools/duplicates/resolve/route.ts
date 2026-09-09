@@ -21,6 +21,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 60
 
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
     const authHeader = `Basic ${Buffer.from(`${creds.wordpress_username}:${(creds.wordpress_app_password || '').replace(/\s+/g, '')}`).toString('base64')}`
     let plugin: { ok?: boolean; trashed?: number; redirected?: number; errors?: string[]; error?: string }
     try {
-      const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/merge-duplicates`, {
+      const res = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/merge-duplicates`, {
         method: 'POST',
         headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: creds.wordpress_api_token || '', merges }),

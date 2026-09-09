@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -45,11 +46,11 @@ export async function GET(request: Request) {
   const tokenUrl = tokenEndpoint(mkt)
   let token = ''
   try {
-    let res = await fetch(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params), signal: AbortSignal.timeout(15_000) })
+    let res = await fetchWithTimeout(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params), signal: AbortSignal.timeout(15_000) })
     let usedForm = false
     if (res.status === 415) {
       usedForm = true
-      res = await fetch(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params).toString(), signal: AbortSignal.timeout(15_000) })
+      res = await fetchWithTimeout(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params).toString(), signal: AbortSignal.timeout(15_000) })
     }
     const bodyText = await res.text()
     let parsed: { access_token?: string; expires_in?: number; error?: string; error_description?: string } = {}
@@ -65,7 +66,7 @@ export async function GET(request: Request) {
   // ── 2. GetItems ──
   try {
     const body = { itemIds: [asin], itemIdType: 'ASIN', marketplace: mkt, partnerTag, resources: ['images.primary.large', 'itemInfo.title', 'offersV2.listings.price', 'parentASIN'] }
-    const res = await fetch('https://creatorsapi.amazon/catalog/v1/getItems', {
+    const res = await fetchWithTimeout('https://creatorsapi.amazon/catalog/v1/getItems', {
       method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'x-marketplace': mkt },
       body: JSON.stringify(body), signal: AbortSignal.timeout(20_000),
     })

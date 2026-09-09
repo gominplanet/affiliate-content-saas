@@ -3,6 +3,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { createServerClient } from '@/lib/supabase/server'
 import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 20
 
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
 
     // ── Step 1: Check site is reachable ───────────────────────────────────────
     try {
-      const siteRes = await fetch(`${siteUrl}/wp-json/`, { signal: AbortSignal.timeout(8000) })
+      const siteRes = await fetchWithTimeout(`${siteUrl}/wp-json/`, { signal: AbortSignal.timeout(8000) })
       if (!siteRes.ok) {
         return NextResponse.json({ ok: false, step: 'reach', error: `Could not reach ${siteUrl} (HTTP ${siteRes.status}). Check the URL.` })
       }
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
 
     // ── Step 2: Basic Auth with Application Password (the only supported path) ──
     const encoded = Buffer.from(`${username}:${cleanPassword}`).toString('base64')
-    const basicRes = await fetch(`${baseUrl}/users/me`, {
+    const basicRes = await fetchWithTimeout(`${baseUrl}/users/me`, {
       headers: { Authorization: `Basic ${encoded}` },
     })
 

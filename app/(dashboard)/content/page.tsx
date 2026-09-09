@@ -2468,6 +2468,10 @@ export default function ContentPage() {
    *  links"), so the modal states what the links are being moved TO rather than
    *  leaving them to read it off two URLs. */
   const [affStyleLabel, setAffStyleLabel] = useState<string | null>(null)
+  /** Off-style posts the scan deliberately did not build a link for this run.
+   *  The scan mints a real link per candidate, so it is capped; showing 25 of
+   *  140 without saying so would read as "you have 25". */
+  const [affDeferred, setAffDeferred] = useState(0)
   const [activeTab, setActiveTab] = useState<'horizontal' | 'vertical' | 'posts' | 'scheduled'>('horizontal')
   // Multi-site (Pro): the blog fresh generations + scheduled posts target.
   // SitePicker auto-selects the default for 2+ site users; null (single-site)
@@ -3724,6 +3728,7 @@ export default function ContentPage() {
         setAffPreview(rows)
         setAffSelected(new Set(rows.map(r => r.postId))) // default: all checked
         setAffStyleLabel((data.chosenStyleLabel as string) || null)
+        setAffDeferred((data.restyleDeferred as number) || 0)
       }
     } catch {
       setFixCatResult('Something went wrong.')
@@ -3797,6 +3802,7 @@ export default function ContentPage() {
       setAffApplying(false)
       setAffPreview(null)
       setAffStyleLabel(null)
+      setAffDeferred(0)
     }
   }
 
@@ -5003,7 +5009,11 @@ export default function ContentPage() {
                         if (broke) bits.push(`${broke} ${broke === 1 ? 'has a broken buy link' : 'have a broken buy link'}`)
                         if (styled) bits.push(`${styled} ${styled === 1 ? 'uses a link style' : 'use a link style'} you didn't choose${affStyleLabel ? ` and will move to ${affStyleLabel}` : ''}`)
                         const lead = bits.length ? bits.join(', and ') : `${affPreview.length} need${affPreview.length === 1 ? 's' : ''} a new buy link`
-                        return `${lead}. Uncheck any you don't want to change. Nothing's saved yet.`
+                        // A capped scan showing 25 of 140 must not read as 25 of 25.
+                        const more = affDeferred > 0
+                          ? ` ${affDeferred} more off-style post${affDeferred === 1 ? '' : 's'} weren't checked this run: apply these, then run it again to continue.`
+                          : ''
+                        return `${lead}. Uncheck any you don't want to change. Nothing's saved yet.${more}`
                       })()}
                 </p>
               </div>

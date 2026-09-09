@@ -23,6 +23,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 // Node runtime serverless function. We buffer the upstream body to an
 // ArrayBuffer before responding instead of piping a ReadableStream —
@@ -110,9 +111,15 @@ async function serveProxy(
   // Stream-fetch from Supabase.
   let upstream: Response
   try {
-    upstream = await fetch(upstreamUrl, {
+    upstream = await fetchWithTimeout(upstreamUrl, {
       method: headOnly ? 'HEAD' : 'GET',
       headers: upstreamHeaders,
+      // NOT the 30s default. This route buffers a whole short (up to ~240 MB
+      // worst case, per the note above) and TikTok's CDN pulls it back through
+      // here, so a normal slow transfer legitimately runs for minutes. The
+      // point of the ceiling is only that a dead upstream cannot hold the
+      // function to its own 300s limit, so it sits just under that.
+      timeoutMs: 240_000,
     })
   } catch (e) {
     return NextResponse.json({

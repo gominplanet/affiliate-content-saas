@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { maybeEncrypt } from '@/lib/secrets'
 import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 60
 
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
     const authHeader = `Basic ${Buffer.from(`${username}:${appPassword}`).toString('base64')}`
     let verifyRes: Response
     try {
-      verifyRes = await fetch(`${siteUrl}/wp-json/wp/v2/users/me`, {
+      verifyRes = await fetchWithTimeout(`${siteUrl}/wp-json/wp/v2/users/me`, {
         headers: { Authorization: authHeader },
         signal: AbortSignal.timeout(10000),
       })
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
 
     // Verify the AffiliateOS REST endpoint is reachable (plugin is active)
     try {
-      const pingRes = await fetch(`${siteUrl}/wp-json/affiliateos/v1/customizations`, {
+      const pingRes = await fetchWithTimeout(`${siteUrl}/wp-json/affiliateos/v1/customizations`, {
         headers: { Authorization: authHeader },
         signal: AbortSignal.timeout(8000),
       })

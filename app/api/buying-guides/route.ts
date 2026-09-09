@@ -37,6 +37,7 @@ import { checkGenerationLimit } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { enforceSeoBasics } from '@/lib/seo-autofix'
 import { writeContentSchema } from '@/lib/content-schema'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 300
 
@@ -223,7 +224,7 @@ async function loadReviews(supabase: Awaited<ReturnType<typeof createServerClien
       // Cache 5 min — these IDs rarely change.
       let excludeTagIds: number[] = []
       try {
-        const tagRes = await fetch(`${wpBase}/wp-json/wp/v2/tags?slug=buying-guide,comparison&_fields=id`, {
+        const tagRes = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/tags?slug=buying-guide,comparison&_fields=id`, {
           signal: AbortSignal.timeout(3000),
           headers: { Accept: 'application/json' },
           next: { revalidate: 300 },
@@ -235,7 +236,7 @@ async function loadReviews(supabase: Awaited<ReturnType<typeof createServerClien
       } catch { /* non-fatal */ }
       const excludeParam = excludeTagIds.length ? `&tags_exclude=${excludeTagIds.join(',')}` : ''
 
-      const res = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=100${excludeParam}&_embed=wp:featuredmedia&_fields=link,title,excerpt,_links,_embedded`, {
+      const res = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/posts?per_page=100${excludeParam}&_embed=wp:featuredmedia&_fields=link,title,excerpt,_links,_embedded`, {
         signal: AbortSignal.timeout(8000),
         headers: { Accept: 'application/json' },
         next: { revalidate: 300 },
@@ -295,7 +296,7 @@ async function isUnlocked(supabase: Awaited<ReturnType<typeof createServerClient
   const wpUrl = integ?.wordpress_url as string | null
   if (!wpUrl) return { unlocked: false, total: 0, tier }
   try {
-    const res = await fetch(`${wpUrl.replace(/\/+$/, '')}/wp-json/wp/v2/posts?per_page=1&_fields=id`, {
+    const res = await fetchWithTimeout(`${wpUrl.replace(/\/+$/, '')}/wp-json/wp/v2/posts?per_page=1&_fields=id`, {
       signal: AbortSignal.timeout(2500),
       headers: { Accept: 'application/json' },
       next: { revalidate: 300 },
@@ -372,7 +373,7 @@ export async function GET() {
   const wpBaseForGuides = (integForGuides?.wordpress_url as string | null)?.replace(/\/+$/, '') || ''
   if (wpBaseForGuides) {
     try {
-      const tagRes = await fetch(`${wpBaseForGuides}/wp-json/wp/v2/tags?slug=buying-guide&_fields=id`, {
+      const tagRes = await fetchWithTimeout(`${wpBaseForGuides}/wp-json/wp/v2/tags?slug=buying-guide&_fields=id`, {
         signal: AbortSignal.timeout(3000),
         headers: { Accept: 'application/json' },
         next: { revalidate: 300 },
@@ -381,7 +382,7 @@ export async function GET() {
         const tags = await tagRes.json() as Array<{ id: number }>
         const tagId = tags[0]?.id
         if (tagId) {
-          const postsRes = await fetch(`${wpBaseForGuides}/wp-json/wp/v2/posts?tags=${tagId}&per_page=30&_fields=id,link,title,date`, {
+          const postsRes = await fetchWithTimeout(`${wpBaseForGuides}/wp-json/wp/v2/posts?tags=${tagId}&per_page=30&_fields=id,link,title,date`, {
             signal: AbortSignal.timeout(5000),
             headers: { Accept: 'application/json' },
             next: { revalidate: 60 },
@@ -772,7 +773,7 @@ VOICE / STYLE RULES:
   const categoryPromise: Promise<number[]> = (async () => {
     try {
       const wpBase = site.wordpress_url.replace(/\/+$/, '')
-      const catRes = await fetch(`${wpBase}/wp-json/wp/v2/categories?per_page=100&_fields=id,name,slug`, {
+      const catRes = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/categories?per_page=100&_fields=id,name,slug`, {
         signal: AbortSignal.timeout(3000),
         headers: { Accept: 'application/json' },
         next: { revalidate: 300 },

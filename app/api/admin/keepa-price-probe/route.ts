@@ -18,6 +18,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
 import { fetchKeepaBasics } from '@/services/keepa'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -77,7 +78,7 @@ export async function GET(request: Request) {
     if (!/^[A-Z0-9]{10}$/.test(asin)) return { ...base, error: 'no valid rep asin' }
     try {
       const purl = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=1&asin=${asin}&stats=90&history=0&buybox=1`
-      const res = await fetch(purl, { signal: AbortSignal.timeout(25_000) })
+      const res = await fetchWithTimeout(purl, { signal: AbortSignal.timeout(25_000) })
       if (!res.ok) return { ...base, error: `keepa http ${res.status}` }
       const data = await res.json() as { products?: unknown[] }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

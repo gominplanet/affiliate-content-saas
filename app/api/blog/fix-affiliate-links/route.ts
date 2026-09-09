@@ -269,6 +269,29 @@ export async function POST(request: Request) {
     // and clicking again will not change that.
     const stuckOffStyle: string[] = []
 
+    // ── THE PREVIEW MINTS, SO THE PREVIEW IS BOUNDED ────────────────────────
+    // Building a candidate's new link means calling resolveAffiliateUrl, and for
+    // a Geniuslink creator that CREATES A REAL SHORTCODE in their account. On
+    // the old default (broken links only) that was fine: a scan found two or
+    // three dead links and minting a replacement for each was the work.
+    //
+    // Restyling is a different scale. A creator who switches to Geniuslink with
+    // 500 plain-Amazon posts would, just by clicking a button labelled Fix
+    // Affiliate Links, mint 500 shortcodes before deciding anything, and every
+    // one they then unticked would be left orphaned in their Geniuslink
+    // dashboard. The same run would also be 500 sequential network round trips
+    // against a 300-second function.
+    //
+    // So a scan resolves at most this many off-style posts and says how many it
+    // did not reach. Applying and running again continues from where it stopped,
+    // because the applied ones are no longer off-style. The proper fix is to
+    // defer minting to the apply step entirely, which is a bigger change to how
+    // preview rows are shaped and is worth doing deliberately rather than at the
+    // end of a session.
+    const RESTYLE_BUDGET = 25
+    let restyleResolved = 0
+    let restyleDeferred = 0
+
     const CHUNK = 6
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK)
@@ -322,6 +345,13 @@ export async function POST(request: Request) {
           // else entirely, and replacing a URL the body does not contain writes
           // nothing while reporting a fix.
           if (reason === 'restyle' && bodyUrl) oldUrl = bodyUrl
+
+          // Out of budget: count it and leave it alone. Nothing is minted for a
+          // post this run will not show, which is the whole point.
+          if (reason === 'restyle') {
+            if (restyleResolved >= RESTYLE_BUDGET) { restyleDeferred++; return }
+            restyleResolved++
+          }
 
           // Re-resolve the RIGHT product + the user's own affiliate link.
           // ownSite = THIS post's site (multi-site self-link filter). Fall
@@ -419,6 +449,9 @@ export async function POST(request: Request) {
       skipped,
       offStyleStuck: stuckOffStyle.slice(0, 20),
       offStyleStuckCount: stuckOffStyle.length,
+      // Off-style posts this run deliberately did not build a link for. Named so
+      // a creator with hundreds knows the list is a page, not the whole truth.
+      restyleDeferred,
       preview: candidates.map((c) => ({
         postId: c.post.id,
         title: (c.post.title || c.post.slug || '').replace(/<[^>]+>/g, ''),

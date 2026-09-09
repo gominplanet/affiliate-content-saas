@@ -20,6 +20,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 const GENIUSLINK_API = 'https://api.geni.us'
 
@@ -67,7 +68,7 @@ export async function GET() {
   if (!creds) return NextResponse.json({ error: 'No credentials' }, { status: 500 })
 
   try {
-    const res = await fetch(`${GENIUSLINK_API}/v1/groups/list`, {
+    const res = await fetchWithTimeout(`${GENIUSLINK_API}/v1/groups/list`, {
       headers: authHeaders(creds),
       signal: AbortSignal.timeout(8000),
     })
@@ -124,7 +125,7 @@ export async function POST(request: Request) {
     try {
       const headers: Record<string, string> = { ...authHeaders(creds) }
       if (a.contentType) headers['Content-Type'] = a.contentType
-      const res = await fetch(a.url, {
+      const res = await fetchWithTimeout(a.url, {
         method: a.method ?? 'POST',
         headers,
         body: a.body,

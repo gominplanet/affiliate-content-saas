@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { submitToIndexNow } from '@/lib/indexnow'
 import { getWordPressCredentials, listSites } from '@/lib/wordpress-sites'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 60
 
@@ -76,7 +77,7 @@ export async function POST() {
     // Per-site IndexNow key from the plugin's /status endpoint.
     let key = ''
     try {
-      const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/status`, { headers: { Authorization: auth }, signal: AbortSignal.timeout(10_000) })
+      const res = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/status`, { headers: { Authorization: auth }, signal: AbortSignal.timeout(10_000) })
       if (res.ok) { const s = await res.json().catch(() => ({})); key = (s?.indexnow_key as string) || '' }
     } catch { /* per-site failure is non-fatal */ }
     if (!key) {
@@ -114,7 +115,7 @@ async function submitForSingleSite(
   const auth = `Basic ${Buffer.from(`${site.wordpress_username}:${site.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')}`
   let key = ''
   try {
-    const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/status`, { headers: { Authorization: auth }, signal: AbortSignal.timeout(10_000) })
+    const res = await fetchWithTimeout(`${wpBase}/wp-json/affiliateos/v1/status`, { headers: { Authorization: auth }, signal: AbortSignal.timeout(10_000) })
     if (res.ok) { const s = await res.json().catch(() => ({})); key = (s?.indexnow_key as string) || '' }
   } catch { /* fall through */ }
   if (!key) {

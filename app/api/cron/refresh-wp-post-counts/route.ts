@@ -17,6 +17,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 export const maxDuration = 300
 
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
       if (!row.wordpress_url) return null
       try {
         const wpBase = row.wordpress_url.replace(/\/+$/, '')
-        const res = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=1&_fields=id`, {
+        const res = await fetchWithTimeout(`${wpBase}/wp-json/wp/v2/posts?per_page=1&_fields=id`, {
           signal: AbortSignal.timeout(5000),
           headers: { Accept: 'application/json' },
         })
