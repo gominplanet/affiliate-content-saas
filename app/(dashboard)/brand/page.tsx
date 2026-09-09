@@ -998,6 +998,19 @@ export default function BrandPage() {
                   placeholder="https://yourblog.com"
                   className="input-field"
                 />
+                {/* SAY WHERE THIS ENDS UP. A creator asked where to change the
+                    website link in his YouTube descriptions, because he wanted
+                    them pointing at his portfolio instead of his blog. This is
+                    the field, and nothing on the screen said so: it is labelled
+                    Blog URL and reads as a detail about the blog. He looked
+                    here, found no answer, and had to ask. */}
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+                  The link MVP puts in your YouTube descriptions and your
+                  &ldquo;Let&rsquo;s Work Together&rdquo; line. Point it anywhere you
+                  like, a portfolio or a link hub, not only a blog. To change the
+                  wording around it, or use a different link for each,{' '}
+                  <a href="/connect-youtube" className="text-[#7C3AED] hover:underline">edit your description lines</a>.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Amazon storefront</label>
