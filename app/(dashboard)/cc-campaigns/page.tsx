@@ -351,6 +351,9 @@ export default function CcCampaignsPage() {
   // it were the catalogue, so a search of 893,644 live campaigns read as "219
   // live campaigns". null = the server could not tell, which prints nothing.
   const [totalMatching, setTotalMatching] = useState<number | null>(null)
+  // Whether that figure is counted or guessed. A planner estimate printed as
+  // fact is what showed "446,338 live campaigns" against a real 893,644.
+  const [totalIsExact, setTotalIsExact] = useState(false)
   const [windowCapped, setWindowCapped] = useState(false)
   const [sort, setSort] = useState<string>('score')
   // Seed the search box from a ?q= deep link (e.g. "Message the brand" on the
@@ -614,7 +617,15 @@ export default function CcCampaignsPage() {
       setCampaigns((prev) => append ? [...prev, ...j.campaigns] : j.campaigns)
       setNextPage(j.nextPage)
       setTotal(j.total ?? 0)
-      setTotalMatching(typeof j.totalMatching === 'number' ? j.totalMatching : null)
+      // Only page 1 carries a count; load-more keeps the figure already shown
+      // rather than blanking the headline mid-scroll.
+      if (typeof j.totalMatching === 'number') {
+        setTotalMatching(j.totalMatching)
+        setTotalIsExact(!!j.totalIsExact)
+      } else if (!append) {
+        setTotalMatching(null)
+        setTotalIsExact(false)
+      }
       setWindowCapped(!!j.windowCapped)
     } finally { setLoadingMore(false); setLoading(false) }
   }, [sort, q, minCommission, payingOnly, hasSpots, hideJoined, hidePosted, joinedOnly])
@@ -664,6 +675,7 @@ export default function CcCampaignsPage() {
       // The joined view comes straight from Amazon, so there is no catalogue-wide
       // number behind it and no ranking window to disclose.
       setTotalMatching(null)
+      setTotalIsExact(false)
       setWindowCapped(false)
       setNextPage(null)
       setJoinedHasMore(!!res.hasMore)
@@ -1011,7 +1023,7 @@ export default function CcCampaignsPage() {
                   // `total` is the ranked, de-duplicated slice this request can
                   // page through, and printing THAT as "live campaigns" is what
                   // made 893,644 live campaigns read as 219.
-                  ? <>About <b style={{ color: 'var(--text-2)' }}>{totalMatching.toLocaleString()}</b> live campaign{totalMatching === 1 ? '' : 's'} match{totalMatching === 1 ? 'es' : ''}{q.trim() ? <> “{q.trim()}”</> : ''}
+                  ? <>{totalIsExact ? '' : 'About '}<b style={{ color: 'var(--text-2)' }}>{totalMatching.toLocaleString()}</b> live campaign{totalMatching === 1 ? '' : 's'} match{totalMatching === 1 ? 'es' : ''}{q.trim() ? <> “{q.trim()}”</> : ''}
                       {windowCapped
                         ? <span> · ranking the best {total.toLocaleString()}, add filters to narrow it</span>
                         : <span> · {total.toLocaleString()} after grouping duplicates</span>}

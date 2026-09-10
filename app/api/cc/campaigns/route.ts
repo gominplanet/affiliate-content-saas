@@ -193,16 +193,29 @@ export async function GET(request: NextRequest) {
     // as a function so the two never drift, and so a keyword transport the
     // database rejects can be retried on the next one down.
     //
-    // `counting` swaps the row payload for a planner estimate: the page needs to
-    // say how many campaigns match, and an exact count over 918,748 rows on every
-    // keystroke of a debounced search is not something to do for a headline.
-    const build = (keyword: Keyword, counting: boolean) => {
+    // `counting` swaps the row payload for a count of the matches.
+    //
+    // EXACT, not estimated. The estimate was tried first, on the reasoning that
+    // an exact count over 918,748 rows is too much to do per keystroke, and it
+    // was wrong by about half in both directions it was checked: it reported
+    // 446,338 live campaigns against a true 893,644, and 2,234 matches for
+    // "solar" against a true 4,140. A headline number that is half the truth is
+    // worse than no headline, because a creator reads it as the catalogue being
+    // short and goes looking for a missing import.
+    //
+    // The cost is bounded in the two shapes that matter. With a keyword the GIN
+    // index narrows to a few thousand rows before anything is counted. Without
+    // one, migration 326's (ends_at, commission_pct) index carries both
+    // predicates, so the count is an index-only scan rather than a table read.
+    // If it fails anyway the caller falls back to the estimate and SAYS it is an
+    // estimate, which is the part that was missing.
+    const build = (keyword: Keyword, counting: boolean, exact = true) => {
       // Cast: cc_campaign_catalog + its enrichment columns aren't in the generated
       // Supabase types, same boundary cast used across the codebase for these.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let qb = (supabase as any)
         .from('cc_campaign_catalog')
-        .select(counting ? 'campaign_id' : COLS, counting ? { count: 'estimated', head: true } : undefined)
+        .select(counting ? 'campaign_id' : COLS, counting ? { count: exact ? 'exact' : 'estimated', head: true } : undefined)
         .gte('ends_at', today)
         .gt('commission_pct', 0)
       if (!counting) qb = qb.limit(WINDOW)
@@ -264,11 +277,27 @@ export async function GET(request: NextRequest) {
     // ranking window. Best-effort: a failed count prints nothing rather than
     // taking the page down, and it is never allowed to be the reason a search
     // returns no results.
+    //
+    // Counted only on the FIRST page. Load-more re-asks the same question for
+    // the same filters, so the client carries the number forward instead.
     let totalMatching: number | null = null
-    try {
-      const { count, error: countErr } = await build(usedKeyword, true)
-      if (!countErr && typeof count === 'number') totalMatching = count
-    } catch { /* the headline is nice to have, the campaigns are not */ }
+    let totalIsExact = false
+    if (page === 1) {
+      try {
+        const { count, error: countErr } = await build(usedKeyword, true, true)
+        if (!countErr && typeof count === 'number') { totalMatching = count; totalIsExact = true }
+      } catch { /* fall through to the estimate */ }
+      // Exact failed (a statement timeout on an awkward filter combination, most
+      // likely). An estimate is still better than nothing, PROVIDED the page
+      // says it is one. Presenting an estimate as fact is what produced "446,338
+      // live campaigns" when there were 893,644.
+      if (totalMatching == null) {
+        try {
+          const { count, error: countErr } = await build(usedKeyword, true, false)
+          if (!countErr && typeof count === 'number') totalMatching = count
+        } catch { /* the headline is nice to have, the campaigns are not */ }
+      }
+    }
 
     // Brand payout reliability: aggregate EVERY campaign for the brands in view
     // (not just active) so "is their budget being spent" reflects full history.
@@ -384,7 +413,11 @@ export async function GET(request: NextRequest) {
       total: deduped.length,
       // What actually matches in the database, before ranking and de-duplication
       // cut it down to a window. This is the number the page leads with.
+      // null on load-more pages: the client keeps the first page's figure.
       totalMatching,
+      // Whether that number is counted or guessed. The page must not print a
+      // planner estimate as though it were a fact.
+      totalIsExact,
       nextPage: start + limit < deduped.length ? page + 1 : null,
       // True when there is more matching the filters than the ranking window
       // reads, so the cards are the best of a slice rather than the best of
