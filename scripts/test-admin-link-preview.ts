@@ -78,6 +78,40 @@ const check = (name: string, cond: boolean, detail?: string) => {
     'support access to a customer\'s content should be visible after the fact')
 }
 
+// ── every read after the guard uses the acting client ───────────────────────
+//
+// The first run of this preview reported "0 posts would be re-pointed" for an
+// account with 113 posts needing exactly that. The scan query still used the
+// session client, which RLS scopes to the OPERATOR, against a user_id belonging
+// to the subject: it matched nothing. Five queries had it, all missed by a
+// rename because `.from(` sat on the next line.
+//
+// A read on the wrong client does not error. It returns an empty set, and an
+// empty set reads as a healthy account.
+{
+  const guardAt = ROUTE.indexOf('const asUserId')
+  const body = ROUTE.slice(guardAt)
+  const strays: string[] = []
+  body.split('\n').forEach((line, i) => {
+    const usesSession = /await\s+supabase\b/.test(line) || /await\s+\(supabase as/.test(line)
+    // The operator's OWN row is the one legitimate session-client read here:
+    // the tier check has to run as the signed-in person, not as the subject.
+    // It is identified by reading user.id on the same statement.
+    const isOperatorsOwnRow = /user\.id/.test(line)
+    if (usesSession && !isOperatorsOwnRow) {
+      strays.push(`line ${i + 1}: ${line.trim().slice(0, 80)}`)
+    }
+  })
+  check('no session-client reads survive the acting-identity switch',
+    strays.length === 0,
+    strays.length ? `${strays.length} left, e.g. ${strays[0]}. Use \`db\`, which is the session client normally and the service role during an admin preview.` : undefined)
+
+  // The detector has to be able to find one, or it passes by looking nowhere.
+  check('the stray detector works',
+    /await\s+supabase\b/.test('  const { data } = await supabase'),
+    'if this fails the check above proves nothing')
+}
+
 if (failures.length) {
   console.error(`\n❌ admin-link-preview: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

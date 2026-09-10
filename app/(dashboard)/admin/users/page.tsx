@@ -147,8 +147,15 @@ export default function AdminUsersPage() {
       const errs = Array.isArray(d.errors) ? d.errors : []
       // Report the finding, including the part that did NOT work: a preview
       // that only counts what it can fix reads as healthier than the account is.
+      // The route explains itself when it finds nothing ("No published posts
+      // found."). Dropping that in favour of a bare "0 posts" is how a preview
+      // that could not SEE the posts reads identically to an account with
+      // nothing wrong, which is exactly what happened the first time this ran.
+      const scanned = typeof d.total === 'number' ? d.total : null
       setLinkResult(
+        (d.message ? `${d.message} ` : '') +
         `${fixes} post${fixes === 1 ? '' : 's'} would be re-pointed` +
+        (scanned != null ? ` (of ${scanned} scanned)` : '') +
         (unresolved ? ` · ${unresolved} could not be resolved` : '') +
         (errs.length ? ` · first error: ${String(errs[0]).slice(0, 200)}` : ''),
       )

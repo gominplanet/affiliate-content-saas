@@ -128,7 +128,7 @@ export async function POST(request: Request) {
     // are resolved per-post below — multi-site users have posts on different
     // sites and we need the SAME site's WP API for each write.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: integrationRaw } = await supabase
+    const { data: integrationRaw } = await db
       .from('integrations')
       .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', actingUserId)
@@ -183,12 +183,12 @@ export async function POST(request: Request) {
     const resolveVideo = async (videoId: string | null) => {
       if (!videoId) return null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let { data } = await supabase
+      let { data } = await db
         .from('youtube_videos').select('*')
         .eq('user_id', actingUserId).eq('id', videoId).maybeSingle()
       if (!data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const r = await supabase
+        const r = await db
           .from('youtube_videos').select('*')
           .eq('user_id', actingUserId).eq('youtube_video_id', videoId).maybeSingle()
         data = r.data
@@ -352,7 +352,7 @@ export async function POST(request: Request) {
         try {
           if (!f?.postId || !f?.oldUrl) continue
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: row } = await supabase
+          const { data: row } = await db
             .from('blog_posts').select('id,title,slug,content,wordpress_post_id,video_id,wordpress_site_id')
             .eq('user_id', actingUserId).eq('id', f.postId).maybeSingle()
           if (!row?.content) continue
@@ -438,7 +438,7 @@ export async function POST(request: Request) {
     // (multi-site users have posts on different sites — self-link filtering
     // must compare against the post's actual site, not the user's default).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: posts } = await supabase
+    const { data: posts } = await db
       .from('blog_posts')
       .select('id,video_id,title,slug,content,wordpress_post_id,wordpress_site_id')
       .eq('user_id', actingUserId)
