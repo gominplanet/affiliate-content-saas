@@ -3783,6 +3783,7 @@ export default function ContentPage() {
     const errors: string[] = []
     let styleLabel: string | null = affStyleLabel
     let missingOnWp = 0
+    const missingTitles: string[] = []
     let pluginVersion: string | null = null
     let pluginLatest: string | null = null
     try {
@@ -3802,6 +3803,7 @@ export default function ContentPage() {
         if (Array.isArray(data.errors)) errors.push(...data.errors.map(String))
         if (data.chosenStyleLabel) styleLabel = data.chosenStyleLabel as string
         missingOnWp += Number(data.missingOnWp) || 0
+        if (Array.isArray(data.missingOnWpTitles)) missingTitles.push(...data.missingOnWpTitles.map(String))
         if (typeof data.pluginVersion === 'string') pluginVersion = data.pluginVersion
         if (typeof data.pluginLatest === 'string') pluginLatest = data.pluginLatest
       }
@@ -3814,7 +3816,7 @@ export default function ContentPage() {
       // both branches, or "8 failed" sends someone hunting a bug that is
       // really eight posts that no longer exist.
       const goneNote = missingOnWp
-        ? ` ${missingOnWp} of them no longer exist on your WordPress site (deleted there), so they were skipped. Re-generate those from their video if you want them back.`
+        ? ` ${missingOnWp} of them no longer exist on your WordPress site, so they were skipped: ${missingTitles.slice(0, 4).join('; ')}${missingTitles.length > 4 ? `; and ${missingTitles.length - 4} more` : ''}. Re-generate those from their video if you want them back.`
         : ''
       if (fixed === 0) {
         const why = errors.length ? ` First error: ${errors[0].slice(0, 160)}` : ''

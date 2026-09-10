@@ -357,12 +357,17 @@ export async function POST(request: Request) {
       // hides the one thing the creator can act on.
       const missingOnWp: string[] = []
       for (const f of selectedFixes) {
+        // Declared OUTSIDE the try so the catch can name the post. `row` is
+        // scoped to the try, and a list of uuids is not something a creator can
+        // act on: the titles are how they recognise which posts are gone.
+        let postTitle: string | null = null
         try {
           if (!f?.postId || !f?.oldUrl) continue
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: row } = await db
             .from('blog_posts').select('id,title,slug,content,wordpress_post_id,video_id,wordpress_site_id')
             .eq('user_id', actingUserId).eq('id', f.postId).maybeSingle()
+          postTitle = (row?.title as string | null) ?? null
           if (!row?.content) continue
           const original = row.content as string
 
@@ -428,7 +433,12 @@ export async function POST(request: Request) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           try { if (row.video_id) await db.from('youtube_videos').update({ product_url: newUrl }).eq('user_id', actingUserId).eq('id', row.video_id) } catch { /* non-fatal */ }
         } catch (err) {
-          if (isStalePostError(err)) { missingOnWp.push(f.postId); continue }
+          if (isStalePostError(err)) {
+            // Keep the TITLE. A list of uuids is not something a creator can act
+            // on; the titles are how they recognise which posts are gone.
+            missingOnWp.push(String(postTitle || f.postId))
+            continue
+          }
           errs.push(`${f.postId}: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
@@ -451,6 +461,7 @@ export async function POST(request: Request) {
         errors: errs.slice(0, 10),
         partiallyFixed: partiallyFixed.length,
         missingOnWp: missingOnWp.length,
+        missingOnWpTitles: missingOnWp.slice(0, 8),
         chosenStyleLabel: STYLE_LABEL[chosenStyle],
         pluginVersion,
         pluginLatest: WP_VERSIONS.plugin.version,
