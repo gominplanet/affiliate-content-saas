@@ -3782,6 +3782,7 @@ export default function ContentPage() {
     let partial = 0
     const errors: string[] = []
     let styleLabel: string | null = affStyleLabel
+    let missingOnWp = 0
     let pluginVersion: string | null = null
     let pluginLatest: string | null = null
     try {
@@ -3800,6 +3801,7 @@ export default function ContentPage() {
         partial += Number(data.partiallyFixed) || 0
         if (Array.isArray(data.errors)) errors.push(...data.errors.map(String))
         if (data.chosenStyleLabel) styleLabel = data.chosenStyleLabel as string
+        missingOnWp += Number(data.missingOnWp) || 0
         if (typeof data.pluginVersion === 'string') pluginVersion = data.pluginVersion
         if (typeof data.pluginLatest === 'string') pluginLatest = data.pluginLatest
       }
@@ -3808,9 +3810,15 @@ export default function ContentPage() {
       // Report the artifact. "Done" over a run where nothing was written, or
       // where half the posts still carry the wrong link, is the failure this
       // whole tool was rewritten to stop.
+      // A post deleted on WordPress is not a failure to retry. Say so, in
+      // both branches, or "8 failed" sends someone hunting a bug that is
+      // really eight posts that no longer exist.
+      const goneNote = missingOnWp
+        ? ` ${missingOnWp} of them no longer exist on your WordPress site (deleted there), so they were skipped. Re-generate those from their video if you want them back.`
+        : ''
       if (fixed === 0) {
         const why = errors.length ? ` First error: ${errors[0].slice(0, 160)}` : ''
-        setFixCatResult(`Nothing was written. ${attempted} post${attempted !== 1 ? 's were' : ' was'} attempted and the link in the post body did not change.${why}`)
+        setFixCatResult(`Nothing was written. ${attempted} post${attempted !== 1 ? 's were' : ' was'} attempted and the link in the post body did not change.${why}${goneNote}`)
       } else {
         // NAME THE FAILURE. This branch printed a bare count while only the
         // nothing-was-written branch showed a reason, so a run that fixed 25 and
@@ -3845,7 +3853,7 @@ export default function ContentPage() {
             : unknownVersion
               ? ' The floating bar at the bottom of each post is drawn by the WordPress plugin, not the post body, so check it is on the latest version if that button still points somewhere else.'
               : ''
-        setFixCatResult(`Done. Fixed the affiliate link on ${fixed} post${fixed !== 1 ? 's' : ''}${failed}${missed}.${partialNote}${barNote}`)
+        setFixCatResult(`Done. Fixed the affiliate link on ${fixed} post${fixed !== 1 ? 's' : ''}${failed}${missed}.${goneNote}${partialNote}${barNote}`)
       }
     } catch {
       setFixCatResult(`Something went wrong after ${fixed} post${fixed !== 1 ? 's' : ''}. Those are saved; run it again to continue.`)

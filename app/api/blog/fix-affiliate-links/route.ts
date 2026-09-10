@@ -29,6 +29,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
+import { isStalePostError } from '@/lib/wp-errors'
 import { probeWpHealth } from '@/lib/wordpress-health'
 import { WP_VERSIONS } from '@/lib/wp-versions'
 import { createWordPressService } from '@/services/wordpress'
@@ -350,6 +351,11 @@ export async function POST(request: Request) {
       // click the wrong kind of link is the same lie in a smaller place, so it
       // is checked after the write and reported.
       const partiallyFixed: string[] = []
+      // Posts whose WordPress copy is GONE. WP answers rest_post_invalid_id for
+      // a stored id that no longer exists there, and it will answer that way
+      // forever: retrying is not a fix and counting them as generic failures
+      // hides the one thing the creator can act on.
+      const missingOnWp: string[] = []
       for (const f of selectedFixes) {
         try {
           if (!f?.postId || !f?.oldUrl) continue
@@ -422,6 +428,7 @@ export async function POST(request: Request) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           try { if (row.video_id) await db.from('youtube_videos').update({ product_url: newUrl }).eq('user_id', actingUserId).eq('id', row.video_id) } catch { /* non-fatal */ }
         } catch (err) {
+          if (isStalePostError(err)) { missingOnWp.push(f.postId); continue }
           errs.push(`${f.postId}: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
@@ -443,6 +450,7 @@ export async function POST(request: Request) {
         attempted: selectedFixes.length,
         errors: errs.slice(0, 10),
         partiallyFixed: partiallyFixed.length,
+        missingOnWp: missingOnWp.length,
         chosenStyleLabel: STYLE_LABEL[chosenStyle],
         pluginVersion,
         pluginLatest: WP_VERSIONS.plugin.version,
