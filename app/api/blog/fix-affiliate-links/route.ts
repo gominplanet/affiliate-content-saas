@@ -27,6 +27,8 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { normalizeTier } from '@/lib/tier'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { isValidAsin } from '@/services/amazon'
@@ -85,6 +87,38 @@ export async function POST(request: Request) {
       mode?: 'broken' | 'regroup' | 'restyle' | 'all'
     }
     const dryRun = body.dryRun === true
+
+    // ── Admin preview of ANOTHER creator's posts ────────────────────────────
+    //
+    // READ-ONLY BY CONSTRUCTION. Refused unless dryRun, so the apply branch
+    // below is unreachable from this path and an operator cannot edit a
+    // customer's live website from here even by accident. Seeing what WOULD
+    // change is a support question; changing it is the creator's decision.
+    //
+    // The service role is used for the reads, and only because RLS scopes the
+    // session client to the operator: it would return zero of the other
+    // creator's posts and the preview would read as "nothing to fix" rather
+    // than as "you cannot see this", which is the worse of the two failures.
+    const asUserId = String((body as { asUserId?: string }).asUserId || '').trim()
+    let actingUserId = user.id
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let db: any = supabase
+    if (asUserId && asUserId !== user.id) {
+      if (!dryRun) {
+        return NextResponse.json({
+          error: 'Previewing another creator is read-only. They apply the fix from their own account.',
+          code: 'preview_only',
+        }, { status: 403 })
+      }
+      const { data: me } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+      if (normalizeTier(me?.tier as string | null) !== 'admin') {
+        return NextResponse.json({ error: 'Admin only.' }, { status: 403 })
+      }
+      actingUserId = asUserId
+      db = createAdminClient()
+      // Reading another person's content leaves a trace, always.
+      console.warn('[fix-affiliate-links] admin preview', { operator: user.id, subject: asUserId })
+    }
     const selectedFixes = Array.isArray(body.fixes) ? body.fixes : null
     const MODES = ['broken', 'regroup', 'restyle', 'all'] as const
     type Mode = (typeof MODES)[number]
@@ -97,7 +131,7 @@ export async function POST(request: Request) {
     const { data: integrationRaw } = await supabase
       .from('integrations')
       .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
-      .eq('user_id', user.id)
+      .eq('user_id', actingUserId)
       .single()
     // Secret columns on this row are encrypted at rest. Decrypt before use:
     // handing the stored ciphertext to the provider as a key fails as
@@ -111,20 +145,20 @@ export async function POST(request: Request) {
     // generator uses. Named here rather than inferred per post so the answer in
     // the preview is the same answer the next generation will produce.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const chosenStyle: LinkStyle = (await getLinkStyle(supabase as any, user.id)).style
+    const chosenStyle: LinkStyle = (await getLinkStyle(db as any, actingUserId)).style
     const STYLE_LABEL: Record<LinkStyle, string> = {
       passport: 'Passport links', geniuslink: 'Geniuslink', bitly: 'Bitly', direct: 'plain Amazon links',
     }
 
     // Per-site service cache so we resolve credentials + build wpService once
     // per site, not once per post (could be hundreds in a bulk fix).
-    // user.id captured here to avoid TS losing narrowing inside the closure.
-    const userId = user.id
+    // actingUserId captured here to avoid TS losing narrowing inside the closure.
+    const userId = actingUserId
     const siteCache = new Map<string, { wpService: ReturnType<typeof createWordPressService>; ownSite: string; siteId: string | null } | null>()
     async function siteFor(postSiteId: string | null | undefined) {
       const key = postSiteId ?? '__default__'
       if (siteCache.has(key)) return siteCache.get(key)!
-      const s = await getWordPressCredentials(supabase, userId, postSiteId ?? null)
+      const s = await getWordPressCredentials(db, userId, postSiteId ?? null)
       if (!s) { siteCache.set(key, null); return null }
       const svc = createWordPressService(s.wordpress_url, s.wordpress_username, s.wordpress_app_password, s.wordpress_api_token || undefined)
       // site_id === 'legacy' means the user has not been migrated to
@@ -151,12 +185,12 @@ export async function POST(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let { data } = await supabase
         .from('youtube_videos').select('*')
-        .eq('user_id', user.id).eq('id', videoId).maybeSingle()
+        .eq('user_id', actingUserId).eq('id', videoId).maybeSingle()
       if (!data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = await supabase
           .from('youtube_videos').select('*')
-          .eq('user_id', user.id).eq('youtube_video_id', videoId).maybeSingle()
+          .eq('user_id', actingUserId).eq('youtube_video_id', videoId).maybeSingle()
         data = r.data
       }
       return data as unknown as { id: string; title: string; description: string; product_url: string | null; youtube_video_id: string | null; asin?: string | null } | null
@@ -287,7 +321,7 @@ export async function POST(request: Request) {
         videoId: video.youtube_video_id,
         geniuslinkGroupId: postSite?.siteId
           ? await resolveGeniuslinkGroupId({
-              supabase,
+              supabase: db,
               siteId: postSite.siteId,
               siteUrl: postSite.ownSite,
               apiKey: wp?.geniuslink_api_key,
@@ -320,7 +354,7 @@ export async function POST(request: Request) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: row } = await supabase
             .from('blog_posts').select('id,title,slug,content,wordpress_post_id,video_id,wordpress_site_id')
-            .eq('user_id', user.id).eq('id', f.postId).maybeSingle()
+            .eq('user_id', actingUserId).eq('id', f.postId).maybeSingle()
           if (!row?.content) continue
           const original = row.content as string
 
@@ -372,7 +406,7 @@ export async function POST(request: Request) {
             if (ctx) await ctx.wpService.updatePost(row.wordpress_post_id, { content: updated } as never)
           }
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await supabase.from('blog_posts').update({ content: updated }).eq('id', row.id)
+          await db.from('blog_posts').update({ content: updated }).eq('id', row.id)
           fixed++
           // Read the post back as a reader sees it: every affiliate href, not
           // just the one that was swapped.
@@ -384,7 +418,7 @@ export async function POST(request: Request) {
           // store the UUID in video_id; comparison posts store a youtube id and
           // simply won't match — harmless).
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          try { if (row.video_id) await supabase.from('youtube_videos').update({ product_url: newUrl }).eq('user_id', user.id).eq('id', row.video_id) } catch { /* non-fatal */ }
+          try { if (row.video_id) await db.from('youtube_videos').update({ product_url: newUrl }).eq('user_id', actingUserId).eq('id', row.video_id) } catch { /* non-fatal */ }
         } catch (err) {
           errs.push(`${f.postId}: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -407,7 +441,7 @@ export async function POST(request: Request) {
     const { data: posts } = await supabase
       .from('blog_posts')
       .select('id,video_id,title,slug,content,wordpress_post_id,wordpress_site_id')
-      .eq('user_id', user.id)
+      .eq('user_id', actingUserId)
       .not('wordpress_post_id', 'is', null)
       .not('content', 'is', null)
       .order('created_at', { ascending: false })
@@ -519,7 +553,7 @@ export async function POST(request: Request) {
             title: video.title || post.title || '',
             description: video.description || '',
             ownSite: postSite?.ownSite ?? defaultEntry.ownSite,
-            userId: user.id,
+            userId: actingUserId,
             tier: wp?.tier,
             amazonTag: wp?.amazon_associates_tag,
             geniuslinkApiKey: wp?.geniuslink_api_key,
@@ -528,7 +562,7 @@ export async function POST(request: Request) {
             videoId: video.youtube_video_id,
             geniuslinkGroupId: postSite?.siteId
               ? await resolveGeniuslinkGroupId({
-                  supabase,
+                  supabase: db,
                   siteId: postSite.siteId,
                   siteUrl: postSite.ownSite,
                   apiKey: wp?.geniuslink_api_key,

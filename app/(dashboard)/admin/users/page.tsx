@@ -40,6 +40,13 @@ const TIER_BADGE: Record<Tier, string> = {
 
 export default function AdminUsersPage() {
   const [email, setEmail] = useState('')
+  // Affiliate-link preview for THIS user's posts. Read-only: the route refuses
+  // anything but a dry run for another creator, so nothing here can write to
+  // their site. It exists because diagnosing a customer's broken links used to
+  // mean asking the customer to click a button and read the answer back.
+  const [linkBusy, setLinkBusy] = useState(false)
+  const [linkResult, setLinkResult] = useState<string | null>(null)
+  const [linkError, setLinkError] = useState<string | null>(null)
   const [looking, setLooking] = useState(false)
   const [lookupError, setLookupError] = useState<string | null>(null)
   const [user, setUser] = useState<TargetUser | null>(null)
@@ -121,6 +128,33 @@ export default function AdminUsersPage() {
     } finally {
       setLooking(false)
     }
+  }
+
+  // Preview what Fix all affiliate links WOULD do to this user's posts.
+  // dryRun is not optional here: the route rejects a non-dry run for another
+  // creator, so this is the only shape that works, which is the intent.
+  async function previewLinks(userId: string) {
+    setLinkBusy(true); setLinkResult(null); setLinkError(null)
+    try {
+      const r = await fetch('/api/blog/fix-affiliate-links', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: true, mode: 'all', asUserId: userId }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { setLinkError(d.error || `Preview failed (${r.status})`); return }
+      const fixes = Array.isArray(d.fixes) ? d.fixes.length : 0
+      const unresolved = Array.isArray(d.unresolved) ? d.unresolved.length : 0
+      const errs = Array.isArray(d.errors) ? d.errors : []
+      // Report the finding, including the part that did NOT work: a preview
+      // that only counts what it can fix reads as healthier than the account is.
+      setLinkResult(
+        `${fixes} post${fixes === 1 ? '' : 's'} would be re-pointed` +
+        (unresolved ? ` · ${unresolved} could not be resolved` : '') +
+        (errs.length ? ` · first error: ${String(errs[0]).slice(0, 200)}` : ''),
+      )
+    } catch (e) {
+      setLinkError(e instanceof Error ? e.message : 'Preview failed')
+    } finally { setLinkBusy(false) }
   }
 
   // Two-step on purpose: the first click arms, the second sends. An email to a
@@ -231,6 +265,37 @@ export default function AdminUsersPage() {
             <Field label="Posts published">{user.postCount}</Field>
             <Field label="Brand">{user.brandName || <span className="italic text-[#86868b]">not set</span>}</Field>
             <Field label="WordPress">{user.wordpressUrl ? <a href={user.wordpressUrl} target="_blank" rel="noreferrer" className="text-[#7C3AED] hover:underline truncate inline-block max-w-[200px]">{user.wordpressUrl.replace(/^https?:\/\//, '')}</a> : <span className="italic text-[#86868b]">not connected</span>}</Field>
+          </div>
+
+          {/* Affiliate links — READ ONLY. Shows what the fixer would change on
+              this creator's posts without touching their site. Applying stays
+              theirs to do, from their own account. */}
+          <div className="border-t border-gray-100 dark:border-white/10 pt-4 mb-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Affiliate links</p>
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">
+                  Preview only. Shows what Fix all affiliate links would change. Nothing is written to their site.
+                </p>
+              </div>
+              <button
+                onClick={() => void previewLinks(user.id)}
+                disabled={linkBusy}
+                className="btn-secondary text-sm flex items-center gap-1.5 flex-shrink-0 disabled:opacity-60"
+              >
+                {linkBusy ? 'Checking…' : 'Preview link fixes'}
+              </button>
+            </div>
+            {linkResult && (
+              <p className="text-[12px] mt-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--text-2,#1d1d1f)' }}>
+                {linkResult}
+              </p>
+            )}
+            {linkError && (
+              <p className="text-[12px] mt-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(245,158,11,0.10)', color: '#b45309' }}>
+                {linkError}
+              </p>
+            )}
           </div>
 
           {/* Direct message — account-specific updates ("your Telegram is
