@@ -142,22 +142,33 @@ export default function AdminUsersPage() {
       })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) { setLinkError(d.error || `Preview failed (${r.status})`); return }
-      const fixes = Array.isArray(d.fixes) ? d.fixes.length : 0
-      const unresolved = Array.isArray(d.unresolved) ? d.unresolved.length : 0
-      const errs = Array.isArray(d.errors) ? d.errors : []
-      // Report the finding, including the part that did NOT work: a preview
-      // that only counts what it can fix reads as healthier than the account is.
-      // The route explains itself when it finds nothing ("No published posts
-      // found."). Dropping that in favour of a bare "0 posts" is how a preview
-      // that could not SEE the posts reads identically to an account with
-      // nothing wrong, which is exactly what happened the first time this ran.
-      const scanned = typeof d.total === 'number' ? d.total : null
+      // Read the fields the route ACTUALLY returns. The first version of this
+      // card read d.fixes and d.unresolved-as-an-array, neither of which exists,
+      // so it rendered its own `undefined` as "0 posts would be re-pointed" for
+      // an account with 113 posts needing exactly that. A number invented by the
+      // reader is worse than no number.
+      const toFix = typeof d.toFix === 'number' ? d.toFix : (Array.isArray(d.preview) ? d.preview.length : 0)
+      const total = typeof d.total === 'number' ? d.total : null
+      const unresolved = typeof d.unresolved === 'number' ? d.unresolved : 0
+      const sk = (d.skipped || {}) as Record<string, number>
+      const stuck = typeof d.offStyleStuckCount === 'number' ? d.offStyleStuckCount : 0
+
+      // Every post is accounted for, not just the fixable ones. An account where
+      // 120 posts all fall out for different reasons should not read the same as
+      // one with nothing wrong.
+      const why: string[] = []
+      if (sk.alreadyRight) why.push(`${sk.alreadyRight} already correct`)
+      if (sk.noVideo) why.push(`${sk.noVideo} no source video`)
+      if (sk.noLink) why.push(`${sk.noLink} no link found`)
+      if (sk.wouldDowngrade) why.push(`${sk.wouldDowngrade} refused (would strip cloaking)`)
+      if (stuck) why.push(`${stuck} off-style but unresolvable`)
+      if (unresolved) why.push(`${unresolved} unresolved`)
+
       setLinkResult(
         (d.message ? `${d.message} ` : '') +
-        `${fixes} post${fixes === 1 ? '' : 's'} would be re-pointed` +
-        (scanned != null ? ` (of ${scanned} scanned)` : '') +
-        (unresolved ? ` · ${unresolved} could not be resolved` : '') +
-        (errs.length ? ` · first error: ${String(errs[0]).slice(0, 200)}` : ''),
+        `Style: ${d.chosenStyleLabel || d.chosenStyle || 'unknown'} · ` +
+        `${toFix} of ${total ?? '?'} would be re-pointed` +
+        (why.length ? ` · ${why.join(' · ')}` : ''),
       )
     } catch (e) {
       setLinkError(e instanceof Error ? e.message : 'Preview failed')
