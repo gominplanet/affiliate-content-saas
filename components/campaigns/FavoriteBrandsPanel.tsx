@@ -24,6 +24,9 @@ interface BrandCampaign {
   commissionPct: number | null
   detailsUrl: string
   isFull: boolean
+  /** Already accepted by this creator. Labelled in the message window rather
+   *  than hidden: joining a brand's campaigns is a reason to write to them. */
+  joined?: boolean
 }
 
 export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => void }) {
@@ -34,6 +37,9 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
   const [busy, setBusy] = useState<string | null>(null) // brand key being accepted
   const [refreshingLive, setRefreshingLive] = useState(false)
   const [msgCampaigns, setMsgCampaigns] = useState<BulkCampaign[] | null>(null)
+  // ASINs in the message window this creator has already joined. The window
+  // labels them and skips re-joining; it never blocks messaging them.
+  const [msgJoined, setMsgJoined] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     try {
@@ -96,8 +102,10 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
   }, [brands, load, onChanged])
 
   // onlyOpen=true → just the campaigns with a free slot (used for Accept all, since you
-  // can't join a full one). onlyOpen=false → every campaign for the brand you haven't
-  // already joined, full or not, so you can still message a brand whose slots are full.
+  // can't join a full one). onlyOpen=false → EVERY campaign for the brand: full ones,
+  // ones you already joined, and if the brand has nothing running at all, their ended
+  // ones. Joining needs a live campaign with a slot; writing to a brand does not, and
+  // the creator who has joined everything they offer is the one with most to say.
   const fetchCampaigns = useCallback(async (label: string, onlyOpen = true): Promise<BrandCampaign[]> => {
     const d = await fetch(`/api/campaigns/favorite-brands/campaigns?brand=${encodeURIComponent(label)}&onlyOpen=${onlyOpen ? '1' : '0'}`).then(r => r.json()).catch(() => ({}))
     return Array.isArray(d?.campaigns) ? d.campaigns : []
@@ -174,11 +182,21 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
         }
         toast.dismiss(tId)
       }
-      if (list.length === 0) { toast(`No ${b.label} campaigns found to message. They may all be ones you've already joined.`); return }
+      if (list.length === 0) {
+        // Genuinely nothing anywhere: not in the catalogue live, not ended, and
+        // not in the creator's own Amazon grid. The old copy blamed this on
+        // already having joined them, which was both wrong and unhelpful, since
+        // joined campaigns are messageable now.
+        toast(`No ${b.label} campaigns found anywhere. MVP has none in the catalogue and your Amazon grid returned none either.`)
+        return
+      }
       setMsgCampaigns(list.map(c => ({
         campaignId: c.campaignId, product: c.name || c.repAsin || '', asin: c.repAsin || '',
         brand: c.brand, detailsUrl: c.detailsUrl, commissionPct: c.commissionPct,
       })))
+      // The campaigns this creator has already joined, so the window can label
+      // them and skip re-joining rather than leaving them looking new.
+      setMsgJoined(new Set(list.filter(c => c.joined).map(c => (c.repAsin || '').toUpperCase()).filter(Boolean)))
     } finally { setBusy(null) }
   }, [fetchCampaigns])
 
@@ -272,9 +290,9 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
         <BulkMessageBrandModal
           campaigns={msgCampaigns}
           alreadyMessaged={new Set()}
-          alreadyAccepted={new Set()}
-          onClose={() => setMsgCampaigns(null)}
-          onDone={() => { setMsgCampaigns(null); onChanged?.() }}
+          alreadyAccepted={msgJoined}
+          onClose={() => { setMsgCampaigns(null); setMsgJoined(new Set()) }}
+          onDone={() => { setMsgCampaigns(null); setMsgJoined(new Set()); onChanged?.() }}
         />
       )}
     </div>

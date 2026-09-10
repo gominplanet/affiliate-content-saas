@@ -60,13 +60,24 @@ export function ccToday(): string {
  *
  *  `capped` is true when the scan hit its limit, which means the rows are a
  *  slice of the brand's campaigns rather than all of them. Callers must surface
- *  that rather than presenting a count as complete. */
+ *  that rather than presenting a count as complete.
+ *
+ *  `includeEnded` drops the still-running filter. Only ONE caller wants it:
+ *  Message all, when a brand has no live campaigns left. Joining needs a running
+ *  campaign, but talking to a brand does not, and refusing to open the message
+ *  window because their last campaign ended is refusing the exact conversation
+ *  that gets the next one. The badge must never pass it: counting an ended
+ *  campaign as open is what made that badge unclearable. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function ccScanBrandCampaigns(sb: any, label: string): Promise<{ rows: CcBrandScanRow[]; capped: boolean }> {
+export async function ccScanBrandCampaigns(
+  sb: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  label: string,
+  opts: { includeEnded?: boolean } = {},
+): Promise<{ rows: CcBrandScanRow[]; capped: boolean }> {
   const tok = brandLikeToken(label)
   if (!tok) return { rows: [], capped: false }
 
-  const { data } = await sb
+  let q = sb
     .from('cc_campaign_catalog')
     .select(CC_BRAND_SCAN_COLS)
     // Broad DB pre-filter (brand OR title contains the token). The precise
@@ -74,14 +85,19 @@ export async function ccScanBrandCampaigns(sb: any, label: string): Promise<{ ro
     // brand column is empty but whose title names it, without dragging in
     // look-alikes like "Dreamegg".
     .or(`brand_name.ilike.%${tok}%,campaign_name.ilike.%${tok}%`)
-    // Still running. This is the line whose absence made the badge unclearable.
-    .gte('ends_at', ccToday())
+  // Still running. This is the line whose absence made the badge unclearable.
+  if (!opts.includeEnded) q = q.gte('ends_at', ccToday())
+
+  const { data } = await q
     // A DETERMINISTIC order, identical in every caller. Without one, PostgREST
     // returns rows in physical order, so two requests for the same brand can
     // read two different thousand-row slices and disagree about what is open.
-    // Soonest-ending first is also the useful slice to keep when a brand has
-    // more campaigns than the cap.
-    .order('ends_at', { ascending: true })
+    //
+    // The direction follows what the slice is FOR. Live: soonest-ending first,
+    // because those are the ones about to be missed. Ended: most-recent first,
+    // because a brand's slice of dead campaigns is only useful as a way to reach
+    // them, and their last campaign says more than their first.
+    .order('ends_at', { ascending: !opts.includeEnded })
     .order('campaign_id', { ascending: true })
     .limit(CC_BRAND_SCAN_LIMIT)
 
