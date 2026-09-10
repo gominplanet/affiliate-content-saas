@@ -70,21 +70,58 @@ async function socialAvailability(
   return { tierSocials, connectedSocials }
 }
 
+/** What the most recent auto-pilot run actually did with the socials.
+ *
+ *  Auto-pilot publishing the blog and posting to nothing else used to leave no
+ *  trace a creator could read: the channels showed ON in this modal, the post
+ *  was live, and the silence was indistinguishable from the cascade never having
+ *  been asked to run. The runner records its outcome on the job now, and this
+ *  hands it back so the modal can say which channels went out and why the rest
+ *  did not. Best-effort — a missing or old-shaped result reads as "no report",
+ *  never as a failure. */
+async function lastRunSocials(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const { data } = await supabase
+      .from('generation_jobs')
+      .select('status, result, error, created_at')
+      .eq('user_id', userId).eq('kind', 'blog')
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const job = (data ?? [])[0] as { status?: string; result?: Record<string, unknown>; error?: string; created_at?: string } | undefined
+    if (!job) return null
+    const report = job.result?.autoSocials
+    if (!report || typeof report !== 'object') {
+      // A run that predates the report, or one that failed before it. Say which
+      // rather than returning nothing, because "the last run errored" is the
+      // answer in one of those cases.
+      return { at: job.created_at ?? null, status: job.status ?? null, error: job.error ?? null, report: null }
+    }
+    return { at: job.created_at ?? null, status: job.status ?? null, error: job.error ?? null, report }
+  } catch { return null }
+}
+
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const site = await getWordPressCredentials(supabase, user.id)
-  const { tierSocials, connectedSocials } = await socialAvailability(supabase, user.id)
+  const [{ tierSocials, connectedSocials }, lastRun] = await Promise.all([
+    socialAvailability(supabase, user.id),
+    lastRunSocials(supabase, user.id),
+  ])
   if (!site || site.site_id === 'legacy') {
-    return NextResponse.json({ autopilot: OFF, noSite: !site, tierSocials, connectedSocials })
+    return NextResponse.json({ autopilot: OFF, noSite: !site, tierSocials, connectedSocials, lastRun })
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: row } = await (supabase as any)
     .from('wordpress_sites').select('blog_customizations').eq('id', site.site_id).maybeSingle()
-  return NextResponse.json({ autopilot: readState(row?.blog_customizations), tierSocials, connectedSocials })
+  return NextResponse.json({ autopilot: readState(row?.blog_customizations), tierSocials, connectedSocials, lastRun })
 }
 
 export async function PUT(req: Request) {

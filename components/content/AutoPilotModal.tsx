@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Rocket } from 'lucide-react'
+import { describeAutoPilotRun, type AutoPilotLastRun } from '@/lib/autopilot-report'
 
 type Cadence = 'daily' | 'alternate' | '3x_week' | '2x_week' | '1x_week'
 interface AutoState { enabled: boolean; lastRunAt: string | null; pausedReason: string | null; socials: string[]; cadence: Cadence; days: number[] }
@@ -46,6 +47,10 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
   // channel that silently never posts.
   const [tierSocials, setTierSocials] = useState<string[]>([])
   const [connectedSocials, setConnectedSocials] = useState<string[]>([])
+  // What the LAST run actually did with the socials. Auto-pilot posting the blog
+  // and nothing else used to leave nothing on screen to read, so five different
+  // causes all looked like the same silence.
+  const [lastRun, setLastRun] = useState<AutoPilotLastRun | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -57,6 +62,7 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
           if (d.autopilot) setState({ socials: [], cadence: 'daily', days: [], ...d.autopilot })
           if (Array.isArray(d.tierSocials)) setTierSocials(d.tierSocials)
           if (Array.isArray(d.connectedSocials)) setConnectedSocials(d.connectedSocials)
+          setLastRun(d.lastRun ?? null)
         }
       } catch { /* keep defaults */ } finally {
         if (!cancelled) setLoading(false)
@@ -211,6 +217,20 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
             {state.enabled && (
               <div>
                 <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Also auto-post to socials</label>
+                {/* What the last run DID, not what it was set to do. A channel
+                    toggled ON here is a request; this line is the result. */}
+                {(() => {
+                  const d = describeAutoPilotRun(lastRun)
+                  if (!d) return null
+                  const colour = d.tone === 'warn' ? '#b45309' : d.tone === 'ok' ? '#1f8a3a' : '#86868b'
+                  const bg = d.tone === 'warn' ? 'rgba(245,158,11,0.10)' : d.tone === 'ok' ? 'rgba(52,199,89,0.10)' : 'transparent'
+                  return (
+                    <p className="text-[11px] leading-relaxed rounded-lg px-2.5 py-1.5 mb-2"
+                      style={{ color: colour, background: bg }}>
+                      {d.text}
+                    </p>
+                  )
+                })()}
                 <div className="grid grid-cols-2 gap-2">
                   {SOCIALS.map(s => {
                     const status = socialStatus(s.key)
