@@ -85,8 +85,19 @@ export async function POST(req: Request) {
   })
   await sb.from('global_sync_targets').insert(targetRows)
 
-  // Fire-and-forget: localize each market's metadata, then mark the job done.
-  // (Milestone 2 will also produce captions + dub here.)
+  // Localize each market's metadata, then mark the job done.
+  //
+  // This runs AFTER the response is returned, which on Vercel means the function
+  // can be frozen before it finishes. It is kept because when it does run the
+  // creator gets their markets in seconds, but it is no longer the only thing
+  // standing between them and a result: /api/cron/drain-global-sync claims any
+  // job nothing has touched for five minutes and finishes it. Four jobs sat in
+  // 'localizing' for over a week before that existed.
+  //
+  // Each market is committed as it completes, so a freeze midway leaves the
+  // finished ones done and only the rest for the cron. And the catch now writes
+  // a REASON: status='failed' with nothing else is a dead job that explains
+  // nothing to the person looking at it.
   // Non-English storefronts get a text-free thumbnail (the branded one bakes an
   // English hook into the image, which reads wrong to a French/German shopper).
   // Generate that clean variant once per video, only when this sync actually
@@ -125,8 +136,22 @@ export async function POST(req: Request) {
         }
       }
       await sb.from('global_sync_jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', job.id)
-    } catch {
-      await sb.from('global_sync_jobs').update({ status: 'failed', updated_at: new Date().toISOString() }).eq('id', job.id)
+    } catch (e) {
+      const why = e instanceof Error ? e.message : 'Localizing failed.'
+      // Leave it OPEN rather than marking it failed. This code runs where a
+      // freeze is indistinguishable from a crash, and the recovery cron can
+      // finish a job it can no longer see. Recording the reason and touching
+      // updated_at is enough: the cron picks it up in five minutes, and if it
+      // fails there too, it fails there with a count behind it.
+      try {
+        await sb.from('global_sync_jobs')
+          .update({ error: why.slice(0, 500), updated_at: new Date().toISOString() })
+          .eq('id', job.id)
+      } catch {
+        // Pre-327 database with no error column: fall back to the old
+        // behaviour so a failure is at least not silent.
+        await sb.from('global_sync_jobs').update({ status: 'failed', updated_at: new Date().toISOString() }).eq('id', job.id)
+      }
     }
   })()
 
