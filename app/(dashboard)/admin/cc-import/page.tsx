@@ -23,7 +23,13 @@ export default function AdminCcImportPage() {
   const [loading, setLoading] = useState(true)
   const [merging, setMerging] = useState(false)
   const [remaining, setRemaining] = useState<number | null>(null)
-  const [result, setResult] = useState<{ upserted: number; purged: number; staged: number } | null>(null)
+  const [result, setResult] = useState<{ upserted: number; purged: number; staged: number; summary?: string; purgeSkipped?: boolean } | null>(null)
+  // Add-only: upsert everything staged, delete nothing. Defaults ON because
+  // Amazon's export is currently short of its own dashboard by more than half,
+  // and a replace against a short export deletes campaigns that are still
+  // running. Untick it deliberately when the upload really is the whole
+  // catalogue and retired campaigns need clearing out.
+  const [addOnly, setAddOnly] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [probeQ, setProbeQ] = useState('solar')
   const [probing, setProbing] = useState(false)
@@ -37,7 +43,7 @@ export default function AdminCcImportPage() {
   const [backfillFilled, setBackfillFilled] = useState<number | null>(null)
   const [backfillDone, setBackfillDone] = useState(false)
   // Server-side background drain (cron): status + start/stop.
-  const [drain, setDrain] = useState<{ active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number } | null>(null)
+  const [drain, setDrain] = useState<{ active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; purgeSkipped?: boolean } | null>(null)
   const [bgStarting, setBgStarting] = useState(false)
   // One-click auto-load: SCOUT downloads Amazon's two exports itself (no manual
   // ZIP download + upload).
@@ -104,7 +110,7 @@ export default function AdminCcImportPage() {
       let confirm = false
       for (let i = 0; i < 2; i++) {
         const r = await fetch('/api/admin/import-cc-catalog', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'background', confirm }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'background', confirm, addOnly }),
         })
         const d = await r.json().catch(() => ({}))
         if (r.status === 409 && d?.needsConfirm) {
@@ -119,7 +125,7 @@ export default function AdminCcImportPage() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not start the background merge.')
     } finally { setBgStarting(false) }
-  }, [bgStarting, loadCounts])
+  }, [bgStarting, loadCounts, addOnly])
 
   const stopBackground = useCallback(async () => {
     try {
@@ -156,7 +162,7 @@ export default function AdminCcImportPage() {
         let d: any = {}
         try {
           const r = await fetch('/api/admin/import-cc-catalog', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm, purgeAfter }),
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm, purgeAfter, addOnly }),
           })
           d = await r.json().catch(() => ({}))
           // Safety prompt: staging far smaller than live — likely a partial upload.
@@ -191,8 +197,16 @@ export default function AdminCcImportPage() {
         totalUpserted += did
         if (d.done) {
           setRemaining(null)
-          setResult({ upserted: totalUpserted, purged: Number(d.purged ?? 0), staged: Number(d.staged ?? 0) })
-          toast.success(`Merged ${totalUpserted.toLocaleString()} campaigns · purged ${Number(d.purged ?? 0).toLocaleString()}`)
+          setResult({
+            upserted: totalUpserted, purged: Number(d.purged ?? 0), staged: Number(d.staged ?? 0),
+            // The server's own sentence, so the page reports what the merge DID
+            // rather than what this page assumed it would do.
+            summary: typeof d.summary === 'string' ? d.summary : undefined,
+            purgeSkipped: d.purgeSkipped === true,
+          })
+          toast.success(d.purgeSkipped === true
+            ? `Added ${totalUpserted.toLocaleString()} campaigns · nothing removed`
+            : `Merged ${totalUpserted.toLocaleString()} campaigns · purged ${Number(d.purged ?? 0).toLocaleString()}`)
           if (d.warning) toast.warning(String(d.warning), { duration: 12_000 })
           void loadCounts()
           return
@@ -209,7 +223,7 @@ export default function AdminCcImportPage() {
       const msg = e instanceof Error ? e.message : 'Merge failed'
       setErr(msg); toast.error(msg)
     } finally { setMerging(false) }
-  }, [merging, loadCounts])
+  }, [merging, loadCounts, addOnly])
 
   const probe = useCallback(async () => {
     if (probing) return
@@ -295,7 +309,7 @@ export default function AdminCcImportPage() {
     <>
       <PageHero
         title="CC Catalog Import"
-        subtitle="Merge the weekly Creator Connections CSV into the live catalog, safely : campaign economics update, enriched product signals are preserved, and campaigns that fell out of the CSV are purged."
+        subtitle="Load the Creator Connections export into the live catalog, safely : campaign economics update and enriched product signals are preserved. Add-only leaves everything else alone; untick it to also clear campaigns missing from the upload."
       />
 
       {/* One-click auto-load — SCOUT downloads Amazon's exports itself. The
@@ -323,10 +337,10 @@ export default function AdminCcImportPage() {
         <ol className="text-[13px] leading-relaxed list-decimal pl-5 space-y-1.5" style={{ color: 'var(--text-soft)' }}>
           <li><b>Drag the two ZIP files</b> from Amazon (Download all available + Download all accepted campaigns) into the upload box below and click <b>Upload to staging</b>. MVP unzips them in your browser. Loose CSVs work too, and multiple files combine automatically.</li>
           <li>Confirm the <b>Staged</b> count looks right (tens of thousands).</li>
-          <li>Click <b>Merge into live catalog</b>. Enriched images/sales/ratings survive; campaigns that fell out are purged.</li>
+          <li>Leave <b>Add only</b> ticked unless you are sure the upload is the complete catalogue, then click the merge button. Enriched images, sales and ratings survive either way.</li>
         </ol>
         <div className="mt-3 rounded-lg px-3 py-2 text-[12.5px] leading-relaxed" style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)', color: 'var(--text)' }}>
-          <b>Upload the COMPLETE current catalog every week, not just the new opportunities.</b> The merge replaces the catalog: whatever is in your CSV is kept, and every campaign <i>not</i> in it is purged. Uploading only this week&rsquo;s new ones would delete last week&rsquo;s. Re-uploading ones that already exist is safe : their enrichment is preserved.
+          <b>Amazon&rsquo;s export can be far short of Amazon&rsquo;s own dashboard.</b> A CC account showing 928,250 campaigns exported 379,181 of them, the same rows on every re-download. With <b>Add only</b> unticked, that upload would have deleted 539,567 catalogue rows and 514,994 of those were still inside their run dates, each losing its Keepa enrichment permanently. Re-uploading campaigns that already exist is always safe : their enrichment is preserved.
         </div>
       </div>
 
@@ -374,6 +388,23 @@ export default function AdminCcImportPage() {
         </div>
       )}
 
+      {/* Add-only. On by default, and the copy says what each setting costs so
+          the choice is made on the evidence rather than on a habit. */}
+      <div className="card p-4 mb-3" style={{ borderColor: addOnly ? 'rgba(52,199,89,0.4)' : 'rgba(245,158,11,0.45)' }}>
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input type="checkbox" checked={addOnly} onChange={e => setAddOnly(e.target.checked)}
+            disabled={merging || bgStarting || !!drain?.active}
+            className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            <b style={{ color: 'var(--text)' }}>Add only : never remove campaigns missing from this upload.</b>
+            <br />
+            {addOnly
+              ? <>Every staged campaign is added or updated and nothing is deleted. Retired campaigns stay in the catalogue until an upload you trust clears them. This is the safe setting when Amazon&rsquo;s export is short of its own dashboard, which it currently is.</>
+              : <>Full replace: every campaign <i>not</i> in this upload is deleted, and each deleted campaign loses its Keepa enrichment permanently. Only leave this unticked when you are sure the upload is the complete catalogue.</>}
+          </span>
+        </label>
+      </div>
+
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <button
           onClick={() => merge()}
@@ -381,8 +412,8 @@ export default function AdminCcImportPage() {
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[14px] font-semibold text-white disabled:opacity-50"
           style={{ background: '#7C3AED' }}>
           {merging
-            ? <><Loader2 size={16} className="animate-spin" /> Merging{remaining != null ? ` — ${remaining.toLocaleString()} left` : '…'}</>
-            : <>Merge into live catalog <ArrowRight size={16} /></>}
+            ? <><Loader2 size={16} className="animate-spin" /> Merging{remaining != null ? `, ${remaining.toLocaleString()} left` : '…'}</>
+            : <>{addOnly ? 'Add to live catalog' : 'Merge into live catalog'} <ArrowRight size={16} /></>}
         </button>
         {/* Background drain: kick it off and close the tab — a cron finishes it
             server-side (no throttled-tab crawl). */}
@@ -392,7 +423,7 @@ export default function AdminCcImportPage() {
           title="Kick off the merge on the server and close the tab — a cron drains it to completion, no need to keep this open."
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold border disabled:opacity-50"
           style={{ borderColor: '#7C3AED', color: '#7C3AED' }}>
-          {bgStarting ? <><Loader2 size={16} className="animate-spin" /> Starting…</> : <>Merge in background</>}
+          {bgStarting ? <><Loader2 size={16} className="animate-spin" /> Starting…</> : <>{addOnly ? 'Add in background' : 'Merge in background'}</>}
         </button>
         <button onClick={loadCounts} disabled={loading || merging}
           className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[13px] font-medium border disabled:opacity-50"
@@ -408,8 +439,10 @@ export default function AdminCcImportPage() {
           <div className="flex-1">
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
               {drain.phase === 'purge'
-                ? 'Merge done — cleaning up campaigns that fell out of the CSV. You can close this tab.'
-                : 'Merging in the background. You can close this tab.'}
+                ? 'Merge done, cleaning up campaigns that fell out of the CSV. You can close this tab.'
+                : drain.mode === 'add-only'
+                  ? 'Adding in the background, removing nothing. You can close this tab.'
+                  : 'Merging in the background. You can close this tab.'}
             </p>
             <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
               {drain.phase === 'purge'
@@ -430,7 +463,13 @@ export default function AdminCcImportPage() {
         <div className="card p-4 mb-5 flex items-start gap-2.5" style={{ borderColor: 'rgba(52,199,89,0.4)' }}>
           <CheckCircle2 size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#34c759' }} />
           <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
-            <b style={{ color: '#1f8a3a' }}>Background merge finished.</b> {typeof drain.purged === 'number' && drain.purged > 0 ? `Removed ${drain.purged.toLocaleString()} fallen-out campaigns. ` : 'No campaigns fell out. '}New campaigns enrich over the next cron runs; survivors kept their signals.
+            <b style={{ color: '#1f8a3a' }}>Background merge finished.</b>{' '}
+            {drain.purgeSkipped === true || drain.mode === 'add-only'
+              ? 'Nothing was removed: add-only was ticked, so campaigns missing from the upload were left alone. '
+              : typeof drain.purged === 'number' && drain.purged > 0
+                ? `Removed ${drain.purged.toLocaleString()} fallen-out campaigns. `
+                : 'The cleanup sweep ran and found nothing to remove. '}
+            New campaigns enrich over the next cron runs; survivors kept their signals.
           </p>
         </div>
       )}
@@ -438,11 +477,14 @@ export default function AdminCcImportPage() {
       {result && (
         <div className="card p-4 mb-5" style={{ borderColor: 'rgba(52,199,89,0.4)' }}>
           <p className="text-[13px] font-semibold mb-1" style={{ color: '#1f8a3a' }}>
-            <CheckCircle2 size={14} className="inline -mt-0.5 mr-1" /> Import merged
+            <CheckCircle2 size={14} className="inline -mt-0.5 mr-1" /> {result.purgeSkipped ? 'Campaigns added' : 'Import merged'}
           </p>
           <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
-            Staged <b>{result.staged.toLocaleString()}</b> · upserted <b>{result.upserted.toLocaleString()}</b> · purged (fell out) <b>{result.purged.toLocaleString()}</b>.
-            New campaigns will enrich over the next runs of the background cron; survivors kept their signals.
+            {/* The server's sentence, which distinguishes "the sweep found
+                nothing to remove" from "the sweep never ran". Those used to
+                render identically as "purged 0". */}
+            {result.summary ?? `Added or updated ${result.upserted.toLocaleString()} campaigns and removed ${result.purged.toLocaleString()}.`}
+            {' '}New campaigns will enrich over the next runs of the background cron; survivors kept their signals.
           </p>
         </div>
       )}

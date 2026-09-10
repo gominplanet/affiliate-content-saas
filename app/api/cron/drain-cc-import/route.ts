@@ -14,6 +14,7 @@
 // the foreground merge (merge_cc_catalog_step / merge_cc_catalog_purge_cursor).
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { ccMergeMode, ccShouldPurge } from '@/lib/cc-merge-mode'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -51,7 +52,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, aborted: 'staging empty' })
   }
 
-  const s = (flag.value || {}) as { phase?: string; cursor?: string; upserted?: number; purged?: number; scanned?: number }
+  const s = (flag.value || {}) as { phase?: string; cursor?: string; upserted?: number; purged?: number; scanned?: number; mode?: string }
+  // The admin's choice rides on the flag, set when the drain was armed. An older
+  // flag with no mode reads as 'replace', which is what it was doing.
+  const mode = ccMergeMode(s.mode)
   let phase: 'merge' | 'purge' = s.phase === 'purge' ? 'purge' : 'merge'
   let cursor = typeof s.cursor === 'string' ? s.cursor : ''
   let upserted = Number(s.upserted || 0)
@@ -69,7 +73,7 @@ export async function GET(request: Request) {
   const save = async (extra: any = {}) => {
     try {
       await admin.from('system_flags')
-        .update({ value: { phase, cursor, upserted, purged, scanned: scannedTotal, ...extra }, updated_at: new Date().toISOString() })
+        .update({ value: { phase, cursor, upserted, purged, scanned: scannedTotal, mode, ...extra }, updated_at: new Date().toISOString() })
         .eq('key', DRAIN_KEY)
     } catch { /* best-effort */ }
   }
@@ -97,6 +101,20 @@ export async function GET(request: Request) {
     await save()
   }
 
+  // Add-only finishes as soon as staging is drained: nothing gets deleted, so
+  // there is no purge phase to enter. Placed OUTSIDE the merge block on purpose.
+  // A drain armed as add-only and resumed on a later tick arrives with phase
+  // already 'purge' and never re-enters the merge block, so a check nested in
+  // there would let it fall through to the tail return, stay armed, and tick
+  // forever without ever finishing.
+  if (phase === 'purge' && !ccShouldPurge(mode)) {
+    await admin.from('system_flags')
+      .update({ active: false, value: { phase: 'done', mode, upserted, purged: 0, purgeSkipped: true, finishedAt: new Date().toISOString() } })
+      .eq('key', DRAIN_KEY)
+    try { await admin.from('system_flags').update({ active: false, updated_at: new Date().toISOString() }).eq('key', ACTIVE_KEY) } catch { /* best-effort */ }
+    return NextResponse.json({ ok: true, done: true, mode, upserted, purged: 0, purgeSkipped: true })
+  }
+
   // ── Purge phase ──────────────────────────────────────────────────────────
   if (phase === 'purge' && Date.now() < deadline) {
     let done = false
@@ -118,7 +136,7 @@ export async function GET(request: Request) {
     if (done) {
       // Finished — disarm the drain and release the enrichment pause.
       await admin.from('system_flags')
-        .update({ active: false, value: { phase: 'done', upserted, purged, finishedAt: new Date().toISOString() } })
+        .update({ active: false, value: { phase: 'done', mode, upserted, purged, finishedAt: new Date().toISOString() } })
         .eq('key', DRAIN_KEY)
       try { await admin.from('system_flags').update({ active: false, updated_at: new Date().toISOString() }).eq('key', ACTIVE_KEY) } catch { /* best-effort */ }
       return NextResponse.json({ ok: true, done: true, upserted, purged })

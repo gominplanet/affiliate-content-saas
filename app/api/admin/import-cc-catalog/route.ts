@@ -19,6 +19,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
 import { fetchKeepaTokenStatus } from '@/services/keepa'
+import { ccMergeMode, ccShouldPurge, ccNeedsPurgeGuards, describeCcMergeOutcome } from '@/lib/cc-merge-mode'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -85,13 +86,13 @@ export async function GET() {
   ])
   // Background-drain status (migration 251) so the UI can show "merging in the
   // background" progress even with the tab closed. Best-effort; absent → null.
-  let drain: { active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number } | null = null
+  let drain: { active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; purgeSkipped?: boolean } | null = null
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: f } = await (admin as any).from('system_flags').select('active,value').eq('key', 'cc_import_drain').maybeSingle()
     if (f) {
-      const v = (f.value || {}) as { phase?: string; upserted?: number; purged?: number; scanned?: number }
-      drain = { active: !!f.active, phase: v.phase, upserted: v.upserted, purged: v.purged, scanned: v.scanned }
+      const v = (f.value || {}) as { phase?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; purgeSkipped?: boolean }
+      drain = { active: !!f.active, phase: v.phase, upserted: v.upserted, purged: v.purged, scanned: v.scanned, mode: v.mode, purgeSkipped: v.purgeSkipped }
     }
   } catch { /* pre-251 DB — no background status */ }
 
@@ -106,8 +107,12 @@ export async function POST(request: Request) {
     const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     if (normalizeTier(intRow?.tier) !== 'admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 })
 
-    const body = await request.json().catch(() => ({})) as { confirm?: boolean; purgeAfter?: string }
+    const body = await request.json().catch(() => ({})) as { confirm?: boolean; purgeAfter?: string; addOnly?: boolean }
     const admin = createAdminClient()
+    // 'add-only' upserts everything staged and deletes nothing. See
+    // lib/cc-merge-mode.ts for why it exists (a partial Amazon export that
+    // would have purged 514,994 still-running campaigns).
+    const mode = ccMergeMode(body.addOnly)
 
     // Guard 1: refuse to merge an EMPTY staging table (that would purge the whole
     // live catalog). Use a CHEAP existence check (limit 1), not an exact count —
@@ -161,6 +166,12 @@ export async function POST(request: Request) {
       ])
       stagedCount = stagedEst
       liveCount = liveEst
+    }
+    // Both guards below warn about the PURGE. In add-only mode nothing is
+    // deleted, so there is nothing to warn about, and asking "remove ~539,567
+    // campaigns?" when the answer is zero trains the admin to click through
+    // warnings — which is how a real one gets clicked through later.
+    if (!body.confirm && ccNeedsPurgeGuards(mode)) {
       if (stagedCount != null && liveCount != null && liveCount > 0 && stagedCount < liveCount * 0.85) {
         return NextResponse.json({
           needsConfirm: true,
@@ -223,13 +234,22 @@ export async function POST(request: Request) {
     if ((body as { mode?: string }).mode === 'background') {
       try {
         await (admin as unknown as { from: (t: string) => any }).from('system_flags').upsert( // eslint-disable-line @typescript-eslint/no-explicit-any
-          { key: 'cc_import_drain', active: true, value: { phase: 'merge', cursor: '', upserted: 0, purged: 0, startedAt: new Date().toISOString() }, updated_at: new Date().toISOString() },
+          // `mode` rides on the flag so the cron drains it the same way the
+          // admin asked for. Without it a background add-only merge would purge
+          // on the cron's next tick, which is the exact outcome the tick-box
+          // exists to prevent.
+          { key: 'cc_import_drain', active: true, value: { phase: 'merge', cursor: '', upserted: 0, purged: 0, mode, startedAt: new Date().toISOString() }, updated_at: new Date().toISOString() },
           { onConflict: 'key' },
         )
       } catch (e) {
         return NextResponse.json({ error: toUserMessage(e, 'Could not start the background merge. Run migration 251, then try again.') }, { status: 500 })
       }
-      return NextResponse.json({ ok: true, background: true, message: 'Merging in the background — you can close this tab. Progress shows on the counts.' })
+      return NextResponse.json({
+        ok: true, background: true, mode,
+        message: mode === 'add-only'
+          ? 'Adding in the background, removing nothing. You can close this tab; progress shows on the counts.'
+          : 'Merging in the background — you can close this tab. Progress shows on the counts.',
+      })
     }
     // Stop a running background drain (admin cancels).
     if ((body as { mode?: string }).mode === 'stop-background') {
@@ -332,13 +352,20 @@ export async function POST(request: Request) {
     // import already running mid-purge can't break.
     const useCursorPurge = typeof body.purgeAfter === 'string'
     let purged = 0
+    // Add-only: every staged campaign is in, and the sweep that deletes the rest
+    // simply does not run. Reported as purgeSkipped rather than purged:0 so the
+    // page can say "nothing was removed" instead of "the sweep found nothing",
+    // which are different facts that used to render identically.
+    const purgeSkipped = !ccShouldPurge(mode)
     // Set when the purge DB function isn't applied yet (migration 220). We do
     // NOT fail the whole merge for this: the upsert already landed every new
     // campaign, so we finish and return a warning telling the admin to apply
     // 220 for cleanup — instead of leaving the import looking broken.
     let purgeMissing = false
 
-    if (useCursorPurge) {
+    if (purgeSkipped) {
+      /* nothing to delete — fall through to the finished response */
+    } else if (useCursorPurge) {
       const PURGE_SCAN = 5000
       let cursor = body.purgeAfter as string
       let purgeDone = false
@@ -400,6 +427,9 @@ export async function POST(request: Request) {
       staged: stagedCount ?? undefined,
       upserted,
       purged,
+      mode,
+      purgeSkipped,
+      summary: describeCcMergeOutcome({ mode, upserted, purged }),
       warning: purgeMissing
         ? 'Merge finished and all campaigns are live, but cleanup of fallen-out campaigns was skipped: the purge DB function isn’t installed. Run migration 220 in Supabase to enable it (nothing else is blocked).'
         : undefined,
