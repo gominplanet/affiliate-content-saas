@@ -3782,6 +3782,8 @@ export default function ContentPage() {
     let partial = 0
     const errors: string[] = []
     let styleLabel: string | null = affStyleLabel
+    let pluginVersion: string | null = null
+    let pluginLatest: string | null = null
     try {
       for (let i = 0; i < fixes.length; i += BATCH) {
         const slice = fixes.slice(i, i + BATCH)
@@ -3798,6 +3800,8 @@ export default function ContentPage() {
         partial += Number(data.partiallyFixed) || 0
         if (Array.isArray(data.errors)) errors.push(...data.errors.map(String))
         if (data.chosenStyleLabel) styleLabel = data.chosenStyleLabel as string
+        if (typeof data.pluginVersion === 'string') pluginVersion = data.pluginVersion
+        if (typeof data.pluginLatest === 'string') pluginLatest = data.pluginLatest
       }
       setAffProgress({ done: fixes.length, total: fixes.length })
 
@@ -3808,7 +3812,16 @@ export default function ContentPage() {
         const why = errors.length ? ` First error: ${errors[0].slice(0, 160)}` : ''
         setFixCatResult(`Nothing was written. ${attempted} post${attempted !== 1 ? 's were' : ' was'} attempted and the link in the post body did not change.${why}`)
       } else {
-        const failed = errors.length ? `, ${errors.length} failed` : ''
+        // NAME THE FAILURE. This branch printed a bare count while only the
+        // nothing-was-written branch showed a reason, so a run that fixed 25 and
+        // failed 8 said nothing at all about the 8. Errors repeat (one dead host
+        // fails every post it touches), so show the first and say how many share
+        // its shape rather than listing eight copies of one sentence.
+        const firstErr = errors.length ? errors[0].replace(/^[0-9a-f-]{8,}:\s*/i, '').slice(0, 160) : ''
+        const sameShape = errors.filter(e => e.includes(firstErr.slice(0, 40))).length
+        const failed = errors.length
+          ? `, ${errors.length} failed: ${firstErr}${sameShape > 1 ? ` (and ${sameShape - 1} more like it)` : ''}`
+          : ''
         const missed = attempted > fixed && !errors.length ? `, ${attempted - fixed} left unchanged` : ''
         const partialNote = partial
           ? ` ${partial} of them still carr${partial === 1 ? 'ies' : 'y'} another link that isn't ${styleLabel || 'your chosen style'}, so run this again to catch the rest.`
@@ -3821,9 +3834,17 @@ export default function ContentPage() {
         // right and the most prominent button on the page was wrong, and this
         // screen said "Done" either way, because the content it checked really
         // had been fixed. Say the part it cannot see.
-        const barNote = styleLabel === 'Passport links'
-          ? ' The floating bar at the bottom of each post is drawn by the WordPress plugin, not the post body: update it to 1.0.94 on your site so that button uses your Passport links too.'
-          : ''
+        // Only when the site is ACTUALLY behind. Telling a creator to install
+        // the version they already run is noise, and noise in a result line is
+        // how the useful half of it stops being read.
+        const behind = !!(pluginVersion && pluginLatest && pluginVersion !== pluginLatest)
+        const unknownVersion = !pluginVersion
+        const barNote = styleLabel !== 'Passport links' ? ''
+          : behind
+            ? ` The floating bar at the bottom of each post is drawn by the WordPress plugin, not the post body. Yours is on ${pluginVersion}: update it to ${pluginLatest} so that button uses your Passport links too.`
+            : unknownVersion
+              ? ' The floating bar at the bottom of each post is drawn by the WordPress plugin, not the post body, so check it is on the latest version if that button still points somewhere else.'
+              : ''
         setFixCatResult(`Done. Fixed the affiliate link on ${fixed} post${fixed !== 1 ? 's' : ''}${failed}${missed}.${partialNote}${barNote}`)
       }
     } catch {

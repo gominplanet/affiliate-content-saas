@@ -29,6 +29,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
+import { probeWpHealth } from '@/lib/wordpress-health'
+import { WP_VERSIONS } from '@/lib/wp-versions'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { isValidAsin } from '@/services/amazon'
@@ -423,6 +425,18 @@ export async function POST(request: Request) {
           errs.push(`${f.postId}: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
+      // The WordPress plugin draws the floating bar, and before 1.0.94 its own
+      // scan did not know Passport, so a freshly re-pointed post got a bar
+      // pointing somewhere else. Report the version the site is ACTUALLY running
+      // rather than telling every Passport creator to go and update: advice a
+      // creator has already followed is how a screen teaches them to stop
+      // reading it. Best-effort, and null simply means the note stays generic.
+      let pluginVersion: string | null = null
+      try {
+        const health = await probeWpHealth(db, actingUserId)
+        pluginVersion = (health?.details?.pluginVersion as string | null) ?? null
+      } catch { /* the run succeeded; the version is a footnote */ }
+
       return NextResponse.json({
         success: true,
         fixed,
@@ -430,6 +444,8 @@ export async function POST(request: Request) {
         errors: errs.slice(0, 10),
         partiallyFixed: partiallyFixed.length,
         chosenStyleLabel: STYLE_LABEL[chosenStyle],
+        pluginVersion,
+        pluginLatest: WP_VERSIONS.plugin.version,
       })
     }
 
