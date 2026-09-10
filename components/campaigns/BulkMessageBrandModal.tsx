@@ -394,6 +394,19 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
             <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
               One message, filled with each brand&apos;s product{folded.length > 0 ? ` · ${folded.length} same-brand folded` : ''}{skipped.length > 0 ? ` · ${skipped.length} already messaged` : ''}
             </p>
+            {/* NAME the brands, do not just count them.
+                "Message 14 brands" on a watchlist entry for Levoit was 13 other
+                sellers whose product titles happened to say Levoit, and a bare
+                number gave no way to notice before pressing send. Messages go
+                out from the creator's own Amazon account and cannot be unsent,
+                so the list is the last check that the set is the intended one. */}
+            {toSend.length > 0 && (
+              <p className="text-[12px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+                {Array.from(new Set(toSend.map(c => (c.brand || '').trim()).filter(Boolean))).slice(0, 12).join(' · ')}
+                {toSend.filter(c => !(c.brand || '').trim()).length > 0 && ' · (brand not named)'}
+                {new Set(toSend.map(c => (c.brand || '').trim()).filter(Boolean)).size > 12 && ' · …'}
+              </p>
+            )}
           </div>
           {!sending && <button onClick={onClose} aria-label="Close" className="p-1 rounded-md hover:bg-black/5" style={{ color: 'var(--text-faint)' }}><X size={18} /></button>}
         </div>

@@ -29,7 +29,7 @@
 // caller is expected to say so instead of printing a bare number that will not
 // go to zero.
 
-import { brandMatches, brandLikeToken } from '@/lib/brand-match'
+import { brandIsSeller, brandLikeToken } from '@/lib/brand-match'
 
 /** How many catalogue rows one brand scan reads. The ILIKE pre-filter is not
  *  indexable, so this bounds a query that would otherwise walk the table. */
@@ -102,7 +102,13 @@ export async function ccScanBrandCampaigns(
     .limit(CC_BRAND_SCAN_LIMIT)
 
   const raw = (Array.isArray(data) ? data : []) as CcBrandScanRow[]
-  const rows = raw.filter(r => brandMatches(label, r.brand_name, r.campaign_name))
+  // brandIsSeller, not brandMatches. The loose match accepts the label in the
+  // TITLE as well as the brand, which pulls in every other seller's replacement
+  // filter, compatible part and comparison listing. Counting those inflates the
+  // badge; messaging them sends mail from the creator's Amazon account to brands
+  // they never picked. One scan feeds the badge, Accept all and Message all, so
+  // narrowing it here fixes all three at once and keeps them agreeing.
+  const rows = raw.filter(r => brandIsSeller(label, r.brand_name, r.campaign_name))
   return { rows, capped: raw.length >= CC_BRAND_SCAN_LIMIT }
 }
 
