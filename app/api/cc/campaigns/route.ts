@@ -38,6 +38,45 @@ export const dynamic = 'force-dynamic'
 // separately so the page can stop presenting a sample as a total.
 const WINDOW = 1000
 
+// ── Match-count cache ───────────────────────────────────────────────────────
+//
+// The exact count is right but it is not free. Measured on the live catalogue,
+// the unfiltered "all live campaigns" count runs a parallel index-only scan over
+// 893,644 rows in about 1.1 seconds, most of it heap fetches while the
+// visibility map catches up after a merge. Run per keystroke behind a 300ms
+// debounce, that is a second of database work for a headline.
+//
+// It is also the most cacheable number on the page: the catalogue changes on a
+// weekly merge, not between keystrokes. So the count is memoised per filter
+// signature for a couple of minutes. The CAMPAIGNS are never cached, only the
+// count, so a stale entry can at worst show a headline a few minutes behind the
+// cards below it, and after a merge it corrects itself on its own.
+//
+// Per serverless instance and deliberately unshared: an in-memory map needs no
+// infrastructure, and the worst case of a cold instance is doing the query it
+// would have done anyway.
+const COUNT_TTL_MS = 120_000
+const COUNT_CACHE_MAX = 200
+const countCache = new Map<string, { value: number; exact: boolean; at: number }>()
+
+function readCount(key: string): { value: number; exact: boolean } | null {
+  const hit = countCache.get(key)
+  if (!hit) return null
+  if (Date.now() - hit.at > COUNT_TTL_MS) { countCache.delete(key); return null }
+  return { value: hit.value, exact: hit.exact }
+}
+
+function writeCount(key: string, value: number, exact: boolean): void {
+  // Bounded so a long-lived instance cannot grow one entry per distinct search
+  // anyone has ever typed. Oldest insertion first, which is what Map iteration
+  // order gives us.
+  if (countCache.size >= COUNT_CACHE_MAX) {
+    const oldest = countCache.keys().next()
+    if (!oldest.done) countCache.delete(oldest.value)
+  }
+  countCache.set(key, { value, exact, at: Date.now() })
+}
+
 interface CatalogRow {
   campaign_id: string
   campaign_name: string | null
@@ -283,9 +322,25 @@ export async function GET(request: NextRequest) {
     let totalMatching: number | null = null
     let totalIsExact = false
     if (page === 1) {
-      try {
+      // Every filter that changes the answer goes in the key. The user id is in
+      // there because hideJoined / hidePosted / joinedOnly narrow by THIS user's
+      // own campaigns, and a cache shared across users would show one creator
+      // another creator's count.
+      const countKey = JSON.stringify([
+        user.id, usedKeyword, q, minCommission, payingOnly, hasSpots,
+        hideJoined, hidePosted, joinedOnly, today,
+      ])
+      const cached = readCount(countKey)
+      if (cached) {
+        totalMatching = cached.value
+        totalIsExact = cached.exact
+      }
+      if (totalMatching == null) try {
         const { count, error: countErr } = await build(usedKeyword, true, true)
-        if (!countErr && typeof count === 'number') { totalMatching = count; totalIsExact = true }
+        if (!countErr && typeof count === 'number') {
+          totalMatching = count; totalIsExact = true
+          writeCount(countKey, count, true)
+        }
       } catch { /* fall through to the estimate */ }
       // Exact failed (a statement timeout on an awkward filter combination, most
       // likely). An estimate is still better than nothing, PROVIDED the page
@@ -294,7 +349,12 @@ export async function GET(request: NextRequest) {
       if (totalMatching == null) {
         try {
           const { count, error: countErr } = await build(usedKeyword, true, false)
-          if (!countErr && typeof count === 'number') totalMatching = count
+          if (!countErr && typeof count === 'number') {
+            totalMatching = count
+            // Cached as NOT exact, so a cache hit keeps saying "About" rather
+            // than promoting an estimate to a fact on the second request.
+            writeCount(countKey, count, false)
+          }
         } catch { /* the headline is nice to have, the campaigns are not */ }
       }
     }
