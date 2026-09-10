@@ -98,6 +98,10 @@ export default function CampaignBrowsePanel({
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [page, setPage] = useState(0)
+  // Roughly how many campaigns match, from the query planner. Shown so a search
+  // reads as a slice of a 918,748-row catalogue rather than as everything there
+  // is. null means the server could not tell, which prints nothing at all.
+  const [totalApprox, setTotalApprox] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
   const [deepDive, setDeepDive] = useState<{ asin: string; title: string; imageUrl: string | null } | null>(null)
@@ -143,6 +147,7 @@ export default function CampaignBrowsePanel({
       // so a page can come back with fewer than a full page of cards while more
       // still exist. Using incoming.length here hid "Load more" after page 1.
       setHasMore(!!data.hasMore)
+      setTotalApprox(typeof data.totalApprox === 'number' ? data.totalApprox : null)
       setPage(pageToLoad)
     } catch {
       setError('Could not load campaigns.')
@@ -192,12 +197,20 @@ export default function CampaignBrowsePanel({
   useEffect(() => {
     const need = rows.filter(r => !r.imageUrl && !enrichTried.current.has(r.asin)).map(r => r.asin)
     if (!need.length) return
-    need.forEach(a => enrichTried.current.add(a))
+    // Mark only what we actually SEND. Marking all of `need` while sending the
+    // first 40 quietly retired the rest: they were recorded as tried without a
+    // request ever going out, so their cards stayed image-less for the session
+    // with no way to tell that from a product Amazon has no image for. It cost
+    // nothing at a page of 40 and everything at a page of 100. The batch that
+    // was sent stays marked whatever comes back, so a product with no signals
+    // is asked about once and never loops.
+    const batch = need.slice(0, 40)
+    batch.forEach(a => enrichTried.current.add(a))
     ;(async () => {
       try {
         const res = await fetch('/api/campaigns/enrich-visible', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ asins: need.slice(0, 40) }),
+          body: JSON.stringify({ asins: batch }),
         })
         const data = await res.json().catch(() => ({}))
         const signals = data?.signals as Record<string, {
@@ -421,6 +434,16 @@ export default function CampaignBrowsePanel({
         </div>
       ) : (
         <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
+          {/* How many matched, versus how many are on screen. Without this a
+              search of a 918,748-row catalogue looked identical whether it
+              matched 60 campaigns or 60,000. The count is a planner estimate,
+              so it says "about". */}
+          <div className="px-1 pb-2.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+            Showing <b style={{ color: 'var(--text-soft)' }}>{rows.length.toLocaleString()}</b>
+            {totalApprox != null && totalApprox > rows.length && <> of about <b style={{ color: 'var(--text-soft)' }}>{totalApprox.toLocaleString()}</b></>}
+            {' '}matching {totalApprox === 1 ? 'campaign' : 'campaigns'}
+            {hasMore && <>. Load more to keep going.</>}
+          </div>
           {/* items-stretch keeps a row's cards equal height; [grid-auto-rows:1fr]
               is dropped because it stretched a single row to the full column
               height, leaving large empty gaps below each card. */}

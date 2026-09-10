@@ -19,11 +19,11 @@ import { type Tier } from '@/lib/tier'
 import { ccAccessOk } from '@/lib/cc-access'
 import { toUserMessage } from '@/lib/friendly-error'
 import { CC_SMART_RULES, hitsAvoidList } from '@/lib/cc-smart-rules'
+import { ccAsinFromQuery, ccTsQuery, ccPageSize } from '@/lib/cc-search-query'
 
 export const dynamic = 'force-dynamic'
 
 type SortKey = 'commission' | 'endingSoon' | 'mostRunway' | 'slots' | 'budget' | 'recentSales' | 'rating'
-const PAGE_SIZE = 40
 
 export async function GET(request: Request) {
   try {
@@ -63,6 +63,7 @@ export async function GET(request: Request) {
     const videoBand = url.searchParams.get('videos') || ''
     const sort = (url.searchParams.get('sort') || 'commission') as SortKey
     const page = Math.max(0, intParam(url, 'page') ?? 0)
+    const PAGE_SIZE = ccPageSize(url.searchParams.get('pageSize'))
     // MVP picks: layer MVP's Focus rulebook (commission / runway / price / demand
     // / rating floors + carousel required) on top of the user's filters. It reads
     // the already-enriched catalog columns, so it costs NOTHING extra (unlike the
@@ -82,16 +83,32 @@ export async function GET(request: Request) {
     // coupling it to the newest migration would silently drop ALL card signals
     // (rank/rating/sales) on a DB that has 263 but not 264. avg90 is a
     // nice-to-have (rank-trend line) — not worth risking the rest of the page.
-    const SIGNAL_COLS = 'image_url, price_now_cents, price_was_cents, discount_pct, rating, review_count, monthly_sold, video_count, category, parent_asin, sales_rank, sales_rank_category, listed_since'
+    // rep_asin belongs here, not in BASE_COLS: it arrived with migration 197
+    // alongside these, and PostgREST rejects the ENTIRE read when one named
+    // column is missing. Naming it in the base set would take the base-only
+    // fallback down with the signal path on any DB that predates 197, which is
+    // the one job the fallback exists to do.
+    const SIGNAL_COLS = 'rep_asin, image_url, price_now_cents, price_was_cents, discount_pct, rating, review_count, monthly_sold, video_count, category, parent_asin, sales_rank, sales_rank_category, listed_since'
     const SIGNAL_SORTS = new Set<SortKey>(['recentSales', 'rating'])
 
     // `signals` on ⇒ select/filter/sort the enriched product columns (migration
     // 197). Falls back to base-only if those columns don't exist yet, so a deploy
     // that lands before the migration never breaks the live Browse view.
     // `keyword`: 'fts' = indexed search_vec, 'ilike' = pre-162 fallback, 'none'.
-    const build = (signals: boolean, keyword: 'fts' | 'ilike' | 'none') => {
+    // What the creator typed, in the three shapes the catalogue can answer.
+    // `asinQ` is a pasted ASIN; `tsq` is the prefix tsquery ("humid" builds
+    // humid:*, so results appear while they are still typing rather than only
+    // once "humidifier" is complete).
+    const asinQ = ccAsinFromQuery(q)
+    const tsq = ccTsQuery(q)
+
+    const build = (signals: boolean, keyword: 'prefix' | 'websearch' | 'asin' | 'ilike' | 'none') => {
       let query = sb.from('cc_campaign_catalog')
-        .select(signals ? `${BASE_COLS}, ${SIGNAL_COLS}` : BASE_COLS)
+        // An ESTIMATED count, so the page can say how many campaigns actually
+        // match instead of leaving a creator to guess from one screen of cards.
+        // Estimated, never exact: an exact count over ~918k rows is a full scan
+        // on every keystroke of a debounced search.
+        .select(signals ? `${BASE_COLS}, ${SIGNAL_COLS}` : BASE_COLS, { count: 'estimated' })
         .gte('ends_at', runwayCutoff)
       if (minCommission > 0) query = query.gte('commission_pct', minCommission)
       if (openSlotsOnly) query = query.gt('available_slot', 0)
@@ -121,32 +138,69 @@ export async function GET(request: Request) {
           .lte('price_now_cents', CC_SMART_RULES.maxPrice * 100)
           .gt('video_count', 0)
       }
-      if (keyword === 'fts') query = query.textSearch('search_vec', q, { type: 'websearch' })
-      else if (keyword === 'ilike') query = query.ilike('campaign_name', `%${q}%`)
+      // Keyword transport, best first. Each falls back to the next below.
+      if (keyword === 'asin' && asinQ) {
+        // The asins array carries its own GIN index (migration 161), so this is
+        // a direct lookup. It also finds the ASIN when it sits deeper in the
+        // array than the representative one, which searching the campaign name
+        // never could.
+        query = query.contains('asins', [asinQ])
+      } else if (keyword === 'prefix' && tsq) {
+        // No `type`, so PostgREST uses to_tsquery and our prefix operator
+        // survives. websearch_to_tsquery would strip it, which is exactly why
+        // partial words returned nothing before.
+        //
+        // config is named explicitly because search_vec is a STORED column built
+        // with to_tsvector('english', …) (migration 162). Leaving it off would
+        // take whatever default_text_search_config the database happens to
+        // carry, and under 'simple' the query stops stemming while the column
+        // keeps stemming: humid:* would no longer reach humidifi and the search
+        // would quietly go back to being useless.
+        query = query.textSearch('search_vec', tsq, { config: 'english' })
+      } else if (keyword === 'websearch') {
+        query = query.textSearch('search_vec', q, { type: 'websearch', config: 'english' })
+      } else if (keyword === 'ilike') {
+        query = query.ilike('campaign_name', `%${q}%`)
+      }
       const effSort: SortKey = (!signals && SIGNAL_SORTS.has(sort)) ? 'commission' : sort
       return applySort(query, effSort)
     }
 
     const lo = page * PAGE_SIZE, hi = lo + PAGE_SIZE - 1
-    let data, error
+    // The keyword transport we prefer for this query, and what it degrades to.
+    // asin → prefix covers a pasted ASIN on a DB whose asins column is empty for
+    // that campaign; prefix → websearch covers a to_tsquery that Postgres
+    // rejects; websearch → ilike covers a search_vec that predates migration 162.
+    const firstKeyword = asinQ ? 'asin' as const : tsq ? 'prefix' as const : 'none' as const
+    let data, error, count
     if (mvpPicks) {
       // MVP picks NEEDS the signal columns to gate on price/rating/sales/video,
       // so it never falls back to the base-only path (which would silently return
-      // non-vetted campaigns). Only the keyword transport degrades (fts → ilike).
-      ;({ data, error } = await build(true, q ? 'fts' : 'none').range(lo, hi))
-      if (error && q) { ({ data, error } = await build(true, 'ilike').range(lo, hi)) }
+      // non-vetted campaigns). Only the keyword transport degrades.
+      ;({ data, error, count } = await build(true, firstKeyword).range(lo, hi))
+      if (error && q) { ({ data, error, count } = await build(true, 'websearch').range(lo, hi)) }
+      if (error && q) { ({ data, error, count } = await build(true, 'ilike').range(lo, hi)) }
     } else {
-      ;({ data, error } = await build(true, q ? 'fts' : 'none').range(lo, hi))
-      // Signal path failed for ANY reason (columns absent pre-197, an .or() hiccup,
-      // etc.) → retry base-only. Broad on purpose: a signal-query error must never
-      // 500 the whole Browse and wipe the results — it just drops the enriched
-      // filters and returns the campaign economics.
-      if (error) {
-        ;({ data, error } = await build(false, q ? 'fts' : 'none').range(lo, hi))
+      ;({ data, error, count } = await build(true, firstKeyword).range(lo, hi))
+      // A pasted ASIN that matched nothing is not an error, but it IS the case
+      // where the ASIN lives in the campaign name rather than the asins array.
+      // Retry through full text before reporting an empty catalogue.
+      if (!error && asinQ && (data ?? []).length === 0 && tsq) {
+        ;({ data, error, count } = await build(true, 'prefix').range(lo, hi))
       }
-      // search_vec absent (migration 162) or another keyword hiccup → ILIKE, base-safe.
+      // Signal path failed for ANY reason (columns absent pre-197, a keyword
+      // hiccup, etc.) → retry base-only. Broad on purpose: a signal-query error
+      // must never 500 the whole Browse and wipe the results — it just drops the
+      // enriched filters and returns the campaign economics.
+      if (error) {
+        ;({ data, error, count } = await build(false, firstKeyword).range(lo, hi))
+      }
+      // to_tsquery rejected the query → whole-word websearch, then ILIKE.
       if (error && q) {
-        ;({ data, error } = await build(false, 'ilike').range(lo, hi))
+        ;({ data, error, count } = await build(false, 'websearch').range(lo, hi))
+      }
+      if (error && q) {
+        ;({ data, error, count } = await build(false, 'ilike').range(lo, hi))
       }
     }
     if (error) {
@@ -156,7 +210,7 @@ export async function GET(request: Request) {
 
     type Row = {
       campaign_id: string; campaign_name: string; brand_name: string | null
-      asins: string[]; commission_pct: number; starts_at: string | null; ends_at: string
+      asins: string[]; rep_asin?: string | null; commission_pct: number; starts_at: string | null; ends_at: string
       budget: number | null; budget_remaining: number | null
       available_slot: number | null; total_slot: number | null
     }
@@ -174,7 +228,15 @@ export async function GET(request: Request) {
       rows = rows.filter(r => !hitsAvoidList({ campaignName: r.campaign_name, brand: r.brand_name, crumbs: null }, CC_SMART_RULES))
     }
     const campaigns = rows.map(toClient)
-    return NextResponse.json({ ok: true, page, campaigns, hasMore: (data ?? []).length === PAGE_SIZE })
+    return NextResponse.json({
+      ok: true, page, pageSize: PAGE_SIZE, campaigns,
+      hasMore: (data ?? []).length === PAGE_SIZE,
+      // Roughly how many campaigns match, so the page can say "about 12,400
+      // campaigns" rather than showing one screen of a 918,748-row catalogue
+      // and leaving the size of it to the imagination. Estimated by the query
+      // planner, so it is labelled as approximate wherever it is shown.
+      totalApprox: typeof count === 'number' ? count : null,
+    })
   } catch (err) {
     console.error('[campaigns/browse]', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, 'Could not load campaigns just now. Please try again in a moment.') }, { status: 500 })
@@ -205,7 +267,14 @@ function extractAsinFromName(name: string | null | undefined): string | null {
 }
 // The campaign's representative ASIN: the stored asins[0], else recovered from
 // the campaign name.
-function pickAsin(r: { asins?: string[] | null; campaign_name?: string | null }): string | null {
+function pickAsin(r: { asins?: string[] | null; rep_asin?: string | null; campaign_name?: string | null }): string | null {
+  // rep_asin FIRST (migration 197): it is the generated asins[1] and it is what
+  // enrichment keys on, so preferring it keeps a card's ASIN identical to the
+  // one the Keepa signals on that same card were fetched for. Falls back to the
+  // array and then the campaign name, which is how this worked before rep_asin
+  // existed and still covers a DB that predates it.
+  const rep = r.rep_asin ? String(r.rep_asin).toUpperCase() : null
+  if (rep) return rep
   const first = Array.isArray(r.asins) && r.asins[0] ? String(r.asins[0]).toUpperCase() : null
   return first || extractAsinFromName(r.campaign_name)
 }
