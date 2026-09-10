@@ -23,12 +23,20 @@ import { ccAccessOk } from '@/lib/cc-access'
 import { ccRequestUrl } from '@/lib/cc-urls'
 import { productSignals, groupBySignals } from '@/lib/cc-dedupe'
 import { type Tier } from '@/lib/tier'
+import { ccAsinFromQuery, ccTsQuery } from '@/lib/cc-search-query'
 
 export const dynamic = 'force-dynamic'
 
 // Coarse DB window we pull before computing scores + paginating in-process.
-// Keeps the "best opportunities" browser fast without loading the whole catalog.
-const WINDOW = 300
+//
+// The opportunity score is computed per row AFTER the query (it needs the brand
+// payout aggregate), and same-product campaigns are collapsed after that, so
+// ranking cannot happen in SQL and a window is unavoidable. What was avoidable
+// was reporting the window's size as the size of the catalogue: 300 rows
+// deduplicated to 219, and the page said "219 live campaigns" while 893,644 were
+// actually live. Raised to 1000, and the true match count is now returned
+// separately so the page can stop presenting a sample as a total.
+const WINDOW = 1000
 
 interface CatalogRow {
   campaign_id: string
@@ -166,55 +174,101 @@ export async function GET(request: NextRequest) {
       excludeAsins = [...set].slice(0, 3000)
     }
 
-    // Coarse fetch: live campaigns, ordered by a cheap proxy for the chosen sort.
-    // Cast: cc_campaign_catalog + its enrichment columns aren't in the generated
-    // Supabase types, same boundary cast used across the codebase for these.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let query = (supabase as any)
-      .from('cc_campaign_catalog')
-      .select(COLS)
-      .gte('ends_at', today)
-      .gt('commission_pct', 0)
-      .limit(WINDOW)
+    // Keyword transports. The prefix tsquery hits the GIN index on search_vec and
+    // matches PARTIAL words, so "humid" finds the 2,520 humidifier campaigns
+    // instead of nothing. The old path was a double ILIKE, which cannot use an
+    // index at all (a leading % defeats a btree) and matched whole substrings
+    // only.
+    const asinQ = ccAsinFromQuery(q)
+    const tsq = ccTsQuery(q)
+    // ILIKE fallback, kept for a database without search_vec (pre-162). Strip
+    // PostgREST .or() structural chars, then the LIKE wildcards, so a typed % or
+    // _ matches literally instead of silently broadening the search.
+    const safeLike = q.replace(/[,()]/g, ' ').replace(/[%_\\]/g, ' ').trim()
+    type Keyword = 'asin' | 'prefix' | 'ilike' | 'none'
+    const firstKeyword: Keyword = !q ? 'none' : asinQ ? 'asin' : tsq ? 'prefix' : safeLike ? 'ilike' : 'none'
 
-    if (minCommission > 0) query = query.gte('commission_pct', minCommission)
-    // In joined-only mode, positively filter to the user's accepted ASINs and
-    // DON'T apply the open-spots gate (a joined campaign is worth showing even
-    // when it's now full). A sentinel keeps an empty joined set matching nothing.
-    if (joinedOnly) {
-      query = query.in('rep_asin', joinedAsins.length ? joinedAsins : ['__none__'])
-    } else {
-      // Strict: only campaigns we KNOW have open spots (available_slot > 0).
-      // A null slot count is "unknown", not "has spots", so it must NOT pass the
-      // filter (this is the bulletproof behaviour — the toggle promises open spots).
-      if (hasSpots) query = query.gt('available_slot', 0)
-      // Null-safe exclusion: `rep_asin NOT IN (...)` is NULL (→ dropped) for
-      // rows with a null rep_asin, which would silently hide untouched campaigns.
-      // Keep null-rep_asin rows in with an explicit OR.
-      if (excludeAsins.length) query = query.or(`rep_asin.is.null,rep_asin.not.in.(${excludeAsins.join(',')})`)
-    }
-    if (q) {
-      // Strip PostgREST .or() structural chars, then escape LIKE wildcards so a
-      // typed % or _ matches literally instead of broadening the search.
-      const safe = q.replace(/[,()]/g, ' ').replace(/[%_\\]/g, ' ').trim()
-      if (safe) query = query.or(`campaign_name.ilike.%${safe}%,brand_name.ilike.%${safe}%`)
-    }
-    // Cheap DB ordering (final ranking happens after enrichment).
-    query = sort === 'ending'
-      ? query.order('ends_at', { ascending: true })
-      : sort === 'demand'
-        // Demand = Amazon's "bought in past month" first, then FALL BACK to Keepa's
-        // sales rank (lower = stronger seller) so a product with no bought-badge
-        // still ranks by real demand instead of sinking. Two-key so the coarse
-        // window pulls strong-rank campaigns in even when they lack a badge.
-        ? query
-            .order('monthly_sold', { ascending: false, nullsFirst: false })
-            .order('sales_rank', { ascending: true, nullsFirst: false })
-        : query.order('commission_pct', { ascending: false, nullsFirst: false })
+    // One definition of "the campaigns this request is asking about", used both
+    // to fetch the ranking window and to count how many there really are. Built
+    // as a function so the two never drift, and so a keyword transport the
+    // database rejects can be retried on the next one down.
+    //
+    // `counting` swaps the row payload for a planner estimate: the page needs to
+    // say how many campaigns match, and an exact count over 918,748 rows on every
+    // keystroke of a debounced search is not something to do for a headline.
+    const build = (keyword: Keyword, counting: boolean) => {
+      // Cast: cc_campaign_catalog + its enrichment columns aren't in the generated
+      // Supabase types, same boundary cast used across the codebase for these.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let qb = (supabase as any)
+        .from('cc_campaign_catalog')
+        .select(counting ? 'campaign_id' : COLS, counting ? { count: 'estimated', head: true } : undefined)
+        .gte('ends_at', today)
+        .gt('commission_pct', 0)
+      if (!counting) qb = qb.limit(WINDOW)
 
-    const { data, error } = await query
+      if (minCommission > 0) qb = qb.gte('commission_pct', minCommission)
+      // In joined-only mode, positively filter to the user's accepted ASINs and
+      // DON'T apply the open-spots gate (a joined campaign is worth showing even
+      // when it's now full). A sentinel keeps an empty joined set matching nothing.
+      if (joinedOnly) {
+        qb = qb.in('rep_asin', joinedAsins.length ? joinedAsins : ['__none__'])
+      } else {
+        // Strict: only campaigns we KNOW have open spots (available_slot > 0).
+        // A null slot count is "unknown", not "has spots", so it must NOT pass the
+        // filter (this is the bulletproof behaviour — the toggle promises open spots).
+        if (hasSpots) qb = qb.gt('available_slot', 0)
+        // Null-safe exclusion: `rep_asin NOT IN (...)` is NULL (→ dropped) for
+        // rows with a null rep_asin, which would silently hide untouched campaigns.
+        // Keep null-rep_asin rows in with an explicit OR.
+        if (excludeAsins.length) qb = qb.or(`rep_asin.is.null,rep_asin.not.in.(${excludeAsins.join(',')})`)
+      }
+
+      if (keyword === 'asin' && asinQ) qb = qb.contains('asins', [asinQ])
+      else if (keyword === 'prefix' && tsq) qb = qb.textSearch('search_vec', tsq, { config: 'english' })
+      else if (keyword === 'ilike' && safeLike) qb = qb.or(`campaign_name.ilike.%${safeLike}%,brand_name.ilike.%${safeLike}%`)
+
+      if (counting) return qb
+      // Cheap DB ordering (final ranking happens after enrichment).
+      return sort === 'ending'
+        ? qb.order('ends_at', { ascending: true })
+        : sort === 'demand'
+          // Demand = Amazon's "bought in past month" first, then FALL BACK to Keepa's
+          // sales rank (lower = stronger seller) so a product with no bought-badge
+          // still ranks by real demand instead of sinking. Two-key so the coarse
+          // window pulls strong-rank campaigns in even when they lack a badge.
+          ? qb
+              .order('monthly_sold', { ascending: false, nullsFirst: false })
+              .order('sales_rank', { ascending: true, nullsFirst: false })
+          : qb.order('commission_pct', { ascending: false, nullsFirst: false })
+    }
+
+    let usedKeyword: Keyword = firstKeyword
+    let { data, error } = await build(firstKeyword, false)
+    // A pasted ASIN that matched nothing is not an error, it is the case where
+    // the ASIN sits in the campaign name rather than the asins array. Try text.
+    if (!error && firstKeyword === 'asin' && (data ?? []).length === 0 && tsq) {
+      usedKeyword = 'prefix'
+      ;({ data, error } = await build('prefix', false))
+    }
+    // to_tsquery rejected, or search_vec is missing (pre-162) → whole-substring
+    // ILIKE. Slower and less useful, but it returns rows rather than an error.
+    if (error && q && safeLike && firstKeyword !== 'ilike') {
+      usedKeyword = 'ilike'
+      ;({ data, error } = await build('ilike', false))
+    }
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
     const rows = (data ?? []) as CatalogRow[]
+
+    // How many campaigns actually match, as opposed to how many are in the
+    // ranking window. Best-effort: a failed count prints nothing rather than
+    // taking the page down, and it is never allowed to be the reason a search
+    // returns no results.
+    let totalMatching: number | null = null
+    try {
+      const { count, error: countErr } = await build(usedKeyword, true)
+      if (!countErr && typeof count === 'number') totalMatching = count
+    } catch { /* the headline is nice to have, the campaigns are not */ }
 
     // Brand payout reliability: aggregate EVERY campaign for the brands in view
     // (not just active) so "is their budget being spent" reflects full history.
@@ -324,9 +378,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       campaigns: shown,
+      // `total` stays the number of ranked, de-duplicated cards this request can
+      // page through. It is NOT the size of the catalogue, and calling it that on
+      // screen is what made a 893,644-campaign catalogue read as 219 campaigns.
       total: deduped.length,
+      // What actually matches in the database, before ranking and de-duplication
+      // cut it down to a window. This is the number the page leads with.
+      totalMatching,
       nextPage: start + limit < deduped.length ? page + 1 : null,
+      // True when there is more matching the filters than the ranking window
+      // reads, so the cards are the best of a slice rather than the best of
+      // everything. The page says so instead of implying it ranked the lot.
       windowCapped: rows.length >= WINDOW,
+      windowSize: WINDOW,
     })
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 })

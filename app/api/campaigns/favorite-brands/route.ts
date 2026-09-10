@@ -11,7 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { campaignFullness } from '@/lib/cc-intelligence'
-import { brandMatches, brandLikeToken } from '@/lib/brand-match'
+import { ccScanBrandCampaigns, ccAcceptedCampaignIds, ccIsAcceptable } from '@/lib/cc-brand-scan'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,71 +22,31 @@ function normBrand(v: string): string {
   return (v || '').trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-/** The user's already-joined campaign IDs — so "open" means open AND not yet
- *  joined. Keyed on the campaign ID, NOT the ASIN: Amazon runs several distinct
- *  campaigns for the same product (same ASIN, different windows), each separately
- *  joinable, so an ASIN key would wrongly hide brand-new campaigns just because you
- *  joined an earlier one for that product. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function acceptedCampaignIds(sb: any, userId: string): Promise<Set<string>> {
-  const set = new Set<string>()
-  // Authoritative: the per-campaign ledger holds every joined campaign id (many
-  // per ASIN), so a brand's count can reach zero even when campaigns share an ASIN.
-  try {
-    const { data } = await sb.from('cc_accepted_campaigns')
-      .select('campaign_id')
-      .eq('user_id', userId)
-      .limit(8000)
-    for (const r of (data ?? [])) {
-      const id = String(r?.campaign_id || '').trim()
-      if (id) set.add(id)
-    }
-  } catch { /* ledger may not exist yet — fall back below */ }
-  // Backfill: campaigns joined before the ledger existed still carry one
-  // cc_campaign_id on their ASIN-keyed row.
-  try {
-    const { data } = await sb.from('campaigns')
-      .select('cc_campaign_id, accepted_at, amazon_joined_at')
-      .eq('user_id', userId)
-      .limit(4000)
-    for (const r of (data ?? [])) {
-      const id = String(r?.cc_campaign_id || '').trim()
-      if (id && (r.accepted_at || r.amazon_joined_at)) set.add(id)
-    }
-  } catch { /* no rows → nothing extra excluded */ }
-  return set
-}
-
 /** Live open / joined / total campaign counts for a brand from the shared catalog.
- *  "open" = has spots AND the creator hasn't already accepted it.
- *  "joined" = you already accepted it (open or not) — tracked so the badge can say
- *  "joined" instead of the misleading "all full" when your only open campaign is one
- *  you already grabbed. */
+ *
+ *  "open" is defined as exactly what Accept all will act on, via the shared
+ *  ccIsAcceptable, and reads the SAME scan Accept all reads. That identity is
+ *  the whole point: the badge previously counted from an unordered slice and
+ *  from campaigns that had already ended, so it sat at "3 open" through any
+ *  number of accepts because those three could never be accepted at all.
+ *
+ *  "joined" = you already accepted it (open or not), tracked so the badge can
+ *  say "joined" instead of the misleading "all full" when your only campaign for
+ *  that brand is one you already grabbed.
+ *
+ *  `capped` says the brand has more campaigns than one scan reads, so the
+ *  numbers describe a slice. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function brandCounts(sb: any, label: string, accepted: Set<string>): Promise<{ open: number; joined: number; total: number }> {
-  const tok = brandLikeToken(label)
-  if (!tok) return { open: 0, joined: 0, total: 0 }
-  // Broad DB pre-filter (brand OR title contains the token), then a precise
-  // whole-word check in JS so "Dreame" catches variant/null brands via the title
-  // without pulling look-alikes like "Dreamegg".
-  const { data } = await sb
-    .from('cc_campaign_catalog')
-    .select('campaign_id, rep_asin, brand_name, campaign_name, available_slot, total_slot')
-    .or(`brand_name.ilike.%${tok}%,campaign_name.ilike.%${tok}%`)
-    .limit(1000)
-  const rows = (Array.isArray(data) ? data : []).filter((r: { brand_name?: string | null; campaign_name?: string | null }) =>
-    brandMatches(label, r.brand_name, r.campaign_name))
+async function brandCounts(sb: any, label: string, accepted: Set<string>): Promise<{ open: number; joined: number; total: number; capped: boolean }> {
+  const { rows, capped } = await ccScanBrandCampaigns(sb, label)
   let open = 0, joined = 0
   for (const r of rows) {
     const cid = String(r.campaign_id || '')
     if (cid && accepted.has(cid)) { joined++; continue } // you joined THIS campaign → not "open" for you
-    const f = campaignFullness(r.available_slot as number | null, r.total_slot as number | null)
-    // Only count opens Accept all can actually act on — a catalog row with no ASIN
-    // can't be accepted, so counting it would leave a phantom that never clears.
-    const asin = String(r.rep_asin || '').trim()
-    if (!f.isFull && asin) open++
+    const f = campaignFullness(r.available_slot, r.total_slot)
+    if (ccIsAcceptable(r, accepted, f.isFull)) open++
   }
-  return { open, joined, total: rows.length }
+  return { open, joined, total: rows.length, capped }
 }
 
 export async function GET() {
@@ -102,10 +62,10 @@ export async function GET() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: true })
 
-  const accepted = await acceptedCampaignIds(sb, user.id)
+  const accepted = await ccAcceptedCampaignIds(sb, user.id)
   const brands = await Promise.all(((favs ?? []) as Array<{ brand_key: string; brand_label: string; last_checked_at: string | null }>).map(async (f) => {
     const counts = await brandCounts(sb, f.brand_label, accepted)
-    return { brand: f.brand_key, label: f.brand_label, openCount: counts.open, joinedCount: counts.joined, totalCount: counts.total, lastCheckedAt: f.last_checked_at ?? null }
+    return { brand: f.brand_key, label: f.brand_label, openCount: counts.open, joinedCount: counts.joined, totalCount: counts.total, capped: counts.capped, lastCheckedAt: f.last_checked_at ?? null }
   }))
 
   return NextResponse.json({ ok: true, brands })
@@ -132,8 +92,8 @@ export async function POST(req: Request) {
     { onConflict: 'user_id,brand_key' },
   )
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  const counts = await brandCounts(sb, label, await acceptedCampaignIds(sb, user.id))
-  return NextResponse.json({ ok: true, brand: { brand: key, label, openCount: counts.open, joinedCount: counts.joined, totalCount: counts.total, lastCheckedAt: null } })
+  const counts = await brandCounts(sb, label, await ccAcceptedCampaignIds(sb, user.id))
+  return NextResponse.json({ ok: true, brand: { brand: key, label, openCount: counts.open, joinedCount: counts.joined, totalCount: counts.total, capped: counts.capped, lastCheckedAt: null } })
 }
 
 export async function DELETE(req: Request) {

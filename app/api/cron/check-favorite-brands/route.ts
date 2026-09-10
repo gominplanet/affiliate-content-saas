@@ -11,7 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { campaignFullness } from '@/lib/cc-intelligence'
-import { brandMatches, brandLikeToken } from '@/lib/brand-match'
+import { ccScanBrandCampaigns } from '@/lib/cc-brand-scan'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -38,18 +38,25 @@ export async function GET(req: Request) {
 
   const openByKey = new Map<string, number>()
   for (const [key, label] of byKey) {
-    const tok = brandLikeToken(label)
-    if (!tok) { openByKey.set(key, 0); continue }
     try {
-      const { data } = await sb
-        .from('cc_campaign_catalog')
-        .select('brand_name, campaign_name, available_slot, total_slot')
-        .or(`brand_name.ilike.%${tok}%,campaign_name.ilike.%${tok}%`)
-        .limit(1000)
+      // The SAME scan the watchlist badge and Accept all read: still-running
+      // only, deterministically ordered. This query had neither, so a campaign
+      // that ENDED months ago with slots frozen open counted as open here, and
+      // this cron is what stamps notified_open_at. A brand whose only "open"
+      // campaign had already ended flipped 0 to open once and then sat there,
+      // pushing a reopened-brand alert for something nobody could join.
+      //
+      // Cross-user by design: one count per distinct brand, shared by everyone
+      // tracking it, so the per-user already-joined exclusion the badge applies
+      // is deliberately not used here.
+      const { rows: scan } = await ccScanBrandCampaigns(sb, label)
       let open = 0
-      for (const c of (data ?? []) as Array<{ brand_name: string | null; campaign_name: string | null; available_slot: number | null; total_slot: number | null }>) {
-        if (!brandMatches(label, c.brand_name, c.campaign_name)) continue
-        if (!campaignFullness(c.available_slot, c.total_slot).isFull) open++
+      for (const c of scan) {
+        if (campaignFullness(c.available_slot, c.total_slot).isFull) continue
+        // No ASIN means nothing to accept, so counting it would notify about a
+        // campaign the Accept button cannot act on.
+        if (!String(c.rep_asin || (Array.isArray(c.asins) ? c.asins[0] : '') || '').trim()) continue
+        open++
       }
       openByKey.set(key, open)
     } catch { openByKey.set(key, 0) }

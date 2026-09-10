@@ -9,12 +9,11 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { campaignFullness } from '@/lib/cc-intelligence'
 import { ccRequestUrl } from '@/lib/cc-urls'
-import { brandMatches, brandLikeToken } from '@/lib/brand-match'
+import { brandLikeToken } from '@/lib/brand-match'
+import { ccScanBrandCampaigns, ccAcceptedCampaignIds, ccIsAcceptable } from '@/lib/cc-brand-scan'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-const COLS = 'campaign_id, campaign_name, brand_name, asins, rep_asin, commission_pct, ends_at, image_url, available_slot, total_slot'
 
 export async function GET(req: Request) {
   const supabase = await createServerClient()
@@ -24,62 +23,43 @@ export async function GET(req: Request) {
   const url = new URL(req.url)
   const label = (url.searchParams.get('brand') || '').trim()
   const onlyOpen = url.searchParams.get('onlyOpen') !== '0'
-  const tok = brandLikeToken(label)
-  if (!tok) return NextResponse.json({ error: 'A brand is required.' }, { status: 400 })
+  if (!brandLikeToken(label)) return NextResponse.json({ error: 'A brand is required.' }, { status: 400 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
 
-  // The user's already-joined campaign IDs — excluded so Accept all / Message all
-  // only target campaigns they haven't joined yet. Keyed on campaign ID, NOT ASIN:
-  // Amazon runs multiple distinct campaigns per product, so an ASIN key would hide
-  // a brand-new joinable campaign just because an earlier one for that product was
-  // joined.
-  const accepted = new Set<string>()
-  // Authoritative per-campaign ledger (many campaigns per ASIN).
-  try {
-    const { data: led } = await sb.from('cc_accepted_campaigns')
-      .select('campaign_id').eq('user_id', user.id).limit(8000)
-    for (const r of (led ?? [])) {
-      const id = String(r?.campaign_id || '').trim()
-      if (id) accepted.add(id)
-    }
-  } catch { /* ledger may not exist yet */ }
-  // Backfill from the legacy ASIN-keyed campaigns row.
-  try {
-    const { data: acc } = await sb.from('campaigns')
-      .select('cc_campaign_id, accepted_at, amazon_joined_at').eq('user_id', user.id).limit(4000)
-    for (const r of (acc ?? [])) {
-      const id = String(r?.cc_campaign_id || '').trim()
-      if (id && (r.accepted_at || r.amazon_joined_at)) accepted.add(id)
-    }
-  } catch { /* nothing excluded */ }
+  const accepted = await ccAcceptedCampaignIds(sb, user.id)
+  // The SAME scan the badge counts from (shared, still-running, deterministically
+  // ordered). Accept all previously read a differently-ordered slice, so on a
+  // brand with more campaigns than one scan reads, the badge counted campaigns
+  // this route never returned and the count could not be driven to zero.
+  const { rows, capped } = await ccScanBrandCampaigns(sb, label)
 
-  const { data } = await sb
-    .from('cc_campaign_catalog')
-    .select(COLS)
-    .or(`brand_name.ilike.%${tok}%,campaign_name.ilike.%${tok}%`)
-    .order('monthly_sold', { ascending: false, nullsFirst: false })
-    .limit(1000)
-
-  // Precise whole-word brand match on the returned rows (brand OR title), so a
-  // variant/null brand is caught via the title without look-alikes like "Dreamegg".
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const campaigns = ((data ?? []) as any[]).filter((r) => brandMatches(label, r.brand_name, r.campaign_name)).map((r) => {
+  const campaigns = rows.map((r) => {
     const f = campaignFullness(r.available_slot, r.total_slot)
     return {
-      campaignId: r.campaign_id as string,
-      name: (r.campaign_name as string) || null,
-      brand: (r.brand_name as string) || null,
-      repAsin: (r.rep_asin as string) || (Array.isArray(r.asins) ? r.asins[0] : null),
+      campaignId: r.campaign_id,
+      name: r.campaign_name || null,
+      brand: r.brand_name || null,
+      repAsin: r.rep_asin || (Array.isArray(r.asins) ? r.asins[0] : null),
       commissionPct: r.commission_pct != null ? Number(r.commission_pct) : null,
-      image: (r.image_url as string) || null,
-      endsAt: (r.ends_at as string) || null,
+      image: r.image_url || null,
+      endsAt: r.ends_at || null,
       isFull: f.isFull,
       spotsLeft: f.spotsLeft,
       detailsUrl: ccRequestUrl(r.campaign_id),
+      // Kept alongside the card so the acceptable test below reads the same row
+      // shape ccIsAcceptable was written against.
+      _row: r,
     }
-  }).filter((c) => !!c.repAsin && !accepted.has(String(c.campaignId)) && (!onlyOpen || !c.isFull))
+  }).filter((c) => onlyOpen
+    // Accept all: exactly what the badge counted as open, same predicate.
+    ? ccIsAcceptable(c._row, accepted, c.isFull)
+    // Message all: every campaign you have not joined, full ones included, so a
+    // brand with no free slots can still be reached.
+    : !!c.repAsin && !accepted.has(String(c.campaignId)))
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    .map(({ _row, ...c }) => c)
 
-  return NextResponse.json({ ok: true, brand: label, campaigns })
+  return NextResponse.json({ ok: true, brand: label, campaigns, capped })
 }

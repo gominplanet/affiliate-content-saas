@@ -11,9 +11,10 @@ import { toast } from 'sonner'
 import { Star, Plus, X, Loader2, Handshake, MessageCircle, RefreshCw } from 'lucide-react'
 import { requestAcceptCampaign, requestCcBrandSearch } from '@/lib/extension-frame'
 import { recordAccept } from '@/lib/accept-campaign'
+import { CC_BRAND_SCAN_LIMIT } from '@/lib/cc-brand-scan'
 import BulkMessageBrandModal, { type BulkCampaign } from '@/components/campaigns/BulkMessageBrandModal'
 
-interface FavBrand { brand: string; label: string; openCount: number; joinedCount: number; totalCount: number; lastCheckedAt: string | null }
+interface FavBrand { brand: string; label: string; openCount: number; joinedCount: number; totalCount: number; capped?: boolean; lastCheckedAt: string | null }
 
 interface BrandCampaign {
   campaignId: string
@@ -132,7 +133,17 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
         toast.loading(`Accepting ${done} of ${list.length}…`, { id: tId, duration: Infinity })
         if (done < list.length) await new Promise(r => setTimeout(r, 1500 + Math.random() * 1500))
       }
-      toast.success(`${b.label}: accepted ${joined} · ${already} already joined${failed ? ` · ${failed} failed` : ''}`, { id: tId, duration: 7000 })
+      // Report the RESULT, not the attempt. A run where every accept failed used
+      // to render as a green success toast reading "accepted 0", which looks
+      // identical to a brand that had nothing left to join. The usual cause is
+      // SCOUT being logged out, and that is worth saying out loud because it is
+      // the one thing the creator can fix.
+      const line = `${b.label}: accepted ${joined} · ${already} already joined${failed ? ` · ${failed} failed` : ''}`
+      if (joined === 0 && already === 0 && failed > 0) {
+        toast.error(`${line}. Nothing was joined — check you're logged into Amazon in this browser, then try again.`, { id: tId, duration: 10_000 })
+      } else {
+        toast.success(line, { id: tId, duration: 7000 })
+      }
       onChanged?.()
       // Refresh the watchlist so the open count drops by what we just joined.
       await load()
@@ -228,6 +239,15 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
                 </span>
                 {b.openCount === 0 && b.joinedCount > 0 && b.totalCount > b.joinedCount && (
                   <span className="text-[11px] ml-1.5" style={{ color: 'var(--text-3)' }}>{b.joinedCount} joined</span>
+                )}
+                {/* A brand with more campaigns than one scan reads has a count
+                    taken from a slice. Saying so is the difference between "you
+                    have not finished" and "this number is not the whole story". */}
+                {b.capped && (
+                  <span className="text-[11px] ml-1.5" title="This brand has more campaigns than MVP reads in one pass. Accept all works through this batch; run it again to get the next."
+                    style={{ color: 'var(--text-3)' }}>
+                    (first {CC_BRAND_SCAN_LIMIT.toLocaleString()})
+                  </span>
                 )}
               </div>
               <button type="button" onClick={() => void acceptAll(b)} disabled={busy === b.brand || b.openCount === 0}

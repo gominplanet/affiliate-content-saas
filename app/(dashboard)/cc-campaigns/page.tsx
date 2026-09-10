@@ -346,6 +346,12 @@ export default function CcCampaignsPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [nextPage, setNextPage] = useState<number | null>(null)
   const [total, setTotal] = useState(0)
+  // How many campaigns actually match, from the database, as opposed to how many
+  // are in the ranking window. The page used to print the window size as though
+  // it were the catalogue, so a search of 893,644 live campaigns read as "219
+  // live campaigns". null = the server could not tell, which prints nothing.
+  const [totalMatching, setTotalMatching] = useState<number | null>(null)
+  const [windowCapped, setWindowCapped] = useState(false)
   const [sort, setSort] = useState<string>('score')
   // Seed the search box from a ?q= deep link (e.g. "Message the brand" on the
   // storefront Brands card jumps here pre-filtered to that brand).
@@ -608,6 +614,8 @@ export default function CcCampaignsPage() {
       setCampaigns((prev) => append ? [...prev, ...j.campaigns] : j.campaigns)
       setNextPage(j.nextPage)
       setTotal(j.total ?? 0)
+      setTotalMatching(typeof j.totalMatching === 'number' ? j.totalMatching : null)
+      setWindowCapped(!!j.windowCapped)
     } finally { setLoadingMore(false); setLoading(false) }
   }, [sort, q, minCommission, payingOnly, hasSpots, hideJoined, hidePosted, joinedOnly])
 
@@ -653,6 +661,10 @@ export default function CcCampaignsPage() {
       const mapped = res.campaigns.map(mapJoined)
       setCampaigns(mapped)
       setTotal(res.total ?? mapped.length)
+      // The joined view comes straight from Amazon, so there is no catalogue-wide
+      // number behind it and no ranking window to disclose.
+      setTotalMatching(null)
+      setWindowCapped(false)
       setNextPage(null)
       setJoinedHasMore(!!res.hasMore)
       // These are all joined → mark accepted so the cards read "Accepted on Amazon".
@@ -993,8 +1005,18 @@ export default function CcCampaignsPage() {
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
             <p className="text-xs text-[var(--text-3)]">
               {joinedOnly
-                ? <>{total.toLocaleString()} joined campaign{total === 1 ? '' : 's'}{joinedHasMore && <span> · showing first {visible.length.toLocaleString()} — narrow your keyword or Load more</span>}</>
-                : <>{total.toLocaleString()} live campaign{total === 1 ? '' : 's'}</>}
+                ? <>{total.toLocaleString()} joined campaign{total === 1 ? '' : 's'}{joinedHasMore && <span> · showing first {visible.length.toLocaleString()}, narrow your keyword or Load more</span>}</>
+                : totalMatching != null
+                  // Lead with what the catalogue actually holds for these filters.
+                  // `total` is the ranked, de-duplicated slice this request can
+                  // page through, and printing THAT as "live campaigns" is what
+                  // made 893,644 live campaigns read as 219.
+                  ? <>About <b style={{ color: 'var(--text-2)' }}>{totalMatching.toLocaleString()}</b> live campaign{totalMatching === 1 ? '' : 's'} match{totalMatching === 1 ? 'es' : ''}{q.trim() ? <> “{q.trim()}”</> : ''}
+                      {windowCapped
+                        ? <span> · ranking the best {total.toLocaleString()}, add filters to narrow it</span>
+                        : <span> · {total.toLocaleString()} after grouping duplicates</span>}
+                    </>
+                  : <>{total.toLocaleString()} live campaign{total === 1 ? '' : 's'}</>}
               {hiddenCount > 0 && <span> · {hiddenCount.toLocaleString()} hidden</span>}
               {shown.length < visible.length && <span> · showing {shown.length.toLocaleString()}</span>}
             </p>
