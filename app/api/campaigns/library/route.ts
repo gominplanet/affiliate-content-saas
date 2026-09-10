@@ -18,6 +18,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { buildCampaignLibrary, type ContentPiece, type JoinedCampaign } from '@/lib/campaign-library'
 import { mergeCampaignRows, displayTitle, isJoined, type CampaignRow } from '@/lib/campaign-rows'
+import { ccNormalizeRequestUrl } from '@/lib/cc-urls'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -378,7 +379,11 @@ async function load() {
       joinedByMvp: true,
       joinedSource: joinedSource.get(r.asin) ?? null,
       messagedAt: r.messaged_at || null,
-      detailsUrl: r.details_url || null,
+      // Rows joined or messaged before the URL fix carry type=spcc&status=
+      // opportunity, which lands the creator on the campaign and then bounces
+      // them to the EPC list. Strip those on the way out so an existing library
+      // stops doing it too, not just newly joined campaigns.
+      detailsUrl: ccNormalizeRequestUrl(r.details_url),
       content: content.get(r.asin) ?? [],
       signals,
       // Filled in by a second request. Amazon reports one row per product per
