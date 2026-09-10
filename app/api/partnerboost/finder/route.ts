@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
         // Match brandPassesPb: percent brands by commission, flat-CPA brands by payout.
         .or(`commission_pct.gte.${rules.minCommissionPct},and(commission_pct.is.null,flat_payout.gte.${rules.minFlatPayout})`)
       if (focus) q = q.ilike('name', `%${focus}%`)
-      const { data: rows } = await q.order('score', { ascending: false }).limit(600)
+      const { data: rows } = await q.order('score', { ascending: false, nullsFirst: false }).limit(600)
       const list: Match[] = (rows ?? []).map((r: Match) => ({
         key: r.product_key, name: r.name, priceNum: r.price,
         price: r.price != null ? String(r.price) : null,
