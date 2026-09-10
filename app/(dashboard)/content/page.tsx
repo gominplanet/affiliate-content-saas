@@ -43,6 +43,7 @@ import {
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2, Tags, Wrench, Pencil, Rocket,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
+import { amazonProductUrlRegex, ASIN_PATH_SEGMENTS } from '@/lib/asin'
 
 // COST CONTROL (2026-06-12): master switch for every multi-video bulk
 // GENERATION action (bulk generate, bulk schedule, bulk rewrite). Off by
@@ -306,7 +307,7 @@ function deriveProductUrl(video: Record<string, unknown>): string | null {
   const patterns = [
     /https?:\/\/(?:www\.)?geni\.us\/[^\s)>\]"']+/i,
     /https?:\/\/(?:www\.)?amzn\.to\/[^\s)>\]"']+/i,
-    /https?:\/\/(?:www\.)?amazon\.[a-z.]+\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s)>\]"']*/i,
+    amazonProductUrlRegex('i'),
   ]
   for (const re of patterns) {
     const m = desc.match(re)
@@ -3919,7 +3920,7 @@ export default function ContentPage() {
   // the shared catalog. We only send videos that reference a product. No SCOUT.
   useEffect(() => {
     const ids = videos
-      .filter(v => /geni\.us|amzn\.to|amazon\.[a-z.]+\/(?:dp|gp\/product)|\bB0[A-Z0-9]{8}\b/i.test(
+      .filter(v => new RegExp(`geni\\.us|amzn\\.to|amazon\\.[a-z.]+\\/(?:${ASIN_PATH_SEGMENTS})|\\bB0[A-Z0-9]{8}\\b`, 'i').test(
         `${(v.product_url as string) || ''} ${(v.description as string) || ''} ${(v.title as string) || ''}`))
       .map(v => v.id as string)
       .slice(0, 200)

@@ -23,12 +23,16 @@
 //
 // Pure and dependency-free so the ordering is tested rather than trusted.
 
+import { asinPathRegex, ASIN_PATH_SEGMENTS } from '@/lib/asin'
 /** An Amazon product URL anywhere in the post body. Anchored on /dp/ or
  *  /gp/product/ followed by a real ten-character id, so a link to a category
  *  page or a search result is not mistaken for the product. */
-const AMAZON_IN_BODY = /https?:\/\/(?:www\.)?amazon\.[a-z.]+\/(?:[^\s"'<>]*?\/)?(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s"'<>]*/i
+const AMAZON_IN_BODY = new RegExp(
+  `https?:\\/\\/(?:[a-z0-9-]+\\.)*amazon\\.[a-z.]+\\/(?:[^\\s"'<>]*?\\/)?(?:${ASIN_PATH_SEGMENTS})\\/[A-Z0-9]{10}[^\\s"'<>]*`,
+  'gi',
+)
 const GENIUS_IN_BODY = /https?:\/\/geni\.us\/[A-Za-z0-9]+/i
-const ASIN_IN_BODY = /\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i
+const ASIN_IN_BODY = asinPathRegex('i')
 
 export interface PostLinkFields {
   geniuslink_code?: string | null

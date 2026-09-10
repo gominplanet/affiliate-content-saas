@@ -130,7 +130,7 @@ export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<A
 
   // ── Step 1 — find a VALID ASIN or a real store destination ───────────────
   const titleAsin = extractAsin(title) // hardened: rejects 10-letter words
-  const descAsin = description.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
+  const descAsin = asinFromAmazonUrl(description)
   if (titleAsin) {
     asin = titleAsin
   } else if (descAsin && isValidAsin(descAsin)) {

@@ -29,13 +29,13 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
-import { asinFromAmazonUrl } from '@/lib/product-link'
 import { isValidAsin } from '@/services/amazon'
 import { resolveAffiliateUrl, resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { styleOfUrl, type LinkStyle } from '@/lib/link-style'
+import { asinFromAmazonUrl, amazonProductUrlRegex, asinPathRegex, isAmazonProductUrl } from '@/lib/asin'
 
 export const maxDuration = 300
 
@@ -199,7 +199,7 @@ export async function POST(request: Request) {
       const uniq = hrefs.filter((u) => (seen.has(u) ? false : (seen.add(u), true)))
       const rank = (u: string): number => {
         if (GENIUSLINK.test(u) || SHORTENERS.test(u) || styleOfUrl(u) === 'passport') return 0
-        if (/amazon\.[a-z.]+\/(?:dp|gp\/product|gp\/aw\/d)\/[A-Z0-9]{10}/i.test(u)) return 1
+        if (isAmazonProductUrl(u)) return 1
         return 2 // a search or storefront URL — kept last, and filtered below
       }
       return uniq.filter((u) => rank(u) < 2).sort((a, b) => rank(a) - rank(b))
@@ -233,8 +233,14 @@ export async function POST(request: Request) {
         const v = (a || '').trim().toUpperCase()
         return v && isValidAsin(v) ? v : null
       }
-      const inBody = content.match(/amazon\.[a-z.]+\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]
-      const fromBody = ok(inBody)
+      // Cheapest source first: a full Amazon product URL already in the body,
+      // then a bare /dp/-style path anywhere in it. Both go through the shared
+      // parser, so /clp/ counts here exactly as it does everywhere else.
+      const inBody = content.match(amazonProductUrlRegex('i'))?.[0]
+        ?? content.match(asinPathRegex('i'))?.[0]
+        ?? ''
+      const bodyAsin = asinFromAmazonUrl(inBody)
+      const fromBody = ok(bodyAsin)
       if (fromBody) return fromBody
       const stored = ok(video.asin)
       if (stored) return stored
@@ -356,7 +362,7 @@ export async function POST(request: Request) {
           const oldUrl = bodyLinkOf(original) || f.oldUrl
           let updated = original.split(oldUrl).join(newUrl)
           updated = updated.replace(
-            /href="https?:\/\/(?:www\.)?amazon\.[a-z.]+\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^"]*"/gi,
+            new RegExp(`href="${amazonProductUrlRegex('i').source}"`, 'gi'),
             (href) => (badAmazonAsin(href) ? `href="${newUrl}"` : href),
           )
           if (updated === original) continue

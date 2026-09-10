@@ -70,7 +70,7 @@ export async function ensureAffiliateShareLink(
       let dest: string | null = null
       if (!asin && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(link)) {
         const finalUrl = await resolveTrueDestination(link)
-        asin = asinFromAmazonUrl(finalUrl) || finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
+        asin = asinFromAmazonUrl(finalUrl)
         if (!asin && !/amazon\.[a-z.]+/i.test(finalUrl) && isSafePassportDestination(finalUrl)) dest = finalUrl
       } else if (!asin && !/amazon\.[a-z.]+/i.test(link) && isSafePassportDestination(link)) {
         dest = link

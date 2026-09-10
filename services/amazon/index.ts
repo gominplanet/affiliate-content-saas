@@ -1,3 +1,4 @@
+import { asinPathRegex } from '@/lib/asin'
 export interface AmazonProduct {
   asin: string
   title: string
@@ -115,7 +116,7 @@ export async function searchAmazonForAsin(query: string): Promise<string | null>
     // is what Amazon's organic results use. Sponsored slots also use
     // /dp/ but tend to appear first; we accept either since we still
     // map to a real product the brand sells.
-    const match = html.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/)
+    const match = html.match(asinPathRegex('i'))
     return match ? match[1] : null
   } catch {
     return null

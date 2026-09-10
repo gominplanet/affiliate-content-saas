@@ -10,6 +10,7 @@
 // Kept framework-free (no Supabase, no React) so it's trivially testable and
 // shared by both the API route and the page.
 
+import { asinPathRegex } from '@/lib/asin'
 export type BrandEventType =
   | 'inquiry'            // a brand messaged the creator through their blog form
   | 'pitch'             // the creator sent an outreach pitch email
@@ -144,7 +145,7 @@ function asinFrom(raw?: string | null): string | null {
   const s = (raw || '').trim()
   if (!s) return null
   if (/^[A-Z0-9]{10}$/i.test(s)) return s.toUpperCase()
-  const m = s.match(/\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})/i) || s.match(/[?&]asin=([A-Z0-9]{10})/i)
+  const m = s.match(asinPathRegex('i')) || s.match(/[?&]asin=([A-Z0-9]{10})/i)
   return m ? m[1].toUpperCase() : null
 }
 

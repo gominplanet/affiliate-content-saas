@@ -24,6 +24,7 @@ import { resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { decodeHtmlEntities } from '@/lib/decode-entities'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
+import { amazonProductUrlRegex } from '@/lib/asin'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,7 +64,7 @@ function deriveProductUrl(video: Record<string, unknown> | null): string | null 
   const patterns = [
     /https?:\/\/(?:www\.)?geni\.us\/[^\s)>\]"']+/i,
     /https?:\/\/(?:www\.)?amzn\.to\/[^\s)>\]"']+/i,
-    /https?:\/\/(?:www\.)?amazon\.[a-z.]+\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s)>\]"']*/i,
+    amazonProductUrlRegex('i'),
   ]
   for (const re of patterns) {
     const m = desc.match(re)
@@ -93,7 +94,7 @@ function deriveProductUrlFromPost(post: Record<string, unknown> | null): string 
   // Otherwise scan the post body for the product/affiliate link MVP embedded.
   const content = (post.content as string) || ''
   const patterns = [
-    /https?:\/\/(?:www\.)?amazon\.[a-z.]+\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s)>\]"']*/i,
+    amazonProductUrlRegex('i'),
     /https?:\/\/(?:www\.)?amzn\.to\/[^\s)>\]"']+/i,
     /https?:\/\/(?:www\.)?geni\.us\/[^\s)>\]"']+/i,
   ]

@@ -12,6 +12,7 @@ import { normalizeTier } from '@/lib/tier'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { cuesToText } from '@/lib/shorts-transcript'
 import { buildProductThumbnail } from '@/lib/product-thumbnail'
+import { asinFromAmazonUrl } from '@/lib/asin'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -19,8 +20,7 @@ export const maxDuration = 300
 function asinFrom(v: string): string | null {
   const s = (v || '').trim()
   if (/^[A-Z0-9]{10}$/i.test(s)) return s.toUpperCase()
-  const m = s.match(/\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})/i)
-  return m ? m[1].toUpperCase() : null
+  return asinFromAmazonUrl(s)
 }
 
 export async function POST(req: Request) {

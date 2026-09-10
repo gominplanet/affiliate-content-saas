@@ -9,6 +9,55 @@
 // warning) plus the whole Amazon service with it. Client code imports this file;
 // product-link re-exports it so every server caller is untouched.
 
+/** The Amazon URL path segments that carry an ASIN. ONE list, exported, because
+ *  twenty hand-rolled copies of it is how a parser fix fails to reach anything.
+ *
+ *  /clp/ was added here on 9 September after a geni.us link resolved through it
+ *  and the parser read null. The fix landed in asinFromAmazonUrl at 14:41 and a
+ *  post generated at 15:18 STILL shipped a raw untagged Amazon link, because the
+ *  code that built that post carried its own `(dp|gp\/product)` regex and never
+ *  called the parser. Nineteen other places had the same copy.
+ *
+ *  Anything matching an ASIN-bearing Amazon path belongs in this string, and
+ *  every caller derives its regex from it. scripts/test-asin-single-source.ts
+ *  fails the build if a new copy appears. */
+export const ASIN_PATH_SEGMENTS = 'dp|gp/product|gp/aw/d|product|clp'
+
+/** Matches an ASIN-bearing Amazon path, capturing the ASIN in group 1.
+ *
+ *  The trailing guard is a NEGATIVE LOOKAHEAD, not a required delimiter, and the
+ *  difference matters. Requiring `[/?#]` or end-of-string works on a bare URL and
+ *  fails the moment the same pattern scans HTML, where the character after the
+ *  ASIN is usually a quote. A lookahead still refuses an 11-character id, which
+ *  is the only thing the guard is for, without dictating what may follow.
+ *
+ *  Fresh instance per call: a shared /g/ regex carries lastIndex between uses,
+ *  which makes every other call fail for no visible reason. */
+export function asinPathRegex(flags = 'i'): RegExp {
+  return new RegExp(`\\/(?:${ASIN_PATH_SEGMENTS})\\/([A-Z0-9]{10})(?![A-Z0-9])`, flags)
+}
+
+/** Matches a FULL Amazon product URL. For scanning HTML, where the host has to
+ *  be part of the match so a relative path or another site cannot qualify. */
+export function amazonProductUrlRegex(flags = 'gi'): RegExp {
+  return new RegExp(
+    `https?:\\/\\/(?:[a-z0-9-]+\\.)*amazon\\.[a-z.]+\\/(?:${ASIN_PATH_SEGMENTS})\\/[A-Z0-9]{10}[^\\s"'<>)\\]]*`,
+    flags,
+  )
+}
+
+/** True when this URL points at an Amazon PRODUCT (not search, not a storefront).
+ *  The shared predicate behind every "is this a buy link" decision. */
+export function isAmazonProductUrl(url: string | null | undefined): boolean {
+  const s = String(url ?? '').trim()
+  if (!/^https?:\/\//i.test(s)) return false
+  try {
+    const u = new URL(s)
+    if (!/(?:^|\.)amazon\.[a-z.]+$/i.test(u.hostname)) return false
+    return asinPathRegex('i').test(u.pathname)
+  } catch { return false }
+}
+
 /** Pull a 10-char Amazon ASIN out of an Amazon product URL path.
  *
  *  /clp/ is in the list because Amazon puts it there. Following a geni.us link
@@ -23,7 +72,7 @@
  *  below for a path segment that simply IS an ASIN, which catches the next one
  *  without anybody having to find it the hard way. */
 export function asinFromAmazonUrl(url: string): string | null {
-  const m = url.match(/\/(?:dp|gp\/product|gp\/aw\/d|product|clp)\/([A-Z0-9]{10})(?:[/?]|$)/i)
+  const m = url.match(asinPathRegex('i'))
   if (m) return m[1].toUpperCase()
 
   // Fallback: an Amazon URL whose path contains a bare ASIN segment. Deliberately

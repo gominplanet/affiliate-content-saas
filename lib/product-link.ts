@@ -172,7 +172,7 @@ export async function resolveProductLink(title: string, description: string, own
   // Hardened: extractAsin rejects 10-letter words (e.g. "UNDERWATER") that the
   // old bare /[A-Z0-9]{10}/ matcher wrongly treated as ASINs.
   const titleAsin = extractAsin(title)
-  const descAsin = description.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
+  const descAsin = asinFromAmazonUrl(description)
   if (titleAsin) return { kind: 'amazon', asin: titleAsin.toUpperCase() }
   if (descAsin) return { kind: 'amazon', asin: descAsin }
 

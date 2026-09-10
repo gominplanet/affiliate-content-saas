@@ -11,6 +11,7 @@
 // turn it on. All product enrichment (brand/title/image) is layered on afterward by
 // Keepa (services/keepa) — internal, never surfaced to users.
 
+import { asinPathRegex } from '@/lib/asin'
 export type SyncSource = 'amazon_storefront' | 'tiktok'
 export type SyncProvider = 'apify' | 'socialcrawl'
 
@@ -112,7 +113,7 @@ export function mapAmazonItem(it: Record<string, unknown>): CatalogItem | null {
   if (!/^[A-Z0-9]{10}$/.test(asin)) {
     // Try to recover an ASIN from a product url or the post/permalink.
     const url = s(it.url) || s(it.productUrl) || s(it.link) || s(it.post_url) || s(it.permalink)
-    const m = url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i) || url.match(ASIN_RE)
+    const m = url.match(asinPathRegex('i')) || url.match(ASIN_RE)
     asin = (m?.[1] || '').toUpperCase()
   }
   if (!/^[A-Z0-9]{10}$/.test(asin)) return null

@@ -9,6 +9,8 @@
 // YouTube description and whose share link disagree about their link style has,
 // from where they sit, a broken product.
 
+import { asinPathRegex } from '@/lib/asin'
+
 export type LinkStyle = 'passport' | 'geniuslink' | 'bitly' | 'direct'
 
 /**
@@ -76,7 +78,7 @@ function isAmazonProductUrl(s: string): boolean {
   try {
     const u = new URL(s)
     if (!/amazon\.[a-z.]+$/i.test(u.hostname.replace(/^www\./i, ''))) return false
-    return /\/(?:dp|gp\/product|gp\/aw\/d)\/[A-Z0-9]{10}/i.test(u.pathname)
+    return asinPathRegex('i').test(u.pathname)
   } catch { return false }
 }
 

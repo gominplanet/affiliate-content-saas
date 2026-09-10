@@ -22,6 +22,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage, verifyProductMatch } from '@/lib/product-image'
+import { asinPathRegex } from '@/lib/asin'
 import { fal } from '@fal-ai/client'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
@@ -53,7 +54,7 @@ async function findAsinInDescription(description: string): Promise<string | null
   const head = description.split(/(?<=[.!?])\s+/).slice(0, 2).join(' ').slice(0, 600)
 
   // Direct ASIN-in-URL patterns first (no network roundtrip).
-  const directMatch = head.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})\b/i)
+  const directMatch = head.match(asinPathRegex('i'))
   if (directMatch) return directMatch[1].toUpperCase()
 
   // Bare ASIN token (legacy creators sometimes write "B0XXXXXXXX" inline).
@@ -71,7 +72,7 @@ async function findAsinInDescription(description: string): Promise<string | null
         headers: { 'User-Agent': 'Mozilla/5.0' },
       })
       const finalUrl = res.url || ''
-      const followed = finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})\b/i)
+      const followed = finalUrl.match(asinPathRegex('i'))
       if (followed) return followed[1].toUpperCase()
     } catch { /* unreachable — fall through */ }
   }

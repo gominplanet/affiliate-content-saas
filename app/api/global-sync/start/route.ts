@@ -11,6 +11,7 @@ import { normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { MARKETS, marketByDomain, localizeMetadata } from '@/lib/global-sync'
 import { buildProductThumbnail } from '@/lib/product-thumbnail'
+import { asinFromAmazonUrl } from '@/lib/asin'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -20,8 +21,7 @@ function asinFrom(v: string | null | undefined): string | null {
   const s = (v || '').trim()
   if (!s) return null
   if (/^[A-Z0-9]{10}$/.test(s)) return s
-  const m = s.match(/\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})/i)
-  return m ? m[1].toUpperCase() : null
+  return asinFromAmazonUrl(s)
 }
 
 export async function POST(req: Request) {

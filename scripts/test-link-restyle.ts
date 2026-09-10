@@ -151,7 +151,7 @@ const RESOLVE = read('lib/affiliate-resolve.ts')
   check('the apply works out the product from the post itself',
     /async function asinForRestyle\(/.test(ROUTE))
   check('cheapest source first: an Amazon link already in the post body',
-    /const inBody = content\.match\(/.test(ROUTE),
+    /const inBody = content\.match\(amazonProductUrlRegex/.test(ROUTE),
     'free, no network, and it is right there')
   check('then the ASIN stored on the video row',
     /const stored = ok\(video\.asin\)/.test(ROUTE))

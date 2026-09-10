@@ -62,7 +62,7 @@ export async function resolvePinProductLink(
   if (!asin && productUrl && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(productUrl)) {
     try {
       const finalUrl = await resolveTrueDestination(productUrl)
-      asin = asinFromAmazonUrl(finalUrl) || finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
+      asin = asinFromAmazonUrl(finalUrl)
       if (!asin && !/amazon\.[a-z.]+/i.test(finalUrl) && isSafePassportDestination(finalUrl)) unwrapped = finalUrl
     } catch { /* redirect unreachable — keep the original link */ }
   }

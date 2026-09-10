@@ -8,6 +8,7 @@ import { buildLearnedVoiceBlock } from '@/lib/voice-fingerprint'
 import { repetitionGuardBlock } from '@/lib/repetition-guard'
 import { resolveNicheScaffold, nicheScaffoldToPrompt, type NicheScaffold } from '@/lib/niche-scaffold'
 import { deriveProductName } from '@/lib/product-name'
+import { asinPathRegex } from '@/lib/asin'
 
 /** Caller identity for cost telemetry (optional — logging is best-effort). */
 export interface UsageCtx { userId?: string | null; tier?: string | null }
@@ -1589,7 +1590,7 @@ QUALITY CHECK:
 
 /** Pull a 10-char Amazon ASIN out of an Amazon product URL path. */
 function asinFromAmazonUrl(url: string): string | null {
-  const m = url.match(/\/(?:dp|gp\/product|gp\/aw\/d|product)\/([A-Z0-9]{10})(?:[/?]|$)/i)
+  const m = url.match(asinPathRegex('i'))
   return m ? m[1].toUpperCase() : null
 }
 

@@ -569,7 +569,7 @@ async function handleGenerate(request: Request) {
 
   // Step 1 — find the RAW destination the creator points buyers to.
   const titleAsin = extractAsin(rawTitle.toUpperCase())
-  const descAsin = rawDescription.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase()
+  const descAsin = asinFromAmazonUrl(rawDescription)
   let destination: string | null = null
   let alreadyGeniuslink = false
   if (titleAsin || descAsin) {
@@ -594,7 +594,7 @@ async function handleGenerate(request: Request) {
         //     (still drives traffic to the product, just no MVP routing).
         if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
           const finalUrl = await resolveTrueDestination(directProductUrl)
-          const asinFromFinal = finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]
+          const asinFromFinal = asinFromAmazonUrl(finalUrl)
           if (asinFromFinal) {
             asinOverride = asinFromFinal.toUpperCase()
             destination = `https://www.amazon.com/dp/${asinOverride}`
@@ -711,8 +711,6 @@ async function handleGenerate(request: Request) {
         try {
           const finalUrl = await resolveTrueDestination(destination)
           passportAsin = asinFromAmazonUrl(finalUrl)
-            || finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase()
-            || null
           // geni.us / short link that resolves to a NON-Amazon store → cloak that.
           if (!passportAsin && !/amazon\.[a-z.]+/i.test(finalUrl) && isSafePassportDestination(finalUrl)) passportDest = finalUrl
         } catch { /* redirect unreachable — falls back below */ }
@@ -798,7 +796,7 @@ async function handleGenerate(request: Request) {
   //         click target.
   const effectiveAsin =
     extractAsin(rawTitle.toUpperCase()) ||
-    rawDescription.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() ||
+    asinFromAmazonUrl(rawDescription) ||
     asinOverride ||
     null
   let productUrl: string | null = affiliateUrlOverride
