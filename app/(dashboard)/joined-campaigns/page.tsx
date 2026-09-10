@@ -26,7 +26,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Loader2, ExternalLink, Sparkles, ArrowUpDown, ScanSearch, CircleAlert, CircleCheck, CircleDashed, CircleDollarSign } from 'lucide-react'
+import { Loader2, ExternalLink, Sparkles, ArrowUpDown, ScanSearch, CircleAlert, CircleCheck, CircleDashed, CircleDollarSign, Mail } from 'lucide-react'
+import { requestBrandChats } from '@/lib/extension-frame'
 import PageHero from '@/components/layout/PageHero'
 import CreateForCampaignModal from '@/components/campaigns/CreateForCampaignModal'
 import { ROUTE_EXPLAINER, type BestRoute } from '@/lib/campaign-runway'
@@ -102,6 +103,21 @@ export default function JoinedCampaignsPage() {
   const [sort, setSort] = useState<Sort>('next')
   const [scanning, setScanning] = useState(false)
 
+  /** Brands whose last message is newer than the last one this creator read.
+   *
+   *  A creator messages a brand and then has no way to know it answered without
+   *  going back to Amazon and looking. The reply is the whole point of the
+   *  outreach, and the page that shows the campaign was silent about it.
+   *
+   *  SCOUT reads the Creator Connections inbox in the creator's own logged-in
+   *  session, so this can only run with the page open and the extension
+   *  installed. It is deliberately quiet about that: a creator without SCOUT
+   *  sees the page exactly as before rather than an error about a thing they did
+   *  not ask for. Lowercased brand names are the join key, because that is all
+   *  the inbox gives us. */
+  const [repliedBrands, setRepliedBrands] = useState<Set<string>>(new Set())
+  const [checkedReplies, setCheckedReplies] = useState(false)
+
   // A blank "could not load" is a page nobody can fix, so the reason is kept and
   // shown. Non-JSON back from the route means it crashed outright rather than
   // answering, and the status is the only clue there is.
@@ -123,6 +139,16 @@ export default function JoinedCampaignsPage() {
       }))))
     } catch { /* the list is already right, it is just less precise */ }
   }, [])
+  /** Ask SCOUT for the inbox. Best-effort and silent on failure. */
+  const checkReplies = useCallback(async () => {
+    try {
+      const r = await requestBrandChats()
+      if (!r.ok || !Array.isArray(r.chats)) return
+      setRepliedBrands(new Set(r.chats.filter(c => c.unread).map(c => c.brand.trim().toLowerCase())))
+    } catch { /* no SCOUT, no session, no badge — the page is unchanged */ }
+    finally { setCheckedReplies(true) }
+  }, [])
+
   const load = useCallback(async () => {
     try {
       const r = await fetch('/api/campaigns/library')
@@ -147,6 +173,9 @@ export default function JoinedCampaignsPage() {
     } finally { setLoading(false) }
   }, [mergeEarnings])
   useEffect(() => { load() }, [load])
+  // On load, in the background. Nothing waits for it: the list renders, and the
+  // badges appear a second or two later if SCOUT is there to answer.
+  useEffect(() => { void checkReplies() }, [checkReplies])
 
   // Look up the products nothing has ever looked up.
   //
@@ -445,6 +474,22 @@ export default function JoinedCampaignsPage() {
                         <a href={r.detailsUrl} target="_blank" rel="noreferrer"
                           className="text-[11.5px] font-medium hover:underline" style={{ color: 'var(--text-faint)' }}>
                           On Amazon
+                        </a>
+                      )}
+                      {/* The brand answered and the creator has not read it.
+                          Links straight to the Amazon inbox, because MVP cannot
+                          show the conversation itself yet and sending someone to
+                          a page that only says "you have a reply" would be worse
+                          than sending them to the reply. */}
+                      {r.brand && repliedBrands.has(r.brand.trim().toLowerCase()) && (
+                        <a
+                          href="https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus"
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`${r.brand} replied and you haven't read it yet`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-semibold"
+                          style={{ color: '#1c7a35', background: 'rgba(52,199,89,0.15)' }}>
+                          <Mail size={11} /> {r.brand} replied
                         </a>
                       )}
                     </div>

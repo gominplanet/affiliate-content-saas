@@ -1,10 +1,18 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// "Post to all three" — the one-click fan-out. From one product it generates a
-// format-correct MVP Art Director design for every CONNECTED network (Pinterest
-// pin, Instagram story, Facebook post), sharing ONE art-director brief so the
-// set looks like one campaign and the extra formats cost pennies, then publishes
-// each. The per-network tabs stay the place to fine-tune; this is the shortcut.
+// The one-click social fan-out. From one product it generates a format-correct
+// MVP Art Director design for each CHOSEN network (Pinterest pin, Instagram
+// story, Facebook post), sharing ONE art-director brief so the set looks like
+// one campaign and the extra formats cost pennies, then publishes each. The
+// per-network tabs stay the place to fine-tune; this is the shortcut.
+//
+// CHOSEN, not merely connected. It used to post to every connected network, and
+// the button said "post to all connected", which was honest about doing the
+// wrong thing: connecting an account is a one-off setup act, posting to it is a
+// per-post decision, and welding them together meant a creator with three
+// accounts linked could not send to two of them without disconnecting the third.
+// The tiles are now the control, the picks are remembered, and the button names
+// the networks it is about to post to.
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
@@ -15,6 +23,9 @@ import ExpressionPicker, { useExpression } from '@/components/thumbnails/Express
 
 interface FaceModel { id: string; name: string }
 type NetKey = 'pinterest' | 'instagram' | 'facebook'
+
+/** Remembered network picks. Same shape as the other design preferences. */
+const PICK_KEY = 'mvp_post_to_all_picks'
 interface NetState { label: string; accent: string; connected: boolean; status: 'idle' | 'designing' | 'posting' | 'done' | 'error'; url?: string; error?: string }
 
 const NETS: { key: NetKey; label: string; accent: string; format: string; endpoint: string; extra?: Record<string, unknown> }[] = [
@@ -45,6 +56,18 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
   // being on for a power bank simply does nothing.
   const [wear, setWear] = useWearProduct()
   const [expression, setExpression] = useExpression()
+  /** Which networks this post actually goes to.
+   *
+   *  Connected used to mean "posts". Connecting a network is a one-off setup
+   *  act and posting to it is a per-post decision, and running them together
+   *  meant a creator who had linked three accounts could not send to two of
+   *  them without disconnecting the third. The button even said "post to all
+   *  connected", which was honest about doing the wrong thing.
+   *
+   *  Remembered per browser like the other design controls, because the answer
+   *  is usually the same next time. A network that is not connected can never
+   *  be selected, so the stored set is intersected with the live one on load. */
+  const [picked, setPicked] = useState<Record<NetKey, boolean>>({ pinterest: true, instagram: true, facebook: true })
   const [nets, setNets] = useState<Record<NetKey, NetState>>({
     pinterest: { label: 'Pinterest', accent: '#E60023', connected: false, status: 'idle' },
     instagram: { label: 'Instagram', accent: '#E1306C', connected: false, status: 'idle' },
@@ -68,6 +91,24 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
           instagram: { ...prev.instagram, connected: !!s?.instagram?.connected },
           facebook: { ...prev.facebook, connected: !!s?.facebook?.connected },
         }))
+        // Restore the remembered picks, but only for networks that are actually
+        // connected now: a stored "yes" for an account since disconnected must
+        // never silently become a target again.
+        try {
+          const raw = localStorage.getItem(PICK_KEY)
+          const stored = raw ? JSON.parse(raw) as Partial<Record<NetKey, boolean>> : null
+          setPicked({
+            pinterest: !!s?.pinterest?.connected && (stored?.pinterest ?? true),
+            instagram: !!s?.instagram?.connected && (stored?.instagram ?? true),
+            facebook: !!s?.facebook?.connected && (stored?.facebook ?? true),
+          })
+        } catch {
+          setPicked({
+            pinterest: !!s?.pinterest?.connected,
+            instagram: !!s?.instagram?.connected,
+            facebook: !!s?.facebook?.connected,
+          })
+        }
       } catch { /* ignore */ }
     })()
   }, [])
@@ -78,7 +119,8 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
     const raw = product.trim()
     if (!raw) return
     if (mode === 'face' && !faceId) return
-    const connectedNets = NETS.filter(n => nets[n.key].connected)
+    // Connected AND chosen. Both, every time.
+    const connectedNets = NETS.filter(n => nets[n.key].connected && picked[n.key])
     if (connectedNets.length === 0) return
     setBusy(true)
     const isUrl = /^https?:\/\//i.test(raw)
@@ -124,13 +166,22 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
   }, [product, mode, faceId, nets, question, wear, expression])
 
   const anyConnected = NETS.some(n => nets[n.key].connected)
+  const chosen = NETS.filter(n => nets[n.key].connected && picked[n.key])
+  const toggle = (k: NetKey) => {
+    if (!nets[k].connected) return
+    setPicked(prev => {
+      const next = { ...prev, [k]: !prev[k] }
+      try { localStorage.setItem(PICK_KEY, JSON.stringify(next)) } catch { /* private window */ }
+      return next
+    })
+  }
 
   if (!open) {
     return (
       <div className="mb-4">
         <button onClick={() => setOpen(true)}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-gray-300 dark:border-white/15 text-sm font-semibold transition hover:bg-gray-50 dark:hover:bg-white/5" style={{ color: 'var(--text)' }}>
-          <Rocket size={15} className="text-[#d97706]" /> Post to all three at once
+          <Rocket size={15} className="text-[#d97706]" /> Post to your socials at once
         </button>
       </div>
     )
@@ -141,12 +192,12 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Rocket size={16} className="text-[#d97706]" />
-          <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>Post to all three at once</h2>
+          <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>Post to your socials at once</h2>
         </div>
         {!defaultOpen && <button onClick={() => setOpen(false)} className="text-[11px] hover:underline" style={{ color: 'var(--text-soft)' }}>Hide</button>}
       </div>
       <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
-        One product → a Pinterest pin, an Instagram story (with link-in-bio) and a Facebook post, all from one shared design. Fine-tune any of them in the tabs below instead.
+        One product → a Pinterest pin, an Instagram story (with link-in-bio) and a Facebook post, all from one shared design. Tick the networks you want; MVP remembers your choice. Fine-tune any of them in the tabs below instead.
       </p>
 
       {!hideProductInput && (
@@ -183,8 +234,26 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         {NETS.map(n => {
           const st = nets[n.key]
+          const on = st.connected && picked[n.key]
           return (
-            <div key={n.key} className={`flex items-center gap-2 rounded-xl border p-2.5 ${st.connected ? 'border-gray-200 dark:border-white/10' : 'border-gray-100 dark:border-white/5 opacity-50'}`}>
+            <button
+              key={n.key}
+              type="button"
+              onClick={() => toggle(n.key)}
+              disabled={!st.connected || busy}
+              aria-pressed={on}
+              title={!st.connected ? `${n.label} is not connected` : on ? `Don't post to ${n.label}` : `Post to ${n.label}`}
+              className={`flex items-center gap-2 rounded-xl border p-2.5 text-left transition ${
+                !st.connected ? 'border-gray-100 dark:border-white/5 opacity-50 cursor-not-allowed'
+                : on ? 'border-[#d97706] bg-[#d97706]/5'
+                : 'border-gray-200 dark:border-white/10 opacity-60 hover:opacity-100'}`}>
+              <input
+                type="checkbox"
+                checked={on}
+                onChange={() => {}}
+                disabled={!st.connected || busy}
+                className="h-3.5 w-3.5 flex-shrink-0 accent-[#d97706] pointer-events-none"
+              />
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: n.accent }} />
               <span className="text-[13px] font-semibold flex-1" style={{ color: 'var(--text)' }}>{n.label}</span>
               {!st.connected ? <span className="text-[10px]" style={{ color: 'var(--text-soft)' }}>not connected</span>
@@ -192,17 +261,27 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
                 : st.status === 'posting' ? <span className="text-[10px] inline-flex items-center gap-1" style={{ color: 'var(--text-soft)' }}><Loader2 size={11} className="animate-spin" /> posting</span>
                 : st.status === 'done' ? (st.url ? <a href={st.url} target="_blank" rel="noreferrer" className="text-[11px] font-semibold text-[#34c759] inline-flex items-center gap-0.5"><Check size={12} /> posted <ExternalLink size={11} /></a> : <span className="text-[11px] font-semibold text-[#34c759] inline-flex items-center gap-0.5"><Check size={12} /> posted</span>)
                 : st.status === 'error' ? <span className="text-[10px] text-[#b91c1c] dark:text-[#f87171] inline-flex items-center gap-1" title={st.error}><AlertCircle size={11} /> failed</span>
-                : <span className="text-[10px] text-[#34c759]">ready</span>}
-            </div>
+                : on ? <span className="text-[10px] text-[#34c759]">will post</span>
+                : <span className="text-[10px]" style={{ color: 'var(--text-soft)' }}>skipped</span>}
+            </button>
           )
         })}
       </div>
 
-      <button onClick={run} disabled={busy || !product.trim() || !anyConnected}
+      {/* NAME THE NETWORKS. "Post to all connected" was a promise about the
+          creator's account rather than about this post, so the button could not
+          be read as a description of what the click does. */}
+      <button onClick={run} disabled={busy || !product.trim() || chosen.length === 0}
         className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold text-sm transition disabled:opacity-60" style={{ backgroundColor: '#d97706' }}>
-        {busy ? <><Loader2 size={16} className="animate-spin" /> Designing + posting…</> : <><Rocket size={16} /> Generate &amp; post to all connected</>}
+        {busy
+          ? <><Loader2 size={16} className="animate-spin" /> Designing + posting…</>
+          : <><Rocket size={16} /> {chosen.length === 0 ? 'Pick a network above' : `Generate & post to ${chosen.map(n => n.label).join(' + ')}`}</>}
       </button>
-      {!anyConnected && <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>Connect at least one network above first.</p>}
+      {!anyConnected
+        ? <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>Connect at least one network above first.</p>
+        : chosen.length === 0
+          ? <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>Every network is unticked, so this would post nowhere. Tick the ones you want.</p>
+          : null}
     </div>
   )
 }
