@@ -23,8 +23,14 @@
  * pre-stage a post ahead of a sale).
  *
  * ⚠️  Flip to FALSE the moment the next Amazon sale starts to bring it back.
+ *
+ * OPEN for Prime Big Deal Days (October). Note that "open" is not the same as
+ * "publish anything today": Amazon holds pre-announcement deals under embargo,
+ * and lib/deal-embargo.ts is what keeps a post about an October deal from going
+ * live in September. Unpausing without that guard is what would put a creator's
+ * Associates account at risk, so the two belong together.
  */
-export const DEALS_HUB_PAUSED = true
+export const DEALS_HUB_PAUSED = false
 
 export type DealOccasionSlug =
   | 'none'

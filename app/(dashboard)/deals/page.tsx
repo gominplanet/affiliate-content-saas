@@ -603,6 +603,30 @@ export default function DealsHubPage() {
           </div>
         </div>
 
+        {/* Amazon's embargo, said before anyone presses Generate.
+            Amazon prints this on the Deals Hub itself, and the Deals Hub lists
+            deals weeks ahead: in September its queue is full of October ones.
+            A creator who does not know the rule will publish an unannounced
+            price, so the rule belongs on this page, not in a support doc. MVP
+            enforces it as well (lib/deal-embargo.ts converts an early publish
+            into a scheduled one), but a guard the user cannot see is a guard
+            they will fight. */}
+        <div className="rounded-2xl border p-4 flex items-start gap-3" style={{ borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.08)' }}>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-[#f59e0b]/20">
+            <span className="text-base">⏳</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold mb-0.5" style={{ color: 'var(--text)' }}>
+              Upcoming deals are confidential until they go live
+            </p>
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
+              Amazon allows a deal to be published only once it is live on amazon.com, and an event&rsquo;s dates only once Amazon has announced them.
+              Write these posts early by all means: if a deal has not started, MVP generates the article now and <b>schedules</b> it to publish the
+              moment the deal opens, rather than putting it out ahead of time.
+            </p>
+          </div>
+        </div>
+
         {/* Amazon-only + Deals Hub link callout. Two things every Deals user
             needs to know before they start dropping URLs:
             (1) this feature pulls product data from Amazon, so non-Amazon

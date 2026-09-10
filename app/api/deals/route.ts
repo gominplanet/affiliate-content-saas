@@ -54,6 +54,7 @@ import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
 import { scrubEmDashes } from '@/lib/html-scrub'
 import { getOccasion, detectOccasion, listOccasions, type DealOccasionSlug } from '@/lib/deal-occasion'
+import { dealEmbargo, type DealEmbargoVerdict } from '@/lib/deal-embargo'
 import { normalizeTier, checkGenerationLimit, checkDealsUsage, TIERS } from '@/lib/tier'
 import { canUseDealRadar } from '@/lib/feature-access'
 import { toUserMessage } from '@/lib/friendly-error'
@@ -388,6 +389,14 @@ export async function POST(req: Request) {
      *  becomes the post's scheduled_at, so the post lands the moment
      *  the deal opens. */
     scheduledAt?: string
+    /** The deal's own start time from the Amazon Deals Hub export.
+     *
+     *  Supplied so the server can tell whether the deal is LIVE. Amazon's terms
+     *  allow publishing a deal only on or after it appears on amazon.com, and
+     *  the Deals Hub lists deals weeks ahead: in September the queue is full of
+     *  October ones. Without this the server has no way to know, and one click
+     *  of Generate publishes an embargoed price. */
+    dealStartsAt?: string
   }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
@@ -493,6 +502,9 @@ export async function POST(req: Request) {
   // WP create call + the DB write share the same ISO. Falls through to
   // null when not scheduling (immediate publish, the default).
   let scheduledAtIso: string | null = null
+  // Filled by the embargo check below so the response can tell the client the
+  // publish was converted into a schedule, and why.
+  let embargoVerdict: DealEmbargoVerdict | null = null
   if (typeof body.scheduledAt === 'string' && body.scheduledAt.trim()) {
     const when = new Date(body.scheduledAt)
     if (isNaN(when.getTime())) {
@@ -511,6 +523,42 @@ export async function POST(req: Request) {
       }, { status: 400 })
     }
     scheduledAtIso = when.toISOString()
+  }
+
+  // ─── Amazon's embargo ──────────────────────────────────────────────────
+  //
+  // A deal that has not started on amazon.com yet cannot be published, and an
+  // event whose dates Amazon has not announced cannot be named. Both are
+  // Amazon's own terms, printed on the Deals Hub, and both are trivially easy to
+  // breach with a tool that turns a queued deal into a live post in one click.
+  //
+  // This does not REFUSE the post. Writing it early is the entire point of a
+  // deal queue. It converts an immediate publish into a scheduled one at the
+  // moment the embargo lifts, which is what the creator wanted anyway and what
+  // the scheduling path below already knows how to do.
+  {
+    const verdict = dealEmbargo({
+      dealStartsAt: body.dealStartsAt,
+      occasion: body.occasion && body.occasion !== 'auto' ? body.occasion : null,
+    })
+    if (verdict.blocked && verdict.publishableAt) {
+      const held = new Date(verdict.publishableAt).getTime()
+      // Already scheduled at or after the embargo lifts: nothing to do, the
+      // creator has already made the right call.
+      const alreadySafe = scheduledAtIso != null && new Date(scheduledAtIso).getTime() >= held
+      if (!alreadySafe) {
+        if (body.preview) {
+          // A preview publishes nothing, so it is allowed. The response carries
+          // the verdict so the page can show the hold before they commit.
+          // (falls through)
+        } else {
+          scheduledAtIso = verdict.publishableAt
+        }
+      }
+    }
+    // Stashed for the response so the client can say what happened rather than
+    // silently returning a scheduled post to someone who pressed Publish.
+    embargoVerdict = verdict
   }
 
   // Resolve WP site early — we need a category-list call later anyway.
@@ -1080,6 +1128,11 @@ export async function POST(req: Request) {
     title: wpTitle,
     regenerated: !!regenerateOldRow,
     replacedPostId: regenerateOldRow?.id ?? null,
+    // When the post went out on a timer rather than immediately, say so and say
+    // why. A creator who pressed Generate and got back a scheduled post with no
+    // explanation would reasonably think it had failed.
+    scheduledAt: scheduledAtIso,
+    ...(embargoVerdict?.blocked ? { embargo: embargoVerdict } : {}),
     ...(migrationNeeded ? { migrationNeeded } : {}),
   })
 }
