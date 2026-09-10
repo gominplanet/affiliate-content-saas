@@ -230,6 +230,15 @@ async function runServiceRouteJob(
     // Abort budget for the internal generate call. 290s under the legacy 300s
     // cap; 560s when GENERATION_LONG_RUN + Fluid Compute give the route a 600s
     // budget so attempt #1 finishes in one pass (see RUNNER_ABORT_MS above).
+    //
+    // Stated BOTH ways on purpose. fetchWithTimeout no longer imposes its 30s
+    // default over a caller signal, but this call is the one that proved how
+    // expensive that mistake is: generating and publishing a post takes about
+    // four minutes, every job died at 30 seconds, and because the abandoned
+    // route kept publishing server-side the posts appeared while the worker
+    // recorded failure and the social cascade never ran. Naming the budget here
+    // means a future default can never quietly shorten it again.
+    timeoutMs: RUNNER_ABORT_MS,
     signal: AbortSignal.timeout(RUNNER_ABORT_MS),
     // CRITICAL: never auto-follow. NEXT_PUBLIC_APP_URL is the non-www
     // canonical, but the domain layer 30x-redirects non-www → www — and

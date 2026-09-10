@@ -31,23 +31,57 @@ export interface TimeoutInit extends RequestInit {
 /**
  * fetch, with a deadline.
  *
- * Honours a caller-supplied `signal` as well as the timeout, so an existing
- * abort (a request the user navigated away from) still works and simply
- * whichever fires first wins. On timeout the rejection says so in words,
- * because "TimeoutError" alone in a log tells nobody which call gave up.
+ * THE DEFAULT ONLY APPLIES WHEN THE CALLER SET NO DEADLINE OF THEIR OWN.
+ *
+ * It used to apply always, combined with any caller signal so that whichever
+ * fired first won. That reads as caution and is the opposite. A caller passing
+ * `signal: AbortSignal.timeout(290_000)` has thought about how long the work
+ * takes; silently capping it at 30 seconds overrules that with a number chosen
+ * for ordinary API calls, and the caller cannot tell, because the shorter signal
+ * simply wins.
+ *
+ * It cost a real feature. The generation worker calls the blog route internally
+ * with a 290-second budget because generating and publishing a post takes around
+ * four minutes. Under the always-on default every one of those died at 30
+ * seconds and retried three times. The worker recorded the job as failed, so the
+ * auto-pilot social cascade never ran, while the route it had abandoned carried
+ * on server-side and published the post anyway. Auto-pilot looked like it worked
+ * and posted to no socials at all, for days, and nothing said otherwise.
+ *
+ * So: a caller-supplied `signal` is now the deadline. `timeoutMs` still applies
+ * alongside it when explicitly passed, for a caller that wants both an abort
+ * signal (navigation, cancellation) and a time limit. Callers with a signal
+ * SHORTER than the default are unaffected either way, which is nearly all of
+ * them; the ones this changes are exactly the ones that were being cut short.
  */
-export async function fetchWithTimeout(input: string | URL | Request, init: TimeoutInit = {}): Promise<Response> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal, ...rest } = init
+/**
+ * The timeout this call will actually run under, in ms, or null when the
+ * caller's own signal is the only deadline.
+ *
+ * Pulled out as a pure function because it is the rule that broke, and a rule
+ * buried inside a fetch wrapper can only be checked by stubbing the network.
+ *
+ *   no signal, no timeoutMs  → the default, which is why this helper exists
+ *   signal, no timeoutMs     → null: the caller named their budget, respect it
+ *   timeoutMs (either way)   → exactly what was asked for
+ */
+export function effectiveTimeoutMs(timeoutMs: number | undefined, hasCallerSignal: boolean): number | null {
+  if (typeof timeoutMs === 'number') return timeoutMs
+  return hasCallerSignal ? null : DEFAULT_TIMEOUT_MS
+}
 
-  // AbortSignal.any is available on Node 20+. Where a caller passed their own
-  // signal we want BOTH, not a choice between them.
-  const timeoutSignal = AbortSignal.timeout(timeoutMs)
-  const combined = signal
+export async function fetchWithTimeout(input: string | URL | Request, init: TimeoutInit = {}): Promise<Response> {
+  const { timeoutMs, signal, ...rest } = init
+
+  const effectiveTimeout = effectiveTimeoutMs(timeoutMs, !!signal)
+  const timeoutSignal = effectiveTimeout == null ? null : AbortSignal.timeout(effectiveTimeout)
+  // AbortSignal.any is available on Node 20+.
+  const combined = signal && timeoutSignal
     ? (typeof AbortSignal.any === 'function' ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal)
-    : timeoutSignal
+    : (signal ?? timeoutSignal)
 
   try {
-    return await fetch(input, { ...rest, signal: combined })
+    return await fetch(input, { ...rest, signal: combined ?? undefined })
   } catch (e) {
     // A timeout surfaces as a bare TimeoutError/AbortError, which in a log line
     // is indistinguishable from a user-cancelled request and names nothing.
@@ -55,7 +89,13 @@ export async function fetchWithTimeout(input: string | URL | Request, init: Time
     if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       const host = (() => { try { return new URL(url).host } catch { return url.slice(0, 60) } })()
-      throw new Error(`Request to ${host} timed out after ${Math.round(timeoutMs / 1000)}s`)
+      // Name the budget that was actually in force. Reporting the default when
+      // the caller's own signal is what fired sends whoever reads the log
+      // hunting for a 30-second setting that was never involved.
+      const budget = effectiveTimeout ?? null
+      throw new Error(budget == null
+        ? `Request to ${host} was aborted by its caller's deadline`
+        : `Request to ${host} timed out after ${Math.round(budget / 1000)}s`)
     }
     throw e
   }
