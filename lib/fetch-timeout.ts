@@ -29,6 +29,49 @@ export interface TimeoutInit extends RequestInit {
 }
 
 /**
+ * The timeout this call will actually run under, in ms, or null when the
+ * caller's own signal is the only deadline.
+ *
+ * Pulled out as a pure function because it is the rule that broke, and a rule
+ * buried inside a fetch wrapper can only be checked by stubbing the network.
+ *
+ *   no signal, no timeoutMs  → the default, which is why this helper exists
+ *   signal, no timeoutMs     → null: the caller named their budget, respect it
+ *   timeoutMs (either way)   → exactly what was asked for
+ */
+export function effectiveTimeoutMs(timeoutMs: number | undefined, hasCallerSignal: boolean): number | null {
+  if (typeof timeoutMs === 'number') return timeoutMs
+  return hasCallerSignal ? null : DEFAULT_TIMEOUT_MS
+}
+
+/** The host part of a URL, for an error message. Falls back to a short prefix of
+ *  whatever was passed, because an unparseable input still needs naming. */
+export function hostOf(input: string | URL | Request): string {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+  try { return new URL(url).host } catch { return String(url).slice(0, 60) }
+}
+
+/** Turn a network failure into a sentence that names the host and the cause,
+ *  or null when this is not that kind of error.
+ *
+ *  Node's fetch throws `TypeError: fetch failed` for every transport problem:
+ *  DNS, refused connection, TLS, reset mid-body. The real reason is on `.cause`
+ *  and the message names neither it nor the host. A creator ran Fix all
+ *  affiliate links across 34 posts, every one failed, and the report read
+ *  "First error: <post id>: fetch failed" — which does not say whether their
+ *  WordPress site was unreachable, a redirect could not be followed, or the link
+ *  service was down. Three different fixes, one indistinguishable message.
+ *
+ *  Pure, so the wording is pinned by tests rather than by a stubbed network. */
+export function describeFetchFailure(err: unknown, input: string | URL | Request): string | null {
+  if (!(err instanceof Error)) return null
+  if (!/fetch failed|network|socket|ECONN|EAI_AGAIN|ENOTFOUND/i.test(err.message)) return null
+  const cause = (err as { cause?: { code?: string; message?: string } }).cause
+  const detail = (cause?.code || cause?.message || '').toString().trim()
+  return `Could not reach ${hostOf(input)}${detail ? ` (${detail.slice(0, 120)})` : ''}`
+}
+
+/**
  * fetch, with a deadline.
  *
  * THE DEFAULT ONLY APPLIES WHEN THE CALLER SET NO DEADLINE OF THEIR OWN.
@@ -54,22 +97,6 @@ export interface TimeoutInit extends RequestInit {
  * SHORTER than the default are unaffected either way, which is nearly all of
  * them; the ones this changes are exactly the ones that were being cut short.
  */
-/**
- * The timeout this call will actually run under, in ms, or null when the
- * caller's own signal is the only deadline.
- *
- * Pulled out as a pure function because it is the rule that broke, and a rule
- * buried inside a fetch wrapper can only be checked by stubbing the network.
- *
- *   no signal, no timeoutMs  → the default, which is why this helper exists
- *   signal, no timeoutMs     → null: the caller named their budget, respect it
- *   timeoutMs (either way)   → exactly what was asked for
- */
-export function effectiveTimeoutMs(timeoutMs: number | undefined, hasCallerSignal: boolean): number | null {
-  if (typeof timeoutMs === 'number') return timeoutMs
-  return hasCallerSignal ? null : DEFAULT_TIMEOUT_MS
-}
-
 export async function fetchWithTimeout(input: string | URL | Request, init: TimeoutInit = {}): Promise<Response> {
   const { timeoutMs, signal, ...rest } = init
 
@@ -86,9 +113,12 @@ export async function fetchWithTimeout(input: string | URL | Request, init: Time
     // A timeout surfaces as a bare TimeoutError/AbortError, which in a log line
     // is indistinguishable from a user-cancelled request and names nothing.
     // Say what timed out and after how long.
+    // A transport failure names the host and the real cause. Undici's bare
+    // "fetch failed" is what made a 34-post batch report nothing actionable.
+    const network = describeFetchFailure(e, input)
+    if (network) throw new Error(network, { cause: e })
     if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-      const host = (() => { try { return new URL(url).host } catch { return url.slice(0, 60) } })()
+      const host = hostOf(input)
       // Name the budget that was actually in force. Reporting the default when
       // the caller's own signal is what fired sends whoever reads the log
       // hunting for a 30-second setting that was never involved.

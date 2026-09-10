@@ -18,7 +18,7 @@
 // The rule is a pure function so it can be checked directly. Testing it through
 // fetch means stubbing the global and inspecting a signal's timer, which is how
 // a test ends up measuring the stub rather than the rule.
-import { effectiveTimeoutMs, DEFAULT_TIMEOUT_MS } from '../lib/fetch-timeout'
+import { effectiveTimeoutMs, describeFetchFailure, hostOf, DEFAULT_TIMEOUT_MS } from '../lib/fetch-timeout'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -76,6 +76,39 @@ const check = (name: string, cond: boolean, detail?: string) => {
     'if this ever fails the list above has stopped describing the bug')
   check('the short callers really are shorter than the default',
     shortCallers.every(ms => ms < DEFAULT_TIMEOUT_MS))
+}
+
+// ── a network failure has to name the host and the cause ────────────────────
+//
+// Node's fetch throws `TypeError: fetch failed` for every transport problem.
+// A creator ran Fix all affiliate links over 34 posts, all 34 failed, and the
+// report said "First error: <post id>: fetch failed". That does not say whether
+// their WordPress site was unreachable, a redirect could not be followed, or the
+// link service was down. Three different fixes, one useless message.
+{
+  const undici = () => {
+    const e = new TypeError('fetch failed')
+    ;(e as { cause?: unknown }).cause = Object.assign(new Error('getaddrinfo ENOTFOUND gominreviews.com'), { code: 'ENOTFOUND' })
+    return e
+  }
+  const msg = describeFetchFailure(undici(), 'https://gominreviews.com/wp-json/wp/v2/posts/12')
+  check('a transport failure names the host', /gominreviews\.com/.test(msg ?? ''), String(msg))
+  check('and names the cause', /ENOTFOUND/.test(msg ?? ''), String(msg))
+  check('and does not just say fetch failed', !/^fetch failed$/i.test(msg ?? ''), String(msg))
+
+  // A failure with no cause attached still names the host, which is the half
+  // that was always missing.
+  const bare = describeFetchFailure(new TypeError('fetch failed'), 'https://api.geni.us/v1/link')
+  check('a causeless failure still names the host', /api\.geni\.us/.test(bare ?? ''), String(bare))
+
+  // Errors that are NOT transport failures must pass through untouched, or a
+  // real API error gets rewritten as a connectivity problem and sends whoever
+  // reads it to the wrong place.
+  check('a 404 is not described as unreachable',
+    describeFetchFailure(new Error('Request failed with status 404'), 'https://x.test') === null)
+  check('a non-error is ignored', describeFetchFailure('boom', 'https://x.test') === null)
+
+  check('an unparseable input still gets named', hostOf('not a url').length > 0)
 }
 
 if (failures.length) {
