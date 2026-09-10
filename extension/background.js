@@ -2698,6 +2698,29 @@ async function loadEpcViaApi() {
       ]
       for (const c of caps) {
         if (job.canceled || job.error || liveCaps.length) break
+
+        // ── CONTROL: is the statuses filter honoured AT ALL? ────────────────
+        // Every status below is accepted the moment it returns rows, which
+        // assumes Amazon actually applies filterOptions.statuses. If it ignores
+        // a value it does not recognise and returns the whole feed instead, the
+        // FIRST try always "works" and we label tens of thousands of rows
+        // OPTED_IN on no evidence. The tell was already in the diagnostic and
+        // unread: 0 of 30 sampled rows had optedIn === true.
+        //
+        // So ask with a status that cannot exist. Rows coming back means the
+        // filter is not being applied and the label on whatever loads next is
+        // meaningless. This costs one request and turns a silent mislabel into
+        // something printed on screen.
+        let statusFilterHonoured = true
+        {
+          const r = await fetchPageFor(c, 1, null, { statuses: ['MVP_CONTROL_NOT_A_REAL_STATUS'] })
+          const items = r && Array.isArray(r.items) ? r.items : []
+          probe.push({ try: 'control:bogus-status', http: r ? r.status : 0, total: r ? r.total : null, items: items.length, optedIn: 0 })
+          if (items.length) statusFilterHonoured = false
+          await _sleep(250)
+        }
+        if (!statusFilterHonoured) job.diag.statusFilterIgnored = true
+
         for (const st of STATUS_TRIES) {
           if (job.canceled || job.error) break
           const patch = { statuses: st }
@@ -2708,7 +2731,11 @@ async function loadEpcViaApi() {
           probe.push({ try: `cap:${c.label}→statuses:${stLabel}`, http: r ? r.status : 0, total: r ? r.total : null, items: items.length, optedIn: optedInCount })
           if (r && (r.status === 401 || r.status === 403)) { job.error = 'unauthorized'; break }
           if (items.length) {
-            liveCaps.push({ cap: c, patch, label: `${c.label}→${stLabel}` })
+            // Name it honestly. When the control proved the filter is ignored,
+            // this feed is "whatever the account has", not the status we asked
+            // for, and the label is the only place that distinction survives.
+            const honest = statusFilterHonoured ? `${c.label}→${stLabel}` : `${c.label}→unfiltered(status-ignored)`
+            liveCaps.push({ cap: c, patch, label: honest })
             if (!job.sample) { try { job.sample = JSON.stringify(items[0]).slice(0, 1800) } catch (e) {} }
             break
           }
