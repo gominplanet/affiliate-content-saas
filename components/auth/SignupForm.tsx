@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { parseOnboardingPath, confirmationLandingFor, type OnboardingPath } from '@/lib/onboarding-path'
+import { trackMeta } from '@/lib/meta-pixel'
 
 // Mirrors PAID_TIERS in app/api/auth/signup-paid/route.ts. The two lists
 // disagreeing is what sent every logged-out "Get Amazon Influencer" click down
@@ -170,6 +171,14 @@ export default function SignupForm() {
       captchaRef.current?.reset()
       setCaptchaToken(null)
     } else {
+      // The middle of the funnel, which was not measured at all.
+      //
+      // Meta saw a page view and then CompleteRegistration, which only fires
+      // once they come back through the email link. Everyone who typed their
+      // address and never confirmed was invisible, so a broken confirmation
+      // email and a bad audience looked identical. This is the step that tells
+      // those two apart, tagged with the door they came through.
+      trackMeta('Lead', { content_name: path === 'amazon' ? 'Amazon signup' : 'Creator signup', content_category: path ?? 'creator' })
       setSuccess(true)
     }
   }

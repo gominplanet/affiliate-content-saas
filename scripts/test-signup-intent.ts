@@ -173,6 +173,35 @@ const check = (name: string, cond: boolean, detail?: string) => {
     'that is exactly the read it would break')
 }
 
+// ── the funnel has to be measurable ─────────────────────────────────────────
+//
+// Ads point at /amazon-influencer, and that page fired nothing. Meta saw the
+// click land and then nothing until CompleteRegistration two pages later, so an
+// ad that brought the right person and an ad that brought a bouncer looked the
+// same, and there was no mid-funnel event to optimise on.
+//
+// The gap between "typed their address" and "confirmed the email" was invisible
+// too, which is where a broken confirmation email hides.
+{
+  const { readFileSync } = require('node:fs') as typeof import('node:fs')
+  const SALES2 = readFileSync('app/amazon-influencer/page.tsx', 'utf8')
+  const FORM2 = readFileSync('components/auth/SignupForm.tsx', 'utf8')
+  const ONB = readFileSync('app/onboarding/page.tsx', 'utf8')
+
+  check('the ad landing page reports a view', /<MetaTrack event="ViewContent"/.test(SALES2),
+    'the page the ads point at reported nothing at all')
+  check('and names itself distinctly', /content_name: 'Amazon Influencer'/.test(SALES2),
+    'sharing a content_name with /pricing makes the two indistinguishable in reporting')
+
+  check('a submitted signup reports a lead', /trackMeta\('Lead'/.test(FORM2),
+    'everyone who typed an address and never confirmed was invisible')
+  check('and the lead says which door they came through', /content_category: path/.test(FORM2))
+
+  check('the registration still fires where it always did',
+    /event="CompleteRegistration"/.test(ONB) && /eventName: 'CompleteRegistration'/.test(ONB),
+    'both halves, browser and server, sharing one event id')
+}
+
 if (failures.length) {
   console.error(`\n❌ signup-intent: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

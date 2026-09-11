@@ -19,6 +19,7 @@ import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { CheckoutButton } from '../pricing/CheckoutButton'
 import { TIERS } from '@/lib/tier'
 import { TrackCompare } from '@/components/pricing/TrackPicker'
+import MetaTrack from '@/components/analytics/MetaTrack'
 import { freeTrialHighlights, freeTrialExclusions } from '@/lib/free-trial'
 
 export const metadata: Metadata = {
@@ -65,6 +66,15 @@ const OTHER_TIERS: { name: string; price: string; blurb: string }[] = [
 export default function AmazonInfluencerPage() {
   return (
     <div className="min-h-screen bg-white dark:bg-[#0b0b0d] text-[#1d1d1f] dark:text-[#f5f5f7]">
+      {/* This page is the ad destination and it fired NOTHING.
+          Meta saw the click land and then nothing until CompleteRegistration
+          two pages later, so there was no way to tell an ad that brings the
+          right person from one that brings a bouncer, and no mid-funnel signal
+          to optimise on at all. A distinct content_name keeps this traffic
+          separable from /pricing, which fires its own ViewContent.
+          No onceKey: a repeat visit to a sales page is itself signal. */}
+      <MetaTrack event="ViewContent" params={{ content_name: 'Amazon Influencer', content_category: 'amazon' }} />
+
       {/* Top bar */}
       <header className="sticky top-0 z-30 backdrop-blur border-b border-gray-200 dark:border-white/10 bg-white/80 dark:bg-[#0b0b0d]/80">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
