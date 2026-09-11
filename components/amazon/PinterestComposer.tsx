@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import DownloadDesign from '@/components/amazon/DownloadDesign'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
@@ -264,6 +265,10 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
             {when === 'later' && (
               <input type="datetime-local" value={scheduleAt} min={defaultScheduleValue().slice(0, 10) + 'T00:00'} onChange={e => setScheduleAt(e.target.value)} className={inputCls} />
             )}
+
+            {/* Same reason as the other composers: a free account cannot
+                publish from here, and the pin is still theirs to post by hand. */}
+            <DownloadDesign url={thumbUrl} filename="mvp-pin.jpg" accent="#e60023" label="Download pin" />
 
             <button onClick={publish} disabled={pubBusy || connected === false}
               className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold text-sm transition disabled:opacity-60" style={{ backgroundColor: PIN_RED }}>

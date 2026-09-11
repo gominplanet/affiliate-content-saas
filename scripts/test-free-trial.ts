@@ -20,7 +20,7 @@
 //     Associates tag: one field, known by heart by a real Amazon influencer,
 //     owned by no bot farm. If that check stops running, free AI is open to
 //     anyone with an email address.
-import { TIERS } from '../lib/tier'
+import { TIERS, nextTierFor } from '../lib/tier'
 import {
   FREE_TRIAL, looksLikeAssociatesTag, freeTrialImageBlock, pooledDesignCap,
   freeTrialHighlights, freeTrialExclusions,
@@ -265,6 +265,51 @@ const check = (name: string, cond: boolean, detail?: string) => {
     check(`the sales page interpolates ${field}`, featureCards.includes(`AMZ.${field}`),
       'a card that stopped reading the plan is a card that can go stale again')
   }
+}
+
+// ── the upgrade offered when the trial runs out ─────────────────────────────
+//
+// A free user makes their five designs, tries a sixth, and is told which plan
+// to buy. nextTierFor walks the BLOG ladder (trial, creator, studio, pro) and
+// 'amazon' is not on it, because it is not a rung: it is the other product.
+//
+// So the answer to "you are out of ready-to-post designs" was "upgrade to
+// Creator" — the one paid plan with pinsPerMonth: 0, which cannot make a single
+// design. We were selling the exact product that does not do the thing they
+// just ran out of, at the moment of highest intent in the whole trial.
+{
+  const design = nextTierFor('trial', 'thumbnailsPerMonth', { preferTier: 'amazon' })
+  check('a free user out of designs is offered the Amazon plan',
+    design?.tier === 'amazon', JSON.stringify(design))
+  check('and the number quoted is the Amazon allowance',
+    design?.limit === TIERS.amazon.thumbnailsPerMonth, JSON.stringify(design))
+
+  // Creator genuinely cannot do it, which is what made the old answer wrong
+  // rather than merely suboptimal.
+  check('Creator really cannot make ready-to-post designs',
+    TIERS.creator.pinsPerMonth === 0 && TIERS.creator.igPostsPerMonth === 0,
+    'if this ever changes, the reasoning above needs revisiting')
+
+  // Untouched without the hint: the same cap, asked without a preference, still
+  // walks the blog ladder to Creator.
+  check('the blog ladder is unchanged when no preference is given',
+    nextTierFor('trial', 'thumbnailsPerMonth')?.tier === 'creator',
+    JSON.stringify(nextTierFor('trial', 'thumbnailsPerMonth')))
+  check('and a paid blog tier is never diverted to Amazon',
+    nextTierFor('creator', 'postsPerMonth')?.tier === 'studio',
+    JSON.stringify(nextTierFor('creator', 'postsPerMonth')))
+
+  // The hint only wins when the preferred plan actually offers MORE. Otherwise
+  // it would answer a cap with a plan that caps lower.
+  check('a preference that offers less is ignored',
+    nextTierFor('trial', 'postsPerMonth', { preferTier: 'amazon' })?.tier !== 'amazon',
+    'the Amazon plan has no blog posts; offering it here would be the same bug mirrored')
+
+  const { readFileSync: rf } = require('node:fs') as typeof import('node:fs')
+  const THUMB2 = rf('app/api/youtube/generate-thumbnail/route.ts', 'utf8')
+  check('the design route passes the preference',
+    /isSocialDesign \? \{ preferTier: 'amazon' \} : undefined/.test(THUMB2),
+    'and only for the design formats, so a YouTube thumbnail cap still walks the blog ladder')
 }
 
 if (failures.length) {

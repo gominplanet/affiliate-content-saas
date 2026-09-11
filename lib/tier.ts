@@ -704,8 +704,37 @@ export function tierHas(
 export function nextTierFor(
   tier: Tier,
   cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth' | 'instagramAiThumbnailsPerMonth' | 'scriptsPerMonth' | 'dealsPerMonth' | 'articlesPerMonth',
+  opts?: {
+    /** The plan this particular surface should offer first, when it actually
+     *  gives more of this cap than the caller's current plan.
+     *
+     *  The ladder below is the BLOG ladder and 'amazon' is not on it, because it
+     *  is not a rung: it is the other product. Without this, a free user who ran
+     *  out of ready-to-post designs was told to upgrade to Creator, which has
+     *  pinsPerMonth: 0 and cannot make a single one. We were answering "you are
+     *  out of designs" with "buy the plan that has no designs".
+     *
+     *  So the surface that knows which product the person is using says so. An
+     *  Amazon design cap offers the Amazon plan; everything else is untouched. */
+    preferTier?: Tier
+  },
 ): { tier: Tier; label: string; limit: number | null } | null {
   tier = normalizeTier(tier)
+
+  if (opts?.preferTier && opts.preferTier !== tier) {
+    const pref = TIERS[opts.preferTier]
+    const currentLimit = TIERS[tier][cap]
+    const prefLimit = pref[cap]
+    // EXACTLY the ladder's own rule below, applied to one extra candidate.
+    // A null current limit means "this plan is not capped this way" (the trial
+    // is governed by lifetimeMax, not postsPerMonth), NOT zero. Treating it as
+    // zero made the Amazon plan's 0 blog posts look like an upgrade over it,
+    // which is the original bug mirrored.
+    if (prefLimit === null || (typeof prefLimit === 'number' && typeof currentLimit === 'number' && prefLimit > currentLimit)) {
+      return { tier: opts.preferTier, label: pref.label, limit: prefLimit }
+    }
+  }
+
   const order: Tier[] = ['trial', 'creator', 'studio', 'pro']
   const idx = order.indexOf(tier)
   if (idx < 0 || idx === order.length - 1) return null

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import DownloadDesign from '@/components/amazon/DownloadDesign'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
@@ -246,6 +247,12 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
             {when === 'later' && (
               <input type="datetime-local" value={scheduleAt} onChange={e => setScheduleAt(e.target.value)} className={inputCls} />
             )}
+
+            {/* The design is theirs whether or not they can publish it from
+                here. On a free account Publish is disabled by design (publishing
+                is the paywall), and without this the composer had no other
+                button: a generated design with nothing to do with it. */}
+            <DownloadDesign url={thumbUrl} filename={`mvp-${network}-design.jpg`} accent={cfg.accent} label="Download design" />
 
             <button onClick={publish} disabled={pubBusy || connected === false}
               className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold text-sm transition disabled:opacity-60" style={{ backgroundColor: cfg.accent }}>

@@ -8,7 +8,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Sparkles, Download, Loader2, User, Package, AlertCircle, Wand2 } from 'lucide-react'
+import { Sparkles, Loader2, User, Package, AlertCircle, Wand2 } from 'lucide-react'
+import DownloadDesign from '@/components/amazon/DownloadDesign'
 import PageExplainer from '@/components/amazon/PageExplainer'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
@@ -317,15 +318,11 @@ export default function AmazonThumbnailsPage() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={result.url} alt="Generated thumbnail" className="w-full rounded-xl border border-gray-200 dark:border-white/10" />
           <div className="flex flex-wrap items-center gap-3 mt-3">
-            <a
-              href={result.url}
-              download="thumbnail.jpg"
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#d97706] hover:bg-[#c2410c] text-white font-semibold text-sm transition"
-            >
-              <Download size={15} /> Download
-            </a>
+            {/* Was an <a download> pointing straight at fal's CDN. The HTML
+                download attribute is IGNORED cross-origin, so this has never
+                saved a file on desktop: it opened a tab. The image is fetched
+                and saved from a blob now, and says so when it cannot. */}
+            <DownloadDesign url={result.url} filename="mvp-thumbnail.jpg" />
             {result.hook && <span className="text-xs px-2 py-1 rounded-full bg-[#d97706]/10 text-[#d97706] font-medium">{result.hook}</span>}
           </div>
 

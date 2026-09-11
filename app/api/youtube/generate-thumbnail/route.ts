@@ -1540,9 +1540,14 @@ export async function POST(request: Request) {
       if (typeof capLimit === 'number') {
         const cap = await checkUsageCap(supabase, user.id, capFeatures, capLimit, tierRow?.subscription_period_start ?? null, tierRow?.subscription_period_end ?? null)
         if (cap && cap.exceeded) {
+          // Offer the plan that actually sells what they just ran out of. The
+          // default ladder is the BLOG ladder, so a free user out of designs was
+          // being pointed at Creator, which has pinsPerMonth: 0 and cannot make
+          // one. An Amazon design cap offers the Amazon plan.
           return NextResponse.json({
             error: `You've used all ${capLimit} ${capLabel} on your plan this period${cap.resetLabel ? ` (resets ${cap.resetLabel})` : ''}.`,
-            capExceeded: true, upgrade: nextTierFor(tier, 'thumbnailsPerMonth'),
+            capExceeded: true,
+            upgrade: nextTierFor(tier, 'thumbnailsPerMonth', isSocialDesign ? { preferTier: 'amazon' } : undefined),
           }, { status: 429 })
         }
       }
