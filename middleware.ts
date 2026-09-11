@@ -76,6 +76,33 @@ const publicPaths = [
   // to read it + click through to Rewardful signup — without this it 307s to
   // /login.
   '/affiliates',
+  // ── Marketing + ad destinations ─────────────────────────────────────────
+  //
+  // Every one of these was reachable only by somebody already logged in, which
+  // is nobody they are written for. /amazon-influencer is the page a live ad
+  // campaign points at: every logged-out click 307'd to /login, so the campaign
+  // read as a near-total bounce with no visible cause, and the page itself
+  // looked fine to anyone testing it from inside the app.
+  //
+  // '/join' covers the whole tree, because isPublic matches on segment
+  // boundaries: /join/amazon and any later /join/creator are whitelisted by
+  // this one entry.
+  '/features',
+  '/amazon-influencer',
+  '/join',
+  // Reached ONLY from a link in an email, by definition from a logged-out
+  // browser. A confirmation that lands on a login page is a subscriber who
+  // thinks the signup failed.
+  '/newsletter-confirmed',
+  '/newsletter-unsubscribed',
+  // Help pages support sends to people mid-problem. Someone whose Instagram
+  // connection just broke is not necessarily signed in when they open the link,
+  // and a support link that lands on /login is worse than no link.
+  '/docs',
+  // The legal URL filed with Meta's app review. Whitelisted as the exact path
+  // rather than the whole /gominplanet tree, so a future sibling has to be
+  // considered rather than inherited.
+  '/gominplanet/privacy',
 ]
 
 function isPublicRoot(pathname: string) {
