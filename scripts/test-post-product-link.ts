@@ -223,6 +223,38 @@ const GENI = 'https://geni.us/cXNSl'
     /\^\[A-Za-z0-9\]\{4,16\}\$\/\.test\(c\)/.test(PASS))
 }
 
+// ── the unattended path, end to end ─────────────────────────────────────────
+//
+// Auto-pilot publishes the blog, queues rows into scheduled_posts, and the
+// process-scheduled cron publishes each one. Nobody is watching any of it, so
+// every step that decides a link has to be right without supervision.
+//
+// Three separate defects sat on this one path, and each hid the next:
+//   the stored geni.us code won over the body's Passport link
+//   the cloaker was handed post.user_id, which that query never selects, so it
+//     read no style, assumed 'direct', and skipped the Passport branch that
+//     would otherwise have caught the stale link
+//   no source was passed, so every scheduled post shared one attribution bucket
+{
+  const { readFileSync } = require('node:fs') as typeof import('node:fs')
+  const CRON = readFileSync('app/api/cron/process-scheduled/route.ts', 'utf8')
+
+  const call = CRON.slice(CRON.indexOf('ensureAffiliateShareLink(admin, {'), CRON.indexOf('ensureAffiliateShareLink(admin, {') + 1400)
+  check('the cron cloak call was found', call.length > 100)
+  check('the cloaker is told who owns the publish', /userId: row\.user_id/.test(call),
+    'post.user_id is undefined here: the select does not ask for it, so the style read returns nothing and Passport is skipped')
+  check('and the cloaker is never handed post.user_id again', !/userId: \(post as any\)\.user_id/.test(call),
+    'that silently downgraded every scheduled post to direct')
+  check('the surface is passed for attribution', /source: row\.platform/.test(call))
+
+  // The select really does omit user_id — which is what makes the assertion
+  // above load-bearing rather than decorative. If it is ever added, this test
+  // should be revisited rather than quietly passing for a new reason.
+  const select = CRON.slice(CRON.indexOf("from('blog_posts')"), CRON.indexOf("from('blog_posts')") + 600)
+  check('the post query still does not select user_id', !/select\('[^']*\buser_id\b/.test(select),
+    'if it now does, the comment on that line needs updating')
+}
+
 console.log(failures.length ? 'FAIL' : 'ALL PASS')
 for (const f of failures) console.log(`  ${f}`)
 process.exit(failures.length ? 1 : 0)

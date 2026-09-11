@@ -541,11 +541,22 @@ async function publishOne(
       postId: (post as any).id,
       link: schedAffiliateLink,
       title: post.title ?? '',
-      userId: (post as any).user_id,
+      // row.user_id, NOT post.user_id. The blog_posts select above does not ask
+      // for user_id, so post.user_id was undefined on every scheduled post ever
+      // published. getLinkStyle then read nothing, decided the creator was on
+      // 'direct', and skipped the Passport branch entirely — so the one place
+      // that could have caught a stale geni.us and re-minted it never ran.
+      // The scheduled row always carries the owner, and it is the owner of
+      // record for this publish.
+      userId: row.user_id,
       apiKey: (integration as any)?.geniuslink_api_key ?? null,
       apiSecret: (integration as any)?.geniuslink_api_secret ?? null,
       siteId: (post as any).wordpress_site_id ?? null,
       siteUrl: (post as any).wordpress_url ?? null,
+      // The surface this is going out on, so the Passport link is attributed to
+      // Facebook rather than to a generic 'social'. Without it every scheduled
+      // post in the account shares one attribution bucket.
+      source: row.platform,
     })
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
