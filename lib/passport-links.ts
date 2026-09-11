@@ -305,6 +305,47 @@ export async function passportLinkForUser(
  * when Passport Links is ON (and the tier allows it) and the destination passes
  * the open-redirect guard, else null so the caller keeps its existing behavior.
  */
+/**
+ * What a Passport code actually points at: its ASIN, or its plain destination.
+ *
+ * Needed because a published post carries the creator's Passport link in its
+ * body, and that link is opaque by design. Sharing it on Facebook re-posts the
+ * BLOG-attributed link, so every social click lands in the analytics under
+ * 'blog' and the per-surface breakdown the creator is reading is wrong. With the
+ * target recovered, the share path can mint the same product under 'facebook'
+ * instead.
+ *
+ * Service role for the same reason as everything else in this file: the
+ * generation job has no user session, so RLS would hide the creator's own links
+ * from their own post. Scoped to the owner regardless, so one creator can never
+ * read another's target. Returns null on anything unexpected: the caller's
+ * fallback is to post the link unchanged, which is correct, just less precise.
+ */
+export async function passportTargetForCode(
+  userId: string,
+  code: string,
+): Promise<{ asin: string | null; destinationUrl: string | null } | null> {
+  const c = (code || '').trim()
+  if (!/^[A-Za-z0-9]{4,16}$/.test(c)) return null
+  try {
+    const db = createAdminClient() as unknown as Db
+    const { data } = await db
+      .from('passport_links')
+      .select('asin, destination_url')
+      .eq('user_id', userId)
+      .eq('code', c)
+      .limit(1)
+    const row = Array.isArray(data) ? data[0] : null
+    if (!row) return null
+    return {
+      asin: (row.asin as string | null) ?? null,
+      destinationUrl: (row.destination_url as string | null) ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function passportLinkForDestination(
   _db: Db, userId: string, destinationUrl: string, opts?: { source?: string | null; title?: string | null },
 ): Promise<string | null> {

@@ -11,7 +11,7 @@ import { shortenBitly } from '@/lib/bitly'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
-import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
+import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination, passportCodeFromUrl, passportTargetForCode } from '@/lib/passport-links'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 
@@ -66,6 +66,26 @@ export async function ensureAffiliateShareLink(
   // unchanged — the exact bug where a Passport user kept posting geni.us links.
   if (cfg.style === 'passport') {
     try {
+      // Already a Passport link? Then it is the BLOG's link, minted with
+      // source='blog' when the post was written. Posting it verbatim on Facebook
+      // works, but every click from there lands in the analytics under 'blog',
+      // and the per-surface breakdown the creator reads is then quietly wrong
+      // for every post whose body carries one. Recover what the code points at
+      // and mint the same product under THIS surface instead.
+      //
+      // Any failure falls through to returning the link unchanged, which is the
+      // behaviour this replaces: correct destination, coarser attribution.
+      const existingCode = passportCodeFromUrl(link)
+      if (existingCode) {
+        const target = await passportTargetForCode(userId, existingCode)
+        const src = opts.source || 'social'
+        const reminted = target?.asin
+          ? await passportLinkForUser(supabase, userId, target.asin, { source: src, title })
+          : target?.destinationUrl
+            ? await passportLinkForDestination(supabase, userId, target.destinationUrl, { source: src, title })
+            : null
+        return reminted || link
+      }
       let asin = link.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || asinFromAmazonUrl(link) || null
       let dest: string | null = null
       if (!asin && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(link)) {

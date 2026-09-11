@@ -194,6 +194,35 @@ const GENI = 'https://geni.us/cXNSl'
   }
 }
 
+// ── the link is right, the attribution has to be too ────────────────────────
+//
+// 248 of one creator's 298 posts carry a Passport link in the body. Now that
+// those are read, every social share re-posts the BLOG's link, because that is
+// what the body holds. The destination is correct and the attribution is not:
+// every Facebook click would land in the analytics under 'blog'.
+//
+// A source assertion, because proving the re-mint behaviourally needs a live
+// passport_links row and two Supabase clients, and would end up testing the stub.
+{
+  const { readFileSync } = require('node:fs') as typeof import('node:fs')
+  const SHARE = readFileSync('lib/blog-share-url.ts', 'utf8')
+
+  check('a Passport link in hand is recognised before anything else',
+    SHARE.indexOf('passportCodeFromUrl(link)') < SHARE.indexOf('asinFromAmazonUrl(link)'),
+    'unwrapping it as if it were a short link would follow a redirect for nothing')
+  check('its target is recovered', /passportTargetForCode\(userId, existingCode\)/.test(SHARE))
+  check('and re-minted for THIS surface', /source: src, title/.test(SHARE))
+  check('a failed re-mint still posts the working link', /return reminted \|\| link/.test(SHARE),
+    'a post must never fail to go out over an attribution detail')
+
+  const PASS = readFileSync('lib/passport-links.ts', 'utf8')
+  check('the lookup is scoped to the owner',
+    /from\('passport_links'\)[\s\S]{0,200}?eq\('user_id', userId\)/.test(PASS),
+    'one creator must never read another creator\'s link target')
+  check('and it refuses a malformed code before querying',
+    /\^\[A-Za-z0-9\]\{4,16\}\$\/\.test\(c\)/.test(PASS))
+}
+
 console.log(failures.length ? 'FAIL' : 'ALL PASS')
 for (const f of failures) console.log(`  ${f}`)
 process.exit(failures.length ? 1 : 0)
