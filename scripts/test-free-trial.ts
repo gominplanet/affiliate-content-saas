@@ -204,6 +204,63 @@ const check = (name: string, cond: boolean, detail?: string) => {
   check('the Amazon hub needs no connection to open',
     !/'\/amazon'/.test(contentRoutes),
     'adding /amazon to CONTENT_ROUTES puts the YouTube connection back in front of the first win')
+
+  // ── the page the ads actually land on ─────────────────────────────────────
+  //
+  // /amazon-influencer is the ad destination. A free tier the sales page never
+  // mentions does not exist as far as the traffic is concerned.
+  const SALES = readFileSync('app/amazon-influencer/page.tsx', 'utf8')
+  check('the Amazon sales page offers the free trial',
+    /tier="trial"/.test(SALES),
+    'the ad destination sent everyone straight to a $79 checkout with no way to try it')
+  check('the free signup lands in the thumbnail generator',
+    /nextPath="\/amazon\/thumbnails"/.test(SALES),
+    'a generic dashboard is where the intent the ad paid for gets spent')
+  check('the sales page lists the same free plan',
+    /freeTrialHighlights\(\)/.test(SALES) && /freeTrialExclusions\(\)/.test(SALES))
+  check('a paused paid checkout does not close free signup',
+    /tier="trial"[^>]*salesPaused=\{false\}/.test(SALES),
+    'SALES_PAUSED stops selling, not signing up')
+
+  // The allowances on that page must be READ from the plan, never typed. Typed,
+  // they went stale and oversold it: 300 pins advertised against a 150 cap, 50
+  // pitches against 40, 100 posts against 60. Someone paying $79 for 300 pins
+  // and stopping at 150 is a refund conversation.
+  check('the sales page reads its numbers from the plan',
+    /const AMZ = TIERS\.amazon/.test(SALES))
+
+  // Scoped to the FEATURES array, which is what renders. The note above it
+  // quotes the old numbers to explain why they are gone, and a whole-file search
+  // would match that and fail forever.
+  const featureCards = SALES.slice(SALES.indexOf('const FEATURES'), SALES.indexOf('const OTHER_TIERS'))
+  check('the feature cards were found', featureCards.length > 500, `${featureCards.length} chars`)
+  // An ALLOWANCE is a number next to a plan unit. "Up to Top 20" on the idea-list
+  // card is a description of the output, not a monthly cap, so it is not one.
+  const literalTags = (featureCards.match(/tag: '[^']*'/g) ?? [])
+    .filter(t => /\d/.test(t) && /(pins|reels|fb|facebook|pitches|posts|month|model|headshots)/i.test(t))
+  check('no feature card states an allowance as a typed literal',
+    literalTags.length === 0,
+    literalTags.join(' | '))
+  // The filter has to be able to find one, or this passes by matching nothing.
+  check('the literal detector works',
+    /\d/.test("tag: '300 pins · 150 Reels'") && /(pins)/i.test("tag: '300 pins · 150 Reels'"))
+  // And the plan really does define every number the cards interpolate. A card
+  // reading an undefined field renders "undefined pins" and still passes a
+  // no-literals check.
+  for (const [field, v] of Object.entries({
+    thumbnailsPerMonth: TIERS.amazon.thumbnailsPerMonth,
+    pinsPerMonth: TIERS.amazon.pinsPerMonth,
+    igPostsPerMonth: TIERS.amazon.igPostsPerMonth,
+    facebookPostsPerMonth: TIERS.amazon.facebookPostsPerMonth,
+    collabsPerMonth: TIERS.amazon.collabsPerMonth,
+    dealsPerMonth: TIERS.amazon.dealsPerMonth,
+    maxFaces: TIERS.amazon.maxFaces,
+    photoboothPerMonth: TIERS.amazon.photoboothPerMonth,
+  })) {
+    check(`the plan defines ${field}`, typeof v === 'number', String(v))
+    check(`the sales page interpolates ${field}`, featureCards.includes(`AMZ.${field}`),
+      'a card that stopped reading the plan is a card that can go stale again')
+  }
 }
 
 if (failures.length) {
