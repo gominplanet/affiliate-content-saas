@@ -145,3 +145,18 @@ export async function sendMetaEvent(e: MetaCapiEvent): Promise<boolean> {
 export function purchaseEventId(stripeObjectId: string): string {
   return `stripe_${stripeObjectId}`
 }
+
+/**
+ * Dedup key for a free-trial registration.
+ *
+ * Derived from the Supabase user id alone so the browser tag and the server
+ * both arrive at the SAME id without passing one to the other. Meta collapses
+ * the pair into one conversion.
+ *
+ * This event is also idempotent by construction: /onboarding re-renders on
+ * every visit, and every one of those sends carries this same id, so Meta
+ * counts the registration once no matter how many times it is re-sent.
+ */
+export function registrationEventId(userId: string): string {
+  return `reg_${userId}`
+}
