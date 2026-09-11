@@ -62,9 +62,22 @@ export function finalizeSocialCaption(text: string, max = 500): string {
 
 /**
  * Resolve a product to its affiliate link, shared by every Amazon-social publish
- * path (pin / IG / FB). ASIN → tagged Amazon destination → geni.us short link
- * (cache-first). Returns the best link we can build plus a soft note if
- * Geniuslink hiccuped so the caller can surface it.
+ * path (pin / IG / FB), live and scheduled alike.
+ *
+ * ASIN first, recovered from the product URL and, when that is a short link,
+ * by following it. Then PASSPORT when the creator has it on, then their ONE
+ * chosen style for everything else. Geniuslink is used only when it is that
+ * chosen style, never merely because keys exist on the row.
+ *
+ * The order above is worth stating because the blog path got it wrong twice.
+ * There it starts from a blog_posts row, which carries a geniuslink_code
+ * scraped out of the source video's YouTube description, and that code outlived
+ * two style changes and kept winning. Nothing here can go stale that way: every
+ * Amazon-social post starts from an ASIN the creator picked a moment ago, so
+ * there is no stored code to prefer and no body to misread.
+ *
+ * Returns the best link we can build plus a soft note if Geniuslink hiccuped,
+ * so the caller can surface it.
  */
 export async function resolveAffiliateLink(opts: {
   userId: string
