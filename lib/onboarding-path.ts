@@ -28,6 +28,8 @@
 // on the funnel itself. The stored path is next. A guess from what is connected
 // is last, and only when there is nothing else to go on.
 
+import { normalizeTier } from '@/lib/tier'
+
 export type OnboardingPath = 'amazon' | 'creator'
 
 /** Read a path from a URL parameter or a database column. Anything unrecognised
@@ -139,4 +141,26 @@ export function amazonOnboardingSteps(): AmazonStep[] {
  *  things. Mirrors the one required step above. */
 export function amazonOnboardingReady(s: { hasAmazonTag?: boolean }): boolean {
   return !!s.hasAmazonTag
+}
+
+/**
+ * Whether the funnel may hold someone at "Connect YouTube".
+ *
+ * Only the free trial. lib/free-tier-gate.ts opens with
+ * `if (tier !== 'trial') return null`, so a channel is genuinely demanded of a
+ * trial account before it spends one of its 5 posts, and of nobody else. Every
+ * paid tier already walks past that gate untouched.
+ *
+ * The funnel used to demand it of everyone, which made it stricter than the
+ * product it was gating. A Studio customer paid on 2026-09-11, met the wall
+ * sixty seconds later and never signed in again: the screen asked for the one
+ * thing they did not have, in order to unlock designs, pins and research that
+ * never needed a channel at all.
+ *
+ * Takes the raw column value rather than a Tier, so a missing or unreadable
+ * tier falls to normalizeTier's default of 'trial' and the strict behaviour,
+ * never the open one.
+ */
+export function youtubeRequiredForTier(rawTier: unknown): boolean {
+  return normalizeTier(rawTier) === 'trial'
 }

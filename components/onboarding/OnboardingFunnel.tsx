@@ -66,7 +66,8 @@ interface StepDef {
   title: string
   icon: React.ReactNode
   done: (s: Status) => boolean
-  /** Hard requirement — can't advance past until done. Only YouTube. */
+  /** Hard requirement — can't advance past until done. Only YouTube, and only
+   *  for the free trial: see youtubeRequired below. */
   required?: boolean
   /** Manual-completion steps the funnel can't auto-detect (Customize Blog). */
   manual?: boolean
@@ -92,22 +93,33 @@ const STEPS: StepDef[] = [
 const ACCENT = '#7C3AED'
 
 /**
- * Navigation lock: YouTube (1) is the ONLY hard gate. Step 1 is always open;
- * every later step unlocks once YouTube is connected. WordPress (2) is optional
- * and never blocks progress. Drives both the rail (click) and the Save & next
- * button.
+ * Navigation lock. Step 1 is always open and WordPress (2) never blocks
+ * anything. YouTube (1) is the only thing that can hold the rest shut, and only
+ * on the free trial, which is the only tier lib/free-tier-gate.ts demands a
+ * channel from. On a paid plan nothing is locked. Drives both the rail (click)
+ * and the Save & next button.
  */
-function stepUnlocked(n: number, s: Status): boolean {
+function stepUnlocked(n: number, s: Status, youtubeRequired: boolean): boolean {
   if (n <= 1) return true
+  // Nothing is locked when YouTube is not being demanded: a paid account can
+  // work through the rest of setup in any order, or none of it.
+  if (!youtubeRequired) return true
   return s.ytConnected
 }
 
 export default function OnboardingFunnel({
-  email, initialStep, status: initialStatus,
+  email, initialStep, status: initialStatus, youtubeRequired,
 }: {
   email: string
   initialStep: number
   status: Status
+  /**
+   * Whether step 1 may block the way. True only for the free trial, which is
+   * the only tier lib/free-tier-gate.ts actually demands a channel from. On a
+   * paid plan the step is still shown and still useful, it just cannot trap
+   * anyone: Save & next, Skip for now, the rail and Finish all work without it.
+   */
+  youtubeRequired: boolean
 }) {
   const router = useRouter()
   const [step, setStep] = useState(initialStep)
@@ -187,19 +199,20 @@ export default function OnboardingFunnel({
   }, [persistStep])
 
   const next = useCallback(() => {
-    if (current.required && !current.done(status)) {
-      // YouTube is the only required step now.
+    if (youtubeRequired && current.required && !current.done(status)) {
+      // YouTube is the only required step, and only on the free trial.
       toast.error('Connect your YouTube channel to continue — it’s the one step we need to get you in.')
       return
     }
     if (step >= STEPS.length) return
     goToStep(step + 1)
-  }, [current, status, step, goToStep])
+  }, [current, status, step, goToStep, youtubeRequired])
 
   const finish = useCallback(async () => {
-    // YouTube is the hard gate — never let a user "finish" without it, or they'd
-    // land on a dashboard the layout would just bounce back here.
-    if (!status.ytConnected) {
+    // On the free trial YouTube is the hard gate: finishing without it would
+    // land them on a dashboard the layout bounces straight back here. A paid
+    // account is never bounced, so it can finish whenever it likes.
+    if (youtubeRequired && !status.ytConnected) {
       toast.error('Connect your YouTube channel first — it’s the one required step.')
       return
     }
@@ -211,7 +224,7 @@ export default function OnboardingFunnel({
       setSaving(false)
       toast.error('Could not finish setup. Try again.')
     }
-  }, [router, status.ytConnected])
+  }, [router, status.ytConnected, youtubeRequired])
 
   // Step 0 (intro video) is not a "setup" step — exclude from the setup counter.
   const setupSteps = STEPS.filter((s) => s.n > 0)
@@ -233,7 +246,7 @@ export default function OnboardingFunnel({
             >
               <LifeBuoy size={13} /> Need help?
             </button>
-            {(status.ytConnected || status.wpConnected) && (
+            {(status.ytConnected || status.wpConnected || !youtubeRequired) && (
               <button
                 onClick={() => router.push('/dashboard')}
                 className="text-xs text-[#a1a1a6] hover:text-white transition-colors"
@@ -331,7 +344,7 @@ export default function OnboardingFunnel({
               {STEPS.map((s) => {
                 const done = s.done(status)
                 const active = s.n === step
-                const locked = !stepUnlocked(s.n, status)
+                const locked = !stepUnlocked(s.n, status, youtubeRequired)
                 return (
                   <li key={s.key}>
                     <button
@@ -371,7 +384,7 @@ export default function OnboardingFunnel({
               </div>
 
               <div className="flex-1">
-                <StepBody stepKey={current.key} status={status} onConnected={refreshStatus} />
+                <StepBody stepKey={current.key} status={status} onConnected={refreshStatus} youtubeRequired={youtubeRequired} />
               </div>
 
               {/* Footer nav */}
@@ -390,7 +403,7 @@ export default function OnboardingFunnel({
 
                 <div className="flex items-center gap-3">
                   {/* Skip — optional steps only */}
-                  {!current.required && step < STEPS.length && (
+                  {(!current.required || !youtubeRequired) && step < STEPS.length && (
                     <button onClick={next} className="text-sm text-[#a1a1a6] hover:text-white transition-colors">
                       Skip for now
                     </button>
@@ -429,11 +442,11 @@ export default function OnboardingFunnel({
 
 /* ── Per-step bodies ─────────────────────────────────────────────────────── */
 
-function StepBody({ stepKey, status, onConnected }: { stepKey: string; status: Status; onConnected: () => void }) {
+function StepBody({ stepKey, status, onConnected, youtubeRequired }: { stepKey: string; status: Status; onConnected: () => void; youtubeRequired: boolean }) {
   switch (stepKey) {
     case 'intro': return <IntroVideoStep />
     case 'wp': return <WordPressStep connected={status.wpConnected} onConnected={onConnected} />
-    case 'yt': return <YouTubeStep connected={status.ytConnected} />
+    case 'yt': return <YouTubeStep connected={status.ytConnected} required={youtubeRequired} />
     case 'aff': return <AffiliateStep done={status.affiliateConnected} onSaved={onConnected} />
     case 'brand': return <BrandStep onSaved={onConnected} />
     case 'voice': return <VoiceStep onSaved={onConnected} />
@@ -939,7 +952,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
 }
 
 /* Step 2 — YouTube (one-click OAuth) */
-function YouTubeStep({ connected }: { connected: boolean }) {
+function YouTubeStep({ connected, required }: { connected: boolean; required: boolean }) {
   if (connected) {
     return (
       <>
@@ -958,7 +971,18 @@ function YouTubeStep({ connected }: { connected: boolean }) {
       <a href="/api/auth/youtube?returnTo=/onboarding" className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>
         <Youtube size={16} /> Connect YouTube
       </a>
-      <p className="text-xs text-[#6e6e73] mt-4">Not ready? You can skip this and connect later from Set up.</p>
+      {/* This footnote used to promise a skip the footer then refused to show,
+          because the step was required for everybody. It is now only shown when
+          the skip is genuinely there. */}
+      {required ? (
+        <p className="text-xs text-[#6e6e73] mt-4">
+          This is the one step we need before your 5 free posts. No channel? Take the
+          {' '}<a href="/onboarding?for=amazon" className="underline" style={{ color: '#FB923C' }}>Amazon Influencer setup</a>{' '}
+          instead.
+        </p>
+      ) : (
+        <p className="text-xs text-[#6e6e73] mt-4">Not ready? Skip it. Your designs, pins and research do not need a channel, and you can connect one later from Set up.</p>
+      )}
     </>
   )
 }

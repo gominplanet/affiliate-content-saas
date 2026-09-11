@@ -17,7 +17,7 @@ import { cookies, headers } from 'next/headers'
 import { createServerClient } from '@/lib/supabase/server'
 import OnboardingFunnel from '@/components/onboarding/OnboardingFunnel'
 import AmazonOnboarding from '@/components/onboarding/AmazonOnboarding'
-import { resolveOnboardingPath, onboardingDestination } from '@/lib/onboarding-path'
+import { resolveOnboardingPath, onboardingDestination, youtubeRequiredForTier } from '@/lib/onboarding-path'
 import MetaTrack from '@/components/analytics/MetaTrack'
 import { sendMetaEvent, registrationEventId } from '@/lib/meta-capi'
 
@@ -36,7 +36,7 @@ export default async function OnboardingPage({
   const sb = supabase as any
   const [{ data: intRow }, { data: brand }, { count: faceCount }] = await Promise.all([
     sb.from('integrations')
-      .select('wordpress_url, youtube_oauth_access_token, geniuslink_api_key, amazon_associates_tag, onboarding_step, onboarding_completed')
+      .select('wordpress_url, youtube_oauth_access_token, geniuslink_api_key, amazon_associates_tag, onboarding_step, onboarding_completed, tier')
       .eq('user_id', user.id)
       .maybeSingle(),
     sb.from('brand_profiles')
@@ -146,6 +146,7 @@ export default async function OnboardingPage({
           email={user.email ?? ''}
           initialStep={initialStep}
           status={status}
+          youtubeRequired={youtubeRequiredForTier(intRow?.tier)}
         />
       )}
     </>
