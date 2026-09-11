@@ -578,6 +578,47 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Could not resolve enough products from those videos. Make sure each links to a clear product.' }, { status: 422 })
   }
 
+  // ── The creator's own review post for each product, when one exists ────────
+  //
+  // A comparison section already has the video and a buy button. What it had no
+  // way to offer was the long version: the full review this creator already
+  // wrote about that exact product, sitting on the same blog. Linking it keeps
+  // the undecided reader on the site instead of losing them at the section, and
+  // it is the same internal link the buying guides lean on.
+  //
+  // Best-effort and non-fatal: a comparison built from public videos has no own
+  // reviews to link, and that is a normal outcome, not a failure.
+  const reviewUrlByVideo = new Map<string, string>()
+  try {
+    const ytIds = resolved.map(r => r.videoId).filter(Boolean)
+    if (ytIds.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: vidRows } = await (supabase as any)
+        .from('youtube_videos')
+        .select('id, youtube_video_id')
+        .eq('user_id', ownerId)
+        .in('youtube_video_id', ytIds)
+      const uuidToYt = new Map<string, string>()
+      for (const v of (vidRows ?? []) as Array<{ id: string; youtube_video_id: string }>) {
+        uuidToYt.set(v.id, v.youtube_video_id)
+      }
+      if (uuidToYt.size) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: postRows } = await (supabase as any)
+          .from('blog_posts')
+          .select('video_id, wordpress_url, post_type')
+          .eq('user_id', ownerId)
+          .in('video_id', [...uuidToYt.keys()])
+          .not('wordpress_url', 'is', null)
+        for (const r of (postRows ?? []) as Array<{ video_id: string; wordpress_url: string; post_type: string | null }>) {
+          if (r.post_type && r.post_type !== 'review') continue
+          const yt = uuidToYt.get(r.video_id)
+          if (yt && !reviewUrlByVideo.has(yt)) reviewUrlByVideo.set(yt, r.wordpress_url)
+        }
+      }
+    }
+  } catch { /* no own reviews to link — the section still has video + buy button */ }
+
   // ── Claude: rank + write each product section (structured, voice-applied) ───
   const anthropic = createAnthropicClient()
   const productBlocks = resolved.map((p, i) => `PRODUCT ${i + 1}:
@@ -728,9 +769,19 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     if (item.verdict) {
       body += `<!-- wp:paragraph {"style":{"typography":{"fontStyle":"italic"}}} --><p><em>👉 ${scrub(item.verdict)}</em></p><!-- /wp:paragraph -->\n`
     }
-    if (p.affiliateUrl) {
+    // Buy now, and read the whole thing. Two buttons because they answer two
+    // different readers: one is decided, one still has a question, and offering
+    // only the first loses the second.
+    const ownReviewUrl = reviewUrlByVideo.get(p.videoId)
+    if (p.affiliateUrl || ownReviewUrl) {
       const btnName = scrub(item.short_name || p.productName.split(',')[0] || p.productName).slice(0, 40)
-      body += `<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"backgroundColor":"vivid-amber"} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${p.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">Check price → ${btnName}</a></div><!-- /wp:button --></div><!-- /wp:buttons -->\n`
+      const buyBtn = p.affiliateUrl
+        ? `<!-- wp:button {"backgroundColor":"vivid-amber"} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${p.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">Check price → ${btnName}</a></div><!-- /wp:button -->`
+        : ''
+      const readBtn = ownReviewUrl
+        ? `<!-- wp:button {"className":"is-style-outline"} --><div class="wp-block-button is-style-outline"><a class="wp-block-button__link wp-element-button" href="${ownReviewUrl}">Read the full review →</a></div><!-- /wp:button -->`
+        : ''
+      body += `<!-- wp:buttons --><div class="wp-block-buttons">${buyBtn}${readBtn}</div><!-- /wp:buttons -->\n`
     }
   }
 

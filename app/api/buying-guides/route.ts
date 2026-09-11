@@ -38,6 +38,10 @@ import { scrubAiHtml } from '@/lib/html-scrub'
 import { enforceSeoBasics } from '@/lib/seo-autofix'
 import { writeContentSchema } from '@/lib/content-schema'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { getLinkStyle, resolveCloakedLink } from '@/lib/link-cloak'
+import { postProductDestination, postProductAsin } from '@/lib/post-product-link'
+import { isAmazonProductUrl } from '@/lib/asin'
+import { injectPickBlocks, describePickCoverage, type GuidePick, type InjectionReport } from '@/lib/guide-pick-blocks'
 
 export const maxDuration = 300
 
@@ -665,12 +669,78 @@ Rules:
     }
   }
 
+  // ── 1b. What each pick's section will carry ──────────────────────────────
+  //
+  // A guide used to send every click to the review post: no video, no way to
+  // buy. The reader who was sold by section three had to click through, hunt for
+  // the button, and click again, and the impulse was gone by then.
+  //
+  // Both extras come from the review the pick IS: its source video, and the
+  // product link already living in its body. One targeted read for the handful
+  // of picked rows — `content` is the whole article, so it is never pulled for
+  // the full catalogue.
+  const pickIds = picks.map(p => p.review.id).filter(Boolean)
+  const pickDetail = new Map<string, { content: string | null; geniuslink_code: string | null; youtubeVideoId: string | null; thumbnailUrl: string | null }>()
+  if (pickIds.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: detailRows, error: detailErr } = await (supabase as any)
+      .from('blog_posts')
+      .select('id, content, geniuslink_code, youtube_videos(youtube_video_id, thumbnail_url)')
+      .eq('user_id', user.id)
+      .in('id', pickIds)
+    if (detailErr) {
+      // Not fatal: the guide still publishes, just with review links only. It is
+      // logged because "every section lost its video" has one cause and this is
+      // where it would be.
+      console.error('[buying-guides] pick detail read failed', detailErr.message)
+    }
+    for (const r of (detailRows ?? []) as Array<{ id: string; content: string | null; geniuslink_code: string | null; youtube_videos: { youtube_video_id: string | null; thumbnail_url: string | null } | null }>) {
+      pickDetail.set(r.id, {
+        content: r.content,
+        geniuslink_code: r.geniuslink_code,
+        youtubeVideoId: r.youtube_videos?.youtube_video_id ?? null,
+        thumbnailUrl: r.youtube_videos?.thumbnail_url ?? null,
+      })
+    }
+  }
+
+  // The buy link is the review's OWN product destination, re-cloaked under the
+  // creator's current link style. Never the raw stored geni.us code on its own:
+  // that is what put dead Geniuslink URLs on a Passport creator's posts for
+  // months. postProductDestination returns a destination, resolveCloakedLink
+  // makes the decision, and the style is read once for all of them.
+  const guideLinkStyle = await getLinkStyle(supabase, user.id)
+  const guidePicks: GuidePick[] = await Promise.all(picks.map(async (p, i) => {
+    const d = p.review.id ? pickDetail.get(p.review.id) : undefined
+    const name = (p.review.title || '').replace(/\s*[-–—:|]\s*review\b.*$/i, '').trim().slice(0, 60) || 'this pick'
+    const destination = d ? postProductDestination({ content: d.content, geniuslink_code: d.geniuslink_code }) : null
+    const asin = d ? postProductAsin({ content: d.content }) : null
+    let buyUrl: string | null = null
+    if (destination) {
+      buyUrl = await resolveCloakedLink({
+        supabase, userId: user.id, destination, asin, channel: 'blog',
+        label: name, source: 'guide', config: guideLinkStyle,
+      })
+    }
+    return {
+      index: i + 1,
+      name,
+      reviewUrl: p.review.wordpress_url,
+      youtubeVideoId: d?.youtubeVideoId ?? null,
+      thumbnailUrl: d?.thumbnailUrl ?? p.review.youtube_videos?.thumbnail_url ?? null,
+      buyUrl,
+      // Amazon is asserted from the DESTINATION, not the cloaked link: a
+      // Passport or geni.us URL says nothing about where it lands, and the
+      // button's words are what keep the creator inside Associates policy 6(w).
+      buyIsAmazon: !!asin || isAmazonProductUrl(destination),
+    }
+  }))
+
   // ── 2. Sonnet: write the guide HTML ──────────────────────────────────────
   const year = new Date().getUTCFullYear()
   const picksContext = picks.map((p, i) => `
 ${i + 1}. ${p.review.title}  (Label: "${p.label}")
    URL: ${p.review.wordpress_url}
-   Image: ${p.review.youtube_videos?.thumbnail_url || ''}
    SEO keyword: ${p.review.seo_keyword || 'n/a'}
    Excerpt: ${(p.review.excerpt || '').slice(0, 320)}
 `).join('\n')
@@ -707,11 +777,11 @@ OUTPUT: one block of valid WordPress block-HTML (Gutenberg comments OK). No pros
 </table>
 
 4. PER-PICK SECTIONS (one H2 per pick, in order):
-   - H2: "{N}. {product name from title}, {label}" (e.g. "1. Step to Bed, Best Overall")
-   - One <figure> at top with the linked review's image (from Image: field) wrapped in an <a> to the review URL; if no image, OMIT the figure
+   - H2: "{N}. {product name from title}, {label}" (e.g. "1. Step to Bed, Best Overall") — ALWAYS start the heading with the pick's number followed by a full stop
+   - IMMEDIATELY after the H2, on its own line, output the exact marker <!--MVP_MEDIA_{N}--> and NOTHING else on that line. Do not write an <img>, a <figure> or an embed yourself.
    - 3-4 short FIRST-PERSON paragraphs covering: why this pick wins its slot, the specific feature that seals it, one trade-off, one quick "pick this over the others when…" scenario
-   - End the pick's section with this CTA (use the pick's URL):
-     <p style="margin:18px 0 32px"><a href="{review URL}" style="display:inline-flex;align-items:center;gap:8px;background:#7C3AED;color:#fff;font-size:14px;font-weight:700;padding:12px 22px;border-radius:8px;text-decoration:none">Read the full review →</a></p>
+   - END the pick's section with the exact marker <!--MVP_CTA_{N}--> on its own line. Do not write any button, link or call to action yourself: the buy link and the review link are inserted there afterwards.
+   - Never write a URL anywhere in a pick section. Refer to the product by name and let the markers carry the links.
 
 5. FAQ (H2 "Frequently Asked Questions" + 4-6 H3 questions):
    - Each answer 2-3 sentences, ANSWER-FIRST
@@ -803,6 +873,7 @@ VOICE / STYLE RULES:
   })()
 
   let html = ''
+  let pickReport: InjectionReport | null = null
   try {
     const writerMsg = await client.messages.create({
       model: 'claude-sonnet-4-6',
@@ -820,6 +891,12 @@ VOICE / STYLE RULES:
     // Guarantee the mechanical SEO checks (answer-first lead + image alt) before
     // publish, so a guide never lands with a fixable SEO gap.
     html = enforceSeoBasics(html, { title: wpTitle, seoKeyword: topic })
+    // Put the video, the buy link and the review link into each section. Built
+    // from data and placed here rather than written by the model: a mistyped
+    // affiliate URL pays someone else and looks perfectly fine on the page.
+    const injected = injectPickBlocks(html, guidePicks)
+    html = injected.html
+    pickReport = injected.report
   } catch (err) {
     console.error('[buying-guides] writer', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, 'Couldn’t write the guide just now. Please try again in a moment.') }, { status: 500 })
@@ -940,5 +1017,11 @@ VOICE / STYLE RULES:
     url: wpPost.link,
     title: wpTitle,
     picksUsed: picks.map(p => ({ id: p.review.id, title: p.review.title, label: p.label })),
+    // What the published guide actually carries per section. A guide with five
+    // sections and one buy button looks identical to a healthy one otherwise.
+    sections: pickReport
+      ? { withVideo: pickReport.withVideo, withBuyLink: pickReport.withBuyLink, total: pickReport.picks.length, unplaced: pickReport.unplaced }
+      : null,
+    sectionsSummary: pickReport ? describePickCoverage(pickReport) : null,
   })
 }

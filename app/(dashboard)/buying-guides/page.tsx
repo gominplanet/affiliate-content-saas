@@ -156,6 +156,42 @@ export default function BuyingGuidesPage() {
     }
   }
 
+  /** What the published guide actually carries, said out loud.
+   *
+   *  Two things can go wrong without anything looking wrong. WordPress can
+   *  accept the post while MVP fails to record it, leaving a live guide the rest
+   *  of the app cannot see. And a section can come out without a buy link,
+   *  because the review it was built from has no product link in it, which is
+   *  the difference between a guide that earns and one that does not.
+   *
+   *  Both are reported here rather than behind a plain green tick. */
+  function publishToast(j: { title?: string; url?: string; tracked?: boolean; trackingError?: string | null; sections?: { withVideo: number; withBuyLink: number; total: number; unplaced: number } | null; sectionsSummary?: string | null }) {
+    const view = j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined
+    if (j.tracked === false) {
+      toast.warning(`Published "${j.title}" to your blog, but MVP couldn’t record it`, {
+        description: `${j.trackingError || 'The guide is live; MVP has no row for it.'} It won’t appear in your Library and the post tools won’t find it. Send this to support.`,
+        action: view,
+        duration: 20_000,
+      })
+      return
+    }
+    const s = j.sections
+    const shortfall = s && (s.withBuyLink < s.total || s.unplaced > 0)
+    if (shortfall) {
+      toast.warning(`Published "${j.title}"`, {
+        description: j.sectionsSummary ?? undefined,
+        action: view,
+        duration: 20_000,
+      })
+      return
+    }
+    toast.success(`Published "${j.title}"`, {
+      description: j.sectionsSummary ?? undefined,
+      action: view,
+      duration: 14_000,
+    })
+  }
+
   /** Phase 1: run the picker. If mode === 'auto', the server then writes
    *  + publishes in the same request (preview flag false). If mode ===
    *  'review', the server returns picks for the user to approve. */
