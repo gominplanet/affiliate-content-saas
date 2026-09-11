@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { reportPaywallReached } from '@/lib/paywall-signal'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { publishAmazonPin, type PinIntegration } from '@/lib/amazon-pin-publish'
 
@@ -37,7 +38,16 @@ export async function POST(request: Request) {
   const tier = (intRow?.tier as Tier) ?? 'trial'
 
   if (!tierAllowsSocial(tier, 'pinterest')) {
-    return NextResponse.json({ error: 'Pinterest posting is on the Amazon, Studio and Pro plans.' }, { status: 403 })
+    // The designed upgrade moment: they are holding a finished design and
+    // this is the wall. Reported as its own event because between
+    // CompleteRegistration and a purchase there was nothing at all, so
+    // "registrations healthy, nobody upgrades" could not be told apart from
+    // "nobody ever got this far". See lib/paywall-signal.ts.
+    reportPaywallReached({ userId: user.id, email: user.email, surface: 'publish-pinterest', tier })
+    return NextResponse.json({
+      error: 'Pinterest posting is on the Amazon, Studio and Pro plans.',
+      code: 'upgrade_required', upgrade: { tier: 'amazon' },
+    }, { status: 403 })
   }
   if (!intRow?.pinterest_access_token) {
     return NextResponse.json({ error: 'Connect your Pinterest account first (Set up → Connect Socials).', needsConnect: true }, { status: 409 })

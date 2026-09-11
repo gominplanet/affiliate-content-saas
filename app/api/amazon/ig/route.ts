@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { reportPaywallReached } from '@/lib/paywall-signal'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { publishToInstagram, type SocialIntegration } from '@/lib/amazon-social-publish'
 
@@ -32,7 +33,16 @@ export async function POST(request: Request) {
   const tier = (intRow?.tier as Tier) ?? 'trial'
 
   if (!tierAllowsSocial(tier, 'instagram')) {
-    return NextResponse.json({ error: 'Instagram posting is on the Amazon, Studio and Pro plans.' }, { status: 403 })
+    // The designed upgrade moment: they are holding a finished design and
+    // this is the wall. Reported as its own event because between
+    // CompleteRegistration and a purchase there was nothing at all, so
+    // "registrations healthy, nobody upgrades" could not be told apart from
+    // "nobody ever got this far". See lib/paywall-signal.ts.
+    reportPaywallReached({ userId: user.id, email: user.email, surface: 'publish-instagram', tier })
+    return NextResponse.json({
+      error: 'Instagram posting is on the Amazon, Studio and Pro plans.',
+      code: 'upgrade_required', upgrade: { tier: 'amazon' },
+    }, { status: 403 })
   }
   if (!intRow?.instagram_user_id || !intRow?.instagram_access_token) {
     return NextResponse.json({ error: 'Connect your Instagram account first.', needsConnect: true }, { status: 409 })

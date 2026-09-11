@@ -12,6 +12,7 @@ import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { spendGate } from '@/lib/ai-spend'
 import { toUserMessage } from '@/lib/friendly-error'
+import { reportPaywallReached } from '@/lib/paywall-signal'
 
 export const maxDuration = 120
 
@@ -36,6 +37,12 @@ export async function POST(request: Request) {
     // publishAll (Pro-only), which both over-restricted Creator/Studio AND
     // short-circuited the per-tier collab cap enforcement below.
     if (TIERS[tier].collabsPerMonth === 0) {
+      // The other advertised capability the trial deliberately withholds. A free
+      // account can see every campaign it matches and cannot pitch one, which is
+      // the strongest upgrade argument in the product. Reported for the same
+      // reason as the publish wall: so "they never reached it" and "they reached
+      // it and did not pay" stop looking identical. See lib/paywall-signal.ts.
+      reportPaywallReached({ userId: user.id, email: user.email, surface: 'brand-pitch', tier })
       return NextResponse.json({
         error: 'Brand-collab pitch emails are a paid-tier feature. Upgrade to Creator+ to start landing deals.',
         currentTier: tier,
