@@ -16,12 +16,18 @@ import { after } from 'next/server'
 import { cookies, headers } from 'next/headers'
 import { createServerClient } from '@/lib/supabase/server'
 import OnboardingFunnel from '@/components/onboarding/OnboardingFunnel'
+import AmazonOnboarding from '@/components/onboarding/AmazonOnboarding'
+import { resolveOnboardingPath, onboardingDestination } from '@/lib/onboarding-path'
 import MetaTrack from '@/components/analytics/MetaTrack'
 import { sendMetaEvent, registrationEventId } from '@/lib/meta-capi'
 
 export const dynamic = 'force-dynamic'
 
-export default async function OnboardingPage() {
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ for?: string }>
+}) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -43,8 +49,35 @@ export default async function OnboardingPage() {
       .eq('status', 'ready'),
   ])
 
-  // Finished users don't get trapped in the funnel — send them home.
-  if (intRow?.onboarding_completed === true) redirect('/dashboard')
+  // ── Which onboarding? ─────────────────────────────────────────────────────
+  //
+  // The main funnel's first step is "Connect YouTube", required, with everything
+  // after it locked. An Amazon influencer has no channel, so that is where they
+  // stop, having clicked an ad about product links and designs.
+  //
+  // onboarding_path is read on its own and defensively: it ships in migration
+  // 328, and naming a missing column in the select above would fail that whole
+  // read and break onboarding for everybody. A database one migration behind
+  // simply falls back to the ?for= parameter, which is where the choice comes
+  // from on the first visit anyway.
+  let storedPath: string | null = null
+  try {
+    const { data: pathRow } = await sb.from('integrations').select('onboarding_path').eq('user_id', user.id).maybeSingle()
+    storedPath = (pathRow?.onboarding_path as string | null) ?? null
+  } catch { /* pre-328 database */ }
+
+  const { for: forParam } = await searchParams
+  const chosen = resolveOnboardingPath({
+    param: forParam,
+    stored: storedPath,
+    hasYouTube: !!intRow?.youtube_oauth_access_token,
+    hasWordPress: !!intRow?.wordpress_url,
+    hasAmazonTag: !!intRow?.amazon_associates_tag,
+  })
+
+  // Finished users don't get trapped in the funnel — send them home, to the
+  // home their path actually has.
+  if (intRow?.onboarding_completed === true) redirect(onboardingDestination(chosen.path))
 
   const niches = Array.isArray(brand?.niches) ? brand!.niches : []
   const learn = brand?.learn_profile && typeof brand.learn_profile === 'object' ? brand.learn_profile : null
@@ -101,11 +134,20 @@ export default async function OnboardingPage() {
           against the server event. */}
       <MetaTrack event="CompleteRegistration" onceKey="reg" eventId={eventId} />
       <MetaTrack event="StartTrial" onceKey="trial" />
-      <OnboardingFunnel
-        email={user.email ?? ''}
-        initialStep={initialStep}
-        status={status}
-      />
+      {chosen.path === 'amazon' ? (
+        <AmazonOnboarding
+          email={user.email ?? ''}
+          initialTag={(intRow?.amazon_associates_tag as string | null) ?? ''}
+          hasFace={status.faceReady}
+          hasSocial={false}
+        />
+      ) : (
+        <OnboardingFunnel
+          email={user.email ?? ''}
+          initialStep={initialStep}
+          status={status}
+        />
+      )}
     </>
   )
 }

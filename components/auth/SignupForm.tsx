@@ -2,11 +2,19 @@
 
 import { useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
+import { parseOnboardingPath, confirmationLandingFor, type OnboardingPath } from '@/lib/onboarding-path'
+
+// Mirrors PAID_TIERS in app/api/auth/signup-paid/route.ts. The two lists
+// disagreeing is what sent every logged-out "Get Amazon Influencer" click down
+// the free path instead of to checkout, so scripts/test-signup-intent.ts fails
+// the build if they drift again.
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import TurnstileField, { captchaRequired, type TurnstileHandle } from '@/components/auth/TurnstileField'
 import { friendlyAuthError } from '@/lib/auth-error'
+
+const PAID_SIGNUP_TIERS = ['creator', 'amazon', 'studio', 'pro']
 
 export default function SignupForm() {
   const router = useRouter()
@@ -34,6 +42,7 @@ export default function SignupForm() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [paidTier, setPaidTier] = useState<string | null>(null)
+  const [path, setPath] = useState<OnboardingPath | null>(null)
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
   const captchaRef = useRef<TurnstileHandle>(null)
   // Queue the submit until Turnstile mints a token instead of erroring when the
@@ -64,7 +73,16 @@ export default function SignupForm() {
     // flow — otherwise a homepage "Get Pro" click falls back to trial + email.
     const sp = new URLSearchParams(window.location.search)
     const t = sp.get('tier') || sp.get('plan')
-    if (t && ['creator', 'studio', 'pro'].includes(t)) setPaidTier(t)
+    // 'amazon' belongs in this list. It was missing, and the consequence was not
+    // cosmetic: a logged-out visitor who clicked "Get Amazon Influencer" arrived
+    // here as /signup?tier=amazon, failed this check, and was quietly given the
+    // FREE flow instead. They confirmed an email and landed in onboarding having
+    // never seen a checkout. The API has always accepted the tier; only this
+    // list did not.
+    if (t && PAID_SIGNUP_TIERS.includes(t)) setPaidTier(t)
+    // Which onboarding they came for. Carried in the URL because it has to
+    // survive a round trip through their inbox.
+    setPath(parseOnboardingPath(sp.get('for')) ?? (t === 'amazon' ? 'amazon' : null))
   }, [])
   const tierLabel = paidTier ? paidTier.charAt(0).toUpperCase() + paidTier.slice(1) : ''
 
@@ -137,7 +155,11 @@ export default function SignupForm() {
         // the code for a session) and on to onboarding. window.origin keeps it
         // correct across preview + prod. NOTE: the Supabase Auth → URL
         // Configuration redirect allow-list must include <site>/api/auth/callback.
-        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent('/onboarding')}`,
+        // The confirmation link comes back through our callback and on to the
+        // onboarding that matches what they signed up FOR. An Amazon influencer
+        // sent to the default funnel meets "Connect YouTube", required, with
+        // every later step locked, which is the end of the road for them.
+        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(confirmationLandingFor(path ?? 'creator'))}`,
       },
     })
 
@@ -162,8 +184,9 @@ export default function SignupForm() {
         </div>
         <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Check your inbox</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          We sent a confirmation link to <strong>{email}</strong>. Click it to unlock your 5 free
-          reviews — no card required. (Check spam if it doesn&apos;t show in a minute.)
+          We sent a confirmation link to <strong>{email}</strong>. Click it to unlock{' '}
+          {path === 'amazon' ? 'your free designs' : 'your 5 free reviews'} — no card required.
+          (Check spam if it doesn&apos;t show in a minute.)
         </p>
       </div>
     )
@@ -171,10 +194,19 @@ export default function SignupForm() {
 
   return (
     <div className="card p-8">
-      <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">{paidTier ? `Start your ${tierLabel} plan` : 'Start free — 5 reviews on the house'}</h2>
+      {/* The pitch has to match the door they came through. Promising a branded
+          review site and a YouTube autopilot to someone who clicked an Amazon
+          ad describes a product they did not come for and cannot use. */}
+      <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">{paidTier
+        ? `Start your ${tierLabel} plan`
+        : path === 'amazon'
+          ? 'Start free — designs with your face on them'
+          : 'Start free — 5 reviews on the house'}</h2>
       <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">{paidTier
         ? `Create your account, then continue to secure checkout — you go straight to ${tierLabel}, no free trial.`
-        : 'No credit card. The full agent pipeline, the YouTube autopilot, and a branded review site — unlocked the moment you confirm your email.'}</p>
+        : path === 'amazon'
+          ? 'No credit card, no website, no YouTube channel. Confirm your email and you are one Amazon product link away from a finished design you can download.'
+          : 'No credit card. The full agent pipeline, the YouTube autopilot, and a branded review site — unlocked the moment you confirm your email.'}</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>

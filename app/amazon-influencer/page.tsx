@@ -104,7 +104,7 @@ export default function AmazonInfluencerPage() {
                 stops PAID checkout, and pausing free signups along with it would
                 close the door on the traffic the ads are already paying for. */}
             <div className="w-full sm:w-64">
-              <CheckoutButton tier="trial" highlight={true} salesPaused={false} ctaLabel="Start free, no card" nextPath="/amazon/thumbnails" />
+              <CheckoutButton tier="trial" highlight={true} salesPaused={false} ctaLabel="Start free, no card" intent="amazon" />
             </div>
             <div className="w-full sm:w-64">
               <CheckoutButton tier="amazon" highlight={false} salesPaused={SALES_PAUSED} ctaLabel="Get Amazon Influencer" />
@@ -180,7 +180,7 @@ export default function AmazonInfluencerPage() {
             </div>
           </div>
           <div className="mt-6 w-full sm:w-72">
-            <CheckoutButton tier="trial" highlight={true} salesPaused={false} ctaLabel="Start free, no card" nextPath="/amazon/thumbnails" />
+            <CheckoutButton tier="trial" highlight={true} salesPaused={false} ctaLabel="Start free, no card" intent="amazon" />
           </div>
         </div>
 
@@ -238,7 +238,7 @@ export default function AmazonInfluencerPage() {
         </ul>
         <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
           <div className="w-full sm:w-64">
-            <CheckoutButton tier="trial" highlight={true} salesPaused={false} ctaLabel="Start free, no card" nextPath="/amazon/thumbnails" />
+            <CheckoutButton tier="trial" highlight={true} salesPaused={false} ctaLabel="Start free, no card" intent="amazon" />
           </div>
           <div className="w-full sm:w-64">
             <CheckoutButton tier="amazon" highlight={false} salesPaused={SALES_PAUSED} ctaLabel="Get Amazon Influencer" />

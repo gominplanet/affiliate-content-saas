@@ -512,6 +512,22 @@ function IntroVideoStep() {
       <p className="text-sm text-[#a1a1a6]">
         Prefer to dive straight in? Hit <span className="text-white">Skip for now</span> below.
       </p>
+
+      {/* The other door, stated up front rather than discovered.
+          The next step is "Connect YouTube" and it is required: every step after
+          it stays locked until it is done. Someone who came for the Amazon
+          Influencer product has no channel to connect, so without this they
+          reach step 1 and stop, on the screen that was meant to welcome them. */}
+      <div className="mt-6 rounded-xl border p-4" style={{ borderColor: 'rgba(234,88,12,0.35)', background: 'rgba(234,88,12,0.07)' }}>
+        <p className="text-sm font-semibold text-white mb-1">No YouTube channel? Here for the Amazon Influencer side?</p>
+        <p className="text-[13px] leading-relaxed text-[#a1a1a6]">
+          The next step asks for a channel and the rest of this setup is built around one. If you turn Amazon
+          product links into designs, take the short setup instead: one field and you are making your first design.
+        </p>
+        <a href="/onboarding?for=amazon" className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-bold" style={{ color: '#FB923C' }}>
+          Go to the Amazon Influencer setup →
+        </a>
+      </div>
     </>
   )
 }

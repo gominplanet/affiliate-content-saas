@@ -213,9 +213,13 @@ const check = (name: string, cond: boolean, detail?: string) => {
   check('the Amazon sales page offers the free trial',
     /tier="trial"/.test(SALES),
     'the ad destination sent everyone straight to a $79 checkout with no way to try it')
-  check('the free signup lands in the thumbnail generator',
-    /nextPath="\/amazon\/thumbnails"/.test(SALES),
-    'a generic dashboard is where the intent the ad paid for gets spent')
+  // The signup has to KNOW they came for the Amazon product, or it drops them
+  // in the main funnel whose first required step is "Connect YouTube". This was
+  // a nextPath prop at first, which put ?next= on the signup URL that the signup
+  // form never read. scripts/test-signup-intent.ts owns the full journey.
+  check('the free signup carries the Amazon intent',
+    /intent="amazon"/.test(SALES),
+    'without it they land in the YouTube funnel, which is where this traffic dies')
   check('the sales page lists the same free plan',
     /freeTrialHighlights\(\)/.test(SALES) && /freeTrialExclusions\(\)/.test(SALES))
   check('a paused paid checkout does not close free signup',

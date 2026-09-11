@@ -20,6 +20,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { signupHrefFor, type OnboardingPath } from '@/lib/onboarding-path'
 
 // Mirror the Window globals Rewardful exposes once its script loads. Kept here
 // (rather than in a global .d.ts) so this component file is self-contained.
@@ -46,7 +47,7 @@ export function CheckoutButton({
   highlight,
   salesPaused,
   ctaLabel,
-  nextPath,
+  intent,
 }: {
   tier: Tier
   /** Drives the colour scheme — Pro card uses a light-on-dark button, others
@@ -58,12 +59,14 @@ export function CheckoutButton({
   salesPaused: boolean
   /** "Start free" / "Get Creator" / "Get Pro" — fully owned by the server. */
   ctaLabel: string
-  /** Where a FREE signup lands afterwards. Defaults to /dashboard. The Amazon
-   *  sales page sends them to the thumbnail generator instead: the page sold
-   *  them one loop, and dropping them on a generic dashboard to go and find it
-   *  is where the intent the ad paid for gets spent. Ignored for paid tiers,
-   *  which go to Stripe. */
-  nextPath?: string
+  /** Which onboarding this button's visitor came for.
+   *
+   *  This replaced a `nextPath` prop that did nothing: it put ?next= on the
+   *  signup URL, and the signup form has always hard-coded its own destination,
+   *  so the value was read by nobody. The path is what actually needs to travel,
+   *  because it has to survive the round trip through their inbox, and the
+   *  signup form now carries it into the confirmation link. */
+  intent?: OnboardingPath
 }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -108,12 +111,10 @@ export function CheckoutButton({
   async function handleCheckout() {
     if (tier === 'trial') {
       // No checkout needed — just send them to signup. After signup they land
-      // on the default trial tier, at `nextPath` when the page named one.
-      // Only an in-app absolute path is accepted: this value reaches a redirect,
-      // and taking '//evil.example' or a full URL from a prop would make it an
-      // open redirect the moment somebody passes one through from a query string.
-      const safeNext = nextPath && /^\/[A-Za-z0-9][A-Za-z0-9\-_/]*$/.test(nextPath) ? nextPath : '/dashboard'
-      router.push(`/signup?next=${encodeURIComponent(safeNext)}`)
+      // on the default trial tier, in the onboarding their intent names.
+      // signupHrefFor is the one place these URLs are spelled, so the sales
+      // page, the pricing page and the funnel's own fork cannot drift apart.
+      router.push(signupHrefFor(intent ?? 'creator'))
       return
     }
     setLoading(true)

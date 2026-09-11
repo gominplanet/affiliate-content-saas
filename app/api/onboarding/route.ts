@@ -12,6 +12,7 @@
  * indirection — onboarding is always about the logged-in account.
  */
 import { NextResponse } from 'next/server'
+import { parseOnboardingPath } from '@/lib/onboarding-path'
 import { createServerClient } from '@/lib/supabase/server'
 
 const MAX_STEP = 7
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { step?: number; completed?: boolean }
+  let body: { step?: number; completed?: boolean; path?: string }
   try {
     body = await request.json()
   } catch {
@@ -76,7 +77,7 @@ export async function POST(request: Request) {
   if (typeof body.completed === 'boolean') {
     patch.onboarding_completed = body.completed
   }
-  if (Object.keys(patch).length === 1) {
+  if (Object.keys(patch).length === 1 && !body.path) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
   }
 
@@ -89,6 +90,21 @@ export async function POST(request: Request) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  // Which onboarding they are on, written SEPARATELY on purpose.
+  //
+  // onboarding_path ships in migration 328, and a column that is not there yet
+  // fails the whole upsert it is part of. Folding it into the write above would
+  // mean a database one migration behind could not record that someone finished
+  // onboarding at all. Its own guarded write costs one statement and cannot take
+  // anything else down with it.
+  const path = parseOnboardingPath(body.path)
+  if (path) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('integrations').update({ onboarding_path: path }).eq('user_id', user.id)
+    } catch { /* pre-328 database: the ?for= parameter still drives the screen */ }
   }
   return NextResponse.json({ ok: true })
 }
