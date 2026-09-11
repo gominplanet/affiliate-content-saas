@@ -18,6 +18,7 @@ import {
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { CheckoutButton } from '../pricing/CheckoutButton'
 import { TIERS } from '@/lib/tier'
+import { TrackCompare } from '@/components/pricing/TrackPicker'
 import { freeTrialHighlights, freeTrialExclusions } from '@/lib/free-trial'
 
 export const metadata: Metadata = {
@@ -196,14 +197,20 @@ export default function AmazonInfluencerPage() {
         </div>
       </section>
 
-      {/* Need the full suite? — the other plans, secondary */}
+      {/* Need the full suite? — the other plans, secondary.
+          The table comes first: someone who arrived from an ad should be able to
+          confirm in one glance that this is a DIFFERENT product from the $49 to
+          $199 plans below, not the middle rung of them. */}
       <section className="border-t border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.02]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14">
+          <div className="flex justify-center mb-14">
+            <TrackCompare />
+          </div>
           <div className="text-center mb-8">
             <h2 className="text-2xl font-bold tracking-tight">Got a blog or a YouTube channel too?</h2>
             <p className="mt-3 text-[15px] text-[#6e6e73] dark:text-[#ebebf0] max-w-2xl mx-auto">
-              The full-suite plans add the whole content engine, blog posts, video-to-blog, a
-              newsletter and SEO, on top of everything above.
+              Those are the other product: a content engine that publishes to a site of your own.
+              They need a WordPress site and a YouTube channel, which this plan never asks for.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mx-auto">

@@ -18,6 +18,7 @@ import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import NextImage from 'next/image'
 import { CheckoutButton } from './CheckoutButton'
 import MetaTrack from '@/components/analytics/MetaTrack'
+import { TrackPicker, TrackCompare } from '@/components/pricing/TrackPicker'
 
 export const metadata: Metadata = { title: 'Pricing · MVP Affiliate' }
 
@@ -175,6 +176,11 @@ export default function PricingPage() {
         </p>
       </div>
 
+      {/* Which of the two products is this visitor? Asked FIRST, because the
+          four prices read as one ladder ($49, $79, $99, $199) and a storefront
+          creator scanning that has no reason to think the $79 one is theirs. */}
+      <TrackPicker />
+
       {/* ───────────────────────────────────────────────────────────────────
           Free research showcase — the real hook. Everything in this block is
           free on every plan, no card, no setup. Sits directly under the hero so
@@ -224,7 +230,7 @@ export default function PricingPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 w-full max-w-6xl">
+      <div id="plans" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 w-full max-w-6xl scroll-mt-8">
         {plans.map((plan) => (
           <div
             key={plan.tier}
@@ -363,6 +369,11 @@ export default function PricingPage() {
           </div>
         </div>
       </section>
+
+      {/* The same boundary as a table, for whoever wants to check rather than
+          be told. Placed after the Amazon block so both products have been
+          described by the time it is read. */}
+      <TrackCompare className="mt-16" />
 
       {/* ───────────────────────────────────────────────────────────────────
           Bundle math — the killer pitch. Show prospects exactly what MVP
