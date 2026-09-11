@@ -4618,8 +4618,12 @@ export default function ContentPage() {
                   {refreshingImagesId === post.id ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
                   {refreshingImagesId === post.id ? 'Adding…' : 'Images'}
                 </button>
-                {/* Replace the post's hero / featured thumbnail with your own. */}
-                <ChangeThumbnailButton postId={post.id} />
+                {/* Replace the post's hero / featured thumbnail with your own.
+                    Prefer the blog_posts UUID when this row has one, and always
+                    send the permalink: rows here are keyed by WordPress id, and
+                    a post MVP never recorded (a guide whose row insert failed
+                    after publishing) can only be placed by its address. */}
+                <ChangeThumbnailButton postId={post.mvpId || String(post.id)} postUrl={post.link} />
                 <button
                   onClick={() => deletePostFromList(post.id)}
                   disabled={deletingPostId === post.id}
@@ -4632,7 +4636,7 @@ export default function ContentPage() {
               {/* Manual edit — full-width block in the card column so the
                   editor stays contained (matches the video-card editor); inside
                   the right-aligned action row it overflowed the card. */}
-              <ManualEdit postId={String(post.id)} />
+              <ManualEdit postId={String(post.id)} postUrl={post.link} />
               {/* Social fan-out — works for video-less ("from a link") posts
                   too, keyed on the WordPress post id. */}
               <OrphanPostShare

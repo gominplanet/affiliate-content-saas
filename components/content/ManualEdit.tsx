@@ -13,7 +13,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { Edit3, Loader2, Save, Image as ImageIcon, Upload } from 'lucide-react'
 
-export function ManualEdit({ postId }: { postId?: string }) {
+// `postUrl` (the live permalink) is optional but worth passing from any list
+// keyed by WordPress post id: it is what lets the thumbnail route place a post
+// MVP has no blog_posts row for, instead of answering "Post not found" about a
+// post the creator is looking at.
+export function ManualEdit({ postId, postUrl }: { postId?: string; postUrl?: string | null }) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -93,12 +97,14 @@ export function ManualEdit({ postId }: { postId?: string }) {
       })
       const resp = await fetch('/api/blog/thumbnail', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, image: dataUrl }),
+        body: JSON.stringify({ postId, image: dataUrl, postUrl: postUrl || null }),
       })
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok) { setThumbMsg(data.error || 'Upload failed.'); return }
       setThumbUrl(data.url || dataUrl)
-      setThumbMsg('Thumbnail updated ✓ (may take a minute to refresh on the live site)')
+      setThumbMsg(data.tracked === false
+        ? 'Thumbnail updated on your site ✓ — this post isn’t tracked in MVP, so Rebuild and the social buttons won’t see it.'
+        : 'Thumbnail updated ✓ (may take a minute to refresh on the live site)')
     } catch {
       setThumbMsg('Upload failed — try again.')
     } finally {

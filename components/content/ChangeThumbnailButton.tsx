@@ -6,13 +6,20 @@
 // edit). Uploads through /api/blog/thumbnail, which sets featured_media on the
 // live WordPress post (proxy-first, so it survives host WAFs). Works for any
 // post — video-backed, link-based, or manually created.
+//
+// `postUrl` is the live permalink and is worth passing wherever it is known. The
+// Posts tab identifies rows by their WordPress numeric id, and a post MVP has no
+// blog_posts row for (a buying guide whose row insert failed after publishing,
+// a rebuild that minted a new WP id) can only be resolved by its address. Send
+// it and the button works on those posts; omit it and the route has no safe way
+// to tell which blog a bare post id belongs to, and says so.
 'use client'
 
 import { useRef, useState } from 'react'
 import { Loader2, ImagePlus } from 'lucide-react'
 import { toast } from 'sonner'
 
-export function ChangeThumbnailButton({ postId }: { postId?: string | number }) {
+export function ChangeThumbnailButton({ postId, postUrl }: { postId?: string | number; postUrl?: string | null }) {
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -29,10 +36,17 @@ export function ChangeThumbnailButton({ postId }: { postId?: string | number }) 
       })
       const resp = await fetch('/api/blog/thumbnail', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: String(postId), image: dataUrl }),
+        body: JSON.stringify({ postId: String(postId), image: dataUrl, postUrl: postUrl || null }),
       })
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok) { toast.error(data.error || 'Upload failed.', { id: t }); return }
+      // The image is live either way, but a post MVP has no row for behaves
+      // differently everywhere else in the app. Saying so here is the only place
+      // the creator finds out before the next feature quietly skips it.
+      if (data.tracked === false) {
+        toast.success('Thumbnail replaced on your site ✓ — note this post isn’t tracked in MVP, so Rebuild and the social buttons won’t see it.', { id: t, duration: 9000 })
+        return
+      }
       toast.success('Thumbnail replaced ✓ (may take a minute to refresh on the live site)', { id: t })
     } catch {
       toast.error('Upload failed — try again.', { id: t })

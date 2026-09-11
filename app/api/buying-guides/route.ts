@@ -850,45 +850,71 @@ VOICE / STYLE RULES:
   }
 
   // ── 4. Save row ──────────────────────────────────────────────────────────
-  // Find the first picked review that has a real MVP video_id (rows pulled
-  // from WP REST have empty video_id). blog_posts.video_id is NOT NULL in
-  // the base schema (migration 024 made it nullable but only if applied)
-  // so we need a non-empty value for safety. If NO picks have a video_id
-  // we fall back to the most recent MVP review for this user.
-  let fallbackVideoId: string | null = picks.find(p => p.review.video_id)?.review.video_id || null
-  if (!fallbackVideoId) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: anyReview } = await (supabase as any)
-      .from('blog_posts')
-      .select('video_id')
-      .eq('user_id', user.id)
-      .not('video_id', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    fallbackVideoId = (anyReview?.video_id as string | null) || null
+  // The post is ALREADY LIVE on WordPress at this point. If this insert fails,
+  // the guide exists on the blog and MVP has no record of it, and every later
+  // action on it — Change thumbnail, Manual edit, the social buttons, Rebuild —
+  // answers "Post not found" about a post the creator can see on the page.
+  //
+  // This used to be `const { data: saved } = await …insert(…)` with no error
+  // branch, and the route returned ok either way. A whole class of orphaned
+  // posts came from that one missing check.
+  //
+  // Two shapes of failure are worth handling rather than just reporting:
+  //
+  //  video_id: blog_posts.video_id is a uuid FK to youtube_videos. A guide is
+  //  built from several videos, so it has no single canonical one, and null is
+  //  correct (migration 024 made the column nullable; the comparison route has
+  //  written null since). On a database where 024 never ran, the insert fails
+  //  with a not-null violation, so that ONE case retries with a source video's
+  //  id. It is a worse row (the guide reads as video-backed) but it exists.
+  //
+  //  wordpress_site_id: 'legacy' is a sentinel meaning "no wordpress_sites row",
+  //  not a uuid, and writing it into a uuid column fails the whole insert.
+  const firstSourceVideoId: string | null = picks.find(p => p.review.video_id)?.review.video_id || null
+
+  const baseRow = {
+    user_id: user.id,
+    title: wpTitle,
+    slug,
+    content: html,
+    excerpt: null,
+    wordpress_post_id: wpPost.id,
+    wordpress_url: wpPost.link,
+    ...(site.site_id && site.site_id !== 'legacy' ? { wordpress_site_id: site.site_id } : {}),
+    status: 'published',
+    post_type: 'guide',
+    seo_keyword: topic,
+    published_at: new Date().toISOString(),
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: saved } = await (supabase as any)
+  let { data: saved, error: saveErr } = await (supabase as any)
     .from('blog_posts')
-    .insert({
-      user_id: user.id,
-      video_id: fallbackVideoId,
-      title: wpTitle,
-      slug,
-      content: html,
-      excerpt: null,
-      wordpress_post_id: wpPost.id,
-      wordpress_url: wpPost.link,
-      wordpress_site_id: site.site_id,
-      status: 'published',
-      post_type: 'guide',
-      seo_keyword: topic,
-      published_at: new Date().toISOString(),
-    })
+    .insert({ ...baseRow, video_id: null })
     .select('id')
-    .single()
+    .maybeSingle()
+
+  // 23502 = not_null_violation. Only retry for that, and only with a real id.
+  if (saveErr && saveErr.code === '23502' && firstSourceVideoId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const retry = await (supabase as any)
+      .from('blog_posts')
+      .insert({ ...baseRow, video_id: firstSourceVideoId })
+      .select('id')
+      .maybeSingle()
+    saved = retry.data
+    saveErr = retry.error
+  }
+
+  if (saveErr || !saved?.id) {
+    // Do NOT fail the request: the guide is live and unpublishing it to keep the
+    // database tidy would be the wrong trade. Report it instead, loudly enough
+    // that the creator knows this post is only half-created.
+    console.error('[buying-guides] blog_posts insert failed', {
+      userId: user.id, wpPostId: wpPost.id, slug,
+      code: saveErr?.code, message: saveErr?.message, details: saveErr?.details,
+    })
+  }
 
   await writeContentSchema(supabase, wpService, {
     userId: user.id,
@@ -905,6 +931,11 @@ VOICE / STYLE RULES:
   return NextResponse.json({
     ok: true,
     postId: saved?.id ?? null,
+    // `tracked: false` is the difference between "published" and "published and
+    // usable". An untracked guide is live on the blog but invisible to the rest
+    // of MVP, and the UI says so rather than showing a plain success.
+    tracked: !!saved?.id,
+    trackingError: saved?.id ? null : (saveErr?.message ?? 'The guide published but MVP could not record it.'),
     wpPostId: wpPost.id,
     url: wpPost.link,
     title: wpTitle,

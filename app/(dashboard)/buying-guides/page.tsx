@@ -214,10 +214,23 @@ export default function BuyingGuidesPage() {
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Publish failed')
-      toast.success(`Published "${j.title}"`, {
-        action: { label: 'View', onClick: () => window.open(j.url, '_blank') },
-        duration: 12_000,
-      })
+      // Publishing to WordPress and recording the post in MVP are two separate
+      // writes, and the second one can fail on its own. When it does the guide
+      // is live but MVP has no row for it, so Change thumbnail, Manual edit and
+      // the social buttons will all say "Post not found" about a post sitting
+      // right there in the list. Say it here, once, instead.
+      if (j.tracked === false) {
+        toast.warning(`Published "${j.title}" to your blog, but MVP couldn’t record it`, {
+          description: `${j.trackingError || 'The guide is live; MVP has no row for it.'} It won’t appear in your Library and the post tools won’t find it. Send this to support.`,
+          action: { label: 'View', onClick: () => window.open(j.url, '_blank') },
+          duration: 20_000,
+        })
+      } else {
+        toast.success(`Published "${j.title}"`, {
+          action: { label: 'View', onClick: () => window.open(j.url, '_blank') },
+          duration: 12_000,
+        })
+      }
       setTopic('')
       setPreviewPicks(null)
       setPreviewTopic('')
