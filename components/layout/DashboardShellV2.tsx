@@ -325,7 +325,15 @@ export default function DashboardShellV2({
   const showDealsEff = isAdmin ? canSeeNav('deals', effectiveTier) : showDeals
   // The Amazon Influencer section (thumbnails + research + social) is the
   // standalone Amazon tier's home, and is also shared into Studio + Pro.
-  const canAmazonHub = (['amazon', 'studio', 'pro', 'admin'] as string[]).includes(effectiveTier)
+  //
+  // 'trial' is here because the free plan IS the Amazon trial now: an Amazon
+  // product, a finished design with their own face on it, downloaded. Hiding the
+  // hub from them hid the entire thing the ads are selling, and the trial's
+  // limits are enforced by the caps in lib/tier.ts and the Associates-tag
+  // qualifier in lib/free-trial.ts, not by the sidebar. Publishing those designs
+  // stays paid (trial has no connected socials), so the wall lands when they try
+  // to post, holding a finished design.
+  const canAmazonHub = (['trial', 'amazon', 'studio', 'pro', 'admin'] as string[]).includes(effectiveTier)
 
   // Admin-only: count of OPEN support tickets (not yet answered/closed). Drives
   // the red "Support" alert in the topbar so the founder catches new tickets

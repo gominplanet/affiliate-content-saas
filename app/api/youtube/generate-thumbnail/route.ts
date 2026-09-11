@@ -10,6 +10,7 @@ import sharp from 'sharp'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
+import { pooledDesignCap, freeTrialImageBlock } from '@/lib/free-trial'
 import { spendGate } from '@/lib/ai-spend'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
@@ -1150,11 +1151,22 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await supabase
       .from('integrations')
-      .select('tier,subscription_period_start,subscription_period_end')
+      .select('tier,subscription_period_start,subscription_period_end,amazon_associates_tag')
       .eq('user_id', user.id)
       .single()
     const tier = normalizeTier(tierRow?.tier)
     TELEMETRY = { userId: user.id, tier }
+
+    // ── Free-tier qualifier ───────────────────────────────────────────────
+    // Free AI needs a bar or it feeds signup-and-farm bots. The bar used to be a
+    // connected WordPress site, which is heavy and irrelevant to an Amazon
+    // influencer who will never publish a blog post. It is now an Amazon
+    // Associates tag: one text field, known by heart by every real Amazon
+    // creator, owned by no bot farm. Checked BEFORE any spend.
+    {
+      const block = freeTrialImageBlock({ tier, amazonTag: (tierRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag })
+      if (block) return NextResponse.json({ error: block, code: 'associates_tag_required' }, { status: 403 })
+    }
 
     // gpt-image render quality is tier-gated: Pro (and admin) get HIGH for the
     // crispest, most ChatGPT-grade output; every other paid tier gets MEDIUM.
@@ -1509,7 +1521,19 @@ export async function POST(request: Request) {
       let capLimit: number | null = null
       let capFeatures: string[] = []
       let capLabel = 'designs'
-      if (isPin) { capLimit = T.pinsPerMonth; capFeatures = ['amazon_pin']; capLabel = 'pins' }
+      // The free trial pools pins, Instagram and Facebook into ONE allowance:
+      // its loop is "make a design and hold it", not "make a pin, and separately
+      // make a story". One counter across all three feature names, so five is
+      // really five. Paid tiers have no pool and keep their per-format caps,
+      // which are separate promises. See lib/free-trial.ts.
+      const pooled = pooledDesignCap(T)
+      const isSocialDesign = isPin || isIg || isStory || isFb
+      if (pooled !== null && isSocialDesign) {
+        capLimit = pooled
+        capFeatures = ['amazon_pin', 'amazon_ig', 'amazon_fb']
+        capLabel = 'ready-to-post designs'
+      }
+      else if (isPin) { capLimit = T.pinsPerMonth; capFeatures = ['amazon_pin']; capLabel = 'pins' }
       else if (isIg || isStory) { capLimit = T.igPostsPerMonth; capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
       else if (isFb) { capLimit = T.facebookPostsPerMonth; capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
       else { capLimit = T.thumbnailsPerMonth; capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }

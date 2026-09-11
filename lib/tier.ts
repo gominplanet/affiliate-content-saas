@@ -74,7 +74,12 @@ export const TIERS = {
      *  upgrade nudge — a circuit breaker on top of the per-feature caps,
      *  catching runaways + uncapped admin testing (the overnight-$60 case).
      *  Set ~2× the expected max so normal users never hit it. null = no ceiling. */
-    monthlyAiSpendCeilingUsd: 5 as number | null,
+    /** Raised 5 → 15 when the free tier became the Amazon trial (see
+     *  lib/free-trial.ts). Five thumbnails, five designs, a face model and six
+     *  photobooth shots do not fit under $5: the breaker fired mid-trial, on the
+     *  most engaged users first, and a generation that simply stops working
+     *  reads as a broken product rather than a limit. */
+    monthlyAiSpendCeilingUsd: 15 as number | null,
     /** Shared "Generations" counter: blog + thumbnail + metadata each
      *  burn 1 unit. Trial is gated by lifetimeMax below, not monthly. */
     postsPerMonth: null as number | null,
@@ -87,13 +92,27 @@ export const TIERS = {
     thumbnailsPerMonth: 5 as number | null,
     metadataGensPerMonth: 5 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
-    /** Deal posts (Amazon CSV + single-link form share this bucket). */
+    /** Deal posts (Amazon CSV + single-link form share this bucket). Publishing
+     *  stays paid: the free loop ends at the download, on purpose. */
     dealsPerMonth: 0 as number | null,
+    /** Per-format caps are NOT consulted on this tier — socialDesignsPerMonth
+     *  below pools all three into one allowance. Left at 0 so that a tier which
+     *  ever loses its pool falls closed rather than open. */
     pinsPerMonth: 0 as number | null,
     igPostsPerMonth: 0 as number | null,
     facebookPostsPerMonth: 0 as number | null,
-    photoboothPerMonth: 0 as number | null,
-    maxFaces: 0 as number | null,
+    /** Five ready-to-post designs, POOLED across pins / Instagram / Facebook.
+     *  The free loop is "make a design and hold it", not "make a pin, and
+     *  separately make a story", so one pool is the honest shape. Null on every
+     *  paid tier, where a pin cap and an Instagram cap are separate promises.
+     *  Read via pooledDesignCap() in lib/free-trial.ts. */
+    socialDesignsPerMonth: 5 as number | null,
+    /** The face model and its headshots are the trial's whole argument: "your
+     *  face on every design" is what makes five designs feel like theirs instead
+     *  of generic output. Matched to the Amazon tier (1 face, 6 shots) because
+     *  it is a one-time cost and the most memorable ninety seconds in the app. */
+    photoboothPerMonth: 6 as number | null,
+    maxFaces: 1 as number | null,
     blogImagesPerPost: 2,
     assistantMessagesPerMonth: 20 as number | null,
     /** Newsletter is Creator-min as of 2026-06-04 tier restructure. Trial
@@ -169,6 +188,10 @@ export const TIERS = {
     pinsPerMonth: 0 as number | null,
     igPostsPerMonth: 0 as number | null,
     facebookPostsPerMonth: 0 as number | null,
+    /** Per-format design caps stand on their own here: a pin allowance and an
+     *  Instagram allowance are two separate promises on a paid plan. Only the
+     *  free trial pools them (see lib/free-trial.ts). */
+    socialDesignsPerMonth: null as number | null,
     photoboothPerMonth: 10 as number | null,
     maxFaces: 1 as number | null,
     blogImagesPerPost: 3,
@@ -249,6 +272,10 @@ export const TIERS = {
      *  100→60 (2026-08-22) for cap-fit. */
     dealsPerMonth: 60 as number | null,
     /** Max 6 professional Photobooth shots. */
+    /** Per-format design caps stand on their own here: a pin allowance and an
+     *  Instagram allowance are two separate promises on a paid plan. Only the
+     *  free trial pools them (see lib/free-trial.ts). */
+    socialDesignsPerMonth: null as number | null,
     photoboothPerMonth: 6 as number | null,
     /** One face model, up to 20 selfies (the source_images cap is 20). */
     maxFaces: 1 as number | null,
@@ -324,6 +351,10 @@ export const TIERS = {
     pinsPerMonth: 90 as number | null,
     igPostsPerMonth: 70 as number | null,
     facebookPostsPerMonth: 45 as number | null,
+    /** Per-format design caps stand on their own here: a pin allowance and an
+     *  Instagram allowance are two separate promises on a paid plan. Only the
+     *  free trial pools them (see lib/free-trial.ts). */
+    socialDesignsPerMonth: null as number | null,
     photoboothPerMonth: 12 as number | null,
     maxFaces: 2 as number | null,
     blogImagesPerPost: 3,
@@ -400,6 +431,10 @@ export const TIERS = {
     pinsPerMonth: 150 as number | null,
     igPostsPerMonth: 110 as number | null,
     facebookPostsPerMonth: 80 as number | null,
+    /** Per-format design caps stand on their own here: a pin allowance and an
+     *  Instagram allowance are two separate promises on a paid plan. Only the
+     *  free trial pools them (see lib/free-trial.ts). */
+    socialDesignsPerMonth: null as number | null,
     photoboothPerMonth: 20 as number | null,
     maxFaces: 3 as number | null,
     blogImagesPerPost: 4,
@@ -464,6 +499,10 @@ export const TIERS = {
     pinsPerMonth: null as number | null,
     igPostsPerMonth: null as number | null,
     facebookPostsPerMonth: null as number | null,
+    /** Per-format design caps stand on their own here: a pin allowance and an
+     *  Instagram allowance are two separate promises on a paid plan. Only the
+     *  free trial pools them (see lib/free-trial.ts). */
+    socialDesignsPerMonth: null as number | null,
     photoboothPerMonth: null as number | null,
     maxFaces: null as number | null,
     blogImagesPerPost: 6,

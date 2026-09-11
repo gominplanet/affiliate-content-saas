@@ -10,6 +10,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { freeTrialImageBlock } from '@/lib/free-trial'
 import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { createOpenAIService, OpenAIService, normalizeToPng } from '@/services/openai'
@@ -22,17 +23,18 @@ export const maxDuration = 300
 async function loadPhotoboothUsage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any, userId: string,
-): Promise<{ tier: Tier; limit: number | null; used: number; remaining: number | null; resetLabel: string }> {
+): Promise<{ tier: Tier; limit: number | null; used: number; remaining: number | null; resetLabel: string; amazonTag: string | null }> {
   // .maybeSingle() — new trial users have no integrations row yet,
   // and normalizeTier() handles undefined cleanly. .single() would
   // throw and 500 the route. Audit fix 2026-06-02.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: row } = await supabase
     .from('integrations')
-    .select('tier,subscription_period_start,subscription_period_end')
+    .select('tier,subscription_period_start,subscription_period_end,amazon_associates_tag')
     .eq('user_id', userId)
     .maybeSingle()
   const tier = normalizeTier(row?.tier)
+  const amazonTag = (row as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag ?? null
   const limit = TIERS[tier].photoboothPerMonth
   const check = await checkUsageCap(
     supabase, userId, PRIMARY_FEATURE.photobooth, limit,
@@ -40,7 +42,7 @@ async function loadPhotoboothUsage(
   )
   const used = check?.used ?? 0
   return {
-    tier, limit, used,
+    tier, limit, used, amazonTag,
     remaining: limit === null ? null : Math.max(0, limit - used),
     resetLabel: check?.resetLabel ?? '',
   }
@@ -146,7 +148,15 @@ export async function POST(request: Request) {
     // ── Pro gate + monthly cap ────────────────────────────────────────────
     const usage = await loadPhotoboothUsage(supabase, user.id)
     const tier = usage.tier
-    // Paid-tier gate: photoboothPerMonth === 0 → off (trial). Creator/Pro have a
+    // The free trial gets a face model and six headshots — "your face on every
+    // design" is the whole argument, so it cannot sit behind the paywall. What it
+    // does sit behind is the Associates tag, the free tier's qualifier. See
+    // lib/free-trial.ts.
+    {
+      const block = freeTrialImageBlock({ tier, amazonTag: usage.amazonTag })
+      if (block) return NextResponse.json({ error: block, code: 'associates_tag_required' }, { status: 403 })
+    }
+    // Paid-tier gate: photoboothPerMonth === 0 → off. Creator/Pro have a
     // monthly cap; admin is unlimited (null limit).
     if (usage.limit === 0) {
       return NextResponse.json({

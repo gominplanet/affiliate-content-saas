@@ -20,6 +20,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { TIERS, normalizeTier } from '@/lib/tier'
+import { freeTrialImageBlock } from '@/lib/free-trial'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 
 // LoRA training retired (2026-05-22): gpt-image-1/2 uses the uploaded photos
@@ -58,9 +59,17 @@ export async function POST(request: Request) {
   // ── Paid-tier gate (maxFaces 0 = feature off for this tier) ───────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await supabase
-    .from('integrations').select('tier').eq('user_id', ownerId).single()
+    .from('integrations').select('tier,amazon_associates_tag').eq('user_id', ownerId).single()
   const tier = normalizeTier(intRow?.tier)
   const maxFaces = TIERS[tier].maxFaces
+  // The free trial gets one face model: putting the creator's own face on the
+  // designs is what makes them feel like theirs, and it is the reason the trial
+  // converts at all. Gated on the Associates tag like every other free-tier
+  // generation (lib/free-trial.ts), not on a paywall.
+  {
+    const block = freeTrialImageBlock({ tier, amazonTag: (intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag })
+    if (block) return NextResponse.json({ error: block, code: 'associates_tag_required' }, { status: 403 })
+  }
   if (maxFaces === 0) {
     return NextResponse.json({
       error: `Saved faces are available on paid plans. Upgrade to ${TIERS.creator.label} or ${TIERS.pro.label} to put your face in thumbnails and posts.`,

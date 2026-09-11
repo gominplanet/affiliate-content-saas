@@ -12,6 +12,7 @@
  */
 
 import type { Metadata } from 'next'
+import { freeTrialHighlights } from '@/lib/free-trial'
 import { CheckCircle, Zap, PackageSearch, Radar, ShoppingBag, Store, Wand2, LayoutTemplate, Handshake, MessageSquare, Share2, UserSquare, Send } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import NextImage from 'next/image'
@@ -44,16 +45,17 @@ const plans: PlanExt[] = [
     price: 0,
     regularPrice: 0,
     limit: 'Free forever · no card',
-    description: 'Research is free for everyone. Search the whole Amazon catalogue, browse live deals, and scout your affiliate campaigns with no card and no setup. Plus 5 full published reviews to try the content engine.',
+    description: 'Take an Amazon product, put your own face on a finished design, and download it. No card, no site, no account to connect: one Amazon Associates tag and you are generating. Research and Deal Radar stay free forever.',
     features: [
+      // The Amazon loop first, because it is the one a new account can complete
+      // today. Pulled from lib/free-trial.ts so the plan advertised here and the
+      // plan the server enforces cannot drift apart.
+      ...freeTrialHighlights(),
       'Amazon Product Research: the whole catalogue, filter by sales, rating, price, reviews & best-sellers',
-      'Deal Radar: browse live, price-history-verified Amazon deals',
       'Levanta + PartnerBoost finders: search your own connected campaigns',
       'Creator Connections catalogue search (needs your own CC access + the free Scout extension)',
-      '5 full published reviews to try the content engine (blog + thumbnail + metadata)',
+      '5 full published reviews if you connect a WordPress site (blog + thumbnail + metadata)',
       'YouTube Co-Pilot: description, tags, hashtags & thumbnail pushed back to YouTube',
-      'Branded WordPress review site (theme + plugin auto-installed)',
-      'Full AI agent pipeline (research, outline, draft, verdict, SEO)',
       'MVP Help Desk: 20 messages / month',
     ],
     highlight: false,
