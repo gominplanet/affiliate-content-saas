@@ -84,6 +84,12 @@ export default function SignupForm() {
     // Which onboarding they came for. Carried in the URL because it has to
     // survive a round trip through their inbox.
     setPath(parseOnboardingPath(sp.get('for')) ?? (t === 'amazon' ? 'amazon' : null))
+    // Carried from the ad landing, where they already typed it. Asking for the
+    // same address twice on consecutive screens is a drop-off for no reason.
+    // Only shape-checked, never trusted: Supabase validates it for real and the
+    // field stays editable.
+    const e = (sp.get('email') || '').trim()
+    if (e && e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) setEmail(e)
   }, [])
   const tierLabel = paidTier ? paidTier.charAt(0).toUpperCase() + paidTier.slice(1) : ''
 

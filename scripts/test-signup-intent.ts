@@ -197,6 +197,28 @@ const check = (name: string, cond: boolean, detail?: string) => {
     'everyone who typed an address and never confirmed was invisible')
   check('and the lead says which door they came through', /content_category: path/.test(FORM2))
 
+  // The ad landing is its own step, and its own audience.
+  const JOIN = readFileSync('app/join/amazon/page.tsx', 'utf8')
+  const JOINFORM = readFileSync('components/landing/AmazonJoinForm.tsx', 'utf8')
+  check('the ad landing reports a view', /<MetaTrack event="ViewContent"/.test(JOIN))
+  check('under its own name', /content_name: 'Amazon ad landing'/.test(JOIN),
+    'three pages sharing one content_name is three audiences merged into one number')
+  check('starting the form is its own event, not a second Lead',
+    /trackMeta\('InitiateCheckout'/.test(JOINFORM) && !/trackMeta\('Lead'/.test(JOINFORM),
+    'a Lead here would double-count against the one the signup form fires')
+  check('the landing carries the Amazon intent into signup',
+    /\/signup\?for=amazon/.test(JOINFORM),
+    'dropping it here puts them back in the YouTube funnel')
+  check('and carries the address they already typed',
+    /email=\$\{encodeURIComponent\(v\)\}/.test(JOINFORM),
+    'asking for the same email twice on consecutive screens is a drop-off for nothing')
+  check('the signup form reads that prefill', /sp\.get\('email'\)/.test(FORM2))
+  check('and shape-checks it rather than trusting it',
+    /\[\^\\s@\]\+@/.test(FORM2), 'it lands in a controlled input, but it arrives from a URL')
+  check('the landing states the free allowance from the plan',
+    /FREE_TRIAL\.thumbnails/.test(JOIN) && /TIERS\.amazon\.price/.test(JOIN),
+    'a second hand-typed copy of the offer is a second thing that goes stale')
+
   check('the registration still fires where it always did',
     /event="CompleteRegistration"/.test(ONB) && /eventName: 'CompleteRegistration'/.test(ONB),
     'both halves, browser and server, sharing one event id')
