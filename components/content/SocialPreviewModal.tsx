@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, X, RefreshCw, CheckCircle, AlertCircle, Calendar, Copy, ExternalLink, Users } from 'lucide-react'
+import { toast } from 'sonner'
 import { useModalA11y } from '@/components/ui/useModalA11y'
 import { tzAbbrev } from '@/lib/format-schedule'
 
@@ -126,6 +127,18 @@ export function SocialPreviewModal({
   // server-side, so there's no per-post affiliate toggle here anymore.
   const [affiliateAvailable, setAffiliateAvailable] = useState(false)
 
+  // ── Facebook attachment choice: thumbnail or playable video ──────────────
+  // A Page post carries exactly ONE attachment, so this is a choice rather than
+  // a combination: either the thumbnail as a still hero image, or the YouTube
+  // watch URL, which Facebook renders as a card with a play control. The
+  // caption, blog link and disclaimer are identical either way.
+  //
+  // `videoAvailable` comes back from the preview call. The video option is only
+  // offered when the post actually has a source video, because an option that
+  // silently degrades to the thumbnail is worse than no option.
+  const [videoAvailable, setVideoAvailable] = useState(false)
+  const [mediaChoice, setMediaChoice] = useState<'thumbnail' | 'video'>('thumbnail')
+
   // Assembled copy-paste block for manual Group sharing: the (edited) post
   // text + hashtags + URL + FTC disclaimer. Reactive to textarea edits.
   const groupCopy = [text.trim(), (serverHashtags || shareHashtags || '').trim(), (shareUrl || '').trim(), (shareDisclaimer || '').trim()]
@@ -145,6 +158,12 @@ export function SocialPreviewModal({
       setFinalText(data.finalText || data.text || '')
       if (typeof data.hashtags === 'string' && data.hashtags.trim()) setServerHashtags(data.hashtags.trim())
       if (typeof data.affiliateAvailable === 'boolean') setAffiliateAvailable(data.affiliateAvailable)
+      if (typeof data.videoAvailable === 'boolean') {
+        setVideoAvailable(data.videoAvailable)
+        // A post with no video can't honour the video choice, so don't leave it
+        // selected from a previous post in the same session.
+        if (!data.videoAvailable) setMediaChoice('thumbnail')
+      }
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Preview failed')
     }
@@ -173,10 +192,14 @@ export function SocialPreviewModal({
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, text, ...effectiveExtraBody }),
+        body: JSON.stringify({ postId, text, ...effectiveExtraBody, ...(isFacebook ? { media: mediaChoice } : {}) }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Publish failed')
+      // The post went out, but not necessarily carrying what was asked for.
+      // Say so here: the modal closes on success, and a plain green tick is how
+      // a creator keeps picking "video" for a month without ever getting one.
+      if (typeof data.mediaNote === 'string' && data.mediaNote) toast.warning(data.mediaNote, { duration: 9000 })
       onPublished()
       onClose()
     } catch (err) {
@@ -208,6 +231,7 @@ export function SocialPreviewModal({
           scheduledAt: when.toISOString(),
           text,
           ...effectiveExtraBody,
+          ...(isFacebook ? { media: mediaChoice } : {}),
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -305,6 +329,49 @@ export function SocialPreviewModal({
                 <p className="mb-3 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
                   The link destination (blog, affiliate, or both) is set in <strong className="font-semibold">Link settings</strong> at the top of the page.
                 </p>
+              )}
+
+              {/* Facebook attachment choice. One attachment per post: the still
+                  thumbnail, or the YouTube video as a playable card. The words,
+                  the blog link and the disclaimer are the same either way; what
+                  changes is the picture and where a tap on it lands. */}
+              {isFacebook && (
+                <div className="mb-4 rounded-xl border border-gray-200 dark:border-white/10 p-3">
+                  <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">What Facebook shows</p>
+                  <label className="flex items-start gap-2 text-xs cursor-pointer mb-2">
+                    <input
+                      type="radio"
+                      name="fb-media"
+                      checked={mediaChoice === 'thumbnail'}
+                      onChange={() => setMediaChoice('thumbnail')}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">The thumbnail as a hero image</span>
+                      <span className="block text-[10px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+                        A still photo post. Tapping it opens the photo on Facebook.
+                      </span>
+                    </span>
+                  </label>
+                  <label className={`flex items-start gap-2 text-xs ${videoAvailable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                    <input
+                      type="radio"
+                      name="fb-media"
+                      disabled={!videoAvailable}
+                      checked={mediaChoice === 'video'}
+                      onChange={() => setMediaChoice('video')}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">The YouTube video, playable</span>
+                      <span className="block text-[10px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+                        {videoAvailable
+                          ? 'Facebook builds a video card from your YouTube link: it plays in the feed on desktop and opens YouTube on mobile. Your blog link stays in the text above, but a tap on the card goes to YouTube.'
+                          : 'This post has no YouTube video behind it, so there is nothing to play.'}
+                      </span>
+                    </span>
+                  </label>
+                </div>
               )}
 
               {/* Facebook manual-share: copy block + saved Groups. Only shown

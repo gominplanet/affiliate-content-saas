@@ -19,6 +19,7 @@ import { resolvePostAffiliateLink } from '@/lib/ig-dm'
 import { postProductAsin } from '@/lib/post-product-link'
 import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
+import { chooseFacebookAttachment, parseFacebookMediaChoice } from '@/lib/facebook-attachment'
 import { blogShareUrl } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { spendGate } from '@/lib/ai-spend'
@@ -32,7 +33,10 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Facebook publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
-    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; socialAccountId?: string; socialAccountIds?: string[]; postUrl?: string; includeAffiliateCta?: boolean }
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; socialAccountId?: string; socialAccountIds?: string[]; postUrl?: string; includeAffiliateCta?: boolean; media?: string }
+    // Thumbnail or playable video: a Page post carries exactly one attachment,
+    // so this is a choice, not a combination. See lib/facebook-attachment.ts.
+    const mediaChoice = parseFacebookMediaChoice(body.media)
     // Opt-in second CTA: append the post's direct affiliate link (+ disclaimer)
     // for readers who want to buy without reading the blog first.
     const includeAffiliateCta = body.includeAffiliateCta === true
@@ -242,13 +246,23 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
           feature: 'social_facebook_hashtags', model: 'claude-haiku-4-5-20251001',
         })
       } catch { /* hashtags optional — copy block still works without them */ }
-      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption, hashtags, affiliateAvailable: !!affiliateLink })
+      // videoAvailable drives the thumbnail/video choice in the preview modal.
+      // Offering "post the video" on a post that has none is how a creator picks
+      // it, gets a thumbnail, and never learns why.
+      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption, hashtags, affiliateAvailable: !!affiliateLink, videoAvailable: !!videoUrl })
     }
 
     // ── 8. Post to Facebook — fan out to each selected Page ───────────────────
     // Same caption to every Page; best-effort per account so one failure can't
     // abort the rest. A single-account post (the common case) runs this loop
     // exactly once and behaves identically to before.
+    // One attachment per post, chosen here so every Page in a fan-out gets the
+    // same thing and the response can say what actually went out.
+    const attachment = chooseFacebookAttachment({
+      requested: mediaChoice, videoUrl, imageUrl, fallbackLink,
+    })
+    let photoFellBack = false
+
     const results: Array<{ accountId: string | null; page: string | null; ok: boolean; id?: string; error?: string }> = []
     for (const acct of fbAccounts) {
       try {
@@ -258,9 +272,9 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
         // webhook's post_id — otherwise comment→DM can never resolve the post. A
         // /feed (link) post returns the page-post id directly as `id`.
         let pagePostId: string
-        if (imageUrl) {
+        if (attachment.kind === 'photo' && attachment.imageUrl) {
           try {
-            const r = await fbService.postPhoto({ imageUrl, caption })
+            const r = await fbService.postPhoto({ imageUrl: attachment.imageUrl, caption })
             pagePostId = (r as { id: string; post_id?: string }).post_id || r.id
           } catch (photoErr) {
             // Facebook couldn't fetch/validate the image (e.g. an unreachable
@@ -271,9 +285,12 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
             console.warn('[facebook-post] photo post failed, falling back to link post:', photoErr)
             const r = await fbService.postLink({ message: caption, link: fallbackLink })
             pagePostId = r.id
+            photoFellBack = true
           }
         } else {
-          const r = await fbService.postLink({ message: caption, link: shareUrl })
+          // The video choice lands here: Facebook builds the card from the
+          // YouTube watch URL, which is what makes it playable.
+          const r = await fbService.postLink({ message: caption, link: attachment.link || shareUrl })
           pagePostId = r.id
         }
         results.push({ accountId: acct.id, page: acct.displayName, ok: true, id: pagePostId })
@@ -310,6 +327,14 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
       // New: per-Page breakdown for the multi-account UI.
       posted: succeeded.length,
       results,
+      // What the post actually carries, not what was asked for. A video choice
+      // that fell back to the thumbnail, or a thumbnail Facebook refused to
+      // fetch, both end as an ordinary green success otherwise.
+      mediaRequested: attachment.requested,
+      mediaUsed: photoFellBack ? 'link-only' : attachment.used,
+      mediaNote: photoFellBack
+        ? 'Facebook couldn’t fetch the thumbnail, so it built the card from the blog post instead.'
+        : attachment.note,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

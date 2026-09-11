@@ -36,6 +36,9 @@ export async function POST(request: Request) {
       socialAccountId?: string
       postUrl?: string
       includeAffiliateCta?: boolean
+      /** Facebook only: 'thumbnail' (default) or 'video'. Persisted so the cron
+       *  attaches the same thing the creator saw in the preview. */
+      media?: string
     }
 
     const rawPostId = body.postId
@@ -113,7 +116,15 @@ export async function POST(request: Request) {
         // Persist the Facebook "add my affiliate link" opt-in so the cron can
         // append the same second CTA it does on immediate publish (options is
         // the flexible per-platform settings column, migration 137).
-        ...(body.includeAffiliateCta ? { options: { includeAffiliateCta: true } } : {}),
+        // `options` is the flexible per-platform settings column (migration
+        // 137). Both Facebook flags live there; build it once so adding the
+        // media choice can't drop the affiliate opt-in.
+        ...(() => {
+          const options: Record<string, unknown> = {}
+          if (body.includeAffiliateCta) options.includeAffiliateCta = true
+          if (platform === 'facebook' && body.media === 'video') options.media = 'video'
+          return Object.keys(options).length ? { options } : {}
+        })(),
       })
       .select('id,scheduled_at,platform')
       .single()

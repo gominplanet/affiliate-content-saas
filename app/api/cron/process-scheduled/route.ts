@@ -26,6 +26,7 @@ import { ThreadsService } from '@/services/threads'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
 import { createFacebookService } from '@/services/facebook'
+import { chooseFacebookAttachment, parseFacebookMediaChoice, type FacebookMediaChoice } from '@/lib/facebook-attachment'
 import { createLinkedInService } from '@/services/linkedin'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
@@ -756,10 +757,16 @@ async function publishOne(
       // (first line + disclaimer), then the blurb + blog link, then a closing
       // disclaimer — matching the manual endpoint. Only when the post has a link.
       let fbIncludeAffiliate = false
+      // Thumbnail or playable video — the same choice the creator made in the
+      // preview modal, persisted on the row so an unattended publish attaches
+      // what they saw rather than reverting to the default.
+      let fbMedia: FacebookMediaChoice = 'thumbnail'
       try {
         const { data: fbOpt } = await admin.from('scheduled_posts').select('options').eq('id', row.id).maybeSingle()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         fbIncludeAffiliate = !!((fbOpt?.options as any)?.includeAffiliateCta)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        fbMedia = parseFacebookMediaChoice((fbOpt?.options as any)?.media)
       } catch { /* options column absent on an old DB — flag can't exist there */ }
       const fbPref = linkPrefFor(linkPrefs, 'facebook')
       const caption = composeCaption({
@@ -775,10 +782,13 @@ async function publishOne(
       // `id`) so the comment→DM webhook can match this post. Fall back to a
       // link post if the image is unreachable so this unattended job never
       // fails silently.
+      const fbAttachment = chooseFacebookAttachment({
+        requested: fbMedia, videoUrl: schedVideoUrl, imageUrl, fallbackLink: fbFallbackLink,
+      })
       let fbPostId: string
-      if (imageUrl) {
+      if (fbAttachment.kind === 'photo' && fbAttachment.imageUrl) {
         try {
-          const r = await fb.postPhoto({ imageUrl, caption })
+          const r = await fb.postPhoto({ imageUrl: fbAttachment.imageUrl, caption })
           fbPostId = (r as { id: string; post_id?: string }).post_id || r.id
         } catch (photoErr) {
           // Only fall back to a link post when the IMAGE is the problem. An
@@ -791,7 +801,9 @@ async function publishOne(
           fbPostId = r.id
         }
       } else {
-        const r = await fb.postLink({ message: caption, link: fbFallbackLink })
+        // The video choice lands here: Facebook builds a playable card from the
+        // YouTube watch URL.
+        const r = await fb.postLink({ message: caption, link: fbAttachment.link || fbFallbackLink })
         fbPostId = r.id
       }
       await admin.from('blog_posts').update({ facebook_post_id: fbPostId }).eq('id', row.blog_post_id)
