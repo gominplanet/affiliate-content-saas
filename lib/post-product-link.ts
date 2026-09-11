@@ -32,6 +32,12 @@ const AMAZON_IN_BODY = new RegExp(
   'gi',
 )
 const GENIUS_IN_BODY = /https?:\/\/geni\.us\/[A-Za-z0-9]+/i
+/** A PASSPORT link in the post body: the branded short domain, or the app-origin
+ *  /go/<code> fallback. Matched with a regex rather than by importing
+ *  lib/passport-links, which reaches for Supabase and Node DNS and would drag
+ *  both into every client bundle that imports this file. The two shapes are
+ *  pinned by scripts/test-post-link.ts against passportLinkUrl(). */
+const PASSPORT_IN_BODY = /https?:\/\/(?:[a-z0-9-]+\.)*mvpl\.ink\/[A-Za-z0-9_-]+|https?:\/\/(?:[a-z0-9-]+\.)*mvpaffiliate\.io\/go\/[A-Za-z0-9_-]+/i
 const ASIN_IN_BODY = asinPathRegex('i')
 
 export interface PostLinkFields {
@@ -39,20 +45,57 @@ export interface PostLinkFields {
   content?: string | null
 }
 
+/** The creator's chosen link style, when the caller knows it. Only used to
+ *  decide whether the STORED geni.us code is an acceptable last resort. */
+export type PostLinkStyle = 'passport' | 'geniuslink' | 'bitly' | 'direct'
+
 /**
  * The post's product destination, for the creator's own link style to cloak.
  *
- * Amazon URL in the body, then a geni.us in the body, then the stored code as a
- * last resort for a post whose body has no product URL left in it. Even that
- * last one is a destination like any other and still goes through the cloaker.
+ * Amazon URL in the body, then a Passport link in the body, then a geni.us in
+ * the body, then the stored code. Every one of them is a destination, never a
+ * decision: the cloaker reads the creator's style and has the final say.
+ *
+ * THE PASSPORT STEP IS WHY THIS WAS REWRITTEN A SECOND TIME.
+ *
+ * The first version put the stored geniuslink_code first and unconditionally,
+ * which posted geni.us links from a Passport creator's account for months. That
+ * was fixed by demoting it to a last resort. It was not enough, and on 11
+ * September an auto-pilot cascade posted geni.us to Facebook, Instagram and
+ * Bluesky from an account that has been on Passport for weeks.
+ *
+ * The reason is that "last resort" was reached EVERY TIME for exactly the
+ * creators the fix was for. A Passport creator's post body contains mvpl.ink
+ * links and nothing else: no Amazon URL, no geni.us. Both body checks missed,
+ * and the only branch left was a geniuslink_code written back when Geniuslink
+ * was the style. The post's own live, correct link was sitting in the body being
+ * ignored, and a months-old code won.
+ *
+ * So the body's Passport link is now read, and it outranks anything stored.
+ *
+ * `linkStyle` closes the remaining hole. A post with no product link at all in
+ * its body still fell through to the stored code, and for anyone not on
+ * Geniuslink that is never the right answer. Pass the creator's style and the
+ * stored code is only used when they actually use Geniuslink. Omit it and the
+ * old behaviour stands, so no caller changes meaning by accident.
  */
-export function postProductDestination(post: PostLinkFields): string | null {
+export function postProductDestination(
+  post: PostLinkFields,
+  opts?: { linkStyle?: PostLinkStyle },
+): string | null {
   const html = post.content || ''
   const amazon = html.match(AMAZON_IN_BODY)
   if (amazon) return amazon[0]
+  // The creator's own current cloaked link, already in the published post.
+  // Nothing stored can be fresher than this.
+  const passport = html.match(PASSPORT_IN_BODY)
+  if (passport) return passport[0]
   const genius = html.match(GENIUS_IN_BODY)
   if (genius) return genius[0]
-  if (post.geniuslink_code) return `https://geni.us/${post.geniuslink_code}`
+  // A stored code is the only candidate that is not evidence from the post
+  // itself, so it is the only one a style can veto.
+  const storedCodeAllowed = opts?.linkStyle === undefined || opts.linkStyle === 'geniuslink'
+  if (post.geniuslink_code && storedCodeAllowed) return `https://geni.us/${post.geniuslink_code}`
   return null
 }
 

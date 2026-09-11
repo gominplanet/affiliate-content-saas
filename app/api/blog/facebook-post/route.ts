@@ -16,6 +16,7 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { getLinkStyle } from '@/lib/link-cloak'
 import { postProductAsin } from '@/lib/post-product-link'
 import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
@@ -184,7 +185,12 @@ Return ONLY the post text, nothing else.`,
     // the URL cannot say: that is what cloaking is. Amazon policy 6(w) requires
     // the placement to make clear it links to an Amazon Site, and the CTA is the
     // only thing that can, since nobody reads mvpl.ink/x7k as Amazon.
-    let affiliateLink = resolvePostAffiliateLink(post)
+    // The style is read HERE, before the destination is chosen, because it is
+    // what decides whether a stored geni.us code is an acceptable answer. For
+    // anyone not on Geniuslink it never is, and skipping that veto is how a
+    // months-old code outranked the creator's own live link in the post body.
+    const postLinkStyle = (await getLinkStyle(supabase, user.id)).style
+    let affiliateLink = resolvePostAffiliateLink(post, { linkStyle: postLinkStyle })
     const amazonDestination = isAmazonLink(affiliateLink) || !!postProductAsin(post as { content?: string | null })
     // Cloak the product CTA link at post time per the creator's chosen Link style
     // (Geniuslink → correct per-site group + persisted code; Bitly → shorten;

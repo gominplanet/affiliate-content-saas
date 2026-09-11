@@ -112,6 +112,88 @@ const GENI = 'https://geni.us/cXNSl'
     postProductAsin({ content: '<a href="https://www.amazon.com/dp/b0dhl5c3rf">x</a>' }) === 'B0DHL5C3RF')
 }
 
+// ── the SECOND time this shipped ────────────────────────────────────────────
+//
+// 11 September. An auto-pilot cascade posted geni.us links to Facebook,
+// Instagram and Bluesky from an account that had been on Passport for weeks.
+// The first fix demoted the stored code to a last resort, and that was not
+// enough: "last resort" was reached EVERY TIME for exactly the creators the fix
+// was for.
+//
+// A Passport creator's post body contains mvpl.ink links and nothing else. No
+// Amazon URL, no geni.us. Both body checks missed, and the only branch left was
+// a geniuslink_code written months earlier. The post's own live, correct link
+// was sitting in the body being ignored.
+{
+  const PASS = 'https://www.mvpl.ink/yYamC7'
+  const post = { geniuslink_code: 'cXNSl', content: `<p>Nice. <a href="${PASS}">Check price on Amazon</a></p>` }
+  check('the body\'s Passport link wins over a stored geni.us code',
+    postProductDestination(post) === PASS, `${postProductDestination(post)}`)
+  check('and no geni.us comes back at all',
+    !/geni\.us/.test(postProductDestination(post) || ''), `${postProductDestination(post)}`)
+
+  // The app-origin shape, for a post written before the branded domain.
+  const viaGo = { geniuslink_code: 'cXNSl', content: '<a href="https://www.mvpaffiliate.io/go/yYamC7">Buy</a>' }
+  check('the /go/<code> shape is recognised too',
+    postProductDestination(viaGo) === 'https://www.mvpaffiliate.io/go/yYamC7', `${postProductDestination(viaGo)}`)
+
+  // Amazon still outranks it: an ASIN needs no network call, and the cloaker can
+  // mint a FRESH Passport link with correct per-surface attribution from it.
+  const both = { geniuslink_code: null, content: `<a href="${PASS}">x</a> <a href="${AMZ}">y</a>` }
+  check('a raw Amazon link still outranks a Passport link', postProductDestination(both) === AMZ,
+    `${postProductDestination(both)}`)
+
+  // A Passport link outranks a geni.us in the same body: it is the newer of the
+  // two, whichever style the creator is on now.
+  const mixed = { geniuslink_code: null, content: `<a href="${GENI}">old</a> <a href="${PASS}">new</a>` }
+  check('a Passport link outranks a geni.us in the same body',
+    postProductDestination(mixed) === PASS, `${postProductDestination(mixed)}`)
+}
+
+// ── the style can veto the stored code ──────────────────────────────────────
+//
+// The remaining hole: a post with NO product link anywhere in its body still
+// fell through to the stored code. For anyone not on Geniuslink that is never
+// the right answer, and it is worse than returning nothing, because nothing
+// means the CTA is simply left off.
+{
+  const bare = { geniuslink_code: 'cXNSl', content: '<p>No product link in here at all.</p>' }
+  check('with no style given the old behaviour stands',
+    postProductDestination(bare) === 'https://geni.us/cXNSl', `${postProductDestination(bare)}`)
+  check('a Passport creator gets nothing rather than a stale code',
+    postProductDestination(bare, { linkStyle: 'passport' }) === null,
+    `${postProductDestination(bare, { linkStyle: 'passport' })}`)
+  check('a Direct creator too', postProductDestination(bare, { linkStyle: 'direct' }) === null)
+  check('a Bitly creator too', postProductDestination(bare, { linkStyle: 'bitly' }) === null)
+  check('a Geniuslink creator still gets their code',
+    postProductDestination(bare, { linkStyle: 'geniuslink' }) === 'https://geni.us/cXNSl')
+
+  // The veto applies ONLY to the stored code. A real destination in the body is
+  // evidence from the post itself and no style may discard it.
+  const withAmz = { geniuslink_code: 'cXNSl', content: `<a href="${AMZ}">Buy</a>` }
+  check('the veto never discards a real link in the body',
+    postProductDestination(withAmz, { linkStyle: 'passport' }) === AMZ,
+    `${postProductDestination(withAmz, { linkStyle: 'passport' })}`)
+}
+
+// ── the callers pass the style ──────────────────────────────────────────────
+//
+// The veto only exists where somebody asks for it. The unattended cron is the
+// one that matters most: it published the wrong link with nobody watching.
+{
+  const { readFileSync } = require('node:fs') as typeof import('node:fs')
+  for (const f of [
+    'app/api/blog/facebook-post/route.ts',
+    'app/api/blog/bluesky-post/route.ts',
+    'app/api/blog/linkedin-post/route.ts',
+    'app/api/cron/process-scheduled/route.ts',
+  ]) {
+    const src = readFileSync(f, 'utf8')
+    check(`${f} passes the creator's link style`, /linkStyle:\s*\w+LinkStyle/.test(src),
+      'without it a stale stored code can still win on a post with no body link')
+  }
+}
+
 console.log(failures.length ? 'FAIL' : 'ALL PASS')
 for (const f of failures) console.log(`  ${f}`)
 process.exit(failures.length ? 1 : 0)

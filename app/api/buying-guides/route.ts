@@ -713,7 +713,9 @@ Rules:
   const guidePicks: GuidePick[] = await Promise.all(picks.map(async (p, i) => {
     const d = p.review.id ? pickDetail.get(p.review.id) : undefined
     const name = (p.review.title || '').replace(/\s*[-–—:|]\s*review\b.*$/i, '').trim().slice(0, 60) || 'this pick'
-    const destination = d ? postProductDestination({ content: d.content, geniuslink_code: d.geniuslink_code }) : null
+    const destination = d
+      ? postProductDestination({ content: d.content, geniuslink_code: d.geniuslink_code }, { linkStyle: guideLinkStyle.style })
+      : null
     const asin = d ? postProductAsin({ content: d.content }) : null
     let buyUrl: string | null = null
     if (destination) {

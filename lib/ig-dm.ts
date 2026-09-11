@@ -12,7 +12,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { ensureDisclaimer } from '@/lib/social-disclaimer'
 import { sendPrivateReply, replyToComment, refreshLongLivedToken } from '@/services/instagram'
 import { resolveCloakedLink } from '@/lib/link-cloak'
-import { postProductDestination, postProductAsin } from '@/lib/post-product-link'
+import { postProductDestination, postProductAsin, type PostLinkStyle } from '@/lib/post-product-link'
 
 export interface IgCommentEvent {
   igAccountId: string   // the IG account that received the comment (webhook entry.id)
@@ -52,13 +52,14 @@ export function resolvePostDmLink(post: {
 export function resolvePostAffiliateLink(post: {
   geniuslink_code?: string | null
   content?: string | null
-}): string | null {
-  return postProductDestination(post)
+}, opts?: { linkStyle?: PostLinkStyle }): string | null {
+  return postProductDestination(post, opts)
 }
 
 // Re-exported so the many call sites that already import from here keep
 // working; the ordering itself lives in lib/post-product-link.ts and is tested.
 export { postProductDestination, postProductAsin }
+export type { PostLinkStyle }
 
 /**
  * Fill the {link} placeholder, then guarantee the two things a DM carrying an

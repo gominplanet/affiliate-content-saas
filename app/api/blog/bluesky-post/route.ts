@@ -12,6 +12,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { getLinkStyle } from '@/lib/link-cloak'
 import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { parseLinkPrefs, linkPrefFor, primaryCardUrl, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
 import { channelShareUrl } from '@/lib/channel-share-url'
@@ -104,7 +105,12 @@ export async function POST(request: NextRequest) {
     // Bluesky's card carries ONE clickable link (300-char cap), so we show the
     // PRIMARY link there — the affiliate product when the affiliate is on, else
     // the chosen content link (review video or blog).
-    let affiliateLink = resolvePostAffiliateLink(post)
+    // The style is read HERE, before the destination is chosen, because it is
+    // what decides whether a stored geni.us code is an acceptable answer. For
+    // anyone not on Geniuslink it never is, and skipping that veto is how a
+    // months-old code outranked the creator's own live link in the post body.
+    const postLinkStyle = (await getLinkStyle(supabase, user.id)).style
+    let affiliateLink = resolvePostAffiliateLink(post, { linkStyle: postLinkStyle })
     // Cloak the product CTA link per the creator's chosen Link style (best-effort).
     if (affiliateLink) {
       affiliateLink = await ensureAffiliateShareLink(supabase, {

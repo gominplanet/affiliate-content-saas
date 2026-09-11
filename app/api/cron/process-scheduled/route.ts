@@ -45,6 +45,7 @@ import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
 import { publishPinForPost } from '@/lib/pin-publish'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { getLinkStyle } from '@/lib/link-cloak'
 import { postProductAsin } from '@/lib/post-product-link'
 import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
@@ -518,9 +519,14 @@ async function publishOne(
   // LinkedIn / Bluesky, plus the video URL + Amazon-tag flag for disclosure.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const linkPrefs = parseLinkPrefs((integration as any).social_link_modes)
+  // The creator's style decides whether a STORED geni.us code is an acceptable
+  // destination. It never is for anyone who is not on Geniuslink, and skipping
+  // that veto is how an unattended cascade posted geni.us links from a Passport
+  // account while the account's own Passport link sat unread in the post body.
+  // This runs unattended, so there is nobody to notice the wrong link go out.
+  const schedLinkStyle = (await getLinkStyle(admin, row.user_id)).style
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let schedAffiliateLink = resolvePostAffiliateLink(post as any)
+  let schedAffiliateLink = resolvePostAffiliateLink(post as any, { linkStyle: schedLinkStyle })
   // Decided BEFORE the cloak below: a wrapped link cannot say where it lands,
   // and Amazon policy 6(w) needs the CTA beside it to make that clear.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
