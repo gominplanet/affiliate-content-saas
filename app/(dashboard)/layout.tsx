@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createServerClient } from '@/lib/supabase/server'
 import { canSeeNav } from '@/lib/feature-access'
-import type { Tier } from '@/lib/tier'
+import { normalizeTier, type Tier } from '@/lib/tier'
 import DashboardShellV2 from '@/components/layout/DashboardShellV2'
 import LastSeenHeartbeat from '@/components/layout/LastSeenHeartbeat'
 import CcRecipeSync from '@/components/scout/CcRecipeSync'
@@ -16,10 +16,19 @@ import { HelpDeskProvider, HelpDeskPanel } from '@/components/HelpDeskSidebar'
 // billing, help, the dashboard home — stays open so cold prospects can explore
 // the free tools. Missing one here is harmless: generation is still blocked at
 // the API by lib/free-tier-gate.ts. Prefix match (route or a sub-path).
+//
+// /photobooth is deliberately NOT on this list. It needs no connection at all —
+// it is selfies — and "1 face model and 6 photobooth headshots" is on the free
+// trial's own advertised feature list. With it here, the Amazon thumbnails page
+// (where the ads land) said "No face yet. Upload your selfies", and that link
+// bounced a trial account into the YouTube funnel. The right qualifier for free
+// AI is the Associates tag, and /api/photobooth already enforces it through
+// freeTrialImageBlock, so the route gate was costing the trial its headline
+// feature to protect something already protected.
 const CONTENT_ROUTES = [
   '/content', '/co-pilot', '/script', '/comparison', '/buying-guides', '/ltk',
   '/deals', '/newsletter', '/social-launch-kit', '/link-in-bio', '/clip-factory',
-  '/shorts-studio', '/customize', '/photobooth', '/instagram-burner',
+  '/shorts-studio', '/customize', '/instagram-burner',
   '/instagram-dm', '/tiktok-publish', '/walmart-pb', '/storefront',
 ]
 function isContentRoute(pathname: string): boolean {
@@ -70,7 +79,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // tools" button on /onboarding lands them here). They only get sent to the
   // funnel when they reach a CONTENT feature, which needs WordPress + YouTube.
   // So the hard redirect now fires only for content routes, not the whole app.
-  if (!onboarded) {
+  // Never for the Amazon plan. The funnel this bounce leads to asks for a
+  // YouTube channel and a WordPress site; an Amazon Influencer has neither and
+  // is never going to. Their plan does not include a blog, so "un-onboarded"
+  // describes their permanent and perfectly valid state. Sending a paying
+  // customer to connect two things we do not sell them is how a Studio customer
+  // paid at 19:25 and never signed in again (see lib/onboarding-path
+  // youtubeRequiredForTier); the Amazon plan meets the same wall on
+  // /link-in-bio and /storefront, which ARE their plan's features.
+  if (!onboarded && normalizeTier(tier) !== 'amazon') {
     const pathname = (await headers()).get('x-pathname') || ''
     if (isContentRoute(pathname)) {
       redirect('/onboarding')

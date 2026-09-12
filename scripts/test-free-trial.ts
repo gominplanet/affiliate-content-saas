@@ -157,6 +157,27 @@ const check = (name: string, cond: boolean, detail?: string) => {
     'the free half of the loop ends at the download; saying so is what makes the paywall land right')
   check('the exclusions name publishing', freeTrialExclusions().some(x => /Publishing/.test(x)),
     'a trial that hides its walls until you hit one produces a support ticket, not an upgrade')
+
+  // "Unlimited" is a word the server has to be able to back.
+  //
+  // The highlights read "Unlimited Amazon product research and Deal Radar" on
+  // three public pages, one of them a paid-ad landing, while
+  // /api/amazon-research counted to fifty a day and 429'd. Fifty is a fine cap
+  // and plenty for a person; the cap was never the problem. Printing a number
+  // the server does not honour, in an ad, is.
+  const unlimited = h.filter(x => /unlimited/i.test(x))
+  check('nothing in the highlights claims to be unlimited',
+    unlimited.length === 0,
+    `${unlimited.join(' | ')} — if a cap really is removed, say so here and delete this check`)
+  check('the research allowance is stated as a number',
+    h.some(x => x.includes(String(FREE_TRIAL.researchSearchesPerDay))),
+    'the count a creator reads has to be the count the route enforces')
+
+  const RESEARCH = (require('node:fs') as typeof import('node:fs'))
+    .readFileSync('app/api/amazon-research/route.ts', 'utf8')
+  check('and the route reads that same number rather than its own copy',
+    /FREE_TRIAL\.researchSearchesPerDay/.test(RESEARCH),
+    'two copies of a number that appears in an ad is how the ad goes stale')
 }
 
 // ── the wiring ──────────────────────────────────────────────────────────────
@@ -204,6 +225,25 @@ const check = (name: string, cond: boolean, detail?: string) => {
   check('the Amazon hub needs no connection to open',
     !/'\/amazon'/.test(contentRoutes),
     'adding /amazon to CONTENT_ROUTES puts the YouTube connection back in front of the first win')
+
+  // Nor the face. "1 face model and 6 photobooth headshots" is on the free
+  // plan's own advertised list, and /photobooth was on the content list, so the
+  // Amazon thumbnails page said "No face yet. Upload your selfies" and that link
+  // bounced a trial account into the YouTube funnel. Photobooth needs no
+  // connection — it is selfies — and /api/photobooth already qualifies free AI
+  // with the Associates tag, which is the right bar.
+  check('photobooth needs no connection either',
+    !/'\/photobooth'/.test(contentRoutes),
+    'the trial advertises the face model; the route gate demanded YouTube or WordPress for it')
+  check('the content-route list was actually found', /'\/content'/.test(contentRoutes),
+    'if the slice missed, both checks above pass by finding nothing')
+
+  // And the whole bounce is off for the Amazon plan. That funnel asks for a
+  // channel and a blog; an Amazon Influencer has neither by design, so it is a
+  // wall in front of /link-in-bio and /storefront, which ARE their features.
+  check('the content bounce never fires for the Amazon plan',
+    /!onboarded && normalizeTier\(tier\) !== 'amazon'/.test(LAYOUT),
+    'a paying customer sent to connect two things their plan does not include')
 
   // ── the page the ads actually land on ─────────────────────────────────────
   //

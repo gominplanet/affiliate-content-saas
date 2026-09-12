@@ -22,6 +22,7 @@ import { getItemsByAsin, creatorsApiConfigured } from '@/services/amazon-creator
 import { recordUsage } from '@/lib/ai-usage'
 import { ONSITE_RULES } from '@/lib/cc-smart-rules'
 import { normalizeTier } from '@/lib/tier'
+import { FREE_TRIAL } from '@/lib/free-trial'
 
 // MVP picks: how many finder hits to deep-verify per page against MVP's onsite
 // buy-to-review rules (carousel + real demand). Each ≈ 2 Keepa tokens, so it's
@@ -45,8 +46,13 @@ export const maxDuration = 30
 
 // Free/trial users get this many Amazon Product Research searches per day (each
 // ≈ 10 Keepa tokens). Insurance against a scraper draining the shared token
-// pool; paid tiers are uncapped. Bump freely — it's a single number.
-const FREE_SEARCHES_PER_DAY = 50
+// pool; paid tiers are uncapped.
+//
+// Read from lib/free-trial rather than declared here, because it is also
+// advertised. Three public pages said "Unlimited Amazon product research" while
+// this route counted to fifty, which is the promise-versus-artifact gap this
+// codebase keeps paying for. One number, one place, no drift.
+const FREE_SEARCHES_PER_DAY = FREE_TRIAL.researchSearchesPerDay
 
 // Keepa rootCategory ids (= Amazon US browse nodes). VERIFIED — kept in sync
 // with Deal Radar's swept nodes (app/api/cron/refresh-deal-radar). id 0 = all.

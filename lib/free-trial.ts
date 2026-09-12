@@ -15,9 +15,10 @@
 // Everything in here serves that sentence. Five thumbnails and five ready-to-post
 // designs are enough to do it more than once. One face model and six photobooth
 // shots are what make the designs theirs rather than generic output, and that is
-// the ninety seconds nobody else's product has. Deal Radar and Amazon product
-// research stay open and uncapped because they are read-only, cost almost
-// nothing, and are the only reason a trial user opens the app on day three.
+// the ninety seconds nobody else's product has. Deal Radar browsing stays open
+// and uncapped, and Amazon product research gets a generous daily allowance,
+// because they are read-only, cost almost nothing, and are the only reason a
+// trial user opens the app on day three.
 // Brand-deal campaigns stay visible and unpitchable, because looking at a $400
 // campaign with four spots left that you cannot claim is a better argument than
 // any pricing page.
@@ -51,6 +52,15 @@ export const FREE_TRIAL = {
   faces: 1,
   /** Photobooth headshots from that face model. */
   photobooth: 6,
+  /** Amazon product searches per day.
+   *
+   *  Three public pages advertised "Unlimited Amazon product research" while
+   *  /api/amazon-research enforced a daily number the copy had never heard of.
+   *  Fifty is plenty for a person and stops a scraper draining the shared Keepa
+   *  token pool (each search is about 10 tokens), so the cap is right and the
+   *  word was wrong. It lives here now, and the route imports it, so the number
+   *  a creator reads is the number the server counts. */
+  researchSearchesPerDay: 50,
   /** The circuit breaker, raised from $5 to cover the loop above with headroom.
    *
    *  At $5 the breaker fired mid-trial, on the most engaged users first, and a
@@ -102,7 +112,7 @@ export function freeTrialHighlights(): string[] {
     `${FREE_TRIAL.thumbnails} Art Director thumbnails`,
     `${FREE_TRIAL.socialDesigns} ready-to-post designs (pins, Instagram, Facebook)`,
     `1 face model and ${FREE_TRIAL.photobooth} photobooth headshots`,
-    'Unlimited Amazon product research and Deal Radar',
+    `${FREE_TRIAL.researchSearchesPerDay} Amazon product searches a day, and Deal Radar`,
     'See every brand-deal campaign your storefront matches',
     'Download everything you make',
   ]

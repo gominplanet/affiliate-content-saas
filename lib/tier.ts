@@ -18,7 +18,7 @@
 //     maxFaces (1/1/2/3), NOT a train-job cap. (faceTrainJobs removed.)
 //   - Deals: a deal is a content piece drawn from the shared postsPerMonth pool
 //     for tiers that have one (Creator/Studio/Pro). Amazon has no blog pool, so
-//     it uses its own dealsPerMonth (100) via checkDealsUsage. dealsPerMonth is
+//     it uses its own dealsPerMonth (60) via checkDealsUsage. dealsPerMonth is
 //     null for the shared-pool tiers so it never advertises a cap that isn't real.
 //   - IG AI thumbnails opens to Studio (30/mo, was Pro-only).
 //   - Topic hubs / Refresh images go to Studio+.
@@ -27,7 +27,11 @@
 //     Studio = weekly (5k/4); Pro = twice-weekly (10k/8).
 //   - Newsletter A/B + Segmented = Pro-only; Scheduling = Studio+.
 //   - Social matrix per tier:
-//       Creator: LinkedIn, Bluesky, Pinterest, Facebook*, Threads*
+//       Creator: LinkedIn, Bluesky, Facebook*, Threads* (no Pinterest: it is
+//                an Amazon-plan channel, and Creator's pinsPerMonth is 0)
+//       Amazon: Facebook*, Pinterest, Instagram* — its own three, NOT a step on
+//               the Creator→Studio→Pro ladder. It is the only plan below Studio
+//               with Instagram or Pinterest.
 //       Studio: + Instagram*, Telegram
 //       Pro:    + Twitter, TikTok*
 //       (* = pending external app-review gate, separate from tier gate)
@@ -574,10 +578,21 @@ export function tierAllowsSocial(tier: Tier, social: Social): boolean {
   return TIERS[normalizeTier(tier)].socials.includes(social)
 }
 
-/** The LOWEST standard tier whose plan includes this social. Used to show
- *  "needs Studio" / "needs Pro" + an upgrade nudge on a locked channel.
+/** The lowest tier ON THE BLOG LADDER whose plan includes this social. Used to
+ *  show "needs Studio" / "needs Pro" + an upgrade nudge on a locked channel.
  *  Admin is excluded (it allows everything but isn't an upgrade target).
- *  Returns null if no standard tier includes it. */
+ *  Returns null if no ladder tier includes it.
+ *
+ *  'amazon' is NOT in the order below, and that is deliberate rather than an
+ *  oversight. Both call sites are the blog schedule modals, and the Amazon plan
+ *  has no blog pool at all: answering "Instagram? get Amazon, it is $79 not $99"
+ *  would send a blogger to a plan that cannot publish a single post. It is a
+ *  cheaper plan and the wrong one.
+ *
+ *  So the name is a promise this cannot keep for every caller. An AMAZON-side
+ *  surface asking the same question needs its own answer — see how the publish
+ *  routes hardcode `upgrade: { tier: 'amazon' }`, and nextTierFor's preferTier.
+ *  If you reach for this from outside the blog ladder, that is the bug. */
 export function minTierForSocial(social: Social): Tier | null {
   const order: Tier[] = ['trial', 'creator', 'studio', 'pro']
   for (const t of order) {
