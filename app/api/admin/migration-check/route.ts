@@ -256,6 +256,25 @@ notify pgrst, 'reload schema';`,
     table: 'campaigns', column: 'campaign_asins',
     sql: `alter table public.campaigns add column if not exists campaign_asins text[];`,
   },
+  {
+    id: '328', what: 'Which onboarding a new account gets (integrations.onboarding_path)',
+    table: 'integrations', column: 'onboarding_path',
+    sql: `alter table public.integrations
+  add column if not exists onboarding_path text;`,
+  },
+  {
+    id: '329', what: 'A published Amazon post can carry a note that is not a failure (amazon_scheduled_posts.note)',
+    table: 'amazon_scheduled_posts', column: 'note',
+    sql: `alter table public.amazon_scheduled_posts
+  add column if not exists note text;
+
+update public.amazon_scheduled_posts
+   set note = error_message,
+       error_message = null
+ where status = 'completed'
+   and error_message is not null
+   and note is null;`,
+  },
 ]
 
 // Per-instance memo of the last probe result. Schema drift is not a
