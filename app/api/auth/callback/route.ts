@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { reportRegistration } from '@/lib/meta-registration'
 
 /**
  * Validate `next` is a same-origin internal path before using it in a redirect.
@@ -37,8 +38,34 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createServerClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
+      // A trial registration completes HERE, when they come back through the
+      // confirmation email, not on the page we send them to. Reporting it from
+      // /onboarding produced zero events across the campaign's first two days
+      // while the ad set optimized on exactly this event. See
+      // lib/meta-registration.ts.
+      //
+      // Only a genuinely new account counts. Sign-in is password-based
+      // (LoginForm uses signInWithPassword), so a code exchange is an email
+      // confirmation rather than a login, but the age check means a future
+      // magic-link or recovery flow through this route cannot re-report an old
+      // account as a fresh registration. It errs towards under-counting, which
+      // is the safe direction for the metric delivery is steered by.
+      const user = data?.user
+      const createdAt = user?.created_at ? Date.parse(user.created_at) : NaN
+      const isNewAccount = Number.isFinite(createdAt) && Date.now() - createdAt < 24 * 60 * 60 * 1000
+      if (user && isNewAccount) {
+        after(async () => {
+          const ok = await reportRegistration({
+            userId: user.id,
+            email: user.email,
+            path: next.includes('for=amazon') ? 'amazon' : 'creator',
+            source: 'email-confirmation',
+          })
+          if (!ok) console.error(`[auth/callback] CompleteRegistration NOT accepted by Meta for ${user.id}`)
+        })
+      }
       return NextResponse.redirect(`${origin}${next}`)
     }
   }

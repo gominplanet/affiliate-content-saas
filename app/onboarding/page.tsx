@@ -12,14 +12,11 @@
  * to /dashboard (they revisit individual steps via the SET UP sidebar group).
  */
 import { redirect } from 'next/navigation'
-import { after } from 'next/server'
-import { cookies, headers } from 'next/headers'
 import { createServerClient } from '@/lib/supabase/server'
 import OnboardingFunnel from '@/components/onboarding/OnboardingFunnel'
 import AmazonOnboarding from '@/components/onboarding/AmazonOnboarding'
 import { resolveOnboardingPath, onboardingDestination, youtubeRequiredForTier } from '@/lib/onboarding-path'
 import MetaTrack from '@/components/analytics/MetaTrack'
-import { sendMetaEvent, registrationEventId } from '@/lib/meta-capi'
 
 export const dynamic = 'force-dynamic'
 
@@ -97,42 +94,20 @@ export default async function OnboardingPage({
   const savedStep = intRow?.onboarding_step != null ? Number(intRow.onboarding_step) : 0
   const initialStep = Math.min(7, Math.max(0, savedStep))
 
-  // Reaching onboarding means the account is confirmed and the free trial has
-  // started, so this is the registration. Report it BOTH ways.
+  // The registration is NOT reported here any more.
   //
-  // The browser tag alone was losing roughly two thirds of them: ad blockers,
-  // iOS/Safari tracking prevention and a cleared localStorage (the onceKey
-  // guard) each eat one silently. Between 2026-09-08 and 2026-09-11 the
-  // database recorded 6 confirmed registrations and Meta received 2 — and this
-  // is the event the ad campaign optimizes on, so delivery was being steered
-  // against a third of reality.
-  //
-  // Both halves carry registrationEventId(), so Meta counts one conversion,
-  // not two. after() runs this once the response is already on its way, so a
-  // slow Graph call never delays the page.
-  const eventId = registrationEventId(user.id)
-  after(async () => {
-    const [jar, hdrs] = await Promise.all([cookies(), headers()])
-    await sendMetaEvent({
-      eventName: 'CompleteRegistration',
-      eventId,
-      email: user.email,
-      externalId: user.id,
-      eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://mvpaffiliate.io'}/onboarding`,
-      fbp: jar.get('_fbp')?.value || null,
-      fbc: jar.get('_fbc')?.value || null,
-      clientIpAddress: hdrs.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
-      clientUserAgent: hdrs.get('user-agent'),
-      custom: { content_name: 'Free trial signup' },
-    })
-  })
+  // It used to be, both through the browser tag and through after() + the
+  // Conversions API, on the theory that every new account renders this page.
+  // Across the Amazon campaign's first two days the pixel received 758
+  // PageViews, 57 ViewContents, 6 InitiateCheckouts, a Purchase and 2 Leads,
+  // and ZERO CompleteRegistrations from either half, while the ad set optimized
+  // on exactly that event. A paid buyer could never have fired it: they are
+  // created already-confirmed and go signup → Stripe → /billing, never through
+  // here. It now fires from the two server routes a registration cannot avoid,
+  // /api/auth/callback and /api/auth/signup-paid. See lib/meta-registration.ts.
 
   return (
     <>
-      {/* Browser half of the pair above. onceKey keeps repeat visits from
-          re-firing it; the shared eventId keeps it from double-counting
-          against the server event. */}
-      <MetaTrack event="CompleteRegistration" onceKey="reg" eventId={eventId} />
       <MetaTrack event="StartTrial" onceKey="trial" />
       {chosen.path === 'amazon' ? (
         <AmazonOnboarding

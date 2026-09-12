@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
 import { getStripe, PRICE_IDS, isValidPriceId } from '@/lib/stripe'
 import type { Tier } from '@/lib/tier'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
+import { reportRegistration } from '@/lib/meta-registration'
 
 /**
  * Paid signup in ONE flow: create the account + send the user straight to
@@ -93,6 +94,26 @@ export async function POST(request: NextRequest) {
   }
 
   const userId = created.user.id
+
+  // A paid signup is a registration too, and this is the ONLY place it can be
+  // reported from. The account is created already-confirmed above, so this
+  // buyer never comes back through /api/auth/callback, and Stripe's success_url
+  // sends them to /billing, so they never render /onboarding either. Before
+  // this, a paying customer could complete the entire flow without Meta ever
+  // being told a registration happened. See lib/meta-registration.ts.
+  //
+  // The Purchase event still fires separately from the Stripe webhook once they
+  // actually pay. This one marks the account existing, which is what the ad set
+  // optimizes on, and an abandoned checkout leaves exactly that: an account.
+  after(async () => {
+    const ok = await reportRegistration({
+      userId,
+      email: cleanEmail,
+      path: tier === 'amazon' ? 'amazon' : 'creator',
+      source: 'paid-signup',
+    })
+    if (!ok) console.error(`[signup-paid] CompleteRegistration NOT accepted by Meta for ${userId}`)
+  })
 
   // Sign them in now so the session cookie is set on this response — when they
   // return from Stripe after paying they're already logged in and land on their

@@ -207,7 +207,6 @@ const check = (name: string, cond: boolean, detail?: string) => {
   const { readFileSync } = require('node:fs') as typeof import('node:fs')
   const SALES2 = readFileSync('app/amazon-influencer/page.tsx', 'utf8')
   const FORM2 = readFileSync('components/auth/SignupForm.tsx', 'utf8')
-  const ONB = readFileSync('app/onboarding/page.tsx', 'utf8')
 
   check('the ad landing page reports a view', /<MetaTrack event="ViewContent"/.test(SALES2),
     'the page the ads point at reported nothing at all')
@@ -240,9 +239,16 @@ const check = (name: string, cond: boolean, detail?: string) => {
     /FREE_TRIAL\.thumbnails/.test(JOIN) && /TIERS\.amazon\.price/.test(JOIN),
     'a second hand-typed copy of the offer is a second thing that goes stale')
 
-  check('the registration still fires where it always did',
-    /event="CompleteRegistration"/.test(ONB) && /eventName: 'CompleteRegistration'/.test(ONB),
-    'both halves, browser and server, sharing one event id')
+  // This used to assert the registration fired from /onboarding, browser and
+  // server, sharing one event id. That was the shape of the bug rather than the
+  // fix: across the Amazon campaign's first two days neither half produced a
+  // single event, and a paid buyer never renders that page at all. The event
+  // now fires from the two server routes a signup cannot avoid, and
+  // scripts/test-registration-event.ts owns that rule in full.
+  check('the registration fires from a route a signup cannot avoid',
+    /reportRegistration\(/.test(readFileSync('app/api/auth/callback/route.ts', 'utf8'))
+    && /reportRegistration\(/.test(readFileSync('app/api/auth/signup-paid/route.ts', 'utf8')),
+    'never from a page that merely tends to get rendered')
 }
 
 if (failures.length) {
