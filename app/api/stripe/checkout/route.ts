@@ -27,7 +27,26 @@ export async function POST(request: NextRequest) {
     promoCode?: string | null
   }
   const priceId = PRICE_IDS[tier as keyof typeof PRICE_IDS]
-  if (!priceId) return NextResponse.json({ error: 'Invalid tier' }, { status: 400 })
+  if (!priceId) {
+    // A plan we sell, with no price env set, is a configuration fault and not a
+    // bad request — and it is the LIKELIER fault on a plan added recently.
+    //
+    // This branch used to answer "Invalid tier" and page nobody, while the
+    // malformed-price branch below alerted ops. So a blank STRIPE_PRICE_AMAZON
+    // in Vercel would take the checkout the ads are buying, tell the customer
+    // they had chosen an invalid plan, and leave no trace anywhere. Whoever
+    // added the tier gets told; the customer is not blamed for it.
+    if (tier in PRICE_IDS) {
+      void alertOps(
+        'Stripe price env missing — checkout blocked',
+        `Tier "${tier}" has no STRIPE_PRICE_* value set. Set it in Vercel and redeploy; until then this plan cannot be bought.`,
+      )
+      return NextResponse.json({
+        error: 'Billing for this plan is temporarily unavailable. Our team has been alerted — please try again shortly or contact support.',
+      }, { status: 503 })
+    }
+    return NextResponse.json({ error: 'Invalid tier' }, { status: 400 })
+  }
   // FAIL FAST on a misconfigured price env. If STRIPE_PRICE_<TIER> isn't a
   // "price_…" id (mis-pasted secret key / product id / blank), don't proceed —
   // starting checkout with a bad price either 500s at Stripe or, worse, falls

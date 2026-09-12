@@ -141,6 +141,27 @@ const check = (name: string, cond: boolean, detail?: string) => {
   check('and amazon is in them', /amazon/.test(formTiers) && /amazon/.test(apiTiers),
     'without it "Get Amazon Influencer" silently becomes a free signup')
 
+  // 1b. A plan with no price env is a fault on our side, and has to be reported
+  //     as one. This branch answered "Invalid tier" and paged nobody, while the
+  //     malformed-price branch right below it alerted ops — so the likelier
+  //     fault on a newly added plan (env never set in Vercel) was the silent
+  //     one, and it would have taken the checkout the ads are paying for while
+  //     telling the customer they picked an invalid plan.
+  const CHECKOUT = readFileSync('app/api/stripe/checkout/route.ts', 'utf8')
+  const missing = CHECKOUT.slice(CHECKOUT.indexOf('if (!priceId)'), CHECKOUT.indexOf('isValidPriceId(priceId)'))
+  check('the missing-price branch was found', missing.length > 50, `${missing.length} chars`)
+  check('a plan we sell with no price set pages ops', /alertOps\(/.test(missing),
+    'a blank STRIPE_PRICE_AMAZON would have failed every Amazon checkout in silence')
+  check('and does not tell the customer they chose an invalid plan',
+    /status: 503/.test(missing),
+    'Invalid tier reads as their mistake; it is ours')
+  check('while a genuinely unknown tier is still a 400',
+    /status: 400/.test(missing),
+    'a malformed request is not a config fault and must not page anyone')
+  check('the two are told apart by the plan list itself',
+    /tier in PRICE_IDS/.test(missing),
+    'anything else drifts the moment a plan is added')
+
   // 2. The path has to reach the confirmation link.
   check('the signup form reads the intent', /parseOnboardingPath\(sp\.get\('for'\)\)/.test(FORM))
   check('and a paid amazon click implies it too', /t === 'amazon' \? 'amazon' : null/.test(FORM),

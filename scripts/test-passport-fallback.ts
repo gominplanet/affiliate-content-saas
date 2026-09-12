@@ -146,6 +146,25 @@ const ALL: PassportMintReason[] = ['ok', 'off', 'tier', 'bad-asin', 'mint-failed
       !/result\.note && <p className="text-\[11px\]"/.test(UI),
       'it was rendered smaller than the caption hint next to it')
   }
+
+  // The fan-out publishes to three networks at once and dropped the note
+  // entirely: it read pinUrl and postUrl off the response and nothing else. So
+  // the one surface that can ship three wrong links in a row was the one that
+  // could never mention it.
+  const ALL = readFileSync('components/amazon/PostToAll.tsx', 'utf8')
+  check('the post-to-all fan-out keeps the note',
+    /note: \(pubData\.geniuslinkNote as string\)/.test(ALL),
+    'three posts, three substituted links, three green ticks')
+  check('and a noted post is not shown as a clean success',
+    /st\.note \? '#ff9500' : '#34c759'/.test(ALL))
+
+  // A reason that only exists in a title attribute does not exist on a phone.
+  check('a failed network prints its reason rather than hovering it',
+    !/title=\{st\.error\}/.test(ALL),
+    'title tooltips do not open on touch, which is where this traffic is')
+  check('and the reasons are rendered under the tiles',
+    /st\.error \|\| st\.note/.test(ALL),
+    'the tile has room for one word; the sentence needs somewhere to go')
 }
 
 if (failures.length) {

@@ -26,7 +26,20 @@ type NetKey = 'pinterest' | 'instagram' | 'facebook'
 
 /** Remembered network picks. Same shape as the other design preferences. */
 const PICK_KEY = 'mvp_post_to_all_picks'
-interface NetState { label: string; accent: string; connected: boolean; status: 'idle' | 'designing' | 'posting' | 'done' | 'error'; url?: string; error?: string }
+interface NetState {
+  label: string; accent: string; connected: boolean
+  status: 'idle' | 'designing' | 'posting' | 'done' | 'error'
+  url?: string
+  error?: string
+  /** The publish route's note: it went out, and the affiliate link or the
+   *  Link-in-Bio tile is not what the creator configured.
+   *
+   *  This was thrown away here. The per-network composers show it; the fan-out
+   *  showed a green "posted" and dropped the sentence on the floor, which meant
+   *  the one surface designed to post three places at once was the one place a
+   *  substituted link could never be noticed. */
+  note?: string
+}
 
 const NETS: { key: NetKey; label: string; accent: string; format: string; endpoint: string; extra?: Record<string, unknown> }[] = [
   { key: 'pinterest', label: 'Pinterest', accent: '#E60023', format: 'pin', endpoint: '/api/amazon/pin' },
@@ -131,7 +144,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
     // Sequential so one shared art-director brief is generated first, then reused
     // (the cache is keyed on briefKey) for the rest — cheaper + consistent.
     for (const n of connectedNets) {
-      setNet(n.key, { status: 'designing', url: undefined, error: undefined })
+      setNet(n.key, { status: 'designing', url: undefined, error: undefined, note: undefined })
       try {
         const genRes = await fetch('/api/youtube/generate-thumbnail', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -157,7 +170,14 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
         })
         const pubData = await pubRes.json().catch(() => ({}))
         if (!pubRes.ok) throw new Error((pubData.error as string) || 'Post failed')
-        setNet(n.key, { status: 'done', url: (pubData.pinUrl || pubData.postUrl) as string | undefined })
+        setNet(n.key, {
+          status: 'done',
+          url: (pubData.pinUrl || pubData.postUrl) as string | undefined,
+          // Carry the sentence through. The routes return it as geniuslinkNote
+          // for wire-compatibility, but it covers Passport substitutions and
+          // Link-in-Bio tile failures too, and it is a complete sentence.
+          note: (pubData.geniuslinkNote as string) || undefined,
+        })
       } catch (e) {
         setNet(n.key, { status: 'error', error: e instanceof Error ? e.message : 'Failed' })
       }
@@ -259,8 +279,15 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
               {!st.connected ? <span className="text-[10px]" style={{ color: 'var(--text-soft)' }}>not connected</span>
                 : st.status === 'designing' ? <span className="text-[10px] inline-flex items-center gap-1" style={{ color: 'var(--text-soft)' }}><Loader2 size={11} className="animate-spin" /> designing</span>
                 : st.status === 'posting' ? <span className="text-[10px] inline-flex items-center gap-1" style={{ color: 'var(--text-soft)' }}><Loader2 size={11} className="animate-spin" /> posting</span>
-                : st.status === 'done' ? (st.url ? <a href={st.url} target="_blank" rel="noreferrer" className="text-[11px] font-semibold text-[#34c759] inline-flex items-center gap-0.5"><Check size={12} /> posted <ExternalLink size={11} /></a> : <span className="text-[11px] font-semibold text-[#34c759] inline-flex items-center gap-0.5"><Check size={12} /> posted</span>)
-                : st.status === 'error' ? <span className="text-[10px] text-[#b91c1c] dark:text-[#f87171] inline-flex items-center gap-1" title={st.error}><AlertCircle size={11} /> failed</span>
+                : st.status === 'done' ? (
+                    // Amber when there is a note: it went out, and something
+                    // about it is not what they set up. A green tick over a
+                    // substituted affiliate link is how that stays unnoticed.
+                    st.url
+                      ? <a href={st.url} target="_blank" rel="noreferrer" className="text-[11px] font-semibold inline-flex items-center gap-0.5" style={{ color: st.note ? '#ff9500' : '#34c759' }}>{st.note ? <AlertCircle size={12} /> : <Check size={12} />} posted <ExternalLink size={11} /></a>
+                      : <span className="text-[11px] font-semibold inline-flex items-center gap-0.5" style={{ color: st.note ? '#ff9500' : '#34c759' }}>{st.note ? <AlertCircle size={12} /> : <Check size={12} />} posted</span>
+                  )
+                : st.status === 'error' ? <span className="text-[10px] text-[#b91c1c] dark:text-[#f87171] inline-flex items-center gap-1"><AlertCircle size={11} /> failed</span>
                 : on ? <span className="text-[10px] text-[#34c759]">will post</span>
                 : <span className="text-[10px]" style={{ color: 'var(--text-soft)' }}>skipped</span>}
             </button>
@@ -277,6 +304,30 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
           ? <><Loader2 size={16} className="animate-spin" /> Designing + posting…</>
           : <><Rocket size={16} /> {chosen.length === 0 ? 'Pick a network above' : `Generate & post to ${chosen.map(n => n.label).join(' + ')}`}</>}
       </button>
+      {/* WHAT HAPPENED, in words, under the tiles.
+          The tile only has room for one word, and "failed" used to carry its
+          reason in a title attribute — which does not exist on a phone, where
+          most of this traffic is. A creator saw the word failed and had no way,
+          ever, to find out why. Same for a note: the fan-out was the one
+          surface that could publish three posts with a substituted link and
+          say nothing at all about it. */}
+      {NETS.some(n => nets[n.key].error || nets[n.key].note) && (
+        <div className="flex flex-col gap-1.5">
+          {NETS.map(n => {
+            const st = nets[n.key]
+            const msg = st.error || st.note
+            if (!msg) return null
+            return (
+              <p key={n.key} className="flex items-start gap-1.5 text-[12px] leading-relaxed"
+                style={{ color: st.error ? '#b91c1c' : 'var(--text)' }}>
+                <AlertCircle size={13} className="mt-0.5 flex-shrink-0" style={{ color: st.error ? '#b91c1c' : '#ff9500' }} />
+                <span><strong>{st.label}:</strong> {msg}</span>
+              </p>
+            )
+          })}
+        </div>
+      )}
+
       {!anyConnected
         ? <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>Connect at least one network above first.</p>
         : chosen.length === 0
