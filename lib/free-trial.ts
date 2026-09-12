@@ -50,8 +50,25 @@ export const FREE_TRIAL = {
   socialDesigns: 5,
   /** One face model, so every design can carry their face. */
   faces: 1,
-  /** Photobooth headshots from that face model. */
-  photobooth: 6,
+  /** Photobooth headshots from that face model.
+   *
+   *  Was 6, which is exactly what the $79 Amazon plan gets. A paid subscriber
+   *  having the same headshot allowance as somebody paying nothing is not a
+   *  trial, it is the product. Two is enough to see your own face come out of
+   *  the machine, which is the whole job of this number, and it leaves the paid
+   *  plan three times the room. */
+  photobooth: 2,
+  /** How long the free plan lasts.
+   *
+   *  It used to last forever. The caps were monthly and the counter reset on the
+   *  1st, so a free account got five thumbnails, five designs and its headshots
+   *  again every month for as long as it existed. That is not a trial, it is a
+   *  free tier with a small ceiling, and nothing in the funnel ever forced the
+   *  decision the trial exists to force.
+   *
+   *  Counted from signup rather than the calendar, so somebody who joins on the
+   *  28th gets a month like everybody else instead of three days. */
+  trialDays: 30,
   /** Amazon product searches per day.
    *
    *  Three public pages advertised "Unlimited Amazon product research" while
@@ -68,6 +85,71 @@ export const FREE_TRIAL = {
    *  a broken product. */
   aiSpendCeilingUsd: 15,
 } as const
+
+/**
+ * The free month: when it started, when it ends, and whether it is over.
+ *
+ * Every free allowance is counted inside this window instead of the calendar
+ * month. Two things follow, and both are the point:
+ *
+ *   The five designs are five for the month, not five that come back on the 1st.
+ *   Somebody who signs up on the 28th used to get five designs, then five more
+ *   three days later.
+ *
+ *   When the window closes the allowances do not renew. The account keeps
+ *   everything it made and everything read-only (research, Deal Radar, the
+ *   designs already downloaded); it just cannot spend more free AI.
+ *
+ * `signupISO` absent or unreadable returns a window that has NOT expired. A
+ * date we could not read must never be the reason somebody's account stops
+ * working, and the per-feature caps still hold in that case.
+ */
+export interface FreeTrialWindow {
+  /** Count usage from here. */
+  startISO: string
+  /** The moment the free month closes. */
+  endISO: string
+  expired: boolean
+  /** Whole days left, floored, never negative. 0 on the last day. */
+  daysLeft: number
+  /** For checkUsageCap's "resets ..." line. Not a reset: it is the end. */
+  endLabel: string
+}
+
+export function freeTrialWindow(signupISO: string | null | undefined, now: Date = new Date()): FreeTrialWindow {
+  const start = new Date(String(signupISO ?? ''))
+  const usable = !isNaN(start.getTime())
+  // No readable signup date: behave as if the month started now, so nothing is
+  // blocked and the counter still has a window to count in.
+  const from = usable ? start : now
+  const end = new Date(from.getTime() + FREE_TRIAL.trialDays * 24 * 60 * 60 * 1000)
+  const msLeft = end.getTime() - now.getTime()
+  return {
+    startISO: from.toISOString(),
+    endISO: end.toISOString(),
+    expired: usable && msLeft <= 0,
+    daysLeft: Math.max(0, Math.floor(msLeft / (24 * 60 * 60 * 1000))),
+    endLabel: end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  }
+}
+
+/**
+ * The sentence to show when a free month is over, or null to allow.
+ *
+ * Paid tiers are never gated here. Says what they keep as well as what has
+ * stopped, because an account that suddenly refuses to generate and explains
+ * nothing reads as broken rather than finished.
+ */
+export function freeTrialExpiredBlock(opts: {
+  tier: Tier
+  signupISO: string | null | undefined
+  now?: Date
+}): string | null {
+  if (opts.tier !== 'trial') return null
+  const w = freeTrialWindow(opts.signupISO, opts.now)
+  if (!w.expired) return null
+  return `Your free month is over, so there is no free AI left on this account. Everything you already made is still yours to download, and Amazon product research and Deal Radar stay open. Upgrade to keep making designs.`
+}
 
 /** The Amazon Associates tag format: 2-20 chars, letters/digits/hyphens, ending
  *  in a store id like `-20`. Loose on purpose. This is a qualifier, not an
@@ -109,6 +191,7 @@ export function pooledDesignCap(limits: { socialDesignsPerMonth?: number | null 
  *  so three surfaces cannot advertise three different free plans. */
 export function freeTrialHighlights(): string[] {
   return [
+    `Free for ${FREE_TRIAL.trialDays} days, no card`,
     `${FREE_TRIAL.thumbnails} Art Director thumbnails`,
     `${FREE_TRIAL.socialDesigns} ready-to-post designs (pins, Instagram, Facebook)`,
     `1 face model and ${FREE_TRIAL.photobooth} photobooth headshots`,

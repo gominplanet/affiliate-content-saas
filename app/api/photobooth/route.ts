@@ -10,7 +10,8 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { freeTrialImageBlock } from '@/lib/free-trial'
+import { freeTrialImageBlock, freeTrialExpiredBlock, freeTrialWindow } from '@/lib/free-trial'
+import { accountSignupISO } from '@/lib/free-trial-signup'
 import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { createOpenAIService, OpenAIService, normalizeToPng } from '@/services/openai'
@@ -23,7 +24,7 @@ export const maxDuration = 300
 async function loadPhotoboothUsage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any, userId: string,
-): Promise<{ tier: Tier; limit: number | null; used: number; remaining: number | null; resetLabel: string; amazonTag: string | null }> {
+): Promise<{ tier: Tier; limit: number | null; used: number; remaining: number | null; resetLabel: string; amazonTag: string | null; signupISO: string | null }> {
   // .maybeSingle() — new trial users have no integrations row yet,
   // and normalizeTier() handles undefined cleanly. .single() would
   // throw and 500 the route. Audit fix 2026-06-02.
@@ -36,13 +37,18 @@ async function loadPhotoboothUsage(
   const tier = normalizeTier(row?.tier)
   const amazonTag = (row as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag ?? null
   const limit = TIERS[tier].photoboothPerMonth
+  // A trial counts inside its own free month, not the calendar one, and the
+  // window does not come back on the 1st. See lib/free-trial freeTrialWindow.
+  const signupISO = tier === 'trial' ? await accountSignupISO(userId) : null
+  const tw = tier === 'trial' ? freeTrialWindow(signupISO) : null
   const check = await checkUsageCap(
     supabase, userId, PRIMARY_FEATURE.photobooth, limit,
-    row?.subscription_period_start ?? null, row?.subscription_period_end ?? null,
+    tw ? tw.startISO : (row?.subscription_period_start ?? null),
+    tw ? tw.endISO : (row?.subscription_period_end ?? null),
   )
   const used = check?.used ?? 0
   return {
-    tier, limit, used, amazonTag,
+    tier, limit, used, amazonTag, signupISO,
     remaining: limit === null ? null : Math.max(0, limit - used),
     resetLabel: check?.resetLabel ?? '',
   }
@@ -148,13 +154,17 @@ export async function POST(request: Request) {
     // ── Pro gate + monthly cap ────────────────────────────────────────────
     const usage = await loadPhotoboothUsage(supabase, user.id)
     const tier = usage.tier
-    // The free trial gets a face model and six headshots — "your face on every
+    // The free trial gets a face model and two headshots — "your face on every
     // design" is the whole argument, so it cannot sit behind the paywall. What it
     // does sit behind is the Associates tag, the free tier's qualifier. See
     // lib/free-trial.ts.
     {
       const block = freeTrialImageBlock({ tier, amazonTag: usage.amazonTag })
       if (block) return NextResponse.json({ error: block, code: 'associates_tag_required' }, { status: 403 })
+      // And the free month has to still be running. Free allowances used to
+      // reset every calendar month, forever.
+      const over = freeTrialExpiredBlock({ tier, signupISO: usage.signupISO })
+      if (over) return NextResponse.json({ error: over, code: 'trial_over', limitReached: true, currentTier: tier }, { status: 403 })
     }
     // Paid-tier gate: photoboothPerMonth === 0 → off. Creator/Pro have a
     // monthly cap; admin is unlimited (null limit).

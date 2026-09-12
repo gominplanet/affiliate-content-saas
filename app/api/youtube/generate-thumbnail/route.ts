@@ -10,7 +10,8 @@ import sharp from 'sharp'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
-import { pooledDesignCap, freeTrialImageBlock } from '@/lib/free-trial'
+import { pooledDesignCap, freeTrialImageBlock, freeTrialExpiredBlock, freeTrialWindow } from '@/lib/free-trial'
+import { accountSignupISO } from '@/lib/free-trial-signup'
 import { spendGate } from '@/lib/ai-spend'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
@@ -1168,6 +1169,22 @@ export async function POST(request: Request) {
       if (block) return NextResponse.json({ error: block, code: 'associates_tag_required' }, { status: 403 })
     }
 
+    // ── The free month ────────────────────────────────────────────────────
+    // Free allowances used to be monthly and reset on the 1st, so a free
+    // account got five thumbnails and five designs again every month forever.
+    // They now run for FREE_TRIAL.trialDays from signup and do not renew. Only
+    // looked up for a trial: no paying account pays for this call.
+    const trialSignupISO = tier === 'trial' ? await accountSignupISO(user.id) : null
+    {
+      const over = freeTrialExpiredBlock({ tier, signupISO: trialSignupISO })
+      if (over) {
+        return NextResponse.json({
+          error: over, code: 'trial_over', capExceeded: true,
+          upgrade: nextTierFor(tier, 'thumbnailsPerMonth', { preferTier: 'amazon' }),
+        }, { status: 403 })
+      }
+    }
+
     // gpt-image render quality is tier-gated: Pro (and admin) get HIGH for the
     // crispest, most ChatGPT-grade output; every other paid tier gets MEDIUM.
     // High costs ~3× more per image (~$0.22 vs ~$0.08), so it's a Pro perk.
@@ -1537,8 +1554,29 @@ export async function POST(request: Request) {
       else if (isIg || isStory) { capLimit = T.igPostsPerMonth; capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
       else if (isFb) { capLimit = T.facebookPostsPerMonth; capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
       else { capLimit = T.thumbnailsPerMonth; capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
+      // A ZERO allowance is not a used-up allowance. Creator can now open the
+      // Amazon hub (its Thumbnail Generator and Research run on Creator's own
+      // limits), and its pin/Instagram/Facebook allowance is 0, so the cap
+      // message would have read "You've used all 0 pins on your plan this
+      // period" to somebody who had made none. Say what the plan includes and
+      // offer the one that sells this.
+      if (capLimit === 0) {
+        return NextResponse.json({
+          error: `${capLabel.charAt(0).toUpperCase()}${capLabel.slice(1)} are not part of the ${TIERS[tier].label} plan. The Amazon Influencer plan includes them.`,
+          capExceeded: true,
+          upgrade: nextTierFor(tier, 'thumbnailsPerMonth', { preferTier: 'amazon' }),
+        }, { status: 403 })
+      }
       if (typeof capLimit === 'number') {
-        const cap = await checkUsageCap(supabase, user.id, capFeatures, capLimit, tierRow?.subscription_period_start ?? null, tierRow?.subscription_period_end ?? null)
+        // A trial counts inside its own free month, not the calendar one. With
+        // the calendar window, somebody who signed up on the 28th spent five
+        // designs and had five more three days later.
+        const tw = tier === 'trial' ? freeTrialWindow(trialSignupISO) : null
+        const cap = await checkUsageCap(
+          supabase, user.id, capFeatures, capLimit,
+          tw ? tw.startISO : (tierRow?.subscription_period_start ?? null),
+          tw ? tw.endISO : (tierRow?.subscription_period_end ?? null),
+        )
         if (cap && cap.exceeded) {
           // Offer the plan that actually sells what they just ran out of. The
           // default ladder is the BLOG ladder, so a free user out of designs was

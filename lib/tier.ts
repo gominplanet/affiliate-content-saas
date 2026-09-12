@@ -79,16 +79,19 @@ export const TIERS = {
      *  catching runaways + uncapped admin testing (the overnight-$60 case).
      *  Set ~2× the expected max so normal users never hit it. null = no ceiling. */
     /** Raised 5 → 15 when the free tier became the Amazon trial (see
-     *  lib/free-trial.ts). Five thumbnails, five designs, a face model and six
-     *  photobooth shots do not fit under $5: the breaker fired mid-trial, on the
-     *  most engaged users first, and a generation that simply stops working
-     *  reads as a broken product rather than a limit. */
+     *  lib/free-trial.ts). Five thumbnails, five designs, a face model and its
+     *  headshots do not fit under $5: the breaker fired mid-trial, on the most
+     *  engaged users first, and a generation that simply stops working reads as
+     *  a broken product rather than a limit. Now a once-per-account cost rather
+     *  than a monthly one, since the free allowances no longer renew. */
     monthlyAiSpendCeilingUsd: 15 as number | null,
     /** Shared "Generations" counter: blog + thumbnail + metadata each
      *  burn 1 unit. Trial is gated by lifetimeMax below, not monthly. */
     postsPerMonth: null as number | null,
-    /** 5 posts LIFETIME (not monthly) — hard wall after the 5th, no card,
-     *  no time limit. The "aha" run. */
+    /** 5 posts LIFETIME (not monthly) — hard wall after the 5th, no card.
+     *  The "aha" run. Every OTHER allowance on this tier is bounded by the free
+     *  month instead (FREE_TRIAL.trialDays); this one was always a lifetime
+     *  count and stays one. */
     lifetimeMax: 5 as number | null,
     collabsPerMonth: 0 as number | null,
     /** Tied to the 5 Co-Pilot videos the trial covers. Shares the same
@@ -111,11 +114,16 @@ export const TIERS = {
      *  paid tier, where a pin cap and an Instagram cap are separate promises.
      *  Read via pooledDesignCap() in lib/free-trial.ts. */
     socialDesignsPerMonth: 5 as number | null,
-    /** The face model and its headshots are the trial's whole argument: "your
-     *  face on every design" is what makes five designs feel like theirs instead
-     *  of generic output. Matched to the Amazon tier (1 face, 6 shots) because
-     *  it is a one-time cost and the most memorable ninety seconds in the app. */
-    photoboothPerMonth: 6 as number | null,
+    /** The face model is the trial's whole argument: "your face on every design"
+     *  is what makes five designs feel like theirs instead of generic output.
+     *
+     *  Headshots were 6, which is exactly what the $79 Amazon plan gets. A paid
+     *  subscriber with the same allowance as somebody paying nothing is not a
+     *  trial. Two is enough to watch your own face come out of the machine,
+     *  which is all this number has to do, and it leaves the paid plan 3x the
+     *  room. Mirrors FREE_TRIAL.photobooth in lib/free-trial.ts, which is what
+     *  the sales pages print. */
+    photoboothPerMonth: 2 as number | null,
     maxFaces: 1 as number | null,
     blogImagesPerPost: 2,
     assistantMessagesPerMonth: 20 as number | null,

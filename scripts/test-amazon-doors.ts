@@ -116,6 +116,33 @@ check('the hub files were found', HUB_FILES.length > 10, `${HUB_FILES.length} fo
     '/connect-socials is walled off for Amazon; offering it opens a door onto this same page')
 }
 
+// ── every plan can see the hub; the ALLOCATION is what differs ──────────────
+//
+// Creator was the only plan shut out of the Amazon hub, including the free
+// trial. So "upgrade to Creator" bought you a smaller visible product than the
+// free account you were leaving, and the plan we most want Creator to buy next
+// was the one thing they could not look at.
+{
+  const nav = SHELL.slice(SHELL.indexOf('const canAmazonHub'), SHELL.indexOf('const canAmazonHub') + 400)
+  for (const t of ['trial', 'creator', 'amazon', 'studio', 'pro', 'admin']) {
+    check(`${t} can see the Amazon hub`, new RegExp(`'${t}'`).test(nav), nav.slice(0, 200))
+  }
+
+  // Seeing it is not the same as being able to spend on it. Creator's design
+  // allowance is 0, and the cap message for a 0 limit used to read "You've used
+  // all 0 pins on your plan this period" to somebody who had made none.
+  const THUMB = readFileSync('app/api/youtube/generate-thumbnail/route.ts', 'utf8')
+  check('a zero allowance is not reported as a used-up allowance',
+    /if \(capLimit === 0\)/.test(THUMB),
+    'nothing was consumed, so "you have used all 0" is describing the wrong thing')
+  check('and it names the plan that does include it',
+    /capLimit === 0\)[\s\S]{0,400}preferTier: 'amazon'/.test(THUMB),
+    'the default ladder points at Creator, which has 0 pins and cannot make one')
+  check('the zero case is answered before the counter is consulted',
+    THUMB.indexOf('if (capLimit === 0)') < THUMB.indexOf('const cap = await checkUsageCap'),
+    'a count against a limit of zero can only ever produce the wrong sentence')
+}
+
 // ── the Amazon onboarding is not a locked room ──────────────────────────────
 {
   const ONB = readFileSync('components/onboarding/AmazonOnboarding.tsx', 'utf8')

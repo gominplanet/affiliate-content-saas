@@ -20,7 +20,8 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { TIERS, normalizeTier } from '@/lib/tier'
-import { freeTrialImageBlock } from '@/lib/free-trial'
+import { freeTrialImageBlock, freeTrialExpiredBlock } from '@/lib/free-trial'
+import { accountSignupISO } from '@/lib/free-trial-signup'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 
 // LoRA training retired (2026-05-22): gpt-image-1/2 uses the uploaded photos
@@ -69,6 +70,11 @@ export async function POST(request: Request) {
   {
     const block = freeTrialImageBlock({ tier, amazonTag: (intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag })
     if (block) return NextResponse.json({ error: block, code: 'associates_tag_required' }, { status: 403 })
+    // And the free month has to still be running. Building a face model is the
+    // single most expensive thing a free account does, so an expired trial must
+    // not be able to start another one.
+    const over = freeTrialExpiredBlock({ tier, signupISO: tier === 'trial' ? await accountSignupISO(ownerId) : null })
+    if (over) return NextResponse.json({ error: over, code: 'trial_over', limitReached: true, currentTier: tier }, { status: 403 })
   }
   if (maxFaces === 0) {
     return NextResponse.json({

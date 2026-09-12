@@ -7,7 +7,7 @@
 // downloaded, in their hands. Complete that once and the $79 explains itself.
 //
 //  1. THE BREAKER FIRES MID-TRIAL. The ceiling was $5. Five thumbnails, five
-//     designs, a face model and six headshots do not fit under $5, so generation
+//     designs, a face model and its headshots do not fit under $5, so generation
 //     would stop working partway through, on the most engaged users first, and a
 //     generation that just stops does not read as a limit. It reads as broken.
 //
@@ -23,7 +23,7 @@
 import { TIERS, nextTierFor } from '../lib/tier'
 import {
   FREE_TRIAL, looksLikeAssociatesTag, freeTrialImageBlock, pooledDesignCap,
-  freeTrialHighlights, freeTrialExclusions,
+  freeTrialHighlights, freeTrialExclusions, freeTrialWindow, freeTrialExpiredBlock,
 } from '../lib/free-trial'
 
 const failures: string[] = []
@@ -43,9 +43,11 @@ const check = (name: string, cond: boolean, detail?: string) => {
 
   // A rough floor for the advertised allowance, using the costs recorded in the
   // Amazon tier comment: ~$0.14 a thumbnail, ~$0.06 a design, and a face model
-  // plus six headshots on top. If the ceiling ever drops back under this, the
-  // breaker becomes the real cap again.
-  const roughFloor = FREE_TRIAL.thumbnails * 0.14 + FREE_TRIAL.socialDesigns * 0.06 + 6 * 0.06 + 1.0
+  // plus its headshots on top. Reads the headshot count rather than hardcoding
+  // it, so changing the allowance re-checks the ceiling instead of quietly
+  // invalidating this sum. If the ceiling drops back under it, the breaker
+  // becomes the real cap again.
+  const roughFloor = FREE_TRIAL.thumbnails * 0.14 + FREE_TRIAL.socialDesigns * 0.06 + FREE_TRIAL.photobooth * 0.06 + 1.0
   check('the ceiling has headroom over the advertised allowance',
     (trial.monthlyAiSpendCeilingUsd ?? 0) > roughFloor * 1.5,
     `ceiling ${trial.monthlyAiSpendCeilingUsd}, rough cost of the full allowance ${roughFloor.toFixed(2)}`)
@@ -60,10 +62,28 @@ const check = (name: string, cond: boolean, detail?: string) => {
     '"your face on every design" is the trial\'s whole argument')
   check('the headshots are included', trial.photoboothPerMonth === FREE_TRIAL.photobooth)
 
-  // The trial matches the Amazon tier on faces and headshots on purpose: it is a
-  // one-time cost and the most memorable part of the product.
+  // The trial gets ONE face on purpose: putting your own face on a design is the
+  // whole argument, and a trial that cannot do it once has no argument.
   check('the face allowance matches the plan it is selling', trial.maxFaces === TIERS.amazon.maxFaces)
-  check('the headshot allowance matches too', trial.photoboothPerMonth === TIERS.amazon.photoboothPerMonth)
+
+  // The headshots must NOT match. They used to, at 6 apiece, which meant a $79
+  // subscriber had exactly the allowance of somebody paying nothing. Two is
+  // enough to watch your own face come out of the machine, which is all this
+  // number has to do.
+  check('the trial gets fewer headshots than the plan it is selling',
+    (trial.photoboothPerMonth ?? 0) < (TIERS.amazon.photoboothPerMonth ?? 0),
+    `trial ${trial.photoboothPerMonth} vs amazon ${TIERS.amazon.photoboothPerMonth}`)
+  check('but still enough to see its own face once',
+    (trial.photoboothPerMonth ?? 0) >= 1,
+    'zero headshots removes the reason the trial converts')
+
+  // And no PAID plan may sit at or below the free one on headshots. Amazon was
+  // the only one that did; this catches the next one.
+  for (const t of ['creator', 'amazon', 'studio', 'pro'] as const) {
+    check(`${t} gets more headshots than the free plan`,
+      (TIERS[t].photoboothPerMonth ?? 0) > (trial.photoboothPerMonth ?? 0),
+      `${t} ${TIERS[t].photoboothPerMonth} vs trial ${trial.photoboothPerMonth}`)
+  }
 }
 
 // ── publishing stays paid ───────────────────────────────────────────────────
@@ -145,6 +165,82 @@ const check = (name: string, cond: boolean, detail?: string) => {
       freeTrialImageBlock({ tier: t, amazonTag: null }) === null,
       'this gate is a free-tier qualifier, not a product requirement')
   }
+}
+
+// ── the free month, and the fact that it ends ───────────────────────────────
+//
+// Free allowances were monthly and the counter reset on the 1st, so a free
+// account got five thumbnails, five designs and its headshots again every month
+// for as long as it existed. That is not a trial. It also meant somebody who
+// signed up on the 28th spent five designs and had five more three days later.
+{
+  const at = (iso: string) => new Date(iso)
+  const SIGNUP = '2026-09-01T12:00:00.000Z'
+
+  const day1 = freeTrialWindow(SIGNUP, at('2026-09-01T12:00:01.000Z'))
+  check('the window starts at signup, not the 1st of the month',
+    day1.startISO === new Date(SIGNUP).toISOString(), day1.startISO)
+  check('and it is not over on day one', !day1.expired)
+  check('with the whole month left', day1.daysLeft === FREE_TRIAL.trialDays - 1,
+    String(day1.daysLeft))
+
+  // The case the calendar window got wrong.
+  const lateSignup = freeTrialWindow('2026-09-28T00:00:00.000Z', at('2026-10-02T00:00:00.000Z'))
+  check('a late-in-the-month signup still has its month four days later',
+    !lateSignup.expired,
+    'under the calendar window their allowance came back on 1 October instead')
+  check('and the counter still starts at their signup',
+    lateSignup.startISO.startsWith('2026-09-28'), lateSignup.startISO)
+
+  const justOver = freeTrialWindow(SIGNUP, at('2026-10-01T12:00:01.000Z'))
+  check('the month ends after exactly the advertised days', justOver.expired,
+    `${FREE_TRIAL.trialDays} days from ${SIGNUP}`)
+  check('and nothing is left', justOver.daysLeft === 0, String(justOver.daysLeft))
+
+  const justUnder = freeTrialWindow(SIGNUP, at('2026-10-01T11:59:00.000Z'))
+  check('and not one minute early', !justUnder.expired)
+
+  // A date we cannot read must never be why an account stops working.
+  for (const bad of [null, undefined, '', 'not a date']) {
+    const w = freeTrialWindow(bad as string | null | undefined, at('2027-01-01T00:00:00.000Z'))
+    check(`an unreadable signup date (${JSON.stringify(bad)}) does not expire anybody`, !w.expired)
+  }
+
+  // The block itself.
+  check('a paid plan is never told its trial is over',
+    (['creator', 'amazon', 'studio', 'pro', 'admin'] as const).every(t =>
+      freeTrialExpiredBlock({ tier: t, signupISO: '2020-01-01T00:00:00.000Z' }) === null))
+  const over = freeTrialExpiredBlock({ tier: 'trial', signupISO: '2020-01-01T00:00:00.000Z' })
+  check('an expired trial gets a sentence', typeof over === 'string' && over.length > 40)
+  check('and it says what they keep, not only what stopped',
+    /still yours to download/i.test(over ?? '') && /research/i.test(over ?? ''),
+    'an account that refuses to generate and explains nothing reads as broken, not finished')
+  check('a trial inside its month is not blocked',
+    freeTrialExpiredBlock({ tier: 'trial', signupISO: new Date().toISOString() }) === null)
+
+  // Wiring: every route that spends free AI has to honour both halves.
+  const { readFileSync } = require('node:fs') as typeof import('node:fs')
+  for (const f of [
+    'app/api/youtube/generate-thumbnail/route.ts',
+    'app/api/photobooth/route.ts',
+    'app/api/face-models/route.ts',
+  ]) {
+    const src = readFileSync(f, 'utf8')
+    check(`${f} refuses an expired trial`, /freeTrialExpiredBlock\(/.test(src),
+      'without it the free month never actually ends')
+  }
+  for (const f of ['app/api/youtube/generate-thumbnail/route.ts', 'app/api/photobooth/route.ts']) {
+    const src = readFileSync(f, 'utf8')
+    check(`${f} counts inside the free month rather than the calendar month`,
+      /freeTrialWindow\(/.test(src) && /tw \? tw\.startISO/.test(src),
+      'a calendar window hands the allowance back on the 1st')
+  }
+  // The signup lookup must not live in the pure module: it is imported by three
+  // public pages that render in the browser.
+  const PURE = readFileSync('lib/free-trial.ts', 'utf8')
+  check('the pure module stays free of server imports',
+    !/supabase/i.test(PURE),
+    'the pricing page imports this file; a service-role client has no business in it')
 }
 
 // ── one description of the free plan, not three ─────────────────────────────

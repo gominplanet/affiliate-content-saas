@@ -333,7 +333,13 @@ export default function DashboardShellV2({
   // qualifier in lib/free-trial.ts, not by the sidebar. Publishing those designs
   // stays paid (trial has no connected socials), so the wall lands when they try
   // to post, holding a finished design.
-  const canAmazonHub = (['trial', 'amazon', 'studio', 'pro', 'admin'] as string[]).includes(effectiveTier)
+  // Creator was the only plan shut out of the Amazon hub, including the free
+  // trial, which made "upgrade to Creator" a downgrade in visible surface. Every
+  // plan sees it now and the ALLOCATION is what differs: Creator's Thumbnail
+  // Generator and Research work on their own limits, and Social Influencer is
+  // where their zero design allowance is stated plainly with the Amazon plan
+  // offered. A tier gate on the door was hiding the reason to walk through it.
+  const canAmazonHub = (['trial', 'creator', 'amazon', 'studio', 'pro', 'admin'] as string[]).includes(effectiveTier)
 
   // Admin-only: count of OPEN support tickets (not yet answered/closed). Drives
   // the red "Support" alert in the topbar so the founder catches new tickets
