@@ -1,11 +1,27 @@
 import type { NextConfig } from 'next'
 
-// Cache-bust marker (2026-08 build-cache-bust-2): webpack keys its persistent
+// Cache-bust marker (build-cache-bust-3): webpack keys its persistent
 // filesystem cache on this config file via buildDependencies, so changing this
 // file forces Vercel to fully invalidate the restored .next/cache and rebuild
-// from scratch — the git equivalent of a no-cache redeploy. Added to clear a
-// stale client-reference manifest that dropped content/page.tsx#default after a
-// new client component entered its import graph.
+// from scratch, the git equivalent of a no-cache redeploy.
+//
+// bust-2 cleared a stale client-reference manifest that dropped
+// content/page.tsx#default after a new client component entered its import
+// graph.
+//
+// bust-3 clears the production lane after a682505 was killed at Vercel's
+// 45-minute ceiling. Vercel caches per lane, and every production build since
+// that kill has failed in under three and a half minutes while the identical
+// commit built green as a preview:
+//
+//   a74de65  production Ready 4m21
+//   a682505  production Error 46m11   preview Ready  4m29
+//   4a3b5f2e production Error  3m24   preview Ready 14m10
+//   6ec78c9f production Error  2m40   preview Ready  5m12
+//
+// Same code, same build command, same test suites, one lane green and one lane
+// dead. That is a cache, not a compile. If a production build fails again after
+// this commit the theory is wrong and the build log is the next thing to read.
 
 const nextConfig: NextConfig = {
   typescript: {
