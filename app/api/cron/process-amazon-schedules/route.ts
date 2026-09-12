@@ -106,10 +106,28 @@ export async function GET(request: Request) {
         })
         externalId = out.pinId; externalUrl = out.pinUrl; note = out.geniuslinkNote
       }
+      // The note goes in `note`, not `error_message`. It means the post DID go
+      // out and something about it is worth reading (the link was substituted),
+      // which is a different thing from a failure and has to look different in
+      // the queue.
+      //
+      // Two writes on purpose. `note` ships in migration 329; on a database
+      // where that has not run, naming it would make PostgREST reject the whole
+      // update and leave the row stuck in 'processing' forever — a published
+      // post the queue reports as still pending, and the cron would never claim
+      // it again. So the status write names only columns that have always
+      // existed, and the note is a separate best-effort write after it.
       await admin.from('amazon_scheduled_posts').update({
         status: 'completed', external_id: externalId, external_url: externalUrl,
-        error_message: note, updated_at: new Date().toISOString(),
+        error_message: null, updated_at: new Date().toISOString(),
       }).eq('id', row.id)
+      if (note) {
+        const { error: noteErr } = await admin.from('amazon_scheduled_posts')
+          .update({ note }).eq('id', row.id)
+        // Log it rather than swallow it: a missing column here means every
+        // substituted link is invisible again, which is the thing this is for.
+        if (noteErr) console.error('[cron/process-amazon-schedules] note not stored (run migration 329?)', { id: row.id, error: noteErr.message, note })
+      }
       return { id: row.id, status: 'completed' as const }
     } catch (err) {
       const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500)

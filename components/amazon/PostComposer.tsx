@@ -7,8 +7,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
 import DownloadDesign from '@/components/amazon/DownloadDesign'
+import { AMAZON_QUEUE_EVENT } from '@/components/amazon/ScheduledQueue'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
@@ -138,6 +138,9 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       if (!res.ok) throw new Error((data.error as string) || 'Post failed. Try again.')
       if (data.caption && !caption) setCaption(data.caption)
       setResult({ postUrl: data.postUrl as string | undefined, scheduledAt: data.scheduledAt as string | undefined, note: (data.geniuslinkNote as string) || null })
+      // Tell the queue on this page to reload, so a post they just scheduled
+      // appears in the list right below instead of after a refresh.
+      if (data.scheduledAt) window.dispatchEvent(new Event(AMAZON_QUEUE_EVENT))
     } catch (err) {
       setPubError(err instanceof Error ? err.message : 'Post failed. Try again.')
     } finally { setPubBusy(false) }
@@ -161,7 +164,10 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       {connected === false && (
         <div className="flex items-start gap-2 text-[13px] rounded-lg border p-3" style={{ color: 'var(--text-soft)', borderColor: `${cfg.accent}4d`, backgroundColor: `${cfg.accent}0d` }}>
           <AlertCircle size={15} className="mt-0.5 flex-shrink-0" style={{ color: cfg.accent }} />
-          <span>{cfg.label} isn&apos;t connected yet. <Link href="/connect-socials" className="font-semibold hover:underline" style={{ color: cfg.accent }}>Connect it</Link> to publish.</span>
+          {/* The connect strip at the top of THIS page, not /connect-socials —
+              that route is walled off for the Amazon plan and bounces them
+              straight back here. */}
+          <span>{cfg.label} isn&apos;t connected yet. <a href="#connections" className="font-semibold hover:underline" style={{ color: cfg.accent }}>Connect it</a> to publish.</span>
         </div>
       )}
 
@@ -261,14 +267,21 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
                 : when === 'later' ? <><CalendarClock size={16} /> Schedule post</> : <><Send size={16} /> Publish to {cfg.label}</>}
             </button>
             {pubError && <p className="text-[13px] text-[#b91c1c] dark:text-[#f87171] flex items-start gap-1.5"><AlertCircle size={14} className="mt-0.5" />{pubError}</p>}
+            {/* A note means the post went out with a DIFFERENT link than the
+                creator's setting says. That is not a success, and it used to be
+                rendered as 11px grey inside a green box, which is the same thing
+                as not rendering it. Amber, full size, and the tick becomes a
+                warning: the box reports the post, not the plan. */}
             {result && (
-              <div className="flex flex-col gap-1.5 rounded-lg border border-[#34c759]/30 bg-[#34c759]/5 p-3">
+              <div className={`flex flex-col gap-1.5 rounded-lg border p-3 ${result.note ? 'border-[#ff9500]/40 bg-[#ff9500]/5' : 'border-[#34c759]/30 bg-[#34c759]/5'}`}>
                 {result.scheduledAt ? (
-                  <span className="flex items-center gap-2 text-sm font-semibold text-[#34c759]"><CalendarClock size={15} /> Scheduled for {new Date(result.scheduledAt).toLocaleString()}</span>
+                  <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: result.note ? '#ff9500' : '#34c759' }}><CalendarClock size={15} /> Scheduled for {new Date(result.scheduledAt).toLocaleString()}</span>
                 ) : (
-                  <a href={result.postUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm font-semibold text-[#34c759]"><Check size={15} /> Posted <ExternalLink size={13} /></a>
+                  <a href={result.postUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm font-semibold" style={{ color: result.note ? '#ff9500' : '#34c759' }}>
+                    {result.note ? <AlertCircle size={15} /> : <Check size={15} />} Posted <ExternalLink size={13} />
+                  </a>
                 )}
-                {result.note && <p className="text-[11px]" style={{ color: 'var(--text-soft)' }}>{result.note}</p>}
+                {result.note && <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text)' }}>{result.note}</p>}
               </div>
             )}
           </div>

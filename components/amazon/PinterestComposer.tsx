@@ -6,8 +6,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
 import DownloadDesign from '@/components/amazon/DownloadDesign'
+import { AMAZON_QUEUE_EVENT } from '@/components/amazon/ScheduledQueue'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
@@ -155,6 +155,9 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
       if (data.title && !title) setTitle(data.title)
       if (data.description && !description) setDescription(data.description)
       setResult({ pinUrl: data.pinUrl as string | undefined, scheduledAt: data.scheduledAt as string | undefined, note: (data.geniuslinkNote as string) || null })
+      // Reload the queue on this page so a pin they just scheduled shows up in
+      // the list below rather than after a refresh.
+      if (data.scheduledAt) window.dispatchEvent(new Event(AMAZON_QUEUE_EVENT))
     } catch (err) {
       setPubError(err instanceof Error ? err.message : 'Pin failed. Try again.')
     } finally { setPubBusy(false) }
@@ -177,7 +180,9 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
       {connected === false && (
         <div className="flex items-start gap-2 text-[13px] rounded-lg border border-[#E60023]/30 bg-[#E60023]/5 p-3" style={{ color: 'var(--text-soft)' }}>
           <AlertCircle size={15} className="mt-0.5 flex-shrink-0" style={{ color: PIN_RED }} />
-          <span>Pinterest isn&apos;t connected yet. <Link href="/connect-socials" className="font-semibold hover:underline" style={{ color: PIN_RED }}>Connect it</Link> to publish Pins.</span>
+          {/* The connect strip at the top of THIS page. /connect-socials is
+              walled off for the Amazon plan and bounces them back here. */}
+          <span>Pinterest isn&apos;t connected yet. <a href="#connections" className="font-semibold hover:underline" style={{ color: PIN_RED }}>Connect it</a> to publish Pins.</span>
         </div>
       )}
 
@@ -277,18 +282,21 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
                 : when === 'later' ? <><CalendarClock size={16} /> Schedule Pin</> : <><Send size={16} /> Publish Pin</>}
             </button>
             {pubError && <p className="text-[13px] text-[#b91c1c] dark:text-[#f87171] flex items-start gap-1.5"><AlertCircle size={14} className="mt-0.5" />{pubError}</p>}
+            {/* A note means the pin went out with a DIFFERENT link than the
+                creator's setting says. Amber rather than green, because a
+                substituted link inside a green box reads as "all good". */}
             {result && (
-              <div className="flex flex-col gap-1.5 rounded-lg border border-[#34c759]/30 bg-[#34c759]/5 p-3">
+              <div className={`flex flex-col gap-1.5 rounded-lg border p-3 ${result.note ? 'border-[#ff9500]/40 bg-[#ff9500]/5' : 'border-[#34c759]/30 bg-[#34c759]/5'}`}>
                 {result.scheduledAt ? (
-                  <span className="flex items-center gap-2 text-sm font-semibold text-[#34c759]">
+                  <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: result.note ? '#ff9500' : '#34c759' }}>
                     <CalendarClock size={15} /> Scheduled for {new Date(result.scheduledAt).toLocaleString()}
                   </span>
                 ) : (
-                  <a href={result.pinUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm font-semibold text-[#34c759]">
-                    <Check size={15} /> Pin published <ExternalLink size={13} />
+                  <a href={result.pinUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm font-semibold" style={{ color: result.note ? '#ff9500' : '#34c759' }}>
+                    {result.note ? <AlertCircle size={15} /> : <Check size={15} />} Pin published <ExternalLink size={13} />
                   </a>
                 )}
-                {result.note && <p className="text-[11px]" style={{ color: 'var(--text-soft)' }}>{result.note}</p>}
+                {result.note && <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text)' }}>{result.note}</p>}
               </div>
             )}
           </div>

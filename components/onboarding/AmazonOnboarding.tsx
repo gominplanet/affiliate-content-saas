@@ -15,7 +15,7 @@
 // once.
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Loader2, Check, ArrowRight, ShieldCheck, UserSquare, Share2 } from 'lucide-react'
@@ -38,6 +38,7 @@ export default function AmazonOnboarding({
   const [tag, setTag] = useState(initialTag)
   const [savedTag, setSavedTag] = useState(initialTag)
   const [saving, setSaving] = useState(false)
+  const [leaving, setLeaving] = useState(false)
 
   const tagLooksRight = looksLikeAssociatesTag(tag)
   const ready = looksLikeAssociatesTag(savedTag)
@@ -65,17 +66,30 @@ export default function AmazonOnboarding({
     }
   }
 
-  function finish() {
-    // Mark the funnel done so the dashboard stops sending them back here, then
-    // go straight to the generator. Best-effort: a failed flag must not strand
-    // somebody on this screen, and the dashboard is reachable either way.
-    void fetch('/api/onboarding', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ completed: true, path: 'amazon' }),
-    }).catch(() => undefined)
-    router.push(onboardingDestination('amazon'))
-  }
+  /**
+   * Mark the funnel done, THEN navigate.
+   *
+   * This used to fire the write and push in the same tick without awaiting. The
+   * flag is not decoration: the dashboard layout bounces an account with nothing
+   * connected off every content route, and /photobooth is one of them. Photobooth
+   * is on the free trial's own feature list ("1 face model and 6 photobooth
+   * headshots"), so losing the race meant the trial's headline feature sent them
+   * back to this screen, which they had already finished.
+   *
+   * Still best-effort at the end: a write that will not land must not trap
+   * anybody here, so the navigation happens either way.
+   */
+  const finish = useCallback(async (to: string) => {
+    setLeaving(true)
+    try {
+      await fetch('/api/onboarding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: true, path: 'amazon' }),
+      })
+    } catch { /* go anyway; the gate is recoverable, a locked screen is not */ }
+    router.push(to)
+  }, [router])
 
   return (
     <div className="min-h-screen bg-white dark:bg-[#0b0b0d] text-[#1d1d1f] dark:text-[#f5f5f7]">
@@ -146,18 +160,41 @@ export default function AmazonOnboarding({
         </div>
 
         {/* ── Out ─────────────────────────────────────────────────────────── */}
-        <div className="mt-8">
-          <button
-            onClick={finish}
-            disabled={!ready}
-            className="btn-primary w-full sm:w-auto disabled:opacity-60"
-            style={ready ? { backgroundColor: ACCENT } : undefined}
-          >
-            Make my first design <ArrowRight size={15} className="inline ml-1" />
-          </button>
+        {/* Two ways out, and that is the point. The primary button needs the tag
+            because the tag is what makes a free design earn. But a screen whose
+            only control is disabled is a locked door: someone who does not have
+            their tag to hand right now, or whose tag this app's format check
+            reads wrong, had nothing else to click and nothing telling them what
+            else to do. Research and Deal Radar are free, uncapped and need no
+            tag, so that is the second door. */}
+        <div className="mt-8 flex flex-col gap-3">
+          <div>
+            <button
+              onClick={() => void finish(onboardingDestination('amazon'))}
+              disabled={!ready || leaving}
+              className="btn-primary w-full sm:w-auto disabled:opacity-60"
+              style={ready ? { backgroundColor: ACCENT } : undefined}
+            >
+              {leaving ? <><Loader2 size={14} className="inline animate-spin mr-1" /> Opening…</> : <>Make my first design <ArrowRight size={15} className="inline ml-1" /></>}
+            </button>
+            {!ready && (
+              <p className="mt-2 text-[12.5px] text-[#86868b] dark:text-[#8e8e93]">
+                Save your Associates tag above and this opens up. It is what makes your free designs earn on your account.
+              </p>
+            )}
+          </div>
           {!ready && (
-            <p className="mt-2 text-[12.5px] text-[#86868b] dark:text-[#8e8e93]">
-              Save your Associates tag above and this opens up. It is what makes your free designs earn on your account.
+            <p className="text-[13px] text-[#6e6e73] dark:text-[#ebebf0]">
+              Do not have it to hand?{' '}
+              <button
+                onClick={() => void finish('/amazon/research')}
+                disabled={leaving}
+                className="font-semibold hover:underline disabled:opacity-60"
+                style={{ color: ACCENT }}
+              >
+                Look around first
+              </button>
+              . Product research and Deal Radar are free and need no tag. Add the tag in Setup whenever you are ready and your designs unlock.
             </p>
           )}
         </div>

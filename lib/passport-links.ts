@@ -241,6 +241,28 @@ export function buildPassportDestination(
 }
 
 /**
+ * Why a Passport mint did not produce a link.
+ *
+ *   off            Passport Links is switched off. Nothing is wrong.
+ *   tier           The flag is set but the plan does not include Passport.
+ *   bad-asin       Not a 10-character ASIN, so there is nothing to route.
+ *   mint-failed    Passport IS on and we could not produce a link.
+ *   error          The lookup itself threw.
+ *
+ * The last two are the ones that matter. Everything below used to collapse into
+ * a bare `null`, which made "the creator has Passport off" and "the creator has
+ * Passport on and we just published a plain Amazon link instead" the same value.
+ * Every caller read that null as the first one and said nothing, so the second
+ * one has never once appeared on a screen.
+ */
+export type PassportMintReason = 'ok' | 'off' | 'tier' | 'bad-asin' | 'mint-failed' | 'error'
+
+export interface PassportMintResult {
+  url: string | null
+  reason: PassportMintReason
+}
+
+/**
  * The one gate every content surface uses: return the creator's Passport Link URL
  * for a product WHEN Passport Links is ON, else null. A null means "not enabled" —
  * the caller then falls through to its existing behavior (Geniuslink, plain tag,
@@ -250,12 +272,23 @@ export function buildPassportDestination(
  * on the row, and read back at redirect time for analytics + the Amazon ascsubtag
  * (per-video / per-surface attribution). `db` can be the user's session client or
  * the admin client.
+ *
+ * Callers that need to tell a switched-off Passport apart from a broken one call
+ * passportLinkForUserDetailed below. This stays the plain form so the twenty-odd
+ * existing call sites keep their exact behaviour.
  */
 export async function passportLinkForUser(
   _db: Db, userId: string, asin: string, opts?: { source?: string | null; title?: string | null },
 ): Promise<string | null> {
+  return (await passportLinkForUserDetailed(_db, userId, asin, opts)).url
+}
+
+/** passportLinkForUser, plus WHY it came back empty. See PassportMintReason. */
+export async function passportLinkForUserDetailed(
+  _db: Db, userId: string, asin: string, opts?: { source?: string | null; title?: string | null },
+): Promise<PassportMintResult> {
   const a = (asin || '').trim().toUpperCase()
-  if (!/^[A-Z0-9]{10}$/.test(a)) return null
+  if (!/^[A-Z0-9]{10}$/.test(a)) return { url: null, reason: 'bad-asin' }
   try {
     // SERVICE ROLE, not the caller's client, and this is the whole reason
     // Passport never reached a single blog post.
@@ -279,9 +312,12 @@ export async function passportLinkForUser(
     // reaches here.
     const db = createAdminClient() as unknown as Db
     const { data: ig } = await db.from('integrations').select('passport_links_enabled, tier').eq('user_id', userId).maybeSingle()
-    if (!ig?.passport_links_enabled) return null
-    // Studio + Pro only — even if the flag is set, a lower tier gets no link.
-    if (!canUsePassport(normalizeTier(ig?.tier))) return null
+    if (!ig?.passport_links_enabled) return { url: null, reason: 'off' }
+    // Every PAID plan, per canUsePassport / NAV_ACCESS.passport: Creator, Amazon,
+    // Studio, Pro and admin. (This comment used to read "Studio + Pro only",
+    // which stopped being true when the Amazon plan shipped and would have sent
+    // the next reader looking for a tier bug that is not there.)
+    if (!canUsePassport(normalizeTier(ig?.tier))) return { url: null, reason: 'tier' }
     // limit(1), not maybeSingle(): two rows flagged default is a data quirk, not
     // a reason to fail the whole mint and drop the creator to a plain link.
     const { data: siteRows } = await db.from('wordpress_sites').select('id').eq('user_id', userId).eq('is_default', true).limit(1)
@@ -289,10 +325,38 @@ export async function passportLinkForUser(
     const siteId = (site?.id as string | undefined) ?? null
     // The source is baked into its own code, so the URL stays clean (no ?s= tail).
     const code = await getOrCreatePassportLink(db, userId, siteId, { asin: a, label: opts?.title ?? null, source: opts?.source ?? null })
-    if (!code) return null
-    return passportLinkUrl(code)
+    if (!code) return { url: null, reason: 'mint-failed' }
+    return { url: passportLinkUrl(code), reason: 'ok' }
   } catch {
-    return null
+    return { url: null, reason: 'error' }
+  }
+}
+
+/**
+ * The sentence to show when Passport was the creator's chosen link style and the
+ * post went out without a Passport link anyway.
+ *
+ * A complete sentence, because every caller prints it as-is. It names what the
+ * post actually shipped rather than what the setting says, which is the whole
+ * point: the Affiliate setup panel on /amazon/social will keep reporting
+ * "Passport Links" for as long as the toggle is on, and it is right to — the
+ * setting IS Passport. Only the post can say what the link turned out to be.
+ *
+ * Returns null for the reasons that are not faults ('ok', and 'off' when the
+ * creator simply is not using Passport).
+ */
+export function passportFallbackNote(reason: PassportMintReason): string | null {
+  switch (reason) {
+    case 'ok':
+    case 'off':
+      return null
+    case 'tier':
+      return 'Passport Links is switched on but is not part of your current plan, so this post used your plain Amazon link instead.'
+    case 'bad-asin':
+      return 'Passport Links needs an Amazon product (an ASIN) to geo-route, and this post did not have one, so it used the link as given.'
+    case 'mint-failed':
+    case 'error':
+      return 'Passport Links is on, but a Passport link could not be created just now, so this post went out with your plain Amazon link. Your tag still earns; shoppers outside the US will land on the US store.'
   }
 }
 

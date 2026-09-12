@@ -9,6 +9,7 @@ import type { Metadata } from 'next'
 import { Share2 } from 'lucide-react'
 import SocialComposer from '@/components/amazon/SocialComposer'
 import SocialConnections from '@/components/amazon/SocialConnections'
+import ScheduledQueue from '@/components/amazon/ScheduledQueue'
 import AffiliateSetup from '@/components/amazon/AffiliateSetup'
 import PageExplainer from '@/components/amazon/PageExplainer'
 
@@ -50,6 +51,12 @@ export default function AmazonSocialPage() {
 
       {/* Connect strip — all three accounts in one place */}
       <SocialConnections />
+
+      {/* What has been scheduled, what went out, and what did not. Hidden until
+          there is something in it. Step 4 below sells scheduling, and until this
+          existed a scheduled post was never seen again by the person who made
+          it — including when it failed. */}
+      <ScheduledQueue />
 
       {/* How links are routed: Passport, the tag, and Geniuslink if they use it */}
       <AffiliateSetup />

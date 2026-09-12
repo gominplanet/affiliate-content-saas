@@ -4,10 +4,17 @@
 // network (Pinterest, Instagram, Facebook) showing connected/not-connected in a
 // single place, so creators wire up their accounts before composing and never
 // wonder where the connection lives.
+//
+// It carries id="connections" because it is the destination for every "connect
+// it" link on this page. Those links used to point at /connect-socials, which
+// the dashboard shell intercepts for the Amazon plan with a card reading "go to
+// Social Influencer" — the page they were already on. A creator who could not
+// publish clicked the only thing offered and was sent back where they started.
 'use client'
 
 import { useEffect, useState } from 'react'
 import { Check, Loader2, Plus, Settings } from 'lucide-react'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
 type PlatformKey = 'pinterest' | 'instagram' | 'facebook'
 interface Conn { connected: boolean; name: string | null }
@@ -29,6 +36,11 @@ function GlyphDot({ color }: { color: string }) {
 
 export default function SocialConnections() {
   const [status, setStatus] = useState<Status | null>(null)
+  const tier = useEffectiveTier()
+  // /connect-socials is walled off for the Amazon plan (it connects its three
+  // approved networks here instead), so offering it is offering a door that
+  // opens onto this page. Shown to everyone else, who has other networks there.
+  const canManageAll = tier !== null && tier !== 'amazon'
 
   useEffect(() => {
     fetch('/api/amazon/social-status')
@@ -38,14 +50,19 @@ export default function SocialConnections() {
   }, [])
 
   return (
-    <div className="mb-6">
+    <div id="connections" className="mb-6 scroll-mt-24">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>
           Your connections
         </h2>
-        <a href="/connect-socials" className="inline-flex items-center gap-1 text-[11px] font-medium hover:underline" style={{ color: 'var(--text-soft)' }}>
-          <Settings size={11} /> Manage all
-        </a>
+        {/* amazon-safe: rendered only when canManageAll, which excludes the
+            Amazon plan. Studio and Pro reach this page too and do have other
+            networks over there. */}
+        {canManageAll && (
+          <a href="/connect-socials" className="inline-flex items-center gap-1 text-[11px] font-medium hover:underline" style={{ color: 'var(--text-soft)' }}>
+            <Settings size={11} /> Manage all
+          </a>
+        )}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {PLATFORMS.map((p) => {

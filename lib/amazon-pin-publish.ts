@@ -10,7 +10,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
 import { resolveGeniuslinkChannelGroupId } from '@/lib/geniuslink-group'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { passportLinkForUser } from '@/lib/passport-links'
+import { passportLinkForUserDetailed, passportFallbackNote } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
@@ -96,23 +96,37 @@ export async function resolveAffiliateLink(opts: {
     try { asin = asinFromAmazonUrl(await resolveFinalUrl(opts.productUrl)) || '' } catch { /* leave blank */ }
   }
   const tag = intRow.amazon_associates_tag || undefined
+  // The creator's ONE chosen Link style. Read FIRST, because it is the only way
+  // to know whether a missing Passport link is normal (they do not use Passport)
+  // or the thing they most need told (they do, and this post is not getting one).
+  const cfg = await getLinkStyle(createAdminClient(), opts.userId)
+
   // Passport Links (geo-routing) wins WHEN ON — resolved by userId, so no caller
-  // needs to change. Off → null and we fall through to Geniuslink / tag as before.
+  // needs to change. Off → we fall through to Geniuslink / tag as before.
+  //
+  // The fall-through used to be silent in every case. A creator with Passport on
+  // whose mint failed published a bare amazon.com link, saw a green Posted, and
+  // had nothing anywhere to tell them the geo-routing they switched on had not
+  // happened. That is the same shape as the geni.us-over-Passport bug: the screen
+  // reported the setting, not the link. Now the substitution carries a sentence.
+  let passportNote: string | null = null
   if (asin) {
-    try {
-      const p = await passportLinkForUser(createAdminClient(), opts.userId, asin, { source: opts.channel || 'social', title: opts.productTitle || null })
-      if (p) return { linkUrl: p, asin, note: null }
-    } catch { /* fall through to normal resolution */ }
+    const p = await passportLinkForUserDetailed(createAdminClient(), opts.userId, asin, { source: opts.channel || 'social', title: opts.productTitle || null })
+    if (p.url) return { linkUrl: p.url, asin, note: null }
+    if (cfg.style === 'passport') passportNote = passportFallbackNote(p.reason)
+  } else if (cfg.style === 'passport') {
+    // No ASIN at all: Passport has nothing to geo-route. Worth saying, because
+    // the creator chose Passport and this post is not carrying one.
+    passportNote = passportFallbackNote('bad-asin')
   }
+
   const destination = asin
     ? `https://www.amazon.com/dp/${asin}${tag ? `?tag=${tag}` : ''}`
     : (opts.productUrl || '')
 
-  // The creator's ONE chosen Link style decides how `destination` is cloaked.
-  // Passport was handled above; Bitly shortens; Geniuslink only when picked.
-  const cfg = await getLinkStyle(createAdminClient(), opts.userId)
+  // Bitly shortens; Geniuslink only when picked. Passport was handled above.
   let linkUrl = destination
-  let note: string | null = null
+  let note: string | null = passportNote
   const pinCreds = geniuslinkCreds(cfg, intRow)
   if (cfg.style === 'bitly' && cfg.bitlyToken && destination) {
     const short = await shortenBitly(cfg.bitlyToken, destination)
