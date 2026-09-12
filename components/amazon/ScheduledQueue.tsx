@@ -25,8 +25,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   AlertCircle, CalendarClock, Check, ExternalLink, Loader2, RefreshCw, X,
 } from 'lucide-react'
-import type { ScheduledRow } from '@/app/api/amazon/scheduled/route'
-import { queueCancellable, queueDetail, queueOutcome, queueTone } from '@/lib/amazon-queue'
+import { queueCancellable, queueDetail, queueOutcome, queueTone, type ScheduledRow } from '@/lib/amazon-queue'
 
 const PLATFORM: Record<ScheduledRow['platform'], { name: string; color: string }> = {
   pinterest: { name: 'Pinterest', color: '#E60023' },

@@ -18,28 +18,13 @@
 // row belonging to somebody else cannot be read or cancelled even by id.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import type { ScheduledRow } from '@/lib/amazon-queue'
 
 export const dynamic = 'force-dynamic'
 
 /** Rows older than this stop being interesting; the queue is a working view, not
  *  an archive. */
 const MAX_ROWS = 40
-
-export interface ScheduledRow {
-  id: string
-  platform: 'pinterest' | 'instagram' | 'facebook'
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
-  scheduledAt: string
-  imageUrl: string | null
-  productTitle: string | null
-  asin: string | null
-  externalUrl: string | null
-  /** Set on a COMPLETED row: it published, and something about it is worth
-   *  reading (the affiliate link was substituted). Never a failure. */
-  note: string | null
-  /** Set on a FAILED row: why it did not publish. */
-  error: string | null
-}
 
 export async function GET() {
   const supabase = await createServerClient()

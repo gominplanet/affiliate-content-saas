@@ -22,6 +22,32 @@
 // than being three ternaries in JSX that nobody can test.
 
 export type QueueStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
+export type QueuePlatform = 'pinterest' | 'instagram' | 'facebook'
+
+/**
+ * One row as the queue panel receives it from GET /api/amazon/scheduled.
+ *
+ * Declared here rather than in the route. The panel is a client component and
+ * was importing the type out of the route module, which puts an app/api file in
+ * the client import graph for nothing — `import type` erases, but the edge is
+ * there for any tool that reads imports before types, and one careless drop of
+ * the `type` keyword would pull a server route into the browser bundle.
+ */
+export interface ScheduledRow {
+  id: string
+  platform: QueuePlatform
+  status: QueueStatus
+  scheduledAt: string
+  imageUrl: string | null
+  productTitle: string | null
+  asin: string | null
+  externalUrl: string | null
+  /** Set on a COMPLETED row: it published, and something about it is worth
+   *  reading (the affiliate link was substituted). Never a failure. */
+  note: string | null
+  /** Set on a FAILED row: why it did not publish. */
+  error: string | null
+}
 export type QueueOutcome = 'waiting' | 'sending' | 'sent' | 'sent-note' | 'failed' | 'cancelled'
 
 /** 'good' gets the green treatment. 'warn' must NOT: a substituted link inside a
