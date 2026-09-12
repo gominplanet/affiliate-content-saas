@@ -41,7 +41,7 @@ export default function AmazonSocialPage() {
         intro="This turns a product design into finished posts for the three networks Amazon creators live on: Pinterest, Instagram and Facebook. MVP writes the caption and attaches your affiliate link, so you just approve and post. Two quick one-time setups first (connect accounts, add your Amazon tag), then it is a few clicks every time."
         steps={[
           { title: 'Connect your accounts', body: 'Link Pinterest, Instagram and Facebook once, in the strip below. This is how MVP posts on your behalf.' },
-          { title: 'Add your affiliate tag', body: 'Enter your Amazon Associates tag (and Geniuslink if you use it) so every post carries your link and earns you commission.' },
+          { title: 'Add your affiliate tag', body: 'Enter your Amazon Associates tag so every post earns on your account, then switch on Passport Links to send each shopper to their own country\u2019s Amazon. Both are in the strip below.' },
           { title: 'Pick a design & network', body: 'Choose a saved design or generate a fresh one, then pick a network tab. The caption and link are written for you.' },
           { title: 'Post now or schedule', body: 'Publish to all three at once, or queue it for later. Copy done, design done, link attached, you just hit go.' },
         ]}
@@ -51,7 +51,7 @@ export default function AmazonSocialPage() {
       {/* Connect strip — all three accounts in one place */}
       <SocialConnections />
 
-      {/* Affiliate IDs — Amazon tag / Geniuslink, via a setup modal */}
+      {/* How links are routed: Passport, the tag, and Geniuslink if they use it */}
       <AffiliateSetup />
 
       {/* Saved research finds + the network-tabbed composer */}
