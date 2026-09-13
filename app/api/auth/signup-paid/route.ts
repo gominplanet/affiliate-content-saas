@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse, after } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
 import { getStripe, PRICE_IDS, isValidPriceId } from '@/lib/stripe'
@@ -105,15 +105,17 @@ export async function POST(request: NextRequest) {
   // The Purchase event still fires separately from the Stripe webhook once they
   // actually pay. This one marks the account existing, which is what the ad set
   // optimizes on, and an abandoned checkout leaves exactly that: an account.
-  after(async () => {
-    const ok = await reportRegistration({
-      userId,
-      email: cleanEmail,
-      path: tier === 'amazon' ? 'amazon' : 'creator',
-      source: 'paid-signup',
-    })
-    if (!ok) console.error(`[signup-paid] CompleteRegistration NOT accepted by Meta for ${userId}`)
+  // AWAITED, never after(). See the same note in app/api/auth/callback: a
+  // serverless function can be frozen as soon as the response is returned, so
+  // an after() callback is dropped and the conversion is lost. This route is
+  // about to call Stripe anyway, so a few hundred ms here is not the slow part.
+  const ok = await reportRegistration({
+    userId,
+    email: cleanEmail,
+    path: tier === 'amazon' ? 'amazon' : 'creator',
+    source: 'paid-signup',
   })
+  if (!ok) console.error(`[signup-paid] CompleteRegistration NOT accepted by Meta for ${userId}`)
 
   // Sign them in now so the session cookie is set on this response — when they
   // return from Stripe after paying they're already logged in and land on their

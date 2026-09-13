@@ -49,9 +49,23 @@ const CAPI = read('lib/meta-capi.ts')
     /reportRegistration\(/.test(PAID) && /source: 'paid-signup'/.test(PAID),
     'a paid buyer never reaches the auth callback or /onboarding, so if this goes, they go uncounted')
 
-  check('neither blocks the response on Meta',
-    /after\(async \(\) => \{/.test(CALLBACK) && /after\(async \(\) => \{/.test(PAID),
-    'a slow Graph call must not delay a confirmation redirect or a checkout handoff')
+  // THE ONE THAT COST THREE DAYS. Both sends were originally scheduled with
+  // after(), on the reasoning that Meta must not delay a redirect. On this
+  // serverless runtime the function can be frozen the moment the response is
+  // returned, so the callback is dropped mid-flight and the conversion is lost.
+  // app/api/stripe/webhook/route.ts already said so in a comment and awaits for
+  // exactly this reason, which is why Purchase and InitiateCheckout have always
+  // arrived and every after()-scheduled event has not: /onboarding reported
+  // zero CompleteRegistrations across three days, and so did the first version
+  // of the fix that moved it here.
+  check('the registration is AWAITED, never scheduled with after()',
+    !/after\(/.test(CALLBACK.replace(/\/\/[^\n]*/g, '')) && !/after\(/.test(PAID.replace(/\/\/[^\n]*/g, '')),
+    'an after() callback on this runtime is dropped when the function freezes')
+  check('and the send is actually awaited in both',
+    /const ok = await reportRegistration\(/.test(CALLBACK) && /const ok = await reportRegistration\(/.test(PAID))
+  check('the pattern matches the events that demonstrably arrive',
+    /await sendMetaEvent\(/.test(read('app/api/stripe/webhook/route.ts')),
+    'Purchase is awaited and has never gone missing; copy that, not a scheduler')
 }
 
 // ── /onboarding must NOT be the source of truth again ───────────────────────

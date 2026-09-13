@@ -1,4 +1,4 @@
-import { NextResponse, after } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { reportRegistration } from '@/lib/meta-registration'
 
@@ -56,15 +56,22 @@ export async function GET(request: Request) {
       const createdAt = user?.created_at ? Date.parse(user.created_at) : NaN
       const isNewAccount = Number.isFinite(createdAt) && Date.now() - createdAt < 24 * 60 * 60 * 1000
       if (user && isNewAccount) {
-        after(async () => {
-          const ok = await reportRegistration({
-            userId: user.id,
-            email: user.email,
-            path: next.includes('for=amazon') ? 'amazon' : 'creator',
-            source: 'email-confirmation',
-          })
-          if (!ok) console.error(`[auth/callback] CompleteRegistration NOT accepted by Meta for ${user.id}`)
+        // AWAITED, never after(). A serverless function can be frozen the
+        // moment the response is returned, so an after() callback is dropped
+        // mid-flight and the conversion is lost. app/api/stripe/webhook says
+        // exactly this and awaits for exactly this reason, which is why
+        // Purchase and InitiateCheckout have always arrived while every event
+        // scheduled with after() has not: /onboarding reported zero
+        // CompleteRegistrations in three days, and so did the first version of
+        // this fix. The cost is a few hundred ms on a redirect the user is
+        // already waiting through.
+        const ok = await reportRegistration({
+          userId: user.id,
+          email: user.email,
+          path: next.includes('for=amazon') ? 'amazon' : 'creator',
+          source: 'email-confirmation',
         })
+        if (!ok) console.error(`[auth/callback] CompleteRegistration NOT accepted by Meta for ${user.id}`)
       }
       return NextResponse.redirect(`${origin}${next}`)
     }
