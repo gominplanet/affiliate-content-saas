@@ -9,9 +9,15 @@
  * sidebar/topbar layout. Uses the same CSS-variable theme system so the
  * sun/moon toggle works identically.
  *
- * Source of truth for tier copy: lib/tier.ts → mirrored in PRICING_TIERS
+ * Source of truth for tier copy: lib/tier.ts, READ from it below rather than
+ * mirrored by hand. The hand-mirror had drifted: this page promised Studio 1,000
+ * assistant messages and Pro 2,500 while the server cuts them off at 400 and 800,
+ * promised Studio 15 headshots against an enforced 12, and sold LoRA retrains that
+ * were retired in May. scripts/test-pricing-copy.ts now fails the build if an
+ * advertised number stops matching the one the server enforces.
  * below and in app/pricing/page.tsx. If you change one, change all three.
  */
+import { TIERS } from '@/lib/tier'
 import {
   FileText, Image as ImageIcon, Mail, Scale, Calendar,
   Play, Sparkles, ArrowRight, Bookmark,
@@ -504,14 +510,14 @@ const PRICING_TIERS: PricingTier[] = [
       '⚡ Amazon Deal Radar + all-deals & full-catalogue research',
       'Creator Connections finder + daily picked-for-you campaign digest',
       'Shoppable Link-in-Bio page',
-      '20 generations / month — blog + thumbnail + metadata bundle',
+      `${TIERS.creator.postsPerMonth} generations / month — blog + thumbnail + metadata bundle`,
       'Video-to-Blog + Blog-to-Social, written in your voice',
       'Auto-post to Facebook, Threads, LinkedIn & Bluesky',
-      '10 video scripts + shot-lists / month',
-      '1 trained face + 1 LoRA retrain, 10 Photobooth headshots',
-      'Newsletter taster — 500 subs, 1 send / month',
-      '5 brand-collab pitch emails / month',
-      '200 AI assistant messages / month',
+      `${TIERS.creator.scriptsPerMonth} video scripts + shot-lists / month`,
+      `${TIERS.creator.maxFaces} face model, ${TIERS.creator.photoboothPerMonth} Photobooth headshots`,
+      `Newsletter taster — ${TIERS.creator.newsletterSubscribers} subs, ${TIERS.creator.newsletterBroadcastsPerMonth} send / month`,
+      `${TIERS.creator.collabsPerMonth} brand-collab pitch emails / month`,
+      `${TIERS.creator.assistantMessagesPerMonth} AI assistant messages / month`,
       '1 WordPress site, yours forever',
     ],
     cta: 'Start as Creator',
@@ -532,14 +538,14 @@ const PRICING_TIERS: PricingTier[] = [
     },
     features: [
       'Everything in Creator, plus:',
-      '45 generations / month',
+      `${TIERS.studio.postsPerMonth} generations / month`,
       'Pinterest, Instagram & Telegram auto-post',
-      'Deals Hub — 15 deal posts / month + Amazon CSV bulk import',
+      'Deals Hub — deal posts draw from your monthly generations + Amazon CSV bulk import',
       'Topic hubs + Refresh Images on published posts',
-      '2 faces + 3 LoRA retrains, 15 Photobooth headshots',
-      '30 video scripts, 15 brand pitches / month',
-      'Newsletter — 5,000 subs, weekly sends + scheduling',
-      '1,000 AI assistant messages / month',
+      `${TIERS.studio.maxFaces} face models, ${TIERS.studio.photoboothPerMonth} Photobooth headshots`,
+      `${TIERS.studio.scriptsPerMonth} video scripts, ${TIERS.studio.collabsPerMonth} brand pitches / month`,
+      `Newsletter — ${(TIERS.studio.newsletterSubscribers ?? 0).toLocaleString()} subs, weekly sends + scheduling`,
+      `${TIERS.studio.assistantMessagesPerMonth} AI assistant messages / month`,
       'Priority generation queue + priority support',
     ],
     cta: 'Go Studio',
@@ -561,16 +567,16 @@ const PRICING_TIERS: PricingTier[] = [
     features: [
       'Everything in Studio, plus:',
       '🎬 Clip Factory — turn long videos into ready-to-post shorts',
-      '100 generations / month',
+      `${TIERS.pro.postsPerMonth} generations / month`,
       'Comparison posts + Buying Guides',
       'Rebuild-from-video on any legacy WordPress post',
       'X (Twitter) & TikTok auto-post',
       'Multi-account social + one-click Publish All',
-      'Up to 10 WordPress sites + 3 Virtual Assistant seats',
+      `Up to ${TIERS.pro.sites} WordPress sites + ${TIERS.pro.vaSeats} Virtual Assistant seats`,
       'Multiple YouTube channels — one per site, or pull from any',
-      '30 deal posts, 100 brand pitches / month',
-      'Newsletter — 10k subs, weekly + A/B + segments',
-      '2,500 AI assistant messages / month',
+      `Deal posts draw from your monthly generations, ${TIERS.pro.collabsPerMonth} brand pitches / month`,
+      `Newsletter — ${(TIERS.pro.newsletterSubscribers ?? 0).toLocaleString()} subs, weekly + A/B + segments`,
+      `${TIERS.pro.assistantMessagesPerMonth} AI assistant messages / month`,
     ],
     cta: 'Go Pro',
   },

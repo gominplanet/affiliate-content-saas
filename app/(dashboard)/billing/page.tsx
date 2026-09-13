@@ -150,13 +150,16 @@ export default function BillingPage() {
     ? 'posts used (lifetime)'
     : `posts used this month · resets the 1st`
 
-  // Caps track lib/tier.ts (honest caps 2026-06-14: 20 / 45 / 100). Prices
-  // unchanged. Pro's bonus-post framing was dropped — just say the flat cap.
-  const planDetails = [
-    { tier: 'creator' as Tier, limit: '20 posts / month',  price: 49,  regularPrice: 99  },
-    { tier: 'studio' as Tier,  limit: '45 posts / month',  price: 99,  regularPrice: 199 },
-    { tier: 'pro' as Tier,     limit: '100 posts / month', price: 199, regularPrice: 499 },
-  ]
+  // Read from lib/tier.ts rather than restated here. This was the third hand-kept
+  // copy of the price list (homepage, /pricing, and this), and the homepage copy
+  // had already drifted from what the server enforces. A number a customer reads
+  // has to be the number they get.
+  const planDetails = ([ 'creator', 'studio', 'pro' ] as const).map((t) => ({
+    tier: t as Tier,
+    limit: `${TIERS[t].postsPerMonth} posts / month`,
+    price: TIERS[t].price,
+    regularPrice: TIERS[t].regularPrice,
+  }))
 
   async function openPortal() {
     setPortalLoading(true)
