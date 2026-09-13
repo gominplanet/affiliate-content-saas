@@ -150,6 +150,27 @@ const strip = (src: string) => src.split('\n').filter(l => !l.trim().startsWith(
     'stripping words off an uploaded image is what used to ship product-only pictures')
 }
 
+// ── it has to be possible to tell what is actually live ────────────────────
+//
+// Both Vercel lanes report to GitHub under one status context and GitHub keeps
+// only the latest, so a red mark on a commit could be production or the branch
+// preview. Reading that wrong cost three bad calls in a day, including two extra
+// builds spent chasing a config error that the first failure had already shown.
+// /api/version answers it in one request.
+{
+  const V = readFileSync('app/api/version/route.ts', 'utf8')
+  const MW = readFileSync('middleware.ts', 'utf8')
+  check('the version route reports the commit', /VERCEL_GIT_COMMIT_SHA/.test(V))
+  check('and which lane is serving', /VERCEL_ENV/.test(V),
+    'production and preview are indistinguishable from outside without it')
+  check('it is reachable without a session', /'\/api\/version'/.test(MW),
+    'a check that needs a login is not a check you can run')
+  check('it is never cached', /no-store/.test(V),
+    'a stale answer is worse than none when the question is what is serving right now')
+  check('it does not leak the branch name', !/VERCEL_GIT_COMMIT_REF/.test(V),
+    'env already separates production from preview; the branch adds nothing and is internal')
+}
+
 if (failures.length) {
   console.error(`\n❌ launchpad-publish: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

@@ -9,6 +9,11 @@ const publicPaths = [
   // this also keeps the app-domain fallback (mvpaffiliate.io/go/<code>) public.
   '/go',
   '/api/auth', '/api/proxy-image', '/api/cron', '/api/wp-version', '/api/campaigns/ingest',
+  // Which commit is serving. Public because it has to be answerable without a
+  // session: it exists so "is my fix live?" is one request instead of reading a
+  // dashboard screenshot. Returns a short SHA and production/preview, nothing
+  // else. See app/api/version/route.ts.
+  '/api/version',
   // Plugin/theme zip downloads — served as octet-stream so Safari doesn't
   // auto-unzip them (which leaves users with the inner .php). The underlying
   // static /public/*.zip is public, so keep the download route public too.
