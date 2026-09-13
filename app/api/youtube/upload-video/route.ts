@@ -25,7 +25,16 @@ export const runtime = 'nodejs'
 export const maxDuration = 300
 
 // Matches the Launchpad UI upload cap + the Supabase bucket per-file limit (500MB).
+// Reachable only because this function is given extra memory in vercel.json and
+// the video is no longer copied three times on its way to YouTube.
 const MAX_BYTES = 500 * 1024 * 1024
+
+/** Say the actual size, not just the limit. "Video is over 500MB" leaves the
+ *  creator guessing whether they missed by a megabyte or by four hundred. */
+function sizeError(bytes: number): string {
+  const mb = Math.round(bytes / (1024 * 1024))
+  return `This video is ${mb}MB and YouTube publishing here tops out at 500MB. Trim it or export at a lower bitrate, then try again.`
+}
 
 export async function POST(request: Request) {
   try {
@@ -69,17 +78,34 @@ async function handleUpload(request: Request) {
   }
 
   // Pull the rendered video bytes (the CTA render lives on our storage).
+  //
+  // COUNT THE COPIES. This route used to hold the whole video in memory three
+  // times over and the service made a fourth, which is what produced a 500 with
+  // an HTML body: the platform OOM-killed the function, so the guaranteed-JSON
+  // wrapper above never ran and the creator was shown a stripped Next.js error
+  // page ("500: Internal Server Error body{color:#000...}") in a toast.
+  //
+  //   res.arrayBuffer()      one copy, unavoidable
+  //   Buffer.from(ab)        no copy, it wraps
+  //   new Uint8Array(buf)    A SECOND COPY, and pointless: a Node Buffer already
+  //                          IS a Uint8Array
+  //   videoBytes.buffer.slice(...) in uploadShort  a THIRD, removed there too
+  //
+  // Now one copy plus whatever undici needs to send it.
   let bytes: Uint8Array
   try {
     // A whole video off a CDN. The 30s default is an API-call ceiling and would
     // abort a legitimate large download, so this gets the upload budget.
     const res = await fetchWithTimeout(videoUrl, { timeoutMs: UPLOAD_TIMEOUT_MS })
     if (!res.ok) throw new Error(`fetch ${res.status}`)
+    // Refuse on the header BEFORE pulling the body into memory. Downloading half
+    // a gigabyte in order to discover it is half a gigabyte is how a size check
+    // becomes the thing it is guarding against.
     const len = Number(res.headers.get('content-length') || 0)
-    if (len && len > MAX_BYTES) return NextResponse.json({ error: 'Video is over 500MB.' }, { status: 400 })
+    if (len && len > MAX_BYTES) return NextResponse.json({ error: sizeError(len) }, { status: 400 })
     const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.byteLength > MAX_BYTES) return NextResponse.json({ error: 'Video is over 500MB.' }, { status: 400 })
-    bytes = new Uint8Array(buf)
+    if (buf.byteLength > MAX_BYTES) return NextResponse.json({ error: sizeError(buf.byteLength) }, { status: 400 })
+    bytes = buf
   } catch (e) {
     return NextResponse.json({ error: `Couldn't read the video: ${e instanceof Error ? e.message : 'unknown'}` }, { status: 502 })
   }

@@ -890,7 +890,20 @@ export class YouTubeOAuthService {
         selfDeclaredMadeForKids: false,
       },
     }
-    const body = videoBytes.buffer.slice(videoBytes.byteOffset, videoBytes.byteOffset + videoBytes.byteLength) as ArrayBuffer
+    // The bytes go out as-is. This used to be
+    //   videoBytes.buffer.slice(byteOffset, byteOffset + byteLength)
+    // which copies the ENTIRE video a second time purely to hand fetch a plain
+    // ArrayBuffer. fetch takes a Uint8Array view directly and honours its offset
+    // and length, so the copy bought nothing and cost a whole video's worth of
+    // memory. On a 250MB upload that copy, stacked on the caller's own, was
+    // enough to have the function OOM-killed by the platform, which surfaces as
+    // a 500 with an HTML body that no try/catch in the route can intercept.
+    //
+    // The cast is the whole reason the copy existed. TypeScript's BodyInit does
+    // not admit Uint8Array<ArrayBufferLike> even though undici sends one without
+    // complaint, and slicing produced a plain ArrayBuffer that satisfied it. A
+    // cast is the correct price for that: it changes a type, not a byte.
+    const body = videoBytes as unknown as BodyInit
 
     // 1) Initiate a resumable upload session — the upload URL comes back in Location.
     const initRes = await fetchWithTimeout(

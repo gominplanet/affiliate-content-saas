@@ -11,7 +11,7 @@
 // localizing is the job rather than a detour. See lib/markets.
 'use client'
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Check, Youtube, Sparkles, Globe, Rocket, Handshake, Lock, Upload, Package } from 'lucide-react'
 import { toast } from 'sonner'
@@ -24,6 +24,7 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { normalizeAsinInput } from '@/lib/asin'
 import { isEnglishMarket } from '@/lib/markets'
 import ThumbnailBoostPanel, { useThumbnailBoost } from '@/components/thumbnails/ThumbnailBoostPanel'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -33,6 +34,30 @@ const muted = { color: 'var(--text-2)' } as const
 const normalizeAsin = normalizeAsinInput
 
 interface Meta { title: string; alternatives: string[]; description: string; tags: string[] }
+
+/**
+ * A publish failure in words a creator can act on.
+ *
+ * When the upload function is killed by the platform (it holds the whole video
+ * in memory) the response is a Next.js error PAGE, not JSON. The caller strips
+ * the tags, so what reached the screen was the error page's stylesheet:
+ * "500: Internal Server Error body{color:#000;background:#fff;margin:0}...".
+ * That is not something anybody can act on, and it is the shape a crash always
+ * takes, so it is worth naming rather than passing through.
+ */
+function humanPublishError(raw: string): string {
+  const s = (raw || '').trim()
+  if (/Internal Server Error|next-error|prefers-color-scheme|<!DOCTYPE/i.test(s)) {
+    return 'YouTube publishing crashed on our side before it could start. Large files are the usual cause. Your video is safe and Amazon does not need this step, so you can skip to Amazon below and come back to YouTube later.'
+  }
+  if (/^HTTP 50\d$/i.test(s) || /^HTTP 429$/i.test(s)) {
+    return `YouTube publishing failed with ${s} and did not say why. Your video is safe. Skip to Amazon below and try YouTube again in a few minutes.`
+  }
+  if (/timed out|timeout|aborted/i.test(s)) {
+    return 'The upload to YouTube ran out of time. That usually means the file is large. Your video is safe, so skip to Amazon below and try a shorter export for YouTube.'
+  }
+  return s || 'Publish failed'
+}
 
 type StepState = 'done' | 'active' | 'locked'
 
@@ -106,6 +131,11 @@ export default function LaunchpadPage() {
   const [privacy, setPrivacy] = useState<'draft' | 'public'>('draft')
   const [publishing, setPublishing] = useState(false)
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null)
+  // The last publish failure, kept ON SCREEN rather than only in a toast that
+  // disappears. A toast is the wrong home for the one message that has to be
+  // read and acted on: it vanishes while the creator is still deciding what to
+  // do, and what they need next (skip to Amazon) is nowhere near it.
+  const [publishError, setPublishError] = useState<string | null>(null)
   // The channel that owns the upload — needed for a Studio link that lands on the
   // right channel instead of erroring out.
   const [publishedChannelId, setPublishedChannelId] = useState<string | null>(null)
@@ -130,6 +160,52 @@ export default function LaunchpadPage() {
   // The same thumbnail controls Co-Pilot has (Quick style, Match a look, Fine-tune),
   // sharing its remembered preferences. Question hook defaults ON here.
   const boost = useThumbnailBoost({ defaultQuestion: true })
+  // BRING YOUR OWN THUMBNAIL.
+  //
+  // Every route into this step generated one. A creator who already has the
+  // thumbnail they want — made in Photoshop, or the one their channel already
+  // uses — had no way to hand it over, so the choice was "let the AI make one"
+  // or "skip and let MVP make one". Both make an image they did not ask for.
+  //
+  // It goes to the same bucket the CTA badge already uses and produces a public
+  // URL, which is exactly what the generated one produces, so YouTube's apply
+  // route and the Amazon master both take it with no change.
+  const thumbFileRef = useRef<HTMLInputElement | null>(null)
+  const supabase = useMemo(() => createBrowserClient(), [])
+  const [thumbUploading, setThumbUploading] = useState(false)
+
+  async function onPickThumbnail(file: File) {
+    // YouTube's own thumbnail limit. Catch it here rather than after a publish,
+    // where it comes back as an opaque API failure on a video that is already up.
+    const MAX = 2 * 1024 * 1024
+    if (!/^image\//.test(file.type)) { toast.error('That is not an image. JPG or PNG.'); return }
+    if (file.size > MAX) {
+      toast.error(`YouTube caps thumbnails at 2MB and this one is ${Math.round(file.size / 1024 / 1024 * 10) / 10}MB. Export it smaller and try again.`)
+      return
+    }
+    setThumbUploading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || 'jpg').toLowerCase()
+      const path = `${user.id}/launchpad-thumb-${crypto.randomUUID()}.${ext}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: upErr } = await (supabase.storage as any)
+        .from('instagram-videos')
+        .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || 'image/jpeg' })
+      if (upErr) throw new Error(upErr.message || 'Upload failed')
+      const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
+      setThumbUrl(urlData.publicUrl)
+      // No text-free variant exists for an uploaded image, and inventing one by
+      // stripping words is what used to ship product-only pictures. Left null so
+      // the master builds its own for the non-English stores.
+      setThumbCleanUrl(null)
+      setThumbSkipped(false)
+      toast.success('Thumbnail uploaded. It goes to YouTube and the English stores as-is.')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not upload that thumbnail')
+    } finally { setThumbUploading(false) }
+  }
   useEffect(() => {
     (async () => {
       try {
@@ -334,7 +410,7 @@ export default function LaunchpadPage() {
 
   async function publish() {
     if (!renderedUrl || !chosenTitle.trim()) return
-    setPublishing(true)
+    setPublishing(true); setPublishError(null)
     try {
       const tagList = tags.split(',').map(t => t.trim()).filter(Boolean)
       // 1) Upload the render as a PRIVATE draft (metadata set here).
@@ -407,23 +483,38 @@ export default function LaunchpadPage() {
       }
 
       toast.success(privacy === 'public' ? 'Published to YouTube.' : 'Saved to YouTube as a private draft.')
+      setPublishError(null)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Publish failed')
+      const raw = e instanceof Error ? e.message : 'Publish failed'
+      setPublishError(humanPublishError(raw))
+      toast.error(humanPublishError(raw), { duration: 10000 })
     } finally { setPublishing(false) }
   }
 
   async function toStorefronts() {
     if (!renderedUrl) { toast.error('Render your video first'); return }
     if (!asinClean) { toast.error('Enter a valid product ASIN (or paste the Amazon product link) first'); return }
+    // THE CTA CUT MUST NEVER REACH AMAZON.
+    //
+    // YouTube gets the version with the CTA burned in. Amazon gets the clean
+    // one. This used to send `cleanUrl || renderedUrl`, so a session restored
+    // without a clean URL quietly shipped the CTA cut to the storefront, where a
+    // burned-in call to action pointing off Amazon is exactly what gets a
+    // storefront video rejected. The creator would have found out from Amazon,
+    // not from us.
+    if (!cleanUrl) {
+      toast.error('The clean cut of this video is missing, and Amazon must not get the version with the CTA burned in. Re-upload the video in Step 1 and the clean copy is kept alongside the render.', { duration: 12000 })
+      return
+    }
     setCreatingMaster(true)
     try {
       const r = await fetch('/api/launchpad/master', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        // Storefronts get the CLEAN upload (no CTA). Fall back to the render
-        // only if the clean URL is somehow missing, so the flow never blocks.
+        // Storefronts get the CLEAN upload, never the CTA render. There is no
+        // fallback on purpose: the guard above refuses rather than substituting.
         // Seed the thumbnail we already generated so the storefront step doesn't
         // stall on "waiting for thumbnail".
-        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl || renderedUrl, asin: asinClean, durationSec, thumbnailUrl: thumbUrl || undefined, thumbnailCleanUrl: thumbCleanUrl || undefined,
+        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl, asin: asinClean, durationSec, thumbnailUrl: thumbUrl || undefined, thumbnailCleanUrl: thumbCleanUrl || undefined,
           // Same face pick as the YouTube step, so any thumbnail the master still has
           // to render (e.g. when YouTube was skipped) features the same person.
           ...(facePick === 'no-human' ? { noHuman: true } : facePick ? { faceId: facePick } : {}) }),
@@ -697,6 +788,22 @@ export default function LaunchpadPage() {
           )}>
           <>
             <p className="text-[12px] mb-3" style={muted}>MVP makes two: one with the headline for YouTube and the English stores, and a text-free one for the non-English stores. Both use your face and the real product. These go to Amazon whether or not you publish to YouTube.</p>
+
+            {/* ALREADY HAVE ONE? Sits at the top of the step, level with the
+                generator, because for a creator who arrived with their thumbnail
+                finished every control below this is the wrong answer. */}
+            <input ref={thumbFileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) void onPickThumbnail(f); e.currentTarget.value = '' }} />
+            <div className="flex flex-wrap items-center gap-2 mb-3 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+              <button type="button" onClick={() => thumbFileRef.current?.click()} disabled={thumbUploading || thumbBusy}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium border disabled:opacity-60"
+                style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                {thumbUploading ? <><Loader2 size={13} className="animate-spin" /> Uploading…</> : <><Upload size={13} /> Upload my own thumbnail</>}
+              </button>
+              <span className="text-[11.5px]" style={muted}>
+                Already made one? Use it instead of generating. JPG or PNG, 1280 by 720, under 2MB.
+              </span>
+            </div>
             {/* The headline is written from the title, so this step waits on it.
                 Say so plainly, with a count, instead of showing dead controls. */}
             {!meta && preparing && (
@@ -872,6 +979,27 @@ export default function LaunchpadPage() {
                           {publishing ? <><Loader2 size={15} className="animate-spin" /> Publishing…</> : <><Youtube size={15} /> {privacy === 'public' ? 'Publish public' : 'Save as draft'}</>}
                         </button>
                       </div>
+                      {/* A FAILED PUBLISH HAS TO OFFER THE WAY FORWARD.
+                          The skip lives in this card's header as a small grey
+                          underline. Somebody who has just been handed an error is
+                          reading the error, not scanning the header, and Amazon
+                          never needed YouTube in the first place. So the exit sits
+                          in the failure itself. */}
+                      {publishError && !publishedUrl && (
+                        <div className="rounded-lg border p-3 flex flex-col gap-2" style={{ borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.06)' }}>
+                          <p className="text-[13px] leading-relaxed" style={label}>{publishError}</p>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button type="button" onClick={() => setYtOpen('skipped')}
+                              className="text-[12.5px] font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: '#7C3AED' }}>
+                              Skip YouTube, continue to Amazon
+                            </button>
+                            <button type="button" onClick={() => void publish()} disabled={publishing}
+                              className="text-[12.5px] font-medium underline disabled:opacity-50" style={muted}>
+                              Try YouTube again
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       {publishedUrl && (
                         <p className="text-[13px] inline-flex items-center gap-1.5 flex-wrap" style={{ color: '#10B981' }}>
                           <Check size={14} /> Done.
