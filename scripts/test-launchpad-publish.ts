@@ -24,8 +24,8 @@
 //   undici serialising the PUT                   a fourth
 //
 // A 250MB upload therefore wanted a gigabyte on a function that did not have
-// one. Two of those copies were free to delete and the function now also gets
-// the memory the job actually needs.
+// one. Two of those copies were free to delete, which halves the peak, and the
+// publish cap came down to a size the default allowance can actually survive.
 //
 // The second half is worse than the crash. Amazon never needed YouTube, but the
 // Amazon step is gated on the YouTube step being resolved, and the only way to
@@ -60,16 +60,25 @@ const strip = (src: string) => src.split('\n').filter(l => !l.trim().startsWith(
     'a cast changes a type, a slice changes a hundred megabytes')
 }
 
-// ── the function is given enough memory to do the job ───────────────────────
+// ── the publish cap matches what the function can actually survive ──────────
+//
+// The first attempt at this raised the function's memory with a `functions`
+// block in vercel.json so the full 500MB stayed reachable. That failed the
+// deployment twice in a row, on the two commits that carried it and on nothing
+// before them, so the config is gone and the cap came down to a size the default
+// allowance handles. A working deploy is worth more than a file size almost
+// nobody reaches, and the copy removal above is what actually fixed the crash.
 {
-  const fns = VERCEL.functions ?? {}
-  const key = 'app/api/youtube/upload-video/route.ts'
-  check('the upload function has an explicit memory allowance', !!fns[key],
-    'on the default allowance it is OOM-killed, which returns an HTML 500 no catch can see')
-  check('and it is a real allowance', (fns[key]?.memory ?? 0) >= 2048,
-    `got ${fns[key]?.memory}`)
-  check('the crons survived the edit', Array.isArray(VERCEL.crons) && VERCEL.crons.length > 20,
+  check('vercel.json carries no functions block', !VERCEL.functions,
+    'adding one failed the deployment; if it is reinstated, verify a green PRODUCTION build before trusting it')
+  check('the crons are intact', Array.isArray(VERCEL.crons) && VERCEL.crons.length > 20,
     `${VERCEL.crons?.length} crons`)
+  check('the cap is one the function can survive',
+    /const MAX_BYTES = 300 \* 1024 \* 1024/.test(ROUTE),
+    'peak memory is about twice the file; 500MB on the default allowance is what was being OOM-killed')
+  check('and the refusal points at the step that still works',
+    /Amazon storefronts are not affected/.test(ROUTE),
+    'a size limit on YouTube must not read as the whole run being over')
 }
 
 // ── the size limit is checked before the download, and says the size ────────

@@ -1,12 +1,4 @@
 {
-  "functions": {
-    "app/api/youtube/upload-video/route.ts": {
-      "memory": 3009
-    },
-    "app/api/youtube/upload-short/route.ts": {
-      "memory": 3009
-    }
-  },
   "crons": [
     {
       "path": "/api/cron/process-generation-jobs",

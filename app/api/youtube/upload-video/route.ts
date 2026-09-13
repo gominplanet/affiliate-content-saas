@@ -24,16 +24,29 @@ import { fetchWithTimeout, UPLOAD_TIMEOUT_MS } from '@/lib/fetch-timeout'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-// Matches the Launchpad UI upload cap + the Supabase bucket per-file limit (500MB).
-// Reachable only because this function is given extra memory in vercel.json and
-// the video is no longer copied three times on its way to YouTube.
-const MAX_BYTES = 500 * 1024 * 1024
+// What this FUNCTION can survive, which is not the same as what the bucket
+// accepts. Storage and the Launchpad uploader both take 500MB, and Amazon is
+// happy with that, but publishing to YouTube holds the video in memory here and
+// the function has a fixed allowance.
+//
+// Peak is now about 2x the file: one copy from arrayBuffer, plus whatever undici
+// needs to send it. It was 4x, which is what OOM-killed the function and
+// produced a 500 with an HTML body. 300MB leaves real headroom under the default
+// allowance on top of the Node and Next baseline.
+//
+// Raising this means giving the function more memory, and the obvious way to do
+// that (a `functions` block in vercel.json) failed the deployment twice, so it
+// is not worth trading a working deploy for a file size almost nobody hits.
+// Streaming the upload in resumable chunks would remove the ceiling properly.
+const MAX_BYTES = 300 * 1024 * 1024
 
-/** Say the actual size, not just the limit. "Video is over 500MB" leaves the
- *  creator guessing whether they missed by a megabyte or by four hundred. */
+/** Say the actual size, not just the limit, and say what to do. "Video is over
+ *  500MB" leaves the creator guessing whether they missed by a megabyte or by
+ *  four hundred, and gives them nothing to act on. */
 function sizeError(bytes: number): string {
   const mb = Math.round(bytes / (1024 * 1024))
-  return `This video is ${mb}MB and YouTube publishing here tops out at 500MB. Trim it or export at a lower bitrate, then try again.`
+  const cap = Math.round(MAX_BYTES / (1024 * 1024))
+  return `This video is ${mb}MB and publishing to YouTube from here tops out at ${cap}MB. Export it at a lower bitrate and try again. Your Amazon storefronts are not affected and take the video as it is.`
 }
 
 export async function POST(request: Request) {
