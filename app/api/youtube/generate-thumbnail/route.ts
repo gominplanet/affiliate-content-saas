@@ -1520,10 +1520,26 @@ export async function POST(request: Request) {
     const isSocialFormat = isPin || isIg || isFb || isStory
     const gfxModelOverride: string | undefined =
       isSocialFormat ? 'gpt-image-1' : undefined
-    // What we LOG for the render: the priced medium variant when overridden
-    // (gpt-image-1-medium = $0.06 in PRICING), else the bare env model.
+    // What we LOG for the render.
+    //
+    // OpenAI prices gpt-image by QUALITY, not by model name, and gfxQuality
+    // above is already tier-gated: Pro and admin render 'high', every other
+    // tier renders 'medium'. The comment on that line has said "~3x more per
+    // image (~$0.22 vs ~$0.08)" the whole time. The billing never heard it.
+    //
+    // Logging the bare env model booked EVERY render at the high rate ($0.19),
+    // including the medium ones that actually cost about $0.06. That is not a
+    // reporting detail: monthlyAiSpendCeilingUsd is what cuts a creator off, so
+    // an Amazon-tier creator was burning their ceiling about three times faster
+    // than their real spend, and the ceiling was sized against the inflated
+    // number too.
+    //
+    // Book it by the quality that actually ran. 'high' keeps the env model and
+    // its $0.19; the social-format override is subsumed, because those tiers
+    // are on medium anyway and a Pro rendering a social format at high really
+    // does pay the high rate.
     const gfxRecordOverride: string | undefined =
-      gfxModelOverride ? 'gpt-image-1-medium' : undefined
+      gfxQuality === 'medium' ? 'gpt-image-1-medium' : undefined
 
     // ── Hard monthly per-format cap ────────────────────────────────────────
     // pin/ig/fb are finite ONLY on the Amazon tier (null = unlimited on Studio/

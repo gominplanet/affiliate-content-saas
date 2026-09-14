@@ -120,7 +120,14 @@ export async function generateArtDirectorPin(opts: {
       quality: 'medium',
     })
     if (!b64) return null
-    if (opts.userId) recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'pinterest_art_director', model: 'gpt-image-2', images: 1 })
+    // Log what the QUALITY costs, not what the model is called. Every render in
+    // this file asks for quality:'medium' (~$0.06), and every one of them used
+    // to be booked as 'gpt-image-2' (~$0.19). OpenAI prices gpt-image by
+    // quality, so that was roughly 3x of imaginary spend on the two biggest
+    // image lines in the whole product, charged against the creator's monthly
+    // ceiling. If any of these calls is ever raised to quality:'high', the
+    // logged model has to move back with it.
+    if (opts.userId) recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'pinterest_art_director', model: 'gpt-image-1-medium', images: 1 })
 
     const jpeg = await sharp(Buffer.from(b64, 'base64')).resize(1000, 1500, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
     return { data: jpeg.toString('base64'), mediaType: 'image/jpeg' }
@@ -178,7 +185,7 @@ export async function generateArtDirectorBlogHero(opts: {
       quality: 'medium',
     })
     if (!b64) return null
-    if (opts.userId) recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'yt_thumb_graphic', model: 'gpt-image-2', images: 1 })
+    if (opts.userId) recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'yt_thumb_graphic', model: 'gpt-image-1-medium', images: 1 })
 
     const jpeg = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
     return { data: jpeg.toString('base64'), mediaType: 'image/jpeg' }
@@ -309,7 +316,7 @@ export async function generateArtDirectorCollagePin(opts: {
       quality: 'medium',
     })
     if (!b64) return null
-    if (opts.userId) recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'pinterest_art_director', model: 'gpt-image-2', images: 1 })
+    if (opts.userId) recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'pinterest_art_director', model: 'gpt-image-1-medium', images: 1 })
 
     const jpeg = await sharp(Buffer.from(b64, 'base64')).resize(1000, 1500, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
     return { data: jpeg.toString('base64'), mediaType: 'image/jpeg' }
@@ -393,7 +400,7 @@ export async function generateArtDirectorRoundupHero(opts: {
       quality: 'medium',
     })
     if (!b64) return null
-    if (opts.userId) recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'yt_thumb_graphic', model: 'gpt-image-2', images: 1 })
+    if (opts.userId) recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'yt_thumb_graphic', model: 'gpt-image-1-medium', images: 1 })
 
     const jpeg = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
     return { data: jpeg.toString('base64'), mediaType: 'image/jpeg' }
