@@ -2359,6 +2359,19 @@ async function handleGenerate(request: Request) {
             const u = await rehostToFal(f)
             if (u) frameRefs.push(u)
           }
+          // The SECOND leg, counted for the same reason as the product one
+          // below. A body image falls through to text-only (no ground truth at
+          // all, the model invents the product) ONLY when the product reference
+          // failed AND there are no frames either. Frames come from YouTube
+          // storyboards, so a post with no youtube_video_id — an upload-first
+          // Launchpad run, a campaign post, a from-link post — never has any.
+          // As that workflow grows, the text-only share grows with it, and
+          // without this row the two causes are impossible to separate.
+          recordUsage({
+            userId: user.id, tier: (wp?.tier as string) ?? null,
+            feature: frameRefs.length > 0 ? 'blog_body_frames_ok' : 'blog_body_frames_none',
+            model: 'diagnostic', images: 0,
+          })
 
           // Resolve the REAL product image through the SINGLE SOURCE OF
           // TRUTH (`lib/resolve-product-reference`). Every improvement to
@@ -2393,6 +2406,32 @@ async function handleGenerate(request: Request) {
             } catch (e) {
               console.warn(`${traceTag} step:fal-upload FAILED`, { error: e instanceof Error ? e.message : String(e) })
             }
+          }
+
+          // WHICH LEG OF THE CHAIN WON, as a countable row.
+          //
+          // resolveProductReference has returned a `source` since it was
+          // written, and its own comment says the field exists so we can "see
+          // how often each path is winning". Nothing ever read it. So when the
+          // share of body images generated with NO product reference went from
+          // 5% in July to 33% in September, there was no way to ask which step
+          // broke — the six distinct outcomes all collapsed into one null.
+          //
+          // Two different failures also looked identical and are now separate:
+          // the chain finding nothing, and the chain finding a photo that we
+          // then failed to download or hand to fal (hotlink protection, a
+          // timeout, a dead CDN). The second one is a post that HAD ground
+          // truth and lost it, which is a different bug with a different fix.
+          //
+          // images:0 — these cost nothing, they exist to be counted.
+          {
+            const leg = falProductImageUrl
+              ? ref.source
+              : ref.productImageUrl ? 'upload-failed' : 'none'
+            recordUsage({
+              userId: user.id, tier: (wp?.tier as string) ?? null,
+              feature: `blog_product_ref_${leg}`, model: 'diagnostic', images: 0,
+            })
           }
 
           // Image count resolution. Two inputs:
