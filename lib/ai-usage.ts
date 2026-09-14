@@ -118,6 +118,23 @@ export const PRICING: Record<string, Pricing> = {
   'elevenlabs-multilingual-v2': { in: 0, out: 100 },
   'elevenlabs-flash-v2.5':      { in: 0, out: 50  },
   'openai-tts-1':               { in: 0, out: 15  },
+
+  // ── Things that produce an image or a publish but cost NOTHING ─────────
+  //
+  // These are logged with images:1 so the row is countable (caps and the
+  // activity views count rows, and a publish that leaves no row is a publish
+  // nobody can see). But images:1 with no entry here means IMAGE_COST_FALLBACK,
+  // so each one was charging the user $0.04 of money that was never spent —
+  // and the monthly spend ceiling is what cuts a creator off. A storefront
+  // creator publishing 100 videos and 100 pins was losing $8 of their ceiling
+  // to three free APIs, plus up to $0.12 per thumbnail run to a text bake that
+  // happens on our own CPU.
+  //
+  // Priced at zero on purpose rather than dropped to images:0: the count is
+  // real, the cost is not.
+  'simple-bake-resvg': { in: 0, out: 0, imageCost: 0 }, // local resvg text bake
+  'pinterest-api':     { in: 0, out: 0, imageCost: 0 }, // Pinterest publish, free
+  'youtube-data-api':  { in: 0, out: 0, imageCost: 0 }, // YouTube upload, quota not dollars
 }
 export const WEB_SEARCH_COST = 0.01 // $ per search (Anthropic server tool)
 /** Fallback per-image cost when an image model isn't in PRICING. */
