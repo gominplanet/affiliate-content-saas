@@ -9,9 +9,17 @@ import { repetitionGuardBlock } from '@/lib/repetition-guard'
 import { resolveNicheScaffold, nicheScaffoldToPrompt, type NicheScaffold } from '@/lib/niche-scaffold'
 import { deriveProductName } from '@/lib/product-name'
 import { asinPathRegex } from '@/lib/asin'
+import { pickBlogWriter, BLOG_WRITER_DEFAULT, type WriterArm } from '@/lib/blog-writer'
 
 /** Caller identity for cost telemetry (optional — logging is best-effort). */
-export interface UsageCtx { userId?: string | null; tier?: string | null }
+export interface UsageCtx {
+  userId?: string | null
+  tier?: string | null
+  /** Stable id (the video id) used to pick the blog writer's A/B arm. Must be
+   *  the same across retries of one post, or a retry can change arms and both
+   *  arms' numbers stop meaning anything. See lib/blog-writer.ts. */
+  writerSeed?: string | null
+}
 
 export interface BrandProfile {
   name: string
@@ -92,6 +100,11 @@ export interface VideoInput {
 }
 
 export interface BlogGenerationOutput {
+  /** Which model actually wrote this post, and which A/B arm it was in. The
+   *  route records these on blog_quality_checks so prose quality can be
+   *  compared per post rather than inferred from timestamps. */
+  writerModel?: string
+  writerArm?: WriterArm
   title: string
   slug: string
   excerpt: string
@@ -2314,8 +2327,14 @@ ${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available
     // response can be cut off by the network/edge, which surfaces as an
     // undici "terminated" / "fetch failed" / socket error. One clean retry
     // recovers the common case rather than failing the whole generation.
+    // WHICH MODEL WRITES THIS POST. Default is Opus 5; a slice may be routed to
+    // Sonnet 5 for the cost trial (lib/blog-writer.ts). Chosen once, above the
+    // retry below, so a transient stream drop re-runs in the SAME arm — a model
+    // that fails more often must not launder its failures into the other arm's
+    // numbers.
+    const writer = pickBlogWriter(ctx?.writerSeed ?? null)
     const runGeneration = () => this.client.messages.stream({
-      model: 'claude-opus-4-8',
+      model: writer.model,
       // Safety CEILING, not the cost control — adaptive thinking tokens count
       // toward max_tokens, so 10000 was truncating real posts (heavy thinking
       // ate the budget before the META/CONTENT blocks finished → "invalid JSON").
@@ -2326,10 +2345,20 @@ ${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available
       // block into "invalid JSON". max_tokens is a CEILING: you only pay for
       // tokens generated, so the real cost cap stays the per-account $ ceiling.
       max_tokens: 24000,  // raised from 16000 on 2026-06-26 for the uncapped length tiers
-      // Writer upgraded Sonnet 4.6 → Opus 4.8 (2026-06-09) for prose quality.
-      // Opus 4.8 removed the fixed `budget_tokens` thinking budget (it 400s)
-      // and only accepts ADAPTIVE thinking, so the model self-decides depth.
-      // effort:'medium' is the latency governor: the whole publish pipeline
+      // Writer upgraded Sonnet 4.6 → Opus 4.8 (2026-06-09) for prose quality,
+      // then 4.8 → Opus 5 (2026-09-14). Opus 5 is the CURRENT generation at the
+      // same list price as 4.8 ($5/$25), so that second move cost nothing and
+      // the model is a better writer at the same effort.
+      //
+      // Thinking config is unchanged and still correct on Opus 5: the fixed
+      // `budget_tokens` budget 400s on both, ADAPTIVE is the only on-mode we
+      // want, and on Opus 5 thinking is on by default anyway. Note that
+      // `{type:'disabled'}` IS accepted on Opus 5 at effort 'high' or below —
+      // do not reach for it here. It saves ~$0.09/post and Anthropic's guidance
+      // is that a disabled-thinking Opus writes its reasoning into the VISIBLE
+      // response, which on a route that returns publishable HTML is a far worse
+      // outcome than the money is worth.
+      // effort:'medium' was the latency governor: the whole publish pipeline
       // (generation + body images + fact/citation/self-critique passes) shares
       // ONE 300s function, Opus is slower per token than Sonnet, and we were
       // already brushing the limit (the old 10k→6k budget trim was for exactly
@@ -2374,7 +2403,7 @@ ${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available
     }
     {
       const u = usageFromAnthropic(message)
-      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_generate', model: 'claude-opus-4-8', input: u.input, output: u.output })
+      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_generate', model: writer.model, input: u.input, output: u.output })
     }
 
     // Filter out thinking blocks — only keep text output
@@ -2403,6 +2432,8 @@ ${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available
         }
       }
       parsed.content = parsed.content.replace(/{VIDEO_ID}/g, video.videoId)
+      parsed.writerModel = writer.model
+      parsed.writerArm = writer.arm
       return parsed
     }
 
@@ -2418,6 +2449,8 @@ ${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available
     }
 
     const parsed: BlogGenerationOutput = {
+      writerModel: writer.model,
+      writerArm: writer.arm,
       ...meta,
       content: contentMatch[1].replace(/{VIDEO_ID}/g, video.videoId),
     }
@@ -2498,7 +2531,11 @@ STRUCTURE REQUIREMENTS (in addition to your normal brand-voice rules):
 Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONTENT_END%% format you always use.`
 
     const stream = this.client.messages.stream({
-      model: 'claude-opus-4-8',
+      // Campaign copy stays on the default writer. It is not in the A/B: 117
+      // calls a quarter against the blog's 1,037, so a slice of it would take
+      // years to say anything, and a brand-campaign brief is the last place to
+      // experiment cheaply.
+      model: BLOG_WRITER_DEFAULT,
       // Safety CEILING, not the cost control — adaptive thinking tokens count
       // toward max_tokens, so 10000 was truncating real posts (heavy thinking
       // ate the budget before the META/CONTENT blocks finished → "invalid JSON").
@@ -2527,7 +2564,7 @@ Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONT
     const message = await stream.finalMessage()
     {
       const u = usageFromAnthropic(message)
-      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'campaign_generate', model: 'claude-opus-4-8', input: u.input, output: u.output })
+      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'campaign_generate', model: BLOG_WRITER_DEFAULT, input: u.input, output: u.output })
     }
     const raw = message.content
       .filter(block => block.type === 'text')

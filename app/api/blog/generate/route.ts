@@ -1184,7 +1184,11 @@ async function handleGenerate(request: Request) {
         supportingKeywords,
         gscQueries,
       },
-      { userId: user.id, tier: (wp?.tier as string) ?? null },
+      // writerSeed: the A/B arm is hashed off the VIDEO id, not the user or the
+      // clock, so a rewrite or a retry of the same post always lands in the same
+      // arm. Otherwise a model that fails more often would quietly move its
+      // failures into the other arm's results.
+      { userId: user.id, tier: (wp?.tier as string) ?? null, writerSeed: videoId },
       isRewrite ? (rewriteFeedback?.trim() || null) : null,
       priorExamples,
       persistentFeedback,
@@ -1313,8 +1317,7 @@ async function handleGenerate(request: Request) {
     // user-context insert policy isn't set up (avoid leaking RLS surface
     // for a write-only telemetry row).
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (createAdminClient() as any).from('blog_quality_checks').insert({
+      const base = {
         user_id: user.id,
         video_id: videoId,
         violations_found: selfCheck.violations.length,
@@ -1324,7 +1327,26 @@ async function handleGenerate(request: Request) {
         // "ai-emphasis-defense" or "em-dash heading". Cap at 20 to
         // avoid runaway arrays from a misbehaving Haiku response.
         violation_patterns: selfCheck.violations.slice(0, 20).map(v => v.pattern || 'unknown'),
+      }
+      // WHICH MODEL WROTE THIS POST. This is what makes the writer trial
+      // readable: violations and fixes are a per-post prose signal, and without
+      // these two columns the arms are indistinguishable in the data.
+      //
+      // Added by migration 330, and written through a guarded retry because
+      // PostgREST rejects the WHOLE insert when one named column is missing.
+      // Until the migration is run, the unguarded version would lose the entire
+      // telemetry row rather than just the arm label, which is the worse trade.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const admin = createAdminClient() as any
+      const { error: insErr2 } = await admin.from('blog_quality_checks').insert({
+        ...base,
+        writer_model: generated.writerModel ?? null,
+        writer_arm: generated.writerArm ?? null,
       })
+      if (insErr2) {
+        console.warn('[blog/generate] quality row without writer columns (run migration 330):', insErr2.message)
+        await admin.from('blog_quality_checks').insert(base)
+      }
     } catch (insErr) {
       console.warn('[blog/generate] failed to persist blog_quality_check:', insErr instanceof Error ? insErr.message : insErr)
     }
