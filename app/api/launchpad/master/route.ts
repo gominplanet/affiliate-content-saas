@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Launchpad is a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
-  const body = await req.json().catch(() => ({})) as { title?: string; videoUrl?: string; asin?: string; durationSec?: number; thumbnailUrl?: string; thumbnailCleanUrl?: string; faceId?: string; noHuman?: boolean }
+  const body = await req.json().catch(() => ({})) as { title?: string; videoUrl?: string; asin?: string; durationSec?: number; thumbnailUrl?: string; faceId?: string; noHuman?: boolean }
   // The creator's face pick from the YouTube step, so any thumbnail we still
   // have to render here features the same person (or nobody, when they chose
   // "no human").
@@ -48,9 +48,6 @@ export async function POST(req: Request) {
   // the master up front so the storefront upload's thumbnail gate passes
   // immediately instead of waiting on the background render.
   const seedThumb = /^https:\/\//i.test((body.thumbnailUrl || '').trim()) ? body.thumbnailUrl!.trim() : null
-  // The text-free twin of that thumbnail (same design, zero words) for non-English
-  // storefronts. When the Launchpad supplies it we never regenerate a different one.
-  const seedClean = /^https:\/\//i.test((body.thumbnailCleanUrl || '').trim()) ? body.thumbnailCleanUrl!.trim() : null
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A hosted video URL is required.' }, { status: 400 })
   if (!asin) return NextResponse.json({ error: 'A valid product ASIN is required.' }, { status: 400 })
 
@@ -84,7 +81,6 @@ export async function POST(req: Request) {
       // upload never stalls on "waiting for thumbnail". The background job below
       // still produces the branded/clean variants and overwrites when ready.
       ...(seedThumb ? { thumbnail_url: seedThumb } : {}),
-      ...(seedClean ? { thumbnail_clean_url: seedClean } : {}),
       published_at: new Date().toISOString(),
     })
     .select('id').single()
@@ -93,27 +89,27 @@ export async function POST(req: Request) {
   // Fire-and-forget enrichment. Best-effort: the dub route re-transcribes on
   // demand if this doesn't finish, and the thumbnail isn't on the critical path.
   //
-  // Thumbnails, per market:
-  //   • English storefronts use thumbnail_url = the creator's own YouTube-step
-  //     thumbnail (seedThumb). We NEVER overwrite it here — that was the bug where
-  //     English got a different, regenerated image. Only regenerate the with-text
-  //     one when the creator skipped the YouTube step (no seed).
-  //   • Non-English storefronts use thumbnail_clean_url — a wordless variant so no
-  //     English hook sits on the image (withText:false). deliver/queue falls back
-  //     to the with-text one if the clean variant isn't ready, so a market is
-  //     never left blank.
+  // Thumbnails: ONE image, the creator's own YouTube-step thumbnail (seedThumb),
+  // which we NEVER overwrite here — that was the bug where the storefronts got a
+  // different, regenerated picture than the one the creator approved. It is only
+  // rendered here when they skipped the YouTube step and there is no seed.
+  //
+  // There used to be a second, wordless render for non-English storefronts. It was
+  // paid for on every single run and could never be used: the Launchpad's
+  // storefront step filters its markets through isEnglishMarket, so US, CA, UK and
+  // AU are the only places a Launchpad master ever goes, and all four take the
+  // thumbnail with the headline on it. Storefront Sync is where localizing is the
+  // job, and it still builds thumbnail_clean_url itself, on demand, the first time
+  // a non-English market is actually chosen for a master.
   void (async () => {
     try {
-      const [t, cleanThumb, textThumb] = await Promise.allSettled([
+      const [t, textThumb] = await Promise.allSettled([
         (async () => transcriptionConfigured() ? cuesToText(await transcribeToCues(videoUrl)).slice(0, 20000) : '')(),
-        seedClean ? Promise.resolve(null) : buildProductThumbnail(sb, { userId: user.id, tier, title, asin, withText: false, faceId, noHuman }),
         seedThumb ? Promise.resolve(null) : buildProductThumbnail(sb, { userId: user.id, tier, title, asin, faceId, noHuman }),
       ])
       const patch: Record<string, unknown> = {}
       const transcript = t.status === 'fulfilled' ? t.value : ''
       if (transcript) patch.transcript = transcript
-      const clean = cleanThumb.status === 'fulfilled' ? cleanThumb.value : null
-      if (!seedClean && clean) patch.thumbnail_clean_url = clean // only when the Launchpad didn't supply the text-free twin
       const text = textThumb.status === 'fulfilled' ? textThumb.value : null
       if (!seedThumb && text) patch.thumbnail_url = text // only when the creator skipped YouTube
       if (Object.keys(patch).length) await sb.from('youtube_videos').update(patch).eq('id', row.id)

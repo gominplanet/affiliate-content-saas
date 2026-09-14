@@ -31,7 +31,7 @@
 // Amazon step is gated on the YouTube step being resolved, and the only way to
 // resolve it was a small grey underline in the card header. Somebody staring at
 // a wall of stripped CSS does not go looking up there. The run was over.
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -145,9 +145,34 @@ const strip = (src: string) => src.split('\n').filter(l => !l.trim().startsWith(
     'that is what /api/youtube/apply and the Amazon master both already read')
   check('it clears the skip flag', /setThumbSkipped\(false\)/.test(PAGE),
     'having uploaded one, they have not skipped this step')
-  check('and does not invent a text-free variant',
-    /setThumbCleanUrl\(null\)/.test(PAGE),
-    'stripping words off an uploaded image is what used to ship product-only pictures')
+}
+
+// ── the Launchpad pays for ONE image, not two ───────────────────────────────
+//
+// Every Launchpad run used to render a second, wordless thumbnail for
+// non-English storefronts, at full image price. It could never be used. The
+// storefront step filters its markets through isEnglishMarket, so US, CA, UK and
+// AU are the only destinations a Launchpad master has, and all four take the
+// thumbnail with the headline on it. Storefront Sync, where localizing is
+// actually the job, still builds the wordless variant and builds it lazily, the
+// first time a non-English market is chosen.
+{
+  const MASTER = strip(readFileSync('app/api/launchpad/master/route.ts', 'utf8'))
+  const page = strip(PAGE)
+  check('the Launchpad no longer renders a text-free twin',
+    !/clean-thumbnail/.test(page) && !/thumbCleanUrl/.test(page),
+    'one image per run, and it is the one the creator approved')
+  check('the standalone route is gone', !existsSync('app/api/launchpad/clean-thumbnail/route.ts'),
+    'an endpoint nothing calls is an endpoint that bills when something does')
+  check('and the master does not render one behind their back',
+    !/withText: false/.test(MASTER),
+    'removing it from the page only to pay for it in the background saves nothing')
+  check('the master still renders the ONE thumbnail when YouTube was skipped',
+    /seedThumb \? Promise\.resolve\(null\) : buildProductThumbnail/.test(MASTER),
+    'skipping YouTube must not mean skipping the storefront image')
+  check('Storefront Sync still builds the wordless one on demand',
+    /withText: false/.test(readFileSync('app/api/global-sync/start/route.ts', 'utf8')),
+    'the non-English markets are that page\'s job and still need it')
 }
 
 // ── it has to be possible to tell what is actually live ────────────────────
@@ -176,4 +201,4 @@ if (failures.length) {
   for (const f of failures) console.error(`   • ${f}`)
   process.exit(1)
 }
-console.log('✅ launchpad-publish: the video is copied once, a crash reads as English, a failure still reaches Amazon, and the clean cut is the only thing Amazon gets')
+console.log('✅ launchpad-publish: the video is copied once, one thumbnail is paid for, a crash reads as English, a failure still reaches Amazon, and the clean cut is the only thing Amazon gets')

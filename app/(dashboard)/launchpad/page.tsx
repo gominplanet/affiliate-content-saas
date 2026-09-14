@@ -147,9 +147,6 @@ export default function LaunchpadPage() {
   // Full Co-Pilot finish: an AI thumbnail + the standard publish options, applied
   // to the uploaded video via /api/youtube/apply (same backend the Co-Pilot uses).
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
-  // A text-free render (same brief, zero words) for non-English storefronts.
-  // Null → the master builds its own clean variant, so nothing blocks on it.
-  const [thumbCleanUrl, setThumbCleanUrl] = useState<string | null>(null)
   // Who's on the thumbnail — the creator's saved faces (same picker as Co-Pilot).
   // 'no-human' = product-only. Defaults to the first ready face when they have one.
   const [faceModels, setFaceModels] = useState<Array<{ id: string; name: string }>>([])
@@ -196,12 +193,8 @@ export default function LaunchpadPage() {
       if (upErr) throw new Error(upErr.message || 'Upload failed')
       const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
       setThumbUrl(urlData.publicUrl)
-      // No text-free variant exists for an uploaded image, and inventing one by
-      // stripping words is what used to ship product-only pictures. Left null so
-      // the master builds its own for the non-English stores.
-      setThumbCleanUrl(null)
       setThumbSkipped(false)
-      toast.success('Thumbnail uploaded. It goes to YouTube and the English stores as-is.')
+      toast.success('Thumbnail uploaded. It goes to YouTube and your storefronts as-is.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not upload that thumbnail')
     } finally { setThumbUploading(false) }
@@ -282,7 +275,6 @@ export default function LaunchpadPage() {
         if (s.description) setDescription(s.description)
         if (s.tags) setTags(s.tags)
         if (s.thumbUrl) setThumbUrl(s.thumbUrl)
-        if (s.thumbCleanUrl) setThumbCleanUrl(s.thumbCleanUrl)
         if (s.thumbSkipped) setThumbSkipped(true)
         if (s.facePick) { facePickRestored.current = true; setFacePick(s.facePick) }
         if (s.publishedUrl) setPublishedUrl(s.publishedUrl)
@@ -306,18 +298,18 @@ export default function LaunchpadPage() {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({
         renderedUrl, cleanUrl, workingTitle, durationSec, asin, ytOpen, meta,
-        chosenTitle, description, tags, thumbUrl, thumbCleanUrl, thumbSkipped, facePick,
+        chosenTitle, description, tags, thumbUrl, thumbSkipped, facePick,
         publishedUrl, publishedVideoId, publishedChannelId, studioDone,
         masterId, geoCheck, marketAsins, savedAt: Date.now(),
       }))
     } catch { /* private mode / quota — resume is a convenience, never a blocker */ }
   }, [restored, renderedUrl, cleanUrl, workingTitle, durationSec, asin, ytOpen, meta,
-      chosenTitle, description, tags, thumbUrl, thumbCleanUrl, thumbSkipped, facePick,
+      chosenTitle, description, tags, thumbUrl, thumbSkipped, facePick,
       publishedUrl, publishedVideoId, publishedChannelId, studioDone,
       masterId, geoCheck, marketAsins])
 
   function startOver() {
-    if (typeof window !== 'undefined' && !window.confirm('Start a new run? This clears the video, thumbnails and storefront progress on this page. Anything already published to YouTube or Amazon stays up.')) return
+    if (typeof window !== 'undefined' && !window.confirm('Start a new run? This clears the video, thumbnail and storefront progress on this page. Anything already published to YouTube or Amazon stays up.')) return
     try { localStorage.removeItem(LS_KEY); localStorage.removeItem('mvp_storefront_job_v1') } catch { /* ignore */ }
     window.location.reload()
   }
@@ -345,16 +337,17 @@ export default function LaunchpadPage() {
 
   // Generate an AI thumbnail from the chosen title + product ASIN (same route the
   // Co-Pilot uses). Non-fatal: a channel can still publish without one.
-  // TWO thumbnails, both Art Director quality:
-  //   1) The rich BAKED design (headline, callouts, banner) for YouTube + the
-  //      English storefronts — textMode 'graphic', the same path the Co-Pilot uses.
-  //   2) A TEXT-FREE thumbnail for non-English storefronts: the creator's SAME
-  //      picked face next to the real product, zero words. Built by the storefront
-  //      thumbnail recipe (not the text engine with the words removed, which kept
-  //      dropping the person and shipping a product-only image). Runs in parallel so
-  //      it adds no wait, and is not pixel-identical to #1 by design: the creator
-  //      prefers the richer baked look for English.
-  //   If #2 fails, the master builds its own clean variant, so nothing blocks.
+  //
+  // ONE thumbnail: the rich BAKED design (headline, callouts, banner) for YouTube
+  // and the storefronts — textMode 'graphic', the same path the Co-Pilot uses.
+  //
+  // This used to render a SECOND, text-free thumbnail alongside it for non-English
+  // storefronts. Launchpad cannot reach those: the storefront step filters its
+  // markets through isEnglishMarket, so US, CA, UK and AU are the only
+  // destinations it offers. Every run was paying for a full extra image render
+  // aimed at a market it would never deliver to. Storefront Sync, which does go
+  // non-English, still builds the wordless variant itself and does it lazily, only
+  // when a non-English market is actually chosen.
   async function genThumbnail(titleArg?: string) {
     const t = (titleArg || chosenTitle || workingTitle || 'My video').trim()
     setThumbBusy(true)
@@ -374,23 +367,6 @@ export default function LaunchpadPage() {
       const pickUrl = (j: { thumbnailUrl?: string; thumbnailUrls?: string[] }): string | null =>
         j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null) || null
 
-      // Kick off the text-free version for non-English stores right away, with the
-      // same face the creator picked (best-effort).
-      const cleanPromise: Promise<string | null> = (async () => {
-        if (!asinClean) return null // the recipe needs the real product photos
-        try {
-          const r = await fetch('/api/launchpad/clean-thumbnail', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              asin: asinClean, title: t,
-              ...(facePick === 'no-human' ? { noHuman: true } : { faceId: facePick }),
-            }),
-          })
-          const j = await r.json().catch(() => ({}))
-          return r.ok && typeof j.url === 'string' ? j.url : null
-        } catch { return null }
-      })()
-
       // The main baked thumbnail. First try WITH the creator's own face; if they
       // have no saved face the route asks for one — Launchpad shouldn't hard-block
       // on that, so retry PRODUCT-ONLY so there's always something.
@@ -400,9 +376,6 @@ export default function LaunchpadPage() {
       const url = pickUrl(j)
       if (!r.ok || !url) throw new Error(j.error || 'Could not generate a thumbnail')
       setThumbUrl(url)
-
-      const clean = await cleanPromise
-      setThumbCleanUrl(clean) // null → the master generates its own text-free variant
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Thumbnail failed')
     } finally { setThumbBusy(false) }
@@ -514,7 +487,7 @@ export default function LaunchpadPage() {
         // fallback on purpose: the guard above refuses rather than substituting.
         // Seed the thumbnail we already generated so the storefront step doesn't
         // stall on "waiting for thumbnail".
-        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl, asin: asinClean, durationSec, thumbnailUrl: thumbUrl || undefined, thumbnailCleanUrl: thumbCleanUrl || undefined,
+        body: JSON.stringify({ title: (chosenTitle || workingTitle || 'My video'), videoUrl: cleanUrl, asin: asinClean, durationSec, thumbnailUrl: thumbUrl || undefined,
           // Same face pick as the YouTube step, so any thumbnail the master still has
           // to render (e.g. when YouTube was skipped) features the same person.
           ...(facePick === 'no-human' ? { noHuman: true } : facePick ? { faceId: facePick } : {}) }),
@@ -693,10 +666,10 @@ export default function LaunchpadPage() {
   // the creator sees the whole journey without getting lost.
   const s1: StepState = renderedUrl ? 'done' : 'active'
   const s2: StepState = !renderedUrl ? 'locked' : asinOk ? 'done' : 'active'
-  // Thumbnails stand on their own BEFORE YouTube, because Amazon needs them too:
-  // a creator who skips YouTube still leaves this step with both images.
+  // The thumbnail stands on its own BEFORE YouTube, because Amazon needs it too:
+  // a creator who skips YouTube still leaves this step with an image.
   const s3: StepState = !(renderedUrl && asinOk) ? 'locked' : (thumbUrl || thumbSkipped) ? 'done' : 'active'
-  // YouTube opens as soon as the thumbnails are made. It never hard-blocks on
+  // YouTube opens as soon as the thumbnail is made. It never hard-blocks on
   // them (the master builds its own if you skip), so a done Step 3 isn't required.
   const s4: StepState = !renderedUrl ? 'locked' : (publishedUrl || ytOpen === 'skipped') ? 'done' : s3 === 'active' ? 'locked' : 'active'
   // Amazon waits for the YouTube step to be resolved (published or skipped), so
@@ -820,14 +793,14 @@ export default function LaunchpadPage() {
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {faceModels.map(m => (
                   <button key={m.id} type="button" disabled={thumbBusy}
-                    onClick={() => { if (facePick === m.id) return; setFacePick(m.id); if (thumbUrl || thumbCleanUrl) void genThumbnail() }}
+                    onClick={() => { if (facePick === m.id) return; setFacePick(m.id); if (thumbUrl) void genThumbnail() }}
                     className="px-3 py-1 rounded-full text-[11px] font-semibold disabled:opacity-60"
                     style={facePick === m.id ? { background: '#FF9500', color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
                     {m.name}
                   </button>
                 ))}
                 <button type="button" disabled={thumbBusy}
-                  onClick={() => { if (facePick === 'no-human') return; setFacePick('no-human'); if (thumbUrl || thumbCleanUrl) void genThumbnail() }}
+                  onClick={() => { if (facePick === 'no-human') return; setFacePick('no-human'); if (thumbUrl) void genThumbnail() }}
                   className="px-3 py-1 rounded-full text-[11px] font-semibold disabled:opacity-60"
                   style={facePick === 'no-human' ? { background: '#3a3a3c', color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
                   No face
@@ -852,9 +825,9 @@ export default function LaunchpadPage() {
               </div>
             </div>
 
-            {/* One design, two thumbnails: with the headline (YouTube + English
-                stores) and a text-free one (non-English stores). */}
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {/* One design, one thumbnail. It goes to YouTube and to every
+                storefront Launchpad can reach, all of which are English. */}
+            <div className="mt-3 max-w-md">
               <div>
                 <div className="rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
                   {thumbUrl
@@ -869,22 +842,14 @@ export default function LaunchpadPage() {
                           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
                           {!meta && preparing
                             ? <><Loader2 size={15} className="animate-spin" /> Writing your title… {prepElapsed}s</>
-                            : <><Sparkles size={15} /> Generate both thumbnails</>}
+                            : <><Sparkles size={15} /> Generate thumbnail</>}
                         </button>
                       )}
                 </div>
-                <p className="text-[11px] mt-1 font-medium" style={label}>YouTube + English stores <span className="font-normal" style={muted}>(US, CA, UK, AU)</span></p>
-              </div>
-              <div>
-                <div className="rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
-                  {thumbCleanUrl
-                    ? <img src={thumbCleanUrl} alt="Thumbnail with no text" className="w-full h-full object-cover" />
-                    : <span className="text-[12px]" style={muted}>{thumbBusy ? '…' : 'No thumbnail yet'}</span>}
-                </div>
-                <p className="text-[11px] mt-1 font-medium" style={label}>Non-English stores <span className="font-normal" style={muted}>(text-free version)</span></p>
+                <p className="text-[11px] mt-1 font-medium" style={label}>YouTube + your storefronts <span className="font-normal" style={muted}>(US, CA, UK, AU)</span></p>
               </div>
             </div>
-            <p className="text-[11px] mt-1.5" style={muted}>Skip this if you like and MVP builds both for you when the video goes to Amazon. Custom thumbnails on YouTube need a phone-verified channel; if yours isn’t, the video still publishes with everything else.</p>
+            <p className="text-[11px] mt-1.5" style={muted}>Skip this if you like and MVP builds one for you when the video goes to Amazon. Custom thumbnails on YouTube need a phone-verified channel; if yours isn’t, the video still publishes with everything else.</p>
           </>
         </StepRow>
 
@@ -892,7 +857,7 @@ export default function LaunchpadPage() {
         <StepRow n={4} state={s4} last={false}
           icon={<Youtube size={15} style={{ color: '#FF0000' }} />}
           title={<>Publish to YouTube <span className="font-normal" style={muted}>(optional)</span></>}
-          hint="Unlocks once your thumbnails are made above."
+          hint="Unlocks once your thumbnail is made above."
           actions={
             ytOpen === 'choose' ? (
               <div className="flex items-center gap-2">
