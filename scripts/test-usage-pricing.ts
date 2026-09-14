@@ -75,6 +75,39 @@ function walk(dir: string, out: string[] = []): string[] {
     'If it really costs that, add it to PRICING with the real number. If it costs nothing, add it at 0.')
 }
 
+// ── an unpriced TEXT model is worse than an unpriced image model ────────────
+//
+// costOf does `PRICING[r.model] ?? { in: 0, out: 0 }`. For an image row the
+// IMAGE_COST_FALLBACK still catches it at $0.04. For a TEXT row there is no
+// fallback at all, so a model nobody priced records as free — and a writer that
+// costs nothing is a writer no spend ceiling can ever stop. Opus 5 was missing
+// from PRICING for exactly this reason, found while checking the API contract
+// rather than by anything going wrong, which is the point of this check.
+{
+  const files = [...walk('app'), ...walk('lib'), ...walk('services')]
+  const unpriced = new Map<string, string>()
+
+  for (const f of files) {
+    const src = readFileSync(f, 'utf8')
+    // recordUsage / recordAnthropicUsage with a literal model and no images.
+    for (const m of src.matchAll(/record(?:Anthropic)?Usage\(\s*(?:[^,]+,\s*)?\{([\s\S]{0,400}?)\}\s*\)/g)) {
+      const body = m[1]
+      const model = body.match(/model:\s*'([^']+)'/)?.[1]
+      if (!model) continue
+      const images = Number(body.match(/images:\s*(\d+)/)?.[1] ?? 0)
+      if (images > 0) continue                 // covered by the image check above
+      if (model in PRICING) continue
+      if (/^(diagnostic|reserved|unknown)$/.test(model)) continue // deliberately free markers
+      if (!unpriced.has(model)) unpriced.set(model, f)
+    }
+  }
+
+  check('no text model bills tokens without a price',
+    unpriced.size === 0,
+    [...unpriced].map(([m, f]) => `${m} (${f})`).join(', ') +
+    ' — a text model missing from PRICING records as $0, with no fallback to catch it')
+}
+
 // ── the free ones are actually free, not merely present ─────────────────────
 //
 // Adding a key with the wrong number would pass the scan above and still charge

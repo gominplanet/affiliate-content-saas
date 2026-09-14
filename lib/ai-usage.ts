@@ -25,10 +25,11 @@ interface Pricing {
 export const PRICING: Record<string, Pricing> = {
   // ── Anthropic ──────────────────────────────────────────────────────────
   'claude-sonnet-4-6':         { in: 3,  out: 15 },
-  // Sonnet 5 — Storefront Sync's localize + dub-script model. Same list price
-  // as Sonnet 4.6 ($3/$15 per 1M); without this entry those calls fell back to
-  // IMAGE_COST_FALLBACK and the admin cost dashboard under-counted them.
-  'claude-sonnet-5':           { in: 3,  out: 15 },
+  // Sonnet 5 — Storefront Sync's localize + dub-script model. It is NOT the
+  // same price as Sonnet 4.6: Anthropic list is $2/$10 per 1M, against 4.6's
+  // $3/$15. This entry said $3/$15 (corrected 2026-09-14), which over-counted
+  // every Sonnet 5 call by 50% against the user's monthly spend ceiling.
+  'claude-sonnet-5':           { in: 2,  out: 10 },
   'claude-haiku-4-5-20251001': { in: 1,  out: 5  },
   // Opus 4.x list price is $5/$25 per 1M. The blog + campaign WRITER runs on
   // 4.8 (upgraded from Sonnet 4.6 on 2026-06-09). 4.7 was previously mapped at
@@ -36,6 +37,13 @@ export const PRICING: Record<string, Pricing> = {
   // over-priced 3×; corrected here so recomputation reflects the true rate.
   'claude-opus-4-8':           { in: 5,  out: 25 },
   'claude-opus-4-7':           { in: 5,  out: 25 },
+  // Opus 5 — the current Opus generation, at the SAME list price as 4.8. Not
+  // used by anything yet, and listed here before it is, because an unknown
+  // TEXT model is worse than an unknown image model: costOf falls back to
+  // { in: 0, out: 0 }, so it would have recorded as FREE rather than as the
+  // $0.04 an unpriced image gets. A writer that costs nothing is a writer
+  // nobody's spend ceiling can ever stop.
+  'claude-opus-5':             { in: 5,  out: 25 },
 
   // ── OpenAI — image generation (per-image flat rates) ──────────────────
   // dall-e-3 standard 1024x1024 = $0.04, 1024x1792 / 1792x1024 = $0.08
@@ -139,6 +147,15 @@ export const PRICING: Record<string, Pricing> = {
   'simple-bake-resvg': { in: 0, out: 0, imageCost: 0 }, // local resvg text bake
   'pinterest-api':     { in: 0, out: 0, imageCost: 0 }, // Pinterest publish, free
   'youtube-data-api':  { in: 0, out: 0, imageCost: 0 }, // YouTube upload, quota not dollars
+
+  // Keepa. Zero DOLLARS per call on purpose, not an oversight: Keepa is a flat
+  // subscription and what a lookup actually consumes is the shared Keepa token
+  // budget, which refills at a fixed rate and is metered on its own gauge in
+  // the admin dashboard. Putting a dollar figure here would charge one user's
+  // monthly ceiling for a resource that is neither theirs nor denominated in
+  // dollars. If Keepa ever moves to per-call billing, this is where it goes.
+  'keepa-finder':      { in: 0, out: 0 },
+  'keepa-card':        { in: 0, out: 0 },
 }
 export const WEB_SEARCH_COST = 0.01 // $ per search (Anthropic server tool)
 /** Fallback per-image cost when an image model isn't in PRICING. */
