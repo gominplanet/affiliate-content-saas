@@ -2515,6 +2515,14 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                             // unstylized but correct identity. Better signal
                             // to the reader than a wrong product.
                             console.warn('[blog-images] both attempts failed verification — using bare reference', { i, reasons: [v.reason, v2.reason] })
+                            // Count the give-up. A console.warn is invisible to
+                            // everyone who is not reading Vercel logs at the
+                            // moment it happens, so "we shipped an unstyled
+                            // stock photo" looked exactly like "we shipped a
+                            // designed one". images:0 — this costs nothing, the
+                            // renders above were already billed; the row exists
+                            // so the rate is answerable.
+                            recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image_unverified', model: 'diagnostic', images: 0 })
                             falUrl = falProductImageUrl
                           }
                         }
@@ -2531,6 +2539,14 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                 // gominreviews.com/plug-in-wax-melt-warmer-review). Log so we
                 // can correlate Vercel logs to bad articles.
                 console.warn('[blog-images] NO product reference resolved — falling through to text-only', { i, productTitleForPrompts, hasAsin: !!effectiveAsin })
+                // Count it. The comment above names a real published article
+                // this path ruined, and until now the only record that it had
+                // happened at all was this line in a log nobody tails. This is
+                // the highest-risk image path in the product (no ground truth
+                // to copy, so the model invents a plausible wrong product), and
+                // it was the one path with no number attached. images:0 — the
+                // text-only render below bills itself.
+                recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image_no_reference', model: 'diagnostic', images: 0 })
               }
               // ── Fallback: no product photo resolved → retouch a real video
               // frame (keeps genuine footage). Secondary because frames don't
