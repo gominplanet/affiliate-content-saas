@@ -1,14 +1,23 @@
 /**
- * X (Twitter) monthly post cap — the ONE social channel with a real per-post
- * cost to us ($0.20 on X's Pay Per Use plan), so it's the only one we meter.
+ * X (Twitter) monthly post cap — the ONE social channel with a real cost to us,
+ * so it's the only one we meter.
+ *
+ * X bills per REQUEST, not per successful post. Confirmed against the developer
+ * console (2026-09-14): 227 requests over 30 days against $45.41 of cost, which
+ * is $0.2000 each. Note that the console's "Billable events" tile reads 0 over
+ * the same window, so that tile is not the meter that produces the invoice —
+ * the Requests chart is. A failed createTweet is a request and is charged.
  *
  * X is Pro-only (see lib/tier.ts socials). This bounds a single Pro account to
- * X_MONTHLY_CAP posts per billing period (~$20 of X spend), stopping one user or
- * a runaway loop from draining the shared X credit balance. Admin = unlimited.
+ * X_MONTHLY_CAP posts per billing period (~$20 of X spend, and more than that
+ * if their posts are failing), stopping one user or a runaway loop from
+ * draining the shared X credit balance. Admin = unlimited.
  *
  * Counts `x_post` rows in ai_usage within the user's billing window — same
  * telemetry-as-counter approach as checkUsageCap, no parallel table to sync.
- * Every X post path records ONE `x_post` row on success via recordXPost().
+ * Every X post path reserves ONE `x_post` row up front; a failure re-labels it
+ * to 'x_post_failed' (see refundXPost) so the slot comes back but the money we
+ * actually spent does not disappear from the books.
  */
 import { normalizeTier, billingWindow, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE, X_MONTHLY_CAP } from '@/lib/usage-cap'
@@ -110,7 +119,34 @@ export async function reserveXPost(
   }
 }
 
-/** Refund a reservation when the tweet failed, so it doesn't burn a slot. */
+/**
+ * Refund a reservation when the tweet failed, so it doesn't burn a slot.
+ *
+ * It does NOT delete the row, and that distinction is the whole point.
+ *
+ * X bills per REQUEST, not per successful post. The developer console's own
+ * numbers say so: 227 requests over 30 days against $45.41 of cost, which is
+ * $0.2000 each to four decimal places. A createTweet that comes back 4xx or
+ * 5xx was still a request and was still charged.
+ *
+ * This used to `delete` the row, which refunded the user's slot AND erased the
+ * money. Two different things were riding on one row: the cap counter (should
+ * a failed post cost the creator one of their monthly slots? no) and the cost
+ * record (did we pay X for it? yes). Deleting served the first and lied about
+ * the second, so every failed X post vanished from cost reporting entirely.
+ *
+ * So the row is re-labelled instead. PRIMARY_FEATURE.x is ['x_post'], so
+ * 'x_post_failed' is invisible to the cap and the creator keeps their slot,
+ * while the $0.20 stays visible to the admin cost dashboard and to the monthly
+ * spend circuit breaker. The breaker seeing it is deliberate: a loop that fails
+ * five hundred times in a row is exactly the runaway the breaker exists to
+ * catch, and a failure that costs nothing to the meter is a failure nobody
+ * stops.
+ *
+ * If the re-label itself fails we fall back to leaving the row as 'x_post'.
+ * That costs the creator a slot, which is the lesser wrong: the alternative is
+ * losing the money from the books.
+ */
 export async function refundXPost(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
@@ -118,7 +154,9 @@ export async function refundXPost(
 ): Promise<void> {
   if (!reservationId) return
   try {
-    await supabase.from('ai_usage').delete().eq('id', reservationId).eq('feature', 'x_post')
+    await supabase.from('ai_usage')
+      .update({ feature: 'x_post_failed' })
+      .eq('id', reservationId).eq('feature', 'x_post')
   } catch (e) {
     console.warn('[x-cap] refundXPost failed (slot stays reserved):', e instanceof Error ? e.message : e)
   }

@@ -104,10 +104,14 @@ export const PRICING: Record<string, Pricing> = {
   'ffmpeg-ass':     { in: 0, out: 0, imageCost: 0.01 },
   'cloudinary':     { in: 0, out: 0, imageCost: 0.02 },
 
-  // ── X (Twitter) — the only social with a real per-post cost ($0.20 on X's
-  //    Pay Per Use plan). recordXPost logs one `x_post` row (model 'twitter-api',
-  //    images:1) per successful post. Without this it fell to the $0.04 image
-  //    fallback and the admin cost dashboard under-counted X spend ~5x.
+  // ── X (Twitter) — the only social with a real cost. $0.20 per REQUEST, not
+  //    per successful post: the developer console shows 227 requests over 30
+  //    days against $45.41, which is $0.2000 each. (Its "Billable events" tile
+  //    reads 0 over the same window, so that tile is not the meter that bills.)
+  //    A failed createTweet is a charged request, which is why refundXPost
+  //    re-labels the row to 'x_post_failed' instead of deleting it — both
+  //    features price through this same entry. Without it the row fell to the
+  //    $0.04 image fallback and the cost dashboard under-counted X spend ~5x.
   'twitter-api':    { in: 0, out: 0, imageCost: 0.20 },
 
   // ── Text-to-speech (Storefront Sync dubs). Priced per CHARACTER via `out`,
