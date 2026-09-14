@@ -2473,6 +2473,10 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                     quality: 'low',
                   })
                   falUrl = out[0]
+                  // Keeps the original feature name on purpose: this is the
+                  // dominant path and the only one that retries, so leaving it
+                  // alone keeps the historical line comparable while
+                  // blog_body_image_retry / this becomes an exact miss rate.
                   if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: GPT_IMAGE_COMPOSE_LOW_COST_MODEL, images: 1 })
 
                   // ── Vision verification — second line of defense against the
@@ -2557,7 +2561,11 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                 try {
                   const out = await composeWithGptImage({ prompt: retouchPrompt, referenceImageUrls: [frame], aspectRatio: '4:3', numImages: 1, quality: 'low' })
                   falUrl = out[0]
-                  if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: GPT_IMAGE_COMPOSE_LOW_COST_MODEL, images: 1 })
+                  // Its own feature name. All three body-image paths used to
+                  // record 'blog_body_image', and only the first one can retry,
+                  // so dividing retries by that total understated the miss rate
+                  // by however many images came from here or from text-only.
+                  if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image_frame', model: GPT_IMAGE_COMPOSE_LOW_COST_MODEL, images: 1 })
                 } catch { /* fall through to text-to-image */ }
               }
               // ── Last resort: text-to-image (no product photo, no frame). Make
@@ -2570,7 +2578,11 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                 })
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 falUrl = ((result.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
-                if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'fal-flux-pro-v1.1', images: 1 })
+                // Its own feature name too, and this is the one to watch: no
+                // reference image at all means nothing anchors the product's
+                // identity, so whatever it draws is a guess. 'blog_body_image'
+                // hid these among the renders that did have ground truth.
+                if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image_textonly', model: 'fal-flux-pro-v1.1', images: 1 })
               }
               if (!falUrl) return null
               // HERO ONLY (i === 0): 4x super-resolution for a crisp lead image.
