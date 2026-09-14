@@ -17,13 +17,20 @@ export function getStripe(): Stripe {
 //     the Stripe price; without it the Studio CTA returns "Invalid tier" so
 //     users never reach a broken checkout.
 //   - Pro: $199 — unchanged.
+//   - Amazon: $99 from 2026-09-14 (was $79) — needs a NEW Stripe price object.
 export const PRICE_IDS = {
   creator: (process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER)!,
   studio:  process.env.STRIPE_PRICE_STUDIO!,
   pro:     process.env.STRIPE_PRICE_PRO!,
-  // Amazon Influencer — $79. Set STRIPE_PRICE_AMAZON in Vercel after creating the
-  // Stripe price; until then the Amazon CTA returns "Invalid tier" (safe, no
-  // broken checkout) rather than charging at the wrong price.
+  // Amazon Influencer — $99 as of 2026-09-14 (was $79). One of the two plans
+  // now sold; creator and studio above are frozen legacy tiers kept so existing
+  // subscribers keep their allowances and their price.
+  //
+  // THIS NEEDS A NEW STRIPE PRICE. The env var still points at the $79 price
+  // until someone creates the $99 one and repoints it, and nothing in the code
+  // can detect that: Stripe charges whatever the price object says, so the
+  // checkout would succeed at the old amount while the app grants the new
+  // allowances. Until then the pricing page says $99 and the card says $79.
   amazon:  process.env.STRIPE_PRICE_AMAZON!,
 } as const
 

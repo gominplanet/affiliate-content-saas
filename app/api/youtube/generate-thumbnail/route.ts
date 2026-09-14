@@ -1188,7 +1188,10 @@ export async function POST(request: Request) {
     // gpt-image render quality is tier-gated: Pro (and admin) get HIGH for the
     // crispest, most ChatGPT-grade output; every other paid tier gets MEDIUM.
     // High costs ~3× more per image (~$0.22 vs ~$0.08), so it's a Pro perk.
-    const gfxQuality: 'medium' | 'high' = (tier === 'pro' || tier === 'admin') ? 'high' : 'medium'
+    //
+    // `let`, because the perk applies to the HERO thumbnail and not to bulk
+    // social formats — see the downgrade just after isSocialFormat is known.
+    let gfxQuality: 'medium' | 'high' = (tier === 'pro' || tier === 'admin') ? 'high' : 'medium'
 
     // Per-user thumbnail badge preference (Thumbnail style → Save as my default).
     // `decoration`: 'auto' (or unset) → let the model/angle pick per thumbnail;
@@ -1520,6 +1523,22 @@ export async function POST(request: Request) {
     const isSocialFormat = isPin || isIg || isFb || isStory
     const gfxModelOverride: string | undefined =
       isSocialFormat ? 'gpt-image-1' : undefined
+
+    // THE HIGH-QUALITY PERK IS FOR THE HERO, NOT FOR BULK SOCIAL.
+    //
+    // gfxQuality above is tier-gated, so Pro was rendering pins, IG posts and FB
+    // posts at HIGH — $0.19 a design against the $0.06 every other tier pays for
+    // the same picture. The swap three lines up already exists because the
+    // social formats do not need the expensive path, and its own comment says
+    // there is "no visible drop at social sizes". Quality was contradicting it.
+    //
+    // The money is not marginal at Pro's caps: 700 social designs at high is
+    // $133 a month, more than the hero thumbnails and the entire blog allowance
+    // put together, spent on images viewed at 1000x1500 on a phone.
+    //
+    // A pin is a pin on every plan. The perk stays where it earns its price:
+    // yt_thumb_graphic, the 1280x720 CTR money-shot.
+    if (isSocialFormat) gfxQuality = 'medium'
     // What we LOG for the render.
     //
     // OpenAI prices gpt-image by QUALITY, not by model name, and gfxQuality

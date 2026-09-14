@@ -64,7 +64,18 @@ const check = (name: string, cond: boolean, detail?: string) => {
 
   // The trial gets ONE face on purpose: putting your own face on a design is the
   // whole argument, and a trial that cannot do it once has no argument.
-  check('the face allowance matches the plan it is selling', trial.maxFaces === TIERS.amazon.maxFaces)
+  //
+  // This used to assert equality with the Amazon plan, which held only while
+  // both were 1. Amazon went to 2 on 2026-09-14 and the equality started
+  // failing, which is the test doing its job badly: it had pinned a coincidence
+  // rather than the rule. The rule is a range, and it is two-sided.
+  check('the trial can put a face on a design at all',
+    (trial.maxFaces ?? 0) >= 1,
+    'one face is the trial\'s entire argument; at zero there is nothing to try')
+  check('and never gets more faces than the plan it is selling',
+    trial.maxFaces !== null && TIERS.amazon.maxFaces !== null &&
+    trial.maxFaces <= TIERS.amazon.maxFaces,
+    'a trial more generous than the paid plan is an argument for not paying')
 
   // The headshots must NOT match. They used to, at 6 apiece, which meant a $79
   // subscriber had exactly the allowance of somebody paying nothing. Two is

@@ -67,8 +67,20 @@ const MEDIUM = 'gpt-image-1-medium'
   const SRC = readFileSync('app/api/youtube/generate-thumbnail/route.ts', 'utf8')
 
   check('render quality is still tier-gated',
-    /const gfxQuality: 'medium' \| 'high' = \(tier === 'pro' \|\| tier === 'admin'\) \? 'high' : 'medium'/.test(SRC),
+    /let gfxQuality: 'medium' \| 'high' = \(tier === 'pro' \|\| tier === 'admin'\) \? 'high' : 'medium'/.test(SRC),
     'the recorded model is derived from this line; if it changes shape the derivation has to follow')
+
+  // The perk is the hero, not bulk social. Pro was rendering pins, IG and FB
+  // posts at high — $0.19 a design against the $0.06 everyone else pays for the
+  // same picture — while the model-swap two lines above already said the social
+  // formats show "no visible drop" on the cheap path. At Pro's caps that is
+  // $133/mo spent on images viewed at 1000x1500 on a phone.
+  check('and bulk social is never rendered at the high rate',
+    /if \(isSocialFormat\) gfxQuality = 'medium'/.test(SRC),
+    'a pin is a pin on every plan; the high-quality perk belongs to the 1280x720 CTR money-shot')
+  check('the downgrade happens before anything renders',
+    SRC.indexOf("if (isSocialFormat) gfxQuality = 'medium'") < SRC.indexOf('generateWithReferences({ prompt'),
+    'downgrading after a render has already gone out changes the log and not the bill')
 
   check('and the recorded model follows the quality',
     /const gfxRecordOverride: string \| undefined =\s*\n\s*gfxQuality === 'medium' \? 'gpt-image-1-medium' : undefined/.test(SRC),

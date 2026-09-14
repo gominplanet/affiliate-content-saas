@@ -240,59 +240,87 @@ export const TIERS = {
     priorityQueue: false,
     prioritySupport: false,
   },
-  // Amazon Influencer tier ($79). A focused, blog-free, YouTube-free plan for
-  // storefront creators: the MVP Art Director (200 medium thumbnails), all
-  // product research, Creator Connections + SCOUT earnings, and FB / Pinterest /
-  // Instagram pushes with AI caption + affiliate link + IG link-in-bio. High-
-  // quality rendering stays a Pro perk (the tier-gate already gives non-Pro
-  // 'medium'). Also surfaced as a shared section inside Studio + Pro. This tier
-  // is intentionally NOT on the blog/YouTube upgrade ladder (nextTierFor), so it
-  // never appears as an upgrade target for a blog/script cap.
+  // Amazon Influencer tier ($99). ONE OF THE TWO PLANS (2026-09-14): Creator
+  // and Studio are frozen legacy tiers kept only so existing subscribers keep
+  // their allowances; everything new is sold as Amazon $99 or Pro $199.
+  //
+  // A focused, blog-free, YouTube-free plan for storefront creators: the MVP
+  // Art Director (400 medium thumbnails), all product research, Creator
+  // Connections + SCOUT earnings, and FB / Pinterest / Instagram pushes with AI
+  // caption + affiliate link + IG link-in-bio. High-quality rendering stays a
+  // Pro perk (the tier-gate already gives non-Pro 'medium'). Also surfaced as a
+  // shared section inside Studio + Pro.
+  //
+  // STILL blog-free and YouTube-free on purpose, and the allowances below have
+  // to stay consistent with that: `sites: 0` and `youtubeChannels: 0` mean a
+  // blog or metadata allowance here would be a number with nowhere to spend it.
+  // That is why postsPerMonth / scriptsPerMonth / articlesPerMonth /
+  // metadataGensPerMonth are 0 rather than small.
+  //
+  // Consequently it is still NOT on the blog/YouTube upgrade ladder
+  // (nextTierFor), so it never appears as an upgrade target for a blog or
+  // script cap. Blog is the reason to buy Pro.
   amazon:  {
     label: 'Amazon',
-    price: 79,
-    regularPrice: 129,
-    /** Measured cost (2026-08-13, real OpenAI bill): the hero thumbnail runs on
-     *  gpt-image-2 (~$0.14 real, logged $0.19); the bulk social formats
-     *  (pin/IG/FB) render on gpt-image-1 medium (~$0.06) — see the Path B model
-     *  swap in generate-thumbnail. CAP-FIT POLICY (2026-08-22): the per-format
-     *  caps below are sized so a user who maxes EVERY one of them still lands at
-     *  ~$43 of logged AI — 72% of this ceiling — so the ceiling can never cut a
-     *  user off before they reach an advertised number. It stays a runaway
-     *  circuit-breaker, not the real cap (the per-format caps are). */
-    monthlyAiSpendCeilingUsd: 60 as number | null,
-    /** No blog. Thumbnails have their own cap below; this stays 0. */
+    price: 99,
+    regularPrice: 199,
+    /** Every render on this tier is gpt-image at MEDIUM quality (~$0.06), not
+     *  $0.19: gfxQuality in generate-thumbnail is tier-gated and high is the Pro
+     *  perk. Until 2026-09-14 the telemetry logged the model name rather than
+     *  the quality, so these renders were BOOKED at $0.19 — roughly 3x — and
+     *  this ceiling was sized against the inflated figure. Both are corrected.
+     *
+     *  CAP-FIT POLICY CHANGED 2026-09-14. The old rule was that maxing EVERY cap
+     *  simultaneously had to stay under this ceiling. That rule is what produced
+     *  a Facebook cap of 40 on a plan sold to video creators: sizing fourteen
+     *  caps to be maxable at once means each one is sized for a customer who
+     *  does not exist. Maxing everything here now costs ~$109 against this $75.
+     *
+     *  So the caps are per-feature PROMISES and this is a global backstop for a
+     *  runaway. The number that matters: a creator genuinely shipping 100 videos
+     *  a month (200 thumbnails, 300 social designs) costs about $42 and never
+     *  comes near it. */
+    monthlyAiSpendCeilingUsd: 75 as number | null,
+    /** No blog, and `sites: 0` below is why. Thumbnails have their own cap. */
     postsPerMonth: 0,
     lifetimeMax: null as number | null,
     /** Creator Connections collabs — storefront creators land brand deals. */
-    collabsPerMonth: 40 as number | null,
-    /** The headline feature: 200 Art Director thumbnails / mo (medium quality). */
-    thumbnailsPerMonth: 200 as number | null,
+    collabsPerMonth: 60 as number | null,
+    /** The headline feature: 400 Art Director thumbnails / mo (medium quality).
+     *  Raised 200 -> 400 on 2026-09-14. At 2 designs per video that carries 200
+     *  videos a month, which is the leeway a creator doing 100 needs in order
+     *  not to ration. */
+    thumbnailsPerMonth: 400 as number | null,
     /** Social Influencer design caps. Each is its own format-correct render
      *  (a pin is not a cropped FB post), but a batch that pushes one product to
      *  several networks shares the art-director brief, so secondary formats cost
-     *  ~$0.06 not $0.08. Publishing + captions on top are free. Trimmed
-     *  2026-08-22 (pins 300→150, IG 150→100, FB 45→40) so the full set of caps
-     *  fits under the $60 ceiling — see cap-fit note above. */
-    pinsPerMonth: 150 as number | null,
-    igPostsPerMonth: 100 as number | null,
-    facebookPostsPerMonth: 40 as number | null,
-    /** No YouTube metadata pipeline. */
+     *  ~$0.06 not $0.08. Publishing + captions on top are free.
+     *
+     *  Raised 2026-09-14 (pins 150 -> 200, IG 100 -> 200, FB 40 -> 150) under
+     *  the new cap policy above. Facebook was the binding wall: at 40 it stopped
+     *  a creator pushing one video a day on 9 February, on a plan sold to people
+     *  who ship daily. */
+    pinsPerMonth: 200 as number | null,
+    igPostsPerMonth: 200 as number | null,
+    facebookPostsPerMonth: 150 as number | null,
+    /** No YouTube metadata pipeline (`youtubeChannels: 0`). */
     metadataGensPerMonth: 0 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
-    /** Deal / product social posts (their core publishing action). Trimmed
-     *  100→60 (2026-08-22) for cap-fit. */
-    dealsPerMonth: 60 as number | null,
-    /** Max 6 professional Photobooth shots. */
+    /** Deal / product social posts (their core publishing action). 60 -> 150 on
+     *  2026-09-14: at 60 it was the second wall after Facebook, and a creator
+     *  posting one deal per video stopped two thirds of the way through. */
+    dealsPerMonth: 150 as number | null,
+    /** 8 professional Photobooth shots (6 -> 8, 2026-09-14). Face setup is
+     *  close to one-time, so this is not a volume lever. */
     /** Per-format design caps stand on their own here: a pin allowance and an
      *  Instagram allowance are two separate promises on a paid plan. Only the
      *  free trial pools them (see lib/free-trial.ts). */
     socialDesignsPerMonth: null as number | null,
-    photoboothPerMonth: 6 as number | null,
-    /** One face model, up to 20 selfies (the source_images cap is 20). */
-    maxFaces: 1 as number | null,
+    photoboothPerMonth: 8 as number | null,
+    /** Two face models (1 -> 2, 2026-09-14), up to 20 selfies each. */
+    maxFaces: 2 as number | null,
     blogImagesPerPost: 0,
-    assistantMessagesPerMonth: 400 as number | null,
+    assistantMessagesPerMonth: 600 as number | null,
     newsletterSubscribers: 0 as number | null,
     newsletterBroadcastsPerMonth: 0 as number | null,
     newsletterScheduling: false,
@@ -408,26 +436,34 @@ export const TIERS = {
     price: 199,
     regularPrice: 499,
     /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial.
-     *  Set to 185 (2026-08-13, down from 200). POLICY: postsPerMonth is the real
-     *  limit; this ceiling sits ABOVE the full 100-post allotment cost
-     *  (image-heavy posts ~$1.7 each → ~$171) so a Pro can always use every post
-     *  they paid for, yet stays BELOW the $199 plan price so the plan can never
-     *  run underwater on a pathological all-image-heavy month. (The old 200 sat
-     *  $1 above the price — a maxed month could break even or lose money.) */
-    monthlyAiSpendCeilingUsd: 185 as number | null,
+     *  185 -> 130 on 2026-09-14, on measured costs rather than estimates.
+     *
+     *  185 was set against "image-heavy posts ~$1.7 each". The 90-day audit put
+     *  a real blog post at $0.69 all in, so the old ceiling was more than double
+     *  what the allowance it was protecting actually costs, and sat close enough
+     *  to the $199 price that a pathological month could still run underwater.
+     *
+     *  Pro renders at HIGH quality ($0.19 a design against the $0.06 every other
+     *  tier pays), so its design caps are the expensive half of this plan, not
+     *  the blog. Maxing every cap here is well over 130; per the cap policy on
+     *  the Amazon tier that is expected and this is the backstop. A real Pro
+     *  writes about 30 posts a month, not 100. */
+    monthlyAiSpendCeilingUsd: 130 as number | null,
     /** Shared counter: 100 generations/mo (lowered 200 → 100, 2026-06-14).
-     *  Honest cap: 100 image-posts (~$62) + 150 scripts (~$15) sits under the
-     *  $90 ceiling, so a Pro user can consume the FULL advertised allowance
-     *  before the spendGate wall — the wall now only trips on genuine abuse.
-     *  (At 200 the $90 ceiling gated users ~half-way, which was misleading.) */
+     *  At the measured $0.69 a post, the full 100 is ~$69 — about half the
+     *  ceiling above, so the blog allowance alone can always be spent in full.
+     *  It is the design caps, at Pro's high-quality $0.19 a render, that the
+     *  ceiling actually governs. */
     postsPerMonth: 100,
     lifetimeMax: null as number | null,
     collabsPerMonth: 100 as number | null,
-    // Cut 300 → 120 (2026-08-22, cap-fit). Pro renders heroes at HIGH quality,
-    // logged $0.19 each, so 300 was $57/mo of ledger cost — a third of the ceiling
-    // on thumbnails alone. 120 ≈ $23 and leaves room for the full 100-post plan
-    // under $185. (Amazon-style designed graphics use the pin/IG/FB caps below.)
-    thumbnailsPerMonth: 120 as number | null,
+    // 120 -> 500 (2026-09-14). Under the two-plan structure Pro must be a
+    // superset of Amazon on EVERY cap, and Amazon now carries 400 thumbnails.
+    // At 120 a Pro customer had less than a third of the design allowance of the
+    // plan costing half as much, which is the same contradiction that made
+    // Studio unsellable next to Amazon. Pro still renders at HIGH quality
+    // ($0.19), so this is the cap the spend ceiling governs in practice.
+    thumbnailsPerMonth: 500 as number | null,
     // Metadata is its OWN cap, sized well above posts/thumbnails (see Studio note):
     // ~$0.013/gen, back-catalog cleanup is a first-few-months behaviour. 250→200
     // (2026-08-22) — still ~$2.60/mo, trivial against the ceiling.
@@ -438,11 +474,17 @@ export const TIERS = {
      *  standalone deal limit that isn't enforced. */
     dealsPerMonth: null as number | null,
     // Amazon-style designed social graphics, finite + metered. Render on
-    // gpt-image-1 medium (~$0.06 each). Trimmed 2026-08-22 (pins 400→150, IG
-    // 250→110, FB 200→80) so the whole plan maxed still fits $185.
-    pinsPerMonth: 150 as number | null,
-    igPostsPerMonth: 110 as number | null,
-    facebookPostsPerMonth: 80 as number | null,
+    // gpt-image-1 MEDIUM (~$0.06 each) on every plan including this one: the
+    // high-quality perk is the hero thumbnail, not bulk social (2026-09-14, see
+    // the downgrade in generate-thumbnail). Until then Pro rendered these at
+    // high, $0.19 apiece, which at these caps is $133/mo on pictures viewed at
+    // 1000x1500 on a phone.
+    //
+    // Raised 2026-09-14 (pins 150 -> 250, IG 110 -> 250, FB 80 -> 200) so Pro is
+    // a superset of Amazon on every cap, which the two-plan structure requires.
+    pinsPerMonth: 250 as number | null,
+    igPostsPerMonth: 250 as number | null,
+    facebookPostsPerMonth: 200 as number | null,
     /** Per-format design caps stand on their own here: a pin allowance and an
      *  Instagram allowance are two separate promises on a paid plan. Only the
      *  free trial pools them (see lib/free-trial.ts). */
@@ -591,18 +633,19 @@ export function tierAllowsSocial(tier: Tier, social: Social): boolean {
  *  Admin is excluded (it allows everything but isn't an upgrade target).
  *  Returns null if no ladder tier includes it.
  *
- *  'amazon' is NOT in the order below, and that is deliberate rather than an
- *  oversight. Both call sites are the blog schedule modals, and the Amazon plan
- *  has no blog pool at all: answering "Instagram? get Amazon, it is $79 not $99"
- *  would send a blogger to a plan that cannot publish a single post. It is a
- *  cheaper plan and the wrong one.
+ *  THE ORDER BELOW IS THE SELLABLE PLANS ONLY (2026-09-14). Creator and Studio
+ *  are frozen legacy tiers: existing subscribers keep them, nobody new can buy
+ *  one. Leaving them in the ladder meant this function answered "Instagram?
+ *  you need Studio" — naming a plan with no checkout behind it, which is a
+ *  dead end dressed as an upsell. Every answer now names a plan you can buy.
  *
- *  So the name is a promise this cannot keep for every caller. An AMAZON-side
- *  surface asking the same question needs its own answer — see how the publish
- *  routes hardcode `upgrade: { tier: 'amazon' }`, and nextTierFor's preferTier.
- *  If you reach for this from outside the blog ladder, that is the bug. */
+ *  Amazon sits above trial and carries facebook / pinterest / instagram, so the
+ *  three visual networks resolve to the $99 plan and everything else to Pro.
+ *  A legacy Creator or Studio subscriber is unaffected: this returns the
+ *  MINIMUM tier that includes the social, and their own tier's `socials` list
+ *  is what actually gates them. */
 export function minTierForSocial(social: Social): Tier | null {
-  const order: Tier[] = ['trial', 'creator', 'studio', 'pro']
+  const order: Tier[] = ['trial', 'amazon', 'pro']
   for (const t of order) {
     if (TIERS[t].socials.includes(social)) return t
   }
