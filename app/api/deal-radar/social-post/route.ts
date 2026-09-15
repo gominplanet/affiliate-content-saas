@@ -64,6 +64,10 @@ export async function POST(request: Request) {
     // Pinterest is a separate pipeline (designed pin → affiliate link), not a
     // caption-link platform.
     const wantPinterest = rawPlatforms.includes('pinterest')
+    // Instagram runs its own pipeline (designed image + caption, no clickable
+    // link in the caption), so like Pinterest it travels as a flag rather than
+    // as one of the caption-link platforms.
+    const wantInstagram = rawPlatforms.includes('instagram')
     // Instagram Story is a separate path (image + baked "link in bio" CTA — a
     // Story published via the API can't carry a caption or a tappable link).
     const wantStory = body.story === true
@@ -109,7 +113,7 @@ export async function POST(request: Request) {
         image_url: body.imageUrl || null,
         // Store 'pinterest' alongside the caption-link platforms; the cron splits
         // it back out and routes it through the pin pipeline at fire time.
-        platforms: wantPinterest ? [...platforms, 'pinterest'] : platforms,
+        platforms: [...platforms, ...(wantPinterest ? ['pinterest'] : []), ...(wantInstagram ? ['instagram'] : [])],
         story: wantStory,
         caption: (body.caption || '').trim() || null,
         scheduled_at: when.toISOString(),
@@ -128,7 +132,7 @@ export async function POST(request: Request) {
 
     const out = await executeDealQuickPost({
       db: supabase, userId: user.id, tier, intRow: intRow ?? null,
-      asin, platforms, pinterest: wantPinterest, story: wantStory,
+      asin, platforms, pinterest: wantPinterest, instagram: wantInstagram, story: wantStory,
       caption: body.caption, title: body.title, imageUrl: body.imageUrl,
     })
     if (out.missingTag) return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })

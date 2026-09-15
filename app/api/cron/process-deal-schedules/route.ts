@@ -114,10 +114,16 @@ export async function GET(request: Request) {
       // Pinterest is stored in the same platforms array but runs its own pipeline.
       const wantPinterest = (Array.isArray(row.platforms) ? row.platforms : []).includes('pinterest')
       const pinterestAlive = wantPinterest && !isDead(row.user_id, 'pinterest')
+      // Instagram likewise: stored in the same array, runs its own pipeline
+      // (a designed image + caption, no clickable link), so it is filtered out
+      // of QUICK_POST_PLATFORMS above and dispatched as its own flag.
+      const wantInstagram = (Array.isArray(row.platforms) ? row.platforms : []).includes('instagram')
+      const instagramAlive = wantInstagram && !isDead(row.user_id, 'instagram')
       // Every requested channel is currently dead → skip the row entirely rather
       // than fire a guaranteed-failing post. Tagged so it never counts toward the
       // dead-channel streak (which would keep the channel dead forever).
-      if ((requested.length + (wantPinterest ? 1 : 0)) > 0 && (platforms.length + (pinterestAlive ? 1 : 0)) === 0) {
+      if ((requested.length + (wantPinterest ? 1 : 0) + (wantInstagram ? 1 : 0)) > 0
+        && (platforms.length + (pinterestAlive ? 1 : 0) + (instagramAlive ? 1 : 0)) === 0) {
         await (admin as any).from("deal_scheduled_posts").update({
           status: 'skipped',
           error_message: '[auto-skipped] Connected channel(s) need reconnecting — not sent.',
@@ -128,7 +134,7 @@ export async function GET(request: Request) {
 
       const out = await executeDealQuickPost({
         db: admin, userId: row.user_id, tier, intRow,
-        asin: row.asin, platforms, pinterest: pinterestAlive, story: row.story === true,
+        asin: row.asin, platforms, pinterest: pinterestAlive, instagram: instagramAlive, story: row.story === true,
         caption: row.caption ?? undefined, title: row.title, imageUrl: row.image_url,
         requireLiveDeal: true,
       })

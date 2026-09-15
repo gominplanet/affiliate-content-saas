@@ -71,12 +71,20 @@ export const QUICK_PLATFORMS: { key: string; label: string }[] = [
 ]
 
 export default function QuickPostModal({
-  deal, onClose, initialCaption = '', pinterestEnabled = false,
-}: { deal: QuickPostDeal; onClose: () => void; initialCaption?: string; pinterestEnabled?: boolean }) {
+  deal, onClose, initialCaption = '', pinterestEnabled = false, instagramEnabled = false,
+}: { deal: QuickPostDeal; onClose: () => void; initialCaption?: string; pinterestEnabled?: boolean; instagramEnabled?: boolean }) {
   // Pinterest is a separate pipeline (a designed pin linking to the affiliate
   // link), shown only when the plan allows Pinterest. It flows through the same
   // `platforms` array; the API routes it to the pin path.
-  const platformOptions = pinterestEnabled ? [...QUICK_PLATFORMS, { key: 'pinterest', label: 'Pinterest' }] : QUICK_PLATFORMS
+  // Pinterest and Instagram both ride in the same `platforms` array and are
+  // split back out server-side, because each runs its own pipeline (a designed
+  // image, no clickable link in the caption) rather than the caption-link path
+  // the six text networks share.
+  const platformOptions = [
+    ...QUICK_PLATFORMS,
+    ...(pinterestEnabled ? [{ key: 'pinterest', label: 'Pinterest' }] : []),
+    ...(instagramEnabled ? [{ key: 'instagram', label: 'Instagram' }] : []),
+  ]
   const [selected, setSelected] = useState<Set<string>>(new Set(platformOptions.map((p) => p.key)))
   const [story, setStory] = useState(false)
   const [caption, setCaption] = useState(initialCaption)

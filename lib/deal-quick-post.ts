@@ -40,6 +40,8 @@ export interface DealQuickPostInput {
    *  the caption-link QuickPostPlatforms. When true, also publish a deal pin. */
   pinterest?: boolean
   story: boolean
+  /** Instagram FEED post (the grid), separate from `story`. Both can be on. */
+  instagram?: boolean
   caption?: string        // user override; blank ⇒ we auto-write a price-safe caption
   title?: string | null   // fallback title when the ASIN has rotated out of the live cache
   imageUrl?: string | null
@@ -86,6 +88,10 @@ export async function executeDealQuickPost(input: DealQuickPostInput): Promise<D
   const dealImage = (deal.image_url as string | null) || null
 
   const results: Array<{ platform: string; ok: boolean; url?: string; error?: string }> = []
+  // The designed deal card, built inside the text-platform branch below. Held
+  // here so the Instagram branch can reuse the SAME image rather than posting
+  // the bare product photo when no text platform was selected.
+  let postImageForIg: string | null = null
   let baseCaption: string | null = null
   let geniuslinkNote: string | null = null
 
@@ -177,6 +183,7 @@ Return ONLY the caption text.` }],
       brandName: (brand?.name as string | null) ?? (deal.brand as string | null),
       logoUrl: brand?.logo_url as string | null,
     })) || dealImage
+    postImageForIg = postImage
 
     const textResults: PlatformResult[] = await publishDealToSocials({
       supabase: db, userId,
@@ -213,6 +220,39 @@ Return ONLY the caption text.` }],
       ...(pinRes.needsLinkPage ? { needsLinkPage: true, setupPath: pinRes.setupPath } : {}),
     })
     if (pinRes.note && !geniuslinkNote) geniuslinkNote = pinRes.note
+  }
+
+  // ── Instagram FEED post (designed deal card + caption) ──
+  //
+  // Its own branch, not a QUICK_POST_PLATFORMS entry, for the same reason
+  // Pinterest has one: those six are the text-caption path, where the link is
+  // IN the caption. Instagram needs an image and puts no clickable link in the
+  // caption at all, so it shares the story's shape rather than the tweet's.
+  //
+  // Reuses publishToInstagram, the same publisher the Amazon hub uses, so the
+  // affiliate-link resolution, the FTC disclosure and the note on a failed
+  // link cloak are identical on both surfaces rather than a second copy that
+  // drifts.
+  if (input.instagram) {
+    try {
+      if (!postImageForIg && !dealImage) throw new Error('Instagram needs a product image and Amazon did not return one for this deal.')
+      const { publishToInstagram } = await import('@/lib/amazon-social-publish')
+      const ig = await publishToInstagram({
+        db, userId, tier: tier as never,
+        intRow: (intRow ?? {}) as never,
+        // dealImage is the bare product photo and can be null when Amazon gave
+        // us nothing. Instagram cannot post without an image, so refuse clearly
+        // rather than let the publisher throw an opaque Meta error.
+        imageUrl: (postImageForIg || dealImage) as string,
+        asin, productTitle: deal.title as string,
+        caption: baseCaption || undefined,
+        postType: 'feed',
+      })
+      results.push({ platform: 'instagram', ok: true, url: ig.url })
+      if (ig.note && !geniuslinkNote) geniuslinkNote = ig.note
+    } catch (e) {
+      results.push({ platform: 'instagram', ok: false, error: e instanceof Error ? e.message : 'Instagram post failed.' })
+    }
   }
 
   // ── Instagram Story (baked-in "LINK IN BIO" CTA) ──

@@ -52,6 +52,8 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
+import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
+import { tierAllowsSocial } from '@/lib/tier'
 
 interface DealRow {
   id: string
@@ -164,6 +166,18 @@ export default function DealsHubPage() {
   // Full Auto vs Let-Me-See — persisted across visits.
   const [mode, setMode] = useState<Mode>('review')
   const [preview, setPreview] = useState<PreviewResp | null>(null)
+  // SOCIALS ONLY. A Deals Hub run normally writes a WordPress post and then
+  // pushes it out. Plenty of creators do not want the post at all: the deal is
+  // the content, the socials are the destination, and the blog is a step they
+  // are paying for in time and in their monthly generations.
+  //
+  // This does not duplicate the publish path. It resolves the product through
+  // the SAME preview scrape, then hands {asin, title, imageUrl} to the same
+  // QuickPostModal that Deal Radar already uses — which already does platform
+  // selection, captions, affiliate links, publish AND schedule. Nothing is
+  // written to WordPress on this path, so it costs no blog generation.
+  const [socialsOnly, setSocialsOnly] = useState(false)
+  const [socialDeal, setSocialDeal] = useState<QuickPostDeal | null>(null)
   // Editable copy of preview values (so the user can adjust occasion/promo
   // before committing).
   const [previewOccasion, setPreviewOccasion] = useState<string>('auto')
@@ -269,11 +283,15 @@ export default function DealsHubPage() {
         occasion: occasion,
         manualDealEnd: manualDealEnd || undefined,
       }
-      if (mode === 'review') {
+      if (socialsOnly || mode === 'review') {
         // Preview only scrapes — don't send the schedule (a past/too-soon
         // value would 400 the preview instead of showing the product). The
         // picked time is carried into the preview card below so the user
         // can confirm or tweak it before the real publish.
+        //
+        // Socials-only ALWAYS takes this branch, whichever mode is selected:
+        // the scrape is the only thing it needs, and any other branch would
+        // write the blog post this mode exists to skip.
         body.preview = true
       } else {
         // Full-auto: schedule now if a time was picked, else publish live.
@@ -302,6 +320,13 @@ export default function DealsHubPage() {
         return
       }
 
+      if (j.preview && socialsOnly) {
+        // Straight to the socials composer. No blog preview card, no post.
+        const pr = (j as PreviewResp).product
+        if (!pr?.asin) { toast.error('Could not read that product. Check the link and try again.'); return }
+        setSocialDeal({ asin: pr.asin, title: pr.title, imageUrl: pr.imageUrl })
+        return
+      }
       if (j.preview) {
         // Show the preview card — user edits then clicks Publish.
         setPreview(j as PreviewResp)
@@ -709,7 +734,30 @@ create index if not exists blog_posts_deal_meta_gin
             <Eye size={13} /> Let me see
           </button>
           <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
-            {mode === 'auto' ? 'One-shot publish.' : 'Preview the scraped product before publishing.'}
+            {socialsOnly
+              ? 'No blog post is written, and none of your monthly generations are used.'
+              : mode === 'auto' ? 'One-shot publish.' : 'Preview the scraped product before publishing.'}
+          </span>
+        </div>
+
+        {/* Socials only. Deliberately a separate row from the Full auto / Let me
+            see pair: those two choose how the BLOG post gets made, and this one
+            decides whether there is a blog post at all. Putting it in the same
+            group would read as a third way to publish an article. */}
+        <div className="flex items-center gap-2 mb-4">
+          <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={socialsOnly}
+              onChange={(e) => setSocialsOnly(e.target.checked)}
+              className="w-4 h-4 accent-[#7C3AED] cursor-pointer"
+            />
+            <span className="text-xs font-semibold text-[#3a3a3c] dark:text-[#ebebf0]">
+              Socials only, skip the blog post
+            </span>
+          </label>
+          <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+            Post or schedule the deal straight to your social accounts.
           </span>
         </div>
 
@@ -1135,6 +1183,18 @@ create index if not exists blog_posts_deal_meta_gin
           )}
         </div>
       </div>
+
+      {/* The same composer Deal Radar uses. It owns platform selection, the
+          caption, the affiliate link, publishing AND scheduling, so the
+          socials-only path adds no second copy of any of that. */}
+      {socialDeal && (
+        <QuickPostModal
+          deal={socialDeal}
+          onClose={() => setSocialDeal(null)}
+          pinterestEnabled={tier ? tierAllowsSocial(tier, 'pinterest') : false}
+          instagramEnabled={tier ? tierAllowsSocial(tier, 'instagram') : false}
+        />
+      )}
     </>
   )
 }

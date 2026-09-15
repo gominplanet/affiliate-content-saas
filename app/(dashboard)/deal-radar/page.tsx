@@ -310,6 +310,7 @@ export default function DealRadarPage() {
   // Pinterest deal pins are offered only where the plan includes Pinterest
   // (amazon / studio / pro / admin). Creator sees the caption-link platforms only.
   const pinterestEnabled = tier ? tierAllowsSocial(tier, 'pinterest') : false
+  const instagramEnabled = tier ? tierAllowsSocial(tier, 'instagram') : false
 
   const PAGE_SIZE = 48 // matches the API
 
@@ -577,7 +578,7 @@ export default function DealRadarPage() {
         </>
       )}
 
-      {quickPostDeal && <QuickPostModal deal={quickPostDeal} onClose={() => setQuickPostDeal(null)} pinterestEnabled={pinterestEnabled} />}
+      {quickPostDeal && <QuickPostModal deal={quickPostDeal} onClose={() => setQuickPostDeal(null)} pinterestEnabled={pinterestEnabled} instagramEnabled={instagramEnabled} />}
 
       {showBulkSchedule && (
         <BulkScheduleDealsModal
