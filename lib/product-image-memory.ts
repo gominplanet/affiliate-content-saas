@@ -32,8 +32,24 @@
 import 'server-only'
 import { randomUUID } from 'node:crypto'
 
-/** Bucket already public + per-user RLS on the first path segment. */
-export const PRODUCT_IMAGE_BUCKET = 'headshots'
+/**
+ * Where the kept copy lives. `product-images` (migration 051), not `headshots`:
+ *
+ *   - it allows 10 MB where headshots caps at 5, and MAX_IMAGE_BYTES sits under
+ *     that rather than over it
+ *   - migration 176 names `headshots` as the bucket that may later be flipped
+ *     to private + signed URLs for real face photos, which would break every
+ *     saved product image parked in it
+ *   - these URLs are fetched server-side by Meta and Pinterest when a post
+ *     goes out, so the bucket has to stay public: true
+ *
+ * Per-user RLS is on the first path segment in both, so the path shape is the
+ * same either way.
+ */
+export const PRODUCT_IMAGE_BUCKET = 'product-images'
+
+// What the bucket accepts, defined once in lib/product-image-limits.
+export { ALLOWED_IMAGE_MIME, MAX_IMAGE_BYTES, isAllowedImageMime, extForMime } from '@/lib/product-image-limits'
 
 // The label/record shape lives in lib/product-image-label so the browser
 // composers can render the same sentence this module reasons about — this file
@@ -41,24 +57,26 @@ export const PRODUCT_IMAGE_BUCKET = 'headshots'
 export {
   STALE_AFTER_DAYS, daysBetween, reuseLabel, isAsin,
 } from '@/lib/product-image-label'
+// Conversion lives in its own module (no 'server-only' marker) purely so the
+// test suite can run it against real bytes. A guard that was only ever
+// asserted in the abstract is not a guard.
+export { normalizeForStorage } from '@/lib/product-image-normalize'
 export type { ProductImageSource, ProductImageRecord, ReuseLabel } from '@/lib/product-image-label'
 
 import { isAsin } from '@/lib/product-image-label'
+import { normalizeForStorage } from '@/lib/product-image-normalize'
+import { extForMime } from '@/lib/product-image-limits'
 import type { ProductImageSource, ProductImageRecord } from '@/lib/product-image-label'
 
-/** Storage path for a persisted copy. user id first so the bucket RLS passes. */
+/**
+ * Storage path for a kept copy. The user id MUST be the first segment — the
+ * bucket's RLS is `(storage.foldername(name))[1] = auth.uid()`. `approved/`
+ * separates these from the product reference photos the blog composer already
+ * uploads into this bucket (migration 051).
+ */
 export function productImagePath(userId: string, asin: string, ext: string): string {
   const safeExt = /^[a-z0-9]{2,5}$/i.test(ext) ? ext.toLowerCase() : 'jpg'
-  return `${userId}/product-images/${asin}-${randomUUID()}.${safeExt}`
-}
-
-/** File extension for a mime type, for the storage path. */
-export function extForMime(mime: string): string {
-  const m = (mime || '').toLowerCase()
-  if (m.includes('png')) return 'png'
-  if (m.includes('webp')) return 'webp'
-  if (m.includes('gif')) return 'gif'
-  return 'jpg'
+  return `${userId}/approved/${asin}-${randomUUID()}.${safeExt}`
 }
 
 /** `data:image/png;base64,...` → bytes, or null when it isn't one. */
@@ -95,11 +113,19 @@ export async function rememberProductImage(opts: {
 }): Promise<string | null> {
   const asin = opts.asin.trim().toUpperCase()
   if (!isAsin(asin)) return null
+  // Convert rather than refuse — see normalizeForStorage. Done here, before
+  // the upload, because storage rejects a bad type with an opaque error on a
+  // best-effort path nobody is watching.
+  const norm = await normalizeForStorage(opts.buffer, opts.mimeType)
+  if (!norm) {
+    console.error('[product-image-memory] unstorable image', opts.mimeType, opts.buffer.byteLength)
+    return null
+  }
   try {
-    const path = productImagePath(opts.userId, asin, extForMime(opts.mimeType))
+    const path = productImagePath(opts.userId, asin, extForMime(norm.mimeType))
     const { error: upErr } = await opts.db.storage
       .from(PRODUCT_IMAGE_BUCKET)
-      .upload(path, opts.buffer, { contentType: opts.mimeType, upsert: false, cacheControl: '31536000' })
+      .upload(path, norm.buffer, { contentType: norm.mimeType, upsert: false, cacheControl: '31536000' })
     if (upErr) {
       console.error('[product-image-memory] upload failed', upErr.message)
       return null

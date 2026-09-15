@@ -25,9 +25,6 @@ import {
 export const runtime = 'nodejs'
 export const maxDuration = 30
 
-/** Refuse anything that would be a silly thing to keep forever. */
-const MAX_BYTES = 8 * 1024 * 1024
-
 export async function GET(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -83,14 +80,24 @@ export async function POST(request: Request) {
       }
       if (!res.ok) return NextResponse.json({ error: `Could not read that image (${res.status}).` }, { status: 502 })
       buffer = Buffer.from(await res.arrayBuffer())
-      mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg'
-      if (!mimeType.startsWith('image/')) mimeType = 'image/jpeg'
+      mimeType = res.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() || 'image/jpeg'
+      // Some CDNs answer octet-stream. Sniff from the extension rather than
+      // guessing jpeg and handing storage a mislabelled PNG.
+      if (!mimeType.startsWith('image/')) {
+        mimeType = /\.png(\?|$)/i.test(raw) ? 'image/png'
+          : /\.webp(\?|$)/i.test(raw) ? 'image/webp' : 'image/jpeg'
+      }
     } else {
       return NextResponse.json({ error: "That wasn't an image URL or a data URI." }, { status: 400 })
     }
 
     if (buffer.byteLength === 0) return NextResponse.json({ error: 'That image was empty.' }, { status: 400 })
-    if (buffer.byteLength > MAX_BYTES) return NextResponse.json({ error: 'That image is too large to keep.' }, { status: 413 })
+    // Size and type are NOT rejected here: rememberProductImage converts an
+    // oversized or non-storable image to JPEG rather than dropping it. Only a
+    // buffer far past anything sharp should be handed is refused outright.
+    if (buffer.byteLength > 40 * 1024 * 1024) {
+      return NextResponse.json({ error: 'That image is far too large to keep.' }, { status: 413 })
+    }
 
     const imageUrl = await rememberProductImage({
       db: supabase, userId: user.id, asin, buffer, mimeType, source,

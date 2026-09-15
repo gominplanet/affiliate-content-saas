@@ -18,7 +18,10 @@
 // image looks exactly like one that made a fresh one. So the tests below are
 // mostly about SAYING SO.
 import { readFileSync } from 'node:fs'
+import sharp from 'sharp'
 import { reuseLabel, daysBetween, isAsin, STALE_AFTER_DAYS } from '../lib/product-image-label'
+import { normalizeForStorage } from '../lib/product-image-normalize'
+import { MAX_IMAGE_BYTES, extForMime, isAllowedImageMime } from '../lib/product-image-limits'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -211,9 +214,65 @@ const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOStr
     /alter table public\.deal_scheduled_posts add column if not exists image_override/.test(SQL))
 }
 
-if (failures.length) {
-  console.error(`\n❌ product-image-memory: ${failures.length} failure(s)\n`)
-  for (const f of failures) console.error(`   • ${f}`)
-  process.exit(1)
+// ── the creator's own upload survives the bucket's limits ───────────────────
+//
+// Run against REAL encoded bytes, not a regex over the source. Co-Pilot's
+// uploader accepts JPG, PNG, GIF and BMP; the product-images bucket holds only
+// png/jpeg/webp. Dropping a creator's GIF would lose the exact image this
+// feature exists to keep, so it is converted. Everything below therefore
+// encodes a fixture and pushes it through.
+async function storageChecks() {
+  const gif = await sharp({ create: { width: 300, height: 200, channels: 3, background: '#3355ff' } }).gif().toBuffer()
+  check('the GIF fixture really is a GIF', !isAllowedImageMime('image/gif'))
+  const g = await normalizeForStorage(Buffer.from(gif), 'image/gif')
+  check('an uploaded GIF is converted, not dropped', !!g,
+    'this is the one image regenerating can never reproduce')
+  check('converted to something the bucket holds', !!g && isAllowedImageMime(g.mimeType), String(g?.mimeType))
+  check('and the storage path extension follows the conversion',
+    !!g && extForMime(g.mimeType) === 'jpg',
+    'a .gif path would name a file the bucket will never hold')
+  check('the converted bytes still decode as the same image',
+    !!g && (await sharp(g.buffer).metadata()).width === 300)
+
+  const png = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#ffffff' } }).png().toBuffer()
+  const p = await normalizeForStorage(Buffer.from(png), 'image/png')
+  check('an already-acceptable PNG is passed through untouched',
+    !!p && p.mimeType === 'image/png' && p.buffer.equals(Buffer.from(png)),
+    're-encoding a fine image loses quality for nothing')
+
+  const huge = await sharp({ create: { width: 6000, height: 6000, channels: 3, background: '#101010' } })
+    .png({ compressionLevel: 0 }).toBuffer()
+  check('the oversized fixture is genuinely over the ceiling',
+    huge.byteLength > MAX_IMAGE_BYTES, `${huge.byteLength} bytes vs ${MAX_IMAGE_BYTES}`)
+  const h = await normalizeForStorage(Buffer.from(huge), 'image/png')
+  check('an oversized image is resized rather than refused', !!h)
+  check('and lands under the ceiling', (h?.buffer.byteLength ?? Infinity) <= MAX_IMAGE_BYTES,
+    `${h?.buffer.byteLength} bytes`)
+
+  check('bytes that are not an image at all return null',
+    (await normalizeForStorage(Buffer.from('not an image'), 'image/png')) === null,
+    'so the caller records nothing rather than pointing at a broken file')
+
+  // The bucket, named once. `headshots` caps at 5 MB and migration 176 flags it
+  // as the bucket that may later go private for real face photos — either would
+  // break every saved product image parked there.
+  const MEM = readFileSync('lib/product-image-memory.ts', 'utf8')
+  check('the kept copy goes in the product-images bucket',
+    /PRODUCT_IMAGE_BUCKET = 'product-images'/.test(MEM))
+  check('the storage path starts with the user id',
+    /`\$\{userId\}\/approved\//.test(readFileSync('lib/product-image-limits.ts', 'utf8') + MEM),
+    "the bucket's RLS is (storage.foldername(name))[1] = auth.uid()")
+  check('our ceiling sits under the bucket\u2019s own 10 MB',
+    MAX_IMAGE_BYTES < 10 * 1024 * 1024, `${MAX_IMAGE_BYTES}`)
 }
-console.log('✅ product-image-memory: recall is labelled, dated without a year, resolved server-side, and what was scheduled is what fires')
+
+// Top-level await is not available under this tsx/cjs target, so the async
+// half runs inside main() and the verdict is printed from there.
+storageChecks().then(() => {
+  if (failures.length) {
+    console.error(`\n❌ product-image-memory: ${failures.length} failure(s)\n`)
+    for (const f of failures) console.error(`   • ${f}`)
+    process.exit(1)
+  }
+  console.log('✅ product-image-memory: recall is labelled, dated without a year, resolved server-side, what was scheduled is what fires, and an uploaded GIF is converted rather than lost')
+})
