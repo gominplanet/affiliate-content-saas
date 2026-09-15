@@ -24,6 +24,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { showcaseOverrideFor } from '@/lib/post-destination'
+import { stripTitleYear } from '@/lib/title-year'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
@@ -1232,7 +1233,12 @@ async function handleGenerate(request: Request) {
   // ── 5.5. Hard-enforce the banned-word rule on every user-facing field.
   //         LLM instructions aren't a guarantee; this is the last line of
   //         defense before anything is published or persisted.
-  generated.title = scrubBanned(generated.title)
+  // The year comes off the TITLE only, never the excerpt or the body: a year in
+  // a sentence is legitimate and this is not the layer to touch it. Prompt
+  // rules have never held for the other bans, and they did not hold for this
+  // one either — a published post carried "(2026)" written by the model, with
+  // no code anywhere appending it.
+  generated.title = stripTitleYear(scrubBanned(generated.title))
   generated.excerpt = scrubBanned(generated.excerpt)
   // scrubAiHtml: strip ```html fence if Sonnet wrapped + replace every
   // em-dash with a comma. The user's hard rule, enforced at the

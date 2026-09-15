@@ -12,6 +12,7 @@
  */
 import { NextResponse } from 'next/server'
 import { clickableTitleRulesForComparison } from '@/lib/clickable-titles'
+import { stripTitleYear as stripYear } from '@/lib/title-year'
 import { createServerClient } from '@/lib/supabase/server'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -84,22 +85,19 @@ const slugify = (s: string) =>
  *  and any stray standalone year, then tidies the leftover punctuation/spacing.
  *  Only 4-digit years 2000–2039 with a word boundary, so a model number like
  *  "5000mAh" is never touched. */
-function stripYear(s: string): string {
-  if (!s) return s
-  let out = s
-    // "... in/for/of/— 2026" → drop the connective + the year.
-    .replace(/\s+(?:in|for|of|—|–|-)\s+20[0-3]\d\b/gi, '')
-    // "2026 Edition/Guide/Update/Roundup/Review/Showdown" → keep just the word.
-    .replace(/\b20[0-3]\d\s+(edition|guide|update|round-?up|review|showdown)\b/gi, '$1')
-    // "(2026)" / "[2026]".
-    .replace(/\s*[([]\s*20[0-3]\d\s*[)\]]/g, '')
-    // Any remaining standalone year.
-    .replace(/\b20[0-3]\d\b/g, '')
-  // Tidy: collapse spaces, pull punctuation back, drop dangling separators.
-  out = out.replace(/\s{2,}/g, ' ').replace(/\s+([:,.])/g, '$1')
-    .replace(/[:\-–—]\s*$/, '').replace(/^\s*[:\-–—]\s*/, '').trim()
-  return out
-}
+// The year stripper lives in lib/title-year now. The copy that was here ended
+// with `.replace(/\b20[0-3]\d\b/g, '')` — "any remaining standalone year" —
+// which stripped a year from ANYWHERE in the string, so it published:
+//
+//   "Snailax 2026 Upgraded Neck and Back Massager"  → "Snailax Upgraded ..."
+//   "Kismile 2026 Ice Maker vs the 2025 Model"      → "Kismile Ice Maker vs the Model"
+//   "The Best Laptops of 2014, Revisited"           → "The Best Laptops, Revisited"
+//
+// A manufacturer's model year is part of the product's name. Removing it
+// corrupts the product, breaks the match against the listing, and reads as a
+// bug. The shared version only removes a year used as DECORATION (bracketed,
+// leading, or trailing), which is why it leaves all three of those alone.
+
 
 /** Strip affiliate/tracking query params from a resolved product URL so that
  *  re-cloaking a PUBLIC creator's link under the MVP user's Geniuslink doesn't
