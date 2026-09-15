@@ -27,6 +27,7 @@ import PageHero from '@/components/layout/PageHero'
 import { ScriptwriterGuide } from '@/components/guide/tool-guides'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useConfirm } from '@/components/ui/useConfirm'
+import { TIERS } from '@/lib/tier'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
@@ -466,7 +467,7 @@ function UpsellCard({ usage }: { usage: UsageInfo }) {
         <ul className="text-[13px] text-[#3a3a3c] dark:text-[#d2d2d7] mb-5 flex flex-col gap-1.5 max-w-lg">
           <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>Hands-On Test · Long-Term Review — time-based styles</span></li>
           <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>Vertical short cutdown written fresh — not lifted from the long master</span></li>
-          <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>30 generations per month — comfortably 2 per business day</span></li>
+          <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>{TIERS.pro.scriptsPerMonth} generations per month on Pro</span></li>
         </ul>
         <a
           href="/billing"

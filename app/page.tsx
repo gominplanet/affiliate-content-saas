@@ -1354,7 +1354,7 @@ function ProductMock() {
               <Play size={16} fill="currentColor" className="ml-0.5" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>Best Robot Vacuums (2026)</p>
+              <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>Best Robot Vacuums</p>
               <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>YouTube review · 12:04</p>
             </div>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1 flex-shrink-0" style={chip('rgba(16,185,129,0.12)', 'transparent', '#10B981')}>

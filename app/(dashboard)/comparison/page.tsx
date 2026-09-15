@@ -119,7 +119,7 @@ export default function ComparisonPage() {
             'Verdict box at the top, comparison table mid-article',
             'Mobile layout + Schema.org markup so the post ranks',
             'Publishes straight to your WordPress site',
-            'For buying-guide round-ups (e.g. "Best [topic] for 2026"), see Buying Guides in the sidebar',
+            'For buying-guide round-ups (e.g. "Best [topic]"), see Buying Guides in the sidebar',
           ]}
           requiredTier="pro"
           currentTier={normalizeTier(tier)}
@@ -135,7 +135,7 @@ export default function ComparisonPage() {
             type="text"
             value={topic}
             onChange={e => setTopic(e.target.value)}
-            placeholder='e.g. "Best Wine Travel Protectors in 2026"'
+            placeholder='e.g. "Best Wine Travel Protectors"'
             className="input-field"
             disabled={busy}
           />

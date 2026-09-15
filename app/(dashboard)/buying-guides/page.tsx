@@ -413,7 +413,7 @@ export default function BuyingGuidesPage() {
       <FeatureLockedCard
         icon={<BookOpen size={28} strokeWidth={1.8} />}
         feature="Buying Guides"
-        description='Long-form "Best [topic] for 2026" round-ups in your voice — either auto-curated from your existing review catalogue or built from a handful of YouTube URLs you specify. Slots picks into Best Overall / Best Budget / Best for X, writes the guide, publishes to WordPress.'
+        description='Long-form "Best [topic]" round-ups in your voice — either auto-curated from your existing review catalogue or built from a handful of YouTube URLs you specify. Slots picks into Best Overall / Best Budget / Best for X, writes the guide, publishes to WordPress.'
         bullets={[
           'Two ways to start: pick from your catalogue OR paste 2-10 YouTube URLs of your own',
           '"Pick from my catalogue" auto-curates 5-7 best-fit reviews (unlocks at 500+ published posts)',
@@ -637,7 +637,7 @@ export default function BuyingGuidesPage() {
                 type="text"
                 value={manualTopic}
                 onChange={e => setManualTopic(e.target.value)}
-                placeholder='e.g. "Best Wine Travel Protectors in 2026"'
+                placeholder='e.g. "Best Wine Travel Protectors"'
                 maxLength={200}
                 disabled={generating}
                 className="w-full rounded-lg px-4 py-3 text-sm outline-none border"
