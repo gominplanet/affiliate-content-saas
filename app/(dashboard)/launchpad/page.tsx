@@ -142,6 +142,18 @@ export default function LaunchpadPage() {
   // What the Studio finish actually managed to set. null = wasn't asked for.
   // Drives the honest "finish these by hand" checklist below the publish button.
   const [studioDone, setStudioDone] = useState<{ details: boolean | null; monetize: boolean | null } | null>(null)
+  // WHAT THE VIDEO ACTUALLY IS ON YOUTUBE, as opposed to what was requested.
+  //
+  // The upload always lands private and a second call flips it. Both the flip
+  // and the metadata/thumbnail pass can fail on their own while the publish
+  // itself succeeded, and the screen used to say "Published to YouTube." either
+  // way: a creator who asked for public could be looking at a green tick over a
+  // private draft. `visibility` is what the last confirmed write left behind,
+  // and `applyWarnings` is what did not land, so the Done card can stop
+  // claiming a thumbnail and a privacy setting it never verified.
+  const [publishResult, setPublishResult] = useState<
+    { visibility: 'public' | 'private'; wanted: 'public' | 'private'; applyWarnings: string[]; metadataOk: boolean } | null
+  >(null)
   // The YouTube video id — used for the Studio deep link (schedule / go live).
   const [publishedVideoId, setPublishedVideoId] = useState<string | null>(null)
   // Full Co-Pilot finish: an AI thumbnail + the standard publish options, applied
@@ -281,6 +293,9 @@ export default function LaunchpadPage() {
         if (s.publishedVideoId) setPublishedVideoId(s.publishedVideoId)
         if (s.publishedChannelId) setPublishedChannelId(s.publishedChannelId)
         if (s.studioDone) setStudioDone(s.studioDone)
+        // Restored alongside studioDone, or a resumed session would show a green
+        // "Done." over the private draft the warnings were explaining.
+        if (s.publishResult) setPublishResult(s.publishResult)
         if (s.masterId) setMasterId(s.masterId)
         if (s.geoCheck) setGeoCheck(s.geoCheck)
         if (s.marketAsins) setMarketAsins(s.marketAsins)
@@ -299,13 +314,13 @@ export default function LaunchpadPage() {
       localStorage.setItem(LS_KEY, JSON.stringify({
         renderedUrl, cleanUrl, workingTitle, durationSec, asin, ytOpen, meta,
         chosenTitle, description, tags, thumbUrl, thumbSkipped, facePick,
-        publishedUrl, publishedVideoId, publishedChannelId, studioDone,
+        publishedUrl, publishedVideoId, publishedChannelId, studioDone, publishResult,
         masterId, geoCheck, marketAsins, savedAt: Date.now(),
       }))
     } catch { /* private mode / quota — resume is a convenience, never a blocker */ }
   }, [restored, renderedUrl, cleanUrl, workingTitle, durationSec, asin, ytOpen, meta,
       chosenTitle, description, tags, thumbUrl, thumbSkipped, facePick,
-      publishedUrl, publishedVideoId, publishedChannelId, studioDone,
+      publishedUrl, publishedVideoId, publishedChannelId, studioDone, publishResult,
       masterId, geoCheck, marketAsins])
 
   function startOver() {
@@ -383,7 +398,9 @@ export default function LaunchpadPage() {
 
   async function publish() {
     if (!renderedUrl || !chosenTitle.trim()) return
-    setPublishing(true); setPublishError(null)
+    // Clears the last result too, or a retry renders the previous run's
+    // warnings under the new attempt.
+    setPublishing(true); setPublishError(null); setPublishResult(null)
     try {
       const tagList = tags.split(',').map(t => t.trim()).filter(Boolean)
       // 1) Upload the render as a PRIVATE draft (metadata set here).
@@ -400,8 +417,18 @@ export default function LaunchpadPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let j: any = {}
       try { j = raw ? JSON.parse(raw) : {} } catch { /* non-JSON response */ }
-      if (j.notEnabled) { toast.error("Publishing to YouTube isn't switched on yet. Google is verifying our upload access."); return }
-      if (j.reconnectRequired) { toast.error('Reconnect YouTube to grant upload permission, then try again.'); return }
+      // These two used to be a toast and nothing else, so the message was gone
+      // in four seconds and the card still showed a Publish button, as though
+      // the click had not happened. publishError is what holds a failure on
+      // screen AND what reveals the "skip to Amazon" escape beside it.
+      if (j.notEnabled) {
+        const m = "Publishing to YouTube isn't switched on yet. Google is verifying our upload access. Your video is safe and Amazon does not need this step."
+        setPublishError(m); toast.error(m, { duration: 10000 }); return
+      }
+      if (j.reconnectRequired) {
+        const m = 'Reconnect YouTube under Set Up to grant upload permission, then try again. Your video is safe and Amazon does not need this step.'
+        setPublishError(m); toast.error(m, { duration: 10000 }); return
+      }
       if (!r.ok || !j.videoId || !j.url) {
         const detail = j.error || (raw ? raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) : '') || `HTTP ${r.status}`
         throw new Error(detail)
@@ -409,10 +436,21 @@ export default function LaunchpadPage() {
       setPublishedUrl(j.url); setPublishedVideoId(String(j.videoId))
       if (typeof j.channelId === 'string' && j.channelId) setPublishedChannelId(j.channelId)
 
-      // 2) Apply the finishing pass — thumbnail + publish options + final privacy —
-      //    via the same route the Co-Pilot uses. Non-fatal: the video is already up,
-      //    so any warning (e.g. thumbnail needs a verified channel) is surfaced but
+      // 2) Apply the finishing pass — thumbnail + publish options — via the same
+      //    route the Co-Pilot uses. Non-fatal: the video is already up, so any
+      //    warning (e.g. thumbnail needs a verified channel) is surfaced but
       //    doesn't undo the publish.
+      //
+      //    IT STAYS PRIVATE HERE, whatever they asked for. This call used to
+      //    carry `privacyStatus: public` and run BEFORE the Studio step below,
+      //    which is the step that sets paid promotion and the AI-use answer.
+      //    YouTube's API cannot set either, so the order meant a Creator
+      //    Connections video went live first and got its disclosure afterwards,
+      //    if SCOUT was installed at all. The Co-Pilot has always done it the
+      //    other way round. Going public is now step 4, and only happens once
+      //    the disclosure is confirmed.
+      const applyWarnings: string[] = []
+      let metadataOk = false
       try {
         const ap = await fetch('/api/youtube/apply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -421,18 +459,34 @@ export default function LaunchpadPage() {
             title: chosenTitle.trim(), description, tags: tagList,
             thumbnailDataUri: thumbUrl || undefined,
             madeForKids, notifySubscribers: notifySubs, embeddable,
-            privacyStatus: privacy === 'public' ? 'public' : 'private',
+            privacyStatus: 'private',
           }),
         })
         const aj = await ap.json().catch(() => ({}))
-        if (Array.isArray(aj?.warnings) && aj.warnings.length > 0) toast.warning(aj.warnings.join(' '), { duration: 9000 })
-      } catch { /* finishing pass is best-effort — the video is already published */ }
+        if (Array.isArray(aj?.warnings)) applyWarnings.push(...(aj.warnings as string[]))
+        // A non-2xx used to be read as success: only `warnings` was inspected,
+        // and a 500 carries none. statusOk is the route's own report that the
+        // write reached YouTube, and it exists precisely for this.
+        if (!ap.ok) applyWarnings.push(String(aj?.error || `the finishing pass returned HTTP ${ap.status}`))
+        metadataOk = ap.ok && aj?.statusOk !== false && applyWarnings.length === 0
+        if (applyWarnings.length > 0) toast.warning(applyWarnings.join(' · '), { duration: 9000 })
+      } catch (e) {
+        // Previously swallowed whole, so a dropped connection here looked
+        // identical to a clean run: no thumbnail, no warning, a green tick.
+        applyWarnings.push(e instanceof Error ? e.message : 'the finishing pass could not be reached')
+        toast.warning(applyWarnings.join(' · '), { duration: 9000 })
+      }
 
       // 3) Studio-only fields — paid promotion + AI-use answer + monetization +
       //    ad rating. YouTube's Data API can't set these, so SCOUT drives the real
       //    Studio controls in the creator's own session and lets Studio's own save
       //    persist them (the reliable path — same as the Co-Pilot). Notify
       //    subscribers is forced OFF. Best-effort: needs SCOUT + a Studio session.
+      //
+      //    `detailsConfirmed` is the gate on step 4. It is true when they did
+      //    not ask for the details pass at all, and otherwise only when SCOUT
+      //    reported that step landed.
+      let detailsConfirmed = !finishDetails
       if (finishDetails || finishMonetize) {
         try {
           const fin = await requestStudioFinish(j.videoId, {
@@ -446,16 +500,55 @@ export default function LaunchpadPage() {
           const dOk = !finishDetails || !!fin.steps.find(s => s.step === 'details')?.ok
           const mStep = fin.steps.find(s => s.step === 'monetization')
           const mOk = !finishMonetize || !!mStep?.ok || !!mStep?.skipped
+          detailsConfirmed = dOk
           // Record what ACTUALLY landed, so the step can show a finish-by-hand
           // checklist instead of a toast that disappears and overstates it.
           setStudioDone({ details: finishDetails ? dOk : null, monetize: finishMonetize ? mOk : null })
           if (dOk && mOk) toast.success('Studio set: paid promotion' + (finishMonetize ? ', monetization + ad rating' : '') + '.')
           else if (fin.error === 'not-installed') toast.warning('SCOUT isn’t installed, so the Studio fields (paid promotion / monetization) were skipped. Install SCOUT and re-run, or set them by hand in Studio.', { duration: 10000 })
           else toast.warning('Couldn’t set every Studio field automatically. Open the video in YouTube Studio to finish paid promotion / monetization.', { duration: 10000 })
-        } catch { /* best-effort — the video is already published */ }
+        } catch {
+          // The video is already published (privately) and stays that way.
+          detailsConfirmed = !finishDetails
+          setStudioDone({ details: finishDetails ? false : null, monetize: finishMonetize ? false : null })
+        }
       }
 
-      toast.success(privacy === 'public' ? 'Published to YouTube.' : 'Saved to YouTube as a private draft.')
+      // 4) NOW go public, if that is what they chose and the disclosure landed.
+      //    Keeping it private is the safe failure here: a private video can be
+      //    published by hand in ten seconds, while a public affiliate video with
+      //    no paid-promotion disclosure is a compliance problem the creator did
+      //    not know they had.
+      let visibility: 'public' | 'private' = 'private'
+      if (privacy === 'public') {
+        if (detailsConfirmed) {
+          try {
+            const gp = await fetch('/api/youtube/apply', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                videoId: j.videoId,
+                madeForKids, notifySubscribers: notifySubs, embeddable,
+                privacyStatus: 'public',
+              }),
+            })
+            const gj = await gp.json().catch(() => ({}))
+            if (gp.ok && gj?.statusOk !== false) visibility = 'public'
+            else applyWarnings.push('Going public did not go through, so the video is still a private draft. Open it on YouTube and set visibility to Public.')
+          } catch {
+            applyWarnings.push('Going public did not go through, so the video is still a private draft. Open it on YouTube and set visibility to Public.')
+          }
+        } else {
+          applyWarnings.push('Kept PRIVATE on purpose: the paid-promotion and AI-use answers could not be confirmed, and an affiliate video should not go public without them. Set them in Studio, then switch it to Public.')
+        }
+      }
+
+      setPublishResult({ visibility, wanted: privacy === 'public' ? 'public' : 'private', applyWarnings, metadataOk })
+      // The toast says what the video IS, not what was asked for. It used to
+      // read "Published to YouTube." on the strength of the request alone, so a
+      // failed privacy write left a creator believing they were live.
+      if (visibility === 'public') toast.success('Published to YouTube.')
+      else if (privacy === 'public') toast.warning('Uploaded, but it is still a PRIVATE draft. See the note under the publish button.', { duration: 12000 })
+      else toast.success('Saved to YouTube as a private draft.')
       setPublishError(null)
     } catch (e) {
       const raw = e instanceof Error ? e.message : 'Publish failed'
@@ -965,9 +1058,24 @@ export default function LaunchpadPage() {
                           </div>
                         </div>
                       )}
+                      {/* What it actually is on YouTube. A creator who picked Public
+                          and ended up with a private draft must not be shown a green
+                          tick reading "Done." */}
+                      {publishedUrl && publishResult && publishResult.visibility === 'private' && publishResult.wanted === 'public' && (
+                        <div className="rounded-lg border p-3" style={{ borderColor: '#d9770655', background: 'rgba(217,119,6,0.06)' }}>
+                          <p className="text-[12px] font-medium mb-1" style={label}>On YouTube as a PRIVATE draft, not public</p>
+                          <p className="text-[12px]" style={muted}>The upload worked. Going public did not, so nobody can see it yet.</p>
+                        </div>
+                      )}
+                      {publishedUrl && publishResult && publishResult.applyWarnings.length > 0 && (
+                        <ul className="text-[12px] space-y-1 list-disc pl-4" style={muted}>
+                          {publishResult.applyWarnings.map((w, i) => <li key={i}>{w}</li>)}
+                        </ul>
+                      )}
                       {publishedUrl && (
-                        <p className="text-[13px] inline-flex items-center gap-1.5 flex-wrap" style={{ color: '#10B981' }}>
-                          <Check size={14} /> Done.
+                        <p className="text-[13px] inline-flex items-center gap-1.5 flex-wrap"
+                          style={{ color: publishResult && publishResult.visibility !== publishResult.wanted ? 'var(--text-2)' : '#10B981' }}>
+                          <Check size={14} /> {publishResult ? (publishResult.visibility === 'public' ? 'Public on YouTube.' : 'On YouTube as a private draft.') : 'Done.'}
                           {publishedVideoId && (
                             // Scope the link to the OWNING channel. A bare
                             // /video/<id>/edit opens under whatever channel Studio is
@@ -988,7 +1096,16 @@ export default function LaunchpadPage() {
                       {publishedUrl && studioDone && (studioDone.details === false || studioDone.monetize === false) && (
                         <div className="rounded-lg border p-3" style={{ borderColor: '#d9770655', background: 'rgba(217,119,6,0.06)' }}>
                           <p className="text-[12px] font-medium mb-1" style={label}>Finish these in Studio</p>
-                          <p className="text-[12px] mb-2" style={muted}>MVP could not confirm these, so check them yourself rather than trust it. Everything else (title, description, tags, thumbnail, privacy) is already set.</p>
+                          {/* This used to end "Everything else (title, description,
+                              tags, thumbnail, privacy) is already set" whatever the
+                              finishing pass had actually managed. It now only says so
+                              when that pass came back clean. */}
+                          <p className="text-[12px] mb-2" style={muted}>
+                            MVP could not confirm these, so check them yourself rather than trust it.
+                            {publishResult?.metadataOk
+                              ? ' Everything else (title, description, tags, thumbnail, privacy) is already set.'
+                              : ' The rest of the details were not all confirmed either, so check the video over while you are in there.'}
+                          </p>
                           <ul className="text-[12px] space-y-1 mb-2" style={muted}>
                             {studioDone.details === false && (
                               <li>Under <strong>Video details</strong>: tick <strong>Paid promotion</strong>, answer <strong>AI use</strong>, and untick <strong>Publish to subscriptions feed and notify subscribers</strong> if you don&apos;t want the bell.</li>
