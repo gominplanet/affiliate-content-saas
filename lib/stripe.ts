@@ -18,20 +18,45 @@ export function getStripe(): Stripe {
 //     users never reach a broken checkout.
 //   - Pro: $199 — unchanged.
 //   - Amazon: $99 from 2026-09-14 (was $79) — needs a NEW Stripe price object.
-export const PRICE_IDS = {
-  creator: (process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER)!,
-  studio:  process.env.STRIPE_PRICE_STUDIO!,
-  pro:     process.env.STRIPE_PRICE_PRO!,
+/**
+ * Every price id a tier is allowed to be on, newest FIRST.
+ *
+ * A STRIPE_PRICE_* var may hold a comma-separated list, because a price change
+ * leaves live subscribers behind on the old one. Stripe prices are immutable,
+ * so raising the Amazon plan from $79 to $99 means creating a NEW price, and
+ * repointing the var at it alone would drop the old price out of the webhook's
+ * price-to-tier map. Of the three places that map is read, one has no fallback
+ * (invoice.payment_succeeded), so every renewal for a legacy subscriber would
+ * silently stop re-affirming their tier.
+ *
+ * So: checkout charges the FIRST id, and the webhook recognises ALL of them.
+ *
+ *     STRIPE_PRICE_AMAZON=price_new99,price_old79
+ */
+export function priceIdsFor(raw: string | null | undefined): string[] {
+  return String(raw ?? '')
+    .split(',')
+    .map(v => v.trim())
+    .filter(v => v.length > 0)
+}
+
+/** Every id, per tier. Order matters: the first is what new buyers are charged. */
+export const PRICE_ID_LIST: Record<'creator' | 'studio' | 'pro' | 'amazon', string[]> = {
+  creator: priceIdsFor(process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER),
+  studio:  priceIdsFor(process.env.STRIPE_PRICE_STUDIO),
+  pro:     priceIdsFor(process.env.STRIPE_PRICE_PRO),
   // Amazon Influencer — $99 as of 2026-09-14 (was $79). One of the two plans
-  // now sold; creator and studio above are frozen legacy tiers kept so existing
+  // now sold; creator and studio are frozen legacy tiers kept so existing
   // subscribers keep their allowances and their price.
-  //
-  // THIS NEEDS A NEW STRIPE PRICE. The env var still points at the $79 price
-  // until someone creates the $99 one and repoints it, and nothing in the code
-  // can detect that: Stripe charges whatever the price object says, so the
-  // checkout would succeed at the old amount while the app grants the new
-  // allowances. Until then the pricing page says $99 and the card says $79.
-  amazon:  process.env.STRIPE_PRICE_AMAZON!,
+  amazon:  priceIdsFor(process.env.STRIPE_PRICE_AMAZON),
+}
+
+/** The price a NEW buyer is charged. The first id in the list. */
+export const PRICE_IDS = {
+  creator: PRICE_ID_LIST.creator[0]!,
+  studio:  PRICE_ID_LIST.studio[0]!,
+  pro:     PRICE_ID_LIST.pro[0]!,
+  amazon:  PRICE_ID_LIST.amazon[0]!,
 } as const
 
 // One-time "your-voice" dub credit blocks. Each is a Stripe ONE-TIME price

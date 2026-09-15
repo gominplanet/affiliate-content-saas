@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getStripe, creditsForPriceId } from '@/lib/stripe'
+import { getStripe, creditsForPriceId, PRICE_ID_LIST } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { alertOps } from '@/lib/ops-alert'
 import { sendMetaEvent, purchaseEventId } from '@/lib/meta-capi'
@@ -34,15 +34,22 @@ async function releaseAndRetry(
 // When an env var is unset, the resulting `undefined` key would silently mis-
 // map a paying customer's webhook to whatever tier shared the empty slot —
 // so we filter undefined keys out instead of `process.env.X!`-ing them.
+// EVERY price id that maps to a paid tier, not just the current one.
+//
+// A STRIPE_PRICE_* var may hold a comma-separated list (see lib/stripe), and it
+// has to, because Stripe prices are immutable: raising a plan's price means
+// creating a new price and leaving live subscribers on the old one. Pointing
+// the var at the new id alone would drop the old price out of this map, and of
+// the three reads below, invoice.payment_succeeded has NO fallback — so every
+// renewal for a legacy subscriber would quietly stop re-affirming their tier.
+// Nothing would break that day; it would simply stop being defended.
+//
+// Undefined/blank entries are filtered rather than `!`-asserted: an unset var
+// would otherwise put an empty key in the map and silently hand whatever tier
+// shared that slot to a paying customer.
 const PRICE_TO_TIER: Record<string, Tier> = Object.fromEntries(
-  (
-    [
-      [process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER, 'creator'],
-      [process.env.STRIPE_PRICE_AMAZON, 'amazon'],
-      [process.env.STRIPE_PRICE_STUDIO, 'studio'],
-      [process.env.STRIPE_PRICE_PRO, 'pro'],
-    ] as Array<[string | undefined, Tier]>
-  ).filter(([id]) => !!id) as Array<[string, Tier]>,
+  (Object.entries(PRICE_ID_LIST) as Array<[Tier, string[]]>)
+    .flatMap(([tier, ids]) => ids.map(id => [id, tier] as [string, Tier])),
 )
 
 // Sanity floors per paid tier (cents). A price BELOW its tier's floor means a
