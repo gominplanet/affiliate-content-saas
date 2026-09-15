@@ -310,13 +310,19 @@ export const TIERS = {
      *  2026-09-14: at 60 it was the second wall after Facebook, and a creator
      *  posting one deal per video stopped two thirds of the way through. */
     dealsPerMonth: 150 as number | null,
-    /** 8 professional Photobooth shots (6 -> 8, 2026-09-14). Face setup is
-     *  close to one-time, so this is not a volume lever. */
     /** Per-format design caps stand on their own here: a pin allowance and an
      *  Instagram allowance are two separate promises on a paid plan. Only the
      *  free trial pools them (see lib/free-trial.ts). */
     socialDesignsPerMonth: null as number | null,
-    photoboothPerMonth: 8 as number | null,
+    /** 12 professional Photobooth shots (6 -> 8 -> 12, 2026-09-15). Face setup
+     *  is close to one-time so this is not a volume lever, and at ~$0.19 a shot
+     *  the extra four cost about 76c a month. It is the feature that makes every
+     *  other design look like the creator, so it is the wrong cap to be stingy
+     *  with on the plan whose whole pitch is "your face on the thumbnail".
+     *
+     *  (The comment for this field used to sit above socialDesignsPerMonth,
+     *  describing a number two lines below it.) */
+    photoboothPerMonth: 12 as number | null,
     /** Two face models (1 -> 2, 2026-09-14), up to 20 selfies each. */
     maxFaces: 2 as number | null,
     blogImagesPerPost: 0,
