@@ -6,7 +6,12 @@
  * creator's own affiliate link. Skips the blog for time-sensitive deals. NOT
  * Instagram/TikTok (no clickable caption link) or Pinterest (pins go to blog).
  *
- * Body: { asin, platforms: string[], caption?, story?, title?, imageUrl?, scheduledFor? }
+ * Body: { asin, platforms: string[], caption?, story?, title?, imageUrl?,
+ *         useSavedImage?, scheduledFor? }
+ *   - useSavedImage: post the image the creator already approved for this ASIN
+ *     (lib/product-image-memory) instead of designing a deal card from the
+ *     Amazon photo. A FLAG, not a URL — the server resolves it from
+ *     (user, asin), so this endpoint can't be used to push an arbitrary image.
  *   - scheduledFor (ISO time, future): queue the post instead of firing now. The
  *     process-deal-schedules cron publishes it at that time and SKIPS it if the
  *     deal has ended by then (you never promote a dead deal).
@@ -23,6 +28,7 @@ import { executeDealQuickPost } from '@/lib/deal-quick-post'
 import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { recallProductImage } from '@/lib/product-image-memory'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -56,7 +62,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Amazon Deal Radar is available on paid plans.', currentTier: tier }, { status: 403 })
     }
 
-    const body = await request.json().catch(() => ({})) as { asin?: string; platforms?: unknown; caption?: string; title?: string; imageUrl?: string; story?: boolean; scheduledFor?: string }
+    const body = await request.json().catch(() => ({})) as { asin?: string; platforms?: unknown; caption?: string; title?: string; imageUrl?: string; story?: boolean; scheduledFor?: string; useSavedImage?: boolean }
     const asin = (body.asin || '').trim().toUpperCase()
     if (!/^[A-Z0-9]{10}$/.test(asin)) return NextResponse.json({ error: 'A valid ASIN is required.' }, { status: 400 })
     const rawPlatforms = (Array.isArray(body.platforms) ? body.platforms : []).map((p) => String(p))
@@ -72,6 +78,15 @@ export async function POST(request: Request) {
     // Story published via the API can't carry a caption or a tappable link).
     const wantStory = body.story === true
     if (!platforms.length && !wantStory && !wantPinterest) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
+
+    // Resolve the creator's approved image for this product ONCE, here. A
+    // scheduled post stores the URL resolved now rather than re-resolving at
+    // fire time, so what the modal said ("Reusing your thumbnail from Sep 14")
+    // is what actually goes out days later.
+    const savedImage = body.useSavedImage === true
+      ? await recallProductImage(supabase, user.id, asin)
+      : null
+    const imageOverride = savedImage?.imageUrl ?? null
 
     // ── Schedule for later ──────────────────────────────────────────────────
     // A future scheduledFor means: don't post now, queue it. The
@@ -111,6 +126,7 @@ export async function POST(request: Request) {
         asin,
         title: (body.title || '').trim() || null,
         image_url: body.imageUrl || null,
+        image_override: imageOverride,
         // Store 'pinterest' alongside the caption-link platforms; the cron splits
         // it back out and routes it through the pin pipeline at fire time.
         platforms: [...platforms, ...(wantPinterest ? ['pinterest'] : []), ...(wantInstagram ? ['instagram'] : [])],
@@ -123,7 +139,10 @@ export async function POST(request: Request) {
         console.error('[deal-radar/social-post schedule]', insErr.message)
         return NextResponse.json({ error: toUserMessage(insErr, 'Could not schedule that post. Please try again.') }, { status: 500 })
       }
-      return NextResponse.json({ ok: true, scheduled: true, scheduledFor: when.toISOString() })
+      // Say which image was queued, not which was requested — useSavedImage
+      // with nothing saved (or an unapplied migration 331) silently falls back
+      // to the product photo, and the caller should be able to tell.
+      return NextResponse.json({ ok: true, scheduled: true, scheduledFor: when.toISOString(), usedSavedImage: !!imageOverride })
     }
 
     // ── Post now ────────────────────────────────────────────────────────────
@@ -134,11 +153,12 @@ export async function POST(request: Request) {
       db: supabase, userId: user.id, tier, intRow: intRow ?? null,
       asin, platforms, pinterest: wantPinterest, instagram: wantInstagram, story: wantStory,
       caption: body.caption, title: body.title, imageUrl: body.imageUrl,
+      imageOverride,
     })
     if (out.missingTag) return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
     if (out.dealEnded && out.results.length === 0) return NextResponse.json({ error: 'That deal is no longer on the radar.' }, { status: 404 })
     const anyOk = out.results.some((r) => r.ok)
-    return NextResponse.json({ ok: anyOk, results: out.results, caption: out.caption, geniuslinkNote: out.geniuslinkNote }, { status: anyOk ? 200 : 502 })
+    return NextResponse.json({ ok: anyOk, results: out.results, caption: out.caption, geniuslinkNote: out.geniuslinkNote, usedSavedImage: !!imageOverride }, { status: anyOk ? 200 : 502 })
   } catch (err) {
     console.error('[deal-radar/social-post]', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, "Couldn't post just now. Please try again in a moment.") }, { status: 500 })

@@ -34,6 +34,11 @@ interface DealScheduleRow {
   platforms: string[] | null
   story: boolean | null
   caption: string | null
+  /** The image the creator chose in the quick-post modal (their approved
+   *  thumbnail for this ASIN). Resolved and stored AT SCHEDULING TIME, not
+   *  here, so the post that fires is the one the modal described. Null on
+   *  rows queued before migration 331. */
+  image_override: string | null
 }
 
 export async function GET(request: Request) {
@@ -136,6 +141,7 @@ export async function GET(request: Request) {
         db: admin, userId: row.user_id, tier, intRow,
         asin: row.asin, platforms, pinterest: pinterestAlive, instagram: instagramAlive, story: row.story === true,
         caption: row.caption ?? undefined, title: row.title, imageUrl: row.image_url,
+        imageOverride: row.image_override ?? null,
         requireLiveDeal: true,
       })
 

@@ -8,6 +8,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import DownloadDesign from '@/components/amazon/DownloadDesign'
 import { AMAZON_QUEUE_EVENT } from '@/components/amazon/ScheduledQueue'
+import SavedProductImage, { useSavedProductImage, saveProductImage } from '@/components/product/SavedProductImage'
+import { asinFromAmazonUrl } from '@/lib/asin'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
@@ -38,6 +40,18 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
   const [expression, setExpression] = useExpression()
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [briefKey, setBriefKey] = useState('') // reused when cross-posting this design to IG/FB
+
+  // The image this creator already approved for this product elsewhere. Offered
+  // here too, but NOT pre-selected the way it is on Facebook/Instagram: a pin is
+  // 2:3 and a recalled YouTube thumbnail is 16:9, so reusing it is a deliberate
+  // choice about brand consistency over pin shape, not a default.
+  const resolvedAsin = (() => {
+    const raw = product.trim()
+    if (/^[A-Z0-9]{10}$/i.test(raw)) return raw.toUpperCase()
+    return asinFromAmazonUrl(raw) || null
+  })()
+  const { saved } = useSavedProductImage(resolvedAsin)
+  const [usingSaved, setUsingSaved] = useState(false)
 
   // Pinterest publish
   const [connected, setConnected] = useState<boolean | null>(null)
@@ -80,7 +94,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
     const raw = product.trim()
     if (!raw) { setGenError('Paste an Amazon product link or ASIN first.'); return }
     if (mode === 'face' && !faceId) { setGenError('Pick a face, or switch to Product only.'); return }
-    setGenBusy(true); setGenError(null); setThumbUrl(null); setResult(null)
+    setGenBusy(true); setGenError(null); setThumbUrl(null); setUsingSaved(false); setResult(null)
     setTitle(''); setDescription('')
     const isUrl = /^https?:\/\//i.test(raw)
     const isAsin = /^[A-Z0-9]{10}$/i.test(raw)
@@ -131,6 +145,26 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
     } finally { setGenBusy(false) }
   }, [product, mode, faceId, question, wear, expression])
 
+  /** Use the approved image instead of designing one, and fetch the pin copy so
+   *  the title/description boxes fill in the way they do after a generate. */
+  const useSavedImage = useCallback(() => {
+    if (!saved) return
+    setThumbUrl(saved.imageUrl)
+    setUsingSaved(true)
+    const raw = product.trim()
+    if (!raw) return
+    const isUrl = /^https?:\/\//i.test(raw)
+    setCopyBusy(true)
+    fetch('/api/amazon/pin-copy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(isUrl ? { productUrl: raw } : { asin: raw.toUpperCase() }),
+    }).then(r => r.json()).then((c) => {
+      if (c?.title) setTitle(prev => prev || c.title)
+      if (c?.description) setDescription(prev => prev || c.description)
+    }).catch(() => { /* copy is best-effort; the publish route writes it if blank */ })
+      .finally(() => setCopyBusy(false))
+  }, [saved, product])
+
   const publish = useCallback(async () => {
     if (!thumbUrl) return
     if (when === 'later' && !scheduleAt) { setPubError('Pick a date and time to schedule.'); return }
@@ -158,6 +192,12 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
       // Reload the queue on this page so a pin they just scheduled shows up in
       // the list below rather than after a refresh.
       if (data.scheduledAt) window.dispatchEvent(new Event(AMAZON_QUEUE_EVENT))
+      // Publishing is the approval. Remember this pin design against the
+      // product. Skipped when it WAS the recalled image — nothing changed.
+      if (!usingSaved && thumbUrl) {
+        const a = /^[A-Z0-9]{10}$/i.test(raw) ? raw.toUpperCase() : asinFromAmazonUrl(raw)
+        if (a) void saveProductImage({ asin: a, imageUrl: thumbUrl, surface: 'Pinterest' })
+      }
     } catch (err) {
       setPubError(err instanceof Error ? err.message : 'Pin failed. Try again.')
     } finally { setPubBusy(false) }
@@ -215,6 +255,23 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
             <ExpressionPicker value={expression} onChange={setExpression} disabled={genBusy} compact />
           </>
         )}
+        {saved && (
+          <div className="flex flex-col gap-1.5">
+            <SavedProductImage
+              saved={saved}
+              inUse={usingSaved}
+              onUse={useSavedImage}
+              onReplace={generate}
+              replaceLabel="Design a pin instead"
+              keepLabel="the Art Director designs a 2:3 pin"
+            />
+            <p className="text-[11px]" style={{ color: 'var(--text-soft)' }}>
+              Pins are 2:3 and a saved YouTube thumbnail is 16:9, so it will sit
+              shorter in the feed than a designed pin. Worth it when you want the
+              same look everywhere, not when you want the tallest pin.
+            </p>
+          </div>
+        )}
         <button onClick={generate} disabled={genBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-sm font-semibold transition disabled:opacity-60" style={{ color: 'var(--text)' }}>
           {genBusy ? <><Loader2 size={16} className="animate-spin" /> Designing…</> : <><Wand2 size={16} /> {thumbUrl ? 'Regenerate thumbnail' : 'Generate thumbnail'}</>}
@@ -229,6 +286,11 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
           <div className="flex-shrink-0 w-full lg:w-56">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={thumbUrl} alt="Pin preview" className="w-full max-w-[224px] mx-auto lg:mx-0 rounded-xl border border-gray-200 dark:border-white/10" />
+            {usingSaved && (
+              <p className="mt-1.5 text-center lg:text-left text-[11px]" style={{ color: 'var(--text-soft)' }}>
+                This is your saved image, not a new pin design.
+              </p>
+            )}
           </div>
 
           {/* Details */}

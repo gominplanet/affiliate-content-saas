@@ -28,6 +28,7 @@ import { createYouTubeOAuthService } from '@/services/youtube'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { tierAllowsPublishAll, type Tier } from '@/lib/tier'
 import { resolveThumbnailInput } from '@/lib/youtube-thumbnail-input'
+import { rememberProductImage } from '@/lib/product-image-memory'
 import { bustYouTubeCache } from '@/app/api/youtube/drafts/route'
 
 export const maxDuration = 60
@@ -66,6 +67,15 @@ export async function POST(request: NextRequest) {
       description?: string
       tags?: string[]
       thumbnailDataUri?: string
+      /** The product this video is about. Only used to remember the approved
+       *  thumbnail against the product so other composers can offer it back
+       *  (lib/product-image-memory). Nothing about the YouTube push depends
+       *  on it, and it is absent for videos with no detected product. */
+      asin?: string
+      /** True when the creator uploaded their own file rather than generating.
+       *  Worth distinguishing: an upload is the one image regenerating can
+       *  never reproduce, and the composers label it differently. */
+      thumbnailUploaded?: boolean
       playlistId?: string | null
       madeForKids?: boolean
       notifySubscribers?: boolean
@@ -131,6 +141,10 @@ export async function POST(request: NextRequest) {
     // generated thumbnail never landed on YouTube. The resolver throws
     // on a recognized-but-broken URL (fetch failure, oversized) so the
     // warning surfaces; null = unrecognized format, warn separately.
+    // Held outside the task so the product-image memory below can keep the
+    // exact bytes YouTube accepted, rather than re-fetching a fal.media URL
+    // that will have expired by the time anyone wants to reuse it.
+    let appliedThumb: { buffer: Buffer; mimeType: string } | null = null
     if (body.thumbnailDataUri) {
       const userInput = body.thumbnailDataUri  // closure-capture so the catch sees it
       tasks.push((async () => {
@@ -139,6 +153,7 @@ export async function POST(request: NextRequest) {
           throw new Error(`Thumbnail input wasn't a data URI or HTTPS URL: ${userInput.slice(0, 80)}`)
         }
         await yt.uploadThumbnail(body.videoId, resolved.buffer, resolved.mimeType)
+        appliedThumb = { buffer: resolved.buffer, mimeType: resolved.mimeType }
       })())
     }
 
@@ -223,7 +238,24 @@ export async function POST(request: NextRequest) {
     // the raw 403 JSON.
     const statusOk = results[1].status === 'fulfilled'
     const quotaHit = warnings.some((w) => /quotaExceeded|exceeded your/i.test(w))
-    return NextResponse.json({ ok: warnings.length === 0, warnings, statusOk, quotaHit })
+
+    // Remember the approved thumbnail against the PRODUCT, so posting the same
+    // ASIN to Facebook next week can offer it back. Only on a thumbnail that
+    // actually landed on YouTube — approval means it shipped, not that it was
+    // generated. Best-effort and never fails the push; `productImageSaved`
+    // reports what happened rather than what was attempted.
+    let productImageSaved = false
+    if (appliedThumb && body.asin) {
+      const thumb = appliedThumb as { buffer: Buffer; mimeType: string }
+      productImageSaved = !!(await rememberProductImage({
+        db: supabase, userId: user.id, asin: body.asin,
+        buffer: thumb.buffer, mimeType: thumb.mimeType,
+        source: body.thumbnailUploaded ? 'upload' : 'generated',
+        surface: 'YouTube Co-Pilot',
+      }))
+    }
+
+    return NextResponse.json({ ok: warnings.length === 0, warnings, statusOk, quotaHit, productImageSaved })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return NextResponse.json({ error: msg }, { status: 500 })

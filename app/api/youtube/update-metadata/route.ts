@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeOAuthService } from '@/services/youtube'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { resolveThumbnailInput } from '@/lib/youtube-thumbnail-input'
+import { rememberProductImage } from '@/lib/product-image-memory'
 
 export async function POST(request: Request) {
   try {
@@ -10,12 +11,18 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { videoId, title, description, tags, thumbnailDataUri } = await request.json() as {
+    const { videoId, title, description, tags, thumbnailDataUri, asin, thumbnailUploaded } = await request.json() as {
       videoId: string
       title: string
       description: string
       tags: string[]
       thumbnailDataUri?: string
+      /** The product this video is about, when Co-Pilot detected one. Used only
+       *  to remember the approved thumbnail against the product so the other
+       *  composers can offer it back (lib/product-image-memory). */
+      asin?: string
+      /** The creator uploaded their own file rather than generating one. */
+      thumbnailUploaded?: boolean
     }
 
     // Resolve the token for the channel THIS video belongs to (migration 127
@@ -45,6 +52,9 @@ export async function POST(request: Request) {
     // hosted on fal/Supabase). Until 2026-06-07 the regex-only path
     // silently skipped HTTPS URLs, which is why generated thumbnails
     // never landed on YouTube.
+    // Held outside the task so the product-image memory below keeps the exact
+    // bytes YouTube accepted, not a fal.media URL that expires.
+    let appliedThumb: { buffer: Buffer; mimeType: string } | null = null
     if (thumbnailDataUri) {
       tasks.push((async () => {
         const resolved = await resolveThumbnailInput(thumbnailDataUri)
@@ -52,6 +62,7 @@ export async function POST(request: Request) {
           throw new Error(`Thumbnail input wasn't a data URI or HTTPS URL: ${thumbnailDataUri.slice(0, 80)}`)
         }
         await yt.uploadThumbnail(videoId, resolved.buffer, resolved.mimeType)
+        appliedThumb = { buffer: resolved.buffer, mimeType: resolved.mimeType }
       })())
     }
 
@@ -84,7 +95,21 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, ...(thumbWarning ? { thumbnailWarning: thumbWarning } : {}) })
+    // Remember the approved thumbnail against the PRODUCT (see
+    // lib/product-image-memory). Only when it actually landed on YouTube.
+    // Never fails the push; the flag reports the result, not the intent.
+    let productImageSaved = false
+    if (appliedThumb && asin) {
+      const thumb = appliedThumb as { buffer: Buffer; mimeType: string }
+      productImageSaved = !!(await rememberProductImage({
+        db: supabase, userId: user.id, asin,
+        buffer: thumb.buffer, mimeType: thumb.mimeType,
+        source: thumbnailUploaded ? 'upload' : 'generated',
+        surface: 'YouTube Co-Pilot',
+      }))
+    }
+
+    return NextResponse.json({ ok: true, productImageSaved, ...(thumbWarning ? { thumbnailWarning: thumbWarning } : {}) })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[update-metadata]', msg)

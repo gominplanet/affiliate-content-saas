@@ -9,6 +9,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import DownloadDesign from '@/components/amazon/DownloadDesign'
 import { AMAZON_QUEUE_EVENT } from '@/components/amazon/ScheduledQueue'
+import SavedProductImage, { useSavedProductImage, saveProductImage } from '@/components/product/SavedProductImage'
+import { asinFromAmazonUrl } from '@/lib/asin'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearProductToggle'
@@ -52,6 +54,19 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [pubError, setPubError] = useState<string | null>(null)
   const [result, setResult] = useState<{ postUrl?: string; scheduledAt?: string; note: string | null } | null>(null)
 
+  // ── The image this creator already approved for this product ──────────────
+  // Offered, never imposed. Pre-fills the preview so posting the same ASIN to
+  // Facebook looks like the same creator who posted it to YouTube, and the
+  // panel says in words which image this is and where it came from. Generating
+  // replaces it.
+  const resolvedAsin = (() => {
+    const raw = product.trim()
+    if (/^[A-Z0-9]{10}$/i.test(raw)) return raw.toUpperCase()
+    return asinFromAmazonUrl(raw) || null
+  })()
+  const { saved } = useSavedProductImage(resolvedAsin)
+  const [usingSaved, setUsingSaved] = useState(false)
+
   useEffect(() => {
     if (presetProduct?.value) setProduct(presetProduct.value)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,22 +87,40 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
     })()
   }, [network])
 
-  const generate = useCallback(async () => {
-    const raw = product.trim()
-    if (!raw) { setGenError('Paste an Amazon product link or ASIN first.'); return }
-    if (mode === 'face' && !faceId) { setGenError('Pick a face, or switch to Product only.'); return }
-    setGenBusy(true); setGenError(null); setThumbUrl(null); setResult(null); setCaption('')
+  /** Ask for a caption for this product. Used by both the generate path and
+   *  the recalled-image path, so a reused image doesn't land in a composer
+   *  with an empty caption box. */
+  const writeCaption = useCallback((raw: string) => {
     const isUrl = /^https?:\/\//i.test(raw)
-    const isAsin = /^[A-Z0-9]{10}$/i.test(raw)
-    const bk = `${(isAsin ? raw.toUpperCase() : raw)}::${Date.now()}`
-
-    // Caption written in parallel with the image.
     setCopyBusy(true)
     fetch('/api/amazon/social-caption', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ network, ...(isUrl ? { productUrl: raw } : { asin: raw.toUpperCase() }) }),
     }).then(r => r.json()).then((c) => { if (c?.caption) setCaption(prev => prev || c.caption) })
       .catch(() => { /* best-effort */ }).finally(() => setCopyBusy(false))
+  }, [network])
+
+  /** Pre-fill the preview with the approved image, once, when one exists and
+   *  nothing has been designed yet in this session. */
+  useEffect(() => {
+    if (!saved || thumbUrl || genBusy) return
+    setThumbUrl(saved.imageUrl)
+    setUsingSaved(true)
+    if (product.trim()) writeCaption(product.trim())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved?.imageUrl])
+
+  const generate = useCallback(async () => {
+    const raw = product.trim()
+    if (!raw) { setGenError('Paste an Amazon product link or ASIN first.'); return }
+    if (mode === 'face' && !faceId) { setGenError('Pick a face, or switch to Product only.'); return }
+    setGenBusy(true); setGenError(null); setThumbUrl(null); setUsingSaved(false); setResult(null); setCaption('')
+    const isUrl = /^https?:\/\//i.test(raw)
+    const isAsin = /^[A-Z0-9]{10}$/i.test(raw)
+    const bk = `${(isAsin ? raw.toUpperCase() : raw)}::${Date.now()}`
+
+    // Caption written in parallel with the image.
+    writeCaption(raw)
 
     const fmt = network === 'instagram' && postType === 'story' ? 'story' : cfg.format
     const bodyReq: Record<string, unknown> = {
@@ -141,6 +174,13 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       // Tell the queue on this page to reload, so a post they just scheduled
       // appears in the list right below instead of after a refresh.
       if (data.scheduledAt) window.dispatchEvent(new Event(AMAZON_QUEUE_EVENT))
+      // Publishing is the approval. Remember the design against the product so
+      // the next surface can offer it back. Skipped when this WAS the recalled
+      // image — re-uploading identical bytes buys nothing.
+      if (!usingSaved && thumbUrl) {
+        const a = /^[A-Z0-9]{10}$/i.test(raw) ? raw.toUpperCase() : asinFromAmazonUrl(raw)
+        if (a) void saveProductImage({ asin: a, imageUrl: thumbUrl, surface: cfg.label })
+      }
     } catch (err) {
       setPubError(err instanceof Error ? err.message : 'Post failed. Try again.')
     } finally { setPubBusy(false) }
@@ -216,6 +256,16 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
             <ExpressionPicker value={expression} onChange={setExpression} disabled={genBusy} compact />
           </>
         )}
+        {saved && (
+          <SavedProductImage
+            saved={saved}
+            inUse={usingSaved}
+            onUse={() => { setThumbUrl(saved.imageUrl); setUsingSaved(true) }}
+            onReplace={generate}
+            replaceLabel="Design a new one"
+            keepLabel="the Art Director designs a fresh one"
+          />
+        )}
         <button onClick={generate} disabled={genBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-sm font-semibold transition disabled:opacity-60" style={{ color: 'var(--text)' }}>
           {genBusy ? <><Loader2 size={16} className="animate-spin" /> Designing…</> : <><Wand2 size={16} /> {thumbUrl ? 'Regenerate design' : 'Generate design'}</>}
@@ -228,6 +278,11 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
           <div className="flex-shrink-0 w-full lg:w-56">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={thumbUrl} alt="Post preview" className="w-full max-w-[224px] mx-auto lg:mx-0 rounded-xl border border-gray-200 dark:border-white/10" />
+            {usingSaved && (
+              <p className="mt-1.5 text-center lg:text-left text-[11px]" style={{ color: 'var(--text-soft)' }}>
+                This is your saved image, not a new design.
+              </p>
+            )}
           </div>
           <div className="flex-1 flex flex-col gap-3 min-w-0">
             <label className="flex flex-col gap-1.5">

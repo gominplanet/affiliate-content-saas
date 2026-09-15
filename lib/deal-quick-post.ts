@@ -45,6 +45,12 @@ export interface DealQuickPostInput {
   caption?: string        // user override; blank ⇒ we auto-write a price-safe caption
   title?: string | null   // fallback title when the ASIN has rotated out of the live cache
   imageUrl?: string | null
+  /** An image the creator already approved for this ASIN elsewhere (a Co-Pilot
+   *  thumbnail, or one they uploaded), chosen in the quick-post modal. When set
+   *  it REPLACES the product photo on every channel AND skips the deal-card
+   *  overlay: painting a deal badge over art the creator designed themselves
+   *  wrecks it, and the modal says as much before they post. */
+  imageOverride?: string | null
   // When true (scheduled posts), REFUSE to post if the deal is no longer live on
   // the radar — a scheduled deal that has since ended must not go out. The
   // immediate path keeps false so a re-share from Price Alerts still works.
@@ -86,12 +92,13 @@ export async function executeDealQuickPost(input: DealQuickPostInput): Promise<D
     deal = { asin, title: fbTitle, brand: null, image_url: input.imageUrl || null, discount_pct: null, deal_quality: null, lowest_label: null }
   }
   const dealImage = (deal.image_url as string | null) || null
+  const override = (input.imageOverride || '').trim() || null
 
   const results: Array<{ platform: string; ok: boolean; url?: string; error?: string }> = []
   // The designed deal card, built inside the text-platform branch below. Held
   // here so the Instagram branch can reuse the SAME image rather than posting
   // the bare product photo when no text platform was selected.
-  let postImageForIg: string | null = null
+  let postImageForIg: string | null = override
   let baseCaption: string | null = null
   let geniuslinkNote: string | null = null
 
@@ -176,7 +183,7 @@ Return ONLY the caption text.` }],
 
     // Turn the bare product photo into a designed deal card (product + a bold
     // qualitative hook + brand chip). Best-effort — falls back to the raw photo.
-    const postImage = (await buildDealCardImage(dealImage, {
+    const postImage = override || (await buildDealCardImage(dealImage, {
       dealQuality: deal.deal_quality as string | null,
       lowestLabel: deal.lowest_label as string | null,
       discountPct: deal.discount_pct as number | null,
@@ -208,7 +215,7 @@ Return ONLY the caption text.` }],
     const { publishDealPin } = await import('@/lib/deal-pin')
     const pinRes = await publishDealPin({
       userId, tier, intRow: intRow ?? null,
-      asin, title: deal.title as string, productImageUrl: dealImage,
+      asin, title: deal.title as string, productImageUrl: override || dealImage,
       linkOverride: pinLink,
     })
     // needsLinkPage rides along so the modal can offer "Set up Link in Bio" as
@@ -260,7 +267,7 @@ Return ONLY the caption text.` }],
     const headline = deal.deal_quality === 'excellent' ? 'HOT DEAL' : 'ON SALE NOW'
     const s = await publishDealStory({
       supabase: db, userId,
-      deal: { asin, title: deal.title as string, imageUrl: dealImage },
+      deal: { asin, title: deal.title as string, imageUrl: override || dealImage },
       headline,
     })
     results.push({ platform: 'instagram_story', ok: s.ok, url: s.ok ? 'https://www.instagram.com/' : undefined, error: s.error })

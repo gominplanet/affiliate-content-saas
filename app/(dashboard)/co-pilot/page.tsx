@@ -1221,6 +1221,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             description: editDesc,
             tags: generated.tags,
             thumbnailDataUri: thumbnailUrl ?? undefined,
+            // Remember this thumbnail against the PRODUCT, not just this video,
+            // so posting the same ASIN to Facebook next week can offer it back
+            // (lib/product-image-memory). An uploaded image is flagged because
+            // it is the one that regenerating can never reproduce.
+            asin: video.detectedAsin ?? undefined,
+            thumbnailUploaded: !!thumbnailModel?.includes('upload'),
             playlistId: proSettings.playlistId,
             madeForKids: isDraft ? undefined : proSettings.madeForKids,
             // Embedding is API-settable — drive it here (not just via SCOUT) so a
@@ -1325,6 +1331,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           description: editDesc,
           tags: generated.tags,
           thumbnailDataUri: thumbnailUrl ?? undefined,
+          asin: video.detectedAsin ?? undefined,
+          thumbnailUploaded: !!thumbnailModel?.includes('upload'),
         }),
       })
       const data = await safeJson(res)

@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { Send, Check, AlertCircle, X as CloseIcon, Loader2, CalendarClock, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { InfoTip } from '@/components/ui/InfoTip'
+import SavedProductImage, { useSavedProductImage } from '@/components/product/SavedProductImage'
 
 // Sensible defaults: 2 hours out, on the minute. Split into date (YYYY-MM-DD)
 // and time (HH:mm) for the two separate pickers, both in the viewer's local time.
@@ -98,6 +99,16 @@ export default function QuickPostModal({
   const [scheduleDate, setScheduleDate] = useState(initial.date)
   const [scheduleTime, setScheduleTime] = useState(initial.time)
   const [scheduling, setScheduling] = useState(false)
+  // An image the creator already approved for this ASIN somewhere else (a
+  // Co-Pilot thumbnail, or one they uploaded). Offered, not imposed: it starts
+  // selected because that is what asking for recall means, and the panel says
+  // so in words with a way back to the product photo.
+  const { saved } = useSavedProductImage(deal.asin)
+  const [useSaved, setUseSaved] = useState(true)
+  // A FLAG, not a URL. The server resolves the saved image itself from
+  // (user, asin); handing it a URL from the browser would let any URL be
+  // pushed to the creator's own socials through this endpoint.
+  const useSavedImage = !!saved && useSaved
 
   const toggle = (key: string) => setSelected((s) => {
     const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n
@@ -117,6 +128,11 @@ export default function QuickPostModal({
         body: JSON.stringify({
           asin: deal.asin, platforms: [...selected], story, caption: caption.trim() || undefined,
           title: deal.title, imageUrl: deal.imageUrl, scheduledFor: when.toISOString(),
+          // What the panel promised is what fires: the server resolves the
+          // saved image NOW and stores that URL on the queued row. Resolving
+          // it again at fire time would silently pick up a newer one and make
+          // the line the creator read while scheduling untrue.
+          useSavedImage,
         }),
       })
       const data = await res.json()
@@ -140,7 +156,7 @@ export default function QuickPostModal({
         // out of the live deal cache (e.g. re-sharing an older watched product).
         body: JSON.stringify({
           asin: deal.asin, platforms: [...selected], story, caption: caption.trim() || undefined,
-          title: deal.title, imageUrl: deal.imageUrl,
+          title: deal.title, imageUrl: deal.imageUrl, useSavedImage,
         }),
       })
       const data = await res.json()
@@ -174,6 +190,22 @@ export default function QuickPostModal({
             {deal.imageUrl && <img loading="lazy" decoding="async" src={deal.imageUrl} alt="" className="h-16 w-16 object-contain rounded border bg-white shrink-0" />}
             <div className="text-sm font-medium line-clamp-3">{deal.title}</div>
           </div>
+
+          {saved && (
+            <SavedProductImage
+              saved={saved}
+              inUse={useSaved}
+              onUse={() => setUseSaved(true)}
+              onReplace={() => setUseSaved(false)}
+              replaceLabel="Use the product photo instead"
+              keepLabel="we design a deal card from the product photo"
+            />
+          )}
+          {saved && useSaved && (
+            <p className="text-[11px] text-muted-foreground -mt-2">
+              Posted as it is. We don&apos;t paint a deal badge over an image you designed yourself.
+            </p>
+          )}
 
           <div>
             <div className="text-xs font-semibold text-muted-foreground mb-1.5">Post to</div>
