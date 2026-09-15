@@ -1067,9 +1067,14 @@ async function generateFaceCutout(supabase: any, opts: {
     const b64 = await openai.generateWithReferences({
       prompt, images: refImages, size: '1024x1536', quality: 'medium', model: opts.imageModel,
     })
+    // The render above is HARDCODED to medium, so the row has to say medium.
+    // Recording opts.imageModel instead booked every cut-out at the high rate
+    // ($0.19) for a picture that costs about $0.06. This function sits outside
+    // the handler, so gfxRecordOverride is not in scope; the cost constant is
+    // the same string it resolves to.
     recordUsage({
       userId: opts.userId, tier: TELEMETRY.tier,
-      feature: 'yt_thumb_face_cutout', model: opts.imageModel, images: 1,
+      feature: 'yt_thumb_face_cutout', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1,
     })
 
     // Pad the portrait with a wide band of the same chroma-green on the top and
@@ -2377,7 +2382,14 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
               if (retry) {
                 posed = retry
                 expressionRetried = true
-                recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxModelOverride ?? 'gpt-image', images: 1 })
+                // SAME CHAIN AS EVERY OTHER RENDER SITE. These two were missed
+                // when the quality-aware billing landed, and were wrong in both
+                // directions: `'gpt-image'` is not in PRICING, so the hero path
+                // fell to IMAGE_COST_FALLBACK ($0.04) against a ~$0.19 render,
+                // while the social path recorded 'gpt-image-1' ($0.19) for a
+                // picture rendered at medium (~$0.06). gfxRecordOverride has to
+                // come FIRST: it is the one that knows the quality actually used.
+                recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxRecordOverride ?? gfxModelOverride ?? (process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'), images: 1 })
                 expressionVerified = (await portraitShowsExpression({
                   portraitPng: retry, label: EXPRESSION_LABEL[expressionKey], description: expressionDesc,
                   politeSmileIsWrong: politeSmileIsWrong(expressionKey),
@@ -2393,7 +2405,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             photoBytes = posed
             extraPhotoBytes = [anchor]
             expressionInReference = true
-            recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxModelOverride ?? 'gpt-image', images: 1 })
+            recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_expression_portrait', model: gfxRecordOverride ?? gfxModelOverride ?? (process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'), images: 1 })
           }
         }
 
