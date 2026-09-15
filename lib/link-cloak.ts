@@ -29,7 +29,7 @@ type Db = any
 export type { LinkStyle } from '@/lib/link-style'
 export { pickLinkStyle } from '@/lib/link-style'
 import type { LinkStyle } from '@/lib/link-style'
-import { pickLinkStyle } from '@/lib/link-style'
+import { pickLinkStyle, pickLinkStyleDetailed } from '@/lib/link-style'
 
 export interface LinkStyleConfig {
   style: LinkStyle
@@ -37,6 +37,14 @@ export interface LinkStyleConfig {
   bitlyToken: string | null
   geniuslinkKey: string | null
   geniuslinkSecret: string | null
+  /** The style the creator actually SAVED, when we had to downgrade them to
+   *  'direct' because its credentials were missing. null when 'direct' is
+   *  genuinely their choice.
+   *
+   *  Without this, a creator whose Geniuslink keys vanished is indistinguishable
+   *  from one who wants plain links, and every layer above behaves correctly for
+   *  a decision she never made. */
+  downgradedFrom: LinkStyle | null
 }
 
 /**
@@ -45,7 +53,7 @@ export interface LinkStyleConfig {
  * usable creds is downgraded to 'direct'. One bounded read; never throws.
  */
 export async function getLinkStyle(supabase: Db, userId: string): Promise<LinkStyleConfig> {
-  const empty: LinkStyleConfig = { style: 'direct', tier: null, bitlyToken: null, geniuslinkKey: null, geniuslinkSecret: null }
+  const empty: LinkStyleConfig = { style: 'direct', tier: null, bitlyToken: null, geniuslinkKey: null, geniuslinkSecret: null, downgradedFrom: null }
   try {
     // select('*'), NOT a named column list, and this is the whole reason the
     // feature was dead in production. blog_social_link_mode ships in migration
@@ -73,13 +81,13 @@ export async function getLinkStyle(supabase: Db, userId: string): Promise<LinkSt
     // reads that silence against the creator's stored credentials.
     const rawMode = (ig.blog_social_link_mode as string | null) || ''
     const mode = rawMode || (ig.wrap_blog_geniuslink === true ? 'geniuslink' : '')
-    const style = pickLinkStyle({
+    const picked = pickLinkStyleDetailed({
       passportEligible: !!ig.passport_links_enabled && canUsePassport(normalizeTier(tier)),
       mode,
       hasBitly: !!bitlyToken,
       hasGeniuslink: !!(geniuslinkKey && geniuslinkSecret),
     })
-    return { style, tier, bitlyToken, geniuslinkKey, geniuslinkSecret }
+    return { style: picked.style, downgradedFrom: picked.downgradedFrom, tier, bitlyToken, geniuslinkKey, geniuslinkSecret }
   } catch {
     return empty
   }
@@ -122,6 +130,7 @@ export type CloakReason =
   | 'geniuslink-unknown-channel'
   | 'bitly-no-token'
   | 'bitly-failed'
+  | 'style-downgraded'      // saved style had no credentials; silently became direct
   | 'error'
 
 export interface CloakResult {
@@ -189,8 +198,14 @@ export async function resolveCloakedLinkDetailed(opts: CloakOpts): Promise<Cloak
       }
       case 'direct':
       default:
-        // Not a failure. A plain link IS the creator's chosen style.
-        return { url: dest, reason: 'direct', cloaked: true }
+        // 'direct' has two completely different meanings and telling them apart
+        // is the whole point. Chosen, it is not a failure and saying anything
+        // would cry wolf on everybody who picked it. DOWNGRADED, it means the
+        // creator asked for Geniuslink or Bitly, the credentials were missing,
+        // and a plain link is going out under a style she never selected.
+        return cfg.downgradedFrom
+          ? { url: dest, reason: 'style-downgraded', cloaked: false }
+          : { url: dest, reason: 'direct', cloaked: true }
     }
   } catch {
     return { url: dest, reason: 'error', cloaked: false }
@@ -217,6 +232,10 @@ export function cloakFallbackNote(r: CloakResult): string | null {
     case 'geniuslink-api-failed':
     case 'geniuslink-error':
       return 'Geniuslink is your link style, but Geniuslink did not return a short link, so this went out with your plain Amazon link. Usually a temporary outage.'
+    case 'style-downgraded':
+      // The one she actually hit. Names the style she SAVED, because "links are
+      // going out plain" sends somebody to the wrong screen entirely.
+      return 'Your saved link style could not be used because its API credentials are missing, so this went out with your plain Amazon link. Re-enter them under External Integrations and check the Link style setting saved.'
     case 'bitly-no-token':
       return 'Bitly is your link style, but no Bitly token is saved, so this went out with your plain Amazon link.'
     case 'bitly-failed':

@@ -151,12 +151,41 @@ export function pickLinkStyle(o: {
   // Passport minting never worked from the blog job (no session, so RLS hid
   // their own row), and Co-Pilot told them to change a setting that could not
   // express Passport in the first place.
-  if (o.passportEligible) return 'passport'
+  return pickLinkStyleDetailed(o).style
+}
+
+/**
+ * The same choice, plus whether we QUIETLY TOOK IT AWAY.
+ *
+ * A creator whose saved style is Geniuslink but whose keys are missing gets
+ * downgraded to 'direct' below. That downgrade is right: a plain link beats no
+ * link. It was also invisible, and worse than invisible, because 'direct' is
+ * indistinguishable from a creator who chose plain links on purpose. Every
+ * layer above then behaved correctly for a choice she never made.
+ *
+ * Reported 2026-09-15 by a creator who had been hand-editing her own published
+ * Facebook posts for days. The day before, the reason a FAILED Geniuslink wrap
+ * was made visible — but her style had already been downgraded before any wrap
+ * was attempted, so the new message stayed silent. The fix was one layer above
+ * the bug.
+ *
+ * `downgradedFrom` is what she chose. null when 'direct' is genuinely hers.
+ */
+export function pickLinkStyleDetailed(o: {
+  passportEligible: boolean
+  mode: string | null | undefined
+  hasBitly: boolean
+  hasGeniuslink: boolean
+}): { style: LinkStyle; downgradedFrom: LinkStyle | null } {
+  if (o.passportEligible) return { style: 'passport', downgradedFrom: null }
   const stored = (o.mode || '').trim().toLowerCase()
-  if (!stored) return o.hasGeniuslink ? 'geniuslink' : 'direct'
+  // An unset mode is not a choice, so falling to 'direct' here is not a
+  // downgrade: there was nothing to take away.
+  if (!stored) return { style: o.hasGeniuslink ? 'geniuslink' : 'direct', downgradedFrom: null }
   let style = stored
-  if (style === 'bitly' && !o.hasBitly) style = 'direct'
-  if (style === 'geniuslink' && !o.hasGeniuslink) style = 'direct'
+  let downgradedFrom: LinkStyle | null = null
+  if (style === 'bitly' && !o.hasBitly) { downgradedFrom = 'bitly'; style = 'direct' }
+  if (style === 'geniuslink' && !o.hasGeniuslink) { downgradedFrom = 'geniuslink'; style = 'direct' }
   if (style !== 'bitly' && style !== 'geniuslink' && style !== 'direct') style = 'direct'
-  return style as LinkStyle
+  return { style: style as LinkStyle, downgradedFrom }
 }

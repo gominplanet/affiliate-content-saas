@@ -18,6 +18,7 @@
 // worth holding in a test: the failure mode only appears once the product is
 // working well enough to hit it, which is the worst time to discover it.
 import { readFileSync } from 'node:fs'
+import { pickLinkStyleDetailed } from '../lib/link-style'
 import { join } from 'node:path'
 import { truncationNote, coverageNote } from '../lib/passport-analytics-labels'
 
@@ -85,6 +86,54 @@ const PAGE = readFileSync(join(root, 'app/(dashboard)/passport/page.tsx'), 'utf8
   check('and offers a retry', /Try again/.test(PAGE),
     'a dead end tells someone their data is gone rather than late')
 }
+
+// ── a style we took away is not a style she chose ───────────────────────────
+//
+// Reported 2026-09-15. A creator's saved link style was Geniuslink, her API
+// credentials went missing, and pickLinkStyle downgraded her to 'direct'. The
+// downgrade is correct: a plain link beats no link. It was also invisible, and
+// worse than invisible, because 'direct' is indistinguishable from a creator who
+// WANTS plain links, so every layer above behaved correctly for a decision she
+// never made. She had been hand-editing her own published Facebook posts for
+// days.
+//
+// The day before, the reason a FAILED Geniuslink wrap was made visible. It did
+// not help her: her style had already been downgraded before any wrap was
+// attempted, so the new message stayed silent. The fix was one layer above the
+// bug, which is the shape of mistake this file exists to catch.
+{
+  const cases: Array<[string, Parameters<typeof pickLinkStyleDetailed>[0], string | null]> = [
+    ['saved geniuslink, credentials gone',
+      { passportEligible: false, mode: 'geniuslink', hasBitly: false, hasGeniuslink: false }, 'geniuslink'],
+    ['saved bitly, no token',
+      { passportEligible: false, mode: 'bitly', hasBitly: false, hasGeniuslink: false }, 'bitly'],
+    // The other side. Reporting these would cry wolf on everyone who is fine.
+    ['saved geniuslink, credentials present',
+      { passportEligible: false, mode: 'geniuslink', hasBitly: false, hasGeniuslink: true }, null],
+    ['chose direct on purpose',
+      { passportEligible: false, mode: 'direct', hasBitly: false, hasGeniuslink: false }, null],
+    ['never chose anything',
+      { passportEligible: false, mode: '', hasBitly: false, hasGeniuslink: false }, null],
+  ]
+  for (const [label, input, expected] of cases) {
+    const got = pickLinkStyleDetailed(input).downgradedFrom
+    check(`${label} -> downgradedFrom ${expected ?? 'null'}`, got === expected, `got ${got ?? 'null'}`)
+  }
+
+  // And the resolver has to ACT on it, or the field is decoration.
+  const CLOAK = readFileSync('lib/link-cloak.ts', 'utf8')
+  check('a downgraded style is reported as a failure',
+    /cfg\.downgradedFrom\s*\n?\s*\? \{ url: dest, reason: 'style-downgraded', cloaked: false \}/.test(CLOAK),
+    'without this, direct-because-we-downgraded-you stays as silent as direct-because-she-chose-it')
+  check('and a chosen direct still says nothing',
+    /: \{ url: dest, reason: 'direct', cloaked: true \}/.test(CLOAK),
+    'a warning on every plain-link creator is a warning nobody reads')
+  check('the message names the fix, not the symptom',
+    /Re-enter them under External Integrations/.test(CLOAK),
+    '"links are going out plain" sends somebody to the wrong screen')
+}
+
+
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
