@@ -225,6 +225,97 @@ const base = { asin: ASIN, amazonTag: 'gomin-20' }
   check('332 is re-runnable', /if not exists/.test(SQL))
 }
 
+// ── THE ACCOUNT DEFAULT, so a TikTok seller sets it once ────────────────────
+//
+// The per-post toggle alone does not serve a creator who SELLS on TikTok: they
+// would tick a box on every post on every surface forever, and the first one
+// they forget silently publishes an Amazon link. The default lives on the
+// account (migration 333) and every surface inherits it.
+{
+  const CLOAK = readFileSync('lib/link-cloak.ts', 'utf8')
+  check('the shared config carries the account default', /destinationDefault: 'amazon' \| 'showcase'/.test(CLOAK))
+  check('and the saved shop link', /showcaseUrl: string \| null/.test(CLOAK))
+  check('getLinkStyle still reads select(*)', /\.select\('\*'\)/.test(CLOAK),
+    'naming link_destination_default would make PostgREST reject the whole read and reset EVERY creator to direct links, which is exactly how this feature was dead in production once before')
+  check('a showcase default with no link is not a showcase default',
+    /=== 'showcase' && showcaseUrl \? 'showcase' : 'amazon'/.test(CLOAK),
+    'otherwise every post on the account falls back and reports a fallback, which is noise rather than information')
+  check('the resolver applies it', /const useShowcase = opts\.destinationOverride/.test(CLOAK))
+  check('and drops the ASIN when it does', /dest = cfg\.showcaseUrl\s*\n\s*asin = ''/.test(CLOAK),
+    'the single most important line: a surviving ASIN geo-routes every click back to Amazon')
+  check('an explicit per-post choice overrides the account',
+    /opts\.destinationOverride\s*\n?\s*\? opts\.destinationOverride === 'showcase'/.test(CLOAK),
+    'a shop account still needs to be able to make one Amazon post')
+}
+
+// ── every hand-rolled link path inherits it ─────────────────────────────────
+//
+// Seven paths predate the shared resolver and build their own Passport /
+// Bitly / Geniuslink chain. Each needs the account default applied explicitly,
+// and a path that is missed is invisible: it just keeps publishing Amazon
+// links inside an article whose every other link points at the shop.
+{
+  for (const f of [
+    'app/api/blog/generate/route.ts',
+    'app/api/blog/comparison/route.ts',
+    'app/api/blog/from-link/route.ts',
+    'app/api/campaigns/generate/route.ts',
+    'lib/pin-product-link.ts',
+    'lib/weekly-digest.ts',
+  ]) {
+    const SRC = readFileSync(f, 'utf8')
+    check(`${f} honours the account default`,
+      /resolveShowcaseLink\(|showcaseOverrideFor\(/.test(SRC),
+      'this path hand-rolls its own link chain, so it does not inherit anything for free')
+  }
+
+  const CLOAK = readFileSync('lib/link-cloak.ts', 'utf8')
+  check('the helper never passes an ASIN on', !/resolveShowcaseLink[\s\S]{0,1500}?passportLinkForUser\(/.test(CLOAK),
+    'passportLinkForUser geo-routes an ASIN to the reader\u2019s local Amazon')
+  check('and returns the shop link even when the mint fails',
+    /code \? passportLinkUrl\(code\) : sc\.url/.test(CLOAK),
+    'the destination the creator chose matters more than counting the click')
+}
+
+// ── the composers show the account's real state ─────────────────────────────
+{
+  const TOGGLE = readFileSync('components/product/ShowcaseToggle.tsx', 'utf8')
+  check('the toggle starts ticked on a shop account',
+    /linkDestination === 'showcase'[\s\S]{0,80}?setOn\(true\)/.test(TOGGLE),
+    'a control that always started off would tell a TikTok-first creator something untrue on every post')
+  check('and unticking it on a shop account reads as a choice',
+    /This one post will link to Amazon instead/.test(TOGGLE),
+    'otherwise it looks identical to a box that was simply never on')
+
+  const MODAL = readFileSync('components/deal/QuickPostModal.tsx', 'utf8')
+  check('the modal uses the shared control, not a copy',
+    /<ShowcaseToggle/.test(MODAL) && !/Send clicks to my TikTok Shop showcase<\/span>/.test(MODAL),
+    'two copies drift, and the one that drifts is the one nobody is looking at')
+
+  const BRAND = readFileSync('app/(dashboard)/brand/page.tsx', 'utf8')
+  check('settings has its own card for the destination', /Where your links send people/.test(BRAND))
+  check('and warns when the default cannot take effect',
+    /cannot take effect and every post will keep linking to Amazon/.test(BRAND),
+    'a shop default with no shop link is the one state that fails on every post at once')
+}
+
+// ── an explicit toggle still beats the account default ──────────────────────
+{
+  for (const f of [
+    'app/api/amazon/fb/route.ts', 'app/api/amazon/ig/route.ts', 'app/api/amazon/pin/route.ts',
+    'app/api/deal-radar/social-post/route.ts', 'app/api/deals/route.ts',
+  ]) {
+    const SRC = readFileSync(f, 'utf8')
+    check(`${f} treats an absent toggle as inherit`,
+      /typeof body\.useShowcase === 'boolean'/.test(SRC),
+      'reading it as `=== true` would make an unticked box indistinguishable from an absent one and strip a shop account back to Amazon')
+    check(`${f} falls back to the account default`,
+      /link_destination_default/.test(SRC))
+  }
+  const SQL = readFileSync('supabase/migrations/333_link_destination_default.sql', 'utf8')
+  check('333 is re-runnable', /add column if not exists/.test(SQL))
+}
+
 if (failures.length) {
   console.error(`\n❌ showcase-destination: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

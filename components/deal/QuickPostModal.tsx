@@ -15,6 +15,7 @@ import { Send, Check, AlertCircle, X as CloseIcon, Loader2, CalendarClock, Info,
 import { Button } from '@/components/ui/button'
 import { InfoTip } from '@/components/ui/InfoTip'
 import SavedProductImage, { useSavedProductImage } from '@/components/product/SavedProductImage'
+import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 
 // Sensible defaults: 2 hours out, on the minute. Split into date (YYYY-MM-DD)
 // and time (HH:mm) for the two separate pickers, both in the viewer's local time.
@@ -115,20 +116,17 @@ export default function QuickPostModal({
   // Off by default: this replaces the affiliate link on a real published post,
   // so it is never something MVP decides for them. The saved default loads from
   // Settings; the box below overrides it for this post only.
-  const [useShowcase, setUseShowcase] = useState(false)
-  const [showcaseUrl, setShowcaseUrl] = useState('')
-  const [savedShowcase, setSavedShowcase] = useState<string | null>(null)
-  useEffect(() => {
-    fetch('/api/affiliate-links/save')
-      .then(r => r.json())
-      .then((d) => { if (typeof d?.tiktokShowcaseUrl === 'string') setSavedShowcase(d.tiktokShowcaseUrl || null) })
-      .catch(() => { /* no default is a normal state, not an error */ })
-  }, [])
-  const effectiveShowcase = showcaseUrl.trim() || savedShowcase || ''
+  // The SHARED hook, not a second copy: it also loads the account-level default
+  // (migration 333), so a creator whose whole account points at their shop sees
+  // this already ticked here too rather than only on the other surfaces.
+  const showcase = useShowcase()
+  const { on: useShowcaseOn, override: showcaseUrl, saved: savedShowcase } = showcase
+  const setUseShowcase = showcase.setOn
+  const setShowcaseUrl = showcase.setOverride
   // The one case worth blocking on: the toggle is on and there is nothing to
   // point at. Posting anyway would quietly publish Amazon links under a toggle
   // that reads as on.
-  const showcaseMissing = useShowcase && !effectiveShowcase
+  const showcaseMissing = showcase.blocked
 
   const toggle = (key: string) => setSelected((s) => {
     const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n
@@ -153,7 +151,7 @@ export default function QuickPostModal({
           // it again at fire time would silently pick up a newer one and make
           // the line the creator read while scheduling untrue.
           useSavedImage,
-          useShowcase,
+          useShowcase: useShowcaseOn,
           showcaseUrl: showcaseUrl.trim() || undefined,
         }),
       })
@@ -185,7 +183,7 @@ export default function QuickPostModal({
         body: JSON.stringify({
           asin: deal.asin, platforms: [...selected], story, caption: caption.trim() || undefined,
           title: deal.title, imageUrl: deal.imageUrl, useSavedImage,
-          useShowcase, showcaseUrl: showcaseUrl.trim() || undefined,
+          useShowcase: useShowcaseOn, showcaseUrl: showcaseUrl.trim() || undefined,
         }),
       })
       const data = await res.json()
@@ -274,39 +272,10 @@ export default function QuickPostModal({
             </button>
           </div>
 
-          {/* Send the clicks somewhere that is not Amazon. */}
-          <div>
-            <button onClick={() => setUseShowcase((v) => !v)}
-              className={`w-full text-left text-sm rounded-lg border px-3 py-2.5 flex items-start gap-2.5 transition ${useShowcase ? 'border-[#7C3AED] bg-[#7C3AED]/10' : 'bg-background hover:bg-accent'}`}>
-              <span className={`mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded border shrink-0 ${useShowcase ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : ''}`}>{useShowcase && <Check size={12} />}</span>
-              <span className="min-w-0">
-                <span className="font-medium flex items-center gap-1.5"><Store size={13} /> Send clicks to my TikTok Shop showcase</span>
-                <span className="block text-[11px] text-muted-foreground leading-snug mt-0.5">
-                  Replaces the Amazon affiliate link on this post. The caption stops quoting Amazon prices and discounts, because they would be about a store nobody is being sent to.
-                </span>
-              </span>
-            </button>
-            {useShowcase && (
-              <div className="mt-2 space-y-1.5">
-                <input
-                  type="url" value={showcaseUrl} onChange={(e) => setShowcaseUrl(e.target.value)}
-                  placeholder={savedShowcase || 'https://www.tiktok.com/@you/showcase'}
-                  className="w-full text-sm rounded-lg border bg-background p-2.5"
-                />
-                {savedShowcase && !showcaseUrl.trim() && (
-                  <p className="text-[11px] text-muted-foreground">
-                    Using your saved showcase link. Paste a different one here to use it on this post only.
-                  </p>
-                )}
-                {showcaseMissing && (
-                  <p className="text-[11px] text-red-600 flex items-start gap-1.5">
-                    <AlertCircle size={13} className="mt-0.5 shrink-0" />
-                    No showcase link. Paste one here, or save a default under Set Up &rarr; Affiliate links. Without it this post would go out with Amazon links.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
+          {/* The SHARED control, not a second copy of it. One place to change
+              the wording, and no chance of the modal and the composers
+              disagreeing about what the toggle does. */}
+          <ShowcaseToggle state={showcase} setOn={setUseShowcase} setOverride={setShowcaseUrl} />
 
           <div>
             <div className="text-xs font-semibold text-muted-foreground mb-1.5">Caption <span className="font-normal">(leave blank to auto-write)</span></div>
@@ -314,7 +283,7 @@ export default function QuickPostModal({
               placeholder="We'll write a price-safe caption for you, or type your own…"
               className="w-full text-sm rounded-lg border bg-background p-2.5 resize-none" />
             <p className="text-[11px] text-muted-foreground mt-1">
-              {useShowcase && !showcaseMissing
+              {useShowcaseOn && !showcaseMissing
                 ? 'Your showcase link and an #ad disclosure are added automatically. Amazon prices and discounts are left out of this post.'
                 : 'Your affiliate link and an #ad disclosure are added automatically. We avoid quoting a specific price so the post stays accurate over time.'}
             </p>

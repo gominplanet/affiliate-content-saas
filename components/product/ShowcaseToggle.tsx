@@ -2,21 +2,26 @@
 //
 // "Send this post's clicks to my TikTok Shop showcase instead."
 //
-// Off by default, everywhere, and never inferred. This replaces the affiliate
-// link on a post that goes to a creator's real audience, so it is only ever
-// something they switch on for themselves.
+// It starts in whatever state the account is actually in: OFF for an Amazon
+// account, ON for a creator whose account default is their shop (migration
+// 333). A control that always started off would be telling a TikTok-first
+// creator something untrue on every post they ever wrote.
 //
-// The two things this control has to get right:
+// The three things this control has to get right:
 //
 //   1. A toggle that is ON with nothing to point at must BLOCK the post. Left
 //      to publish, it would fall back to Amazon links under a switch that reads
 //      as on, and the only place that shows up is their own analytics weeks
-//      later. `showcaseBlocked` is what the composers disable their buttons on.
+//      later. `blocked` is what the composers disable their buttons on.
 //
 //   2. It has to say what else changes. Turning this on also removes every
 //      Amazon price claim from the copy, because a discount quoted over a link
 //      to a different shop is a claim about a store the reader is never sent
 //      to. A creator who is not told that will think the writer broke.
+//
+//   3. Unticking it on a shop account is a real choice, not a return to
+//      neutral: that one post goes to Amazon while the rest of the account does
+//      not. It says so rather than looking like the box was simply off.
 
 'use client'
 
@@ -33,6 +38,9 @@ export interface ShowcaseState {
   effective: string
   /** The toggle is on and there is nothing to point at. Block the post. */
   blocked: boolean
+  /** This account sends links to the shop by default, so the box started on
+   *  and unticking it is a deliberate one-off Amazon post. */
+  isDefault: boolean
 }
 
 /** Loads the creator's saved showcase link and holds the per-post override. */
@@ -43,17 +51,25 @@ export function useShowcase(): ShowcaseState & {
   const [on, setOn] = useState(false)
   const [override, setOverride] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
+  // Whether this account sends links to the shop by default (migration 333).
+  // The box starts TICKED for those creators, because it is showing them what
+  // will actually happen. A control that always started off would be lying to
+  // a TikTok-first account on every single post.
+  const [isDefault, setIsDefault] = useState(false)
 
   useEffect(() => {
     fetch('/api/affiliate-links/save')
       .then(r => r.json())
-      .then((d) => { if (typeof d?.tiktokShowcaseUrl === 'string') setSaved(d.tiktokShowcaseUrl || null) })
+      .then((d) => {
+        if (typeof d?.tiktokShowcaseUrl === 'string') setSaved(d.tiktokShowcaseUrl || null)
+        if (d?.linkDestination === 'showcase') { setIsDefault(true); setOn(true) }
+      })
       // Having no default saved is a normal state, not an error worth a toast.
       .catch(() => { /* leave null */ })
   }, [])
 
   const effective = override.trim() || saved || ''
-  return { on, override, saved, effective, blocked: on && !effective, setOn, setOverride }
+  return { on, override, saved, effective, isDefault, blocked: on && !effective, setOn, setOverride }
 }
 
 export default function ShowcaseToggle({ state, setOn, setOverride, compact = false }: {
@@ -75,7 +91,14 @@ export default function ShowcaseToggle({ state, setOn, setOverride, compact = fa
           <span className="text-[13px] font-medium flex items-center gap-1.5"><Store size={13} /> Send clicks to my TikTok Shop showcase</span>
           {!compact && (
             <span className="block text-[11px] leading-snug mt-0.5" style={{ color: 'var(--text-soft)' }}>
-              No Amazon affiliate link on this one. The copy also drops Amazon prices and discounts, because they describe a shop the reader is not being sent to.
+              {state.isDefault && state.on
+                ? 'This is your account default. Untick it to make this one post link to Amazon instead.'
+                : 'No Amazon affiliate link on this one. The copy also drops Amazon prices and discounts, because they describe a shop the reader is not being sent to.'}
+            </span>
+          )}
+          {!compact && state.isDefault && !state.on && (
+            <span className="block text-[11px] leading-snug mt-0.5 text-amber-700 dark:text-amber-500">
+              Your account sends links to your shop. This one post will link to Amazon instead.
             </span>
           )}
         </span>
@@ -97,7 +120,7 @@ export default function ShowcaseToggle({ state, setOn, setOverride, compact = fa
           {state.blocked && (
             <span className="text-[11px] text-[#b91c1c] dark:text-[#f87171] flex items-start gap-1.5">
               <AlertCircle size={12} className="mt-0.5 shrink-0" />
-              No showcase link yet. Paste one here, or save a default under Set Up &rarr; Affiliate links. Posting without it would put Amazon links on this post.
+              No showcase link yet. Paste one here, or save a default under Brand Profile &rarr; Where your links send people. Posting without it would put Amazon links on this post.
             </span>
           )}
         </div>

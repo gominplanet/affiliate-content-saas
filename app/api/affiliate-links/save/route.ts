@@ -103,6 +103,9 @@ export async function GET() {
       // The saved default for posts that send clicks to the creator's TikTok
       // Shop showcase instead of Amazon (lib/post-destination).
       tiktokShowcaseUrl: (row.tiktok_showcase_url as string) ?? '',
+      // The account-level default (migration 333). NULL reads as 'amazon',
+      // which is what every existing account keeps.
+      linkDestination: (row.link_destination_default as string) === 'showcase' ? 'showcase' : 'amazon',
       linkStyleChosen,
       effectiveLinkStyle,
       passportOn,
@@ -123,6 +126,7 @@ export async function POST(request: Request) {
       geniuslinkKey?: string; geniuslinkSecret?: string; blogSocialLinkMode?: string
       bitlyToken?: string; pinterestLinkPref?: string; amazonTag?: string
       tiktokShowcaseUrl?: string
+      linkDestination?: 'amazon' | 'showcase'
     }
     // Write to the OWNER's row so generation (which reads getLinkStyle for the
     // owner) actually sees the choice — a VA saving to their own row was silently
@@ -174,6 +178,12 @@ export async function POST(request: Request) {
       }
     }
 
+    // Only two values are meaningful, and an unrecognised one must not switch
+    // a creator's whole account over by accident.
+    const linkDestination = b.linkDestination === 'showcase' ? 'showcase'
+      : b.linkDestination === 'amazon' ? 'amazon'
+      : undefined
+
     // ── Core columns — these always exist. If this fails, the save truly failed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: coreErr } = await (admin as any).from('integrations').upsert(
@@ -202,6 +212,19 @@ export async function POST(request: Request) {
       ...(mode ? { blog_social_link_mode: mode } : {}),
       pinterest_link_pref: pin,
     }
+    if (linkDestination !== undefined) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (admin as any).from('integrations')
+        .update({ link_destination_default: linkDestination }).eq('user_id', ownerId)
+      if (error) {
+        console.warn(`[affiliate-links/save] link_destination_default skipped: ${error.message}`)
+        return NextResponse.json({
+          error: 'Your database is missing the link destination column. Run migration 333, then save again.',
+          migrationNeeded: '333_link_destination_default',
+        }, { status: 500 })
+      }
+    }
+
     // Nullable, and set explicitly so a cleared box actually clears it.
     if (showcase !== undefined) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -32,7 +32,7 @@ import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithGptImage, composeWithNanoBanana, rehostToFal, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { getLinkStyle, resolveShowcaseLink } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { preflightWpPublish } from '@/lib/wp-preflight'
@@ -335,6 +335,10 @@ export async function POST(request: Request) {
   // (passportLinkForUser returns null unless Passport is on + eligible, which is
   // exactly when the style resolves to 'passport').
   const cmpStyle = await getLinkStyle(supabase, ownerId)
+  // A creator whose account points at their own TikTok Shop (migration 333):
+  // resolved once, then used for every product link in the comparison. Null on
+  // an Amazon account, which leaves the chain below completely untouched.
+  const cmpShowcase = await resolveShowcaseLink(supabase, ownerId, cmpStyle, { source: 'blog' })
   const cmpCreds = geniuslinkCreds(cmpStyle, wp)
   const genius = (cmpStyle.style === 'geniuslink' && cmpCreds)
     ? createGeniuslinkService(cmpCreds.key, cmpCreds.secret)

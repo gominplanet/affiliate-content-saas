@@ -12,7 +12,7 @@
 import { asinFromAmazonUrl, firstProductUrl } from '@/lib/product-link'
 import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { getLinkStyle, resolveShowcaseLink } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { extractAsin } from '@/services/amazon'
@@ -101,6 +101,9 @@ export async function resolvePinProductLink(
   // it (Amazon ASIN only); Bitly shortens the direct link; otherwise the tagged
   // direct URL. Passport was already handled above (it wins when it's the style).
   const cfg = await getLinkStyle(supabase, userId)
+  // Showcase account (migration 333). Returns null on an Amazon account.
+  const showcase = await resolveShowcaseLink(supabase, userId, cfg, { source: 'pinterest' })
+  if (showcase) return showcase
   if (cfg.style === 'bitly' && cfg.bitlyToken) {
     const short = await shortenBitly(cfg.bitlyToken, dest)
     return short || dest

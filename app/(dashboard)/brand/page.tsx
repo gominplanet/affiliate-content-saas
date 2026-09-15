@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { BrandProfileGuide } from '@/components/guide/tool-guides'
-import { Save, Check, Plus, Trash2, Upload, X, RefreshCw, Loader2, AlertCircle, Globe, ArrowRight } from 'lucide-react'
+import { Save, Check, Plus, Trash2, Upload, X, RefreshCw, Loader2, AlertCircle, Globe, ArrowRight, Store } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
 import GeniuslinkGroupsPanel from '@/components/brand/GeniuslinkGroupsPanel'
@@ -385,6 +385,10 @@ export default function BrandPage() {
   // clicks to the creator's own TikTok Shop instead (lib/post-destination).
   // Saved once here; each post decides whether to use it.
   const [tiktokShowcaseUrl, setTiktokShowcaseUrl] = useState('')
+  // The ACCOUNT-level default (migration 333). A creator who sells on TikTok
+  // sets this once rather than ticking a box on every post forever, and the
+  // first one they forget is the one that silently publishes an Amazon link.
+  const [linkDestination, setLinkDestination] = useState<'amazon' | 'showcase'>('amazon')
   // Nothing in this card is real until its fetch comes back: the mode is a
   // placeholder, the key fields are empty because they have not arrived, not
   // because the creator cleared them. Saving the page before that (or after a
@@ -610,6 +614,7 @@ export default function BrandPage() {
         setPinterestLinkPref(pref === 'blog_post' || pref === 'youtube' || pref === 'homepage' ? pref : 'auto')
         setAmazonAssociatesTag(d.amazonTag ?? '')
         setTiktokShowcaseUrl(d.tiktokShowcaseUrl ?? '')
+        setLinkDestination(d.linkDestination === 'showcase' ? 'showcase' : 'amazon')
       })
       .catch(() => {})
 
@@ -777,7 +782,7 @@ export default function BrandPage() {
           blogSocialLinkMode,
           bitlyToken,
           pinterestLinkPref, amazonTag: amazonAssociatesTag,
-          tiktokShowcaseUrl,
+          tiktokShowcaseUrl, linkDestination,
         } : {}),
       })
       const data = await res.json().catch(() => ({}))
@@ -1475,26 +1480,72 @@ export default function BrandPage() {
                 <p className="text-[10.5px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
                   This tag belongs to your <b>active site</b>. Running more than one brand? Switch sites in the top bar first, then set that site&apos;s tag here. Each site&apos;s links use its own tag; a site with none set falls back to this one.
                 </p>
-
-                {/* Sits under the Associates tag because it is the alternative
-                    to it: a post uses one or the other, never both. Saving a
-                    link here changes nothing on its own — each post decides. */}
-                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-white/10">
-                  <label htmlFor="brand-tiktok-showcase" className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">TikTok Shop showcase link</label>
-                  <input
-                    id="brand-tiktok-showcase"
-                    name="tiktok-showcase"
-                    type="url"
-                    value={tiktokShowcaseUrl}
-                    onChange={e => setTiktokShowcaseUrl(e.target.value)}
-                    placeholder="https://www.tiktok.com/@you/showcase"
-                    className="input-field text-xs"
-                  />
-                  <p className="text-[10.5px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
-                    Optional. When a post turns on <b>Send clicks to my TikTok Shop showcase</b>, this is where it points. Saving it here does not change any post by itself: each post has its own toggle, and can paste a different link. A post using the showcase carries no Amazon link, and its copy leaves out Amazon prices and discounts.
-                  </p>
-                </div>
               </div>
+            </div>
+
+            {/* ── Where your links send people ────────────────────────────
+                Its own card, matching the Associates tag and Search Console
+                cards, because it is a decision of the same weight: it changes
+                the destination of every link MVP makes. It was first shipped as
+                a faint field tucked under the Associates tag and was, fairly,
+                impossible to see. */}
+            <div className="rounded-xl border-2 p-4 mt-3" style={{ borderColor: linkDestination === 'showcase' ? '#7C3AED' : undefined }}>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#7C3AED]/10 flex-shrink-0">
+                  <Store size={15} className="text-[#7C3AED]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Where your links send people</p>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Amazon, or your own TikTok Shop</p>
+                </div>
+                {linkDestination === 'showcase' && (
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] flex-shrink-0">
+                    <Check size={12} /> TikTok Shop
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                {([
+                  { v: 'amazon' as const, label: 'Amazon', sub: 'Your affiliate link, the usual way' },
+                  { v: 'showcase' as const, label: 'My TikTok Shop', sub: 'No Amazon link on any post' },
+                ]).map(o => (
+                  <button
+                    key={o.v} type="button" onClick={() => setLinkDestination(o.v)}
+                    className={`text-left rounded-xl border-2 px-3 py-2.5 transition ${linkDestination === o.v ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'}`}
+                  >
+                    <span className="block text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{o.label}</span>
+                    <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">{o.sub}</span>
+                  </button>
+                ))}
+              </div>
+
+              <label htmlFor="brand-tiktok-showcase" className="block text-[11px] font-semibold text-[#3a3a3c] dark:text-[#ebebf0] mb-1">
+                TikTok Shop showcase link
+              </label>
+              <input
+                id="brand-tiktok-showcase"
+                name="tiktok-showcase"
+                type="url"
+                value={tiktokShowcaseUrl}
+                onChange={e => setTiktokShowcaseUrl(e.target.value)}
+                placeholder="https://www.tiktok.com/@you/showcase"
+                className="input-field text-xs"
+              />
+
+              {/* The one state that would fail on every post at once, and the
+                  only place it can be caught before that happens. */}
+              {linkDestination === 'showcase' && !tiktokShowcaseUrl.trim() && (
+                <p className="text-[11px] font-medium text-[#b91c1c] dark:text-[#f87171] mt-2 leading-relaxed">
+                  Add your showcase link above, or this setting cannot take effect and every post will keep linking to Amazon.
+                </p>
+              )}
+
+              <p className="text-[10.5px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
+                {linkDestination === 'showcase'
+                  ? <>Every post MVP makes will link to your shop: blog articles, deals, Facebook, Instagram, Pinterest, Link in Bio and your weekly digest. Posts carry <b>no Amazon link</b>, and their copy leaves out Amazon prices and discounts, because those describe a shop your reader is not being sent to. Any single post can still be switched back to Amazon on its own toggle.</>
+                  : <>Set this to <b>My TikTok Shop</b> if you sell there rather than on Amazon, and every post will point at your shop instead. You can leave it on Amazon and switch on individual posts one at a time.</>}
+              </p>
             </div>
 
             {/* Google Search Console — read-only SEO data. Moved here from

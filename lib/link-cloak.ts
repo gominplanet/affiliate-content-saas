@@ -30,6 +30,7 @@ export type { LinkStyle } from '@/lib/link-style'
 export { pickLinkStyle } from '@/lib/link-style'
 import type { LinkStyle } from '@/lib/link-style'
 import { pickLinkStyle, pickLinkStyleDetailed } from '@/lib/link-style'
+import { normalizeShowcaseUrl, styleForShowcase, showcaseOverrideFor } from '@/lib/post-destination'
 
 export interface LinkStyleConfig {
   style: LinkStyle
@@ -45,6 +46,19 @@ export interface LinkStyleConfig {
    *  from one who wants plain links, and every layer above behaves correctly for
    *  a decision she never made. */
   downgradedFrom: LinkStyle | null
+  /**
+   * WHERE THIS CREATOR'S LINKS POINT BY DEFAULT.
+   *
+   * 'amazon' for everyone who has not chosen otherwise. 'showcase' for a
+   * creator who sells through their TikTok Shop and set that as their default
+   * (migration 333). Carried here rather than read per-caller because
+   * getLinkStyle is already the one read every link path makes, so putting it
+   * here means every surface inherits it — including ones written later, which
+   * is the failure this is really guarding against.
+   */
+  destinationDefault: 'amazon' | 'showcase'
+  /** Their saved TikTok Shop showcase link, or null. */
+  showcaseUrl: string | null
 }
 
 /**
@@ -53,7 +67,10 @@ export interface LinkStyleConfig {
  * usable creds is downgraded to 'direct'. One bounded read; never throws.
  */
 export async function getLinkStyle(supabase: Db, userId: string): Promise<LinkStyleConfig> {
-  const empty: LinkStyleConfig = { style: 'direct', tier: null, bitlyToken: null, geniuslinkKey: null, geniuslinkSecret: null, downgradedFrom: null }
+  const empty: LinkStyleConfig = {
+    style: 'direct', tier: null, bitlyToken: null, geniuslinkKey: null, geniuslinkSecret: null,
+    downgradedFrom: null, destinationDefault: 'amazon', showcaseUrl: null,
+  }
   try {
     // select('*'), NOT a named column list, and this is the whole reason the
     // feature was dead in production. blog_social_link_mode ships in migration
@@ -87,7 +104,19 @@ export async function getLinkStyle(supabase: Db, userId: string): Promise<LinkSt
       hasBitly: !!bitlyToken,
       hasGeniuslink: !!(geniuslinkKey && geniuslinkSecret),
     })
-    return { style: picked.style, downgradedFrom: picked.downgradedFrom, tier, bitlyToken, geniuslinkKey, geniuslinkSecret }
+    // A 'showcase' default with no usable link is NOT a showcase default. It
+    // would make every link on the account fall back to Amazon and report a
+    // fallback on every single post, which is noise rather than information.
+    // Treated as 'amazon' here, and the settings screen is where the creator is
+    // told their default cannot take effect yet.
+    const showcaseUrl = normalizeShowcaseUrl(ig.tiktok_showcase_url as string | null)
+    const destinationDefault: 'amazon' | 'showcase' =
+      (ig.link_destination_default as string | null) === 'showcase' && showcaseUrl ? 'showcase' : 'amazon'
+    return {
+      style: picked.style, downgradedFrom: picked.downgradedFrom, tier,
+      bitlyToken, geniuslinkKey, geniuslinkSecret,
+      destinationDefault, showcaseUrl,
+    }
   } catch {
     return empty
   }
@@ -110,6 +139,18 @@ export interface CloakOpts {
   /** Pre-resolved style, to avoid re-reading integrations when cloaking many links
    *  in one request (e.g. every product link in a blog post). */
   config?: LinkStyleConfig
+  /**
+   * Override the account's default destination for THIS link.
+   *
+   * Omitted (the normal case) means inherit, which is what lets a creator set
+   * 'showcase' once and have every surface follow — including surfaces written
+   * after this was added, which is the point.
+   *
+   * 'amazon' forces the affiliate link even on a showcase account (a one-off
+   * Amazon post), 'showcase' forces the shop link even on an Amazon account
+   * (the per-post toggle from migration 332).
+   */
+  destinationOverride?: 'amazon' | 'showcase'
 }
 
 /**
@@ -157,14 +198,38 @@ export interface CloakResult {
  * one.
  */
 export async function resolveCloakedLinkDetailed(opts: CloakOpts): Promise<CloakResult> {
-  const dest = (opts.destination || '').trim()
+  let dest = (opts.destination || '').trim()
   if (!dest) return { url: dest, reason: 'no-destination', cloaked: false }
   const cfg = opts.config ?? (await getLinkStyle(opts.supabase, opts.userId))
-  const asin = (opts.asin || '').trim().toUpperCase()
+  let asin = (opts.asin || '').trim().toUpperCase()
+
+  // ── SEND THE CLICKS TO THE CREATOR'S OWN SHOP INSTEAD ────────────────────
+  //
+  // Applied HERE so every caller inherits it from one place. The three things
+  // that have to happen together, each of which fails silently on its own:
+  //
+  //   1. the destination becomes the shop link
+  //   2. THE ASIN IS DROPPED — Passport geo-routes an ASIN to the reader's
+  //      local Amazon, so leaving it sends every click to Amazon on a post that
+  //      reads as a shop post
+  //   3. Geniuslink is skipped — it exists to route Amazon links and nothing
+  //      else — falling to Passport, which shortens anything and keeps the
+  //      click stats, or to a plain link
+  //
+  // `useShowcase` is the account default unless this call overrode it.
+  const useShowcase = opts.destinationOverride
+    ? opts.destinationOverride === 'showcase'
+    : cfg.destinationDefault === 'showcase'
+  let style = cfg.style
+  if (useShowcase && cfg.showcaseUrl) {
+    dest = cfg.showcaseUrl
+    asin = ''
+    style = styleForShowcase(cfg.style, cfg.style === 'passport').style
+  }
   const hasAsin = /^[A-Z0-9]{10}$/.test(asin)
 
   try {
-    switch (cfg.style) {
+    switch (style) {
       case 'passport': {
         // Amazon ASIN → geo-routing link; any other URL → cloaked forwarder.
         if (hasAsin) {
@@ -248,4 +313,54 @@ export function cloakFallbackNote(r: CloakResult): string | null {
 /** Unchanged contract for callers that only want the URL. */
 export async function resolveCloakedLink(opts: CloakOpts): Promise<string> {
   return (await resolveCloakedLinkDetailed(opts)).url
+}
+
+/**
+ * The creator's shop link, cloaked in their style, or null when this account
+ * is not a showcase account.
+ *
+ * For the seven paths that hand-roll their own Passport / Bitly / Geniuslink
+ * chain rather than calling resolveCloakedLinkDetailed (the blog writer,
+ * comparisons, from-link, campaigns, Link in Bio sync, pin links, the weekly
+ * digest). Each gets ONE call at the top of its chain:
+ *
+ *     const sc = await resolveShowcaseLink(db, userId, cfg)
+ *     if (sc) return sc
+ *
+ * Returning null leaves their Amazon path completely untouched, which matters
+ * more than the feature does: these paths build a creator's entire blog, and a
+ * refactor that quietly changed the Amazon case would be a much worse bug than
+ * this is a good feature.
+ *
+ * NO ASIN is ever passed on. Passport geo-routes an ASIN to the reader's local
+ * Amazon, so a shop link minted from one would send every click to Amazon while
+ * the article reads as a shop article.
+ */
+export async function resolveShowcaseLink(
+  supabase: Db,
+  userId: string,
+  config?: LinkStyleConfig,
+  opts?: { label?: string | null; source?: string | null; override?: 'amazon' | 'showcase' },
+): Promise<string | null> {
+  const cfg = config ?? (await getLinkStyle(supabase, userId))
+  const sc = showcaseOverrideFor(cfg, opts?.override)
+  if (!sc) return null
+  try {
+    if (sc.style === 'passport') {
+      const site = await getDefaultSite(supabase, userId)
+      const siteId = site && site.id !== 'legacy' ? (site.id as string) : null
+      const code = await getOrCreatePassportLink(supabase, userId, siteId, {
+        destinationUrl: sc.url, label: opts?.label ?? null, source: opts?.source ?? 'blog',
+      })
+      // A failed mint still returns the shop link: the destination the creator
+      // chose is what matters, the click counting is the nice-to-have.
+      return code ? passportLinkUrl(code) : sc.url
+    }
+    if (sc.style === 'bitly' && cfg.bitlyToken) {
+      return (await shortenBitly(cfg.bitlyToken, sc.url)) || sc.url
+    }
+    return sc.url
+  } catch {
+    return sc.url
+  }
 }

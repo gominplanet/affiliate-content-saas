@@ -23,6 +23,7 @@ import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl, isAmazonNonProduct
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
+import { showcaseOverrideFor } from '@/lib/post-destination'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
@@ -695,7 +696,23 @@ async function handleGenerate(request: Request) {
     const blogAsin = destination.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
     const blogLinkStyle = await getLinkStyle(supabase, ownerId)
     const blogCreds = geniuslinkCreds(blogLinkStyle, wp)
-    if (blogLinkStyle.style === 'passport') {
+
+    // ── A creator who sells on TikTok, not Amazon ────────────────────────────
+    // Their whole account points at their own shop (migration 333), so every
+    // link in this article does too. Handled before the style chain below
+    // because the ASIN must NOT reach Passport: it would geo-route every click
+    // to Amazon on a post that reads as a shop post.
+    const blogShowcase = showcaseOverrideFor(blogLinkStyle)
+    if (blogShowcase) {
+      if (blogShowcase.style === 'passport') {
+        const p = await passportLinkForDestination(supabase, ownerId, blogShowcase.url, { source: 'blog', title: rawTitle })
+        affiliateUrlOverride = p || blogShowcase.url
+      } else if (blogShowcase.style === 'bitly' && blogLinkStyle.bitlyToken) {
+        affiliateUrlOverride = (await shortenBitly(blogLinkStyle.bitlyToken, blogShowcase.url)) || blogShowcase.url
+      } else {
+        affiliateUrlOverride = blogShowcase.url
+      }
+    } else if (blogLinkStyle.style === 'passport') {
       // Passport cloaks ANY affiliate destination, not just Amazon ASINs.
       //   1) Amazon: geo-route by ASIN. Recover the ASIN when it's a direct /dp
       //      link, or by unwrapping a geni.us / short link via its PUBLIC redirect

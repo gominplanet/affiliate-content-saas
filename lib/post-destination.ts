@@ -195,6 +195,17 @@ export function styleForDestination(
   return { style: replacement, changedFrom: style }
 }
 
+/**
+ * The style to use when the destination is a showcase, without needing a full
+ * PostDestination to hand. Same rule as styleForDestination: Geniuslink only
+ * routes Amazon links, so it falls to Passport (which shortens anything and
+ * keeps the click stats) or to a plain link.
+ */
+export function styleForShowcase(style: LinkStyle, passportAvailable: boolean): { style: LinkStyle; changedFrom: LinkStyle | null } {
+  if (style !== 'geniuslink') return { style, changedFrom: null }
+  return { style: passportAvailable ? 'passport' : 'direct', changedFrom: 'geniuslink' }
+}
+
 /** The sentence to show when a style was swapped for the destination. */
 export function styleSwapNote(changedFrom: LinkStyle | null, to: LinkStyle): string | null {
   if (!changedFrom) return null
@@ -222,4 +233,35 @@ export function disclaimerForDestination(kind: DestinationKind, creatorDisclaime
   const own = (creatorDisclaimer || '').trim()
   if (own) return own
   return kind === 'showcase' ? SHOWCASE_DISCLAIMER : amazonDefault
+}
+
+/**
+ * For the paths that hand-roll their own Passport / Bitly / Geniuslink chain
+ * instead of going through resolveCloakedLinkDetailed.
+ *
+ * There are seven of them (the blog writer, comparisons, from-link, campaigns,
+ * Link in Bio sync, pin product links, the weekly digest), each a copy of the
+ * same logic that predates the shared resolver. Rather than rewrite all seven
+ * under one feature, each gets ONE call to this at the top: it answers "is this
+ * a showcase account, and if so what do I use instead", in the same shape they
+ * all already deal in.
+ *
+ * Returns null when nothing changes, so the caller's existing Amazon path runs
+ * untouched. That matters: these are the paths that build a creator's whole
+ * blog, and a refactor that quietly altered the Amazon case would be far worse
+ * than the feature is good.
+ */
+export function showcaseOverrideFor(
+  cfg: { destinationDefault?: 'amazon' | 'showcase'; showcaseUrl?: string | null; style: LinkStyle },
+  override?: 'amazon' | 'showcase',
+): { url: string; style: LinkStyle; changedFrom: LinkStyle | null; note: string | null } | null {
+  const want = override ? override === 'showcase' : cfg.destinationDefault === 'showcase'
+  if (!want) return null
+  const url = normalizeShowcaseUrl(cfg.showcaseUrl)
+  // A showcase default with no usable link falls back to Amazon. getLinkStyle
+  // already refuses to report 'showcase' in that state, so reaching here means
+  // an explicit per-post override with nothing saved.
+  if (!url) return null
+  const styled = styleForShowcase(cfg.style, cfg.style === 'passport')
+  return { url, style: styled.style, changedFrom: styled.changedFrom, note: styleSwapNote(styled.changedFrom, styled.style) }
 }

@@ -20,7 +20,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { passportLinkForUser } from '@/lib/passport-links'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { getLinkStyle, resolveShowcaseLink } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -374,7 +374,11 @@ export async function POST(request: Request) {
     let affiliateUrl = ccTagged
     let geniuslinkCode: string | null = null
     const ccStyle = await getLinkStyle(supabase, user.id)
-    if (ccStyle.style === 'passport') {
+    // Showcase account (migration 333): the whole campaign points at the shop.
+    const ccShowcase = await resolveShowcaseLink(supabase, user.id, ccStyle, { label: product?.title || asin, source: 'blog' })
+    if (ccShowcase) {
+      affiliateUrl = ccShowcase
+    } else if (ccStyle.style === 'passport') {
       const passportCc = await passportLinkForUser(supabase, user.id, asin, { source: 'blog', title: product?.title || asin })
       if (passportCc) affiliateUrl = passportCc
     } else if (ccStyle.style === 'bitly' && ccStyle.bitlyToken) {

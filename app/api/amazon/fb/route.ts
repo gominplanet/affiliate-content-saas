@@ -60,7 +60,14 @@ export async function POST(request: Request) {
   const destination = resolvePostDestination({
     asin: (body.asin || '').trim().toUpperCase() || null,
     amazonTag: (intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag,
-    useShowcase: body.useShowcase === true, showcaseUrl,
+    // An explicit toggle wins either way; an absent one inherits the account
+    // default (migration 333), so a TikTok-first creator does not have to tick
+    // a box on every post forever. The first one they forgot would be the one
+    // that silently published an Amazon link.
+    useShowcase: typeof body.useShowcase === 'boolean'
+      ? body.useShowcase
+      : (intRow as { link_destination_default?: string | null } | null)?.link_destination_default === 'showcase',
+    showcaseUrl,
   })
 
   const when = (body.scheduledAt || '').trim()

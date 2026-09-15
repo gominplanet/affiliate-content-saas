@@ -341,7 +341,11 @@ export async function POST(req: Request) {
   // tier's normal monthly blog-post allowance, enforced by the shared cap below.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: dealIntg } = await (supabase as any)
-    .from('integrations').select('tier, amazon_associates_tag, geniuslink_api_key, geniuslink_api_secret').eq('user_id', user.id).maybeSingle()
+    // select('*'), not a column list: PostgREST rejects the WHOLE statement
+    // when one named column is missing, so naming tiktok_showcase_url or
+    // link_destination_default here would break every deal post on any
+    // database that has not run migrations 332 and 333.
+    .from('integrations').select('*').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(dealIntg?.tier)
   if (!canUseDealRadar(tier)) {
     return NextResponse.json({ error: 'Deal posts are available on paid plans.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
@@ -675,7 +679,10 @@ export async function POST(req: Request) {
   // suppresses every Amazon price claim in the post: the discount, the
   // "lowest price we've tracked" verdict and the price-check block are all
   // facts about a store the reader is no longer being sent to.
-  const dealUseShowcase = body.useShowcase === true
+  // Explicit wins; absent inherits the account default (migration 333).
+  const dealUseShowcase = typeof body.useShowcase === 'boolean'
+    ? body.useShowcase
+    : (dealIntg as { link_destination_default?: string | null } | null)?.link_destination_default === 'showcase'
   const dealShowcaseUrl = (body.showcaseUrl || '').trim()
     || ((dealIntg as { tiktok_showcase_url?: string | null } | null)?.tiktok_showcase_url || '')
   const dealDestination = resolvePostDestination({

@@ -97,7 +97,10 @@ export async function POST(request: Request) {
     // the image is: the composer told the creator where this post would send
     // people, and changing the saved default afterwards must not silently
     // redirect a post they already approved.
-    const useShowcase = body.useShowcase === true
+    // Explicit wins; absent inherits the account default (migration 333).
+    const useShowcase = typeof body.useShowcase === 'boolean'
+      ? body.useShowcase
+      : (intRow as { link_destination_default?: string | null } | null)?.link_destination_default === 'showcase'
     const showcaseUrl = (body.showcaseUrl || '').trim()
       || ((intRow as { tiktok_showcase_url?: string | null } | null)?.tiktok_showcase_url || '')
     const destination = resolvePostDestination({

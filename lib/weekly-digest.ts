@@ -9,7 +9,7 @@
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { passportLinkForUser } from '@/lib/passport-links'
-import { getLinkStyle, type LinkStyleConfig } from '@/lib/link-cloak'
+import { getLinkStyle, resolveShowcaseLink, type LinkStyleConfig } from '@/lib/link-cloak'
 import { shortenBitly } from '@/lib/bitly'
 import { scrubBanned } from '@/lib/scrub'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
@@ -117,6 +117,10 @@ export async function resolveAffiliateUrl(
   // With a user, honor their ONE chosen link style so digest/roundup links match
   // the rest of MVP: Passport (geo-route) / Bitly / Geniuslink / Direct.
   const cfg = config ?? (await getLinkStyle(createAdminClient(), userId))
+  // Showcase account (migration 333): every product in the digest points at the
+  // creator's own shop. Null on an Amazon account.
+  const showcase = await resolveShowcaseLink(createAdminClient(), userId, cfg, { label: title, source: 'digest' })
+  if (showcase) return showcase
   switch (cfg.style) {
     case 'passport': {
       try {

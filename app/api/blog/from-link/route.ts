@@ -36,7 +36,7 @@ import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { getLinkStyle, resolveShowcaseLink } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -198,6 +198,8 @@ export async function POST(req: Request) {
   // Bitly wraps the tagged fallback when that's their style; Passport calls
   // below self-gate (passportLinkForUser returns null unless it's their style).
   const flStyle = await getLinkStyle(supabase, ownerId)
+  // Showcase account (migration 333): one shop link replaces the affiliate link.
+  const flShowcase = await resolveShowcaseLink(supabase, ownerId, flStyle, { source: 'blog' })
   const flCreds = geniuslinkCreds(flStyle, wp)
   const genius = (flStyle.style === 'geniuslink' && flCreds)
     ? createGeniuslinkService(flCreds.key, flCreds.secret)
