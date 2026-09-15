@@ -294,6 +294,26 @@ const base = { asin: ASIN, amazonTag: 'gomin-20' }
 
   const BRAND = readFileSync('app/(dashboard)/brand/page.tsx', 'utf8')
   check('settings has its own card for the destination', /Where your links send people/.test(BRAND))
+  // It is a STARTING POINT, not a mode you return to. Copy that reads like a
+  // lock-in sent a creator looking for a switch that was already on every
+  // compose screen.
+  check('and reads as a starting point, not a mode',
+    /never have to come back here to switch/.test(BRAND),
+    'the choice is made per post; this only decides how that box starts')
+  // Bounded by CONTENT, not by a character budget. The first cut used
+  // `+ 3500` and the card's copy sits 3867 characters in, so the check passed
+  // on an em-dash injected on purpose — a guard that tests nothing looks
+  // exactly like a guard that works.
+  const cardStart = BRAND.indexOf('Where your links send people')
+  const cardEndPhrase = 'not being sent to.'
+  const cardEnd = BRAND.indexOf(cardEndPhrase, cardStart)
+  check('the destination card was found', cardStart > -1 && cardEnd > cardStart,
+    `start ${cardStart}, end ${cardEnd}`)
+  const cardCopy = cardStart > -1 && cardEnd > cardStart
+    ? BRAND.slice(cardStart, cardEnd + cardEndPhrase.length) : ''
+  check('the card copy carries no dash',
+    cardCopy.length > 500 && !/(?:&mdash;|&ndash;|[\u2014\u2013]|\s-\s)/.test(cardCopy),
+    'the standing rule, and freshly written UI copy is where it slips in')
   check('and warns when the default cannot take effect',
     /cannot take effect and every post will keep linking to Amazon/.test(BRAND),
     'a shop default with no shop link is the one state that fails on every post at once')

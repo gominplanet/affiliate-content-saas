@@ -1496,7 +1496,7 @@ export default function BrandPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Where your links send people</p>
-                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Amazon, or your own TikTok Shop</p>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">The starting point for a new post. Every post can still be switched.</p>
                 </div>
                 {linkDestination === 'showcase' && (
                   <span className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] flex-shrink-0">
@@ -1507,8 +1507,8 @@ export default function BrandPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                 {([
-                  { v: 'amazon' as const, label: 'Amazon', sub: 'Your affiliate link, the usual way' },
-                  { v: 'showcase' as const, label: 'My TikTok Shop', sub: 'No Amazon link on any post' },
+                  { v: 'amazon' as const, label: 'Amazon', sub: 'New posts start with your affiliate link' },
+                  { v: 'showcase' as const, label: 'My TikTok Shop', sub: 'New posts start with your shop link' },
                 ]).map(o => (
                   <button
                     key={o.v} type="button" onClick={() => setLinkDestination(o.v)}
@@ -1542,9 +1542,14 @@ export default function BrandPage() {
               )}
 
               <p className="text-[10.5px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
-                {linkDestination === 'showcase'
-                  ? <>Every post MVP makes will link to your shop: blog articles, deals, Facebook, Instagram, Pinterest, Link in Bio and your weekly digest. Posts carry <b>no Amazon link</b>, and their copy leaves out Amazon prices and discounts, because those describe a shop your reader is not being sent to. Any single post can still be switched back to Amazon on its own toggle.</>
-                  : <>Set this to <b>My TikTok Shop</b> if you sell there rather than on Amazon, and every post will point at your shop instead. You can leave it on Amazon and switch on individual posts one at a time.</>}
+                <b>You never have to come back here to switch.</b> Every place you make a post
+                 (Deals, Facebook, Instagram, Pinterest) has its own <b>Send clicks to my TikTok Shop showcase</b>
+                 box, and that is where you choose, post by post. This setting only decides
+                 whether that box starts ticked, so pick whichever you do more often.
+              </p>
+              <p className="text-[10.5px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
+                A post that uses your shop carries <b>no Amazon link</b>, and its copy leaves out Amazon
+                 prices and discounts, because those describe a shop your reader is not being sent to.
               </p>
             </div>
 
