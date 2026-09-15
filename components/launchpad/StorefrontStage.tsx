@@ -487,7 +487,14 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         if (only.size === 0 || thumbDecision === 'stop') return []
         setPhase('Getting the thumbnail…')
         let items = await loadQueue(only)
-        if (items.length === 0) return []
+        // An empty queue for a wave we meant to upload is a real failure and it
+        // used to return in silence. The run then ended on "Uploaded to 0 of 0
+        // storefronts", which reads like there had been nothing to do rather
+        // than like the markets the creator picked never reached the queue.
+        if (items.length === 0) {
+          toast.error(`Nothing was queued for ${[...only].join(', ')}, so ${only.size === 1 ? 'that store' : 'those stores'} got no upload. Hit Upload again; if it keeps happening the localize step did not finish.`, { duration: 12000 })
+          return []
+        }
         // A thumbnail the caller already made (Launchpad's thumbnail step) counts:
         // fill it into any item the server queue didn't have one for so the gate
         // passes immediately instead of waiting on the background render.
@@ -553,9 +560,25 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       if (blocked.length > 0) {
         toast(`${blocked.length} ${blocked.length === 1 ? 'store was' : 'stores were'} skipped (not signed in / not enrolled).`)
       }
+      // COUNT AGAINST WHAT WE SET OUT TO DO, NOT AGAINST WHAT CAME BACK.
+      //
+      // This read `${done} of ${results.length}`, where results is the rows SCOUT
+      // returned. A market that never reached the queue produces no row, so it
+      // left both sides of the fraction, and three stores that uploaded nothing
+      // reported "Uploaded to 0 of 0 storefronts" as a success toast. The
+      // denominator has to be the markets we were ready to upload to.
+      const attempted = readyTargets.length
       const done = results.filter(r => r.ok).length
       const dups = results.filter(r => !r.ok && r.duplicate).length
-      toast.success(`Uploaded to ${done} of ${results.length} storefronts${dups > 0 ? ` · ${dups} already there` : ''}`)
+      const landed = done + dups
+      const missing = Math.max(0, attempted - results.length)
+      const tail = [
+        dups > 0 ? `${dups} already there` : '',
+        missing > 0 ? `${missing} never got as far as an upload` : '',
+      ].filter(Boolean).join(' · ')
+      const line = `Uploaded to ${done} of ${attempted} storefronts${tail ? ` · ${tail}` : ''}`
+      if (landed === attempted && attempted > 0) toast.success(line)
+      else toast.error(line, { duration: 12000 })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Storefront upload failed')
     } finally { setDelivering(false); setPhase(null); setDubbing(null) }

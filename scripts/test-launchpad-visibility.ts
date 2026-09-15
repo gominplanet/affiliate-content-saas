@@ -142,6 +142,29 @@ const code = PAGE.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\
     'otherwise the last run\'s warnings render under the new attempt')
 }
 
+// ── the storefront run counts what it set out to do ───────────────────────
+//
+// The final line read `Uploaded to ${done} of ${results.length} storefronts`,
+// where results is the rows SCOUT returned. A market that never reached the
+// delivery queue produces no row, so it vanished from BOTH sides of the
+// fraction: three stores that uploaded nothing reported "Uploaded to 0 of 0
+// storefronts", as a success toast. And the wave that found an empty queue
+// returned in silence, so there was nothing else on screen to contradict it.
+{
+  const STAGE = readFileSync('components/launchpad/StorefrontStage.tsx', 'utf8')
+  const stage = STAGE.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')
+  check('the denominator is the markets we were ready to upload to',
+    /const attempted = readyTargets\.length/.test(stage) && /of \$\{attempted\} storefronts/.test(stage),
+    'counting against the rows that came back hides every market that produced no row')
+  check('and a short run is not reported as a success',
+    /if \(landed === attempted && attempted > 0\) toast\.success\(line\)/.test(stage),
+    'toast.success on a partial upload is the whole bug')
+  check('a wave with an empty queue says so', /Nothing was queued for/.test(STAGE),
+    'it used to return [] in silence, and silence looked exactly like nothing to do')
+  check('the missing markets are named in the count', /never got as far as an upload/.test(STAGE),
+    'a creator needs to know the difference between refused and never attempted')
+}
+
 if (failures.length) {
   console.error(`\n❌ launchpad-visibility: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
