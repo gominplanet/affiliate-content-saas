@@ -14,6 +14,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { fetchKeepaProductStats, buildPriceSnapshotHtml } from '@/services/keepa'
+import { replacePriceSnapshot } from '@/lib/price-snapshot-swap'
 import { scrubBanned } from '@/lib/scrub'
 import { toUserMessage } from '@/lib/friendly-error'
 
@@ -87,14 +88,31 @@ ${oldContent}`,
     const looksOk = updated.length > oldContent.length * 0.6 && /<\/p>/i.test(updated)
       && oldContent.includes('[mvp_deal_cta') === updated.includes('[mvp_deal_cta')
     if (!looksOk) {
-      const snapshot = buildPriceSnapshotHtml(a)
-      updated = snapshot
-        ? oldContent.replace(/<div class="mvp-price-snapshot"[\s\S]*?<\/div>\s*<\/div>\s*(?:<div[^>]*><\/div>\s*)?<\/div>/i, snapshot)
-        : oldContent
-      if (updated === oldContent) {
-        return NextResponse.json({ error: "Couldn't safely rewrite the post automatically — edit the price in WordPress, or regenerate the post from Deal Radar." }, { status: 422 })
+      // The rewrite came back mangled. Fall back to refreshing ONLY the
+      // deterministic price block rather than publishing broken HTML.
+      const swap = replacePriceSnapshot(oldContent, buildPriceSnapshotHtml(a))
+      if (!swap.replaced) {
+        return NextResponse.json({ error: "Couldn't safely rewrite the post automatically. Edit the price in WordPress, or regenerate the post from Deal Radar." }, { status: 422 })
       }
+      updated = swap.html
     }
+
+    // ── THE DEAL CHECK BLOCK, ON EVERY REFRESH ───────────────────────────────
+    //
+    // Not only in the fallback above. The Haiku pass is told to keep every tag
+    // exactly as it is, so it correctly leaves this block alone — which meant
+    // the refresh corrected every sentence in the post and left the strongest
+    // claim on the page ("This is the lowest price we've tracked", with the
+    // marker pinned at the all-time low) frozen at whatever it said on the day
+    // it was written. The block was rebuilt when the rewrite FAILED and skipped
+    // when it worked, which is exactly backwards.
+    //
+    // buildPriceSnapshotHtml returns '' when the current history supports no
+    // honest verdict; replacePriceSnapshot then REMOVES the block, because a
+    // stale verdict is worse than no deal check.
+    const freshSnapshot = buildPriceSnapshotHtml(a)
+    const snap = replacePriceSnapshot(updated, freshSnapshot)
+    if (snap.replaced) updated = snap.html
 
     // Push to WordPress + persist.
     const site = await getWordPressCredentials(supabase, user.id, (post.wordpress_site_id as string | null) || undefined)
@@ -105,7 +123,17 @@ ${oldContent}`,
     const dealMeta = { ...((post.deal_meta as Record<string, unknown>) || {}), priceSale: now, discountPct: pct }
     await sb.from('blog_posts').update({ content: updated, deal_meta: dealMeta }).eq('id', post.id)
 
-    return NextResponse.json({ ok: true })
+    // Report what actually changed. `{ ok: true }` for a refresh that left the
+    // deal check saying "lowest price we've tracked" is the failure this whole
+    // fix is about, and the screen has no other way to know.
+    return NextResponse.json({
+      ok: true,
+      dealCheck: snap.replaced
+        ? (freshSnapshot ? 'updated' : 'removed')
+        : (snap.reason === 'no-block' ? 'none' : 'unchanged'),
+      newPrice: now,
+      discountPct: pct,
+    })
   } catch (err) {
     console.error('[deals/refresh-price]', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, "Couldn't refresh the price just now. Please try again in a moment.") }, { status: 500 })
