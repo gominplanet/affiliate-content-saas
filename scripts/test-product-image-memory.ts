@@ -208,6 +208,72 @@ const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOStr
   }
 }
 
+// ── the save fires when MVP MAKES the image, not only when it ships ─────────
+//
+// THE BUG SEB HIT. The first cut only saved on "Apply to YouTube", so a
+// creator who generated a thumbnail and did not push it to YouTube — most of
+// the time — had nothing remembered, and the Deals Hub had nothing to offer.
+{
+  const PAGE = readFileSync('app/(dashboard)/co-pilot/page.tsx', 'utf8')
+  check('Co-Pilot saves the thumbnail it is showing',
+    /useEffect\([\s\S]{0,400}?saveProductImage\(/.test(PAGE),
+    'keyed on the visible image, because generate / pick a variant / swap the title / upload are all "finished"')
+  check('and re-saves whenever that image changes',
+    /\}, \[thumbnailUrl, effectiveAsin\]\)/.test(PAGE),
+    'a variant pick or a new title must replace what the product remembers')
+}
+
+// ── the ASIN is the one the SERVER resolved, not the one the client guessed ──
+//
+// THE SECOND BUG, and a repeat of one this codebase already documents: the
+// thumbnail form sends `productUrl` and NO `asin` when a link is pasted, which
+// is why generate-thumbnail has effAsin at all. Filing images under
+// video.detectedAsin alone stored them against null for every overridden
+// product.
+{
+  const PAGE = readFileSync('app/(dashboard)/co-pilot/page.tsx', 'utf8')
+  check('Co-Pilot derives an effective ASIN', /const effectiveAsin = /.test(PAGE))
+  check('from the override link as well as the detected one',
+    /asinFromAmazonUrl\(override\)/.test(PAGE),
+    'a pasted Product link override sends no asin at all')
+  check('and no apply call still keys off detectedAsin alone',
+    !/asin: video\.detectedAsin \?\? undefined,\n\s+thumbnailUploaded/.test(PAGE))
+
+  const ROUTE = readFileSync('app/api/youtube/generate-thumbnail/route.ts', 'utf8')
+  check('the route records the ASIN it resolved', /memo\.asin = effAsin/.test(ROUTE))
+  check('through one wrapper, not five return sites',
+    /export async function POST\(request: Request\) \{[\s\S]{0,900}?generateThumbnail\(request, memo\)/.test(ROUTE),
+    'this handler has five success returns and a sixth would silently stop saving')
+}
+
+// ── the remembered image is the one with the title on it ────────────────────
+//
+// THE THIRD BUG. generate-thumbnail returns the TEXT-FREE base and the browser
+// bakes the headline on afterwards (addTextOverlay). Saving server-side would
+// file the one version the creator never chose.
+{
+  const ROUTE = readFileSync('app/api/youtube/generate-thumbnail/route.ts', 'utf8')
+  check('the route lets a caller defer the save', /deferImageMemory/.test(ROUTE))
+  check('and reads the flag off a clone of the request',
+    /request\.clone\(\)\.json\(\)/.test(ROUTE),
+    'the handler still needs the body stream')
+
+  const PAGE = readFileSync('app/(dashboard)/co-pilot/page.tsx', 'utf8')
+  check('Co-Pilot defers on every generate call',
+    (PAGE.match(/deferImageMemory: true/g) || []).length === 2,
+    'both the first render and the regenerate return a text-free base')
+}
+
+// ── and the screen says whether it worked ───────────────────────────────────
+{
+  const PAGE = readFileSync('app/(dashboard)/co-pilot/page.tsx', 'utf8')
+  check('a successful save is stated', /Saved for <span className="font-mono">/.test(PAGE))
+  check('a failed save reads differently', /Couldn&apos;t save this for/.test(PAGE),
+    'a failed save that looks like a successful one is only discovered in the Deals Hub a week later')
+  check('and no product at all is its own message', /No product on this video/.test(PAGE),
+    'the commonest reason nothing is remembered, and the one the creator can fix')
+}
+
 // ── remembering never breaks the thing the creator actually asked for ───────
 {
   for (const f of ['app/api/youtube/apply/route.ts', 'app/api/youtube/update-metadata/route.ts']) {

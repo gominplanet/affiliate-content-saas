@@ -175,3 +175,54 @@ export async function recallProductImage(db: any, userId: string, asin: string):
     return null
   }
 }
+
+/**
+ * Remember an image we only have a URL for.
+ *
+ * Used by every path that renders through fal (the Co-Pilot thumbnail, the
+ * Amazon composers) where the bytes were never in this process. Fetches the
+ * URL and keeps OUR OWN copy: fal.media links expire, and an image that
+ * vanishes in a month is worse than no memory.
+ *
+ * Best-effort like everything else here — a render must never fail because we
+ * could not remember the result. Returns the stored public URL, or null.
+ */
+export async function rememberProductImageFromUrl(opts: {
+  db: any
+  userId: string
+  asin: string
+  imageUrl: string
+  source?: ProductImageSource
+  surface?: string | null
+  modelUsed?: string | null
+}): Promise<string | null> {
+  if (!isAsin(opts.asin)) return null
+  if (!/^https?:\/\//i.test(opts.imageUrl)) return null
+  try {
+    // The URL here is produced by our own render pipeline rather than by a
+    // request body, but it still goes through the SSRF guard: this function is
+    // exported and the next caller may not be so careful.
+    const { assertPublicHttpUrl } = await import('@/lib/ssrf-guard')
+    assertPublicHttpUrl(opts.imageUrl)
+    const res = await fetch(opts.imageUrl, {
+      signal: AbortSignal.timeout(15_000),
+      headers: { 'User-Agent': 'Mozilla/5.0 (MVP Affiliate)' },
+    })
+    if (!res.ok) {
+      console.error('[product-image-memory] fetch failed', res.status, opts.imageUrl.slice(0, 80))
+      return null
+    }
+    const buffer = Buffer.from(await res.arrayBuffer())
+    const mimeType = res.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() || 'image/jpeg'
+    return await rememberProductImage({
+      db: opts.db, userId: opts.userId, asin: opts.asin,
+      buffer, mimeType,
+      source: opts.source || 'generated',
+      surface: opts.surface ?? null,
+      modelUsed: opts.modelUsed ?? null,
+    })
+  } catch (err) {
+    console.error('[product-image-memory] remember-from-url failed', err instanceof Error ? err.message : err)
+    return null
+  }
+}

@@ -6,6 +6,8 @@ import ExpressionPicker, { useExpression } from '@/components/thumbnails/Express
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { asinFromAmazonUrl } from '@/lib/asin'
+import { saveProductImage } from '@/components/product/SavedProductImage'
 import { detectLineEdit, LINE_META, type LineKey } from '@/lib/yt-description-lines'
 import PageHero from '@/components/layout/PageHero'
 import { CoPilotGuide } from '@/components/guide/tool-guides'
@@ -985,6 +987,56 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     })()
   }, [])
 
+  /**
+   * The ASIN this video's art actually belongs to.
+   *
+   * NOT just video.detectedAsin. When the creator pastes a product link in
+   * "Product link (override)", the form sends `productUrl` and no `asin` at
+   * all — generate-thumbnail already has an effAsin for exactly this reason,
+   * and the comment there records that keying off the body `asin` alone has
+   * starved this route once before. The product-image memory repeated the
+   * mistake and filed images under a null ASIN, which is why a Co-Pilot
+   * thumbnail never came back in the Deals Hub.
+   */
+  const effectiveAsin = (() => {
+    const override = productUrl.trim()
+    if (override) return asinFromAmazonUrl(override) || video.detectedAsin || null
+    return video.detectedAsin || null
+  })()
+
+  /**
+   * Remember the thumbnail against the PRODUCT, so posting the same ASIN to
+   * Facebook next week can offer it back (lib/product-image-memory).
+   *
+   * Keyed on the visible thumbnail rather than on a button, because there is no
+   * single moment when a creator "finishes": they generate, pick a variant,
+   * swap the title, or upload their own. Every one of those changes
+   * thumbnailUrl, and the image on screen is the one they mean. Saving only at
+   * "Apply to YouTube" was the original bug — most thumbnails never get pushed,
+   * so nothing was ever remembered.
+   *
+   * Best-effort and silent on failure; savedProductImage drives the one line of
+   * UI that reports what actually happened.
+   */
+  const [savedProductImage, setSavedProductImage] = useState<'saving' | 'saved' | 'failed' | null>(null)
+  useEffect(() => {
+    if (!thumbnailUrl || !effectiveAsin) { setSavedProductImage(null); return }
+    let cancelled = false
+    setSavedProductImage('saving')
+    ;(async () => {
+      const ok = await saveProductImage({
+        asin: effectiveAsin,
+        imageUrl: thumbnailUrl,
+        surface: 'YouTube Co-Pilot',
+        modelUsed: thumbnailModel,
+        source: thumbnailModel?.includes('upload') ? 'upload' : 'generated',
+      })
+      if (!cancelled) setSavedProductImage(ok ? 'saved' : 'failed')
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thumbnailUrl, effectiveAsin])
+
   /** Record a 👍 / 👎 reaction on the current YouTube thumbnail. */
   async function submitYtThumbnailFeedback(reaction: 'like' | 'dislike') {
     if (!thumbnailUrl) return
@@ -1225,7 +1277,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             // so posting the same ASIN to Facebook next week can offer it back
             // (lib/product-image-memory). An uploaded image is flagged because
             // it is the one that regenerating can never reproduce.
-            asin: video.detectedAsin ?? undefined,
+            asin: effectiveAsin ?? undefined,
             thumbnailUploaded: !!thumbnailModel?.includes('upload'),
             playlistId: proSettings.playlistId,
             madeForKids: isDraft ? undefined : proSettings.madeForKids,
@@ -1331,7 +1383,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           description: editDesc,
           tags: generated.tags,
           thumbnailDataUri: thumbnailUrl ?? undefined,
-          asin: video.detectedAsin ?? undefined,
+          asin: effectiveAsin ?? undefined,
           thumbnailUploaded: !!thumbnailModel?.includes('upload'),
         }),
       })
@@ -1854,6 +1906,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           scenePrompt: scenePrompt.trim() || undefined,
           // Optional pasted product link — authoritative product source.
           productUrl: productUrl.trim() || undefined,
+          // This route hands back the TEXT-FREE base; the headline is baked on
+          // in the browser below. Let the client save the finished image, or
+          // the product would remember a thumbnail with no title on it.
+          deferImageMemory: true,
           // graphic = gpt-image-1 (identity-grounded, ~20s with video frame or ~2min with Photobooth).
           // Use graphic whenever there's an identity source: face model OR a YouTube video to pull frames from.
           // Product-only / selfie → 'clean' (NB Pro, fast, no face composition).
@@ -1980,6 +2036,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           scenePrompt: scenePrompt.trim() || undefined,
           // Optional pasted product link — authoritative product source.
           productUrl: productUrl.trim() || undefined,
+          // This route hands back the TEXT-FREE base; the headline is baked on
+          // in the browser below. Let the client save the finished image, or
+          // the product would remember a thumbnail with no title on it.
+          deferImageMemory: true,
           // gpt-image is the only engine now (matches the manual Generate button).
           textMode: 'graphic',
           breakFrame: breakFrame || undefined,
@@ -3067,6 +3127,25 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
                       </div>
+                      {/* Whether this image is now filed against the product.
+                          Without this line a save that failed looks exactly
+                          like one that worked, and the only place you would
+                          find out is the Deals Hub a week later. */}
+                      {effectiveAsin && savedProductImage === 'saved' && (
+                        <span className="text-[11px] text-[#86868b]">
+                          Saved for <span className="font-mono">{effectiveAsin}</span>. Deals Hub, Facebook and Pinterest will offer this image for this product.
+                        </span>
+                      )}
+                      {effectiveAsin && savedProductImage === 'failed' && (
+                        <span className="text-[11px] text-[#b91c1c] dark:text-[#f87171]">
+                          Couldn&apos;t save this for <span className="font-mono">{effectiveAsin}</span>. Other tools won&apos;t offer it for this product. Your thumbnail here is unaffected.
+                        </span>
+                      )}
+                      {!effectiveAsin && (
+                        <span className="text-[11px] text-[#86868b]">
+                          No product on this video, so this image isn&apos;t saved for reuse. Paste the Amazon link under Product link to file it against an ASIN.
+                        </span>
+                      )}
                       {titleOptions.length > 1 && titleOverlayCtx && (
                         <div className="flex flex-col gap-1.5">
                           <span className="text-[11px] text-[#86868b]">Pick a title{retitling ? ' · applying…' : ''}</span>

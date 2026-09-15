@@ -4,6 +4,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { asinFromAmazonUrl } from '@/lib/product-link'
+import { rememberProductImageFromUrl } from '@/lib/product-image-memory'
 import { createOpenAIService, normalizeToPng } from '@/services/openai'
 import { fal } from '@fal-ai/client'
 import sharp from 'sharp'
@@ -1141,12 +1142,78 @@ let LAST_CUTOUT_ERROR = ''
 // (gate skipped, threw, or compose returned nothing) — no server logs needed.
 let LAST_NB_FALLTHROUGH = ''
 
-// ── Main route ────────────────────────────────────────────────────────────────
+/**
+ * What the wrapper needs in order to remember the rendered image against the
+ * product. Filled in as the handler resolves them, because the handler has
+ * FIVE success returns (flux, nano-banana, kontext-upload, kontext, ideogram)
+ * and patching each one is how the sixth silently stops saving.
+ */
+interface ImageMemo {
+  db: SupabaseLike | null
+  userId: string | null
+  /** The ASIN the SERVER resolved, not the one the client guessed. */
+  asin: string | null
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SupabaseLike = any
+
+/**
+ * POST /api/youtube/generate-thumbnail
+ *
+ * Wrapper around the renderer. Its only job is the product-image memory: when
+ * MVP makes an image for a product, remember it against that product so every
+ * other composer can offer it back (lib/product-image-memory).
+ *
+ * Saving here rather than at "Apply to YouTube" is deliberate and was a bug
+ * fix: keying off the apply step meant a creator who generated a thumbnail and
+ * did not push it to YouTube got nothing remembered, which is most of the time.
+ * MVP made the image; MVP should remember it.
+ */
 export async function POST(request: Request) {
+  // Read the flag off a CLONE — the handler still needs the body stream.
+  let defer = false
+  try {
+    const peek = await request.clone().json() as { deferImageMemory?: boolean }
+    defer = peek?.deferImageMemory === true
+  } catch { /* unreadable body is the handler's problem, not ours */ }
+
+  const memo: ImageMemo = { db: null, userId: null, asin: null }
+  const res = await generateThumbnail(request, memo)
+
+  // YouTube Co-Pilot defers: this route returns the TEXT-FREE base image and
+  // the browser bakes the headline on afterwards (addTextOverlay). Saving here
+  // would remember a thumbnail without the creator's title on it — the one
+  // image they never chose. The client saves the finished one instead.
+  if (defer) return res
+  if (res.status !== 200 || !memo.db || !memo.userId || !memo.asin) return res
+  let body: Record<string, unknown>
+  try {
+    body = await res.clone().json() as Record<string, unknown>
+  } catch {
+    return res
+  }
+  const url = (Array.isArray(body.thumbnailUrls) ? body.thumbnailUrls[0] : null) || body.thumbnailUrl
+  if (typeof url !== 'string' || !url) return res
+
+  const saved = await rememberProductImageFromUrl({
+    db: memo.db, userId: memo.userId, asin: memo.asin, imageUrl: url,
+    surface: 'YouTube Co-Pilot',
+    modelUsed: typeof body.modelUsed === 'string' ? body.modelUsed : null,
+  })
+  // Report the result, not the attempt. `savedForProduct` is the ASIN it is now
+  // filed under, or null — a screen that says "saved" for a write that did not
+  // happen is the failure this repo keeps re-finding.
+  return NextResponse.json({ ...body, savedForProduct: saved ? memo.asin : null }, { status: 200 })
+}
+
+// ── Main route ────────────────────────────────────────────────────────────────
+async function generateThumbnail(request: Request, memo: ImageMemo) {
   try {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    memo.db = supabase
+    memo.userId = user.id
 
     // Tier + billing window for usage-cap check + telemetry.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1829,6 +1896,12 @@ export async function POST(request: Request) {
     const effAsin = (asin && asin.trim())
       || (pastedProductUrl ? asinFromAmazonUrl(pastedProductUrl) : null)
       || null
+    // THIS is the ASIN the image belongs to. The client sends `productUrl` and
+    // NOT `asin` whenever a link is pasted — the comment above records that
+    // keying off the body `asin` alone has already starved this route once.
+    // The product-image memory made the same mistake and filed images under a
+    // null ASIN, so it now takes the resolved one from here.
+    memo.asin = effAsin
     if (effAsin && (!productTitle || !productDescription || !productBullets.length)) {
       try {
         const p = await fetchAmazonProduct(effAsin)
