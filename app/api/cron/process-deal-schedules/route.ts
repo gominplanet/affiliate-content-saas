@@ -67,7 +67,11 @@ export async function GET(request: Request) {
     .update({ status: 'processing', claimed_at: nowIso, updated_at: nowIso })
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
-    .select('id,user_id,asin,title,image_url,platforms,story,caption')
+    // select('*'), not a column list: PostgREST 400s the WHOLE statement when one
+    // named column is missing, and on the atomic claim that IS this queue, a 400
+    // means nothing is ever claimed again. Silently, because a cron has no user
+    // watching it. process-burn-jobs did exactly that in production on 2026-09-14.
+    .select('*')
     .limit(MAX_PER_TICK)
 
   if (claimErr) return NextResponse.json({ error: `Claim failed: ${claimErr.message}` }, { status: 500 })

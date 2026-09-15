@@ -19,6 +19,7 @@ import { recordReachSample } from '@/lib/reach-pulse'
 import { recordUsage } from '@/lib/ai-usage'
 import { checkSpendCeiling } from '@/lib/ai-spend'
 import { metaEnabled } from '@/lib/feature-flags'
+import { alertOps } from '@/lib/ops-alert'
 
 export const maxDuration = 300
 
@@ -47,21 +48,42 @@ export async function GET(request: Request) {
   const nowIso = new Date().toISOString()
 
   // Atomic claim of one due job.
+  //
+  // select('*'), NOT a named column list, and that is the whole point.
+  //
+  // PostgREST rejects the ENTIRE statement with a 400 when one named column is
+  // missing. This claim used to name seven, so a single unapplied migration
+  // 400'd the PATCH, 500'd the route, and halted every burn job on every tick
+  // forever — silently, because a cron has no user watching it. Observed in
+  // production on 2026-09-14 at 10:07: PATCH 400 in 55ms, route 500 in 64ms,
+  // repeating on the schedule.
+  //
+  // The comment that used to sit here shows the same trap was already hit once,
+  // for sticker_url (migration 139) and sticker_duration_sec (174), and fixed
+  // by removing those two names from the list. That fixed the two columns that
+  // had broken and left the other seven loaded. A star select cannot be broken
+  // by the next column anybody adds.
+  //
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  // NB: sticker_url (migration 139) and sticker_duration_sec (174) are NOT
-  // selected in the claim. They're fetched per-job below, so a database that
-  // hasn't applied those migrations degrades to "no sticker overlay" instead of
-  // 400-ing this claim on EVERY tick and halting all burn jobs (the same
-  // resilience pattern process-scheduled uses for its post-base columns).
   const { data: claimed, error: claimErr } = await admin
     .from('ig_burn_jobs')
     .update({ status: 'processing', claimed_at: nowIso })
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
-    .select('id,user_id,source_video_url,caption_text,style,position,product')
+    .select('*')
     .order('scheduled_at', { ascending: true })
     .limit(1)
-  if (claimErr) return NextResponse.json({ error: `Claim failed: ${claimErr.message}` }, { status: 500 })
+  if (claimErr) {
+    // A schema fault halts the whole queue and repeats until somebody looks at
+    // Vercel logs, which is the failure mode that hid this for a day. Page ops
+    // and say which fault it is, rather than returning a bare 500 forever.
+    const schemaFault = /column|schema cache|PGRST2\d\d/i.test(claimErr.message || '')
+    void alertOps(
+      schemaFault ? 'Burn queue halted — schema fault on the job claim' : 'Burn queue halted — claim failed',
+      `ig_burn_jobs claim failed: ${claimErr.message}${schemaFault ? '\n\nThis looks like a missing column. Every queued Shop Burner job is stuck until the migration is applied.' : ''}`,
+    )
+    return NextResponse.json({ error: `Claim failed: ${claimErr.message}`, schemaFault }, { status: 500 })
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const job: BurnJob | undefined = ((claimed ?? []) as any[])[0] as BurnJob | undefined
