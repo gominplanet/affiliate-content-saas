@@ -15,7 +15,7 @@ import { publishDealToSocials, QUICK_POST_PLATFORMS, type QuickPostPlatform, typ
 import { publishDealStory } from '@/lib/deal-story-publish'
 import { buildDealCardImage } from '@/lib/deal-card'
 import { createGeniuslinkService } from '@/services/geniuslink'
-import { resolveCloakedLink, getLinkStyle } from '@/lib/link-cloak'
+import { resolveCloakedLinkDetailed, cloakFallbackNote, getLinkStyle } from '@/lib/link-cloak'
 import { CHANNEL_GROUP_NAMES, channelKey } from '@/lib/geniuslink-group'
 import type { Tier } from '@/lib/tier'
 
@@ -99,13 +99,33 @@ export async function executeDealQuickPost(input: DealQuickPostInput): Promise<D
   const platformLinks: Partial<Record<QuickPostPlatform, string>> = {}
   if (platforms.length) {
     await Promise.all(platforms.map(async (p) => {
-      platformLinks[p] = await resolveCloakedLink({ supabase: db, userId, destination: taggedLink, asin, channel: p, source: p, label: dealTitle, config: linkStyle })
+      const r = await resolveCloakedLinkDetailed({ supabase: db, userId, destination: taggedLink, asin, channel: p, source: p, label: dealTitle, config: linkStyle })
+      platformLinks[p] = r.url
+      // SAY IT WHEN THE LINK IS NOT THE ONE THEY ASKED FOR. This used to call
+      // resolveCloakedLink, which returns a bare string, so a failed Geniuslink
+      // wrap published a raw amazon.com/dp/...?tag=... link and told nobody. A
+      // paying creator found out from her own live Facebook post and had been
+      // editing links by hand on Facebook ever since, one at a time, believing
+      // that was the product.
+      //
+      // First reason wins: with several platforms failing for one cause, six
+      // copies of the same sentence is not six times the information.
+      if (!geniuslinkNote) {
+        const note = cloakFallbackNote(r)
+        if (note) geniuslinkNote = note
+      }
     }))
   }
   // Pinterest is a separate pipeline — its own cloaked link (MVP-PINTEREST group).
-  const pinLink = input.pinterest
-    ? await resolveCloakedLink({ supabase: db, userId, destination: taggedLink, asin, channel: 'pinterest', source: 'pinterest', label: dealTitle, config: linkStyle })
-    : null
+  let pinLink: string | null = null
+  if (input.pinterest) {
+    const r = await resolveCloakedLinkDetailed({ supabase: db, userId, destination: taggedLink, asin, channel: 'pinterest', source: 'pinterest', label: dealTitle, config: linkStyle })
+    pinLink = r.url
+    if (!geniuslinkNote) {
+      const note = cloakFallbackNote(r)
+      if (note) geniuslinkNote = note
+    }
+  }
 
   // ── Link-friendly text platforms ──
   if (platforms.length) {

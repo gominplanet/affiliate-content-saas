@@ -16,7 +16,7 @@
 import { canUsePassport } from '@/lib/feature-access'
 import { normalizeTier } from '@/lib/tier'
 import { passportLinkForUser, getOrCreatePassportLink, passportLinkUrl } from '@/lib/passport-links'
-import { channelWrapLink } from '@/lib/channel-share-url'
+import { channelWrapLink, channelWrapLinkDetailed } from '@/lib/channel-share-url'
 import { shortenBitly } from '@/lib/bitly'
 import { getDefaultSite } from '@/lib/wordpress-sites'
 
@@ -109,9 +109,47 @@ export interface CloakOpts {
  * Best-effort: any failure falls back to the plain destination so a link is never
  * lost. Pass `config` (from getLinkStyle) when cloaking many links at once.
  */
-export async function resolveCloakedLink(opts: CloakOpts): Promise<string> {
+export type CloakReason =
+  | 'ok'                    // the link was cloaked as the creator asked
+  | 'direct'                // 'direct' style: a plain link is the correct answer
+  | 'no-destination'
+  | 'passport-mint-failed'  // Passport chosen, the ASIN link would not mint
+  | 'passport-no-code'      // Passport chosen, the forwarder would not create
+  | 'geniuslink-no-creds'   // Geniuslink chosen, keys missing or not the style
+  | 'geniuslink-no-group'
+  | 'geniuslink-api-failed'
+  | 'geniuslink-error'
+  | 'geniuslink-unknown-channel'
+  | 'bitly-no-token'
+  | 'bitly-failed'
+  | 'error'
+
+export interface CloakResult {
+  url: string
+  reason: CloakReason
+  /** false = a PLAIN, uncloaked link is about to be published. */
+  cloaked: boolean
+}
+
+/**
+ * The same resolution, but it says what happened.
+ *
+ * resolveCloakedLink has six exits that quietly return the plain destination,
+ * and five of them are failures. On 2026-09-12 a paying creator sent a
+ * screenshot of her own published Facebook post carrying a raw
+ * amazon.com/dp/...?tag=... link. Her style was Geniuslink, her keys had stopped
+ * working, and every layer did exactly what it was told: fall back so the post
+ * still goes out. Nothing told her, so she had been editing links by hand on
+ * Facebook, one post at a time, believing that was the product.
+ *
+ * The fallback behaviour is unchanged and still right: a post must never fail
+ * to publish because a shortener is down. What changes is that the caller can
+ * now say so, which is the difference between a degraded post and an invisible
+ * one.
+ */
+export async function resolveCloakedLinkDetailed(opts: CloakOpts): Promise<CloakResult> {
   const dest = (opts.destination || '').trim()
-  if (!dest) return dest
+  if (!dest) return { url: dest, reason: 'no-destination', cloaked: false }
   const cfg = opts.config ?? (await getLinkStyle(opts.supabase, opts.userId))
   const asin = (opts.asin || '').trim().toUpperCase()
   const hasAsin = /^[A-Z0-9]{10}$/.test(asin)
@@ -122,28 +160,73 @@ export async function resolveCloakedLink(opts: CloakOpts): Promise<string> {
         // Amazon ASIN → geo-routing link; any other URL → cloaked forwarder.
         if (hasAsin) {
           const u = await passportLinkForUser(opts.supabase, opts.userId, asin, { source: opts.source ?? opts.channel ?? null, title: opts.label ?? null })
-          return u || dest
+          return u ? { url: u, reason: 'ok', cloaked: true } : { url: dest, reason: 'passport-mint-failed', cloaked: false }
         }
         const site = await getDefaultSite(opts.supabase, opts.userId)
         const siteId = site && site.id !== 'legacy' ? (site.id as string) : null
         const code = await getOrCreatePassportLink(opts.supabase, opts.userId, siteId, { destinationUrl: dest, label: opts.label ?? null, source: opts.source ?? opts.channel ?? null })
-        return code ? passportLinkUrl(code) : dest
+        return code
+          ? { url: passportLinkUrl(code), reason: 'ok', cloaked: true }
+          : { url: dest, reason: 'passport-no-code', cloaked: false }
       }
-      case 'geniuslink':
-        return await channelWrapLink({
+      case 'geniuslink': {
+        const w = await channelWrapLinkDetailed({
           supabase: opts.supabase, destination: dest, channel: opts.channel || 'blog',
           userId: opts.userId, apiKey: cfg.geniuslinkKey, apiSecret: cfg.geniuslinkSecret, label: opts.label ?? undefined,
         })
+        if (w.reason === 'ok' || w.reason === 'already-wrapped') return { url: w.url, reason: 'ok', cloaked: true }
+        const map: Record<string, CloakReason> = {
+          'no-creds': 'geniuslink-no-creds', 'no-group': 'geniuslink-no-group',
+          'api-failed': 'geniuslink-api-failed', 'error': 'geniuslink-error',
+          'unknown-channel': 'geniuslink-unknown-channel', 'no-destination': 'no-destination',
+        }
+        return { url: w.url, reason: map[w.reason] ?? 'error', cloaked: false }
+      }
       case 'bitly': {
-        if (!cfg.bitlyToken) return dest
+        if (!cfg.bitlyToken) return { url: dest, reason: 'bitly-no-token', cloaked: false }
         const short = await shortenBitly(cfg.bitlyToken, dest)
-        return short || dest
+        return short ? { url: short, reason: 'ok', cloaked: true } : { url: dest, reason: 'bitly-failed', cloaked: false }
       }
       case 'direct':
       default:
-        return dest
+        // Not a failure. A plain link IS the creator's chosen style.
+        return { url: dest, reason: 'direct', cloaked: true }
     }
   } catch {
-    return dest
+    return { url: dest, reason: 'error', cloaked: false }
   }
+}
+
+/**
+ * What to tell the creator when their link did not get cloaked. null when
+ * nothing went wrong, so a caller can write `if (note) show(note)`.
+ *
+ * Names the style they chose and what to check, because "link not cloaked" sends
+ * somebody to the wrong settings page.
+ */
+export function cloakFallbackNote(r: CloakResult): string | null {
+  if (r.cloaked) return null
+  switch (r.reason) {
+    case 'passport-mint-failed':
+    case 'passport-no-code':
+      return 'Passport is your link style, but the Passport link could not be created, so this went out with your plain Amazon link instead.'
+    case 'geniuslink-no-creds':
+      return 'Geniuslink is your link style, but your API key and secret are not working, so this went out with your plain Amazon link. Re-enter them under External Integrations.'
+    case 'geniuslink-no-group':
+      return 'Geniuslink is your link style, but the tracking group for this channel could not be created, so this went out with your plain Amazon link.'
+    case 'geniuslink-api-failed':
+    case 'geniuslink-error':
+      return 'Geniuslink is your link style, but Geniuslink did not return a short link, so this went out with your plain Amazon link. Usually a temporary outage.'
+    case 'bitly-no-token':
+      return 'Bitly is your link style, but no Bitly token is saved, so this went out with your plain Amazon link.'
+    case 'bitly-failed':
+      return 'Bitly is your link style, but Bitly did not return a short link, so this went out with your plain Amazon link.'
+    default:
+      return 'This went out with your plain Amazon link rather than your chosen link style.'
+  }
+}
+
+/** Unchanged contract for callers that only want the URL. */
+export async function resolveCloakedLink(opts: CloakOpts): Promise<string> {
+  return (await resolveCloakedLinkDetailed(opts)).url
 }

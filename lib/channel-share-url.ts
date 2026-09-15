@@ -138,23 +138,57 @@ interface ChannelWrapOpts {
  * the destination unchanged. No per-post cache — use for one-off/quick-post links.
  * Skips wrapping a link that's already a geni.us link.
  */
-export async function channelWrapLink(opts: ChannelWrapOpts): Promise<string> {
+/** Why a wrap did or did not happen. Every value except 'ok' and
+ *  'already-wrapped' means a PLAIN link is about to be published. */
+export type WrapReason =
+  | 'ok'               // a geni.us link was created
+  | 'already-wrapped'  // the destination was already a geni.us link
+  | 'no-destination'
+  | 'unknown-channel'  // channelKey() did not recognise opts.channel
+  | 'no-creds'         // Geniuslink is not this creator's style, or keys missing
+  | 'no-group'         // the channel's Geniuslink group could not be resolved
+  | 'api-failed'       // createLink returned nothing, or not a geni.us URL
+  | 'error'            // the call threw
+
+export interface WrapResult { url: string; reason: WrapReason }
+
+/**
+ * The same wrap, but it says what happened.
+ *
+ * channelWrapLink has SEVEN exits that return the plain destination and six of
+ * them are failures. A creator whose Geniuslink keys stopped working got a
+ * published Facebook post carrying a raw amazon.com/dp/...?tag=... link, with
+ * nothing anywhere to say the wrap had been attempted and lost — reported by a
+ * paying customer on 2026-09-12 with a screenshot of the post.
+ *
+ * Best-effort behaviour is unchanged and deliberate: a post must never fail to
+ * go out because a link shortener is down. What changes is that the caller can
+ * now tell the creator, instead of everyone finding out from the live post.
+ */
+export async function channelWrapLinkDetailed(opts: ChannelWrapOpts): Promise<WrapResult> {
   const { supabase, destination, userId, apiKey, apiSecret, label } = opts
-  if (!destination) return destination
-  if (/geni\.us/i.test(destination)) return destination
+  if (!destination) return { url: destination, reason: 'no-destination' }
+  if (/geni\.us/i.test(destination)) return { url: destination, reason: 'already-wrapped' }
   const key = channelKey(opts.channel)
-  if (!key) return destination
+  if (!key) return { url: destination, reason: 'unknown-channel' }
   // Only geni.us-wrap when Geniuslink is the creator's chosen style; otherwise
   // (Passport / Bitly / Direct) return the destination as-is.
   const creds = await geniuslinkStyleCreds(supabase, userId, apiKey, apiSecret)
-  if (!creds) return destination
+  if (!creds) return { url: destination, reason: 'no-creds' }
   try {
     const groupId = await resolveGeniuslinkChannelGroupId({ supabase, userId, channel: key, apiKey: creds.key, apiSecret: creds.secret })
-    if (!groupId) return destination
+    if (!groupId) return { url: destination, reason: 'no-group' }
     const svc = createGeniuslinkService(creds.key, creds.secret)
     const url = await svc.createLink(destination, (label || 'Link').slice(0, 120), { groupId })
-    return (url && /geni\.us/i.test(url)) ? url : destination
+    return (url && /geni\.us/i.test(url))
+      ? { url, reason: 'ok' }
+      : { url: destination, reason: 'api-failed' }
   } catch {
-    return destination
+    return { url: destination, reason: 'error' }
   }
+}
+
+/** Unchanged contract for the callers that only want the URL. */
+export async function channelWrapLink(opts: ChannelWrapOpts): Promise<string> {
+  return (await channelWrapLinkDetailed(opts)).url
 }
