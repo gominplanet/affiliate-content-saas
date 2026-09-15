@@ -102,6 +102,16 @@ export default function ScheduleEditModal({
       if (Array.isArray(d.skipped) && d.skipped.length) {
         toast.message(`Skipped: ${d.skipped.join(', ')}`)
       }
+      // MVP moved its own schedule but WordPress did not take the new date.
+      // WordPress is what actually publishes, so this is a FAILED reschedule
+      // even though every MVP-side write worked. A green "Schedule updated"
+      // here is the difference between a creator knowing their post is about to
+      // go out at the wrong time and finding out from the live site.
+      if (typeof d.wpWarning === 'string' && d.wpWarning) {
+        toast.error(d.wpWarning, { duration: 12000 })
+        setSaving(false)
+        return
+      }
       toast.success('Schedule updated')
       onSaved()
       onClose()

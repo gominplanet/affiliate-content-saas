@@ -26,6 +26,13 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
 
 export const runtime = 'nodejs'
+// A WordPress write here can take a while on a slow host: the body-auth proxy
+// leg aborts at 30s (lib/wp-proxy), then the legacy Basic-Auth path allows 45s,
+// and a 401 sends it round again for another 45s. Undeclared, this route
+// inherited the platform default, so a slow host could kill it AFTER
+// blog_posts.scheduled_for had been moved but BEFORE the social cascade was
+// shifted, leaving the post and its socials on different times.
+export const maxDuration = 120
 
 const SUPPORTED_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
 
@@ -36,6 +43,10 @@ export async function PATCH(request: Request) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    /** Set when MVP's own schedule moved but WordPress's did not. The two then
+     *  disagree about when the post publishes, and WordPress wins. */
+    let wpWarning: string | null = null
 
     const body = (await request.json()) as {
       blogPostId?: string
@@ -86,15 +97,28 @@ export async function PATCH(request: Request) {
       await (supabase as any).from('blog_posts').update({ scheduled_for: newIso }).eq('id', blogPostId).eq('user_id', user.id)
 
       // wp-native: WordPress owns the publish — move the WP post's date.
+      //
+      // WHEN THIS FAILS, SAY SO. MVP's own scheduled_for has already been
+      // moved by the update above, so a swallowed failure here leaves the two
+      // systems disagreeing about when the post goes out, and WordPress is the
+      // one that actually publishes. The creator is told their post moved; it
+      // publishes at the old time anyway. This used to be a console.warn, which
+      // is the same as nothing: a cron has no user and neither does a log line.
       if (scheduleMode !== 'draft-flip' && post.wordpress_post_id) {
         try {
           const creds = await getWordPressCredentials(supabase, user.id, (post.wordpress_site_id as string) ?? body.siteId ?? null)
-          if (creds) {
+          if (!creds) {
+            wpWarning = 'MVP moved this post, but WordPress is not connected for this site, so the live post still publishes at its original time. Reconnect WordPress and set the time again.'
+          } else {
             const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password, creds.wordpress_api_token ?? undefined)
             await wp.updatePost(post.wordpress_post_id as number, { status: 'future', date: newIso })
           }
         } catch (e) {
-          console.warn('[schedule-edit] WP reschedule failed:', e instanceof Error ? e.message : e)
+          const msg = e instanceof Error ? e.message : String(e)
+          console.warn('[schedule-edit] WP reschedule failed:', msg)
+          wpWarning = /abort|timeout|timed out/i.test(msg)
+            ? 'MVP moved this post, but WordPress did not answer in time, so the live post still publishes at its original time. Your site may be slow right now. Try setting the time again in a minute.'
+            : `MVP moved this post, but WordPress refused the change (${msg.slice(0, 120)}), so the live post still publishes at its original time.`
         }
       }
 
@@ -188,12 +212,16 @@ export async function PATCH(request: Request) {
       .then((r: any) => { if (r?.error) console.warn('[schedule-edit] ticked-platforms sync:', r.error.message) }, () => {})
 
     return NextResponse.json({
-      ok: true,
+      // NOT ok when WordPress did not take the new date. The post's own page is
+      // what readers see, so a half-applied reschedule is a failed reschedule
+      // even though every MVP-side write succeeded.
+      ok: !wpWarning,
       scheduledFor: new Date(newBaseMs).toISOString(),
       platforms: [...current],
       added,
       removed: removePlatforms,
       skipped,
+      wpWarning,
     })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
