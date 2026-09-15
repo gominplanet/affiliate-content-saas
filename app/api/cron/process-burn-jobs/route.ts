@@ -47,42 +47,60 @@ export async function GET(request: Request) {
   const admin = createAdminClient()
   const nowIso = new Date().toISOString()
 
-  // Atomic claim of one due job.
+  // Atomic claim of the OLDEST due job, in two steps: read the id, then claim
+  // that id.
   //
-  // select('*'), NOT a named column list, and that is the whole point.
+  // It used to be one statement with .order('scheduled_at') on the PATCH, and
+  // that is what broke it. PostgREST does not accept an order on a mutation, so
+  // the claim 400'd on every single tick and the route 500'd behind it — in
+  // production on 2026-09-14 at 10:07, PATCH 400 in 55ms, route 500 in 64ms,
+  // repeating on the schedule with every queued job stuck behind it and nobody
+  // watching, because a cron has no user.
   //
-  // PostgREST rejects the ENTIRE statement with a 400 when one named column is
-  // missing. This claim used to name seven, so a single unapplied migration
-  // 400'd the PATCH, 500'd the route, and halted every burn job on every tick
-  // forever — silently, because a cron has no user watching it. Observed in
-  // production on 2026-09-14 at 10:07: PATCH 400 in 55ms, route 500 in 64ms,
-  // repeating on the schedule.
+  // The two sibling queues (process-amazon-schedules, process-deal-schedules)
+  // have always worked, and the only thing separating them from this one was
+  // that they never ordered their claim. They take whatever rows come back,
+  // which is fine for them but loses oldest-first here.
   //
-  // The comment that used to sit here shows the same trap was already hit once,
-  // for sticker_url (migration 139) and sticker_duration_sec (174), and fixed
-  // by removing those two names from the list. That fixed the two columns that
-  // had broken and left the other seven loaded. A star select cannot be broken
-  // by the next column anybody adds.
+  // So: order on the READ, where it is allowed, then claim by id. Same pattern
+  // prerender-pins already uses. FIFO is kept and the mutation carries no
+  // order. The .eq('status','pending') on the claim is still what makes it
+  // atomic — two overlapping ticks cannot both win the same row.
   //
+  // select('*') on both, so a column added tomorrow cannot 400 either half.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: due, error: dueErr } = await admin
+    .from('ig_burn_jobs')
+    .select('id')
+    .eq('status', 'pending')
+    .lte('scheduled_at', nowIso)
+    .order('scheduled_at', { ascending: true })
+    .limit(1)
+  if (dueErr) return NextResponse.json({ error: `Queue read failed: ${dueErr.message}` }, { status: 500 })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dueId = ((due ?? []) as any[])[0]?.id as string | undefined
+  if (!dueId) return NextResponse.json({ ok: true, processed: 0 })
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: claimed, error: claimErr } = await admin
     .from('ig_burn_jobs')
     .update({ status: 'processing', claimed_at: nowIso })
+    .eq('id', dueId)
     .eq('status', 'pending')
-    .lte('scheduled_at', nowIso)
     .select('*')
-    .order('scheduled_at', { ascending: true })
-    .limit(1)
   if (claimErr) {
     // A schema fault halts the whole queue and repeats until somebody looks at
     // Vercel logs, which is the failure mode that hid this for a day. Page ops
     // and say which fault it is, rather than returning a bare 500 forever.
-    const schemaFault = /column|schema cache|PGRST2\d\d/i.test(claimErr.message || '')
+    // A claim failure halts the WHOLE queue and repeats on the schedule until
+    // somebody happens to read Vercel logs, which is exactly how this one hid.
+    // Page ops with the raw PostgREST message: the last diagnosis of this bug
+    // was wrong because the message was never in front of anybody.
     void alertOps(
-      schemaFault ? 'Burn queue halted — schema fault on the job claim' : 'Burn queue halted — claim failed',
-      `ig_burn_jobs claim failed: ${claimErr.message}${schemaFault ? '\n\nThis looks like a missing column. Every queued Shop Burner job is stuck until the migration is applied.' : ''}`,
+      'Burn queue halted — the job claim is failing',
+      `ig_burn_jobs claim failed: ${claimErr.message}\n\nEvery queued Shop Burner job is stuck behind this and it repeats every tick.`,
     )
-    return NextResponse.json({ error: `Claim failed: ${claimErr.message}`, schemaFault }, { status: 500 })
+    return NextResponse.json({ error: `Claim failed: ${claimErr.message}` }, { status: 500 })
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

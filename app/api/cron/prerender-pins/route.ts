@@ -63,11 +63,12 @@ export async function GET(request: Request) {
     .in('id', ids)
     .is('image_media_type', null)
     .eq('status', 'pending')
-    // select('*'), not a column list: PostgREST 400s the WHOLE statement when
-    // one named column is missing, and on the atomic claim that IS this queue,
-    // a 400 means nothing is ever claimed again. Silently, because a cron has
-    // no user watching it. process-burn-jobs did exactly that in production on
-    // 2026-09-14.
+    // select('*'), not a column list. PostgREST rejects the WHOLE statement when
+    // one named column is missing, and on the atomic claim that IS this queue a
+    // rejection means nothing is ever claimed again — silently, because a cron
+    // has no user watching it. A star select cannot be broken by the next
+    // column anybody adds. (Hygiene, not the fix for the 2026-09-14 outage:
+    // that was an .order() on the mutation, see process-burn-jobs.)
     .select('*')
   const claimedRows = (claimed ?? []) as Array<{ id: string; user_id: string; blog_post_id: string }>
   if (!claimedRows.length) return NextResponse.json({ ok: true, rendered: 0 })
