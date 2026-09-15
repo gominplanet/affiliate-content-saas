@@ -263,7 +263,7 @@ export const TIERS = {
   amazon:  {
     label: 'Amazon',
     price: 99,
-    regularPrice: 199,
+    regularPrice: 179,
     /** Every render on this tier is gpt-image at MEDIUM quality (~$0.06), not
      *  $0.19: gfxQuality in generate-thumbnail is tier-gated and high is the Pro
      *  perk. Until 2026-09-14 the telemetry logged the model name rather than
@@ -434,7 +434,7 @@ export const TIERS = {
   pro:     {
     label: 'Pro',
     price: 199,
-    regularPrice: 499,
+    regularPrice: 399,
     /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial.
      *  185 -> 130 on 2026-09-14, on measured costs rather than estimates.
      *
@@ -655,6 +655,30 @@ export function minTierForSocial(social: Social): Tier | null {
 /** Human-friendly label for a tier (e.g. 'Studio', 'Pro', 'Free Trial'). */
 export function tierLabel(tier: Tier): string {
   return TIERS[normalizeTier(tier)].label
+}
+
+/**
+ * The plans a NEW subscription can be created on (2026-09-15).
+ *
+ * 'creator' and 'studio' are frozen: five existing subscribers keep their plan,
+ * their allowances and their price, and nobody new can buy one. Studio at $99
+ * gave less than Amazon at $79 on thumbnails, Pinterest, Instagram and collabs,
+ * so it was never a rung above Amazon — it was a different product at a higher
+ * price, and any customer who compared the two pages could see it.
+ *
+ * They are NOT removed from TIERS or from PRICE_IDS, and that distinction is
+ * load-bearing. Renewals, the Stripe portal and the webhook's price-to-tier
+ * mapping all still have to resolve those plans, or the five legacy accounts
+ * break at their next billing date. What stops is CHECKOUT.
+ *
+ * 'trial' is not sellable because it is what you get for free, and 'admin' is
+ * internal staff.
+ */
+export const SELLABLE_TIERS: readonly Tier[] = ['amazon', 'pro'] as const
+
+/** Can a new subscription be started on this plan? Checkout's gate. */
+export function isSellableTier(raw: unknown): boolean {
+  return (SELLABLE_TIERS as readonly string[]).includes(String(raw))
 }
 
 /** Can this tier still move up a plan? Drives the sidebar's "Upgrade" CTA.

@@ -22,7 +22,7 @@
 // allowances rather than typing them, and no stale figure survives anywhere in
 // the rendered feature lists.
 import { readFileSync } from 'node:fs'
-import { TIERS, type Tier } from '../lib/tier'
+import { TIERS, SELLABLE_TIERS, type Tier } from '../lib/tier'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -42,12 +42,23 @@ check('the homepage pricing block was found', cards.length > 1000, `${cards.leng
     check(`the ${file} reads the tier table`, /from '@\/lib\/tier'/.test(src),
       'a hand-kept mirror is what drifted')
   }
-  for (const t of ['creator', 'studio', 'pro'] as const) {
+  // The two SELLABLE plans (2026-09-15). Creator and Studio are frozen: their
+  // cards are gone from the homepage because nobody new can buy one, so there
+  // is no card left to drift. Their allowances still live in TIERS for the five
+  // subscribers who keep them, and the billing page still renders a legacy
+  // subscriber's own plan as their current one.
+  for (const t of SELLABLE_TIERS) {
     check(`the ${t} card interpolates its allowances`,
       new RegExp(`TIERS\\.${t}\\.`).test(cards),
       'a typed number cannot follow the one the server enforces')
   }
+  check('the homepage sells only the two plans',
+    !/name: 'Creator'/.test(cards) && !/name: 'Studio'/.test(cards),
+    'a frozen plan with a live Buy button creates a sixth subscriber on a plan we decided not to support')
   check('the billing page derives its plan rows', /TIERS\[t\]\.postsPerMonth/.test(BILLING))
+  check('and offers only the sellable plans',
+    /const planDetails = SELLABLE_TIERS\.map/.test(BILLING),
+    'the old hardcoded list omitted Amazon entirely, so an Amazon customer saw three plans and none was theirs')
   check('and its prices', /price: TIERS\[t\]\.price/.test(BILLING),
     'three hand-kept price lists is how one of them goes stale unnoticed')
 }
@@ -75,7 +86,7 @@ check('the homepage pricing block was found', cards.length > 1000, `${cards.leng
     return cards.slice(at, next < 0 ? cards.length : next)
   }
 
-  for (const t of ['creator', 'studio', 'pro'] as const) {
+  for (const t of SELLABLE_TIERS) {
     const c = chunk(t)
     check(`the ${t} card was located`, c.length > 200, `${c.length} chars`)
     for (const f of NUMERIC) {

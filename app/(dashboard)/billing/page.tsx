@@ -7,7 +7,7 @@ import { LegacyCapsNotice } from '@/components/newsletter/LegacyCapsNotice'
 import { Zap, CheckCircle, Loader2, PartyPopper } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { trackMeta } from '@/lib/meta-pixel'
-import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
+import { TIERS, normalizeTier, SELLABLE_TIERS, type Tier } from '@/lib/tier'
 import { effectiveTier, getViewAsTier, setViewAsTier } from '@/lib/view-as'
 
 export default function BillingPage() {
@@ -132,7 +132,7 @@ export default function BillingPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const p = new URLSearchParams(window.location.search).get('plan')
-    if (p && ['creator', 'studio', 'pro'].includes(p)) {
+    if (p && (SELLABLE_TIERS as readonly string[]).includes(p)) {
       setHighlightPlan(p)
       window.history.replaceState({}, '', '/billing')
     }
@@ -154,9 +154,23 @@ export default function BillingPage() {
   // copy of the price list (homepage, /pricing, and this), and the homepage copy
   // had already drifted from what the server enforces. A number a customer reads
   // has to be the number they get.
-  const planDetails = ([ 'creator', 'studio', 'pro' ] as const).map((t) => ({
-    tier: t as Tier,
-    limit: `${TIERS[t].postsPerMonth} posts / month`,
+  //
+  // SELLABLE_TIERS, not a hand-written list. Creator and Studio are frozen: a
+  // legacy subscriber keeps their plan and their price, but the picker must not
+  // offer either to anyone, including to the legacy subscriber themselves —
+  // re-buying a frozen plan is how you end up with a sixth account on it.
+  //
+  // Amazon was missing from the old hardcoded list entirely, so an Amazon
+  // customer saw three plans and none of them was theirs, and a trial user had
+  // no way to reach the $99 plan from inside the app at all.
+  //
+  // The label is per-plan because "posts / month" is meaningless on Amazon,
+  // which has no blog by design.
+  const planDetails = SELLABLE_TIERS.map((t) => ({
+    tier: t,
+    limit: (TIERS[t].postsPerMonth ?? 0) > 0
+      ? `${TIERS[t].postsPerMonth} posts / month`
+      : `${TIERS[t].thumbnailsPerMonth} designs / month`,
     price: TIERS[t].price,
     regularPrice: TIERS[t].regularPrice,
   }))

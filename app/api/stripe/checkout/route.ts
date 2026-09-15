@@ -4,7 +4,7 @@ import { getStripe, PRICE_IDS, isValidPriceId } from '@/lib/stripe'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
 import { sendMetaEvent, purchaseEventId } from '@/lib/meta-capi'
-import { TIERS, type Tier } from '@/lib/tier'
+import { TIERS, isSellableTier, type Tier } from '@/lib/tier'
 
 export async function POST(request: NextRequest) {
   // Hard stop: bulletproof gate that runs no matter how the user got
@@ -26,6 +26,22 @@ export async function POST(request: NextRequest) {
      *  Checkout sessions get Stripe's own "Add promotion code" field. */
     promoCode?: string | null
   }
+  // FROZEN PLANS CANNOT BE BOUGHT. Creator and Studio still exist everywhere
+  // else — renewals, the portal, and the webhook's price-to-tier mapping all
+  // still resolve them, because five paying subscribers would otherwise break
+  // at their next billing date. What stops is starting a NEW subscription.
+  //
+  // Gated here rather than only by removing the cards, because a stale link, a
+  // cached page or a bookmarked /signup?plan=studio would otherwise create a
+  // sixth legacy subscriber on a plan we have decided not to support.
+  if (!isSellableTier(tier)) {
+    return NextResponse.json({
+      error: TIERS[tier as Tier]
+        ? 'That plan is no longer available. Choose the Amazon or Pro plan.'
+        : 'Invalid tier',
+    }, { status: 400 })
+  }
+
   const priceId = PRICE_IDS[tier as keyof typeof PRICE_IDS]
   if (!priceId) {
     // A plan we sell, with no price env set, is a configuration fault and not a
