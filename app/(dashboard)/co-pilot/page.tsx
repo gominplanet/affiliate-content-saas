@@ -699,17 +699,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [loadedPresetId, setLoadedPresetId] = useState<string | null>(null)
   const [savingPreset, setSavingPreset] = useState(false)
   const [styleRefUploading, setStyleRefUploading] = useState(false)
-  /** "Upload your own photo" flow — the user supplies a photo of themselves
-   *  WITH the product; the server cleans it up / re-renders it into a polished
-   *  thumbnail scene (Kontext) and we overlay the title. Public Supabase URL.
-   *  cleanupPrompt is optional free-text direction for the re-render. */
-  const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null)
-  const [photoUploading, setPhotoUploading] = useState(false)
-  const [cleanupPrompt, setCleanupPrompt] = useState('')
   /** 3C — Up to 5 product reference photos the user uploads to ground the
    *  thumbnail composition on the ACTUAL product(s). Different from
-   *  uploadedPhotoUrl (which is a photo of the USER with the product); these
-   *  are clean product shots — front view, side angle, multiple products for
+   *  the creator's own selfies; these are clean product shots — front view, side angle, multiple products for
    *  comparison thumbnails, etc. Public Supabase URLs. */
   const [productImageUrls, setProductImageUrls] = useState<string[]>([])
   const [productImagesUploading, setProductImagesUploading] = useState(false)
@@ -1679,37 +1671,6 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     }
   }
 
-  async function handlePhotoUpload(file: File) {
-    setThumbnailError(null)
-    if (!file.type.startsWith('image/')) {
-      setThumbnailError('Your photo must be an image (JPG, PNG, or WebP).')
-      return
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      setThumbnailError(`That photo is ${(file.size / 1024 / 1024).toFixed(1)} MB. Keep it under 10 MB.`)
-      return
-    }
-    setPhotoUploading(true)
-    try {
-      const sb = createBrowserClient()
-      const { data: { user } } = await sb.auth.getUser()
-      if (!user) throw new Error('Not signed in')
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-      // Public bucket so the server can fetch it for the Kontext re-render.
-      const path = `${user.id}/thumb-uploads/${crypto.randomUUID()}.${ext}`
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: upErr } = await (sb.storage as any)
-        .from('product-images').upload(path, file, { upsert: false, cacheControl: '31536000', contentType: file.type || 'image/jpeg' })
-      if (upErr) throw new Error(upErr.message)
-      const { data } = sb.storage.from('product-images').getPublicUrl(path)
-      setUploadedPhotoUrl(data.publicUrl)
-    } catch (err) {
-      setThumbnailError(err instanceof Error ? err.message : 'Photo upload failed')
-    } finally {
-      setPhotoUploading(false)
-    }
-  }
-
   // 3C — Upload one or more product reference photos. Reuses the same public
   // product-images bucket as the other thumbnail uploads (server fetches them
   // back, rehosts to fal, and passes all of them as references to Nano Banana
@@ -1893,8 +1854,6 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // 'no-human' → product-only; honoured whenever the picker is on No face.
           noHuman: (isProductOnly || scoutFaceSelection === 'no-human') || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
-          uploadedPhotoUrl: uploadedPhotoUrl || undefined,
-          cleanupPrompt: cleanupPrompt.trim() || undefined,
           // 3C — Multi-product reference photos + optional composition note.
           // When the user uploaded their own product photos these replace the
           // single Amazon-scraped image as the references; the note (if any)
@@ -3054,7 +3013,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                   {thumbnailMode === 'own-design' && (
                     <div className="flex flex-col gap-3 p-4 rounded-xl bg-[#5856d6]/5 border border-[#5856d6]/20">
                       <p className="text-[11px] font-semibold text-[#5856d6]">Upload your finished thumbnail design</p>
-                      {thumbnailUrl && thumbnailModel === 'kontext-upload' ? (
+                      {thumbnailUrl && thumbnailModel === 'upload' ? (
                         <div className="flex flex-col gap-2">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={thumbnailUrl} alt="Your design" className="w-full rounded-lg border border-[#5856d6]/30" style={{ aspectRatio: '16/9' }} />
@@ -3199,40 +3158,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         {/* No regenerate / custom-title controls on the gpt-image result:
                             every regeneration costs a full image, and MVP should land it on
                             the first try. Download it, or start a new generation. */}
-                        {(thumbnailModel === 'nano-banana-pro' || thumbnailModel === 'nano-banana') && (
-                          <>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">✨ Scene · crisp text</span>
-                            <button onClick={() => generateThumbnail({ textMode: 'baked' })} disabled={generatingThumbnail}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#5856d6] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60">
-                              <RefreshCw size={12} /> Baked text
-                            </button>
-                            {selectedFaceModelId && selectedFaceModelId !== 'no-human' && (
-                              <button onClick={() => generateThumbnail({ textMode: 'graphic' })} disabled={generatingThumbnail}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#FF6B00] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60">
-                                🎨 Graphic
-                              </button>
-                            )}
-                          </>
-                        )}
-                        {(thumbnailModel === 'nano-banana-pro-baked' || thumbnailModel === 'nano-banana-baked') && (
-                          <>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6] font-medium">✨ Baked text</span>
-                            <button onClick={() => generateThumbnail({ textMode: 'clean' })} disabled={generatingThumbnail}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60">
-                              <RefreshCw size={12} /> Crisp text
-                            </button>
-                          </>
-                        )}
-                        {thumbnailModel === 'kontext-upload' && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">📤 Your upload</span>
-                        )}
-                        {!!thumbnailModel && thumbnailModel !== 'kontext-upload' && (thumbnailModel.startsWith('kontext-') || thumbnailModel.startsWith('ideogram-') || thumbnailModel.startsWith('flux')) && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500] font-medium" title="Scene-composite fallback">
-                            🎨 Scene (fallback)
-                          </span>
-                        )}
+                        {/* The engine-swap buttons that lived here ("Baked text",
+                            "Crisp text", "Graphic") only rendered on a nano-banana
+                            result, and the routes that produced one were removed when
+                            gpt-image became the only engine. They could not be reached:
+                            the sole way to a nano-banana result was a path only a
+                            nano-banana result could open. Same for the kontext /
+                            ideogram / flux "Scene (fallback)" badge. */}
                       </div>
-                      {thumbnailModel !== 'kontext-upload' && (
+                      {thumbnailModel !== 'upload' && (
                         <div className="flex items-center gap-2 pt-1">
                           <span className="text-[10px] text-[#86868b]">Train the AI:</span>
                           <button onClick={() => submitYtThumbnailFeedback('like')} disabled={thumbnailFeedbackSent !== null}

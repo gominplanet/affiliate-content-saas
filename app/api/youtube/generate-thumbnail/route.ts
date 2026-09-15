@@ -8,27 +8,17 @@ import { rememberProductImageFromUrl } from '@/lib/product-image-memory'
 import { createOpenAIService, normalizeToPng } from '@/services/openai'
 import { fal } from '@fal-ai/client'
 import sharp from 'sharp'
-import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { pooledDesignCap, freeTrialImageBlock, freeTrialExpiredBlock, freeTrialWindow } from '@/lib/free-trial'
 import { accountSignupISO } from '@/lib/free-trial-signup'
 import { spendGate } from '@/lib/ai-spend'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
-import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
-import { type TextPosition } from '@/lib/thumbnail-textzone'
-import { NO_BRAND_IMAGE_CLAUSE, stripDesignBrands } from '@/lib/image-guard'
+import { pickBestFrame } from '@/lib/thumbnail-score'
+import { stripDesignBrands } from '@/lib/image-guard'
 import { getOrCreateBriefs } from '@/lib/art-director-cache'
-import { composeWithGptImage, composeWithNanoBanana, generateWithIdeogram, rehostToFal, rehostFacePhotos, rehostStyleRefs, applyMoodyGrade, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
-// renderDesignerOverlay (Satori-based, template-driven) was the previous
-// clean-path renderer. Now superseded by bakeSimpleHeadline which uses
-// Resvg directly with raw SVG + paint-order: stroke fill for razor-sharp
-// vector outlines (the Satori path used 8-direction text-shadow tricks
-// that produced soft/blurry edges). Kept around as a fallback option for
-// admin/preview surfaces that may still reference it.
-import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
-import { bakeSimpleHeadline, compositeBadgeOnly, NEON_BORDER_STYLE_COUNT, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
-import { analyzeTextZone } from '@/lib/thumbnail-textzone'
+import { rehostToFal } from '@/lib/thumbnail-generators'
+import { bakeSimpleHeadline, compositeBadgeOnly, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
 import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { detectWearable, wearDirective } from '@/lib/wear-product'
 import { normalizeExpression, expressionDirective, expressionDescription, EXPRESSION_LABEL, politeSmileIsWrong } from '@/lib/face-expression'
@@ -40,20 +30,11 @@ import {
   normalizeFraming, normalizeBuild, normalizeHeight, resolveFraming, framingLine, framingNote,
   type EffectiveFraming,
 } from '@/lib/body-framing'
-import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
-import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
-import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 // Telemetry context — populated at request start, read by the three
 // Anthropic helpers below so each call is tagged with the right user/tier.
 let TELEMETRY: { userId: string | null; tier: string | null } = { userId: null, tier: null }
-
-// Publish-gate threshold (Phase 2 / Track A). When the best variant's
-// vision-LLM score is below this, we flag `belowThreshold` so the client can
-// suggest regenerating. We never auto-regenerate server-side — that would
-// silently burn the user's thumbnail cap and add latency. 0–100 scale.
-const THUMBNAIL_SCORE_THRESHOLD = 55
 
 /**
  * Fit a rendered graphic to the final delivered size. gpt-image only renders a
@@ -71,32 +52,6 @@ async function fitFinalGraphic(b64: string, outW: number, outH: number, isStory:
     return sharp(bg).composite([{ input: fg, gravity: 'centre' }]).jpeg({ quality: 92 }).toBuffer()
   }
   return sharp(src).resize(outW, outH, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
-}
-
-/**
- * Score + rank generated thumbnail variants best-first. Returns the URLs
- * reordered so index 0 is the strongest, the aligned scores, the top score,
- * and whether the best variant fell below the publish-gate threshold. Fully
- * best-effort: on any scoring failure the original order is preserved and
- * scores come back null, so this can never break generation.
- */
-async function rankVariants(
-  urls: string[],
-  overlayHook: string,
-  ctx: { userId?: string | null; tier?: string | null },
-): Promise<{ urls: string[]; scores: Array<ThumbnailScore | null>; topScore: number | null; belowThreshold: boolean }> {
-  if (urls.length === 0) return { urls, scores: [], topScore: null, belowThreshold: false }
-  const ranked = await rankThumbnails(urls, { title: overlayHook, ctx })
-  if (!ranked.some(r => r.score !== null)) {
-    return { urls, scores: urls.map(() => null), topScore: null, belowThreshold: false }
-  }
-  const topScore = ranked[0].score?.score ?? null
-  return {
-    urls: ranked.map(r => r.url),
-    scores: ranked.map(r => r.score),
-    topScore,
-    belowThreshold: topScore !== null && topScore < THUMBNAIL_SCORE_THRESHOLD,
-  }
 }
 
 // 300s (Vercel Pro max). A face thumbnail runs the gpt-image cut-out and the
@@ -133,131 +88,6 @@ async function withAnthropicRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Pro
     }
   }
   throw new Error('Claude AI is temporarily unavailable — please try again in a moment.')
-}
-
-// ── Fetch recent channel thumbnail URLs via YouTube OAuth ─────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function fetchChannelThumbnails(supabase: any, userId: string): Promise<string[]> {
-  try {
-    const { data: intRow } = await supabase
-      .from('integrations')
-      .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry')
-      .eq('user_id', userId)
-      .single()
-    if (!intRow?.youtube_oauth_access_token) return []
-
-    const token = await getValidYouTubeToken(intRow as Record<string, unknown>)
-    const yt = createYouTubeOAuthService(token)
-    const { videos } = await yt.getDraftVideos(25)
-
-    // Prefer published thumbnails (these were "approved" by the creator)
-    const published = videos.filter(v => v.status === 'public' && v.thumbnailUrl).map(v => v.thumbnailUrl)
-    const all = videos.filter(v => v.thumbnailUrl).map(v => v.thumbnailUrl)
-    const urls = (published.length >= 4 ? published : all).slice(0, 8)
-    return urls
-  } catch {
-    return []  // non-fatal — skip style analysis if YouTube not connected or fails
-  }
-}
-
-// ── Analyse channel thumbnails with Claude vision ─────────────────────────────
-async function analyzeChannelStyle(thumbnailUrls: string[]): Promise<string | null> {
-  if (thumbnailUrls.length < 2) return null
-  try {
-    const anthropic = createAnthropicClient()
-    const imageBlocks = thumbnailUrls.map(url => ({
-      type: 'image' as const,
-      source: { type: 'url' as const, url },
-    }))
-    const msg = await withAnthropicRetry(() => anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 180,
-      messages: [{
-        role: 'user',
-        content: [
-          ...imageBlocks,
-          {
-            type: 'text',
-            text: `Analyse these YouTube channel thumbnails and describe the visual style in 2 concise sentences:
-1. Background style — is it dark/bright, solid colour/blurred indoor setting, minimalist/busy?
-2. Composition & energy — where is the person placed, how large is the face, what is the emotional energy (intense/calm/excited)?
-Ignore any text overlays. Focus only on consistent patterns across thumbnails. Be specific and brief.`,
-          },
-        ],
-      }],
-    }))
-    recordAnthropicUsage(msg, {
-      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-      feature: 'yt_thumb_channel_style', model: 'claude-haiku-4-5-20251001',
-    })
-    return (msg.content[0] as { type: string; text: string }).text.trim()
-  } catch {
-    return null  // non-fatal
-  }
-}
-
-// ── Claude: Product scene prompt (product-only, style-aware, story-driven) ────
-// Setting/mood pool — weighted toward BRIGHT, airy, Instagram-style homes so
-// thumbnails aren't always moody/dark. One darker option for occasional variety.
-// Backdrops are ALWAYS BRIGHT, CLEAN and UNCLUTTERED with a strongly blurred
-// shallow-depth background. NEVER dark or moody — dark scenes lose all detail
-// and the creator cut-out blends into them. A busy, deep room also invites the
-// model to hallucinate bystanders; a simple soft bright backdrop does not.
-// Backdrops are deliberately SHALLOW with NO room depth — a product on a
-// surface against a softly blurred LIGHT wall/backdrop. No open rooms, doorways
-// or deep kitchens: those give the model space to hallucinate a background
-// person. Always bright, never dark.
-const SCENE_MOODS = [
-  'a product on a clean light wooden surface, directly behind it a softly blurred plain WARM-WHITE wall filling the whole background, bright soft daylight, very shallow depth of field, no room depth.',
-  'a product on a bright neutral countertop with a heavily blurred soft LIGHT-GREY wall right behind it, airy daylight, minimal, no open space or room behind.',
-  'a product on a light surface against an out-of-focus soft CREAM backdrop filling the frame, gentle warm daylight, clean and uncluttered, no room visible.',
-  'a product on a warm wooden tabletop with one or two softly blurred out-of-focus potted plants close behind against a blurred light wall, bright daylight, shallow depth, no open room.',
-  'a product on a bright surface with a softly blurred sunlit LIGHT backdrop directly behind it, warm golden daylight, airy and simple, no deep background.',
-  'a product on a sleek light shelf against a softly blurred BRIGHT WHITE wall close behind, lots of daylight, clean and aspirational, no room depth.',
-]
-
-async function generateProductPrompt(opts: {
-  videoTitle: string
-  productTitle: string
-  productDescription: string
-  productBullets: string[]
-  style: string
-  channelStyle?: string | null
-}): Promise<string> {
-  const sceneMood = pick(SCENE_MOODS)
-  const anthropic = createAnthropicClient()
-  const msg = await withAnthropicRetry(() => anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 500,
-    messages: [{
-      role: 'user',
-      content: `You are a YouTube thumbnail art director. Write a Flux image generation prompt for a product shot in a real, story-driven scene. NO faces, NO people. The product must look exactly as described — use every visual detail from the product data below.
-
-PRODUCT DATA:
-TITLE: "${opts.videoTitle}"
-PRODUCT NAME: ${opts.productTitle || 'Unknown product'}
-${opts.productDescription ? `DESCRIPTION: ${opts.productDescription}` : ''}
-${opts.productBullets.length ? `FEATURES: ${opts.productBullets.slice(0, 4).join(' · ')}` : ''}
-
-SETTING / MOOD (use THIS — it sets the background and lighting): ${sceneMood}
-${opts.channelStyle ? `CHANNEL AESTHETIC (also match this): ${opts.channelStyle}` : ''}
-
-YOUR TASK:
-1. PRODUCT APPEARANCE — extract exact visual details from the data above: colour, shape, size, material, any text/branding on it. Describe it precisely so the AI renders the RIGHT product.
-2. SCENE — place the product in the SETTING/MOOD above. Keep the background SHALLOW and softly blurred — a wall/backdrop close behind the product, NOT an open room, doorway or deep space. The space is completely EMPTY: nobody is present anywhere, not even a blurred figure in the far background.
-3. COMPOSITION — product CENTRE / CENTRE-LEFT, large and sharp. Keep the TOP-LEFT and the BOTTOM-RIGHT areas relatively clean (a title goes top-left, a person is added bottom-right later).
-4. LIGHTING — MATCH the setting above. If the setting is bright/airy, use bright, natural daylight (do NOT make it dark or heavily moody). Make the product look appealing and true-to-life.
-5. End with: "16:9, photorealistic, 8K, shallow depth of field, absolutely no people, no humans, no faces, no heads, no bodies, no hands, no text overlays, no brand names or retailer/marketplace logos (no Amazon/Prime/store logos), no watermarks, no copyright or trademark symbols, no price tags or badges — only the product's own physical branding"
-6. Under 90 words total.
-
-Return ONLY the prompt.`,
-    }],
-  }))
-  recordAnthropicUsage(msg, {
-    userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-    feature: 'yt_thumb_product_prompt', model: 'claude-sonnet-4-6',
-  })
-  return (msg.content[0] as { type: string; text: string }).text.trim()
 }
 
 // ── Thumbnail copy framework (2026-06-08) ──────────────────────────────────
@@ -328,15 +158,6 @@ const ANGLE_DEFS: Record<CtrAngle, string> = {
   SKEPTIC: 'Attack the product up front to spike drama and force the click to see if it\'s vindicated. Examples: "WASTE OF | MONEY?!" · "BIGGEST SCAM | OF 2026?" · "DON\'T BELIEVE | THE HYPE". Emphasis word is usually "WASTE" / "SCAM" / "DON\'T".',
   VALUE_DISRUPTION: 'Compare the item to a much pricier/different category to make it look like an insane life-hack. Examples: "CHEAPER THAN | YOUR LATTE!" · "BEATS A $300 | GADGET?" · "$20 vs $200 | NO CONTEST". Emphasis word is usually "CHEAPER" / "BEATS" / the dollar amount.',
 }
-
-const BANNED_COPY_TERMS = [
-  // Hype words that read as AI / scammy
-  'amazing', 'incredible', 'insane',
-  // User rule: never the word HONEST
-  'honest',
-  // Generic literal descriptions that aren't hooks
-  'watch this', 'check this', 'look at this', 'review of',
-]
 
 /**
  * Parse one Haiku JSON response into a clean ThumbCopy. Tolerates the model
@@ -484,16 +305,6 @@ async function generateThumbCopies(videoTitle: string, count: number, productCon
     Array.from({ length: n }, (_, i) => generateThumbCopy(videoTitle, ANGLE_ROTATION[i % ANGLE_ROTATION.length], productContext, claimsSheet)),
   )
   return out
-}
-
-// Backward-compat shim: a few overlay-path callers still want flat strings
-// for canvas drawing. They get the same 4-angle psychology behind the scenes
-// — just flattened. New consumers should call generateThumbCopies and read
-// .line1/.line2/.emphasisWord directly so the yellow highlight + line break
-// both ride along.
-async function generateHooks(videoTitle: string, count: number): Promise<string[]> {
-  const copies = await generateThumbCopies(videoTitle, count)
-  return copies.map(flatCopy)
 }
 
 // ── ART DIRECTOR: bespoke per-product design brief (the ChatGPT trick) ──────
@@ -685,8 +496,7 @@ async function designThumbnailBriefs(input: {
 // User uploads any image they like the look of (a competitor thumbnail, a
 // moodboard pic, one of their own previous wins). We distill it into a
 // short style brief that gets folded into the scene prompt — color
-// palette, lighting, composition, mood. Cheap (~$0.005/call) and works
-// alongside the product-image Kontext path without conflicting.
+// palette, lighting, composition, mood. Cheap (~$0.005/call).
 
 /**
  * Ask a cheap vision model whether the render put the RIGHT garment on.
@@ -857,66 +667,6 @@ async function headAndNeckCrop(png: Buffer | Uint8Array): Promise<{ bytes: Buffe
     return { bytes: png, cropped: false }
   }
 }
-
-// alongside the product-image Kontext path without conflicting.
-async function extractStyleBrief(referenceUrl: string): Promise<string | null> {
-  try {
-    const anthropic = createAnthropicClient()
-    const msg = await withAnthropicRetry(() => anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 180,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image' as const, source: { type: 'url' as const, url: referenceUrl } },
-          {
-            type: 'text' as const,
-            text: `Analyse this thumbnail's VISUAL STYLE only — ignore the subject matter and any text overlays.
-Describe in 2 short sentences:
-1. Color palette + lighting (e.g. "warm sunset orange / teal shadow split, hard rim light")
-2. Composition + mood (e.g. "subject hard-left, blurred busy background, high-contrast cinematic")
-Be specific. No filler words. Return only the description, no preamble.`,
-          },
-        ],
-      }],
-    }))
-    recordAnthropicUsage(msg, {
-      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-      feature: 'yt_thumb_style_brief', model: 'claude-haiku-4-5-20251001',
-    })
-    return (msg.content[0] as { type: string; text: string }).text.trim()
-  } catch {
-    return null
-  }
-}
-
-// ── Generate a transparent-background cut-out of the creator ──────────────────
-// Head-and-shoulders PNG with alpha, generated FRESH each time from the
-// uploaded photos (gpt-image, face-only — no product, so no identity blending).
-// We deliberately do NOT cache/reuse it: each thumbnail gets a different OUTFIT
-// and expression (same person) so a channel's thumbnails feel varied, not
-// copy-pasted. The client composites this into the bottom-right corner.
-// Best-effort: returns null on any failure (thumbnail still renders, no person).
-const CUTOUT_OUTFITS = [
-  'a casual button-up shirt', 'a plain crew-neck t-shirt', 'a smart blazer over a tee',
-  'a polo shirt', 'a cozy knit sweater', 'a denim shirt', 'a simple hoodie',
-]
-const CUTOUT_EXPRESSIONS = [
-  'a warm friendly smile', 'a confident slight smile', 'an intrigued raised-eyebrow look',
-  'a wide, pleasantly-surprised open-mouth expression', 'an approachable grin showing teeth',
-  'a relaxed natural smile', 'a wide-eyed amazed "wow" expression', 'a curious, skeptical squint',
-  'a delighted laughing expression', 'a playful smirk', 'a mouth-slightly-open intrigued look',
-  'an excited eyebrows-up expression', 'a soft thoughtful smile',
-]
-const CUTOUT_POSES = [
-  'head turned slightly to one side, looking back at the camera',
-  'head tilted a little to the side',
-  'a slight lean toward the camera',
-  'chin angled down a touch with eyes up to the camera',
-  'shoulders turned at a three-quarter angle, face to camera',
-  'a relaxed straight-on pose facing the camera',
-  'one shoulder slightly forward, casual angle',
-]
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
 
 /** The WARDROBE directive for the composed-scene prompts. When the creator pinned
@@ -974,7 +724,6 @@ async function matchFaceModelToFrame<T extends { name: string; source_images: st
   return null
 }
 
-
 /**
  * A portrait of the creator ALREADY WEARING the expression they picked.
  *
@@ -1020,138 +769,12 @@ async function generateExpressionPortrait(opts: {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function generateFaceCutout(supabase: any, opts: {
-  userId: string
-  sourceImages: string[]
-  imageModel: string
-  outfitPref?: string | null
-}): Promise<string | null> {
-  if (!opts.sourceImages.length) return null
-  try {
-    // Downloaded and re-encoded in parallel. These are five independent photos,
-    // and doing them in series put five round trips on the critical path of the
-    // slowest feature in the product. Order is preserved.
-    const fetched = await Promise.all(
-      opts.sourceImages.slice(0, 5).map(async (path: string) => {
-        try {
-          const { data: file } = await supabase.storage.from('headshots').download(path)
-          if (!file) return null
-          // Re-encode to a clean RGB PNG so gpt-image never rejects the photo
-          // for an odd format / colour mode / orientation.
-          return await normalizeToPng(new Uint8Array(await file.arrayBuffer()))
-        } catch (e) {
-          console.warn('[generateFaceCutout] skipping unreadable reference photo', path, e)
-          return null
-        }
-      }),
-    )
-    const refImages = fetched
-      .filter((d): d is Uint8Array => !!d)
-      .map((data, i) => ({ data, filename: `face_${i}.png`, mime: 'image/png' }))
-    if (refImages.length === 0) return null
-    // A pinned wardrobe (the creator's signature look, e.g. a white lab coat)
-    // overrides the random pool so every thumbnail keeps that outfit.
-    const outfit = (opts.outfitPref || '').trim() || pick(CUTOUT_OUTFITS)
-    const expression = pick(CUTOUT_EXPRESSIONS)
-    const pose = pick(CUTOUT_POSES)
-    // 1. Generate a tight CLOSE-UP portrait on a plain backdrop (same call
-    //    Photobooth uses — reliable). We remove the background next. We want the
-    //    FACE to be big (close crop, chest-up) for impact, but the whole HEAD +
-    //    HAIR must stay inside the frame with margin above and on the sides so
-    //    rembg gives a clean silhouette (no hard "blade" edge). Only the lower
-    //    chest/shoulders may run off the BOTTOM edge — that's hidden when the
-    //    cut-out is bottom-anchored in the thumbnail.
-    const prompt = `A clean CLOSE-UP SOLO portrait of EXACTLY ONE person — the MAIN subject shown in the reference photos. Preserve their exact facial identity, hair, and likeness. IMPORTANT: the reference photos may also contain OTHER people (a partner, friend, or bystander standing next to them) — IGNORE everyone else. Identify the single most prominent main subject (the largest, most central face) and render ONLY that one individual, completely ALONE. CRITICAL: there is ONLY ONE person in the entire output image — absolutely NO second person, no partner, no companion, no extra face, head, shoulder, arm, hand or body part of anyone else anywhere in the frame or its background, not even partially or at the edges. One person, alone on the backdrop. They are wearing ${outfit}, with ${expression}, ${pose}. Flattering studio lighting, sharp focus, realistic natural skin texture. FRAMING (critical): a head-and-shoulders portrait — head and the top of the shoulders, chest-up. The ENTIRE person must sit fully INSIDE the frame, floating toward the centre with a clear, generous band of plain background visible on ALL FOUR sides — top, bottom, left AND right. Their head, hair, shoulders and arms must NOT touch or be cropped by ANY edge. Do NOT zoom in so far that the shoulders or arms reach the left/right edges — pull back enough that there is obvious empty background all the way around the upper body. BACKGROUND: a plain, perfectly even, solid VIVID CHROMA-GREEN screen (bright saturated green, like a film green screen) filling the entire background — a strong colour that clearly contrasts with the person's hair, skin and clothing so the background can be removed perfectly with no part of the person mistaken for background. No shadows on the background, no gradients. No text, no logos.`
-    const openai = createOpenAIService()
-    const b64 = await openai.generateWithReferences({
-      prompt, images: refImages, size: '1024x1536', quality: 'medium', model: opts.imageModel,
-    })
-    // The render above is HARDCODED to medium, so the row has to say medium.
-    // Recording opts.imageModel instead booked every cut-out at the high rate
-    // ($0.19) for a picture that costs about $0.06. This function sits outside
-    // the handler, so gfxRecordOverride is not in scope; the cost constant is
-    // the same string it resolves to.
-    recordUsage({
-      userId: opts.userId, tier: TELEMETRY.tier,
-      feature: 'yt_thumb_face_cutout', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1,
-    })
-
-    // Pad the portrait with a wide band of the same chroma-green on the top and
-    // both sides BEFORE background removal. This guarantees rembg always sees
-    // clean background at every edge (except the bottom, where the chest is
-    // meant to run off), so it traces the real body contour as a soft silhouette
-    // instead of leaving a hard straight "blade" cut where a shoulder/arm
-    // touched the frame. The green matches the generated backdrop so it's
-    // removed as one. We trim the transparent margin back off afterwards so the
-    // face still fills the composite.
-    const CHROMA = '#00b140'
-    let uploadBuf: Buffer
-    try {
-      const meta = await sharp(Buffer.from(b64, 'base64')).metadata()
-      const w = meta.width ?? 1024
-      const h = meta.height ?? 1536
-      uploadBuf = await sharp(Buffer.from(b64, 'base64'))
-        .flatten({ background: CHROMA })
-        .extend({
-          top: Math.round(h * 0.12),
-          left: Math.round(w * 0.14),
-          right: Math.round(w * 0.14),
-          bottom: Math.round(h * 0.08),
-          background: CHROMA,
-        })
-        .png()
-        .toBuffer()
-    } catch (e) {
-      console.warn('[generateFaceCutout] padding failed, using raw portrait:', e)
-      uploadBuf = Buffer.from(b64, 'base64')
-    }
-    const headshotUrl = await fal.storage.upload(new Blob([new Uint8Array(uploadBuf)], { type: 'image/png' }))
-
-    // 2. Remove the background → clean transparent PNG to composite.
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rembg = await fal.subscribe('fal-ai/imageutils/rembg' as any, {
-        input: { image_url: headshotUrl },
-        pollInterval: 2000,
-      })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cutUrl = (rembg.data as any)?.image?.url as string | undefined
-      if (cutUrl) {
-        recordUsage({
-          userId: opts.userId, tier: TELEMETRY.tier,
-          feature: 'yt_thumb_cutout_rembg', model: 'fal-rembg', images: 1,
-        })
-        // The transparent padding we added is trimmed back to a tight bounding
-        // box on the CLIENT during compositing (alpha-bbox crop) — no extra
-        // server round trip, so the face still fills the composite without
-        // adding latency here.
-        return cutUrl
-      }
-    } catch (e) {
-      console.warn('[generateFaceCutout] rembg failed, using opaque headshot:', e)
-    }
-    // Fallback: opaque headshot (composites as a small portrait, still shows the person).
-    return headshotUrl
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.warn('[generateFaceCutout] failed:', msg)
-    LAST_CUTOUT_ERROR = msg.slice(0, 300)
-    return null
-  }
-}
-// Surfaced to the client console (faceDebug) so cut-out failures are visible.
-let LAST_CUTOUT_ERROR = ''
-// Why the PRIMARY composed (Nano Banana) path didn't return an image, so when we
-// fall through to a product-only fallback the UI can show exactly what happened
-// (gate skipped, threw, or compose returned nothing) — no server logs needed.
-let LAST_NB_FALLTHROUGH = ''
-
 /**
  * What the wrapper needs in order to remember the rendered image against the
  * product. Filled in as the handler resolves them, because the handler has
- * FIVE success returns (flux, nano-banana, kontext-upload, kontext, ideogram)
- * and patching each one is how the sixth silently stops saving.
+ * more than one success return (the designed thumbnail and the product-only
+ * one) and patching each return individually is how the next one added
+ * silently stops saving.
  */
 interface ImageMemo {
   db: SupabaseLike | null
@@ -1294,8 +917,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       // unset → keep the 'none' default (no badge)
     } catch { /* default: no badge */ }
 
-    // Monthly AI-spend circuit breaker — thumbnails generate nano-banana-pro
-    // images ($0.13 each), an unbounded vector for admin (no thumbnail cap).
+    // Monthly AI-spend circuit breaker — a thumbnail renders a gpt-image
+    // ($0.19 high, $0.06 medium), an unbounded vector for admin (no cap).
     const spendBlocked = await spendGate(user.id, tier)
     if (spendBlocked) return spendBlocked
 
@@ -1320,15 +943,12 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       faceAuto,
       noHuman,
       videoDescription,
-      uploadedPhotoUrl,
-      cleanupPrompt,
       youtubeVideoId,
       textMode,
       capturedFrameDataUrl,
       capturedFrames,
       // 3C — Multi-product reference photos + composition note. When set, these
-      // are used as the product references for Nano Banana Pro instead of the
-      // single Amazon-resolved photo. Lets creators show MULTIPLE products in
+      // are the product references instead of the single Amazon-resolved photo. Lets creators show MULTIPLE products in
       // one thumbnail (comparison videos), or multiple angles of one product.
       customProductImageUrls,
       productCompositionNote,
@@ -1385,30 +1005,29 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
        *  product photo when there's no Amazon ASIN (non-Amazon products). */
       videoDescription?: string
       /** YouTube native ID (e.g. dQw4w9WgXcQ). When present we pull the REAL
-       *  video frame (img.youtube.com) and let Nano Banana regenerate a viral
-       *  thumbnail from it — the creator + product are already in the frame, so
-       *  no face upload is needed. */
+       *  video frame (img.youtube.com) and regenerate the thumbnail from it —
+       *  the creator + product are already in the frame, so no face upload is
+       *  needed. */
       youtubeVideoId?: string | null
-      /** 'baked' (default): the headline typography is rendered INTO the image
-       *  for the cohesive "designed" look. 'clean': return a text-free scene so
-       *  the client can draw its crisp canvas overlay (the fallback). */
+      /** 'graphic' is the only mode this route still builds: gpt-image renders
+       *  the design with the headline typography baked in. 'baked' and 'clean'
+       *  belonged to the removed engines and now return a 400; the union keeps
+       *  them so a stale client gets that answer rather than a type error. */
       textMode?: 'baked' | 'clean' | 'graphic'
       /** A single REAL frame grabbed by the extension (jpeg data: URL). Legacy
        *  single-frame path. Superseded by capturedFrames. */
       capturedFrameDataUrl?: string | null
       /** SEVERAL real frames grabbed across the video by the extension (jpeg
-       *  data: URLs). We vision-pick the best (clear face + product visible) and
-       *  ground Nano Banana on it — captures the creator + product as they
-       *  actually appear on camera. Absent → maxres frame. */
+       *  data: URLs). We vision-pick the best (clear face + product visible)
+       *  and ground the render on it — it captures the creator + product as
+       *  they actually appear on camera. Absent → maxres frame. */
       capturedFrames?: string[] | null
       productTitle?: string
       productDescription?: string
       productBullets?: string[]
       style?: string
       /** Locked text overlay. When set, we skip the hook-generation
-       *  agent entirely and use this verbatim. The image prompt
-       *  explicitly tells Flux NOT to render text — overlay happens
-       *  client-side via canvas, so locked text is always crisp. */
+       *  agent entirely and use this verbatim. */
       customHeadline?: string
       /** How many variants to generate in a single shot. 1–10 — clamped
        *  server-side. Each variant counts as one image against the user's
@@ -1433,18 +1052,9 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
        *  zero human elements. Best for unboxings, comparison shots, or
        *  branding-focused thumbnails where the product itself is the star. */
       noHuman?: boolean
-      /** "Upload your own photo" flow — a public URL to a photo the user
-       *  took of THEMSELVES with the product. We send it through Kontext to
-       *  clean it up / re-render it into a polished thumbnail scene, then
-       *  overlay the title. No separate face cut-out (the photo has them). */
-      uploadedPhotoUrl?: string
-      /** Optional free-text direction for the re-render of the uploaded photo
-       *  (e.g. "bright kitchen, surprised face"). */
-      cleanupPrompt?: string
       /** 3C — Up to 5 public image URLs the user uploaded as reference photos
        *  of the actual product(s). When present, these REPLACE the single
-       *  Amazon-scraped product image as the references fed to Nano Banana
-       *  Pro. Use cases:
+       *  Amazon-scraped product image as the references. Use cases:
        *  - Multiple angles of one product (front / side / detail)
        *  - Multiple products in a comparison-style thumbnail (Product A vs B)
        *  - Custom product when no Amazon ASIN exists
@@ -1455,7 +1065,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       /** Optional free-text composition direction explaining how to arrange the
        *  product references — e.g. "front view on the left, side angle on the
        *  right" or "Product A above, Product B below". Folded into the
-       *  productRefClause so Nano Banana Pro respects it. */
+       *  productRefClause. */
       productCompositionNote?: string
       /** Free-text creator direction for the entire thumbnail — e.g. "me
        *  holding the bottle, shocked face, bright kitchen, big arrow at the
@@ -1783,18 +1393,6 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       }
     }
 
-    // UPLOADED-PHOTO PRIORITY. When the user uploads a photo of THEMSELVES with
-    // the product ("Upload 1–3 photos of you with the product"), that photo IS
-    // the identity + scene — PATH U just cleans it up. It must NEVER be
-    // overridden by a saved face model (e.g. auto-matching to "Seb") or the
-    // video frame's person; that's exactly the "uploaded a selfie, got someone
-    // else entirely" bug. Drop any loaded/auto face model so every downstream
-    // branch defers to PATH U.
-    if (uploadedPhotoUrl) {
-      faceModel = null
-      autoFaceModels = []
-    }
-
     // Co-Pilot thumbnails are FREE enrichment of a content piece (pricing model
     // 2026-06-15): they no longer decrement the content-piece quota. Cost is
     // bounded by the monthly $-ceiling (spendGate, checked above) instead.
@@ -1818,7 +1416,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     // user's face is never rendered for another.)
     // youtubeVideoId means Co-Pilot context — always the user's own channel video,
     // so the person visible in storyboard frames is the user's own face.
-    const hasOwnedFaceIdentity = !!faceModel || autoFaceModels.length > 0 || !!uploadedPhotoUrl || !!youtubeVideoId
+    const hasOwnedFaceIdentity = !!faceModel || autoFaceModels.length > 0 || !!youtubeVideoId
     if (!noHuman && !hasOwnedFaceIdentity) {
       return NextResponse.json({
         ok: false,
@@ -1915,10 +1513,10 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         if (!productBullets.length) productBullets = p.bullets
       } catch { /* fall through — resolver already logged any block */ }
     }
-    // 3C — When the user uploaded their own product photos, treat the FIRST one
-    // as the "single product image" for the Kontext fallback path (which only
-    // takes one image_url). The NB Pro path below uses all of them. This means
-    // a custom upload also unblocks the Kontext fallback for non-Amazon products.
+    // 3C — When the user uploaded their own product photos, the FIRST one is
+    // the "single product image" for any step that takes only one; the render
+    // below uses all of them. A custom upload is also what unblocks a
+    // non-Amazon product, which has no scraped image to fall back on.
     if (customProductRefs.length > 0) {
       productImageUrl = customProductRefs[0]
     }
@@ -1984,8 +1582,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     // ── PATH GFX-PRODUCT: gpt-image product-only (no face) ────────────────────
     // "Product Only" on the gpt-image engine: a clean, gorgeous product-hero
     // thumbnail with the headline baked on, no creator. Uses only the product
-    // reference image. Falls THROUGH to the NB/Kontext product-only path below on
-    // any failure, so this is purely additive — it never blanks a result.
+    // reference image. On failure it returns a retryable error: there is no
+    // second engine to fall through to.
     if (textMode === 'graphic' && noHuman) {
       try {
         const openaiGfxP = createOpenAIService()
@@ -2135,10 +1733,34 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       }
     }
 
+    // SEVERAL FACES ON FILE AND NO FRAME TO MATCH THEM AGAINST.
+    //
+    // Above, a single ready face model collapses straight into faceModel, and
+    // several collapse only in random mode; otherwise autoFaceModels stays
+    // populated so a downstream step can match the right person to the video.
+    // The step that did that matching for a FRAMELESS request lived in the Nano
+    // Banana path, which no longer exists, so it is done here instead. Without
+    // it a creator with two faces and no captured frame reaches the graphic path
+    // with no identity at all and gets a 502.
+    //
+    // Only when there is no frame: with one, the graphic path does its own
+    // match against the video's own thumbnail a few lines down, and that match
+    // is better because it can see the actual scene.
+    if (!faceModel && autoFaceModels.length > 0 && !hasVideoFrame) {
+      const matched = youtubeVideoId
+        ? await matchFaceModelToFrame(
+            `https://i.ytimg.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
+            autoFaceModels, supabase, { userId: user.id, tier },
+          )
+        : null
+      faceModel = matched ?? autoFaceModels[0]
+      autoFaceModels = []
+    }
+
     // Private / inaccessible video: storyboard failed, no extension frames, no
-    // Photobooth or uploaded photo → return a clear 409 rather than falling
-    // through to NB which has nothing to ground on and would hang or produce junk.
-    if (textMode === 'graphic' && !noHuman && !hasVideoFrame && !faceModel && autoFaceModels.length === 0 && !uploadedPhotoUrl) {
+    // face model → return a clear 409. There is nothing left to ground on, and
+    // the honest answer is better than an invented face.
+    if (textMode === 'graphic' && !noHuman && !hasVideoFrame && !faceModel && autoFaceModels.length === 0) {
       return NextResponse.json({
         ok: false,
         needsExtension: true,
@@ -2146,7 +1768,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         message: "This video is private — MVP can't pull frames from it without the browser extension. Install the SCOUT extension from the Chrome Web Store to capture your video frames, or add a Face Model under \"Your Face\" to generate a thumbnail.",
       }, { status: 409 })
     }
-    if (textMode === 'graphic' && !uploadedPhotoUrl && (faceModel || hasVideoFrame)) {
+    if (textMode === 'graphic' && (faceModel || hasVideoFrame)) {
       try {
         const openaiGfx = createOpenAIService()
         const claimsSheetGfx = await claimsSheetPromise
@@ -2204,9 +1826,9 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         const garment: { check: GarmentVerdict | null; retried: boolean } = { check: null, retried: false }
         // Load a selfie as PNG bytes. source_images are STORAGE PATHS in the
         // private 'headshots' bucket — a raw fetch() on the bare path 400s, which
-        // is exactly why the whole graphic path was silently falling back to
-        // Nano Banana ("no readable face photo"). Download via the storage client
-        // (the NB path does the same); still handle a full http URL just in case.
+        // is exactly why the whole graphic path used to fail with "no readable
+        // face photo". Download via the storage client; still handle a full
+        // http URL just in case.
         const loadFacePng = async (p: string): Promise<Buffer | Uint8Array | null> => {
           try {
             let bytes: Uint8Array
@@ -2854,1204 +2476,21 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       }
     }
 
-    // ── PATH NB (PRIMARY): Nano Banana, grounded on the REAL video frame ─────
-    // Mirrors how the fast competitor works: the creator + product are ALREADY
-    // in the video's own frame, so we feed THAT frame to Gemini and let it
-    // regenerate a vibrant, viral thumbnail — no face upload, no client-side
-    // compositing. By default the headline typography is BAKED into the image
-    // (the cohesive "designed" look). textMode:'clean' instead returns a
-    // text-free scene for the crisp client-overlay fallback. On any failure we
-    // fall through to the Kontext / Flux paths below, so this stays safe.
-    // Real frames grabbed by the extension: prefer the multi-frame array
-    // (vision-pick the best), then the legacy single frame, then maxres.
-    let validFrames: string[] = Array.isArray(capturedFrames)
-      ? capturedFrames.filter((f): f is string => typeof f === 'string' && f.startsWith('data:image/'))
-      : []
-    // Storyboard fallback: when there are no extension frames and we have a
-    // youtubeVideoId, fetch a handful of evenly-spaced key frames from YouTube's
-    // own storyboard tiles. Gives us multiple real frames from across the video
-    // for grounding + auto-match, without ffmpeg, yt-dlp, or the extension.
-    // Best-effort — YouTube blocks scrapers from some cloud IPs, in which case
-    // we silently fall back to the maxres thumbnail path below. ~1-2s, no cost.
-    if (validFrames.length === 0 && youtubeVideoId) {
-      try {
-        const sb = await fetchStoryboardFrames(youtubeVideoId as string, { maxFrames: 4 })
-        if (sb.length > 0) validFrames = sb.map(f => f.dataUrl)
-      } catch { /* best-effort */ }
-    }
-    const hasCapturedFrame = validFrames.length > 0 || (typeof capturedFrameDataUrl === 'string' && capturedFrameDataUrl.startsWith('data:image/'))
-    // The composed NB path is the PRIMARY for creator+product thumbnails and no
-    // longer REQUIRES a video frame: a face model and/or a product image are
-    // enough to ground it (frame-scrubbing was removed when a face is selected).
-    // We still use the real frame when one is available. Only skip NB when there
-    // is nothing at all to ground on → product-only Kontext/Flux fallbacks.
-    const haveFaceForNB = !!faceModel || autoFaceModels.length > 0
-    LAST_NB_FALLTHROUGH = 'NB not entered: no video frame, no face model, no product image'
-    // When the user uploaded their OWN photo (them + the product), that is the
-    // authoritative source — skip the composed/frame path so PATH U handles it
-    // (otherwise a video-backed Co-Pilot run would compose from the frame and
-    // the upload would be ignored / a frame face used instead of theirs).
-    if (!uploadedPhotoUrl && (youtubeVideoId || hasCapturedFrame || haveFaceForNB || productImageUrl)) {
-      LAST_NB_FALLTHROUGH = 'NB entered, resolving references…'
-      try {
-        // Pick the best real frame (clear face + product visible) when we have
-        // several; otherwise the single frame, the uploader's maxres, or — when
-        // there's no video at all — no frame (we ground on the face + product).
-        let baseFrame: string | null = null
-        if (validFrames.length > 1) {
-          const pick = await pickBestFrame(validFrames, { productName: productTitle || undefined, ctx: { userId: user.id, tier } })
-          baseFrame = validFrames[pick] ?? validFrames[0]
-        } else if (validFrames.length === 1) {
-          baseFrame = validFrames[0]
-        } else if (typeof capturedFrameDataUrl === 'string' && capturedFrameDataUrl.startsWith('data:image/')) {
-          baseFrame = capturedFrameDataUrl
-        } else if (youtubeVideoId) {
-          baseFrame = await resolveBestThumbnail(youtubeVideoId as string)
-        }
-        const frameRef = baseFrame ? await rehostToFal(baseFrame) : null
-        // Proceed whenever we have SOMETHING to ground on (frame, face, or product).
-        if (frameRef || haveFaceForNB || productImageUrl) {
-          const wantClean = textMode === 'clean'
-          // FIVE distinct title options for the picker. The user clicks the one
-          // they want; on the clean (overlay) path it's re-drawn client-side on
-          // the text-free image instantly — no regeneration. A locked custom
-          // headline collapses to a single option.
-          // FIVE distinct structured copies — different angle per index (NEGATION,
-          // CURIOSITY_GAP, SKEPTIC, VALUE_DISRUPTION, then back to NEGATION).
-          // When the user supplied a locked custom headline, collapse to a single
-          // ThumbCopy with the headline split across two lines for visual layout.
-          const splitLocked = (h: string): ThumbCopy => {
-            const words = h.trim().split(/\s+/)
-            const half = Math.ceil(words.length / 2)
-            return {
-              angle: 'NEGATION',
-              line1: words.slice(0, half).join(' ').toUpperCase().slice(0, 16),
-              line2: words.slice(half).join(' ').toUpperCase().slice(0, 22) || words.slice(0, half).join(' ').toUpperCase(),
-              emphasisWord: words[0]?.toUpperCase() || '',
-            }
-          }
-          const rawVariants: ThumbCopy[] = lockedHeadline
-            ? [splitLocked(lockedHeadline)]
-            : await generateThumbCopies(videoTitle, 5, productDescription, await claimsSheetPromise)
-          // Assign decorations: use the model's suggestion when valid, else fall
-          // back to the angle-default mapping. Track which decorations have been
-          // assigned in this batch so each variant gets a DIFFERENT one (natural
-          // variety — the 4-angle rotation produces 4 different defaults).
-          const usedDecorations = new Set<ThumbDecoration>()
-          const copyVariants: ThumbCopy[] = rawVariants.map((c) => {
-            // Forced brand badge — the creator picked ONE badge (or 'none') as
-            // their default, so every variant gets exactly that, overriding the
-            // model/angle pick and the per-batch variety rule.
-            if (forcedDecoration) return { ...c, decoration: forcedDecoration }
-            let preferred = c.decoration ?? ANGLE_DECORATION[c.angle]
-            // User opted out of the green ✓ — never let 'check' through.
-            if (noCheckDecoration && preferred === 'check') preferred = 'none'
-            let decoration: ThumbDecoration = preferred
-            if (preferred !== 'none' && usedDecorations.has(preferred)) {
-              // This decoration was already used this batch — pick the next fresh one.
-              const ALL_DECORATIONS: ThumbDecoration[] = noCheckDecoration
-                ? ['arrow', 'stars', 'none']
-                : ['check', 'arrow', 'stars', 'none']
-              decoration = ALL_DECORATIONS.find(d => !usedDecorations.has(d)) ?? preferred
-            }
-            usedDecorations.add(decoration)
-            return { ...c, decoration }
-          })
-          // Flattened single-string forms for legacy consumers (overlay
-          // canvas draw, picker UI, response payload).
-          const titleOptions = copyVariants.map(flatCopy)
-          // `hooks` is the per-variant ThumbCopy[] — drives the baked-text
-          // prompt with full line1/line2/emphasisWord structure.
-          // Boost: a creator-chosen accent word overrides the brief's auto-picked
-          // emphasis word, so both the baked prompt and the overlay colour THAT word.
-          const hooks: ThumbCopy[] = accentW
-            ? copyVariants.map(c => ({ ...c, emphasisWord: accentW }))
-            : copyVariants
-          // Representative hook for the response payload + variant scoring.
-          const overlayHookNB = titleOptions[0]
-
-          // Auto-match: when the user left the face on "Auto" and has multiple
-          // faces, vision-match the frame to pick the right person (Seb vs
-          // Michelle) instead of guessing. Sets faceModel for everything below.
-          // Auto-match vision-picks the right person FROM the frame. With no
-          // frame we can't match, so fall back to the first available face model.
-          if (!faceModel && autoFaceModels.length > 0) {
-            faceModel = frameRef
-              ? await matchFaceModelToFrame(frameRef, autoFaceModels, supabase, { userId: user.id, tier })
-              : null // no frame → can't vision-match; leave null so the frame drives identity
-          }
-          // "Your Face" identity references: if the user has a face model, pass
-          // a few of their real photos alongside the video frame so Nano Banana
-          // Pro locks the host's likeness from MULTIPLE angles — the biggest
-          // lever for resemblance vs. a single frame. Best-effort.
-          // Identity anchor: one Photobooth-quality gpt-image portrait of the
-          // creator (cached per face), led as the PRIMARY likeness reference so
-          // the composited face inherits Photobooth fidelity. A couple of the
-          // raw photos ride along for extra angles. Falls back to the raw photos
-          // if the anchor can't be built.
-          // Thumbnails want PUNCH: lead with an "excited" anchor (cached
-          // separately from the neutral one) so the composited face carries
-          // high-CTR energy instead of a calm headshot expression.
-          // Product-only mode (2026-06-08): user picked "Product only" in
-          // the face selector. Skip face-ref loading entirely; the prompt
-          // (compositionLine below) detects the empty faceRefs and switches
-          // to a no-human composition centered on the product hero.
-          let faceRefs: string[] = []
-          if (noHuman) {
-            console.log('[thumb] noHuman mode — skipping face references')
-          } else if (faceModel?.source_images?.length) {
-            // Identity references = the creator's own uploaded selfies, the bank
-            // they gave us — nothing else. We do NOT use generated Photobooth
-            // headshots or a synthetic identity anchor here (2026-08-13): the
-            // uploaded selfies are the ground truth for the face, and handing NB
-            // several raw uploads gives it multiple real angles to lock identity
-            // to. Wardrobe is re-dressed downstream (see outfitNote).
-            faceRefs = await rehostFacePhotos(supabase, faceModel.source_images, 7)
-          }
-          // Product image(s) as references so the product(s) render accurately
-          // (the bold look). The prompt scopes the product refs to the
-          // product(s) ONLY — the person is taken from the frame + face photos.
-          // 3C — When the user supplied custom product photos, all of them go in
-          // as refs so Nano Banana Pro can see every angle / both products.
-          // Otherwise we fall back to the single auto-resolved Amazon image.
-          let productRefs: string[] = []
-          if (customProductRefs.length > 0) {
-            const rehosted = await Promise.all(customProductRefs.map((u) => rehostToFal(u)))
-            productRefs = rehosted.filter((u): u is string => !!u)
-          } else if (productImageUrl) {
-            const single = await rehostToFal(productImageUrl)
-            if (single) productRefs = [single]
-          }
-          // When we have the creator's photos, lock identity to THOSE alone —
-          // mixing in the lower-quality, oddly-lit video frame was letting the
-          // model drift to a different-looking person. Fall back to the frame
-          // only when no face photos are available.
-          // Product-only (noHuman): NEVER pass the video frame as an identity
-          // reference — it contains the on-camera person (who may be a DIFFERENT
-          // creator from a curated/public video), and Nano Banana renders that
-          // face even though the prompt says "no human". Ground on product +
-          // style only. This was the "someone else's face in my thumbnail" bug.
-          const identityRefs = noHuman
-            ? []
-            : (faceRefs.length > 0 ? faceRefs : (frameRef ? [frameRef] : []))
-          // ── Style references (2026-06-08, "Gemini-style" thumbnail upgrade) ──
-          // 3-5 curated thumbnail examples passed as input images so the model
-          // matches the visual language (cinematic blue/orange lighting, bold
-          // dual-tone text with thick outlines, reviewer+product composition).
-          // Single biggest CTR-quality lever — without these, Nano Banana Pro
-          // defaults to its own "sterile product shot" average. Silently no-ops
-          // if no refs are uploaded yet at /public/thumbnail-style-refs/.
-          // ORDER MATTERS in NB Pro: face → product → style refs. The face
-          // anchors identity, the product anchors form, the style refs teach
-          // composition + look.
-          const appBase = process.env.NEXT_PUBLIC_APP_URL
-            || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-            || (request.headers.get('origin'))
-          // Product-only mode: skip the curated style refs too — they're
-          // "creator + product" example thumbnails that CONTAIN PEOPLE and teach
-          // a person+product split, which is both wrong for a product-only
-          // layout and a residual person-leak risk. Product-only grounds on the
-          // product image(s) + the no-human prompt alone.
-          const styleRefs = noHuman ? [] : await rehostStyleRefs(appBase, 4)
-          const refs = [...identityRefs, ...productRefs, ...styleRefs]
-          // Creator-uploaded style reference (a competitor thumbnail / moodboard
-          // they like the look of). Distill its palette/lighting/composition into
-          // a short brief and fold it into the composed prompt below — previously
-          // this only fed the Kontext/Flux FALLBACK path, so on the primary
-          // composed path the user's upload appeared to "do nothing".
-          const userStyleBrief = styleReferenceUrl ? await extractStyleBrief(styleReferenceUrl) : null
-          // Breadcrumb: if NB still falls through after this, the compose returned
-          // nothing despite having references — surfaced via faceDebug below.
-          LAST_NB_FALLTHROUGH = `NB entered with refs=${refs.length} (face=${faceRefs.length}, product=${productRefs.length}, style=${styleRefs.length}, frame=${frameRef ? 1 : 0}) — compose returned no image`
-
-          // ── COMPOSED thumbnail (always): recompose into a designed, high-CTR
-          //    "creator-review" thumbnail — host large + expressive on one side,
-          //    product hero-rendered on the other with rim-light/glow, the
-          //    background reimagined to fit the video. Per-variant host side +
-          //    title style give the variety the user wants when generating 2–3.
-          //
-          //    DEFAULT (textMode 'clean'): render the scene TEXT-FREE and draw
-          //    the headline with the pixel-perfect canvas overlay — image models
-          //    misspell baked text ("USTNG", duplicate words), the overlay never
-          //    does. BAKED toggle (textMode 'baked'): bake the title in for a
-          //    fully-integrated look, at the risk of a typo.
-          const TITLE_STYLES = [
-            'a bold heavy CONDENSED ALL-CAPS sans-serif, the FIRST word bright YELLOW and the rest pure WHITE, with a thick solid black outline and a hard drop shadow',
-            'a bold heavy CONDENSED ALL-CAPS sans-serif in pure WHITE with a thick black outline and hard drop shadow',
-            'a bold heavy CONDENSED ALL-CAPS sans-serif in WHITE with ONE key word in a punchy accent colour (red or cyan), thick black outline and drop shadow',
-          ]
-          // Identity clause adapts to how many creator references we have. With
-          // the user's face-model photos we tell the model to fuse ALL of them
-          // for a much stronger likeness lock.
-          const nIdentity = identityRefs.length
-          // 2026-06-08: tightened skin + identity language after user
-          // reported face resemblance was "a little off". The previous
-          // copy let NB Pro do a loose-likeness average — adding
-          // PHOTO-IDENTICAL and a per-feature checklist forces a much
-          // tighter match. Critical to preserve real identity markers:
-          // unique facial geometry, asymmetries, the actual texture of
-          // the skin (NOT smoothed), eye colour, hair colour + length
-          // exactly as in the references.
-          const skinFidelity = `Reproduce their skin and APPARENT AGE EXACTLY as in the reference photos — keep the real skin texture, natural pores, the exact freckles/marks/asymmetries that appear in the reference. Do NOT plastic-smooth or beauty-filter the face. Do NOT de-age or age them. Do NOT invent new wrinkles, blemishes or marks that aren't in the references. The face must read as THIS person photographed in good light — not an idealised AI version of them.`
-          const identityClause = faceRefs.length > 0
-            ? `★ IDENTITY LOCK (highest priority — NEVER violate): The ${nIdentity} reference image(s) are real photos of the SAME video creator. The rendered face MUST be a PHOTO-IDENTICAL match to that exact human. Lock these specific identity markers from the references:
-   – Exact bone structure (cheekbone height, jaw width, chin shape, brow ridge)
-   – Exact eye shape, eye colour, eyelid fold, and the spacing between the eyes
-   – Exact nose shape (bridge, tip, nostrils)
-   – Exact mouth shape and lip thickness${expressionLine ? ' (their EXPRESSION is specified separately and is NOT taken from the reference)' : ', and resting expression'}
-   – Exact hair colour, texture, length and style
-   – Exact ethnicity, skin tone and apparent age (do not lighten / darken / age / de-age)
-   – Any distinguishing features visible in the references (freckles, moles, asymmetries, glasses)
-The viewer must look at the rendered thumbnail and INSTANTLY recognise this as the SAME PERSON from the references — not "looks similar to", not "in their family", but the SAME individual. Under NO circumstances substitute, average, idealise, or invent a different person. If you cannot match the reference exactly, render the face slightly smaller and looser rather than confidently rendering the wrong person. ${skinFidelity}`
-            : `★ IDENTITY LOCK (highest priority — NEVER violate): REFERENCE IMAGE 1 is a still from the creator's OWN video. The person in it IS the real host. The rendered face MUST be a PHOTO-IDENTICAL match to that exact human — same bone structure, same eye shape and colour, same nose, same mouth, same hair colour/texture/length, same ethnicity, same skin tone, same apparent age, same distinguishing features (freckles, moles, asymmetries, glasses). The viewer must INSTANTLY recognise this as the SAME PERSON from the reference. Under NO circumstances substitute, average, idealise, or invent a different person. ${skinFidelity}`
-          // Vary the OUTFIT — the reference photos are for the FACE only, not the
-          // wardrobe, so thumbnails don't always show the same shirt.
-          const outfitNote = wardrobeDirective(faceModel?.outfit_pref)
-          // 3C — Multi-product reference clause. With 1 product photo we keep
-          // the old single-product wording. With 2-5 we tell the model these
-          // are ALL the product(s) to render (same product different angles,
-          // OR different products in a comparison thumbnail), and fold in any
-          // composition direction the user typed.
-          const nProducts = productRefs.length
-          const compositionDirective = compositionNote
-            ? ` COMPOSITION DIRECTION FROM THE CREATOR (follow this exactly): "${compositionNote}".`
-            : ''
-          const productRefClause = nProducts === 0
-            ? `Render the ACTUAL product item accurately and prominently as a clean hero object — keep its own brand mark, product name, and any label/text physically printed on the product itself so viewers recognise it. Never its retail box or any marketing-infographic packaging, and no added marketing claims, feature text, badges or callouts around it.`
-            : nProducts === 1
-              ? `The FINAL reference image is the PRODUCT being reviewed — render the ACTUAL PRODUCT ITEM ITSELF, matching its true shape, colour, materials AND its own branding/label/name physically printed on it (keep the brand mark and product name on the bottle/box/device so viewers immediately recognise the product). CRITICAL: if that reference is retail PACKAGING, a box, a poly-bag or a marketing/A+ Content infographic (overlay headlines like "Ultimate ___", checkmark badges, callout circles, comparison panels, feature-highlight pills, arrows pointing at parts), depict the REAL unpackaged product (in use or as a clean hero object) — NOT the box, NOT the infographic — and do NOT reproduce ANY printed MARKETING copy from it (feature lists, claims, percentages, ratings, warranty/award badges, size charts, checkmarks, checkboxes, callout pills). Do NOT copy the reference's composition, layout, framing, or staging — use it ONLY to learn what the product physically looks like. The product's OWN brand/label/name STAYS; all marketing collateral goes. Use that final image ONLY for the product; do NOT take any person, face, hands or body from it.${compositionDirective}`
-              : `The FINAL ${nProducts} reference images are PRODUCT photos supplied by the creator — they may be DIFFERENT angles of the same product, OR DIFFERENT products being compared. Render ALL ${nProducts} of them visibly in the thumbnail, each matching its true shape, colour, materials AND its own branding/label/name physically printed on it (keep brand marks and product names on bottles/boxes/devices so viewers immediately recognise the products). CRITICAL: if any reference is retail PACKAGING, a box, a poly-bag or a marketing/A+ Content infographic (overlay headlines, checkmark badges, callout circles, comparison panels, feature-highlight pills), depict the REAL unpackaged product — NOT the box, NOT the infographic — and do NOT reproduce ANY printed MARKETING copy from it (feature lists, claims, percentages, ratings, warranty/award badges, size charts, checkmarks, checkboxes, callout pills). Do NOT copy the references' composition, layout, framing, or staging — use them ONLY to learn what the products physically look like. The products' OWN brand/label/name STAYS; all marketing collateral goes. Use these reference images ONLY for the products; do NOT take any person, face, hands or body from them.${compositionDirective}`
-          // ── ANGLE → SCENE framing (2026-06-08, from Gemini handoff #2) ────
-          // Per-angle scene preset. Each psychological hook benefits from a
-          // matching visual treatment: a NEGATION ("NEVER USE CANDLES AGAIN!")
-          // reads strongest with a bright happy-discovery scene; a SKEPTIC
-          // ("WASTE OF MONEY?!") reads strongest with a moody critical scene.
-          // The previous rotation (palette/expression/action by VARIANT INDEX)
-          // produced disconnected combos like a SKEPTIC headline over a bright
-          // editorial scene. Mapping by ANGLE keeps the emotional pitch
-          // coherent across copy + image.
-          const FRAMING_MAP: Record<CtrAngle, {
-            environment: string
-            expression: string
-            action: string
-            lighting: { rim: string; accent: string; overall: string }
-          }> = {
-            NEGATION: {
-              environment: 'a clean, bright modern living-room background with daylight pouring in and a softly-blurred minimalist interior',
-              expression: 'a wide-eyed delighted grin, mouth slightly open like they just made a discovery they want to share',
-              action: 'open-palm gesturing toward the product as if presenting it',
-              lighting: { rim: 'cool soft daylight', accent: 'warm honey', overall: 'bright airy editorial' },
-            },
-            CURIOSITY_GAP: {
-              environment: 'a moody dimly-lit modern bedroom or den, soft cinematic atmosphere with subtle background bokeh',
-              expression: 'an intense, almost deadpan serious expression staring directly into the camera with urgency, eyebrows slightly raised',
-              action: 'one finger pressed to lips OR holding the product up just below the chin like a secret about to be told',
-              lighting: { rim: 'rich blue', accent: 'warm orange', overall: 'cinematic teal-and-orange' },
-            },
-            SKEPTIC: {
-              environment: 'a slightly cluttered home-office desk at sunset, warm cinematic background light filtering through a window',
-              expression: 'a skeptical, slightly confused frown with one eyebrow raised, head tilted just slightly, lips pursed',
-              action: 'one hand scratching the chin or pointing dubiously at the product as if questioning it',
-              lighting: { rim: 'cool teal', accent: 'warm sunset gold', overall: 'moody cinematic golden-hour' },
-            },
-            VALUE_DISRUPTION: {
-              environment: 'a premium clean kitchen or studio countertop, luxurious high-end commercial aesthetic, soft white-grey background',
-              expression: 'a confident knowing smirk, head slightly cocked, authoritative high-energy vibe',
-              action: 'a single decisive index finger pointing straight at the product',
-              lighting: { rim: 'deep magenta', accent: 'electric cyan', overall: 'high-end editorial neon-pop' },
-            },
-          }
-          // Style-ref aware clause: when we have curated reference thumbnails,
-          // explicitly tell the model to mimic their visual gestalt. This is
-          // what made the Gemini-handoff output land — the model treats the
-          // refs as the style anchor, not the prompt.
-          // 2026-06-08 fix for duplicate-text bug: the style refs all have
-          // headline text baked into them. NB Pro was copying that text
-          // verbatim onto the output (producing "BULK TEACHER GIFTS" etc.)
-          // which then got OVERLAID with our designer text — double text.
-          // Wording now AGGRESSIVELY forbids reproducing any text from the
-          // refs: use them for LAYOUT and LIGHTING only, never for content.
-          const styleRefClause = styleRefs.length > 0
-            ? `STYLE REFERENCE (composition + lighting ONLY): the LAST ${styleRefs.length} reference image${styleRefs.length === 1 ? '' : 's'} show${styleRefs.length === 1 ? 's' : ''} the EXACT layout style we want — creator on one side, product hero on the other, rich rim-light + warm accent glow.
-   ★ CRITICAL — DO NOT COPY TEXT: those reference images contain headline text. You must NOT render ANY of that text in the output. You must NOT invent your own headline text either. Render the image COMPLETELY TEXT-FREE. The headline gets composited on TOP later as a separate layer — your only job is the IMAGE underneath.
-   Use the references ONLY for: composition (left/right split), lighting (blue rim + orange accent glow), and overall visual energy. Do NOT copy: the people in the refs, the products in the refs, the colour schemes verbatim, and ABSOLUTELY NOT the text. ★ Also do NOT reproduce ANY cartoon mascots, illustrated avatars, channel logos, watermarks, badge/emblem graphics or character drawings from the references — the output must contain NONE of those; only the real creator (if any) and the real product belong in the image.`
-            : ''
-          const buildComposed = (i: number, withText: boolean): string => {
-            const hostSide = i % 2 === 0 ? 'LEFT' : 'RIGHT'
-            const productSide = hostSide === 'LEFT' ? 'RIGHT' : 'LEFT'
-            // Scene is now driven by the variant's psychological ANGLE, not
-            // its index — keeps SKEPTIC copy on a SKEPTIC scene, NEGATION on
-            // a discovery scene, etc. Falls back to CURIOSITY_GAP if the
-            // angle is unrecognised (shouldn't happen — ThumbCopy is typed).
-            const variantCopy = hooks[i % hooks.length]
-            const frame = FRAMING_MAP[variantCopy.angle] ?? FRAMING_MAP.CURIOSITY_GAP
-            const palette = frame.lighting
-            // The creator's pick beats the angle's scene preset for the same
-            // reason: two named expressions in one prompt cancel out.
-            const expression = expressionLine ? 'the expression described above' : frame.expression
-            // Boost: an explicit pose (hold / wear / use / point / thumbs) beats the
-            // angle's default framing action.
-            const action = wearLine ? 'wearing the product, exactly as described above' : (poseOverride || frame.action)
-            // Headline phrasing copied from the user's winning Gemini-handoff
-            // prompt VERBATIM — natural-language description, not a structured
-            // template. The earlier "emphasisWord must be yellow, all others
-            // white" was too prescriptive: the model ignored it and made
-            // EVERYTHING yellow. Gemini's pattern ("white and yellow text
-            // reads: …") lets the model pick the colour mix naturally and
-            // produces the bold white + yellow-accent look we want. The arrow
-            // gets a SPECIFIC target on the product so it doesn't render as a
-            // floating squiggle.
-            const c = hooks[i % hooks.length]
-            // Zero-typing Boost (composed path): typed values win, else the auto
-            // toggles use this hook's own art-director badge / emphasis word.
-            const cBadge = badge || (wantAutoBadge ? ((c as ThumbBrief).badge || '') : '')
-            const cAccent = accentW || (wantAutoAccent ? (c.emphasisWord || '') : '')
-            const headlineClause = withText
-              ? `At the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner of the frame, large, bold, blocky white and yellow text with heavy black outlines reads: "${c.line1}". Directly below it, smaller but still bold white and yellow text reads: "${c.line2}". A prominent yellow arrow with a thick black outline points from the text to the product.${cAccent ? ` Render the word "${cAccent}" in bright RED (#FF2D2D) with the same thick black outline so it jumps out from the white and yellow.` : ''}${cBadge ? ` Beside the product, add a bold STARBURST badge — a spiky sun-burst shape filled bright yellow with a thick black outline — reading exactly "${cBadge}" in heavy black capitals, perfectly spelled, tilted slightly for energy. Keep it clear of the headline.` : ''} Text and graphics are baked directly into the image composition — no other text, captions, or labels anywhere in the image.`
-              : `★ ABSOLUTELY ZERO TEXT in the rendered image. NO words, NO letters, NO captions, NO headlines, NO labels, NO banner text, NO logos, NO arrows with text, NO badges with text. The image must be PURELY VISUAL — face + product + scene only. Even if the style references contain text, DO NOT REPRODUCE IT. The headline is composited as a SEPARATE LAYER afterwards — your output must be 100% clean of any glyph or character. Leave a generous uncluttered area at the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner with simple background colour where text will be added afterwards by a different system.`
-            // 3C — Composition swaps between single-product (host one side,
-            // product the other) and multi-product (host smaller, products
-            // arranged on the opposite side per the composition note when
-            // given, or a sensible default arrangement when not).
-            // PRODUCT-ONLY composition (2026-06-08) — when noHuman is true,
-            // we render the product CENTERED with no human elements anywhere
-            // in the frame. Background gets more atmosphere since there's no
-            // creator to balance against.
-            const compositionLine = noHuman
-              ? `COMPOSITION (PRODUCT ONLY — NO HUMAN): The product is the HERO, centered or slightly off-center in the frame. Render it LARGE, dramatically lit, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow and premium rim-lighting. ABSOLUTELY NO PEOPLE in the image — no faces, no hands, no arms, no body parts, no silhouettes, no reflections of people. The product stands alone as the sole subject. Multiple-angle shots OK if it adds drama (one main + a smaller secondary angle floating behind), but the focus is unmistakably on the product itself.`
-              // "Make me wear it": the default layout puts the creator on one
-              // side and a hero shot of the product on the other, which for a
-              // shirt is a shirt on a hanger standing next to someone wearing a
-              // different shirt. Worn means the product has no second home in
-              // the frame, so the opposite side has to be told it is scenery.
-              : wearLine
-              ? `COMPOSITION (THE PRODUCT IS WORN — see the WORN, NOT HELD rule above): Put the creator LARGE on the ${hostSide} side, framed chest-up, ${expression}. The product is ${wearable.on} — that is the ONLY place it appears. Light it so it reads clearly at thumbnail size: a ${palette.accent} accent glow falling across it and premium rim-lighting separating the creator from the background. The ${productSide} side of the frame is scene, background and headline space ONLY — do NOT render a second copy of the product there or anywhere else, not on a hanger, not on a mannequin, not on a stand, not laid out on a surface, not floating, and not held in a hand.`
-              : nProducts >= 2
-                ? `COMPOSITION: Put the creator on the ${hostSide} side, framed chest-up, ${expression}, ${action.replace('the product', 'the products')}. Render ALL ${nProducts} products visibly and large on the ${productSide} side of the frame, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow and premium rim-lighting so they pop. ${compositionNote ? `Arrange them per the creator's direction above ("${compositionNote}").` : 'Arrange them in a clean, balanced layout (side-by-side, stacked, or a small grid) so each product is clearly recognisable at thumbnail size.'} Every product must be unobscured and identifiable.`
-                : `COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, ${expression}, with ${action}. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow (warm light wrapping the product) and premium rim-lighting so it pops.`
-            // ── Prompt assembly (order matters for text rendering) ──────────
-            // The headline used to live near the END of the prompt, AFTER the
-            // brand-guard clause that says "no extraneous text". The model was
-            // interpreting that conflict by shrinking/skipping the headline.
-            // 2026-06-08 fix: move headline IMMEDIATELY after composition (so
-            // the model places it while the scene is fresh in mind), then
-            // append a HEADLINE-AWARE brand guard that explicitly exempts the
-            // intentional headline + arrow as the ONLY allowed text.
-            // When noHuman, skip identity + outfit (no human to describe).
-            // The wardrobe line exists to vary what the creator has on, which is
-            // the one thing that must not vary when the product IS what they
-            // have on. Left in, it dresses them in something else and the model
-            // resolves the conflict by putting the real garment beside them.
-            // Same wording bug as the graphic path: "plain and neutral" read as
-            // describing the garment and flattened a patterned product into a
-            // blank one. It may only ever describe what is NOT the product.
-            const wornWardrobe = `WARDROBE: they are wearing the product itself, and it keeps EXACTLY the colour, pattern, texture, collar and trim of the reference photo — never simplified, never recoloured, never a plain version of it. Any OTHER garment visible on them is unpatterned so it does not compete; that applies to those garments only and NEVER to the product.`
-            const humanClauses = noHuman ? '' : `${identityClause}\n${wearLine ? wornWardrobe : outfitNote}\n`
-            // Creator's uploaded style reference, distilled — match its LOOK
-            // (palette/lighting/contrast/energy) while keeping our composition
-            // rules below authoritative. High priority so the upload visibly
-            // shapes the result instead of being ignored.
-            const userStyleClause = userStyleBrief
-              ? `★ MATCH THIS LOOK (the creator uploaded a style reference — follow its colour palette, lighting, contrast and overall energy): ${userStyleBrief}\n`
-              : ''
-            // Creator's free-text direction for the whole thumbnail. HIGH
-            // priority for the SCENE (setting, mood, pose, expression, props)
-            // — it overrides the default environment/expression/action picked
-            // below — but it NEVER overrides the identity lock or product
-            // fidelity. Placed near the top so the model reads it while the
-            // composition is still open.
-            const creatorDirectionClause = sceneDirection
-              ? `★ CREATOR'S THUMBNAIL DIRECTION (this is exactly what the creator asked for — follow it for the scene, setting/background, mood, the ${noHuman ? 'composition' : "creator's pose and facial expression"}, and any props or action described): "${sceneDirection}". It OVERRIDES the default scene, expression and background suggestions written further below. It does NOT override the identity lock${noHuman ? '' : ' (the face must stay the exact person from the references)'} or the product-fidelity rules (the real product, its true look and its own branding). If the direction ever conflicts with those, keep the ${noHuman ? 'product' : 'identity and product'} faithful and apply the rest of the direction.\n`
-              : ''
-            return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
-${wearLine ? `${wearLine}\n` : ''}${expressionLine ? `${expressionLine}\n` : ''}${creatorDirectionClause}${userStyleClause}${humanClauses}${productRefClause}
-${styleRefClause}
-${compositionLine}
-${wantEffects ? `ENERGY EFFECTS (the creator asked for these): make the image feel kinetic — bold speed lines radiating outward from the product, a subtle motion streak trailing the product (the product ITSELF stays sharp and identifiable), a radial light burst behind the headline area, and, only if the product is a drink, food or liquid, a dramatic splash frozen mid-air. High energy, still photorealistic, never cartoonish.
-` : ''}${headlineClause}
-BACKGROUND (must FIT the product's real-world use): set the scene where ${productTitle || 'this product'} is ACTUALLY used — INFER the correct environment from the product itself. Examples: a kitchen gadget → a kitchen; an OUTDOOR / patio / deck / pool / garden / lawn product → a tidy outdoor patio, deck, balcony, poolside or backyard (NOT indoors); a car/auto product → a garage or driveway; a bathroom product → a bathroom; a workshop/tool → a garage or workbench; a desk/office product → a desk. Do NOT default to a generic indoor living room unless the product is genuinely a living-room item. Grade the chosen setting as ${palette.overall} cinematic — a dramatic blend of ${palette.rim} rim-light behind the subject and ${palette.accent} glow around the product, deep contrast, soft vignette around the edges. The rim light must visibly separate the subject from the background so any cut-out edge blends cleanly with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes. Loosely fits the video "${videoTitle}" without literally illustrating the title.
-The ONLY text in the image is the headline described above (plus the arrow${cBadge && withText ? ' and the starburst badge' : ''}). HARD RULE: the word "Amazon" (and "Prime") must NEVER appear in the headline or anywhere in the image, and NEVER draw the Amazon smile / swoosh arrow logo. NO retailer logos, NO invented brand names, NO marketing copy or feature lists from product packaging, NO price tags, watermarks, ©/™/® symbols, or any extra signage anywhere in the background or on surfaces. The product's own physical branding on its body/bottle/box IS kept intact (it's the item being reviewed).
-Ultra-sharp, professional, photorealistic.${wearLine ? `\nFINAL CHECK — THE GARMENT: the item on them is the one in the product reference photo. Same colour, same pattern and texture, same collar and trim, same sleeve length. The scene's palette and lighting never change what the product looks like.` : ''}${expressionLine ? `\nFINAL CHECK — THE FACE: ${expressionLine}` : ''}`
-          }
-
-          // wantClean (default) = overlay the title via canvas (perfect text);
-          // !wantClean = bake the title into the image (integrated, may typo).
-          const promptFor = (i: number): string => buildComposed(i, !wantClean)
-          // Representative prompt for telemetry / the response payload.
-          const nbPrompt = promptFor(0)
-
-          // Composed scene: gpt-image primary (unified 2026-08-13); Nano Banana
-          // Pro → NB stay as resilience fallbacks. Title is overlaid (default)
-          // or baked into the image (toggle).
-          let nbModelKey: string = GPT_IMAGE_COMPOSE_COST_MODEL
-          let nbModelUsed = wantClean ? 'gpt-image-compose' : 'gpt-image-compose-baked'
-          // Image-QC telemetry. faceIdentityChecked = the face dimension ran (a
-          // creator-face thumbnail). qcWarning = the QC gate (face + brand-leak +
-          // baked-text) couldn't be satisfied even after a regenerate, so the set
-          // was kept + flagged rather than blanked.
-          let faceIdentityChecked = false
-          let qcWarning = false
-
-          // Fire `variantCount` parallel single-image composes — each with its
-          // own prompt (rotating host side + title style) so variants differ.
-          const nbBatches = await Promise.all(
-            Array.from({ length: variantCount }, (_, i) =>
-              composeWithGptImage({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
-            ),
-          )
-          let nbUrls = nbBatches.flat().filter(Boolean).slice(0, variantCount)
-
-          // Fallback: regular Nano Banana ($0.039) so we still produce a thumbnail.
-          // (The $0.13 Nano Banana Pro tier was removed 2026-08 — it only ran as a
-          // fallback after gpt-image, and paying 3.3x for a fallback image wasn't
-          // worth it; regular Nano Banana covers the same job.)
-          if (nbUrls.length === 0) {
-            const fb = await Promise.all(
-              Array.from({ length: variantCount }, (_, i) =>
-                composeWithNanoBanana({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
-              ),
-            )
-            nbUrls = fb.flat().filter(Boolean).slice(0, variantCount)
-            if (nbUrls.length > 0) { nbModelKey = NANO_BANANA_COST_MODEL; nbModelUsed = wantClean ? 'nano-banana' : 'nano-banana-baked' }
-          }
-
-          // Force-moody grade: deterministically darken + add contrast + vignette
-          // to every composed thumbnail so the background is moody/contrasty every
-          // time and any faint cut-out halo is hidden — then rank/overlay the
-          // graded versions. Best-effort per image (falls back to the original).
-          if (nbUrls.length > 0) {
-            nbUrls = await Promise.all(nbUrls.map(applyMoodyGrade))
-          }
-
-          if (nbUrls.length > 0) {
-            // Cap counter must appear EXACTLY ONCE per generation (see
-            // PRIMARY_FEATURE.thumbnail in lib/usage-cap.ts and migration 101 —
-            // multiple model calls for one generation must not multiply the
-            // count). Record the primary feature once; log the extra variants'
-            // real spend under a cost-only feature the cap doesn't count.
-            recordUsage({
-              userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-              feature: 'yt_thumb_nanobanana_image', model: nbModelKey, images: 1,
-            })
-            for (let i = 1; i < nbUrls.length; i++) {
-              recordUsage({
-                userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-                feature: 'yt_thumb_nanobanana_cost', model: nbModelKey, images: 1,
-              })
-            }
-            // ── IMAGE QC GATE (per variant) ──────────────────────────────
-            // Drop any composed variant that fails ANY of:
-            //   • FACE — doesn't show the creator's own face (face thumbnails only;
-            //     idRef = starred Photobooth shot / identity anchor / best photo).
-            //     Privacy-critical: never a stranger or a generic stand-in.
-            //   • BRAND LEAK — a retailer/marketplace logo or watermark rendered.
-            //   • BAKED TEXT — (baked-title mode only) the headline is misspelled
-            //     or the banned word rendered inside the image.
-            // If at least one variant survives, keep only those. If NONE survive,
-            // regenerate once and re-audit; if that still fails, keep the set but
-            // flag it (better to return something than blank the result).
-            if (nbUrls.length > 0) {
-              const idCtx = { userId: TELEMETRY.userId, tier: TELEMETRY.tier }
-              const idRef = faceRefs[0] || null
-              if (idRef) faceIdentityChecked = true
-              // Gate on product fidelity ONLY when we fed the model exactly one
-              // product reference. For multi-product comparison thumbnails a
-              // single-ref check is ambiguous and would over-reject good variants.
-              const singleProductRef = productRefs.length === 1 ? productRefs[0] : null
-              // Audit one variant against all enabled dimensions. baked-text maps
-              // the variant back to its per-variant headline via nbUrls index.
-              const auditVariant = async (u: string): Promise<boolean> => {
-                const idx = Math.max(0, nbUrls.indexOf(u))
-                const [face, leak, baked, product] = await Promise.all([
-                  idRef ? verifyFaceIdentity(idRef, u, idCtx) : Promise.resolve({ match: true, reason: '' }),
-                  verifyNoBrandLeak(u, idCtx),
-                  !wantClean ? verifyBakedText(u, flatCopy(hooks[idx % hooks.length]) || overlayHookNB, idCtx) : Promise.resolve({ ok: true, reason: '' }),
-                  singleProductRef ? verifyProductMatch(singleProductRef, u, productTitle || '', idCtx) : Promise.resolve({ match: true, reason: '' }),
-                ])
-                return face.match && leak.clean && baked.ok && product.match
-              }
-              const pass1 = await Promise.all(nbUrls.map(auditVariant))
-              const surviving = nbUrls.filter((_, i) => pass1[i])
-              if (surviving.length === 0) {
-                const retry = (await Promise.all(
-                  Array.from({ length: variantCount }, (_, i) =>
-                    composeWithGptImage({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
-                  ),
-                )).flat().filter(Boolean).slice(0, variantCount)
-                const retryGraded = retry.length > 0 ? await Promise.all(retry.map(applyMoodyGrade)) : []
-                // QC retry is real spend but the SAME generation — track cost
-                // only, never advance the cap again (it was counted above).
-                for (let i = 0; i < retryGraded.length; i++) {
-                  recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_nanobanana_cost', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1 })
-                }
-                if (retryGraded.length > 0) {
-                  nbUrls = retryGraded // remap auditVariant's index space to the retry set
-                  const pass2 = await Promise.all(retryGraded.map(auditVariant))
-                  const ok2 = retryGraded.filter((_, i) => pass2[i])
-                  if (ok2.length > 0) nbUrls = ok2
-                  else qcWarning = true // keep the retry set, flag it
-                } else qcWarning = true
-              } else if (surviving.length < nbUrls.length) {
-                nbUrls = surviving // drop the failing variants
-              }
-            }
-
-            const rank = await rankVariants(nbUrls, overlayHookNB, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
-
-            // Per-variant headline placement (overlay path): we composed the
-            // host on a KNOWN side per variant (even=LEFT, odd=RIGHT), so the
-            // title goes in the opposite TOP corner — deterministic, no vision
-            // call needed, and correct per variant (the host side rotates).
-            const posForIndex = (i: number): TextPosition => (i % 2 === 0 ? 'top-right' : 'top-left')
-            const textPositions = rank.urls.map(u => posForIndex(Math.max(0, nbUrls.indexOf(u))))
-            const textPosition: TextPosition | null = wantClean ? (textPositions[0] ?? null) : null
-
-            // ── DESIGNER TEXT OVERLAY ────────────────────────────────────
-            // For the clean (overlay) path, server-side bake the designer
-            // typography onto each ranked variant using a random template
-            // from the 10-template library. Each variant gets a DIFFERENT
-            // template so the user sees real visual variety. Falls back to
-            // the bare clean image on any per-variant render error — the
-            // client knows to handle `baked: true` either way.
-            //
-            // Only run on the `wantClean` path. When the caller chose
-            // baked-text mode (textMode='baked'), the headline is already
-            // in the image and adding another typography layer would
-            // double-print the text.
-            let designerTemplateIds: Array<string | null> = []
-            // Diagnostic state surfaced in the API response so the user can
-            // see (from browser DevTools) whether opentype is succeeding +
-            // why it's failing if not — no Vercel logs needed.
-            let lastBakePath: string | null = null
-            let lastOpentypeError: string | null = null
-            let finalUrls: string[] = rank.urls
-            let displayRankUrls: string[] = rank.urls
-            let designerApplied = false
-            if (wantClean) {
-              designerApplied = true
-              // Random per-generation offset into the neon-border palette so a
-              // SINGLE-variant generation doesn't always land on style 0 — each
-              // regenerate rotates the starting color/shape. Within one batch the
-              // per-variant origIdx still spreads styles apart (palette has 10,
-              // variant cap is 10 → no collisions). See NEON_BORDER_STYLES.
-              const borderOffset = Math.floor(Math.random() * NEON_BORDER_STYLE_COUNT)
-              const designerResults = await Promise.all(rank.urls.map(async (cleanUrl, i) => {
-                try {
-                  // Find which original index this ranked URL came from so
-                  // the overlay uses the matching per-variant structured copy.
-                  const origIdx = Math.max(0, nbUrls.indexOf(cleanUrl))
-                  const variantCopy = hooks[origIdx]
-                  if (!variantCopy) throw new Error(`no copy for variant ${origIdx}`)
-
-                  // VISION-DETECT where the subject actually lives so the
-                  // text lands in the FREE corner. The clean-path NB prompt
-                  // reserves a corner already, but the model occasionally
-                  // composes the subject differently than asked — vision
-                  // ground-truth keeps the overlay out of the face/product.
-                  const zone = await analyzeTextZone(cleanUrl, { ctx: { userId: TELEMETRY.userId, tier: TELEMETRY.tier } })
-
-                  // Reject variants where the face is at the very top of the
-                  // frame — means NB Pro composed the creator too tall and the
-                  // head is cut off. Better to drop the variant than ship a
-                  // headless thumbnail. (face y < 4% of frame height = cropped)
-                  if (!noHuman && zone?.faceBox && zone.faceBox.y < 0.04) {
-                    return { url: cleanUrl, templateId: null, baked: false, rankIdx: i }
-                  }
-
-                  // 2026-06-08: FACE-FIRST side detection. The faceBox is
-                  // ground-truth (vision drew a literal bounding box around
-                  // the face) so if it exists, USE IT — face center < 0.5
-                  // means face is on the LEFT, text MUST go on the right.
-                  // subjectSide can be muddled (vision says "center" when
-                  // there's a face + product on opposite sides) and the
-                  // position-includes-left heuristic can flip wrong, which
-                  // is how text ended up on TOP of the face in the
-                  // "NEVER BUY SINGLE GIFTS AGAIN" regression. Prefer the
-                  // box; fall through to subjectSide; last resort the
-                  // position heuristic.
-                  let subjectSide: 'left' | 'right'
-                  if (zone?.faceBox) {
-                    const faceCenterX = zone.faceBox.x + zone.faceBox.w / 2
-                    subjectSide = faceCenterX < 0.5 ? 'left' : 'right'
-                  } else if (zone?.subjectSide === 'left' || zone?.subjectSide === 'right') {
-                    subjectSide = zone.subjectSide
-                  } else {
-                    subjectSide = zone?.position?.includes('left') ? 'right' : 'left'
-                  }
-                  const verticalAnchor: 'top' | 'bottom' = zone?.position?.startsWith('bottom') ? 'bottom' : 'top'
-
-                  // 2026-06-08: bake via Resvg + raw SVG with paint-order:
-                  // stroke fill — produces SHARP vector outlines around each
-                  // glyph instead of the Satori path's 8-direction text-shadow
-                  // (which read as soft/blurry compared to Gemini's reference).
-                  // Anton font loaded explicitly from the @fontsource buffer.
-                  // Anchor flips to opposite side of the subject.
-                  const anchor: 'upper-left' | 'upper-right' = subjectSide === 'left' ? 'upper-right' : 'upper-left'
-
-                  // Pull the base image bytes — Resvg needs them as a Buffer
-                  // for the sharp composite step.
-                  const baseRes = await fetch(cleanUrl, { signal: AbortSignal.timeout(15000) })
-                  if (!baseRes.ok) throw new Error(`base fetch ${baseRes.status}`)
-                  const baseBuf = Buffer.from(await baseRes.arrayBuffer())
-
-                  // verticalAnchor is informative but the bake currently
-                  // always anchors top — mirror Gemini's reference layout.
-                  void verticalAnchor
-
-                  // ── Person cutout for the "break the frame" effect ────
-                  // Run rembg on the NB Pro composition to get a transparent
-                  // PNG of just the creator. We then composite this OVER
-                  // the neon border (in bakeSimpleHeadline), so the
-                  // creator's head/shoulders sit IN FRONT of the border
-                  // line — the look user pointed out from Gemini's
-                  // reference (model extending above/beyond the frame).
-                  // Best-effort: if rembg fails, the bake still ships with
-                  // the border simply drawn ON TOP of the creator.
-                  let personCutoutPng: Buffer | undefined
-                  // Skip rembg when there's no human (product-only) or when the
-                  // caller didn't request the "break frame" effect. Default is
-                  // OFF — saves 15-20s per generation. Enable via breakFrame:true
-                  // in the request body to get the person-over-border cutout look.
-                  if (!noHuman && breakFrame) try {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const rembg = await fal.subscribe('fal-ai/imageutils/rembg' as any, {
-                      input: { image_url: cleanUrl },
-                      pollInterval: 2000,
-                    })
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const cutUrl = (rembg.data as any)?.image?.url as string | undefined
-                    if (cutUrl) {
-                      const cutRes = await fetch(cutUrl, { signal: AbortSignal.timeout(15000) })
-                      if (cutRes.ok) {
-                        personCutoutPng = Buffer.from(await cutRes.arrayBuffer())
-                        recordUsage({
-                          userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-                          feature: 'yt_thumb_break_frame_cutout', model: 'fal-rembg', images: 1,
-                        })
-                      }
-                    }
-                  } catch (e) {
-                    console.warn('[simple-bake] rembg cutout failed (non-fatal):', e instanceof Error ? e.message : String(e))
-                  }
-
-                  // A locked border index (from the Co-Pilot block) pins ONE border
-                  // for every variant; null/omitted → varied (origIdx spreads the
-                  // palette across the batch, borderOffset rotates the start).
-                  const effectiveBorderIndex = (typeof borderStyleIndex === 'number' && borderStyleIndex >= 0)
-                    ? borderStyleIndex
-                    : origIdx + borderOffset
-                  // Honor the creator's badge choice on EVERY path (this GFX path
-                  // included) — force it right before baking so no code path can
-                  // bypass it. null = 'auto' (keep the copy's own decoration).
-                  const bakeCopy = forcedDecoration ? { ...variantCopy, decoration: forcedDecoration } : variantCopy
-                  const result = await bakeSimpleHeadline(baseBuf, bakeCopy, {
-                    anchor,
-                    personCutoutPng,
-                    borderStyleIndex: effectiveBorderIndex,
-                    // Title emphasis colour from the block (else default yellow).
-                    accentColor: accentColor || undefined,
-                    userId: String(TELEMETRY.userId ?? ''),
-                    tier: TELEMETRY.tier,
-                  })
-                  if (result.renderError) {
-                    console.warn('[simple-bake] variant', i, 'rendered bare base:', result.renderError)
-                  }
-
-                  const dataUri = `data:image/jpeg;base64,${result.png.toString('base64')}`
-                  const hosted = await rehostToFal(dataUri)
-                  if (!hosted) throw new Error('rehostToFal returned null')
-                  recordUsage({
-                    userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-                    feature: 'yt_thumb_simple_bake',
-                    model: 'simple-bake-resvg',
-                    images: 1,
-                  })
-                  // Surface bake diagnostics so we can SEE in the browser
-                  // network tab whether opentype is succeeding or falling
-                  // back to Satori, plus the reason if opentype failed.
-                  return {
-                    url: hosted,
-                    templateId: `simple-bake:${result.bakePath ?? 'unknown'}`,
-                    bakePath: result.bakePath,
-                    opentypeError: result.opentypeError,
-                    baked: true,
-                    rankIdx: i,
-                  }
-                } catch (e) {
-                  console.warn('[designer-overlay] variant fell back to clean image', i, e instanceof Error ? e.message : String(e))
-                  return { url: cleanUrl, templateId: null, baked: false, rankIdx: i }
-                }
-              }))
-              // Only surface variants that were successfully baked (text +
-              // border applied). Falling back to the raw NB Pro image looks
-              // like a raw photograph and confuses users. If ALL bakes fail,
-              // keep the full set so we still return something.
-              const bakedResults = designerResults.filter(r => r.baked)
-              const displayResults = bakedResults.length > 0 ? bakedResults : designerResults
-              finalUrls = displayResults.map(r => r.url)
-              designerTemplateIds = displayResults.map(r => r.templateId)
-              // Track which rank.urls indices survived — needed to align
-              // overlayHooks with finalUrls (they must have the same length).
-              displayRankUrls = displayResults.map(r => rank.urls[r.rankIdx])
-              // Collect opentype diagnostics across variants so the response
-              // can surface which renderer ran + why opentype failed (if it
-              // did). Keeps the data we need to debug the silent-fail bug.
-              const firstWithError = designerResults.find(r => {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                return (r as any).opentypeError
-              })
-              if (firstWithError) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                lastOpentypeError = (firstWithError as any).opentypeError as string
-              }
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const firstWithPath = designerResults.find(r => (r as any).bakePath)
-              if (firstWithPath) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                lastBakePath = (firstWithPath as any).bakePath as string
-              }
-            }
-
-            // ── DOUBLE-VERIFY THE FINAL IMAGE ────────────────────────────
-            // The one thumbnail that actually publishes (finalUrls[0]) gets a
-            // 2-of-3 CONSENSUS face check — the strongest guarantee, run once on
-            // the winner (the per-variant gate above already filtered the set).
-            // Face path only; flags qcWarning if the published image fails.
-            if (faceRefs.length > 0 && finalUrls[0] && !qcWarning) {
-              const consensus = await verifyFaceIdentityConsensus(faceRefs[0], finalUrls[0], { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
-              if (!consensus.match) qcWarning = true
-            }
-
-            return NextResponse.json({
-              ok: true,
-              // Designer overlay (if applied) replaces the rank URLs with
-              // server-baked composited versions. Otherwise serve the raw
-              // ranked images for the legacy client-side canvas overlay.
-              thumbnailUrl: finalUrls[0],
-              thumbnailUrls: finalUrls,
-              thumbnailScores: rank.scores,
-              thumbnailScore: rank.topScore,
-              belowThreshold: rank.belowThreshold,
-              overlayHook: overlayHookNB,
-              // The 5 title options for the client-side picker. On the clean
-              // (overlay) path the user clicks one and it's re-drawn on the
-              // text-free image instantly. Omitted/ignored on the baked path.
-              // (Also omitted when designer overlay baked the text server-side.)
-              titleOptions: wantClean && !designerApplied ? titleOptions : undefined,
-              // Per-variant titles + placements, aligned to rank.urls order so
-              // the client overlays the matching headline + corner on each
-              // variant (the host side — and so the clear corner — rotates).
-              overlayHooks: (wantClean && designerApplied ? displayRankUrls : rank.urls).map(u => flatCopy(hooks[Math.max(0, nbUrls.indexOf(u))]) || overlayHookNB),
-              textPositions: wantClean && !designerApplied ? textPositions : undefined,
-              // Diagnostic: which designer template each variant used. Null
-              // entries = render fell back to the clean image for that slot.
-              // simple-bake:opentype = crisp paint-order:stroke fill path.
-              // simple-bake:satori = softer text-shadow fallback (means
-              // opentype failed). Check browser network tab to see which.
-              designerTemplateIds: designerApplied ? designerTemplateIds : undefined,
-              // Top-level diagnostic for the bake. bakePath tells you which
-              // renderer ran ('opentype' = razor-sharp, 'satori' = softer
-              // fallback). opentypeError explains why opentype was skipped.
-              bakePath: lastBakePath,
-              opentypeError: lastOpentypeError,
-              headlineLocked: !!lockedHeadline,
-              prompt: nbPrompt,
-              styleBriefApplied: false,
-              channelStyle: null,
-              modelUsed: nbModelUsed,
-              // baked:true → headline is already IN the image; the client must
-              // NOT draw a text overlay. The designer-overlay path is also
-              // server-baked typography, so it gets baked:true too.
-              baked: !wantClean || designerApplied,
-              textPosition: designerApplied ? null : textPosition,
-              faceBox: null,
-              composited: true,
-              headshotUsed: false,
-              personCutoutUrl: null,
-              // Which face model the likeness was locked to (Auto-match result),
-              // surfaced so the user can confirm it picked the right person.
-              faceUsed: faceModel?.name ?? null,
-              // Image-QC gate result: true = the shown set passed face + brand-
-              // leak + baked-text checks (and the published image double-verified);
-              // false = QC couldn't be satisfied so it was kept + flagged.
-              imageQcVerified: !qcWarning,
-              // Back-compat: face-only view of the same result (null when this
-              // wasn't a creator-face thumbnail).
-              faceIdentityVerified: faceIdentityChecked ? !qcWarning : null,
-              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceRefs=${faceRefs.length}, productRefs=${productRefs.length}${customProductRefs.length > 0 ? ' [user-supplied]' : ''}, title=${wantClean ? 'overlay' : 'baked'}, qc=${qcWarning ? 'flagged' : 'verified'})`,
-            })
-          }
-          console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        LAST_NB_FALLTHROUGH = `NB threw: ${msg}`.slice(0, 240)
-        console.warn('[generate-thumbnail] Nano Banana frame path failed, falling through:', msg)
-      }
-    }
-
-    // ── PATH U: user uploaded their own photo (them + the product) ───────────
-    // Clean it up / re-render it into a polished YouTube thumbnail scene with
-    // Kontext, then the client overlays the title. No product fetch, no face
-    // cut-out — the uploaded photo already contains the person and product.
-    if (typeof uploadedPhotoUrl === 'string' && /^https?:\/\//.test(uploadedPhotoUrl)) {
-      try {
-        const overlayHookU = lockedHeadline || (await generateHook(videoTitle, productDescription, await claimsSheetPromise))
-        const photoRes = await fetchWithTimeout(uploadedPhotoUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-        if (!photoRes.ok) throw new Error(`Cannot fetch uploaded photo (${photoRes.status})`)
-        const falPhotoUrl = await fal.storage.upload(await photoRes.blob())
-
-        const cleanup = (typeof cleanupPrompt === 'string' ? cleanupPrompt : '').trim().slice(0, 400)
-        // Background rotation — when the user gives no scene hint, vary the setting
-        // across generations so re-runs feel fresh; always softly blurred so focus
-        // stays on the person + product. The user's scene hint (if any) wins.
-        const UPLOAD_SCENES = [
-          'a bright, airy modern kitchen',
-          'a stylish outdoor patio with tasteful greenery',
-          'a clean, modern home office',
-          'a professional studio space with a smooth seamless backdrop',
-          'a warm, tastefully decorated living room',
-        ]
-        const scenePick = UPLOAD_SCENES[Math.floor(Math.random() * UPLOAD_SCENES.length)]
-        const bgDirection = cleanup || `Place them in ${scenePick}`
-        const kontextInstruction = `Transform this user-submitted photo into a clean, professional, eye-catching YouTube thumbnail.
-
-SUBJECT — LIGHT RETOUCH ONLY: keep the EXACT same person. Preserve their facial identity, bone structure, age, skin texture, hair and likeness precisely — they must look unmistakably like the same real individual. Do NOT make them look older or younger, do NOT slim, smooth, beautify or reshape their face or body. Just touch it up: brighten and even out the lighting on them, boost colour vibrancy, fix exposure, and clean up image issues (noise, softness, compression artifacts, distracting blemishes) — a polished version of the SAME photo. KEEP the product they are holding or showing exactly: same item, shape, colour, branding and details.
-
-BACKGROUND: ${bgDirection}, rendered with a soft, gentle blur (shallow depth of field) so all focus stays on the person and the product. Remove background clutter and distractions; keep it bright, clean and uncluttered.
-
-Bright, flattering, high-contrast premium thumbnail look. Do NOT add any other people. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, 16:9.`
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const kontextResult = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
-          input: {
-            image_url: falPhotoUrl,
-            prompt: kontextInstruction,
-            aspect_ratio: '16:9',
-            num_images: variantCount,
-            output_format: 'jpeg',
-            guidance_scale: 4,
-          },
-          pollInterval: 3000,
-        })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const imgs = (kontextResult.data as any)?.images as Array<{ url: string }> | undefined
-        const urls = (imgs ?? []).map(i => i.url).filter(Boolean)
-        if (urls.length > 0) {
-          // Cap counter must appear EXACTLY ONCE per generation (see
-          // PRIMARY_FEATURE.thumbnail in lib/usage-cap.ts) — recording the
-          // primary feature per variant charged a 2-variant generation as 2
-          // thumbnails, so users got half their marketed monthly count. Record
-          // the primary once; log the extra variants' real spend under a
-          // cost-only feature the cap does not count (mirrors the nano path).
-          recordUsage({
-            userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-            feature: 'yt_thumb_kontext_image', model: 'fal-flux-pro-kontext', images: 1,
-          })
-          for (let i = 1; i < urls.length; i++) {
-            recordUsage({
-              userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-              feature: 'yt_thumb_kontext_cost', model: 'fal-flux-pro-kontext', images: 1,
-            })
-          }
-          // Force-moody grade before ranking — every path gets a moody/contrasty
-          // background, not just the primary NB path (see applyMoodyGrade).
-          const moodyUploadUrls = await Promise.all(urls.map(applyMoodyGrade))
-          const rank = await rankVariants(moodyUploadUrls, overlayHookU, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
-
-          // BAKE THE TITLE ON (unless the user is in clean/overlay text mode).
-          // Same neon-border + bold line1/line2 + yellow-emphasis treatment MVP
-          // bakes on every other thumbnail — now applied to the cleaned-up
-          // uploaded photo. The person + product are already IN the image; we
-          // never composite a face here, so the identity stays exactly what the
-          // user uploaded. Falls back to the un-baked photo if a bake fails.
-          const wantBakedU = textMode !== 'clean'
-          let finalUrlsU = rank.urls
-          let bakedU = false
-          if (wantBakedU) {
-            try {
-              const claimsForU = await claimsSheetPromise
-              const splitLockedU = (h: string): ThumbCopy => {
-                const words = (h || '').trim().split(/\s+/)
-                const half = Math.ceil(words.length / 2)
-                return {
-                  angle: 'NEGATION',
-                  line1: words.slice(0, half).join(' ').toUpperCase().slice(0, 18),
-                  line2: (words.slice(half).join(' ').toUpperCase() || words.slice(0, half).join(' ').toUpperCase()).slice(0, 22),
-                  emphasisWord: '',
-                }
-              }
-              const copiesU: ThumbCopy[] = lockedHeadline
-                ? rank.urls.map(() => splitLockedU(lockedHeadline))
-                : await generateThumbCopies(videoTitle, rank.urls.length, productDescription, claimsForU)
-              const bakedArr = await Promise.all(rank.urls.map(async (u, i) => {
-                try {
-                  const r = await fetch(u, { signal: AbortSignal.timeout(15000) })
-                  if (!r.ok) return u
-                  const buf = Buffer.from(await r.arrayBuffer())
-                  const copy0 = copiesU[i] ?? copiesU[0]
-                  const copy = forcedDecoration ? { ...copy0, decoration: forcedDecoration } : copy0
-                  const res = await bakeSimpleHeadline(buf, copy, {
-                    borderStyleIndex: (typeof borderStyleIndex === 'number' && borderStyleIndex >= 0) ? borderStyleIndex : i,
-                    accentColor: accentColor || undefined,
-                    userId: String(TELEMETRY.userId ?? ''),
-                    tier: TELEMETRY.tier,
-                  })
-                  const hosted = await rehostToFal(`data:image/jpeg;base64,${res.png.toString('base64')}`)
-                  if (hosted) {
-                    recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_simple_bake', model: 'simple-bake-resvg', images: 1 })
-                    return hosted
-                  }
-                  return u
-                } catch { return u }
-              }))
-              if (bakedArr.some((b, i) => b !== rank.urls[i])) { finalUrlsU = bakedArr; bakedU = true }
-            } catch (e) {
-              console.warn('[upload-path] headline bake failed, returning clean photo:', e instanceof Error ? e.message : String(e))
-            }
-          }
-
-          return NextResponse.json({
-            ok: true,
-            thumbnailUrl: finalUrlsU[0],
-            thumbnailUrls: finalUrlsU,
-            thumbnailScores: rank.scores,
-            thumbnailScore: rank.topScore,
-            belowThreshold: rank.belowThreshold,
-            overlayHook: overlayHookU,
-            headlineLocked: !!lockedHeadline,
-            // baked:true → the headline is already IN the image; the client must
-            // NOT draw its own text overlay (would double the title).
-            baked: bakedU,
-            prompt: kontextInstruction,
-            styleBriefApplied: false,
-            channelStyle: null,
-            modelUsed: bakedU ? 'kontext-upload+bake' : 'kontext-upload',
-            headshotUsed: false,
-            personCutoutUrl: null,
-            faceDebug: `upload-path (no cut-out — photo already has the person; title=${bakedU ? 'baked' : 'overlay'})`,
-          })
-        }
-        // If Kontext returned nothing, fall through to the normal pipeline.
-        console.warn('[generate-thumbnail] upload path returned no image; falling through')
-      } catch (err) {
-        console.warn('[generate-thumbnail] upload path failed, falling through:', err)
-      }
-    }
-
-    // Kick off the creator cut-out RIGHT NOW (don't await) so it runs in
-    // parallel with channel analysis + prompt gen + the product scene — the
-    // gpt-image cut-out is the long pole, so starting it first minimises total
-    // wall-clock time.
-    const cutoutPromise: Promise<string | null> = faceModel
-      ? generateFaceCutout(supabase, {
-          userId: user.id,
-          sourceImages: faceModel.source_images,
-          imageModel: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
-          outfitPref: faceModel.outfit_pref ?? null,
-        })
-      : Promise.resolve(null)
-    const resolveCutout = async (): Promise<{ url: string | null; debug: string }> => {
-      const url = await cutoutPromise
-      const cutoutDebug = !faceModelId
-        ? 'no-faceModelId-sent (face not selected in the modal)'
-        : !faceModel
-          ? 'faceModelId sent but model not found / has no source photos'
-          : !url
-            ? `cut-out GENERATION FAILED: ${LAST_CUTOUT_ERROR || '(no error captured)'}`
-            : 'ok'
-      // We're in a fallback path, so the primary designed (NB) path didn't return
-      // an image — prepend WHY so it's visible in the UI without server logs.
-      const debug = LAST_NB_FALLTHROUGH ? `${LAST_NB_FALLTHROUGH} | cutout: ${cutoutDebug}` : cutoutDebug
-      return { url, debug }
-    }
-
-    const channelThumbnailUrls = await fetchChannelThumbnails(supabase, user.id)
-    const channelStyle = await analyzeChannelStyle(channelThumbnailUrls)
-    console.log('[generate-thumbnail] Channel style:', channelStyle ?? 'none')
-
-    // ── Generate scene prompt + hook + (optional) style brief in parallel ───
-    // The face path (gpt-image, PATH G below) builds its own prompt inline;
-    // this product-only prompt feeds the Kontext / Flux-Pro no-face paths.
-    const claimsForHook = await claimsSheetPromise
-    const [productPrompt, generatedHook, styleBrief] = await Promise.all([
-      generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle }),
-      lockedHeadline ? Promise.resolve('') : generateHook(videoTitle, productDescription, claimsForHook),
-      styleReferenceUrl ? extractStyleBrief(styleReferenceUrl) : Promise.resolve(null),
-    ])
-    const overlayHook = lockedHeadline || generatedHook
-    // Fold the style brief into the prompt as a high-priority directive so
-    // Flux respects color / lighting / composition while still rendering
-    // the product or scene we asked for.
-    const finalScenePrompt = styleBrief
-      ? `VISUAL STYLE (high priority — follow this aesthetic exactly): ${styleBrief}\n\nSCENE: ${productPrompt}`
-      : productPrompt
-    console.log('[generate-thumbnail] Scene prompt:', finalScenePrompt)
-    console.log('[generate-thumbnail] Overlay text:', overlayHook, lockedHeadline ? '(LOCKED)' : '(AI)')
-    if (styleBrief) console.log('[generate-thumbnail] Style brief:', styleBrief)
-
-    // ── PATH A: Kontext — use real product image as visual reference ──────────
-    // Start from the actual product photo and transform the scene around it.
-    // Always product-only (no person) — the creator is composited separately.
-    if (productImageUrl) {
-      try {
-        // fal.ai cannot reach Supabase/Amazon URLs directly — re-host first
-        const imgRes = await fetchWithTimeout(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-        if (!imgRes.ok) throw new Error(`Cannot fetch product image (${imgRes.status})`)
-        const imgBlob = await imgRes.blob()
-        const falImageUrl = await fal.storage.upload(imgBlob)
-        console.log('[generate-thumbnail] Product image uploaded to fal:', falImageUrl)
-
-        // Kontext: preserve the product, replace background with scene
-        const kontextInstruction = `Keep ONLY the exact product object from this image — its shape, colour, material, branding, and all details. IMPORTANT: if the original image contains ANY person, model, hands, arms or body parts, REMOVE them completely — keep only the product itself, nothing human. Remove the white background and any accessories or packaging. Place the product in the following scene: ${finalScenePrompt}. The product should sit naturally in the scene with realistic shadows and lighting. The scene MUST be BRIGHT and well-lit with light, airy tones and clear background detail — NEVER dark, black, dim or moody. COMPOSITION (important): position the product on the LEFT / CENTRE-LEFT of the frame and keep the RIGHT THIRD of the image open — empty background / negative space — because a person will be composited into the bottom-right corner afterwards, so the product must NOT extend into the right third or it will be covered. CRITICAL: there must be ABSOLUTELY NO people anywhere — no humans, no faces, no heads, no bodies, no hands, no silhouettes or reflections of people in the scene or its background. The scene is completely empty of any person. No white background. ${NO_BRAND_IMAGE_CLAUSE}`
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const kontextResult = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
-          input: {
-            image_url: falImageUrl,
-            prompt: kontextInstruction,
-            aspect_ratio: '16:9',
-            num_images: variantCount,
-            output_format: 'jpeg',
-            guidance_scale: 5,
-          },
-          pollInterval: 3000,
-        })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const kontextImages = (kontextResult.data as any)?.images as Array<{ url: string }> | undefined
-        const kontextUrls = (kontextImages ?? []).map(i => i.url).filter(Boolean)
-        if (kontextUrls.length > 0) {
-          // Record one usage row per image returned so cap counting + cost
-          // telemetry stays accurate when variantCount > 1.
-          for (let i = 0; i < kontextUrls.length; i++) {
-            recordUsage({
-              userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-              feature: 'yt_thumb_kontext_image', model: 'fal-flux-pro-kontext', images: 1,
-            })
-          }
-          console.log('[generate-thumbnail] Kontext results:', kontextUrls)
-          const { url: personCutoutUrl, debug: faceDebug } = await resolveCutout()
-          // Force-moody grade the scene before ranking — defence-in-depth so the
-          // fallback paths get a moody/contrasty background too (see applyMoodyGrade).
-          const moodyKontextUrls = await Promise.all(kontextUrls.map(applyMoodyGrade))
-          const rank = await rankVariants(moodyKontextUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
-          return NextResponse.json({
-            ok: true,
-            // Primary url retained for backwards-compat with existing client
-            // code; thumbnailUrls is the full array (best-first) when variantCount > 1.
-            thumbnailUrl: rank.urls[0],
-            thumbnailUrls: rank.urls,
-            thumbnailScores: rank.scores,
-            thumbnailScore: rank.topScore,
-            belowThreshold: rank.belowThreshold,
-            overlayHook,
-            headlineLocked: !!lockedHeadline,
-            prompt: kontextInstruction,
-            styleBriefApplied: !!styleBrief,
-            channelStyle: channelStyle ?? null,
-            modelUsed: `kontext-${style}`,
-            headshotUsed: !!personCutoutUrl,
-            personCutoutUrl,
-            faceDebug,
-          })
-        }
-      } catch (err) {
-        console.warn('[generate-thumbnail] Kontext path failed, falling back to Flux Pro:', err)
-      }
-    }
-
-    // (LoRA retired 2026-05-22 — the face path is gpt-image-1/2 above, PATH G.
-    //  If that fails we fall through to the product-only Flux Pro path below.)
-
-    // ── PATH I: Ideogram v3 — text-forward scene (no product image) ──────────
-    // For the no-reference case Ideogram produces stronger graphic/thumbnail-
-    // style images than Flux Pro v1.1 (and far cleaner typography if we ever
-    // bake text in). The headline is still overlaid client-side, so the shared
-    // scene prompt tells it to avoid text. Falls through to Flux Pro on empty.
-    try {
-      const ideoUrls = await generateWithIdeogram({ prompt: finalScenePrompt, numImages: variantCount, renderingSpeed: 'BALANCED' })
-      if (ideoUrls.length > 0) {
-        for (let i = 0; i < ideoUrls.length; i++) {
-          recordUsage({
-            userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-            feature: 'yt_thumb_ideogram_image', model: IDEOGRAM_COST_MODEL, images: 1,
-          })
-        }
-        const { url: personCutoutUrl, debug: faceDebug } = await resolveCutout()
-        // Force-moody grade the scene before ranking (see applyMoodyGrade).
-        const moodyIdeoUrls = await Promise.all(ideoUrls.map(applyMoodyGrade))
-        const rank = await rankVariants(moodyIdeoUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
-        return NextResponse.json({
-          ok: true,
-          thumbnailUrl: rank.urls[0],
-          thumbnailUrls: rank.urls,
-          thumbnailScores: rank.scores,
-          thumbnailScore: rank.topScore,
-          belowThreshold: rank.belowThreshold,
-          overlayHook,
-          headlineLocked: !!lockedHeadline,
-          prompt: finalScenePrompt,
-          styleBriefApplied: !!styleBrief,
-          channelStyle: channelStyle ?? null,
-          modelUsed: `ideogram-${style}`,
-          headshotUsed: !!personCutoutUrl,
-          personCutoutUrl,
-          faceDebug,
-        })
-      }
-      console.warn('[generate-thumbnail] Ideogram returned no image; falling back to Flux Pro')
-    } catch (err) {
-      console.warn('[generate-thumbnail] Ideogram path failed, falling back to Flux Pro:', err)
-    }
-
-    // ── PATH C: Flux Pro fallback — no product image, no face model ───────────
-    console.log('[generate-thumbnail] Using Flux Pro fallback (no product image)')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
-      input: {
-        prompt: finalScenePrompt,
-        image_size: 'landscape_16_9',
-        num_inference_steps: 28,
-        guidance_scale: 3.5,
-        num_images: variantCount,
-        output_format: 'jpeg',
-        safety_tolerance: '2',
-      },
-      pollInterval: 3000,
-    })
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const images = (result.data as any)?.images as Array<{ url: string }> | undefined
-    const thumbnailUrls = (images ?? []).map(i => i.url).filter(Boolean)
-    if (thumbnailUrls.length === 0) throw new Error('Flux Pro did not return an image. Please try again.')
-    for (let i = 0; i < thumbnailUrls.length; i++) {
-      recordUsage({
-        userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-        feature: 'yt_thumb_flux_image', model: 'fal-flux-pro-v1.1', images: 1,
-      })
-    }
-
-    const { url: personCutoutUrl, debug: faceDebug } = await resolveCutout()
-    // Force-moody grade the scene before ranking (see applyMoodyGrade).
-    const moodyFluxUrls = await Promise.all(thumbnailUrls.map(applyMoodyGrade))
-    const rank = await rankVariants(moodyFluxUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
+    // ── ONE ENGINE ────────────────────────────────────────────────────────
+    //
+    // Every branch above either returns or throws, so reaching here means the
+    // request asked for a textMode this route no longer builds. It used to fall
+    // into a cascade of five more engines (Nano Banana, an uploaded-photo
+    // Kontext re-render, Kontext, Ideogram, Flux Pro); those were removed once
+    // gpt-image became the only engine and the graphic path stopped falling
+    // through to them. Answering plainly beats answering with silence.
     return NextResponse.json({
-      ok: true,
-      thumbnailUrl: rank.urls[0],
-      thumbnailUrls: rank.urls,
-      thumbnailScores: rank.scores,
-      thumbnailScore: rank.topScore,
-      belowThreshold: rank.belowThreshold,
-      overlayHook,
-      headlineLocked: !!lockedHeadline,
-      prompt: finalScenePrompt,
-      styleBriefApplied: !!styleBrief,
-      channelStyle: channelStyle ?? null,
-      modelUsed: `flux-pro-${style}`,
-      headshotUsed: !!personCutoutUrl,
-      personCutoutUrl,
-      faceDebug,
-    })
+      ok: false,
+      error: 'unsupported-text-mode',
+      message: 'This version of MVP builds designed thumbnails only. Reload the page and hit Generate again.',
+      textMode: textMode ?? null,
+    }, { status: 400 })
+
   } catch (err) {
     // fal.ai ApiError has a .body property with the full validation detail
     const falBody = (err as Record<string, unknown>)?.body

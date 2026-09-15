@@ -17,9 +17,11 @@
 //          for a picture rendered at MEDIUM quality (~$0.06). Wrong in both
 //          directions at once.
 //
-//   3.     generateFaceCutout renders at a HARDCODED quality: 'medium' and
+//   3.     generateFaceCutout rendered at a HARDCODED quality: 'medium' and
 //          recorded opts.imageModel, so every cut-out booked at the high rate
-//          for a picture that costs about a third of it.
+//          for a picture that costs about a third of it. That function has
+//          since been removed with the engines that called it, so only the
+//          rule it proved is left behind.
 //
 // All three were found only because somebody grouped ai_usage by model and did
 // not recognise a name. OpenAI prices gpt-image by QUALITY, and the model
@@ -123,7 +125,7 @@ const ROUTE = readFileSync('app/api/youtube/generate-thumbnail/route.ts', 'utf8'
   const QUALITY_AWARE = /\b(gfxRecordOverride|[A-Z_]+_COST_MODEL)\b/
 
   const imageRecords = [...ROUTE.matchAll(/recordUsage\(\{[^}]*images:\s*1[^}]*\}\)/g)].map(m => m[0])
-  check('the route records image usage at all', imageRecords.length >= 12, `${imageRecords.length}`)
+  check('the route records image usage at all', imageRecords.length >= 4, `${imageRecords.length}`)
 
   let guarded = 0
   for (const call of imageRecords) {
@@ -140,27 +142,28 @@ const ROUTE = readFileSync('app/api/youtube/generate-thumbnail/route.ts', 'utf8'
     "it is not a model anybody prices; it booked 41 renders at the fallback rate")
 }
 
-// ── the cut-out records medium because it RENDERS medium ───────────────────
+// ── ONE ENGINE, AND IT STAYS ONE ──────────────────────────────────────────
 //
-// generateFaceCutout sits outside the handler, so gfxRecordOverride is out of
-// scope and the check above passes on the constant alone. What makes the
-// constant the RIGHT one is the hardcoded quality two lines above it, so both
-// halves are pinned here: if somebody later lets the quality vary, this fails
-// and the row has to start following it.
+// The route used to carry five more engines below the graphic path: Nano
+// Banana, an uploaded-photo Kontext re-render, Kontext, Ideogram and Flux Pro.
+// None was reachable. The graphic path stopped falling through to them when
+// gpt-image became the only engine, and the UI that could ask for one only
+// rendered on a result those engines produced, so the whole cascade was a
+// closed loop nothing could enter. It is billing's problem too: every one of
+// them recorded its own model, and dead billing code is the kind that drifts
+// out of PRICING without anybody noticing, because nothing it does shows up.
 {
-  const start = ROUTE.indexOf('async function generateFaceCutout')
-  check('generateFaceCutout is still there', start > 0)
-  const body = ROUTE.slice(start, ROUTE.indexOf('yt_thumb_cutout_rembg', start))
-  const quality = body.match(/quality:\s*'(\w+)'/)?.[1]
-  check('the cut-out render still fixes its quality', quality === 'medium',
-    `renders at "${quality}"; if this is no longer fixed, the recorded model cannot be a constant`)
-  const recorded = body.match(/feature: 'yt_thumb_face_cutout', model: ([^,]+),/)?.[1]?.trim()
-  check('and the row names a medium-priced model',
-    recorded === 'GPT_IMAGE_COMPOSE_COST_MODEL',
-    `records \`${recorded}\`; the render is medium (~$${PRICING['gpt-image-1-medium']!.imageCost}) and anything else books it at the high rate`)
-  check('and that constant is in fact the medium price',
-    /GPT_IMAGE_COMPOSE_COST_MODEL = 'gpt-image-1-medium'/.test(readFileSync('lib/thumbnail-generators.ts', 'utf8')),
-    'the constant is what makes the line above true')
+  check('the removed engines have not come back',
+    !/PATH (NB|U|A|I|C)\b/.test(ROUTE),
+    'if a fallback engine returns, its billing has to be checked against PRICING before it ships')
+  check('and a request this route cannot build is answered, not dropped',
+    /error: 'unsupported-text-mode'/.test(ROUTE),
+    'without a terminal response a stale client falls off the end of the handler')
+
+  const COPILOT = readFileSync('app/(dashboard)/co-pilot/page.tsx', 'utf8')
+  check('the engine-swap buttons are gone from the Co-Pilot result bar',
+    !/textMode: '(baked|clean)'/.test(COPILOT),
+    'they could not be reached, and a button that regenerates on a removed engine would now 400')
 }
 
 if (failures.length) {
