@@ -50,6 +50,7 @@ import { getLinkStyle } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { composeWithGptImage, composeWithNanoBanana, rehostToFal, GPT_IMAGE_COMPOSE_LOW_COST_MODEL } from '@/lib/thumbnail-generators'
+import { recallProductImage } from '@/lib/product-image-memory'
 import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
 import { scrubEmDashes } from '@/lib/html-scrub'
@@ -734,6 +735,18 @@ export async function POST(req: Request) {
   const mainImage = product.imageUrl
   const productRefForFal = mainImage ? await rehostToFal(mainImage) : null
 
+  // ── The creator's own image wins over a fresh render ─────────────────
+  //
+  // If they already approved art for this ASIN somewhere (a Co-Pilot
+  // thumbnail, or one they uploaded), that is the hero. Their design, posted
+  // as they made it: the DEAL badge is NOT composited on top, because painting
+  // a badge over a thumbnail somebody designed wrecks it. The response says
+  // which image was used so the screen never reports a render that never ran.
+  //
+  // This also skips the gpt-image call, though that is a side effect and not
+  // the reason — at 1.10 touches per product there was never money in it.
+  const savedHero = await recallProductImage(supabase, user.id, asin)
+
   // Thumbnail (badge baked in)
   const thumbPrompt = buildThumbnailPrompt({
     productTitle: product.title || `the product (ASIN ${product.asin})`,
@@ -743,7 +756,9 @@ export async function POST(req: Request) {
   })
   // PRIMARY: gpt-image (unified 2026-08-13). NB Pro → NB stay as resilience
   // fallbacks so a gpt hiccup never fails the render.
-  const thumbPromise: Promise<string | null> = productRefForFal
+  const thumbPromise: Promise<string | null> = savedHero
+    ? Promise.resolve(savedHero.imageUrl)
+    : productRefForFal
     ? composeWithGptImage({
         prompt: thumbPrompt,
         referenceImageUrls: [productRefForFal],
@@ -1132,6 +1147,12 @@ export async function POST(req: Request) {
     // why. A creator who pressed Generate and got back a scheduled post with no
     // explanation would reasonably think it had failed.
     scheduledAt: scheduledAtIso,
+    // Report the image that was actually used, not the one the pipeline
+    // intended. A reused hero and a freshly rendered one look identical on the
+    // published post, so the only place the difference can be stated is here.
+    heroImage: savedHero
+      ? { reused: true, source: savedHero.source, surface: savedHero.surface, approvedAt: savedHero.approvedAt }
+      : { reused: false },
     ...(embargoVerdict?.blocked ? { embargo: embargoVerdict } : {}),
     ...(migrationNeeded ? { migrationNeeded } : {}),
   })

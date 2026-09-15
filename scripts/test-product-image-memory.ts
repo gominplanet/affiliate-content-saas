@@ -160,6 +160,36 @@ const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOStr
     'the deal badge silently going missing is a surprise worth one sentence')
 }
 
+// ── the deal BLOG post hero reuses too, and says which image it used ────────
+//
+// The surface Seb actually reached for first, and the one that is hardest to
+// audit: a reused hero and a freshly rendered one are pixel-for-pixel
+// indistinguishable on the published article, so if the toast stays quiet
+// there is nowhere left to tell them apart.
+{
+  const DEALS = readFileSync('app/api/deals/route.ts', 'utf8')
+  check('the deal route recalls the approved image',
+    /const savedHero = await recallProductImage\(supabase, user\.id, asin\)/.test(DEALS))
+  check('and uses it instead of rendering', /savedHero[\s\S]{0,60}Promise\.resolve\(savedHero\.imageUrl\)/.test(DEALS),
+    'otherwise it pays for a gpt-image render and throws it away')
+  check('the DEAL badge is not composited over the creator\u2019s own design',
+    !/savedHero[\s\S]{0,400}?buildThumbnailPrompt\([\s\S]{0,200}?savedHero/.test(DEALS),
+    'painting a badge over art they designed wrecks it')
+  check('the response reports which hero was used', /heroImage: savedHero/.test(DEALS),
+    'the published post cannot show the difference, so the API has to')
+
+  const PAGE = readFileSync('app/(dashboard)/deals/page.tsx', 'utf8')
+  check('the deals screen prints it', /function heroNote/.test(PAGE))
+  check('on every success path, not just one',
+    (PAGE.match(/heroNote\(j\)/g) || []).length >= 4,
+    'publish, schedule, preview-publish and regenerate all render a hero')
+  check('and names the missing badge', /No DEAL badge was added/.test(PAGE),
+    'the badge silently going missing is a surprise worth one sentence')
+  check('the hero note carries no year',
+    /month: 'short', day: 'numeric' \}/.test(PAGE) && !/year: 'numeric'/.test(PAGE),
+    'the standing rule, and a date formatter is the likeliest place to break it')
+}
+
 // ── every surface that reuses, says so ──────────────────────────────────────
 {
   const PANEL = readFileSync('components/product/SavedProductImage.tsx', 'utf8')

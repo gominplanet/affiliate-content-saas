@@ -341,10 +341,11 @@ export default function DealsHubPage() {
       // Full auto path — publish (or schedule) completed.
       if (scheduleAt) {
         toast.success(`Deal post scheduled for ${formatSchedule(scheduleAt)}.`, {
-          description: 'WordPress publishes it live automatically at that time.',
+          description: [heroNote(j), 'WordPress publishes it live automatically at that time.'].filter(Boolean).join(' '),
         })
       } else {
         toast.success('Deal post published!', {
+          description: heroNote(j),
           action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
         })
       }
@@ -400,10 +401,11 @@ export default function DealsHubPage() {
       }
       if (previewScheduleAt) {
         toast.success(`Deal post scheduled for ${formatSchedule(previewScheduleAt)}.`, {
-          description: 'WordPress publishes it live automatically at that time.',
+          description: [heroNote(j), 'WordPress publishes it live automatically at that time.'].filter(Boolean).join(' '),
         })
       } else {
         toast.success('Deal post published!', {
+          description: heroNote(j),
           action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
         })
       }
@@ -467,6 +469,25 @@ export default function DealsHubPage() {
     }
   }
 
+  /**
+   * What to say about the post's hero image.
+   *
+   * A reused hero and a freshly rendered one are indistinguishable on the
+   * published post, so the toast is the only place the difference can be
+   * stated. Silence here would make "MVP designed you a hero" and "MVP used
+   * the thumbnail you made in August" look the same.
+   */
+  function heroNote(j: { heroImage?: { reused?: boolean; source?: string; surface?: string | null; approvedAt?: string } }): string | undefined {
+    const h = j.heroImage
+    if (!h?.reused) return undefined
+    const noun = h.source === 'upload' ? 'the image you uploaded' : 'your saved thumbnail'
+    const where = h.surface ? ` from ${h.surface}` : ''
+    const when = h.approvedAt && Number.isFinite(new Date(h.approvedAt).getTime())
+      ? new Date(h.approvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : null
+    return `Hero is ${noun}${where}${when ? `, saved ${when}` : ''}. No DEAL badge was added over your design.`
+  }
+
   // ── Regenerate a deal ───────────────────────────────────────────────────
   // Re-runs the full generation pipeline (writer + images + WP publish)
   // using the same ASIN, promo code, promo URL, occasion, and end-date the
@@ -494,6 +515,7 @@ export default function DealsHubPage() {
         return
       }
       toast.success('Deal post regenerated', {
+        description: heroNote(j),
         action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
       })
       // Refresh the list — the old row is gone, the new one appears at the
