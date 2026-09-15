@@ -45,12 +45,32 @@ const row = (label: string) => rows.find(r => r.label === label)
     && designs!.amazon.includes(String(A.facebookPostsPerMonth)),
     `${designs!.amazon} vs plan ${A.pinsPerMonth}/${A.igPostsPerMonth}/${A.facebookPostsPerMonth}`)
 
-  // The numbers that were oversold on the sales page. If any of them reappears
-  // in this table, somebody has typed one in again.
-  for (const stale of ['300 pins', '150 Reels', '45 Facebook', '50 pitches', '100 posts']) {
-    check(`no row repeats the old "${stale}" claim`,
-      !rows.some(r => r.amazon.includes(stale)),
-      'that is the exact shape of the numbers that went stale')
+  // NO NUMBER IN THIS TABLE THAT THE PLAN DOES NOT GRANT.
+  //
+  // This used to ban five literal strings that had been oversold on the sales
+  // page ('300 pins', '150 Reels', ...). That worked until a banned number
+  // became a TRUE one: Amazon's Instagram cap is 150 as of 2026-09-15, so the
+  // table correctly rendered "150 Reels" and the guard failed the build for
+  // telling the truth. A blocklist of yesterday's wrong answers goes stale in
+  // both directions.
+  //
+  // The rule underneath it is the durable one: every figure quoted in the
+  // Amazon column has to be a number this plan actually grants. That catches a
+  // typed-in stale figure the same way, and cannot object to a live one.
+  {
+    const granted = new Set(
+      Object.values(A).filter((v): v is number => typeof v === 'number').map(String),
+    )
+    for (const r of rows) {
+      // Years, prices and formatted sizes ("1280x720") are not allowances.
+      const quoted = (r.amazon.match(/\b\d{2,}\b/g) ?? [])
+        .filter(n => !/^(19|20)\d{2}$/.test(n) && !['720', '1280', '1024', '1536'].includes(n))
+      for (const n of quoted) {
+        check(`"${r.amazon}" quotes ${n}, which the Amazon plan grants`,
+          granted.has(n),
+          'a number on the comparison table that is not in TIERS.amazon is one somebody typed')
+      }
+    }
   }
 
   const deals = row('Brand deals (Creator Connections)')

@@ -290,7 +290,7 @@ export const TIERS = {
      *  Raised 200 -> 400 on 2026-09-14. At 2 designs per video that carries 200
      *  videos a month, which is the leeway a creator doing 100 needs in order
      *  not to ration. */
-    thumbnailsPerMonth: 400 as number | null,
+    thumbnailsPerMonth: 250 as number | null,
     /** Social Influencer design caps. Each is its own format-correct render
      *  (a pin is not a cropped FB post), but a batch that pushes one product to
      *  several networks shares the art-director brief, so secondary formats cost
@@ -300,9 +300,9 @@ export const TIERS = {
      *  the new cap policy above. Facebook was the binding wall: at 40 it stopped
      *  a creator pushing one video a day on 9 February, on a plan sold to people
      *  who ship daily. */
-    pinsPerMonth: 200 as number | null,
-    igPostsPerMonth: 200 as number | null,
-    facebookPostsPerMonth: 150 as number | null,
+    pinsPerMonth: 150 as number | null,
+    igPostsPerMonth: 150 as number | null,
+    facebookPostsPerMonth: 120 as number | null,
     /** No YouTube metadata pipeline (`youtubeChannels: 0`). */
     metadataGensPerMonth: 0 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
@@ -469,7 +469,7 @@ export const TIERS = {
     // plan costing half as much, which is the same contradiction that made
     // Studio unsellable next to Amazon. Pro still renders at HIGH quality
     // ($0.19), so this is the cap the spend ceiling governs in practice.
-    thumbnailsPerMonth: 500 as number | null,
+    thumbnailsPerMonth: 300 as number | null,
     // Metadata is its OWN cap, sized well above posts/thumbnails (see Studio note):
     // ~$0.013/gen, back-catalog cleanup is a first-few-months behaviour. 250→200
     // (2026-08-22) — still ~$2.60/mo, trivial against the ceiling.
@@ -486,11 +486,13 @@ export const TIERS = {
     // high, $0.19 apiece, which at these caps is $133/mo on pictures viewed at
     // 1000x1500 on a phone.
     //
-    // Raised 2026-09-14 (pins 150 -> 250, IG 110 -> 250, FB 80 -> 200) so Pro is
-    // a superset of Amazon on every cap, which the two-plan structure requires.
-    pinsPerMonth: 250 as number | null,
-    igPostsPerMonth: 250 as number | null,
-    facebookPostsPerMonth: 200 as number | null,
+    // 200/200/150, a superset of Amazon's 150/150/120 as the two-plan structure
+    // requires. Briefly 250/250/200 on 2026-09-14 before the usage data arrived:
+    // measured amazon_pin is FIVE a user a month, so those were sized for
+    // nobody and the headroom cost ceiling rather than buying goodwill.
+    pinsPerMonth: 200 as number | null,
+    igPostsPerMonth: 200 as number | null,
+    facebookPostsPerMonth: 150 as number | null,
     /** Per-format design caps stand on their own here: a pin allowance and an
      *  Instagram allowance are two separate promises on a paid plan. Only the
      *  free trial pools them (see lib/free-trial.ts). */
