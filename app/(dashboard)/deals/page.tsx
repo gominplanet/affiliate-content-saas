@@ -53,6 +53,7 @@ import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
 import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
+import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 import { tierAllowsSocial } from '@/lib/tier'
 
 interface DealRow {
@@ -177,6 +178,11 @@ export default function DealsHubPage() {
   // selection, captions, affiliate links, publish AND schedule. Nothing is
   // written to WordPress on this path, so it costs no blog generation.
   const [socialsOnly, setSocialsOnly] = useState(false)
+  // Opt a BLOG deal post out of the affiliate link and point it at the
+  // creator's TikTok Shop instead. The socials-only path has its own copy of
+  // this control inside the quick-post modal, because that post is composed
+  // there and can be scheduled separately.
+  const showcase = useShowcase()
   const [socialDeal, setSocialDeal] = useState<QuickPostDeal | null>(null)
   // Editable copy of preview values (so the user can adjust occasion/promo
   // before committing).
@@ -282,6 +288,11 @@ export default function DealsHubPage() {
         promoUrl: promoUrl.trim() || undefined,
         occasion: occasion,
         manualDealEnd: manualDealEnd || undefined,
+        // Blog path only. Socials-only sends this from the quick-post modal.
+        ...(socialsOnly ? {} : {
+          useShowcase: showcase.on,
+          showcaseUrl: showcase.override.trim() || undefined,
+        }),
       }
       if (socialsOnly || mode === 'review') {
         // Preview only scrapes — don't send the schedule (a past/too-soon
@@ -345,7 +356,7 @@ export default function DealsHubPage() {
         })
       } else {
         toast.success('Deal post published!', {
-          description: heroNote(j),
+          description: [destinationNote(j), heroNote(j)].filter(Boolean).join(' ') || undefined,
           action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
         })
       }
@@ -477,6 +488,20 @@ export default function DealsHubPage() {
    * stated. Silence here would make "MVP designed you a hero" and "MVP used
    * the thumbnail you made in August" look the same.
    */
+  /**
+   * Where the published post sends its clicks.
+   *
+   * Only says something when it is NOT the default. A post that asked for the
+   * showcase and fell back to Amazon carries the reason from the server, and a
+   * showcase post says so plainly, because the article itself looks identical
+   * either way until you click a link in it.
+   */
+  function destinationNote(j: { destinationKind?: string; destinationNote?: string | null }): string | undefined {
+    if (typeof j.destinationNote === 'string' && j.destinationNote) return j.destinationNote
+    if (j.destinationKind === 'showcase') return 'Links point at your TikTok showcase, and Amazon prices were left out of the copy.'
+    return undefined
+  }
+
   function heroNote(j: { heroImage?: { reused?: boolean; source?: string; surface?: string | null; approvedAt?: string } }): string | undefined {
     const h = j.heroImage
     if (!h?.reused) return undefined
@@ -783,6 +808,15 @@ create index if not exists blog_posts_deal_meta_gin
           </span>
         </div>
 
+        {/* Hidden on socials-only: that post is composed in the quick-post
+            modal, which carries its own copy of this control. Showing both
+            would leave two switches for one decision. */}
+        {!socialsOnly && (
+          <div className="mb-4 max-w-xl">
+            <ShowcaseToggle state={showcase} setOn={showcase.setOn} setOverride={showcase.setOverride} />
+          </div>
+        )}
+
         {/* ── Preview card (review mode, after server returned data) ── */}
         {preview && (
           <div className="card p-6 border" style={{ borderColor: 'rgba(124,58,237,.3)' }}>
@@ -1044,7 +1078,7 @@ create index if not exists blog_posts_deal_meta_gin
               <p className="text-[11px]" style={{ color: 'var(--text-2)' }}>
                 Promo code lands in the deal-box CTA copy. Promo URL replaces every buy-button href. Both can coexist.
               </p>
-              <Button type="submit" disabled={generating || !input.trim()}>
+              <Button type="submit" disabled={generating || !input.trim() || (!socialsOnly && showcase.blocked)}>
                 {generating ? (
                   <><Loader2 size={14} className="animate-spin" /> {mode === 'auto' ? (scheduleAt ? 'Scheduling...' : 'Publishing...') : 'Reading the listing...'}</>
                 ) : (

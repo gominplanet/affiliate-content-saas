@@ -7,7 +7,10 @@
  * Instagram/TikTok (no clickable caption link) or Pinterest (pins go to blog).
  *
  * Body: { asin, platforms: string[], caption?, story?, title?, imageUrl?,
- *         useSavedImage?, scheduledFor? }
+ *         useSavedImage?, useShowcase?, showcaseUrl?, scheduledFor? }
+ *   - useShowcase: send clicks to the creator's TikTok Shop showcase instead of
+ *     Amazon. showcaseUrl is an optional per-post override; without it the
+ *     saved default on integrations is used (lib/post-destination).
  *   - useSavedImage: post the image the creator already approved for this ASIN
  *     (lib/product-image-memory) instead of designing a deal card from the
  *     Amazon photo. A FLAG, not a URL — the server resolves it from
@@ -29,6 +32,7 @@ import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { recallProductImage } from '@/lib/product-image-memory'
+import { resolvePostDestination } from '@/lib/post-destination'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -48,7 +52,7 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: rawIntRow } = await (supabase as any)
       .from('integrations')
-      .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret,pinterest_access_token,pinterest_board_id,pinterest_pin_target')
+      .select('*')
       .eq('user_id', user.id).maybeSingle()
     // Secret columns (pinterest_access_token, geniuslink_api_key/secret) are
     // stored encrypted at rest. This path fed them to the Pinterest / Geniuslink
@@ -62,7 +66,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Amazon Deal Radar is available on paid plans.', currentTier: tier }, { status: 403 })
     }
 
-    const body = await request.json().catch(() => ({})) as { asin?: string; platforms?: unknown; caption?: string; title?: string; imageUrl?: string; story?: boolean; scheduledFor?: string; useSavedImage?: boolean }
+    const body = await request.json().catch(() => ({})) as { asin?: string; platforms?: unknown; caption?: string; title?: string; imageUrl?: string; story?: boolean; scheduledFor?: string; useSavedImage?: boolean; useShowcase?: boolean; showcaseUrl?: string }
     const asin = (body.asin || '').trim().toUpperCase()
     if (!/^[A-Z0-9]{10}$/.test(asin)) return NextResponse.json({ error: 'A valid ASIN is required.' }, { status: 400 })
     const rawPlatforms = (Array.isArray(body.platforms) ? body.platforms : []).map((p) => String(p))
@@ -87,6 +91,20 @@ export async function POST(request: Request) {
       ? await recallProductImage(supabase, user.id, asin)
       : null
     const imageOverride = savedImage?.imageUrl ?? null
+
+    // WHERE THE CLICKS GO, resolved ONCE here. A per-post paste wins over the
+    // saved default. Resolved now rather than at fire time for the same reason
+    // the image is: the composer told the creator where this post would send
+    // people, and changing the saved default afterwards must not silently
+    // redirect a post they already approved.
+    const useShowcase = body.useShowcase === true
+    const showcaseUrl = (body.showcaseUrl || '').trim()
+      || ((intRow as { tiktok_showcase_url?: string | null } | null)?.tiktok_showcase_url || '')
+    const destination = resolvePostDestination({
+      asin,
+      amazonTag: (intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag,
+      useShowcase, showcaseUrl,
+    })
 
     // ── Schedule for later ──────────────────────────────────────────────────
     // A future scheduledFor means: don't post now, queue it. The
@@ -127,6 +145,8 @@ export async function POST(request: Request) {
         title: (body.title || '').trim() || null,
         image_url: body.imageUrl || null,
         image_override: imageOverride,
+        destination_url: destination.kind === 'showcase' ? destination.url : null,
+        destination_kind: destination.kind,
         // Store 'pinterest' alongside the caption-link platforms; the cron splits
         // it back out and routes it through the pin pipeline at fire time.
         platforms: [...platforms, ...(wantPinterest ? ['pinterest'] : []), ...(wantInstagram ? ['instagram'] : [])],
@@ -142,7 +162,13 @@ export async function POST(request: Request) {
       // Say which image was queued, not which was requested — useSavedImage
       // with nothing saved (or an unapplied migration 331) silently falls back
       // to the product photo, and the caller should be able to tell.
-      return NextResponse.json({ ok: true, scheduled: true, scheduledFor: when.toISOString(), usedSavedImage: !!imageOverride })
+      return NextResponse.json({
+        ok: true, scheduled: true, scheduledFor: when.toISOString(),
+        usedSavedImage: !!imageOverride,
+        // Say where it will actually go, and why if that is not what was asked.
+        destinationKind: destination.kind,
+        destinationNote: destination.note,
+      })
     }
 
     // ── Post now ────────────────────────────────────────────────────────────
@@ -154,11 +180,17 @@ export async function POST(request: Request) {
       asin, platforms, pinterest: wantPinterest, instagram: wantInstagram, story: wantStory,
       caption: body.caption, title: body.title, imageUrl: body.imageUrl,
       imageOverride,
+      useShowcase, showcaseUrl,
     })
     if (out.missingTag) return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
     if (out.dealEnded && out.results.length === 0) return NextResponse.json({ error: 'That deal is no longer on the radar.' }, { status: 404 })
     const anyOk = out.results.some((r) => r.ok)
-    return NextResponse.json({ ok: anyOk, results: out.results, caption: out.caption, geniuslinkNote: out.geniuslinkNote, usedSavedImage: !!imageOverride }, { status: anyOk ? 200 : 502 })
+    return NextResponse.json({
+      ok: anyOk, results: out.results, caption: out.caption, geniuslinkNote: out.geniuslinkNote,
+      usedSavedImage: !!imageOverride,
+      destinationKind: out.destinationKind ?? 'amazon',
+      destinationNote: out.destinationNote ?? null,
+    }, { status: anyOk ? 200 : 502 })
   } catch (err) {
     console.error('[deal-radar/social-post]', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, "Couldn't post just now. Please try again in a moment.") }, { status: 500 })

@@ -39,6 +39,11 @@ interface DealScheduleRow {
    *  here, so the post that fires is the one the modal described. Null on
    *  rows queued before migration 331. */
   image_override: string | null
+  /** Where this post's clicks go, chosen and validated AT SCHEDULING TIME.
+   *  Re-resolving the creator's saved showcase link here would silently
+   *  redirect a post they already approved. Null = Amazon, the default. */
+  destination_url: string | null
+  destination_kind: string | null
 }
 
 export async function GET(request: Request) {
@@ -142,6 +147,8 @@ export async function GET(request: Request) {
         asin: row.asin, platforms, pinterest: pinterestAlive, instagram: instagramAlive, story: row.story === true,
         caption: row.caption ?? undefined, title: row.title, imageUrl: row.image_url,
         imageOverride: row.image_override ?? null,
+        useShowcase: row.destination_kind === 'showcase',
+        showcaseUrl: row.destination_url ?? null,
         requireLiveDeal: true,
       })
 

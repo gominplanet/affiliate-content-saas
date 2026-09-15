@@ -15,6 +15,7 @@ import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { reportPaywallReached } from '@/lib/paywall-signal'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { publishAmazonPin, type PinIntegration } from '@/lib/amazon-pin-publish'
+import { resolvePostDestination } from '@/lib/post-destination'
 
 export const maxDuration = 60
 
@@ -26,12 +27,16 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as {
     imageUrl?: string; productUrl?: string; asin?: string; productTitle?: string
     boardId?: string; title?: string; description?: string; scheduledAt?: string
+    useShowcase?: boolean; showcaseUrl?: string
   }
   if (!body.imageUrl) return NextResponse.json({ error: 'A thumbnail image is required. Generate one first.' }, { status: 400 })
 
   const { data: rawInt } = await supabase
     .from('integrations')
-    .select('tier,user_id,pinterest_access_token,pinterest_board_id,pinterest_pin_target,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
+    // select('*'), not a column list: PostgREST rejects the WHOLE statement when
+    // one named column is missing, so naming tiktok_showcase_url here would
+    // break every post on any database that has not run migration 332.
+    .select('*')
     .eq('user_id', user.id).single()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const intRow = decryptIntegrationRow(rawInt as any) as (PinIntegration & { tier?: string }) | null
@@ -53,6 +58,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Connect your Pinterest account first (Set up → Connect Socials).', needsConnect: true }, { status: 409 })
   }
 
+  // WHERE THE CLICKS GO. A per-post paste wins over the saved default, and it
+  // is resolved HERE so a scheduled pin stores the destination it was queued
+  // with rather than re-reading a default that may have changed since.
+  const showcaseUrl = (body.showcaseUrl || '').trim()
+    || ((intRow as { tiktok_showcase_url?: string | null } | null)?.tiktok_showcase_url || '')
+  const destination = resolvePostDestination({
+    asin: (body.asin || '').trim().toUpperCase() || null,
+    amazonTag: (intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag,
+    useShowcase: body.useShowcase === true, showcaseUrl,
+  })
+
   // ── Schedule for later ────────────────────────────────────────────────────
   const when = (body.scheduledAt || '').trim()
   if (when) {
@@ -69,10 +85,15 @@ export async function POST(request: Request) {
         product_title: (body.productTitle || '').trim() || null, board_id: (body.boardId || '').trim() || null,
         title: (body.title || '').trim() || null, description: (body.description || '').trim() || null,
         scheduled_at: at.toISOString(),
+        destination_url: destination.kind === 'showcase' ? destination.url : null,
+        destination_kind: destination.kind,
       })
       .select('id,scheduled_at').single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ ok: true, scheduled: true, id: data.id, scheduledAt: data.scheduled_at })
+    return NextResponse.json({
+      ok: true, scheduled: true, id: data.id, scheduledAt: data.scheduled_at,
+      destinationKind: destination.kind, destinationNote: destination.note,
+    })
   }
 
   // ── Publish now ───────────────────────────────────────────────────────────
@@ -81,8 +102,14 @@ export async function POST(request: Request) {
       userId: user.id, tier, intRow,
       imageUrl: body.imageUrl, asin: body.asin, productUrl: body.productUrl, productTitle: body.productTitle,
       boardId: body.boardId, title: body.title, description: body.description,
+      useShowcase: destination.kind === 'showcase', showcaseUrl: destination.url,
     })
-    return NextResponse.json({ ok: true, ...res })
+    return NextResponse.json({
+      ok: true, ...res,
+      // A pin that asked for the showcase and fell back to Amazon must not
+      // report the request back as the result.
+      geniuslinkNote: [destination.note, res.geniuslinkNote].filter(Boolean).join(' ') || null,
+    })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Pinterest pin failed' }, { status: 500 })
   }

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import DownloadDesign from '@/components/amazon/DownloadDesign'
 import { AMAZON_QUEUE_EVENT } from '@/components/amazon/ScheduledQueue'
 import SavedProductImage, { useSavedProductImage, saveProductImage } from '@/components/product/SavedProductImage'
+import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
@@ -66,6 +67,9 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   })()
   const { saved } = useSavedProductImage(resolvedAsin)
   const [usingSaved, setUsingSaved] = useState(false)
+  // Opt this post out of the affiliate link entirely and send clicks to the
+  // creator's own TikTok Shop instead (lib/post-destination).
+  const showcase = useShowcase()
 
   useEffect(() => {
     if (presetProduct?.value) setProduct(presetProduct.value)
@@ -162,6 +166,8 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
         body: JSON.stringify({
           imageUrl: thumbUrl,
           ...(isUrl ? { productUrl: raw } : { asin: raw.toUpperCase() }),
+          useShowcase: showcase.on,
+          showcaseUrl: showcase.override.trim() || undefined,
           caption: caption.trim() || undefined,
           ...(network === 'instagram' ? { postType } : {}),
           ...(when === 'later' ? { scheduledAt: new Date(scheduleAt).toISOString() } : {}),
@@ -170,7 +176,12 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error((data.error as string) || 'Post failed. Try again.')
       if (data.caption && !caption) setCaption(data.caption)
-      setResult({ postUrl: data.postUrl as string | undefined, scheduledAt: data.scheduledAt as string | undefined, note: (data.geniuslinkNote as string) || null })
+      setResult({
+        postUrl: data.postUrl as string | undefined, scheduledAt: data.scheduledAt as string | undefined,
+        // destinationNote is set on the scheduled path, geniuslinkNote on the
+        // immediate one. Either can say the showcase was asked for and not used.
+        note: (data.geniuslinkNote as string) || (data.destinationNote as string) || null,
+      })
       // Tell the queue on this page to reload, so a post they just scheduled
       // appears in the list right below instead of after a refresh.
       if (data.scheduledAt) window.dispatchEvent(new Event(AMAZON_QUEUE_EVENT))
@@ -256,6 +267,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
             <ExpressionPicker value={expression} onChange={setExpression} disabled={genBusy} compact />
           </>
         )}
+        <ShowcaseToggle state={showcase} setOn={showcase.setOn} setOverride={showcase.setOverride} />
         {saved && (
           <SavedProductImage
             saved={saved}
@@ -315,7 +327,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
                 button: a generated design with nothing to do with it. */}
             <DownloadDesign url={thumbUrl} filename={`mvp-${network}-design.jpg`} accent={cfg.accent} label="Download design" />
 
-            <button onClick={publish} disabled={pubBusy || connected === false}
+            <button onClick={publish} disabled={pubBusy || connected === false || showcase.blocked}
               className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold text-sm transition disabled:opacity-60" style={{ backgroundColor: cfg.accent }}>
               {pubBusy
                 ? <><Loader2 size={16} className="animate-spin" /> {when === 'later' ? 'Scheduling…' : 'Posting…'}</>

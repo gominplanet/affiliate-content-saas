@@ -381,6 +381,10 @@ export default function BrandPage() {
   // 'direct' (plain URL, free), 'geniuslink' (branded, tracked, costs per
   // click), or 'bitly' (free short link, needs the creator's Bitly token).
   const [blogSocialLinkMode, setBlogSocialLinkMode] = useState<'direct' | 'geniuslink' | 'bitly'>('direct')
+  // The saved default for posts that opt out of the affiliate link and send
+  // clicks to the creator's own TikTok Shop instead (lib/post-destination).
+  // Saved once here; each post decides whether to use it.
+  const [tiktokShowcaseUrl, setTiktokShowcaseUrl] = useState('')
   // Nothing in this card is real until its fetch comes back: the mode is a
   // placeholder, the key fields are empty because they have not arrived, not
   // because the creator cleared them. Saving the page before that (or after a
@@ -605,6 +609,7 @@ export default function BrandPage() {
         const pref = d.pinterestLinkPref
         setPinterestLinkPref(pref === 'blog_post' || pref === 'youtube' || pref === 'homepage' ? pref : 'auto')
         setAmazonAssociatesTag(d.amazonTag ?? '')
+        setTiktokShowcaseUrl(d.tiktokShowcaseUrl ?? '')
       })
       .catch(() => {})
 
@@ -772,6 +777,7 @@ export default function BrandPage() {
           blogSocialLinkMode,
           bitlyToken,
           pinterestLinkPref, amazonTag: amazonAssociatesTag,
+          tiktokShowcaseUrl,
         } : {}),
       })
       const data = await res.json().catch(() => ({}))
@@ -1469,6 +1475,25 @@ export default function BrandPage() {
                 <p className="text-[10.5px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
                   This tag belongs to your <b>active site</b>. Running more than one brand? Switch sites in the top bar first, then set that site&apos;s tag here. Each site&apos;s links use its own tag; a site with none set falls back to this one.
                 </p>
+
+                {/* Sits under the Associates tag because it is the alternative
+                    to it: a post uses one or the other, never both. Saving a
+                    link here changes nothing on its own — each post decides. */}
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-white/10">
+                  <label htmlFor="brand-tiktok-showcase" className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">TikTok Shop showcase link</label>
+                  <input
+                    id="brand-tiktok-showcase"
+                    name="tiktok-showcase"
+                    type="url"
+                    value={tiktokShowcaseUrl}
+                    onChange={e => setTiktokShowcaseUrl(e.target.value)}
+                    placeholder="https://www.tiktok.com/@you/showcase"
+                    className="input-field text-xs"
+                  />
+                  <p className="text-[10.5px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
+                    Optional. When a post turns on <b>Send clicks to my TikTok Shop showcase</b>, this is where it points. Saving it here does not change any post by itself: each post has its own toggle, and can paste a different link. A post using the showcase carries no Amazon link, and its copy leaves out Amazon prices and discounts.
+                  </p>
+                </div>
               </div>
             </div>
 

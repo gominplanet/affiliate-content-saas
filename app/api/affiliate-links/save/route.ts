@@ -27,6 +27,7 @@ import { pickLinkStyle } from '@/lib/link-style'
 import { canUsePassport } from '@/lib/feature-access'
 import { normalizeTier } from '@/lib/tier'
 import { encryptIntegrationWrite, decryptIntegrationRow } from '@/lib/integration-secrets'
+import { normalizeShowcaseUrl, SHOWCASE_URL_HINT } from '@/lib/post-destination'
 
 export const dynamic = 'force-dynamic'
 
@@ -99,6 +100,9 @@ export async function GET() {
       bitlyToken: (row.bitly_access_token as string) ?? '',
       pinterestLinkPref: PIN_PREFS.has(pinRaw) ? pinRaw : 'auto',
       amazonTag: (row.amazon_associates_tag as string) ?? '',
+      // The saved default for posts that send clicks to the creator's TikTok
+      // Shop showcase instead of Amazon (lib/post-destination).
+      tiktokShowcaseUrl: (row.tiktok_showcase_url as string) ?? '',
       linkStyleChosen,
       effectiveLinkStyle,
       passportOn,
@@ -118,6 +122,7 @@ export async function POST(request: Request) {
     const b = await request.json().catch(() => ({})) as {
       geniuslinkKey?: string; geniuslinkSecret?: string; blogSocialLinkMode?: string
       bitlyToken?: string; pinterestLinkPref?: string; amazonTag?: string
+      tiktokShowcaseUrl?: string
     }
     // Write to the OWNER's row so generation (which reads getLinkStyle for the
     // owner) actually sees the choice — a VA saving to their own row was silently
@@ -152,6 +157,23 @@ export async function POST(request: Request) {
       ? String(b.pinterestLinkPref)
       : (PIN_PREFS.has(String(prev.pinterest_link_pref ?? '')) ? String(prev.pinterest_link_pref) : 'auto')
 
+    // A showcase link that does not work is worse than none: the toggle would
+    // read as on, every post would quietly fall back to Amazon, and the only
+    // place that shows up is the creator's own analytics weeks later. Refuse
+    // the save and say exactly what a real one looks like. An empty string is
+    // still an explicit clear.
+    let showcase: string | null | undefined
+    if (b.tiktokShowcaseUrl !== undefined) {
+      const sent = b.tiktokShowcaseUrl.trim()
+      if (!sent) {
+        showcase = null
+      } else {
+        const norm = normalizeShowcaseUrl(sent)
+        if (!norm) return NextResponse.json({ error: SHOWCASE_URL_HINT }, { status: 400 })
+        showcase = norm
+      }
+    }
+
     // ── Core columns — these always exist. If this fails, the save truly failed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: coreErr } = await (admin as any).from('integrations').upsert(
@@ -179,6 +201,22 @@ export async function POST(request: Request) {
     const extras: Record<string, string> = {
       ...(mode ? { blog_social_link_mode: mode } : {}),
       pinterest_link_pref: pin,
+    }
+    // Nullable, and set explicitly so a cleared box actually clears it.
+    if (showcase !== undefined) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (admin as any).from('integrations')
+        .update({ tiktok_showcase_url: showcase }).eq('user_id', ownerId)
+      if (error) {
+        // Migration 332 not applied. Say so rather than returning ok for a
+        // write that did not happen — the creator would set it, see success,
+        // and find every post still going to Amazon.
+        console.warn(`[affiliate-links/save] tiktok_showcase_url skipped: ${error.message}`)
+        return NextResponse.json({
+          error: 'Your database is missing the TikTok showcase column. Run migration 332, then save again.',
+          migrationNeeded: '332_tiktok_showcase_destination',
+        }, { status: 500 })
+      }
     }
     // bitly_access_token is nullable — set it explicitly (clears when blank).
     const bitly = keep(b.bitlyToken, 'bitly_access_token')

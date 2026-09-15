@@ -163,12 +163,17 @@ export async function publishToFacebook(opts: {
   productUrl?: string
   productTitle?: string
   caption?: string
-}): Promise<{ id: string; url: string; caption: string; linkUrl: string; note: string | null }> {
+  /** Send the clicks to the creator's TikTok Shop showcase instead of Amazon.
+   *  Resolved by the caller; see lib/post-destination. */
+  useShowcase?: boolean
+  showcaseUrl?: string | null
+}): Promise<{ id: string; url: string; caption: string; linkUrl: string; note: string | null; destinationKind?: 'amazon' | 'showcase' }> {
   const { intRow } = opts
   if (!intRow.facebook_page_id || !intRow.facebook_page_access_token) throw new Error('Facebook Page is not connected.')
 
   const { linkUrl, asin, note } = await resolveAffiliateLink({
     userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle, channel: 'facebook',
+    useShowcase: opts.useShowcase, showcaseUrl: opts.showcaseUrl,
   })
 
   const body = (opts.caption || '').trim() || await writeSocialCaption({ userId: opts.userId, tier: opts.tier, productTitle: opts.productTitle, productUrl: opts.productUrl, asin })
@@ -194,13 +199,17 @@ export async function publishToInstagram(opts: {
   /** 'feed' (default) → a 4:5 feed post with a caption. 'story' → a 9:16 story
    *  (IG ignores its caption/link, so the shop happens purely via Link-in-Bio). */
   postType?: 'feed' | 'story'
-}): Promise<{ id: string; url: string; caption: string; linkUrl: string; note: string | null }> {
+  /** Send the clicks to the creator's TikTok Shop showcase instead of Amazon. */
+  useShowcase?: boolean
+  showcaseUrl?: string | null
+}): Promise<{ id: string; url: string; caption: string; linkUrl: string; note: string | null; destinationKind?: 'amazon' | 'showcase' }> {
   const { intRow } = opts
   if (!intRow.instagram_user_id || !intRow.instagram_access_token) throw new Error('Instagram is not connected.')
   const isStory = opts.postType === 'story'
 
   const { linkUrl, asin, note } = await resolveAffiliateLink({
     userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle, channel: 'instagram',
+    useShowcase: opts.useShowcase, showcaseUrl: opts.showcaseUrl,
   })
 
   let caption = (opts.caption || '').trim() || await writeSocialCaption({ userId: opts.userId, tier: opts.tier, productTitle: opts.productTitle, productUrl: opts.productUrl, asin })

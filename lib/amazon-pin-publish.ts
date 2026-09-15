@@ -10,9 +10,10 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
 import { resolveGeniuslinkChannelGroupId } from '@/lib/geniuslink-group'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { passportLinkForUserDetailed, passportFallbackNote } from '@/lib/passport-links'
+import { passportLinkForUserDetailed, passportFallbackNote, getOrCreatePassportLink, passportLinkUrl } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
+import { resolvePostDestination, styleForDestination, styleSwapNote } from '@/lib/post-destination'
 import { shortenBitly } from '@/lib/bitly'
 import { asinFromAmazonUrl, resolveFinalUrl } from '@/lib/product-link'
 import { pinDestination, isBlockedPinLink, type PinDestinationKind } from '@/lib/pinterest-destination'
@@ -89,7 +90,12 @@ export async function resolveAffiliateLink(opts: {
    *  (MVP-FACEBOOK, …) so clicks attribute per channel. Omit for the default
    *  per-ASIN group. */
   channel?: string
-}): Promise<{ linkUrl: string; asin: string; note: string | null }> {
+  /** Send this post's clicks to the creator's TikTok Shop showcase instead of
+   *  Amazon. The URL is resolved by the caller (per-post box, else the saved
+   *  default) so this function never has to decide which one won. */
+  useShowcase?: boolean
+  showcaseUrl?: string | null
+}): Promise<{ linkUrl: string; asin: string; note: string | null; destinationKind?: 'amazon' | 'showcase' }> {
   const { intRow } = opts
   let asin = (opts.asin || '').trim().toUpperCase() || asinFromAmazonUrl(opts.productUrl || '') || ''
   if (!asin && opts.productUrl && /(?:geni\.us|amzn\.to|a\.co|bit\.ly)/i.test(opts.productUrl)) {
@@ -100,6 +106,46 @@ export async function resolveAffiliateLink(opts: {
   // to know whether a missing Passport link is normal (they do not use Passport)
   // or the thing they most need told (they do, and this post is not getting one).
   const cfg = await getLinkStyle(createAdminClient(), opts.userId)
+
+  // ── The showcase destination short-circuits everything below ─────────────
+  // Amazon geo-routing (Passport by ASIN) and Geniuslink both exist to route an
+  // Amazon link. Handing either one an ASIN alongside a TikTok destination
+  // sends every click to Amazon while the post reads as a showcase post: the
+  // exact opposite of what was asked, and invisible. So the ASIN is dropped and
+  // only shorteners that work on any URL are considered.
+  if (opts.useShowcase) {
+    const dest = resolvePostDestination({
+      asin, amazonTag: tag ?? null,
+      useShowcase: true, showcaseUrl: opts.showcaseUrl,
+    })
+    if (dest.kind === 'showcase') {
+      const styled = styleForDestination(dest, cfg.style, { passportAvailable: cfg.style === 'passport' })
+      const swapNote = styleSwapNote(styled.changedFrom, styled.style)
+      if (styled.style === 'passport') {
+        const code = await getOrCreatePassportLink(createAdminClient(), opts.userId, null, {
+          destinationUrl: dest.url, label: opts.productTitle || null, source: opts.channel || 'social',
+        })
+        if (code) return { linkUrl: passportLinkUrl(code), asin, note: swapNote, destinationKind: 'showcase' }
+        // A failed mint must not silently publish a different destination, so
+        // the raw showcase link goes out and the caller is told the clicks are
+        // no longer being counted.
+        return {
+          linkUrl: dest.url, asin, destinationKind: 'showcase',
+          note: 'Your showcase link went out uncloaked, so clicks on this post are not counted. The post itself is fine.',
+        }
+      }
+      if (styled.style === 'bitly' && cfg.bitlyToken) {
+        const short = await shortenBitly(cfg.bitlyToken, dest.url)
+        if (short) return { linkUrl: short, asin, note: swapNote, destinationKind: 'showcase' }
+      }
+      return { linkUrl: dest.url, asin, note: swapNote, destinationKind: 'showcase' }
+    }
+    // Asked for the showcase and did not get one. Amazon below, and SAY SO —
+    // a silent fallback here is indistinguishable from never having asked.
+    const fallbackNote = dest.note
+    const amazonResult = await resolveAffiliateLink({ ...opts, useShowcase: false })
+    return { ...amazonResult, destinationKind: 'amazon', note: [fallbackNote, amazonResult.note].filter(Boolean).join(' ') || null }
+  }
 
   // Passport Links (geo-routing) wins WHEN ON — resolved by userId, so no caller
   // needs to change. Off → we fall through to Geniuslink / tag as before.
@@ -372,6 +418,12 @@ export async function publishAmazonPin(opts: {
   /** When set (Passport Links on), pin THIS link directly, skipping tag/geni.us
    *  resolution — the geo-routing link. */
   linkOverride?: string | null
+  /** Send the clicks to the creator's TikTok Shop showcase instead of Amazon.
+   *  Worth noting for Pinterest specifically: a TikTok showcase URL is a real
+   *  destination Pinterest accepts, unlike an affiliate redirect domain, so a
+   *  showcase pin does not need the Link-in-Bio detour below. */
+  useShowcase?: boolean
+  showcaseUrl?: string | null
   /** The product photo for the SHOP TILE, which is a different picture from the
    *  pin. The deal path renders a designed vertical pin and passes it as base64,
    *  so imageUrl is empty there and the tile was being written with no image at
@@ -388,6 +440,7 @@ export async function publishAmazonPin(opts: {
     ? { linkUrl: opts.linkOverride, asin: (opts.asin || '').trim().toUpperCase(), note: null }
     : await resolveAffiliateLink({
         userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle, channel: 'pinterest',
+        useShowcase: opts.useShowcase, showcaseUrl: opts.showcaseUrl,
       })
   const { linkUrl: affiliateUrl, asin, note: geniuslinkNote } = resolved
   if (!affiliateUrl) throw new Error('No product link to pin to. Paste an Amazon link or ASIN.')
@@ -410,12 +463,26 @@ export async function publishAmazonPin(opts: {
   //
   // The tile is written BEFORE the pin goes out, so a pin can never advertise a
   // product that is not on the page it lands on.
-  const dest = await resolvePinDestinationFor({
-    userId: opts.userId, intRow,
-    asin, productTitle: opts.productTitle,
-    imageUrl: opts.tileImageUrl || opts.imageUrl || null,
-    affiliateUrl,
-  })
+  // A TikTok showcase is the one destination that needs NO detour. The whole
+  // reason pins go via the creator's own page is that Pinterest rejects
+  // affiliate redirect and cloaking domains; a showcase is the creator's own
+  // shop on a domain Pinterest is perfectly happy with.
+  //
+  // It has to be the RAW showcase URL, though. resolveAffiliateLink will have
+  // wrapped it through Passport for click stats, and mvpl.ink is on
+  // isBlockedPinLink's list — so the cloaked version would trip the belt-and-
+  // braces check below and the pin would fail outright.
+  const showcaseDest = opts.useShowcase
+    ? resolvePostDestination({ asin, amazonTag: intRow.amazon_associates_tag ?? null, useShowcase: true, showcaseUrl: opts.showcaseUrl })
+    : null
+  const dest = showcaseDest?.kind === 'showcase'
+    ? { url: showcaseDest.url, kind: 'showcase' as const, note: null as string | null, setupPath: undefined as string | undefined }
+    : await resolvePinDestinationFor({
+      userId: opts.userId, intRow,
+      asin, productTitle: opts.productTitle,
+      imageUrl: opts.tileImageUrl || opts.imageUrl || null,
+      affiliateUrl,
+    })
   if (!dest.url) {
     // Carries the flag so the caller can offer the fix as a button instead of
     // printing a sentence and leaving the creator to find the page themselves.

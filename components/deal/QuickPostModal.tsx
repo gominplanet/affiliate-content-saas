@@ -10,7 +10,8 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Send, Check, AlertCircle, X as CloseIcon, Loader2, CalendarClock, Info } from 'lucide-react'
+import { useEffect } from 'react'
+import { Send, Check, AlertCircle, X as CloseIcon, Loader2, CalendarClock, Info, Store } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { InfoTip } from '@/components/ui/InfoTip'
 import SavedProductImage, { useSavedProductImage } from '@/components/product/SavedProductImage'
@@ -110,6 +111,25 @@ export default function QuickPostModal({
   // pushed to the creator's own socials through this endpoint.
   const useSavedImage = !!saved && useSaved
 
+  // ── Send the clicks to the creator's TikTok Shop showcase instead ─────────
+  // Off by default: this replaces the affiliate link on a real published post,
+  // so it is never something MVP decides for them. The saved default loads from
+  // Settings; the box below overrides it for this post only.
+  const [useShowcase, setUseShowcase] = useState(false)
+  const [showcaseUrl, setShowcaseUrl] = useState('')
+  const [savedShowcase, setSavedShowcase] = useState<string | null>(null)
+  useEffect(() => {
+    fetch('/api/affiliate-links/save')
+      .then(r => r.json())
+      .then((d) => { if (typeof d?.tiktokShowcaseUrl === 'string') setSavedShowcase(d.tiktokShowcaseUrl || null) })
+      .catch(() => { /* no default is a normal state, not an error */ })
+  }, [])
+  const effectiveShowcase = showcaseUrl.trim() || savedShowcase || ''
+  // The one case worth blocking on: the toggle is on and there is nothing to
+  // point at. Posting anyway would quietly publish Amazon links under a toggle
+  // that reads as on.
+  const showcaseMissing = useShowcase && !effectiveShowcase
+
   const toggle = (key: string) => setSelected((s) => {
     const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n
   })
@@ -133,11 +153,19 @@ export default function QuickPostModal({
           // it again at fire time would silently pick up a newer one and make
           // the line the creator read while scheduling untrue.
           useSavedImage,
+          useShowcase,
+          showcaseUrl: showcaseUrl.trim() || undefined,
         }),
       })
       const data = await res.json()
       if (!res.ok || !data.scheduled) { toast.error(data.error || 'Could not schedule that post.'); return }
-      toast.success(`Scheduled for ${when.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`)
+      toast.success(`Scheduled for ${when.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`, {
+        // Say where the queued post will send people. A scheduled post that
+        // quietly fell back to Amazon is otherwise only discovered after it fires.
+        description: typeof data.destinationNote === 'string' && data.destinationNote
+          ? data.destinationNote
+          : (data.destinationKind === 'showcase' ? 'Links will point at your TikTok showcase.' : undefined),
+      })
       setTimeout(onClose, 700)
     } catch {
       toast.error('Could not schedule that post.')
@@ -157,14 +185,25 @@ export default function QuickPostModal({
         body: JSON.stringify({
           asin: deal.asin, platforms: [...selected], story, caption: caption.trim() || undefined,
           title: deal.title, imageUrl: deal.imageUrl, useSavedImage,
+          useShowcase, showcaseUrl: showcaseUrl.trim() || undefined,
         }),
       })
       const data = await res.json()
       if (!res.ok && !Array.isArray(data.results)) { toast.error(data.error || 'Could not post.'); return }
       const posted = data.results as PostResult[]
       setResults(posted)
-      const note = typeof data.geniuslinkNote === 'string' ? data.geniuslinkNote : null
+      // Two separate things can be worth saying: the cloaker fell back, and the
+      // destination is not the one that was asked for. Show both rather than
+      // letting one hide the other.
+      const notes = [
+        typeof data.destinationNote === 'string' ? data.destinationNote : null,
+        typeof data.geniuslinkNote === 'string' ? data.geniuslinkNote : null,
+      ].filter(Boolean) as string[]
+      const note = notes.length ? notes.join(' ') : null
       setLinkNote(note)
+      if (data.destinationKind === 'showcase') {
+        toast.success('Links point at your TikTok showcase on this post.')
+      }
       const okCount = posted.filter((r) => r.ok).length
       const failCount = posted.length - okCount
       if (okCount > 0) toast.success(`Posted to ${okCount} platform${okCount > 1 ? 's' : ''}.`)
@@ -235,12 +274,50 @@ export default function QuickPostModal({
             </button>
           </div>
 
+          {/* Send the clicks somewhere that is not Amazon. */}
+          <div>
+            <button onClick={() => setUseShowcase((v) => !v)}
+              className={`w-full text-left text-sm rounded-lg border px-3 py-2.5 flex items-start gap-2.5 transition ${useShowcase ? 'border-[#7C3AED] bg-[#7C3AED]/10' : 'bg-background hover:bg-accent'}`}>
+              <span className={`mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded border shrink-0 ${useShowcase ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : ''}`}>{useShowcase && <Check size={12} />}</span>
+              <span className="min-w-0">
+                <span className="font-medium flex items-center gap-1.5"><Store size={13} /> Send clicks to my TikTok Shop showcase</span>
+                <span className="block text-[11px] text-muted-foreground leading-snug mt-0.5">
+                  Replaces the Amazon affiliate link on this post. The caption stops quoting Amazon prices and discounts, because they would be about a store nobody is being sent to.
+                </span>
+              </span>
+            </button>
+            {useShowcase && (
+              <div className="mt-2 space-y-1.5">
+                <input
+                  type="url" value={showcaseUrl} onChange={(e) => setShowcaseUrl(e.target.value)}
+                  placeholder={savedShowcase || 'https://www.tiktok.com/@you/showcase'}
+                  className="w-full text-sm rounded-lg border bg-background p-2.5"
+                />
+                {savedShowcase && !showcaseUrl.trim() && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Using your saved showcase link. Paste a different one here to use it on this post only.
+                  </p>
+                )}
+                {showcaseMissing && (
+                  <p className="text-[11px] text-red-600 flex items-start gap-1.5">
+                    <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                    No showcase link. Paste one here, or save a default under Set Up &rarr; Affiliate links. Without it this post would go out with Amazon links.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           <div>
             <div className="text-xs font-semibold text-muted-foreground mb-1.5">Caption <span className="font-normal">(leave blank to auto-write)</span></div>
             <textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={3}
               placeholder="We'll write a price-safe caption for you, or type your own…"
               className="w-full text-sm rounded-lg border bg-background p-2.5 resize-none" />
-            <p className="text-[11px] text-muted-foreground mt-1">Your affiliate link and an #ad disclosure are added automatically. We avoid quoting a specific price so the post stays accurate over time.</p>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              {useShowcase && !showcaseMissing
+                ? 'Your showcase link and an #ad disclosure are added automatically. Amazon prices and discounts are left out of this post.'
+                : 'Your affiliate link and an #ad disclosure are added automatically. We avoid quoting a specific price so the post stays accurate over time.'}
+            </p>
           </div>
 
           {/* Schedule panel — revealed by the red Schedule button in the footer. */}
@@ -321,10 +398,10 @@ export default function QuickPostModal({
         <div className="flex items-center justify-between gap-2 p-4 border-t">
           <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={post} disabled={posting || scheduling || (selected.size === 0 && !story)}>
+            <Button size="sm" onClick={post} disabled={posting || scheduling || showcaseMissing || (selected.size === 0 && !story)}>
               {posting ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Posting…</> : <><Send size={14} className="mr-1.5" /> Post now</>}
             </Button>
-            <Button size="sm" onClick={schedule} disabled={scheduling || posting || (selected.size === 0 && !story)}
+            <Button size="sm" onClick={schedule} disabled={scheduling || posting || showcaseMissing || (selected.size === 0 && !story)}
               className="bg-red-600 hover:bg-red-700 text-white">
               {scheduling ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Scheduling…</> : <><CalendarClock size={14} className="mr-1.5" /> Schedule</>}
             </Button>

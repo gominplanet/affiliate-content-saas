@@ -31,7 +31,18 @@ interface Row {
   board_id: string | null
   title: string | null
   description: string | null
+  /** Where this post's clicks go, chosen and validated AT SCHEDULING TIME.
+   *  Re-resolving the creator's saved showcase link here would silently
+   *  redirect a post they already approved. Null = Amazon, the default. */
+  destination_url: string | null
+  destination_kind: string | null
 }
+
+/** Carried onto every publisher below, so a queued showcase post fires as one. */
+const showcaseOpts = (row: Row) => ({
+  useShowcase: row.destination_kind === 'showcase',
+  showcaseUrl: row.destination_url ?? null,
+})
 
 export async function GET(request: Request) {
   const auth = request.headers.get('authorization') ?? ''
@@ -93,6 +104,7 @@ export async function GET(request: Request) {
           db: admin, userId: row.user_id, tier, intRow,
           imageUrl: row.image_url, asin: row.asin ?? undefined, productUrl: row.product_url ?? undefined,
           productTitle: row.product_title ?? undefined, caption: row.description ?? undefined,
+          ...showcaseOpts(row),
         })
         externalId = out.id; externalUrl = out.url; note = out.note
       } else if (row.platform === 'facebook') {
@@ -100,6 +112,7 @@ export async function GET(request: Request) {
           userId: row.user_id, tier, intRow,
           imageUrl: row.image_url, asin: row.asin ?? undefined, productUrl: row.product_url ?? undefined,
           productTitle: row.product_title ?? undefined, caption: row.description ?? undefined,
+          ...showcaseOpts(row),
         })
         externalId = out.id; externalUrl = out.url; note = out.note
       } else {
@@ -109,6 +122,7 @@ export async function GET(request: Request) {
           imageUrl: row.image_url, asin: row.asin ?? undefined, productUrl: row.product_url ?? undefined,
           productTitle: row.product_title ?? undefined, boardId: row.board_id ?? undefined,
           title: row.title ?? undefined, description: row.description ?? undefined,
+          ...showcaseOpts(row),
         })
         externalId = out.pinId; externalUrl = out.pinUrl; note = out.geniuslinkNote
       }

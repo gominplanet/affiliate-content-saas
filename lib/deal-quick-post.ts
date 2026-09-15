@@ -11,6 +11,9 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { scrubBanned } from '@/lib/scrub'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
+import {
+  resolvePostDestination, styleForDestination, styleSwapNote, disclaimerForDestination,
+} from '@/lib/post-destination'
 import { publishDealToSocials, QUICK_POST_PLATFORMS, type QuickPostPlatform, type PlatformResult } from '@/lib/deal-social-publish'
 import { publishDealStory } from '@/lib/deal-story-publish'
 import { buildDealCardImage } from '@/lib/deal-card'
@@ -51,6 +54,11 @@ export interface DealQuickPostInput {
    *  overlay: painting a deal badge over art the creator designed themselves
    *  wrecks it, and the modal says as much before they post. */
   imageOverride?: string | null
+  /** Send clicks to the creator's TikTok Shop showcase instead of Amazon.
+   *  The showcase URL is resolved by the CALLER (from the per-post box or the
+   *  saved default) so this function never has to guess which one won. */
+  useShowcase?: boolean
+  showcaseUrl?: string | null
   // When true (scheduled posts), REFUSE to post if the deal is no longer live on
   // the radar — a scheduled deal that has since ended must not go out. The
   // immediate path keeps false so a re-share from Price Alerts still works.
@@ -65,6 +73,12 @@ export interface DealQuickPostOutput {
   dealEnded?: boolean
   // Set when the caller didn't supply a tag (nothing was posted).
   missingTag?: boolean
+  /** Where the clicks actually went. 'showcase' only when a valid showcase link
+   *  was used; a post that asked for one and fell back reads 'amazon' here and
+   *  carries the reason in destinationNote. */
+  destinationKind?: 'amazon' | 'showcase'
+  /** Why the destination or the link style is not what was asked for. */
+  destinationNote?: string | null
 }
 
 /**
@@ -108,11 +122,26 @@ export async function executeDealQuickPost(input: DealQuickPostInput): Promise<D
   // single resolver — Passport / Geniuslink / Bitly / Direct all cloak the same
   // way. One link per platform so each channel's clicks attribute to its own group.
   const linkStyle = await getLinkStyle(db, userId)
-  const taggedLink = `https://www.amazon.com/dp/${asin}${tag ? `?tag=${encodeURIComponent(tag)}` : ''}`
+
+  // WHERE THE CLICKS GO. Amazon unless this post opted into the creator's
+  // TikTok Shop showcase. See lib/post-destination for why the ASIN is dropped
+  // on a showcase post (Passport would geo-route it back to Amazon and the post
+  // would look right while doing the opposite of what was asked).
+  const destination = resolvePostDestination({
+    asin, amazonTag: tag,
+    useShowcase: input.useShowcase === true,
+    showcaseUrl: input.showcaseUrl,
+  })
+  const styled = styleForDestination(destination, linkStyle.style, { passportAvailable: linkStyle.style === 'passport' })
+  const effectiveStyle = { ...linkStyle, style: styled.style }
+  let destinationNote: string | null = destination.note || styleSwapNote(styled.changedFrom, styled.style)
+
+  const taggedLink = destination.url
+  const cloakAsin = destination.asinForCloak
   const platformLinks: Partial<Record<QuickPostPlatform, string>> = {}
   if (platforms.length) {
     await Promise.all(platforms.map(async (p) => {
-      const r = await resolveCloakedLinkDetailed({ supabase: db, userId, destination: taggedLink, asin, channel: p, source: p, label: dealTitle, config: linkStyle })
+      const r = await resolveCloakedLinkDetailed({ supabase: db, userId, destination: taggedLink, asin: cloakAsin, channel: p, source: p, label: dealTitle, config: effectiveStyle })
       platformLinks[p] = r.url
       // SAY IT WHEN THE LINK IS NOT THE ONE THEY ASKED FOR. This used to call
       // resolveCloakedLink, which returns a bare string, so a failed Geniuslink
@@ -132,7 +161,7 @@ export async function executeDealQuickPost(input: DealQuickPostInput): Promise<D
   // Pinterest is a separate pipeline — its own cloaked link (MVP-PINTEREST group).
   let pinLink: string | null = null
   if (input.pinterest) {
-    const r = await resolveCloakedLinkDetailed({ supabase: db, userId, destination: taggedLink, asin, channel: 'pinterest', source: 'pinterest', label: dealTitle, config: linkStyle })
+    const r = await resolveCloakedLinkDetailed({ supabase: db, userId, destination: taggedLink, asin: cloakAsin, channel: 'pinterest', source: 'pinterest', label: dealTitle, config: effectiveStyle })
     pinLink = r.url
     if (!geniuslinkNote) {
       const note = cloakFallbackNote(r)
@@ -142,13 +171,25 @@ export async function executeDealQuickPost(input: DealQuickPostInput): Promise<D
 
   // ── Link-friendly text platforms ──
   if (platforms.length) {
-    // Passport builds its own per-country tags; every other style needs the US tag.
-    if (!tag && linkStyle.style !== 'passport') return { results: [], caption: null, geniuslinkNote: null, missingTag: true }
+    // Passport builds its own per-country tags; every other style needs the US
+    // tag. A showcase post needs neither: no part of its link is Amazon's, so
+    // demanding an Associates tag would block a creator who does not sell on
+    // Amazon at all from posting.
+    if (!tag && effectiveStyle.style !== 'passport' && destination.kind !== 'showcase') {
+      return { results: [], caption: null, geniuslinkNote: null, missingTag: true }
+    }
     const link = platformLinks[platforms[0]] || taggedLink
 
     const { data: brand } = await db.from('brand_profiles')
       .select('affiliate_disclaimer,name,logo_url').eq('user_id', userId).maybeSingle()
-    const disclaimer = (brand?.affiliate_disclaimer as string | null)?.trim() || AFFILIATE_DISCLAIMER_DEFAULT
+    // The default names Amazon Associates. On a showcase post that is a false
+    // statement about where the money comes from, so the disclosure still ships
+    // but stops naming the wrong programme. A creator's own wording always wins.
+    const disclaimer = disclaimerForDestination(
+      destination.kind,
+      brand?.affiliate_disclaimer as string | null,
+      AFFILIATE_DISCLAIMER_DEFAULT,
+    )
 
     let cap = (input.caption || '').trim()
     if (!cap) {
@@ -157,10 +198,15 @@ export async function executeDealQuickPost(input: DealQuickPostInput): Promise<D
         const msg = await anthropic.messages.create({
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 220,
-          messages: [{ role: 'user', content: `Write a punchy social caption for this Amazon deal.
+          messages: [{ role: 'user', content: `Write a punchy social caption for this ${destination.kind === 'showcase' ? 'product' : 'Amazon deal'}.
 
 Product: ${deal.title}${deal.brand ? ` (${deal.brand})` : ''}
-${deal.lowest_label ? `Price signal: ${deal.lowest_label}.` : ''}
+${destination.suppressAmazonClaims
+  // The price signal is Amazon price history. Over a TikTok showcase link it is
+  // a claim about a store the reader is not being sent to, so it is withheld
+  // rather than reworded.
+  ? 'This post links to the creator\'s own TikTok Shop showcase, NOT to Amazon. Do NOT mention Amazon, Amazon prices, discounts, percentages off, or any "lowest price" claim — you do not know what it costs there.'
+  : (deal.lowest_label ? `Price signal: ${deal.lowest_label}.` : '')}
 
 Rules:
 - 1-2 short sentences. A strong hook + why it's worth grabbing now.
@@ -209,7 +255,9 @@ Return ONLY the caption text.` }],
   // one, matching the text-platform behaviour.
   if (input.pinterest) {
     const tag = (intRow?.amazon_associates_tag || '').trim()
-    if (!tag && !results.length && !wantStory) {
+    // Same reasoning as the text platforms: a pin pointing at a TikTok showcase
+    // earns through TikTok, so an Associates tag is not what makes it earn.
+    if (!tag && destination.kind !== 'showcase' && !results.length && !wantStory) {
       return { results: [], caption: baseCaption, geniuslinkNote, missingTag: true }
     }
     const { publishDealPin } = await import('@/lib/deal-pin')
@@ -273,7 +321,14 @@ Return ONLY the caption text.` }],
     results.push({ platform: 'instagram_story', ok: s.ok, url: s.ok ? 'https://www.instagram.com/' : undefined, error: s.error })
   }
 
-  return { results, caption: baseCaption, geniuslinkNote }
+  // Report where the clicks ACTUALLY went, not where they were meant to. A post
+  // that asked for the showcase and fell back to Amazon returns 'amazon' here,
+  // with destinationNote carrying the reason.
+  return {
+    results, caption: baseCaption, geniuslinkNote,
+    destinationKind: destination.kind,
+    destinationNote,
+  }
 }
 
 /**

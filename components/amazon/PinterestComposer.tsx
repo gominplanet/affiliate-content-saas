@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from 'react'
 import DownloadDesign from '@/components/amazon/DownloadDesign'
 import { AMAZON_QUEUE_EVENT } from '@/components/amazon/ScheduledQueue'
 import SavedProductImage, { useSavedProductImage, saveProductImage } from '@/components/product/SavedProductImage'
+import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
@@ -52,6 +53,9 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
   })()
   const { saved } = useSavedProductImage(resolvedAsin)
   const [usingSaved, setUsingSaved] = useState(false)
+  // Opt this post out of the affiliate link entirely and send clicks to the
+  // creator's own TikTok Shop instead (lib/post-destination).
+  const showcase = useShowcase()
 
   // Pinterest publish
   const [connected, setConnected] = useState<boolean | null>(null)
@@ -178,6 +182,8 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
         body: JSON.stringify({
           imageUrl: thumbUrl,
           ...(isUrl ? { productUrl: raw } : { asin: raw.toUpperCase() }),
+          useShowcase: showcase.on,
+          showcaseUrl: showcase.override.trim() || undefined,
           boardId: boardId || undefined,
           title: title.trim() || undefined,
           description: description.trim() || undefined,
@@ -255,6 +261,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
             <ExpressionPicker value={expression} onChange={setExpression} disabled={genBusy} compact />
           </>
         )}
+        <ShowcaseToggle state={showcase} setOn={showcase.setOn} setOverride={showcase.setOverride} />
         {saved && (
           <div className="flex flex-col gap-1.5">
             <SavedProductImage
@@ -337,7 +344,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
                 publish from here, and the pin is still theirs to post by hand. */}
             <DownloadDesign url={thumbUrl} filename="mvp-pin.jpg" accent="#e60023" label="Download pin" />
 
-            <button onClick={publish} disabled={pubBusy || connected === false}
+            <button onClick={publish} disabled={pubBusy || connected === false || showcase.blocked}
               className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold text-sm transition disabled:opacity-60" style={{ backgroundColor: PIN_RED }}>
               {pubBusy
                 ? <><Loader2 size={16} className="animate-spin" /> {when === 'later' ? 'Scheduling…' : 'Pinning…'}</>

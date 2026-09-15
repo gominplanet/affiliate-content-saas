@@ -37,7 +37,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { isStalePostError, WP_STALE_POST_MESSAGE } from '@/lib/wp-errors'
-import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { getWordPressCredentials, getDefaultSite } from '@/lib/wordpress-sites'
 import { applyPostFixes } from '@/lib/seo-fix'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -45,12 +45,15 @@ import { extractAsin, fetchAmazonProduct, isValidAsin, type AmazonProduct } from
 import { fetchKeepaProductStats, buildPriceContext, buildPriceSnapshotHtml } from '@/services/keepa'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
-import { passportLinkForUser } from '@/lib/passport-links'
+import { passportLinkForUser, getOrCreatePassportLink, passportLinkUrl } from '@/lib/passport-links'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { composeWithGptImage, composeWithNanoBanana, rehostToFal, GPT_IMAGE_COMPOSE_LOW_COST_MODEL } from '@/lib/thumbnail-generators'
 import { recallProductImage } from '@/lib/product-image-memory'
+import {
+  resolvePostDestination, styleForDestination, styleSwapNote, disclaimerForDestination,
+} from '@/lib/post-destination'
 import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
 import { scrubEmDashes } from '@/lib/html-scrub'
@@ -398,6 +401,10 @@ export async function POST(req: Request) {
      *  October ones. Without this the server has no way to know, and one click
      *  of Generate publishes an embargoed price. */
     dealStartsAt?: string
+    /** Send this post's clicks to the creator's TikTok Shop showcase instead of
+     *  Amazon. showcaseUrl overrides their saved default for this post only. */
+    useShowcase?: boolean
+    showcaseUrl?: string
   }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
@@ -661,18 +668,41 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: brandRow } = await (supabase as any)
     .from('brand_profiles').select('affiliate_disclaimer').eq('user_id', user.id).maybeSingle()
-  const affiliateDisclaimer = ((brandRow?.affiliate_disclaimer as string | null) || '').trim()
-    || 'As an Amazon Associate I earn from qualifying purchases. This post contains affiliate links, and I may earn a commission at no extra cost to you.'
+
+  // ── WHERE THIS POST'S LINKS GO ───────────────────────────────────────────
+  // Amazon unless the creator sent this post to their TikTok Shop showcase.
+  // Resolved before the price work below, because a showcase destination
+  // suppresses every Amazon price claim in the post: the discount, the
+  // "lowest price we've tracked" verdict and the price-check block are all
+  // facts about a store the reader is no longer being sent to.
+  const dealUseShowcase = body.useShowcase === true
+  const dealShowcaseUrl = (body.showcaseUrl || '').trim()
+    || ((dealIntg as { tiktok_showcase_url?: string | null } | null)?.tiktok_showcase_url || '')
+  const dealDestination = resolvePostDestination({
+    asin: product.asin,
+    amazonTag: dealIntg?.amazon_associates_tag ?? null,
+    useShowcase: dealUseShowcase, showcaseUrl: dealShowcaseUrl,
+  })
+
+  const affiliateDisclaimer = disclaimerForDestination(
+    dealDestination.kind,
+    brandRow?.affiliate_disclaimer as string | null,
+    'As an Amazon Associate I earn from qualifying purchases. This post contains affiliate links, and I may earn a commission at no extra cost to you.',
+  )
 
   // Real price-history grounding (Keepa) — turns the post from generic hype into
   // an honest "lowest price we've seen / X% below its usual" claim. Best-effort:
   // empty string when Keepa is unconfigured or has no usable history, and the
   // writer prompt drops the line cleanly. No-op cost without KEEPA_API_KEY.
   const priceAssessment = await fetchKeepaProductStats(asin)
-  const priceHistory = buildPriceContext(priceAssessment)
+  // Both of these are Amazon price history. On a showcase post they would be
+  // claims about a price on a page the reader is never sent to, which is a
+  // different thing from a stale claim: it is a claim about the wrong store.
+  // Withheld rather than reworded, and the response says so.
+  const priceHistory = dealDestination.suppressAmazonClaims ? '' : buildPriceContext(priceAssessment)
   // Phase 3: a visual "price check" block (Now / Typical / All-time low + bar)
   // injected into the post body — trust + AEO signal, never names a source.
-  const priceSnapshot = buildPriceSnapshotHtml(priceAssessment)
+  const priceSnapshot = dealDestination.suppressAmazonClaims ? '' : buildPriceSnapshotHtml(priceAssessment)
 
   // Affiliate CTA link — MVP attaches the creator's OWN Amazon tag (and wraps
   // it through Geniuslink when connected) itself. The engine used to emit a bare
@@ -681,13 +711,26 @@ export async function POST(req: Request) {
   // Apply the creator's ONE chosen Link style (Passport / Bitly / Geniuslink /
   // Direct), so a deal post's link matches every other surface. getLinkStyle is
   // the single source of truth; the tagged link is the fallback that always earns.
-  const dealTagged = dealIntg?.amazon_associates_tag
-    ? `https://www.amazon.com/dp/${product.asin}?tag=${encodeURIComponent(dealIntg.amazon_associates_tag)}`
-    : `https://www.amazon.com/dp/${product.asin}`
-  const dealStyle = await getLinkStyle(supabase, user.id)
+  const dealTagged = dealDestination.url
+  const rawDealStyle = await getLinkStyle(supabase, user.id)
+  // Geniuslink geo-routes Amazon links and nothing else, so a showcase post
+  // falls to Passport (still shortened, clicks still counted) or a plain link.
+  const dealStyled = styleForDestination(dealDestination, rawDealStyle.style, { passportAvailable: rawDealStyle.style === 'passport' })
+  const dealStyle = { ...rawDealStyle, style: dealStyled.style }
+  const dealDestinationNote = dealDestination.note || styleSwapNote(dealStyled.changedFrom, dealStyled.style)
   let dealAffiliateUrl = dealTagged
   if (dealStyle.style === 'passport') {
-    const p = await passportLinkForUser(supabase, user.id, product.asin, { source: 'blog', title: product.title })
+    // A showcase destination must NOT be minted from the ASIN: passportLinkForUser
+    // geo-routes it to the reader's local Amazon, so the post would read as a
+    // showcase post and send every click to Amazon anyway.
+    const p = dealDestination.kind === 'showcase'
+      ? await (async () => {
+        const site = await getDefaultSite(supabase, user.id)
+        const siteId = site && site.id !== 'legacy' ? (site.id as string) : null
+        const code = await getOrCreatePassportLink(supabase, user.id, siteId, { destinationUrl: dealDestination.url, label: product.title || null, source: 'blog' })
+        return code ? passportLinkUrl(code) : null
+      })()
+      : await passportLinkForUser(supabase, user.id, product.asin, { source: 'blog', title: product.title })
     if (p) dealAffiliateUrl = p
   } else if (dealStyle.style === 'bitly' && dealStyle.bitlyToken) {
     const short = await shortenBitly(dealStyle.bitlyToken, dealTagged)
@@ -708,6 +751,7 @@ export async function POST(req: Request) {
   const writerPrompt = buildDealWriterPrompt({
     product,
     affiliateUrl: dealAffiliateUrl,
+    destinationKind: dealDestination.kind,
     priceHistory,
     occasion: occasion.slug,
     occasionLong: occasion.longLabel,
@@ -1014,6 +1058,19 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let saved: any = null
   let migrationNeeded: string | null = null
+  /** Written AFTER the insert, best-effort, so a database without migration 332
+   *  still publishes the post. Recorded so the link-repair tools can tell a
+   *  post that deliberately points at a showcase apart from one whose affiliate
+   *  link is broken, and never offer to "fix" it back to Amazon. */
+  const recordDestination = async (postId: string) => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('blog_posts').update({
+        destination_kind: dealDestination.kind,
+        destination_url: dealDestination.kind === 'showcase' ? dealDestination.url : null,
+      }).eq('id', postId)
+    } catch { /* un-migrated column; the post is still correct */ }
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const firstInsert = await (supabase as any)
     .from('blog_posts')
@@ -1135,6 +1192,8 @@ export async function POST(req: Request) {
     }
   }
 
+  if (saved?.id) await recordDestination(saved.id as string)
+
   return NextResponse.json({
     ok: true,
     postId: saved?.id ?? null,
@@ -1150,6 +1209,11 @@ export async function POST(req: Request) {
     // Report the image that was actually used, not the one the pipeline
     // intended. A reused hero and a freshly rendered one look identical on the
     // published post, so the only place the difference can be stated is here.
+    // Where this post actually sends people, and why if that is not what was
+    // asked. A post that requested the showcase and fell back to Amazon reads
+    // 'amazon' here rather than reporting the request back as the result.
+    destinationKind: dealDestination.kind,
+    destinationNote: dealDestinationNote,
     heroImage: savedHero
       ? { reused: true, source: savedHero.source, surface: savedHero.surface, approvedAt: savedHero.approvedAt }
       : { reused: false },
@@ -1194,6 +1258,10 @@ interface DealWriterPromptInput {
   product: AmazonProduct
   /** Resolved affiliate CTA link (tag / Geniuslink). Used on every anchor. */
   affiliateUrl?: string
+  /** 'showcase' when this post's links go to the creator's TikTok Shop, not
+   *  Amazon. Every Amazon price claim and every "on Amazon" phrase has to go:
+   *  they describe a store the reader is not being sent to. */
+  destinationKind?: 'amazon' | 'showcase'
   occasion: DealOccasionSlug
   occasionLong: string
   occasionHype: string
@@ -1226,6 +1294,14 @@ function buildDealWriterPrompt(p: DealWriterPromptInput): string {
     ? `The discount: ${p.savingsLine}. Frame this in RELATIVE terms only ("about X% off today", "a genuine price drop right now"). Do NOT state any exact dollar price.`
     : 'No explicit discount figure — write this as a "great price right now / good time to buy" piece in relative terms. Do NOT state any exact dollar price.'
 
+  // A showcase post links to the creator's own TikTok Shop. Anything the writer
+  // knows about Amazon pricing is about a different store, so it is banned
+  // outright rather than softened: a reader who clicks through and finds a
+  // different price was misled by the post, not by a stale number.
+  const showcaseLine = p.destinationKind === 'showcase'
+    ? `\nDESTINATION: every link in this article goes to the creator's own TikTok Shop showcase, NOT to Amazon.\n  - NEVER write the word Amazon, and never name any other retailer.\n  - NEVER state or imply a discount, a percentage off, a "was" price, a lowest-price claim, or any price at all. You do not know what it costs there.\n  - Write it as a recommendation of the product itself: who it is for, what it does well, what to know before buying.\n  - CTA anchors say "Shop it in my TikTok Shop" or "See it in my shop", never "on Amazon".`
+    : ''
+
   const endLine = p.dealEndsAt
     ? `Deal expiration: ${p.dealEndsAt}. Mention this prominently early in the article.`
     : 'No expiration date given. Don\'t invent one. Use language like "while the price holds" instead of fake countdown urgency.'
@@ -1247,7 +1323,9 @@ function buildDealWriterPrompt(p: DealWriterPromptInput): string {
     const lines: string[] = []
     if (p.promoCode) lines.push(`Promo code: ${p.promoCode}. Use this in the deal-box CTA copy.`)
     if (p.promoUrl) lines.push(`Special promo URL: ${p.promoUrl}. Every "buy" / "see deal" anchor in the article should link to this URL.`)
-    if (!lines.length) lines.push(`No promo code or special URL given. Use the Amazon canonical URL ${fallbackUrl} as the href on every CTA anchor.`)
+    if (!lines.length) lines.push(p.destinationKind === 'showcase'
+      ? `No promo code given. Use ${fallbackUrl} as the href on every CTA anchor. It is the creator's own shop link; do not describe it as an Amazon link.`
+      : `No promo code or special URL given. Use the Amazon canonical URL ${fallbackUrl} as the href on every CTA anchor.`)
     return lines.join(' ')
   })()
   const ctaHref = p.promoUrl || fallbackUrl
@@ -1267,13 +1345,13 @@ DEAL ENVELOPE
 - ${endLine}
 - ${occasionLine}
 - Badge text on thumbnail: ${p.badgeLabel} (don't put this exact string in the body, the thumbnail handles it)
-- ${promoLine}${p.priceHistory ? `\n- VERIFIED PRICE CONTEXT (confirmed straight from this product's live price history — state it as fact, it's your credibility edge. NEVER name a data provider, tool, service, or third party such as Keepa; present the numbers as pulled directly from the product's own price history): ${p.priceHistory} Work this naturally into "The deal at a glance". Do NOT exaggerate beyond it.` : ''}${renewedDisclosure}
+- ${promoLine}${p.priceHistory ? `\n- VERIFIED PRICE CONTEXT (confirmed straight from this product's live price history — state it as fact, it's your credibility edge. NEVER name a data provider, tool, service, or third party such as Keepa; present the numbers as pulled directly from the product's own price history): ${p.priceHistory} Work this naturally into "The deal at a glance". Do NOT exaggerate beyond it.` : ''}${renewedDisclosure}${showcaseLine}
 
 ${DEAL_VOICE_RULES}
 
 STRUCTURE (target ~800 words):
 1. <p> Punchy opening hook. State the deal up front: what's discounted, by how much (if known), and why it matters TODAY. If the occasion is set, lean into it ("Prime Day delivered a real one this year:"). Two sentences max for the hook.
-2. <h2>The deal at a glance</h2> — One <p> with the deal story in RELATIVE terms only (${p.savingsLine ? 'the discount: ' + p.savingsLine + ', framed as "about X% off today" / "a genuine price drop"' : 'frame as "one of the best prices this has hit recently"'} — NO exact dollar amounts), then the expiration note if any, then a one-line CTA. Wrap the CTA anchor as <a href="${ctaHref}" rel="nofollow sponsored">${p.promoCode ? `Apply code ${p.promoCode} on Amazon` : 'See the deal on Amazon'}</a>.
+2. <h2>The deal at a glance</h2> — One <p> with the deal story in RELATIVE terms only (${p.savingsLine ? 'the discount: ' + p.savingsLine + ', framed as "about X% off today" / "a genuine price drop"' : 'frame as "one of the best prices this has hit recently"'} — NO exact dollar amounts), then the expiration note if any, then a one-line CTA. Wrap the CTA anchor as <a href="${ctaHref}" rel="nofollow sponsored">${p.destinationKind === 'showcase' ? 'Shop it in my TikTok Shop' : (p.promoCode ? `Apply code ${p.promoCode} on Amazon` : 'See the deal on Amazon')}</a>.
 3. <h2>Why this deal is worth your attention</h2> — 2-3 paragraphs. Confident, direct product commentary. Use the spec bullets above as known facts about the product, not as something you're citing ("The 6500 RPM motor handles X" — NOT "the listing claims a 6500 RPM motor"). Talk about who this fits and who it doesn't. Never claim hands-on time. Never cite the listing as a source.
 4. <h2>What you're actually getting</h2> — Bullet list <ul><li> of 4-6 concrete specs / features. Concise. State them directly. No marketing fluff. No "the listing says" framing.
 5. <h2>Before you buy</h2> — One <p> of grounded caveats: shipping windows for the occasion, return policy considerations, the kinds of buyer this would NOT fit. Keep it real.

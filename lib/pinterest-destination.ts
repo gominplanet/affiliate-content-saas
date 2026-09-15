@@ -30,7 +30,12 @@
 // This module is the pure half: what the destination should be, and what to say
 // when there is not one yet.
 
-export type PinDestinationKind = 'shop' | 'blog_post' | 'homepage' | 'none'
+// 'showcase' is the creator's own TikTok Shop, used when a post opts out of
+// the affiliate link entirely. It is the one destination that needs no detour:
+// the whole reason a pin normally goes via the creator's own page is that
+// Pinterest rejects affiliate redirect and cloaking domains, and tiktok.com is
+// neither.
+export type PinDestinationKind = 'shop' | 'blog_post' | 'homepage' | 'none' | 'showcase'
 
 export interface PinDestination {
   /** The URL to put on the pin, or null when we must not pin at all. */
