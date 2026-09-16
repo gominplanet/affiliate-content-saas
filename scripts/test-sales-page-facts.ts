@@ -141,6 +141,47 @@ const split = strip(SPLIT)
     'it is the longest-form answer on the site and it said it outright')
 }
 
+// ── the collab cap is on the DRAFTING, not on the outreach ─────────────────
+//
+// collabsPerMonth gates ONE route: /api/collaborations/generate, the Claude
+// call that writes a pitch from the creator's brand profile. Messaging a brand
+// is not capped anywhere — campaigns/message-link and campaigns/mark-messaged
+// have no tier check and no counter, because the message is sent on Amazon, in
+// Amazon's own box. A creator past the cap can still pitch every brand they
+// like; they just write it themselves.
+//
+// The pricing page said "60 brand deals / month" next to a card about browsing
+// the catalogue, which puts a monthly ceiling on the two things that have none:
+// how many campaigns you can see and how many brands you can approach. It
+// understated the plan in the most expensive place to be wrong.
+{
+  const AMZ_PAGE = readFileSync('app/amazon-influencer/page.tsx', 'utf8')
+  const surfaces = [
+    ['landing', LANDING], ['pricing', PRICING], ['amazon page', AMZ_PAGE],
+  ] as const
+
+  for (const [name, raw] of surfaces) {
+    const src = strip(raw)
+    check(`${name} does not cap brand DEALS`, !/brand deals\s*\/\s*month/i.test(src),
+      'nothing limits how many deals a creator lands; the cap is on pitches MVP writes')
+    check(`${name} does not cap outreach`, !/pitch emails\s*\/\s*month/i.test(src),
+      '"emails / month" reads as a send limit, and sending is uncapped and happens on Amazon')
+    // Wherever the number IS stated, it has to say what it counts.
+    if (/collabsPerMonth/.test(src)) {
+      check(`${name} says the pitches are DRAFTED`, /draft(ed|s)?\b/i.test(src),
+        'the word is what separates "we write 60 for you" from "you may send 60"')
+    }
+  }
+
+  // The claim that was simply false. There is no inbox: campaigns/message-link
+  // caches Amazon's own detailsUrl and sends the creator there.
+  for (const [name, raw] of surfaces) {
+    check(`${name} does not claim conversations live in MVP`,
+      !/keep every conversation in one place|negotiate with brands inside MVP/i.test(raw),
+      'MVP hands over a link to Amazon\'s message box and stores no thread')
+  }
+}
+
 // ── the claims that are NOT numbers ────────────────────────────────────────
 {
   // 9 is exactly the length of the Social union. If a platform is added or

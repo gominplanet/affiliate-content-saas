@@ -521,7 +521,7 @@ const PRICING_TIERS: PricingTier[] = [
       'Auto-post to Pinterest, Instagram & Facebook with AI captions + your affiliate link',
       `${TIERS.amazon.dealsPerMonth} deal / product posts / month`,
       `${TIERS.amazon.maxFaces} face models, ${TIERS.amazon.photoboothPerMonth} Photobooth headshots — your face on every design`,
-      `${TIERS.amazon.collabsPerMonth} brand-collab pitch emails / month`,
+      `${TIERS.amazon.collabsPerMonth} brand pitches drafted for you / month`,
       `${TIERS.amazon.assistantMessagesPerMonth} AI assistant messages / month`,
       'Priority generation queue + priority support',
       // SAY WHAT IT DOES NOT DO, ON THE CARD. At $79 as a side product this was
@@ -557,7 +557,7 @@ const PRICING_TIERS: PricingTier[] = [
       'Multi-account social + one-click Publish All',
       `Up to ${TIERS.pro.sites} WordPress sites + ${TIERS.pro.vaSeats} Virtual Assistant seats`,
       'Multiple YouTube channels — one per site, or pull from any',
-      `${TIERS.pro.scriptsPerMonth} video scripts, ${TIERS.pro.collabsPerMonth} brand pitches / month`,
+      `${TIERS.pro.scriptsPerMonth} video scripts, ${TIERS.pro.collabsPerMonth} brand pitches drafted / month`,
       `Newsletter — ${(TIERS.pro.newsletterSubscribers ?? 0).toLocaleString()} subs, weekly + A/B + segments`,
       `${TIERS.pro.assistantMessagesPerMonth} AI assistant messages / month`,
     ],
