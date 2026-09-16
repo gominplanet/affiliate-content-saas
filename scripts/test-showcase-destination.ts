@@ -339,6 +339,38 @@ const base = { asin: ASIN, amazonTag: 'gomin-20' }
   check('the per-product path shares that body',
     /cloakShopUrl\(supabase, userId, cfg, swap\.style, dest/.test(CLOAK),
     'a TikTok product link must follow every rule the account showcase follows')
+
+  // THE TWO PATHS MUST ASK THE SAME QUESTION.
+  //
+  // Sharing the minting body is not enough: the STYLE decision happens before
+  // it, once in showcaseOverrideFor and once in resolveProductShopLink, and
+  // they drifted immediately. The per-product one read
+  //
+  //     styleForShowcase(cfg.style, cfg.style === 'passport' || cfg.style === 'geniuslink')
+  //
+  // where `passportAvailable` is supposed to mean the creator has Passport
+  // turned on. That second clause is always true for exactly the creator being
+  // asked about, so a Geniuslink creator got a Passport link from a product and
+  // a plain link from their account showcase, and was told a different thing
+  // about their clicks in each case.
+  const DEST = readFileSync('lib/post-destination.ts', 'utf8')
+  const args = [
+    ...[...CLOAK.matchAll(/styleForShowcase\(cfg\.style, ([^)]+)\)/g)].map(m => m[1].trim()),
+    ...[...DEST.matchAll(/styleForShowcase\(cfg\.style, ([^)]+)\)/g)].map(m => m[1].trim()),
+  ]
+  check('every path computes passportAvailable', args.length >= 3, `${args.length} call sites`)
+  check('and they all ask the IDENTICAL question', new Set(args).size === 1,
+    `${[...new Set(args)].join('  |  ')} — a Geniuslink creator would get a different link from each`)
+  check('none of them asks about geniuslink', !args.some(a => /geniuslink/.test(a)),
+    'whether their style is Geniuslink says nothing about whether Passport is available')
+
+  check('the swap note comes from the shared helper, not the call site',
+    /note: styleSwapNote\(swap\.changedFrom, swap\.style\)/.test(CLOAK),
+    'a hand-written note said "clicks are still counted" on a swap to a PLAIN link, which is untrue')
+  const FL2 = readFileSync('app/api/blog/from-link/route.ts', 'utf8')
+  check('and the blog route passes it through rather than writing its own',
+    /tiktokNote = shop\?\.note/.test(FL2),
+    'the call site does not know which style it ended up with')
 }
 
 // ── the composers show the account's real state ─────────────────────────────

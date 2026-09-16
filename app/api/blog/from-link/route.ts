@@ -276,11 +276,11 @@ export async function POST(req: Request) {
       label: productName || 'TikTok Shop product', source: 'blog',
     })
     affiliateUrl = shop?.url ?? (tp.share_url as string)
-    // A swapped style is reported rather than applied in silence: a creator on
-    // Geniuslink gets a Passport link here and should know why.
-    tiktokNote = shop?.changedFrom
-      ? 'Geniuslink only routes Amazon links, so this post uses a Passport link to your TikTok Shop product instead. Clicks are still counted.'
-      : null
+    // A swapped style is reported rather than applied in silence, and the
+    // sentence comes from the shared helper: a Geniuslink creator without
+    // Passport gets a PLAIN link here, and telling them their clicks are still
+    // counted would be untrue.
+    tiktokNote = shop?.note ?? null
   } else if (asin) {
     try {
       const p = await fetchAmazonProduct(asin)

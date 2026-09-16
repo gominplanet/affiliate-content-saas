@@ -30,7 +30,7 @@ export type { LinkStyle } from '@/lib/link-style'
 export { pickLinkStyle } from '@/lib/link-style'
 import type { LinkStyle } from '@/lib/link-style'
 import { pickLinkStyle, pickLinkStyleDetailed } from '@/lib/link-style'
-import { normalizeShowcaseUrl, styleForShowcase, showcaseOverrideFor } from '@/lib/post-destination'
+import { normalizeShowcaseUrl, styleForShowcase, showcaseOverrideFor, styleSwapNote } from '@/lib/post-destination'
 
 export interface LinkStyleConfig {
   style: LinkStyle
@@ -371,13 +371,25 @@ export async function resolveProductShopLink(
   destinationUrl: string,
   config?: LinkStyleConfig,
   opts?: { label?: string | null; source?: string | null },
-): Promise<{ url: string; changedFrom: LinkStyle | null } | null> {
+): Promise<{ url: string; changedFrom: LinkStyle | null; note: string | null } | null> {
   const dest = (destinationUrl || '').trim()
   if (!dest) return null
   const cfg = config ?? (await getLinkStyle(supabase, userId))
-  const swap = styleForShowcase(cfg.style, cfg.style === 'passport' || cfg.style === 'geniuslink')
+  // THE SAME EXPRESSION showcaseOverrideFor uses, character for character, and
+  // it has to stay that way. `passportAvailable` means the creator has Passport
+  // turned on, which getLinkStyle reports by resolving their style to
+  // 'passport'. This first read `cfg.style === 'passport' || cfg.style ===
+  // 'geniuslink'`, which is always true for the one creator the question is
+  // being asked about and has nothing to do with Passport at all. The effect
+  // was that a Geniuslink creator got a Passport link per product and a plain
+  // link from their account showcase, which is exactly the drift that putting
+  // the minting body in one place was supposed to prevent.
+  const swap = styleForShowcase(cfg.style, cfg.style === 'passport')
   const url = await cloakShopUrl(supabase, userId, cfg, swap.style, dest, opts)
-  return { url: url ?? dest, changedFrom: swap.changedFrom }
+  // The note comes from the shared helper rather than being written at the call
+  // site, so "Geniuslink was swapped for a plain link, clicks are NOT counted"
+  // cannot be reported as "swapped for Passport, clicks are still counted".
+  return { url: url ?? dest, changedFrom: swap.changedFrom, note: styleSwapNote(swap.changedFrom, swap.style) }
 }
 
 /** Shared body, so the account-level and per-product paths cannot drift. */
