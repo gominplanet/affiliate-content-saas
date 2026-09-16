@@ -35,6 +35,35 @@ const check = (name: string, cond: boolean, detail?: string) => {
 const NEW = 'price_1QNEW99amazon'
 const OLD = 'price_1QOLD79amazon'
 
+// ── the diagnostic compares against STRIPE, not against itself ─────────────
+//
+// The list mechanism below was right and the price was still wrong. Amazon was
+// raised to $99 in lib/tier and Stripe kept charging $79, because a Stripe
+// price is immutable: raising it means creating a new price and repointing the
+// var, and only the first half happened. Every check in this file passed, the
+// pricing page said $99 from the config, and new subscribers paid $79 on
+// founder pricing locked for the life of the subscription.
+//
+// Nothing offline can see that: the amount lives in Stripe. What CAN be held is
+// that the admin diagnostic asks. It used to stop at "the var is set and well
+// formed", which is true of a var pointing at the wrong amount.
+{
+  const CHECK = readFileSync('app/api/admin/stripe-price-check/route.ts', 'utf8')
+  const src = CHECK.split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n')
+  check('the diagnostic retrieves the price from Stripe', /stripe\.prices\.retrieve\(/.test(src),
+    'without this it can only report that a var is set, which was true the whole time it was wrong')
+  check('and reads the amount it will charge', /unit_amount/.test(src))
+  check('and compares it to the plan', /TIERS\[tier\]/.test(src) && /chargesUsd === expectedUsd/.test(src),
+    'comparing to anything else compares the config to itself')
+  check('an unknown answer is null, not a pass',
+    /matches: chargesUsd == null \|\| expectedUsd == null \? null/.test(src),
+    '"we could not check" reading as "it agrees" is how this stayed invisible')
+  check('and the mismatches are summarised at the top level', /priceMismatch/.test(src),
+    'buried in a per-key object, nobody scanning the response sees it')
+  check('a per-price failure does not blank the report', /catch \(e\) \{[\s\S]{0,200}?error: e instanceof Error/.test(src),
+    'this is opened when something is already wrong; one dead id must not hide the rest')
+}
+
 // ── parsing ────────────────────────────────────────────────────────────────
 {
   check('a single id still works', JSON.stringify(priceIdsFor(NEW)) === JSON.stringify([NEW]),
