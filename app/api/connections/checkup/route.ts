@@ -89,6 +89,16 @@ export async function GET() {
         || isUnreadableSecret(str('geniuslink_api_secret')),
       wordpressConfigured: Array.isArray(siteRes?.data) ? siteRes.data.length > 0 : !!str('wordpress_url'),
       wordpressNeedsAttention: !!wpHealth?.needsAttention,
+      // Proactive: what the nightly refresh recorded. Read defensively because
+      // connection_health is a jsonb column added by migration, and this route
+      // must keep answering on a deployment where it is absent.
+      staleTokens: (() => {
+        const health = (integ.connection_health ?? {}) as Record<string, { dead?: unknown } | undefined>
+        if (!health || typeof health !== 'object') return []
+        return (['threads', 'instagram'] as const)
+          .filter(p => health[p]?.dead === true)
+          .map(p => ({ platform: p, label: platformLabel(p) }))
+      })(),
       deadChannels: (dead ?? []).map(d => ({
         platform: d.platform,
         label: d.label || platformLabel(d.platform),

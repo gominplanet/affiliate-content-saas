@@ -21,6 +21,7 @@
  *
  * Auth: Vercel cron sends Authorization: Bearer ${CRON_SECRET}.
  */
+import { looksLikeDeadToken } from '@/lib/meta-error'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { maybeDecrypt as maybeDecryptRaw, maybeEncrypt } from '@/lib/secrets'
@@ -89,6 +90,7 @@ export async function GET(request: Request) {
     instagram: { refreshed: 0, skipped: 0, failed: 0 },
     pinterest: { refreshed: 0, skipped: 0, failed: 0 },
     social_accounts: { refreshed: 0, skipped: 0, failed: 0 },
+    marked_dead: 0,
   }
 
   const processRow = async (row: Row) => {
@@ -162,7 +164,7 @@ export async function GET(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: saData } = await (admin as any)
     .from('social_accounts')
-    .select('id,platform,access_token,extra')
+    .select('id,user_id,platform,access_token,extra')
     .in('platform', ['instagram', 'threads'])
     .not('access_token', 'is', null)
     .limit(5000)
@@ -170,7 +172,7 @@ export async function GET(request: Request) {
   // Soonest-expiry first (unknown expiry = 0 sorts first, so never-stamped rows
   // get healed early) so if the budget is tight the MOST urgent tokens drain
   // before the tail (P1).
-  const accounts = ((saData ?? []) as Array<{ id: string; platform: string; access_token: string | null; extra: Record<string, unknown> | null }>)
+  const accounts = ((saData ?? []) as Array<{ id: string; user_id?: string | null; platform: string; access_token: string | null; extra: Record<string, unknown> | null }>)
     .slice()
     .sort((a, b) => {
       const ea = Number((a.extra as { token_expiry?: number } | null)?.token_expiry || 0)
@@ -178,7 +180,7 @@ export async function GET(request: Request) {
       return ea - eb
     })
 
-  const processAcc = async (acc: { id: string; platform: string; access_token: string | null; extra: Record<string, unknown> | null }) => {
+  const processAcc = async (acc: { id: string; user_id?: string | null; platform: string; access_token: string | null; extra: Record<string, unknown> | null }) => {
     const tok = maybeDecrypt(acc.access_token)
     if (!tok) { tally.social_accounts.skipped++; return }
     const extra = (acc.extra && typeof acc.extra === 'object') ? acc.extra : {}
@@ -193,14 +195,59 @@ export async function GET(request: Request) {
         .update({ access_token: maybeEncrypt(r.accessToken), extra: { ...extra, token_expiry: r.expiresAt } })
         .eq('id', acc.id)
       tally.social_accounts.refreshed++
+
+      // And clear any dead mark, so a reconnect stops nagging AT ONCE rather
+      // than waiting for something else to notice. A warning that outlives its
+      // cause teaches people to ignore warnings.
+      if (acc.user_id) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: cur } = await (admin as any).from('integrations')
+            .select('connection_health').eq('user_id', acc.user_id).maybeSingle()
+          const health = ((cur?.connection_health ?? {}) || {}) as Record<string, unknown>
+          if (health[acc.platform]) {
+            delete health[acc.platform]
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (admin as any).from('integrations').update({ connection_health: health })
+              .eq('user_id', acc.user_id)
+          }
+        } catch { /* best effort */ }
+      }
     } catch (e) {
       // <24h-old or revoked token — leave the row untouched (never wipe a token
-      // that might still work); log so a permanently-dead one is visible.
+      // that might still work).
+      const msg = e instanceof Error ? e.message : String(e)
       console.error('[cron/refresh-social-tokens] social_accounts refresh failed', {
-        id: acc.id, platform: acc.platform,
-        error: e instanceof Error ? e.message : String(e),
+        id: acc.id, platform: acc.platform, error: msg,
       })
       tally.social_accounts.failed++
+
+      // A CONSOLE LOG IS NOT A REPORT. This ran nightly against a creator's dead
+      // Threads token, failed every time, and the only place it appeared was a
+      // log nobody reads. He found out when a post came back "An unknown error
+      // occurred", which named no cause and did not suggest reconnecting.
+      //
+      // Only a token we can tell is DEAD is recorded. A refresh refused because
+      // the token is under 24 hours old is routine and happens to every freshly
+      // connected account, so marking that would send people to redo a
+      // connection made yesterday.
+      if (acc.user_id && looksLikeDeadToken(msg) && (acc.platform === 'threads' || acc.platform === 'instagram')) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: cur } = await (admin as any).from('integrations')
+            .select('connection_health').eq('user_id', acc.user_id).maybeSingle()
+          const health = ((cur?.connection_health ?? {}) || {}) as Record<string, unknown>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (admin as any).from('integrations').update({
+            connection_health: {
+              ...health,
+              [acc.platform]: { ok: false, dead: true, reason: msg.slice(0, 300), checkedAt: Date.now() },
+            },
+            connection_health_at: new Date().toISOString(),
+          }).eq('user_id', acc.user_id)
+          tally.marked_dead++
+        } catch { /* best effort — never let the bookkeeping fail the run */ }
+      }
     }
   }
   await mapPool(accounts, REFRESH_CONCURRENCY, processAcc)

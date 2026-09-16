@@ -31,6 +31,7 @@
  * Docs:
  *   https://developers.facebook.com/docs/instagram-platform/content-publishing
  */
+import { describeMetaError } from '@/lib/meta-error'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 const GRAPH_BASE = 'https://graph.instagram.com'
@@ -276,9 +277,12 @@ export async function createMediaContainer(opts: {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
   })
-  const data = await res.json() as { id?: string; error?: { message: string } }
+  const data = await res.json().catch(() => ({})) as { id?: string }
   if (!res.ok || !data.id) {
-    throw new Error(`Instagram container create failed: ${data.error?.message || `HTTP ${res.status}`}`)
+    // Same reasoning as Threads: Meta's `code` is what separates a dead token
+    // from a rate limit from a media Instagram will not take, and reading only
+    // `error.message` threw all three away.
+    throw new Error(describeMetaError('Instagram', 'container create', data, res.status))
   }
   return data.id
 }

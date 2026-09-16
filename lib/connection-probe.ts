@@ -20,7 +20,16 @@ export interface HealthEntry {
   reason?: string
   checkedAt: number
 }
-export type ConnectionHealth = Partial<Record<'facebook' | 'youtube', HealthEntry>>
+/**
+ * Facebook and YouTube are PROBED here. Threads and Instagram are recorded by
+ * the nightly token refresh, which is the only place that learns their token
+ * died: their refresh call either works or comes back revoked, and until now a
+ * revoked one only reached a console log. A creator's Threads went stale, every
+ * nightly refresh failed silently, and the first thing that said so was a post
+ * failing with a message that named no cause.
+ */
+export type HealthPlatform = 'facebook' | 'youtube' | 'threads' | 'instagram'
+export type ConnectionHealth = Partial<Record<HealthPlatform, HealthEntry>>
 
 // Re-probe at most this often on the lazy (dashboard) path — the daily cron
 // keeps everyone fresh regardless; this just avoids a Graph/Google round-trip on

@@ -63,6 +63,13 @@ export interface CheckupInput {
   wordpressNeedsAttention: boolean
   /** Reactive social health: channels failing their scheduled posts. */
   deadChannels: { platform: string; label: string; message: string }[]
+  /**
+   * Proactive health, from integrations.connection_health: a token the nightly
+   * refresh found revoked. This is the one that arrives EARLY. The reactive
+   * list above only speaks after a channel has failed posts, which is after the
+   * creator has already lost them.
+   */
+  staleTokens: { platform: string; label: string }[]
 }
 
 import { mediaCapability } from '@/lib/x-scopes'
@@ -148,6 +155,24 @@ export function buildCheckup(input: CheckupInput): CheckupItem[] {
       })
   }
 
+  // ── A token the nightly refresh found dead ───────────────────────────────
+  //
+  // Ahead of everything else, because this is knowledge nobody had to lose a
+  // post to get. A creator's Threads went stale, the refresh failed every night
+  // into a console log, and the first thing that told him was a post failing
+  // with a message that named no cause and did not suggest reconnecting.
+  for (const stale of input.staleTokens) {
+    if (items.some(i => i.key === `dead-${stale.platform}`)) continue
+    items.push({
+      key: `stale-${stale.platform}`,
+      label: stale.label,
+      state: 'action',
+      detail: `Your ${stale.label} connection has gone stale, so posts to it will not go out. Nothing you did caused it: a ${stale.label} connection has to be renewed periodically and yours could not be. Reconnecting takes a few seconds and fixes it.`,
+      href: HREF.socials,
+      actionLabel: `Reconnect ${stale.label}`,
+    })
+  }
+
   // ── Anything already failing its scheduled posts ─────────────────────────
   //
   // These come from the reactive health system, which only speaks after a
@@ -155,6 +180,7 @@ export function buildCheckup(input: CheckupInput): CheckupItem[] {
   // whole question rather than sending people to look in two places.
   for (const dead of input.deadChannels) {
     if (dead.platform === 'twitter' && items.some(i => i.key === 'x-media' && i.state === 'action')) continue
+    if (items.some(i => i.key === `stale-${dead.platform}`)) continue
     items.push({
       key: `dead-${dead.platform}`,
       label: dead.label,

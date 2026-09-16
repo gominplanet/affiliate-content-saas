@@ -1,3 +1,4 @@
+import { describeMetaError } from '@/lib/meta-error'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 const BASE = 'https://graph.threads.net/v1.0'
 
@@ -69,10 +70,13 @@ export class ThreadsService {
       body: JSON.stringify(containerBody),
     })
     if (!containerRes.ok) {
-      const err = await containerRes.json()
-      // Name the step. Both fetches used to rethrow Meta's bare message, which
-      // made an identical error unattributable between the two calls.
-      throw new Error(`Threads container create failed: ${err.error?.message || `HTTP ${containerRes.status}`}`)
+      const err = await containerRes.json().catch(() => ({}))
+      // Name the step AND keep Meta's diagnostic fields. Rethrowing
+      // `error.message` alone produced "Threads container create failed: An
+      // unknown error occurred", which cannot be told apart from a dead token,
+      // a rate limit or an image Threads will not take. Those are three
+      // different jobs.
+      throw new Error(describeMetaError('Threads', 'container create', err, containerRes.status))
     }
     const { id: creationId } = await containerRes.json() as { id: string }
 
@@ -86,8 +90,8 @@ export class ThreadsService {
       body: JSON.stringify({ creation_id: creationId }),
     })
     if (!publishRes.ok) {
-      const err = await publishRes.json()
-      throw new Error(`Threads publish failed: ${err.error?.message || `HTTP ${publishRes.status}`}`)
+      const err = await publishRes.json().catch(() => ({}))
+      throw new Error(describeMetaError('Threads', 'publish', err, publishRes.status))
     }
     const { id } = await publishRes.json() as { id: string }
 
@@ -157,9 +161,14 @@ export async function refreshThreadsToken(currentToken: string): Promise<{ acces
   const res = await fetchWithTimeout(
     `https://graph.threads.net/refresh_access_token?grant_type=th_refresh_token&access_token=${encodeURIComponent(currentToken)}`,
   )
-  const data = await res.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error?: { message?: string } }
+  const data = await res.json().catch(() => ({})) as { access_token?: string; expires_in?: number }
   if (!res.ok || !data.access_token) {
-    throw new Error(`Threads token refresh failed: ${data.error?.message || `HTTP ${res.status}`}`)
+    // Keep Meta's code. A refresh that fails because the token is under 24h old
+    // is harmless and routine; one that fails because the token was revoked
+    // means this creator's Threads is dead and nobody has told them. Those two
+    // used to throw the same sentence, so the cron could not tell them apart
+    // and treated both as noise.
+    throw new Error(describeMetaError('Threads', 'token refresh', data, res.status))
   }
   return {
     accessToken: data.access_token,

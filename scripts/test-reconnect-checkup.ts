@@ -34,6 +34,7 @@ const NOTHING: CheckupInput = {
   wordpressConfigured: false,
   wordpressNeedsAttention: false,
   deadChannels: [],
+  staleTokens: [],
 }
 const input = (over: Partial<CheckupInput>): CheckupInput => ({ ...NOTHING, ...over })
 const find = (items: ReturnType<typeof buildCheckup>, key: string) => items.find(i => i.key === key)
@@ -116,6 +117,37 @@ const find = (items: ReturnType<typeof buildCheckup>, key: string) => items.find
   check('and marked as an action', find(other, 'dead-pinterest')?.state === 'action')
 }
 
+// ── a token the nightly refresh found dead ─────────────────────────────────
+//
+// The case that prompted this. A creator's Threads token went stale, the
+// nightly refresh failed against it every night into a console log, and the
+// first thing that told him was a post failing with "An unknown error
+// occurred" — a message that named no cause and did not suggest the fix. He
+// reconnected on a hunch and it worked.
+{
+  const stale = buildCheckup(input({ staleTokens: [{ platform: 'threads', label: 'Threads' }] }))
+  const item = find(stale, 'stale-threads')
+  check('a stale token is an action', item?.state === 'action', item?.state)
+  check('and says reconnecting is the fix', /reconnect/i.test(item?.detail ?? ''), item?.detail)
+  check('and does not blame the creator', /nothing you did/i.test(item?.detail ?? ''),
+    'this is our refresh failing, not something they broke')
+  check('and links somewhere', !!item?.href && !!item?.actionLabel)
+
+  // One row per channel. A stale token that has ALSO started failing posts is
+  // one problem with two symptoms, and printing both reads as two.
+  const both = buildCheckup(input({
+    staleTokens: [{ platform: 'threads', label: 'Threads' }],
+    deadChannels: [{ platform: 'threads', label: 'Threads', message: 'Threads keeps refusing your posts.' }],
+  }))
+  check('a stale token and a failing channel are one row', both.filter(i => i.label === 'Threads').length === 1,
+    both.filter(i => i.label === 'Threads').map(i => i.key).join(', '))
+
+  check('nothing is said when no token is stale', !buildCheckup(input({})).some(i => i.key.startsWith('stale-')))
+
+  const s2 = checkupSummary(stale)
+  check('and it leads the headline', /needs redoing/.test(s2.headline), s2.headline)
+}
+
 // ── the sentence at the top ────────────────────────────────────────────────
 //
 // This is the line that decides whether anybody acts, so it is held to the one
@@ -188,6 +220,7 @@ const find = (items: ReturnType<typeof buildCheckup>, key: string) => items.find
       wordpressConfigured: true,
     }),
     input({ twitterConnected: true, twitterScopes: null }),
+    input({ staleTokens: [{ platform: 'threads', label: 'Threads' }] }),
     input({}),
   ]
   const everything = scenarios.flatMap(s => buildCheckup(s))
