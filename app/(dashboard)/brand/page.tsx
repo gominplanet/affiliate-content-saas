@@ -788,6 +788,11 @@ export default function BrandPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) {
         setWpPushNote(`Brand saved, but affiliate routing keys failed: ${data.error || res.statusText}`)
+      } else if (typeof data.showcaseWarning === 'string' && data.showcaseWarning) {
+        // The save WORKED. This is what a viewer will actually experience when
+        // they click the link, which is a different thing from whether it
+        // stored, and the only moment the creator can still swap it.
+        setWpPushNote(data.showcaseWarning)
       }
     } catch (e) {
       setWpPushNote(`Brand saved, but affiliate routing keys failed: ${e instanceof Error ? e.message : 'unknown error'}`)

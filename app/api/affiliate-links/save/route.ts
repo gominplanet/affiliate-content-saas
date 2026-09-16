@@ -27,7 +27,7 @@ import { pickLinkStyle } from '@/lib/link-style'
 import { canUsePassport } from '@/lib/feature-access'
 import { normalizeTier } from '@/lib/tier'
 import { encryptIntegrationWrite, decryptIntegrationRow } from '@/lib/integration-secrets'
-import { normalizeShowcaseUrl, SHOWCASE_URL_HINT } from '@/lib/post-destination'
+import { classifyShowcaseUrl, SHOWCASE_URL_HINT } from '@/lib/post-destination'
 
 export const dynamic = 'force-dynamic'
 
@@ -167,14 +167,23 @@ export async function POST(request: Request) {
     // the save and say exactly what a real one looks like. An empty string is
     // still an explicit clear.
     let showcase: string | null | undefined
+    // Carried back to the creator on a SUCCESSFUL save. An app-only share link
+    // is saved because it works for phone traffic, but a desktop click on it
+    // cannot open at all, and that is not something to find out from analytics.
+    let showcaseWarning: string | null = null
     if (b.tiktokShowcaseUrl !== undefined) {
       const sent = b.tiktokShowcaseUrl.trim()
       if (!sent) {
         showcase = null
       } else {
-        const norm = normalizeShowcaseUrl(sent)
-        if (!norm) return NextResponse.json({ error: SHOWCASE_URL_HINT }, { status: 400 })
-        showcase = norm
+        const verdict = classifyShowcaseUrl(sent)
+        // The refusal names the actual mistake (a profile URL, a non-TikTok
+        // host) instead of one generic hint for every kind of wrong.
+        if (!verdict.accepted || !verdict.url) {
+          return NextResponse.json({ error: verdict.refusal || SHOWCASE_URL_HINT }, { status: 400 })
+        }
+        showcase = verdict.url
+        showcaseWarning = verdict.warning
       }
     }
 
@@ -258,7 +267,9 @@ export async function POST(request: Request) {
     // tags (migration 280). Best-effort: single-site users are a no-op.
     await snapshotActiveBlogIdentity(supabase, user.id)
 
-    return NextResponse.json({ ok: true, skipped })
+    // showcaseWarning rides on a SUCCESSFUL save: the link was stored and
+    // will be used, and there is still something true to say about it.
+    return NextResponse.json({ ok: true, skipped, showcaseWarning })
   } catch (err) {
     console.error('[affiliate-links/save]', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, "Couldn't save your link settings just now. Please try again.") }, { status: 500 })

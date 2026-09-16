@@ -20,7 +20,7 @@
 // showcase post can quietly become an Amazon post.
 import { readFileSync } from 'node:fs'
 import {
-  resolvePostDestination, isTikTokShowcaseUrl, normalizeShowcaseUrl,
+  resolvePostDestination, isTikTokShowcaseUrl, normalizeShowcaseUrl, classifyShowcaseUrl,
   styleForDestination, styleSwapNote, disclaimerForDestination,
   amazonDestination, SHOWCASE_DISCLAIMER,
 } from '../lib/post-destination'
@@ -52,6 +52,61 @@ const base = { asin: ASIN, amazonTag: 'gomin-20' }
     'copying from the TikTok app often drops it, and rejecting something obviously right is worse than fixing it')
   check('whitespace is trimmed', normalizeShowcaseUrl(`  ${SHOWCASE}  `) === SHOWCASE)
   check('junk normalizes to null', normalizeShowcaseUrl('not a url') === null)
+}
+
+// ── not every tiktok.com link opens in a browser ────────────────────────────
+//
+// MEASURED, not assumed. A showcase link from TikTok's own Share sheet, in
+// every spelling (vt.tiktok.com/CODE, the same with ?page=TikTokShop, and the
+// canonical tiktok.com/t/CODE), answers a 302 whose Location is
+// `snssdk1180://ec/showcase?...` — TikTok's private app scheme. The SAME
+// redirect comes back for a desktop Chrome user agent as for mobile Safari,
+// and there is no https fallback in the chain or in the body. A phone with
+// TikTok installed opens the app; a desktop browser cannot follow it at all.
+//
+// A bare profile URL was worse: tiktok.com/@handle passed the old host-only
+// check, so a creator could paste their profile, get a green tick, and send
+// every viewer to a video feed with no product on it.
+{
+  const APP = 'https://vt.tiktok.com/ZTUbdCWjq/?page=TikTokShop'
+  const app = classifyShowcaseUrl(APP)
+  check('a share short link is recognised as an app link', app.kind === 'app-only', app.kind)
+  check('and is still saved', app.accepted && app.url === APP,
+    'refusing it would leave a phone-first creator with no usable showcase destination at all')
+  check('but the creator is told what a desktop click does', !!app.warning && /desktop/i.test(app.warning!),
+    'it works on a phone and dies on a desktop, and that is not something to learn from analytics')
+  for (const v of ['https://vm.tiktok.com/ZSabc123/', 'https://www.tiktok.com/t/ZTUbdCWjq/', 'https://vt.tiktok.com/ZSabc123']) {
+    check(`the app-link shape is caught: ${v}`, classifyShowcaseUrl(v).kind === 'app-only', classifyShowcaseUrl(v).kind)
+  }
+
+  const prof = classifyShowcaseUrl('https://www.tiktok.com/@ale_gimenez')
+  check('a bare profile URL is REFUSED', !prof.accepted && prof.kind === 'profile',
+    'it used to pass, because the check only looked at the host')
+  check('and the refusal names the actual mistake', !!prof.refusal && /profile/i.test(prof.refusal!),
+    'one generic hint for every kind of wrong tells a creator nothing about which wrong they made')
+  check('normalize refuses it too', normalizeShowcaseUrl('https://www.tiktok.com/@ale_gimenez') === null,
+    'the save route goes through normalize, so a gap here is a gap everywhere')
+
+  // A real shop path on the same host must survive the profile rule.
+  for (const v of ['https://www.tiktok.com/@ale_gimenez/shop', 'https://shop.tiktok.com/view/product/123', SHOWCASE]) {
+    const c = classifyShowcaseUrl(v)
+    check(`a real shop link still passes: ${v}`, c.kind === 'web' && c.accepted, c.kind)
+    check(`and carries no warning: ${v}`, c.warning === null, c.warning || '')
+  }
+}
+
+// ── the save route uses the verdict, not a boolean ──────────────────────────
+{
+  const SAVE = readFileSync('app/api/affiliate-links/save/route.ts', 'utf8')
+  check('the route classifies rather than just validating', /classifyShowcaseUrl\(sent\)/.test(SAVE))
+  check('and returns the specific refusal', /verdict\.refusal \|\| SHOWCASE_URL_HINT/.test(SAVE),
+    'the generic hint is the fallback, not the answer')
+  check('a warning rides on a SUCCESSFUL save', /showcaseWarning/.test(SAVE),
+    'the link stored and will be used; there is still something true to say about it')
+
+  const BRAND = readFileSync('app/(dashboard)/brand/page.tsx', 'utf8')
+  check('and the Brand page shows it', /data\.showcaseWarning/.test(BRAND),
+    'a warning the server returns and the screen drops is the same as no warning')
 }
 
 // ── the toggle off changes nothing ──────────────────────────────────────────

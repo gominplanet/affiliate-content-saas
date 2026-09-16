@@ -81,24 +81,92 @@ const TIKTOK_HOSTS = [
 
 /** Is this a TikTok link we are willing to send a creator's audience to? */
 export function isTikTokShowcaseUrl(raw: string | null | undefined): boolean {
+  return classifyShowcaseUrl(raw).accepted
+}
+
+/**
+ * NOT EVERY TIKTOK LINK OPENS IN A BROWSER.
+ *
+ * Measured, not assumed. A showcase link copied from TikTok's own Share sheet
+ * looks like https://vt.tiktok.com/ZTUbdCWjq/?page=TikTokShop, and every form
+ * of it (bare, with the query, and the canonical tiktok.com/t/… spelling)
+ * answers a 302 whose Location is:
+ *
+ *   snssdk1180://ec/showcase?…&author_id=…&url=…seller-showcase-page.js
+ *
+ * snssdk1180:// is TikTok's private app scheme, and the same redirect comes
+ * back for a desktop Chrome user agent as for mobile Safari. There is no https
+ * fallback in the chain or in the body. So:
+ *
+ *   on a phone with TikTok installed   the OS opens the app. Works.
+ *   on a desktop browser               the redirect cannot be followed. Dead.
+ *
+ * That is worth knowing at the paste rather than from analytics, which is the
+ * whole reason this file validates instead of accepting any URL. It is a
+ * WARNING and not a refusal: for a creator whose audience is mostly on a phone
+ * the link works for most of their traffic, and refusing it would leave them
+ * with no usable showcase destination at all.
+ *
+ * A bare profile URL is refused outright. tiktok.com/@handle is a video feed,
+ * not a shop, and a viewer who clicks it lands nowhere near a product. It used
+ * to be accepted, because the old check only looked at the host.
+ */
+export type ShowcaseLinkKind = 'web' | 'app-only' | 'profile' | 'not-tiktok'
+
+export interface ShowcaseLinkVerdict {
+  kind: ShowcaseLinkKind
+  /** Whether it can be saved as a destination at all. */
+  accepted: boolean
+  /** The normalized https URL, or null when it is not usable. */
+  url: string | null
+  /** What a viewer will actually experience. Null when nothing needs saying. */
+  warning: string | null
+  /** Why it was refused, in words a creator can act on. Null when accepted. */
+  refusal: string | null
+}
+
+/** Short-link hosts and paths that resolve to the TikTok app, not to a page. */
+const APP_LINK_HOSTS = ['vt.tiktok.com', 'vm.tiktok.com']
+
+export function classifyShowcaseUrl(raw: string | null | undefined): ShowcaseLinkVerdict {
+  const dead = (kind: ShowcaseLinkKind, refusal: string): ShowcaseLinkVerdict =>
+    ({ kind, accepted: false, url: null, warning: null, refusal })
+
   const s = String(raw ?? '').trim()
-  if (!s) return false
+  if (!s) return dead('not-tiktok', SHOWCASE_URL_HINT)
+  // A creator pasting from the TikTok app often gets a bare host with no
+  // scheme. Add one rather than rejecting something that is obviously right.
+  const withScheme = /^https?:\/\//i.test(s) ? s : `https://${s}`
   let u: URL
-  try { u = new URL(s) } catch { return false }
+  try { u = new URL(withScheme) } catch { return dead('not-tiktok', SHOWCASE_URL_HINT) }
   // http would downgrade every click; TikTok is https-only anyway.
-  if (u.protocol !== 'https:') return false
+  if (u.protocol !== 'https:') return dead('not-tiktok', SHOWCASE_URL_HINT)
   const host = u.hostname.toLowerCase().replace(/^www\./, '')
-  return TIKTOK_HOSTS.some(h => host === h || host.endsWith(`.${h}`))
+  const onTikTok = TIKTOK_HOSTS.some(h => host === h || host.endsWith(`.${h}`))
+  if (!onTikTok) return dead('not-tiktok', SHOWCASE_URL_HINT)
+
+  const path = u.pathname.replace(/\/+$/, '')
+
+  // A share short link: vt/vm hosts, or the canonical tiktok.com/t/<code>.
+  if (APP_LINK_HOSTS.includes(host) || /^\/t\/[^/]+$/.test(path)) {
+    return {
+      kind: 'app-only', accepted: true, url: withScheme, refusal: null,
+      warning: 'This is a TikTok app link. On a phone with TikTok installed it opens your showcase in the app, which is most social traffic. On a desktop browser it cannot open at all, so those clicks go nowhere. If TikTok gives you a link that opens your showcase in a normal browser, use that one instead.',
+    }
+  }
+
+  // A bare profile. /@handle with nothing after it is a video feed.
+  if (/^\/@[^/]+$/.test(path)) {
+    return dead('profile',
+      'That is your TikTok profile, not your showcase. A viewer who clicks it lands on your videos with no product in sight. Open your TikTok Shop showcase itself, tap Share, and paste that link.')
+  }
+
+  return { kind: 'web', accepted: true, url: withScheme, warning: null, refusal: null }
 }
 
 /** Trim and validate a pasted showcase URL. Null when it is not usable. */
 export function normalizeShowcaseUrl(raw: string | null | undefined): string | null {
-  const s = String(raw ?? '').trim()
-  if (!s) return null
-  // A creator pasting from the TikTok app often gets a bare host with no
-  // scheme. Add one rather than rejecting something that is obviously right.
-  const withScheme = /^https?:\/\//i.test(s) ? s : `https://${s}`
-  return isTikTokShowcaseUrl(withScheme) ? withScheme : null
+  return classifyShowcaseUrl(raw).url
 }
 
 /** What to tell a creator whose showcase link was not accepted. */
