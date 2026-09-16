@@ -7,7 +7,17 @@
  * personalized DIRECT MESSAGE the creator can review and send to the brand from
  * Amazon's own "Message Brand" chat. Chat-length (≤ ~900 chars for Amazon's 1000
  * cap), no email subject. Personalization is pulled from the creator's Brand
- * Profile (media kit, link hub, niche). Pro-tier only.
+ * Profile (media kit, link hub, niche). EVERY PAID TIER, not Pro-only as this
+ * line used to say: the gate is tierAllowsCampaigns, which is tierAllowsFinders,
+ * which passes Creator, Amazon, Studio and Pro.
+ *
+ * DELIBERATELY UNCAPPED. There is no per-month check here and there should not
+ * be: the bulk modal drafts ONE message and fills each brand's product into it,
+ * saved templates re-send with no drafting at all, and the send happens on
+ * Amazon. Counting drafts would cap something the creator can already do by
+ * hand. The monthly figure on the pricing page belongs to
+ * /api/collaborations/generate, the separate long-form Brand Deals EMAIL tool.
+ * Two features, two writers, one cap.
  *
  * Human-in-the-loop by design: this only DRAFTS. SCOUT places the text in the
  * box; the creator reviews and clicks Amazon's Send.

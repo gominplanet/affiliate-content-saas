@@ -85,11 +85,15 @@ const split = strip(SPLIT)
     ['pinsPerMonth', 'pins'],
     ['igPostsPerMonth', 'Reels'],
     ['facebookPostsPerMonth', 'Facebook designs'],
-    ['collabsPerMonth', 'brand deals'],
     ['dealsPerMonth', 'posts published'],
     ['maxFaces', 'face models'],
     ['photoboothPerMonth', 'headshots'],
   ] as const
+  // collabsPerMonth is deliberately NOT in that list any more. The Amazon card
+  // it used to sit on is Creator Connections messaging, which is uncapped, so
+  // requiring the page to print the number would be requiring it to state a
+  // limit the product does not enforce. The number is still read on the Pro
+  // Brand Deals bullet, which is the feature it actually belongs to.
   for (const [field, what] of reads) {
     check(`the ${what} cap is read, not typed`, new RegExp(`TIERS\\.amazon\\.${field}`).test(pricing),
       `it was hardcoded and wrong; TIERS.amazon.${field} is ${String((TIERS.amazon as Record<string, unknown>)[field])}`)
@@ -170,7 +174,32 @@ const split = strip(SPLIT)
     if (/collabsPerMonth/.test(src)) {
       check(`${name} says the pitches are DRAFTED`, /draft(ed|s)?\b/i.test(src),
         'the word is what separates "we write 60 for you" from "you may send 60"')
+      // TWO FEATURES, TWO WRITERS, ONE CAP. collabsPerMonth belongs to
+      // /api/collaborations/generate, the long-form Brand Deals EMAIL tool.
+      // Creator Connections messages come from /api/campaigns/outreach, which
+      // has no cap at all, so putting this number on a Creator Connections card
+      // invents a limit the product does not enforce. It was on one.
+      check(`${name} names Brand Deals where it states the figure`,
+        /Brand Deals/.test(src),
+        'unlabelled, the number reads as a limit on Creator Connections messaging, which is uncapped')
     }
+  }
+
+  // Creator Connections drafting is uncapped and the pages have to be able to
+  // say so. The bulk modal drafts ONE message and fills each brand's product
+  // into it; a saved template re-sends with no drafting at all.
+  {
+    // strip() first. The route's header now explains WHY it has no cap, and
+    // names collabsPerMonth to do it, so a raw grep finds the explanation and
+    // calls it the bug. Third time this exact trap has fired today.
+    const OUTREACH = strip(readFileSync('app/api/campaigns/outreach/route.ts', 'utf8'))
+    check('the Creator Connections drafter is still uncapped',
+      !/collabsPerMonth/.test(OUTREACH),
+      'adding a cap here would make the "Unlimited" on three pages false')
+    const BULK = readFileSync('components/campaigns/BulkMessageBrandModal.tsx', 'utf8')
+    check('and the bulk modal still drafts once and reuses it',
+      /\/api\/campaigns\/outreach/.test(BULK) && /template/i.test(BULK),
+      'if bulk started drafting per brand, "unlimited" would depend on the spend ceiling instead')
   }
 
   // The claim that was simply false. There is no inbox: campaigns/message-link

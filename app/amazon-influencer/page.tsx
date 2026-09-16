@@ -13,7 +13,7 @@ import Link from 'next/link'
 import NextImage from 'next/image'
 import {
   Wand2, LayoutTemplate, Handshake, MessageSquare, PackageSearch, Radar,
-  Send, UserSquare, Zap, Check, ArrowRight, ShoppingBag, ShieldCheck, Lock,
+  Send, UserSquare, Zap, Check, ArrowRight, ShoppingBag, ShieldCheck, Lock, Mail,
 } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { CheckoutButton } from '../pricing/CheckoutButton'
@@ -48,12 +48,13 @@ const FEATURES: { icon: React.ReactNode; title: string; tag: string; desc: strin
   { icon: <Wand2 size={20} />, title: 'One-click video-review thumbnails', tag: `${AMZ.thumbnailsPerMonth} / month`, desc: 'Drop in any Amazon product and get an incredible video-review thumbnail in one click, the scroll-stopping cover that makes shoppers hit play on your storefront review. The same Art Director engine our top video creators use.' },
   { icon: <LayoutTemplate size={20} />, title: 'Ready-to-post designs', tag: `${AMZ.pinsPerMonth} pins · ${AMZ.igPostsPerMonth} Reels · ${AMZ.facebookPostsPerMonth} FB`, desc: 'Finished Pinterest pins, Instagram Reels covers and Facebook posts, laid out and captioned for you. No Canva, no templates to fight. Post them as they are.' },
   { icon: <Handshake size={20} />, title: 'Daily brand-deal digest', tag: 'Picked for you', desc: 'Every day MVP sends you a fresh, ranked list of Creator Connections campaigns auto-matched to your storefront, your niche and what you actually post, each scored on payout and how full the roster is. The deals worth your time, surfaced for you, so you stop digging through the whole catalogue.' },
-  { icon: <MessageSquare size={20} />, title: 'Outreach written for you', tag: `${AMZ.collabsPerMonth} drafted pitches / month`, desc: 'For any campaign, MVP drafts a personalized pitch from your media kit and drops it straight into Amazon’s own Message Brand box. You review the wording and hit send.' },
+  { icon: <MessageSquare size={20} />, title: 'Outreach written for you', tag: 'Unlimited', desc: 'For any campaign, MVP drafts a personalized pitch from your media kit and drops it straight into Amazon’s own Message Brand box. Draft as many as you like, message brands in bulk, and save the angles that work as reusable templates.' },
+  { icon: <Mail size={20} />, title: 'Brand Deals outreach emails', tag: `${AMZ.collabsPerMonth} drafted / month`, desc: 'Beyond Creator Connections: name any brand and MVP researches it and writes a full long-form pitch email from your media kit, ready to send from your own inbox. This is the one outreach tool with a monthly number on it.' },
   { icon: <PackageSearch size={20} />, title: 'Amazon Product Research', tag: 'Unlimited browse', desc: 'Filter the whole Amazon catalogue by sales, rating, price, review ratio and competition. Find the products worth posting before you spend a design on them.' },
   { icon: <Radar size={20} />, title: 'Deal Radar', tag: 'Unlimited browse', desc: 'Live, price-history-verified Amazon deals. Jump on a real price drop the day it happens and turn it into a post while it is still hot.' },
   { icon: <ShoppingBag size={20} />, title: 'Idea List → Shopping Guide', tag: 'Up to Top 20', desc: 'Point MVP at one of your Amazon idea lists and it checks every product, ranks them by your own sales, demand, live deals and ratings, then writes a full shopping-guide post with your affiliate links and a call-to-action back to the whole list on Amazon.' },
   { icon: <Send size={20} />, title: 'Publish for you', tag: `${AMZ.dealsPerMonth} posts / month`, desc: 'Push product and deal posts straight to Facebook, Pinterest and Instagram, all three at once, from one screen. Copy written, design done, you approve and it goes.' },
-  { icon: <UserSquare size={20} />, title: 'Your face on every design', tag: `${AMZ.maxFaces} model · ${AMZ.photoboothPerMonth} headshots`, desc: 'Add one face model and MVP puts you in the designs. Run the photobooth for 6 studio-quality headshots so your posts look like you, not stock. Prefer not to? Switch to product-only designs anytime.' },
+  { icon: <UserSquare size={20} />, title: 'Your face on every design', tag: `${AMZ.maxFaces} face models · ${AMZ.photoboothPerMonth} headshots`, desc: `Add your face and MVP puts you in the designs. Run the photobooth for ${AMZ.photoboothPerMonth} studio-quality headshots so your posts look like you, not stock. Prefer not to? Switch to product-only designs anytime.` },
   { icon: <Zap size={20} />, title: 'Priority queue + support', tag: 'Included', desc: 'Your renders jump the line and your questions get answered first. When a deal is live you are not waiting behind the free tier.' },
 ]
 
