@@ -233,6 +233,71 @@ const p = parseTikTokProduct(HTML, URL)
     'above Labs it would be promoted as a finished feature')
 }
 
+// ── a blog post about a TikTok product ─────────────────────────────────────
+//
+// blog/from-link already wrote about "any store/affiliate link", but every
+// branch in it assumed Amazon underneath: an ASIN to geo-route, an Associates
+// tag to append, and a disclosure naming a programme this post does not earn
+// through. A TikTok Shop product has none of those, and the ways that go wrong
+// are all quiet ones.
+{
+  const FL = readFileSync('app/api/blog/from-link/route.ts', 'utf8')
+  const fl = FL.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')
+
+  check('the route accepts a saved product', /tiktokProductId/.test(fl))
+  check('and the product is looked up under the OWNER', /\.eq\('user_id', ownerId\)\.eq\('product_id', tiktokProductId\)/.test(fl),
+    'without the user_id filter any creator could write a post about any other creator\'s product')
+  check('an unknown product is refused, not written around',
+    /not in your saved products/.test(FL),
+    'falling through would write a post with no destination at all')
+
+  check('the TikTok branch is checked BEFORE the Amazon one',
+    fl.indexOf('if (tiktokProductId)') > -1 && fl.indexOf('if (tiktokProductId)') < fl.indexOf('} else if (asin)'),
+    'none of the Amazon machinery applies, so it must not be the default path')
+  check('and the Amazon branch became an else',
+    /\} else if \(asin\) \{/.test(fl),
+    'left as a separate if, both would run and the second would overwrite the destination')
+
+  check('the destination is the saved share_url', /tp\.share_url as string/.test(fl),
+    'it carries _t and u_code, which is what credits the sale')
+  check('and it goes through the per-product resolver', /resolveProductShopLink\(supabase, ownerId, tp\.share_url/.test(fl),
+    'that is what wraps it for click tracking without rewriting it')
+  // The resolver's RESULT has to be what ships. Keeping the call and throwing
+  // away its return leaves both checks above satisfied and still publishes the
+  // wrong link, which is precisely the attribution-stripping bug.
+  check('and the resolver\'s result is what becomes the link',
+    /affiliateUrl = shop\?\.url \?\? \(tp\.share_url as string\)/.test(fl),
+    'a call whose return is discarded is not a call')
+  check('canonical_url is never a destination', !/affiliateUrl = .*canonical_url/.test(fl),
+    'it exists to re-read the product page and carries none of the share attribution')
+
+  check('a swapped link style is reported', /linkNote: tiktokNote/.test(fl),
+    'a Geniuslink creator silently getting a Passport link is a change they should hear about')
+
+  check('the Associates disclosure is NOT used on a TikTok post',
+    /tiktokProductId\s*\n?\s*\? SHOWCASE_DISCLAIMER/.test(fl),
+    'the post does not earn through Amazon Associates and the Operating Agreement is not a thing to be casually wrong about')
+  check('but the creator\'s own disclaimer still wins',
+    /brand\?\.affiliate_disclaimer as string\) \|\| \(tiktokProductId/.test(fl),
+    'they wrote it, so it is not ours to override')
+
+  check('a product with no link is still researchable',
+    /const target = finalUrl \|\| link \|\| productName/.test(fl),
+    'there is no page to fetch, so without the name the post is written from a title alone and invents the specifics')
+  check('and a saved product alone is enough to start',
+    /!link && !providedName && !tiktokProductId/.test(fl),
+    'the product carries its own name; demanding a link too would block the one path that has everything')
+
+  const UI = readFileSync('components/labs/TikTokShop.tsx', 'utf8')
+  check('the card can start one', /tiktokProductId: p\.product_id/.test(UI))
+  check('and says how long it takes', /takes a couple of minutes/.test(UI),
+    'a silent two-minute wait reads as a hang')
+  check('the spinner is on the product, not the page', /writing === p\.product_id/.test(UI),
+    'a page-wide spinner hides which product is running')
+  check('both notes reach the screen', /j\.note/.test(UI) && /j\.linkNote/.test(UI),
+    'one means the post is live but unrecorded, the other means the link style changed; neither is a failure')
+}
+
 if (failures.length) {
   console.error(`\n❌ tiktok-product: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

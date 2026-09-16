@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, Plus, Trash2, Star, ShoppingBag, ExternalLink, FlaskConical } from 'lucide-react'
+import { Loader2, Plus, Trash2, Star, ShoppingBag, ExternalLink, FlaskConical, PenLine } from 'lucide-react'
 import { toast } from 'sonner'
 
 const muted = { color: 'var(--text-2)' } as const
@@ -54,6 +54,9 @@ export default function TikTokShop() {
   // still readable while they go back to TikTok for a different one.
   const [addError, setAddError] = useState<string | null>(null)
   const [migrationNeeded, setMigrationNeeded] = useState<string | null>(null)
+  // The product currently being written about, so the card shows its own
+  // spinner rather than a page-wide one that hides which product is running.
+  const [writing, setWriting] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -99,6 +102,30 @@ export default function TikTokShop() {
     } catch (e) {
       setAddError(e instanceof Error ? e.message : 'Could not add that product.')
     } finally { setAdding(false) }
+  }
+
+  async function writePost(p: Row) {
+    if (writing) return
+    setWriting(p.product_id)
+    // A blog post takes minutes. Saying so beats a spinner that looks stuck.
+    toast('Writing the post. This takes a couple of minutes, and it publishes to your site when it is done.')
+    try {
+      const r = await fetch('/api/blog/from-link', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tiktokProductId: p.product_id, includeImages: true }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) { toast.error((j.error as string) || 'Could not write that post.', { duration: 10000 }); return }
+      // Two separate things, and both are reported. `note` means the post is
+      // live but MVP did not record it; `linkNote` means the link style was
+      // swapped for this destination. Neither is a failure of the request.
+      if (j.note) toast.warning(j.note as string, { duration: 12000 })
+      if (j.linkNote) toast.message(j.linkNote as string, { duration: 10000 })
+      toast.success('Published. Opening it now.')
+      if (j.url) window.open(j.url as string, '_blank', 'noopener')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not write that post.', { duration: 10000 })
+    } finally { setWriting(null) }
   }
 
   async function remove(id: string, title: string) {
@@ -213,15 +240,24 @@ export default function TikTokShop() {
                     {p.sold_count !== null && <span>{compactCount(p.sold_count)} sold</span>}
                   </div>
                   {p.seller_name && <p className="text-[11px] truncate" style={muted}>Sold by {p.seller_name}</p>}
-                  <div className="flex items-center gap-2 mt-auto pt-2">
-                    <a href={p.share_url} target="_blank" rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] font-medium underline" style={muted}>
-                      <ExternalLink size={11} /> On TikTok
-                    </a>
-                    <button type="button" onClick={() => void remove(p.id, p.title)}
-                      className="ml-auto inline-flex items-center gap-1 text-[11px]" style={muted}>
-                      <Trash2 size={11} /> Remove
+                  <div className="mt-auto pt-2 flex flex-col gap-2">
+                    <button type="button" onClick={() => void writePost(p)} disabled={!!writing}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-60"
+                      style={{ background: '#DC2626' }}>
+                      {writing === p.product_id
+                        ? <><Loader2 size={12} className="animate-spin" /> Writing…</>
+                        : <><PenLine size={12} /> Write a blog post</>}
                     </button>
+                    <div className="flex items-center gap-2">
+                      <a href={p.share_url} target="_blank" rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-medium underline" style={muted}>
+                        <ExternalLink size={11} /> On TikTok
+                      </a>
+                      <button type="button" onClick={() => void remove(p.id, p.title)}
+                        className="ml-auto inline-flex items-center gap-1 text-[11px]" style={muted}>
+                        <Trash2 size={11} /> Remove
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -234,7 +270,7 @@ export default function TikTokShop() {
           // these is the next slice, and a card that looks clickable but is not
           // is worse than a sentence saying so.
           <p className="text-[11px] text-center" style={muted}>
-            Writing a post, pin or blog from one of these lands next. For now this is your product list.
+            A blog post publishes to your connected site with the link pointing at that product. Pins and social posts land next.
           </p>
         )}
       </div>

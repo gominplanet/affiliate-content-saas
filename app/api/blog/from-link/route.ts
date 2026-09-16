@@ -36,7 +36,8 @@ import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
-import { getLinkStyle, resolveShowcaseLink } from '@/lib/link-cloak'
+import { getLinkStyle, resolveShowcaseLink, resolveProductShopLink } from '@/lib/link-cloak'
+import { SHOWCASE_DISCLAIMER } from '@/lib/post-destination'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -117,6 +118,10 @@ export async function POST(req: Request) {
 
   let body: {
     link?: string; productName?: string; angle?: string; category?: string; includeImages?: boolean; siteId?: string
+    /** A saved TikTok Shop product (Labs). When set it is the SUBJECT and the
+     *  DESTINATION, and the Amazon paths below are skipped entirely: there is
+     *  no ASIN, no Associates tag and no price history behind it. */
+    tiktokProductId?: string
     // Product data SCOUT scraped off a non-Amazon store page in the user's own
     // browser (Walmart/Target/etc. block our server scrape). Best-effort grounding.
     scraped?: { title?: string; description?: string; bullets?: string[]; brand?: string | null; price?: string | null; rating?: string | null; imageUrl?: string | null; images?: string[]; sourceUrl?: string }
@@ -125,10 +130,11 @@ export async function POST(req: Request) {
 
   const link = (body.link || '').trim()
   const providedName = (body.productName || '').trim()
+  const tiktokProductId = (body.tiktokProductId || '').trim()
   const angle = (body.angle || '').trim()
   const category = (body.category || '').trim()
   const siteId = body.siteId
-  if (!link && !providedName) {
+  if (!link && !providedName && !tiktokProductId) {
     return NextResponse.json({ error: 'Paste a product link or ASIN — or at least the product name.' }, { status: 400 })
   }
 
@@ -169,8 +175,14 @@ export async function POST(req: Request) {
     .eq('user_id', ownerId)
     .maybeSingle()
   const learnBlock = creatorVoiceBlock(brand)
-  const disclaimer = (brand?.affiliate_disclaimer as string) ||
-    '📌 As an Amazon Associate I earn from qualifying purchases. This post contains affiliate links — I may earn a small commission at no extra cost to you.'
+  // A TikTok Shop post earns through TikTok, so the default line naming Amazon
+  // Associates is simply untrue on it, and the Associates Operating Agreement is
+  // not a thing to be casually wrong about. The material connection still
+  // exists, so a disclosure still ships; it stops naming the wrong programme.
+  // A creator's OWN saved disclaimer still wins, because they wrote it.
+  const disclaimer = (brand?.affiliate_disclaimer as string) || (tiktokProductId
+    ? SHOWCASE_DISCLAIMER
+    : '📌 As an Amazon Associate I earn from qualifying purchases. This post contains affiliate links — I may earn a small commission at no extra cost to you.')
 
   // ── Content preferences — parity with video-to-blog (Brand Profile →
   //    Content). Each section toggle defaults ON (only an explicit false hides
@@ -225,7 +237,51 @@ export async function POST(req: Request) {
   // generated hero is unavailable — so every post still gets a thumbnail.
   let productImageUrl: string | null = null
 
-  if (asin) {
+  // ── 1a. A SAVED TIKTOK SHOP PRODUCT ────────────────────────────────────────
+  //
+  // Placed FIRST and returning its own grounding, because none of the Amazon
+  // machinery below applies: there is no ASIN to geo-route, no Associates tag
+  // to append, and no price history to claim anything about. Everything the
+  // post needs was already read off the product's own page when the creator
+  // added it, so this path does no research call at all.
+  //
+  // The saved share_url is used VERBATIM as the destination. It carries _t and
+  // u_code, which is what credits the sale, and the resolver below wraps it for
+  // click tracking without rewriting it.
+  let tiktokNote: string | null = null
+  if (tiktokProductId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tp } = await (supabase as any)
+      .from('tiktok_products').select('*')
+      .eq('user_id', ownerId).eq('product_id', tiktokProductId).maybeSingle()
+    if (!tp) {
+      return NextResponse.json({
+        error: 'That TikTok product is not in your saved products. Add it under Labs → TikTok Shop, then try again.',
+      }, { status: 404 })
+    }
+    productName = providedName || (tp.title as string)
+    pDescription = (tp.description as string) || ''
+    productImageUrl = (tp.image_url as string) || null
+    // Facts read off the product's own page. Handed to the writer as grounding
+    // so it states what is true instead of inventing specifics from a title,
+    // which is the failure mode that matters most on an affiliate post.
+    const facts = [
+      tp.price ? `Price on TikTok Shop: ${tp.currency_symbol || '$'}${tp.price}` : '',
+      tp.rating ? `Rated ${tp.rating} out of 5${tp.review_count ? ` from ${tp.review_count} reviews` : ''}` : '',
+      tp.sold_count ? `${tp.sold_count} units sold` : '',
+      tp.seller_name ? `Sold by ${tp.seller_name} on TikTok Shop` : '',
+    ].filter(Boolean)
+    bullets = facts
+    const shop = await resolveProductShopLink(supabase, ownerId, tp.share_url as string, flStyle, {
+      label: productName || 'TikTok Shop product', source: 'blog',
+    })
+    affiliateUrl = shop?.url ?? (tp.share_url as string)
+    // A swapped style is reported rather than applied in silence: a creator on
+    // Geniuslink gets a Passport link here and should know why.
+    tiktokNote = shop?.changedFrom
+      ? 'Geniuslink only routes Amazon links, so this post uses a Passport link to your TikTok Shop product instead. Clicks are still counted.'
+      : null
+  } else if (asin) {
     try {
       const p = await fetchAmazonProduct(asin)
       if (p.title) productName = providedName || p.title
@@ -288,7 +344,7 @@ export async function POST(req: Request) {
   // ── 2. Research grounding (web + owner sentiment) — replaces the transcript ──
   let research = ''
   try {
-    const target = finalUrl || link || providedName
+    const target = finalUrl || link || productName || providedName
     if (target) {
       const r = await researchProductFromUrl(target, productName, ctx)
       if (typeof r === 'string') research = r
@@ -628,5 +684,9 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     note: saveErr
       ? 'The post is live on your site, but MVP could not save its record, so it will not appear in your content list or get social pushes. Re-sync your posts from the Content page to pick it up.'
       : null,
+    // A link style we had to swap for this destination. Reported on a SUCCESS,
+    // because the post went out fine and there is still something true to say
+    // about which link is in it.
+    linkNote: tiktokNote,
   })
 }

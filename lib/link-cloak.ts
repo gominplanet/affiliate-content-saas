@@ -345,22 +345,66 @@ export async function resolveShowcaseLink(
   const cfg = config ?? (await getLinkStyle(supabase, userId))
   const sc = showcaseOverrideFor(cfg, opts?.override)
   if (!sc) return null
+  return cloakShopUrl(supabase, userId, cfg, sc.style, sc.url, opts)
+}
+
+/**
+ * The same thing for ONE PRODUCT, given its URL directly.
+ *
+ * The account-level showcase is a single front door set in Brand Profile. A
+ * TikTok Shop product is a different destination per post, and it comes from
+ * the creator's saved products rather than from their settings, so the URL is
+ * passed in instead of read.
+ *
+ * THE URL IS NOT NORMALIZED, EVER. A TikTok product link carries _t and u_code,
+ * and those are what credit the sale to the creator. Tidying the link the way
+ * an Amazon URL gets tidied would strip the attribution off every post and the
+ * loss would only surface in a commission report months later.
+ *
+ * Every rule the showcase destination follows applies here for the same
+ * reasons: Geniuslink only routes Amazon links so the style is swapped, and no
+ * ASIN is ever passed on because Passport would geo-route it to Amazon.
+ */
+export async function resolveProductShopLink(
+  supabase: Db,
+  userId: string,
+  destinationUrl: string,
+  config?: LinkStyleConfig,
+  opts?: { label?: string | null; source?: string | null },
+): Promise<{ url: string; changedFrom: LinkStyle | null } | null> {
+  const dest = (destinationUrl || '').trim()
+  if (!dest) return null
+  const cfg = config ?? (await getLinkStyle(supabase, userId))
+  const swap = styleForShowcase(cfg.style, cfg.style === 'passport' || cfg.style === 'geniuslink')
+  const url = await cloakShopUrl(supabase, userId, cfg, swap.style, dest, opts)
+  return { url: url ?? dest, changedFrom: swap.changedFrom }
+}
+
+/** Shared body, so the account-level and per-product paths cannot drift. */
+async function cloakShopUrl(
+  supabase: Db,
+  userId: string,
+  cfg: LinkStyleConfig,
+  style: LinkStyle,
+  dest: string,
+  opts?: { label?: string | null; source?: string | null },
+): Promise<string | null> {
   try {
-    if (sc.style === 'passport') {
+    if (style === 'passport') {
       const site = await getDefaultSite(supabase, userId)
       const siteId = site && site.id !== 'legacy' ? (site.id as string) : null
       const code = await getOrCreatePassportLink(supabase, userId, siteId, {
-        destinationUrl: sc.url, label: opts?.label ?? null, source: opts?.source ?? 'blog',
+        destinationUrl: dest, label: opts?.label ?? null, source: opts?.source ?? 'blog',
       })
       // A failed mint still returns the shop link: the destination the creator
       // chose is what matters, the click counting is the nice-to-have.
-      return code ? passportLinkUrl(code) : sc.url
+      return code ? passportLinkUrl(code) : dest
     }
-    if (sc.style === 'bitly' && cfg.bitlyToken) {
-      return (await shortenBitly(cfg.bitlyToken, sc.url)) || sc.url
+    if (style === 'bitly' && cfg.bitlyToken) {
+      return (await shortenBitly(cfg.bitlyToken, dest)) || dest
     }
-    return sc.url
+    return dest
   } catch {
-    return sc.url
+    return dest
   }
 }

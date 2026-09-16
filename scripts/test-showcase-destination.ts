@@ -325,11 +325,20 @@ const base = { asin: ASIN, amazonTag: 'gomin-20' }
   }
 
   const CLOAK = readFileSync('lib/link-cloak.ts', 'utf8')
-  check('the helper never passes an ASIN on', !/resolveShowcaseLink[\s\S]{0,1500}?passportLinkForUser\(/.test(CLOAK),
+  // The minting body moved into cloakShopUrl so the account-level showcase and
+  // the per-product TikTok path cannot drift. Both claims below are about that
+  // shared body now, which is why they name it rather than resolveShowcaseLink.
+  check('the shared minting body exists', /async function cloakShopUrl\(/.test(CLOAK),
+    'two copies of this are two chances to geo-route a shop link to Amazon')
+  check('the helper never passes an ASIN on',
+    !/async function cloakShopUrl\([\s\S]{0,1500}?passportLinkForUser\(/.test(CLOAK),
     'passportLinkForUser geo-routes an ASIN to the reader\u2019s local Amazon')
   check('and returns the shop link even when the mint fails',
-    /code \? passportLinkUrl\(code\) : sc\.url/.test(CLOAK),
+    /code \? passportLinkUrl\(code\) : dest/.test(CLOAK),
     'the destination the creator chose matters more than counting the click')
+  check('the per-product path shares that body',
+    /cloakShopUrl\(supabase, userId, cfg, swap\.style, dest/.test(CLOAK),
+    'a TikTok product link must follow every rule the account showcase follows')
 }
 
 // ── the composers show the account's real state ─────────────────────────────
