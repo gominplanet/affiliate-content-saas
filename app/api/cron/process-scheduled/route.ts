@@ -415,7 +415,7 @@ async function publishOne(
   const [postRes, intRes] = await Promise.all([
     admin
       .from('blog_posts')
-      .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,geniuslink_code,geniuslink_blog_url,geniuslink_channel_urls,content,twitter_post_id,threads_post_id,linkedin_post_id,facebook_post_id,bluesky_post_uri,pinterest_pin_id,telegram_message_id,youtube_videos(thumbnail_url,youtube_video_id)')
+      .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,geniuslink_code,geniuslink_blog_url,geniuslink_channel_urls,content,twitter_post_id,threads_post_id,linkedin_post_id,facebook_post_id,bluesky_post_uri,pinterest_pin_id,telegram_message_id,youtube_videos(thumbnail_url,blog_thumbnail_url,youtube_video_id)')
       .eq('id', row.blog_post_id)
       .single(),
     admin
@@ -652,7 +652,10 @@ async function publishOne(
       // above and never allowed to throw, so an unreachable image costs the
       // picture and not the scheduled post.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const xImage = ((post as any).youtube_videos?.thumbnail_url as string | null) || (await fetchOgImage(url)) || null
+      const xImage = ((post as any).youtube_videos?.blog_thumbnail_url as string | null)
+        || ((post as any).youtube_videos?.thumbnail_url as string | null)
+        || (await fetchOgImage(url))
+        || null
       let xMedia = await resolveXMedia({ accessToken: accessToken!, imageUrl: xImage, grantedScopes: twScopes })
       let result
       try {

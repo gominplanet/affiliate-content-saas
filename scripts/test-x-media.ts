@@ -269,6 +269,46 @@ async function liveChecks() {
     'the sync guard documents its own gap: a hostname whose A record points at a private IP')
 }
 
+// ── the picture is the one the CREATOR designed ────────────────────────────
+//
+// The first version put og:image at the top, reasoning that the blog's featured
+// image is what a reader lands on so the tweet should match it. The first live
+// test settled that: the tweet carried a bare product photo on a white
+// background while the post's own row in MVP showed the branded thumbnail the
+// creator had paid a render for. A timeline is a feed. The designed image is
+// the one built to stop a scroll, and og:image is the fallback for a post that
+// has none.
+{
+  // Anchored on the SELECTION BLOCK, not the file. A file-wide indexOf finds
+  // the `fetchOgImage` import on line 13 and declares og:image first on
+  // correct code, which is how the first version of this check failed.
+  const blocks = [
+    ['manual post', post.slice(post.indexOf('const heroUrl ='), post.indexOf('const heroUrl =') + 420)],
+    ['scheduled cron', cron.slice(cron.indexOf('const xImage ='), cron.indexOf('const xImage =') + 420)],
+  ] as const
+  for (const [name, block] of blocks) {
+    check(`${name} has a hero selection block at all`, block.length > 50,
+      'the anchor moved, so the order below is not being checked on anything')
+    const atThumb = block.indexOf('blog_thumbnail_url')
+    const atOg = block.indexOf('fetchOgImage')
+    check(`${name} reads the designed blog hero`, atThumb !== -1,
+      'blog_thumbnail_url is the most specific answer to "what image is this post\'s"')
+    check(`${name} prefers it over og:image`, atThumb !== -1 && atOg !== -1 && atThumb < atOg,
+      'og:image first is what attached a raw product photo on the first live test')
+  }
+  // Reading a column the query never asked for silently yields undefined and
+  // falls through to og:image, which looks exactly like the bug it replaced.
+  check('the manual query selects it',
+    /youtube_videos\(thumbnail_url, blog_thumbnail_url\)/.test(post),
+    'a field not in the select is undefined, and the fallback chain hides that perfectly')
+  check('and so does the cron query',
+    /youtube_videos\(thumbnail_url,blog_thumbnail_url,youtube_video_id\)/.test(cron))
+  // og:image costs a round trip to the creator's blog. On a post that has a
+  // designed thumbnail the answer was never going to be used.
+  check('og:image is only fetched when nothing better exists', /\?\? pick\(await fetchOgImage\(/.test(post),
+    'awaiting it inside an array literal runs it on every post and throws the result away')
+}
+
 // ── all THREE posting paths attach ─────────────────────────────────────────
 //
 // Wiring one and forgetting another is the likeliest regression here, and the

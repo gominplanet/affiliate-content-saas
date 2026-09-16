@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     // on any database that has not run it.
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('*, youtube_videos(thumbnail_url)')
+      .select('*, youtube_videos(thumbnail_url, blog_thumbnail_url)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -226,25 +226,40 @@ Return ONLY the tweet text.`,
 
     // ── 5a. The picture ────────────────────────────────────────────────────
     //
-    // og:image FIRST, because that is literally the image the post shows, and
-    // matching the card a reader would otherwise have got is the whole point.
-    // The other two are fallbacks for a post whose og:image is missing, which
-    // is the exact condition that started this: a creator's X posts had a title
-    // and description and a blank rectangle, because the WordPress post had no
-    // featured image for X to read.
+    // THE DESIGNED THUMBNAIL FIRST. The first version of this put og:image at
+    // the top, reasoning that the blog's featured image is what a reader lands
+    // on, so the tweet should match it. That was wrong in practice: the first
+    // live test attached a bare product photo on a white background, while the
+    // post's own row in MVP showed the branded thumbnail the creator paid a
+    // render for. A timeline is a feed, and the designed image is the one built
+    // to stop a scroll.
+    //
+    // So the order is the creator's own work first and the blog's featured
+    // image as the fallback, which is exactly the old behaviour for any post
+    // that has no designed thumbnail.
+    //
+    //   blog_thumbnail_url  the hero the creator uploaded or designed FOR the
+    //                       blog post. The most specific answer there is.
+    //   thumbnail_url       the video's thumbnail, which is the branded design
+    //                       MVP made. This is the picture on the post's row.
+    //   og:image            whatever fronts the published post.
+    //   hero_source_url     the product photo a link-written post was built
+    //                       from, for posts that have no video at all.
     //
     // resolveXMedia never throws. A post that cannot carry its image still goes
     // out, and comes back with a note saying so.
-    const heroCandidates = [
-      await fetchOgImage(post.wordpress_url as string),
-      (post.youtube_videos as { thumbnail_url?: string } | null)?.thumbnail_url,
-      post.hero_source_url as string | null | undefined,
-    ]
-    const media = await resolveXMedia({
-      accessToken,
-      imageUrl: heroCandidates.find(u => typeof u === 'string' && u.trim()) || null,
-      grantedScopes,
-    })
+    const video = post.youtube_videos as { thumbnail_url?: string | null; blog_thumbnail_url?: string | null } | null
+    const pick = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
+    // og:image is fetched LAST and only if nothing better exists: it costs a
+    // round trip to the creator's blog, and on a post that has a designed
+    // thumbnail the answer was never going to be used.
+    const heroUrl =
+      pick(video?.blog_thumbnail_url)
+      ?? pick(video?.thumbnail_url)
+      ?? pick(await fetchOgImage(post.wordpress_url as string))
+      ?? pick(post.hero_source_url)
+
+    const media = await resolveXMedia({ accessToken, imageUrl: heroUrl, grantedScopes })
 
     let tweet
     try {
