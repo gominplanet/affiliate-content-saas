@@ -1144,6 +1144,27 @@ async function handleGenerate(request: Request) {
     : null
   if (checkpointGen) {
     console.log('[blog/generate] reusing checkpointed generation for job', serviceJobId, '(skipping Opus call)')
+    // ── A POST THIS JOB ALREADY PUBLISHED IS NOT PUBLISHED AGAIN ────────────
+    //
+    // THE BUG THIS EXISTS FOR. A creator found three near-identical posts on
+    // his site on two days running, a minute apart — and MVP's own database
+    // held ONE row for each day. WordPress had three, we had one.
+    //
+    // max_attempts is 3. The checkpoint was written before the WP publish so a
+    // retry would not re-pay for Opus, and NOTHING was written after it. So an
+    // attempt that published successfully and then died on the way home (the
+    // worker's abort, a failed blog_posts insert) was requeued, resumed from
+    // the checkpoint, and created a SECOND post. Three attempts, three posts,
+    // and the single surviving row is why nothing downstream ever noticed.
+    //
+    // existingWpPostId already means "update this post instead of creating
+    // one". It was only ever populated from blog_posts.wordpress_post_id,
+    // which on this path does not exist yet, precisely when it is needed most.
+    const priorWpId = (checkpointGen as { __wpPostId?: unknown }).__wpPostId
+    if (typeof priorWpId === 'number' && priorWpId > 0 && !existingWpPostId) {
+      console.log('[blog/generate] job', serviceJobId, 'already published WP post', priorWpId, '— updating it instead of creating another')
+      existingWpPostId = priorWpId
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     generated = checkpointGen as any
   } else {
@@ -1697,6 +1718,17 @@ async function handleGenerate(request: Request) {
         comment_status: 'closed',
         ping_status: 'closed',
       })
+      // THE MOMENT WordPress accepts it, before anything else can fail. Every
+      // line between here and the blog_posts insert is a chance for this
+      // attempt to die, and without this the retry makes another post.
+      // Merged onto the existing checkpoint so the writer output it already
+      // holds is not lost, which would re-bill the Opus call.
+      if (serviceJobId && wpPost?.id) {
+        await saveJobCheckpoint(createAdminClient(), serviceJobId, {
+          ...(generated as unknown as Record<string, unknown>),
+          __wpPostId: wpPost.id,
+        })
+      }
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : (errToMessage(err) || 'WordPress publish failed')
