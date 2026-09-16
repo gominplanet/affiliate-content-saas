@@ -94,3 +94,33 @@ export function ownershipDisclosure(o: ProductOwnership): string | null {
 export function ownershipVoiceRule(o: ProductOwnership, dealVoiceRules: string): string | null {
   return o === 'not-used' ? dealVoiceRules : null
 }
+
+/** The saved-product shape both writers read. Loose on purpose: it is a DB row. */
+export interface TikTokProductRow {
+  title?: string | null
+  price?: string | null
+  currency_symbol?: string | null
+  rating?: number | string | null
+  review_count?: number | null
+  sold_count?: number | null
+  seller_name?: string | null
+  ownership?: string | null
+}
+
+/**
+ * The facts a post may state about a TikTok product, in one place.
+ *
+ * The blog and the social caption both need them, and if each built its own
+ * list they would drift into saying different things about the same product on
+ * the same day. Everything here was read off the product's own page; nothing is
+ * inferred, and there is deliberately no price HISTORY, because a TikTok
+ * product has one price and no past for it.
+ */
+export function tiktokProductFacts(tp: TikTokProductRow): string[] {
+  return [
+    tp.price ? `Price on TikTok Shop: ${tp.currency_symbol || '$'}${tp.price}` : '',
+    tp.rating ? `Rated ${tp.rating} out of 5${tp.review_count ? ` from ${tp.review_count} reviews` : ''}` : '',
+    tp.sold_count ? `${tp.sold_count} units sold` : '',
+    tp.seller_name ? `Sold by ${tp.seller_name} on TikTok Shop` : '',
+  ].filter(Boolean)
+}

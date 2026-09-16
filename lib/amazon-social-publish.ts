@@ -13,6 +13,7 @@ import { resolveAffiliateLink, finalizeSocialCaption, type PinIntegration } from
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { scrubReviewLanguage } from '@/lib/deal-scrub'
 import { scrubBanned } from '@/lib/scrub'
 import type { Tier } from '@/lib/tier'
 
@@ -39,25 +40,42 @@ export async function writeSocialCaption(opts: {
   productTitle?: string
   productUrl?: string
   asin?: string
+  /** Facts already read off the product page, so the caption states what is
+   *  true instead of inventing it from a title. Used by the TikTok Shop path,
+   *  where there is no Amazon catalogue behind the product. */
+  facts?: string[]
+  /** Whether the creator has actually used this product. Defaults to true,
+   *  which is the Amazon path's long-standing behaviour and the common case.
+   *  False switches the caption out of "I tried this" and into what owners
+   *  report. See lib/product-ownership.ts for why this is a question and not
+   *  a disclaimer. */
+  handsOn?: boolean
 }): Promise<string> {
   const asin = (opts.asin || '').trim().toUpperCase()
   let productTitle = (opts.productTitle || '').trim()
   if (!productTitle && asin) {
     try { productTitle = (await fetchAmazonProduct(asin)).title || '' } catch { /* ignore */ }
   }
+  const handsOn = opts.handsOn !== false
+  const facts = (opts.facts || []).filter(f => typeof f === 'string' && f.trim()).slice(0, 6)
   let body = ''
   try {
     const anthropic = createAnthropicClient()
+    const voice = handsOn ? '' :
+      ' VOICE RULE: the writer has NOT used this product. Never claim personal use — no "I tried", "I tested", "I own", "I bought", "in my experience". Write from what the product is and what owners report.'
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 400,
-      system: 'You write high-CTR social captions for product finds (Instagram/Facebook). Return STRICT JSON {"caption"}. caption ≤ 350 chars, benefit-led and scroll-stopping, then 4–6 relevant NICHE hashtags for discovery (specific to the product category). No price claims, no "cheap", no fake urgency. No markdown, JSON only.',
-      messages: [{ role: 'user', content: `PRODUCT: ${productTitle || opts.productUrl || 'a great find'}\n\nWrite the caption JSON now.` }],
+      system: `You write high-CTR social captions for product finds (Instagram/Facebook). Return STRICT JSON {"caption"}. caption ≤ 350 chars, benefit-led and scroll-stopping, then 4–6 relevant NICHE hashtags for discovery (specific to the product category). No price claims, no "cheap", no fake urgency. No markdown, JSON only.${voice}`,
+      messages: [{ role: 'user', content: `PRODUCT: ${productTitle || opts.productUrl || 'a great find'}${facts.length ? `\n\nKNOWN FACTS (use only these, do not invent others):\n${facts.map(f => `- ${f}`).join('\n')}` : ''}\n\nWrite the caption JSON now.` }],
     })
     recordAnthropicUsage(msg, { userId: opts.userId, tier: opts.tier, feature: 'amazon_social_caption', model: 'claude-haiku-4-5-20251001' })
     const raw = (msg.content[0] as { type: string; text?: string }).text || ''
     const j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as { caption?: string }
-    body = scrubBanned(String(j.caption || '').trim())
+    // The prompt rule is not the guard, same as everywhere else in this
+    // codebase: the rewrite runs over the OUTPUT too.
+    const cleaned = scrubBanned(String(j.caption || '').trim())
+    body = handsOn ? cleaned : scrubReviewLanguage(cleaned)
   } catch { /* fall back */ }
   if (!body) body = productTitle || 'A great find'
   return finalizeSocialCaption(body)

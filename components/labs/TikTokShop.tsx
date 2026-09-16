@@ -13,9 +13,10 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, Plus, Trash2, Star, ShoppingBag, ExternalLink, FlaskConical, PenLine } from 'lucide-react'
+import { Loader2, Plus, Trash2, Star, ShoppingBag, ExternalLink, FlaskConical, PenLine, Share2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { OWNERSHIP_CHOICES, type ProductOwnership } from '@/lib/product-ownership'
+import TikTokSocialPanel from '@/components/labs/TikTokSocialPanel'
 
 const muted = { color: 'var(--text-2)' } as const
 
@@ -60,6 +61,9 @@ export default function TikTokShop() {
   // The product currently being written about, so the card shows its own
   // spinner rather than a page-wide one that hides which product is running.
   const [writing, setWriting] = useState<string | null>(null)
+  // Which product's social panel is open. One at a time: two open panels both
+  // rendering a design is two image bills for one post.
+  const [socialFor, setSocialFor] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -292,6 +296,12 @@ export default function TikTokShop() {
                         ? <><Loader2 size={12} className="animate-spin" /> Writing…</>
                         : <><PenLine size={12} /> Write a blog post</>}
                     </button>
+                    <button type="button"
+                      onClick={() => setSocialFor(socialFor === p.product_id ? null : p.product_id)}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-[12px] font-semibold"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                      <Share2 size={12} /> {socialFor === p.product_id ? 'Hide social post' : 'Post to social'}
+                    </button>
                     <div className="flex items-center gap-2">
                       <a href={p.share_url} target="_blank" rel="noreferrer"
                         className="inline-flex items-center gap-1 text-[11px] font-medium underline" style={muted}>
@@ -303,6 +313,12 @@ export default function TikTokShop() {
                       </button>
                     </div>
                   </div>
+                  {socialFor === p.product_id && (
+                    <TikTokSocialPanel
+                      product={{ product_id: p.product_id, share_url: p.share_url, title: p.title, image_url: p.image_url }}
+                      onClose={() => setSocialFor(null)}
+                    />
+                  )}
                 </div>
               </div>
             ))}
@@ -314,7 +330,7 @@ export default function TikTokShop() {
           // these is the next slice, and a card that looks clickable but is not
           // is worse than a sentence saying so.
           <p className="text-[11px] text-center" style={muted}>
-            A blog post publishes to your connected site with the link pointing at that product. Pins and social posts land next.
+            Every post and pin links straight to that product, with the attribution on your pasted link left untouched.
           </p>
         )}
       </div>

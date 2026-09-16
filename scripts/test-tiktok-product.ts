@@ -43,7 +43,7 @@ import {
 } from '../lib/tiktok-product'
 import {
   normalizeOwnership, ownershipDisclosure, ownershipVoiceRule, hasHandsOn,
-  DEFAULT_OWNERSHIP, OWNERSHIP_CHOICES,
+  DEFAULT_OWNERSHIP, OWNERSHIP_CHOICES, tiktokProductFacts,
 } from '../lib/product-ownership'
 import { scrubReviewLanguage, DEAL_VOICE_RULES } from '../lib/deal-scrub'
 
@@ -442,6 +442,97 @@ const p = parseTikTokProduct(HTML, URL)
   check('and on every card afterwards', /setOwn\(p, e\.target\.value/.test(UI2))
   check('an optimistic change reverts on failure', /ownership: before/.test(UI2),
     'a control that silently keeps the wrong value is worse than a slow one')
+}
+
+// ── a social post about a TikTok product ───────────────────────────────────
+//
+// Every endpoint involved already existed. The work is handing them the right
+// three things, and each one has a way of being quietly wrong:
+//
+//   the design    without the product's own photo as a reference the designer
+//                 invents a plausible WRONG product, which is this path's worst
+//                 failure because the result looks completely fine.
+//   the caption   written from the facts read off the product page, under the
+//                 same hands-on answer the blog obeys. A post that says "I
+//                 tried this" while the blog says otherwise is one product
+//                 contradicting itself on the same day.
+//   the link      the pasted share url verbatim, as an explicit per-post
+//                 override, so it works regardless of the account default.
+{
+  const PANEL = readFileSync('components/labs/TikTokSocialPanel.tsx', 'utf8')
+  const panel = PANEL.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')
+
+  check('all three networks are offered', /facebook:/.test(panel) && /instagram:/.test(panel) && /pinterest:/.test(panel))
+  check('the design uses the product\'s own photo',
+    /customProductImageUrls: \[product\.image_url\]/.test(panel),
+    'without it the designer invents a plausible wrong product and the result looks fine')
+  check('and it is product-only', /noHuman: true/.test(panel),
+    'a face model has nothing to do with a product the creator may not have filmed')
+
+  check('the caption is asked for by saved product id', /tiktokProductId: product\.product_id/.test(panel),
+    'that is what carries the facts and the hands-on answer; a bare title carries neither')
+  check('and it is written WHILE the image renders', /void fetch\('\/api\/amazon\/social-caption'/.test(panel),
+    'a cheap Haiku call serialised behind a slow image call adds a minute for nothing')
+
+  check('the destination is an explicit per-post override',
+    /useShowcase: true,[\s\S]{0,120}?showcaseUrl: product\.share_url/.test(panel),
+    'inheriting the account default would silently publish an Amazon link for a creator who has not set one')
+  check('and it is the PASTED url', !/canonical/.test(panel),
+    '_t and u_code are what credit the sale')
+  check('a post that did not use the showcase says so',
+    /destinationNote/.test(panel) && /geniuslinkNote/.test(panel),
+    'a successful post pointing somewhere the creator did not choose is neither a failure nor a success')
+  check('and the failure is held on screen', /const \[error, setError\]/.test(panel),
+    'a toast is gone before they have finished reacting to it')
+
+  // The caption writer.
+  const ASP = readFileSync('lib/amazon-social-publish.ts', 'utf8')
+  check('the caption writer takes facts', /facts\?: string\[\]/.test(ASP))
+  check('and a hands-on flag', /handsOn\?: boolean/.test(ASP))
+  check('which defaults to TRUE', /const handsOn = opts\.handsOn !== false/.test(ASP),
+    'the Amazon path has always written in the review voice and must be unaffected by this')
+  check('the caption output is scrubbed, not just prompted',
+    /body = handsOn \? cleaned : scrubReviewLanguage\(cleaned\)/.test(ASP),
+    'a prompt rule alone has never held for any other ban in this codebase')
+  check('and the model is told to use only the given facts', /do not invent others/.test(ASP),
+    'a title alone is what produces invented specs')
+
+  const CAP = readFileSync('app/api/amazon/social-caption/route.ts', 'utf8')
+  check('the caption route loads the saved product', /tiktokProductId/.test(CAP))
+  check('scoped to the owner', /\.eq\('user_id', user\.id\)\.eq\('product_id', tiktokProductId\)/.test(CAP))
+  check('an unknown product is refused', /not in your saved products/.test(CAP),
+    'falling through would write a caption with no facts and no hands-on answer')
+}
+
+// ── one product cannot contradict itself ───────────────────────────────────
+//
+// The blog and the caption both state the price, rating, review count, units
+// sold and seller. Built separately they would drift, and the drift would show
+// up as two posts about the same product disagreeing on the same day.
+{
+  const row = {
+    title: 'A thing', price: '279.99', currency_symbol: '$',
+    rating: 4.7, review_count: 277, sold_count: 2883, seller_name: 'ENYAMUSICOfficialFlagship',
+  }
+  const f = tiktokProductFacts(row)
+  check('the facts builder states the price', f.some(x => x.includes('$279.99')), f.join(' | '))
+  check('the rating with its review count', f.some(x => /4\.7 out of 5 from 277 reviews/.test(x)))
+  check('the units sold', f.some(x => /2883 units sold/.test(x)))
+  check('and the seller', f.some(x => /ENYAMUSICOfficialFlagship/.test(x)))
+  check('a missing field is omitted, not guessed',
+    tiktokProductFacts({ title: 'A thing' }).length === 0,
+    'an empty price rendered as "$" or a null rating as "null out of 5" is worse than silence')
+  check('NO price history is ever stated', !f.some(x => /lowest|was |drop|history/i.test(x)),
+    'a TikTok product has one price and no past for it')
+
+  const FL4 = readFileSync('app/api/blog/from-link/route.ts', 'utf8')
+  check('the blog uses the shared builder', /bullets = tiktokProductFacts\(tp\)/.test(FL4),
+    'its own copy of this list is how the two surfaces drift apart')
+  const CAP2 = readFileSync('app/api/amazon/social-caption/route.ts', 'utf8')
+  check('and so does the caption', /facts = tiktokProductFacts\(tp\)/.test(CAP2))
+  check('both read ownership through the same helper',
+    /hasHandsOn\(normalizeOwnership/.test(CAP2) && /normalizeOwnership\(tp\.ownership/.test(FL4),
+    'two readings of one column is how a caption claims hands-on time the blog just disclaimed')
 }
 
 if (failures.length) {

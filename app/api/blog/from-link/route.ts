@@ -39,7 +39,7 @@ import { passportLinkForUser } from '@/lib/passport-links'
 import { getLinkStyle, resolveShowcaseLink, resolveProductShopLink } from '@/lib/link-cloak'
 import { SHOWCASE_DISCLAIMER } from '@/lib/post-destination'
 import { upgradeTikTokImage } from '@/lib/tiktok-product'
-import { normalizeOwnership, ownershipDisclosure, ownershipVoiceRule, hasHandsOn } from '@/lib/product-ownership'
+import { normalizeOwnership, ownershipDisclosure, ownershipVoiceRule, hasHandsOn, tiktokProductFacts } from '@/lib/product-ownership'
 import { DEAL_VOICE_RULES, scrubReviewLanguage } from '@/lib/deal-scrub'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
@@ -274,13 +274,9 @@ export async function POST(req: Request) {
     // Facts read off the product's own page. Handed to the writer as grounding
     // so it states what is true instead of inventing specifics from a title,
     // which is the failure mode that matters most on an affiliate post.
-    const facts = [
-      tp.price ? `Price on TikTok Shop: ${tp.currency_symbol || '$'}${tp.price}` : '',
-      tp.rating ? `Rated ${tp.rating} out of 5${tp.review_count ? ` from ${tp.review_count} reviews` : ''}` : '',
-      tp.sold_count ? `${tp.sold_count} units sold` : '',
-      tp.seller_name ? `Sold by ${tp.seller_name} on TikTok Shop` : '',
-    ].filter(Boolean)
-    bullets = facts
+    // Shared with the social caption. Two copies of this list would drift into
+    // saying different things about the same product on the same day.
+    bullets = tiktokProductFacts(tp)
     const shop = await resolveProductShopLink(supabase, ownerId, tp.share_url as string, flStyle, {
       label: productName || 'TikTok Shop product', source: 'blog',
     })
