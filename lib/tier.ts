@@ -7,20 +7,21 @@
 //     metadata" as a bundle that burns 1 unit; postsPerMonth /
 //     thumbnailsPerMonth read the same cap.
 //     True atomic shared counter is a follow-up RPC (see follow-up task).
-//   - metadataGensPerMonth is a SEPARATE, higher allowance (Creator 75, Studio 100,
-//     Pro 250, 2026-08): Co-Pilot re-titling is ~35× cheaper than a post and back-catalog
+//   - metadataGensPerMonth is a SEPARATE, higher allowance (see the field on each
+//     tier): Co-Pilot re-titling is ~35× cheaper than a post and back-catalog
 //     cleanup is a first-months behaviour. Enforced in /api/youtube/generate-metadata
 //     via checkUsageCap(PRIMARY_FEATURE.metadata) — its own bucket, never the
 //     post/thumbnail quota.
-//   - Scripts open to Creator (10/mo), Studio (30/mo), Pro (150/mo).
+//   - Scripts open to Creator and above; the cap is `scriptsPerMonth` per tier.
 //   - Face models: LoRA training was retired 2026-05-22 — the Art Director now
 //     uses the uploaded selfies directly (gpt-image). Faces are capped by
 //     maxFaces (1/1/2/3), NOT a train-job cap. (faceTrainJobs removed.)
 //   - Deals: a deal is a content piece drawn from the shared postsPerMonth pool
 //     for tiers that have one (Creator/Studio/Pro). Amazon has no blog pool, so
-//     it uses its own dealsPerMonth (60) via checkDealsUsage. dealsPerMonth is
+//     it uses its own dealsPerMonth via checkDealsUsage. dealsPerMonth is
 //     null for the shared-pool tiers so it never advertises a cap that isn't real.
-//   - IG AI thumbnails opens to Studio (30/mo, was Pro-only).
+//   - IG AI thumbnails opens to Studio (was Pro-only); cap is
+//     `instagramAiThumbnailsPerMonth`.
 //   - Topic hubs / Refresh images go to Studio+.
 //   - Comparison posts / Buying guides / Rebuild-from-video → Pro-only.
 //   - Newsletter access opens to Creator (taster: 500 subs, 1 send/mo);
@@ -279,27 +280,40 @@ export const TIERS = {
      *  So the caps are per-feature PROMISES and this is a global backstop for a
      *  runaway. The number that matters: a creator genuinely shipping 100 videos
      *  a month (200 thumbnails, 300 social designs) costs about $42 and never
-     *  comes near it. */
+     *  comes near it. Those two are an example WORKLOAD, not the caps; the caps
+     *  are the literals on each field below. */
     monthlyAiSpendCeilingUsd: 75 as number | null,
     /** No blog, and `sites: 0` below is why. Thumbnails have their own cap. */
     postsPerMonth: 0,
     lifetimeMax: null as number | null,
     /** Creator Connections collabs — storefront creators land brand deals. */
     collabsPerMonth: 60 as number | null,
-    /** The headline feature: 400 Art Director thumbnails / mo (medium quality).
-     *  Raised 200 -> 400 on 2026-09-14. At 2 designs per video that carries 200
-     *  videos a month, which is the leeway a creator doing 100 needs in order
-     *  not to ration. */
+    /** The headline feature: Art Director thumbnails at medium quality.
+     *
+     *  Raised from 200 on 2026-09-14. At 2 designs per video this carries 125
+     *  videos a month, which is the leeway a creator shipping daily needs in
+     *  order not to ration.
+     *
+     *  NO CAP NUMBER IN THIS COMMENT, deliberately. It used to name a figure
+     *  well above the literal below it and describe a raise to that figure,
+     *  so the intended change and the applied one had drifted apart and the
+     *  prose was the more confident of the two. The value below is the only
+     *  answer, the pricing page reads it, and scripts/test-sales-page-facts
+     *  holds that page to reading it. */
     thumbnailsPerMonth: 250 as number | null,
     /** Social Influencer design caps. Each is its own format-correct render
      *  (a pin is not a cropped FB post), but a batch that pushes one product to
      *  several networks shares the art-director brief, so secondary formats cost
      *  ~$0.06 not $0.08. Publishing + captions on top are free.
      *
-     *  Raised 2026-09-14 (pins 150 -> 200, IG 100 -> 200, FB 40 -> 150) under
-     *  the new cap policy above. Facebook was the binding wall: at 40 it stopped
-     *  a creator pushing one video a day on 9 February, on a plan sold to people
-     *  who ship daily. */
+     *  Raised on 2026-09-14 under the new cap policy above, from pins 150,
+     *  IG 100 and FB 40. Facebook was the binding wall: at 40 it stopped a
+     *  creator pushing one video a day partway through the month, on a plan
+     *  sold to people who ship daily.
+     *
+     *  The NEW numbers are deliberately not repeated here either. This comment
+     *  used to claim three figures that none of the three literals below
+     *  matched, describing a plan nobody was on. Read the three lines. */
     pinsPerMonth: 150 as number | null,
     igPostsPerMonth: 150 as number | null,
     facebookPostsPerMonth: 120 as number | null,
@@ -1004,9 +1018,8 @@ export async function checkUsageLimit(
 /**
  * Video Script & Shot List monthly cap. Counts rows in `video_scripts` for
  * this user since the 1st of the current UTC month, against the tier's
- * `scriptsPerMonth`. Creator+ tiers all have access now (Creator 10/mo,
- * Studio 30/mo, Pro 150/mo) — trial returns "feature off" since trial is
- * onboarding-only.
+ * `scriptsPerMonth`. Creator+ tiers all have access now — trial returns
+ * "feature off" since trial is onboarding-only.
  *
  * Returns the current count + cap on success too, so the page can render a
  * "X of 30 used this month" meter without a second query.
@@ -1077,7 +1090,8 @@ export async function checkScriptUsage(
 /**
  * Deals Hub monthly cap. Counts rows in `blog_posts` where post_type='deal'
  * (or deal_meta IS NOT NULL) since the start of the user's billing window.
- * Studio 5/mo, Pro 30/mo. Creator + Trial return "feature off" → upsell.
+ * The cap is `dealsPerMonth`, which is null on the shared-pool tiers because a
+ * deal comes out of postsPerMonth there. Creator + Trial return "feature off".
  */
 export async function checkDealsUsage(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createServerClient>>,
