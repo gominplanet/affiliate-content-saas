@@ -747,7 +747,7 @@ export default function DashboardShellV2({
   // Section label → the tier that unlocks it. Shown as a pill (amazon view only)
   // on sections this plan can't use. 'Create' is the blog/YouTube content area,
   // which the Amazon Influencer plan intentionally excludes.
-  const AMAZON_LOCKED_SECTION: Record<string, string> = { Create: 'Creator+' }
+  const AMAZON_LOCKED_SECTION: Record<string, string> = { Create: 'Pro' }
   // Amazon view: the orange hub holds ALL the plan's tools, sub-grouped (Create
   // / Find & earn / Your brand / Account & help). Everything the Amazon plan
   // includes lives here; the rest of MVP still renders below (with the walled

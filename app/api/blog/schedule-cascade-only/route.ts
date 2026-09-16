@@ -111,7 +111,7 @@ export async function POST(request: Request) {
               {
                 error:
                   `Cascade-only schedule cap reached: ${distinctIds.size}/${cap} posts this month on ${tier}. ` +
-                  `Upgrade Creator or higher to lift the cap.`,
+                  `Upgrade to Pro to lift the cap.`,
                 limitReached: true,
                 cap: 'cascade-only-schedules',
                 currentTier: tier,

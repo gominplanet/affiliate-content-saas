@@ -322,7 +322,7 @@ export default function PricingPage() {
                 publishes them, and opens the door to paid brand deals. Here is exactly what you get.
               </p>
               <p className="mt-3 text-[13px] font-medium rounded-lg px-3 py-2 inline-block" style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}>
-                Already on Studio or Pro? This whole toolkit is already included in your plan, on top of the blog + YouTube engine.
+                Already on Pro? This whole toolkit is already included in your plan, on top of the blog + YouTube engine.
               </p>
             </div>
             <div className="w-full max-w-lg rounded-2xl px-6 py-6 flex flex-col items-center"

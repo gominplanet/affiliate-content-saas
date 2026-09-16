@@ -170,7 +170,7 @@ export async function POST(request: Request) {
     // monthly cap; admin is unlimited (null limit).
     if (usage.limit === 0) {
       return NextResponse.json({
-        error: 'Photobooth is available on paid plans. Upgrade to Creator or Pro to generate headshots.',
+        error: 'Photobooth is available on the Amazon and Pro plans. Upgrade to generate headshots.',
         limitReached: true, cap: 'photobooth', currentTier: tier,
         upgrade: { tier: 'creator', label: TIERS.creator.label, limit: TIERS.creator.photoboothPerMonth },
       }, { status: 403 })

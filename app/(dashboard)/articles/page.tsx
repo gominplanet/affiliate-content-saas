@@ -290,7 +290,7 @@ export default function ArticlesPage() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Articles</h1>
               <p className="text-sm mt-2" style={{ color: 'var(--text-2)' }}>
-                Articles is a Creator, Studio and Pro feature. Upgrade to publish researched
+                Articles is a Pro feature. Upgrade to publish researched
                 informational articles alongside your reviews.
               </p>
             </div>

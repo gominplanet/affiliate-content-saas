@@ -268,7 +268,7 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
               <summary className="cursor-pointer text-[#7C3AED] font-medium">How it works</summary>
               <ul className="space-y-1.5 leading-relaxed mt-2">
                 <li>• Turns your next un-blogged YouTube video into a full post (hero + in-article images).</li>
-                <li>• Posts on the schedule above (up to one a day), from your monthly post allowance. Every day suits Studio and Pro; on Creator, pick a lighter cadence so it lasts the month.</li>
+                <li>• Posts on the schedule above (up to one a day), from your monthly post allowance. Every day fits the Pro allowance. On a smaller one, pick a lighter cadence so it lasts the month.</li>
                 <li>• Blog only by default. Turn on socials above to auto-post as each post goes live.</li>
                 <li>• Out of monthly allowance? It pauses, emails you, and resumes next cycle. Want more sooner? Generate posts manually.</li>
               </ul>

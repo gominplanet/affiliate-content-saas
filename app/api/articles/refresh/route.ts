@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     // Same entitlement as writing an article: Creator, Studio and Pro (and admin).
     // Trial + Amazon (articlesPerMonth 0) can't refresh either.
     if (TIERS[tier].articlesPerMonth === 0) {
-      return NextResponse.json({ error: 'Articles is a Creator, Studio and Pro feature.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
+      return NextResponse.json({ error: 'Articles is a Pro feature.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
     }
     const gate = await spendGate(user.id, tier)
     if (gate) return gate

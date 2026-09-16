@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     // so usage gets attributed correctly.
     if (tier === 'trial') {
       return NextResponse.json(
-        { error: 'Upgrade to Creator or higher to scan your archive for title hallucinations.' },
+        { error: 'Upgrade to Pro to scan your archive for title hallucinations.' },
         { status: 403 },
       )
     }

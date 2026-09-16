@@ -73,26 +73,38 @@ const row = (label: string) => rows.find(r => r.label === label)
     }
   }
 
-  const deals = row('Brand deals (Creator Connections)')
-  check('the brand-deal row matches the plan',
-    deals!.amazon.includes(String(A.collabsPerMonth)),
-    `${deals!.amazon} vs plan ${A.collabsPerMonth}`)
+  // Renamed from "Brand deals (Creator Connections)". That label put the cap
+  // on the wrong feature: messaging brands through Creator Connections is
+  // uncapped, and this number is the separate Brand Deals email writer.
+  const deals = row('Brand pitches drafted for you')
+  check('the brand-pitch row exists', !!deals, 'the label moved; this check is measuring nothing')
+  check('the brand-pitch row matches the plan',
+    !!deals && deals.amazon.includes(String(A.collabsPerMonth)),
+    `${deals?.amazon} vs plan ${A.collabsPerMonth}`)
+  const msg = row('Messaging brands on Creator Connections')
+  check('and messaging is stated as uncapped on both',
+    !!msg && /unlimited/i.test(msg.amazon) && /unlimited/i.test(msg.ladder),
+    'a number here is what made people read a limit into outreach that has none')
 
   const face = row('Your face on the designs')
   check('the face row matches the plan',
     face!.amazon.includes(String(A.maxFaces)) && face!.amazon.includes(String(A.photoboothPerMonth)),
     `${face!.amazon} vs plan ${A.maxFaces}/${A.photoboothPerMonth}`)
 
+  // THE SELLABLE PLANS ONLY. This used to require all four prices, which meant
+  // the table could not stop naming Creator and Studio without failing here:
+  // the guard was holding the page to advertising two plans checkout refuses.
   const price = row('Price')
-  check('every price comes from the plan config',
-    [TIERS.amazon.price, TIERS.creator.price, TIERS.studio.price, TIERS.pro.price]
-      .every(p => `${price!.amazon} ${price!.ladder}`.includes(`$${p}`)),
+  check('every price comes from a sellable plan',
+    SELLABLE_TIERS.every(t => `${price!.amazon} ${price!.ladder}`.includes(`$${TIERS[t].price}`)),
     `${price!.amazon} | ${price!.ladder}`)
+  check('and no frozen plan is priced here',
+    !`${price!.amazon} ${price!.ladder}`.includes(`$${TIERS.creator.price}`),
+    'Creator is $49 and unbuyable; Studio shares Amazon\'s $99 so only this one is checkable')
 
   const posts = row('Blog posts')
-  check('the ladder\'s post counts come from the plan config',
-    [TIERS.creator.postsPerMonth, TIERS.studio.postsPerMonth, TIERS.pro.postsPerMonth]
-      .every(v => posts!.ladder.includes(String(v))),
+  check('the ladder\'s post count comes from the plan config',
+    posts!.ladder.includes(String(TIERS.pro.postsPerMonth)),
     posts!.ladder)
 }
 
@@ -112,9 +124,16 @@ const row = (label: string) => rows.find(r => r.label === label)
   check('and no channel', TIERS.amazon.youtubeChannels === 0)
   check('and the row says nothing to connect',
     /nothing to connect/i.test(needs!.amazon), needs!.amazon)
-  check('while the ladder row names both',
-    /wordpress/i.test(needs!.ladder) && /youtube/i.test(needs!.ladder), needs!.ladder)
-  check('the ladder really does need a site', TIERS.creator.sites > 0 && TIERS.creator.youtubeChannels > 0)
+  // It used to require the ladder row to name WordPress AND YouTube, which held
+  // the page to "you need a site and a channel to start". MVP installs
+  // WordPress, so that was a barrier the product does not have, stated to
+  // exactly the people it would turn away.
+  check('while the ladder row names the site',
+    /wordpress/i.test(needs!.ladder), needs!.ladder)
+  check('and offers to build one rather than demanding it',
+    /build|set (one )?up|install/i.test(needs!.ladder),
+    'requiring an existing site is the barrier; being able to make one is the offer')
+  check('the ladder plan really does publish to a site', TIERS.pro.sites > 0)
 
   const publishes = row('Publishes to')
   check('the Amazon plan publishes to exactly three networks', TIERS.amazon.socials.length === 3,

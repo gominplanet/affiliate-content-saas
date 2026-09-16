@@ -269,7 +269,7 @@ export default function ScriptPage() {
           'Subject-only shot list (no over-direction)',
           'Hands-On + Long-Term include an auto vertical-short cutdown (TikTok / Reels / Shorts)',
           'Grounded in real scraped product info — no hallucinated specs',
-          'Creator: 10/mo · Studio: 30/mo · Pro: 150/mo',
+          'Pro: 120 scripts a month',
         ]}
         requiredTier="creator"
         currentTier={previewTier}

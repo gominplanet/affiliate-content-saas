@@ -568,8 +568,6 @@ export default function NewsletterPage() {
           'Compose issues with a live preview + auto-pulled review picks',
           'CAN-SPAM compliant (mailing address footer + 1-click unsubscribe)',
           'Sender domain verify + DKIM for inbox-first deliverability',
-          'Creator: 500 subs, 1 send/mo (taster)',
-          'Studio: 5,000 subs, weekly sends + scheduling',
           'Pro: 10,000 subs, weekly sends + A/B subject lines + segmented sends',
         ]}
         requiredTier="creator"

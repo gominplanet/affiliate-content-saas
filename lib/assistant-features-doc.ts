@@ -176,7 +176,7 @@ post with a verdict box, sortable spec table, pros/cons per product, and
 ### Buying Guides
 URL: /buying-guides · Sidebar: Create → Buying Guides
 Generate a topic-based guide ("Best Wireless Vacuums for Pet Hair").
-Creator+ can use this — minimal but visible buying-guide template.
+Pro can use this — minimal but visible buying-guide template.
 
 ### Deal Posts
 URL: /deals · Sidebar: Create → Deals Hub
@@ -216,12 +216,10 @@ formats them for email.
   sending.
 - **A/B subject lines** — two subjects, split-test, winner sends to the
   rest. Pro-only.
-- **Scheduling** — schedule a broadcast for a future time. Studio + Pro.
+- **Scheduling** — schedule a broadcast for a future time. Pro.
 
 ### Tier caps for newsletter (current)
 - Trial: locked (FeatureLockedCard shown)
-- Creator: 500 subscribers / 1 broadcast per month
-- Studio: 5,000 subs / 4 sends per month
 - Pro: 10,000 subs / 8 sends per month
 
 ### Legacy Creator grandfathering
@@ -311,8 +309,8 @@ owns the channel. Grants read access to private/draft videos +
 write access to push generated metadata back.
 
 ### Other platforms (varies by tier)
-- LinkedIn, Bluesky, Pinterest, Facebook, Threads — Creator+
-- Instagram, Telegram — Studio+
+- LinkedIn, Bluesky, Threads — Pro. Pinterest, Facebook — Amazon and Pro
+- Instagram — Amazon and Pro. Telegram — Pro
 - Twitter/X, TikTok — Pro
 - (Some platforms are still in app-review phase with their respective
   providers; those show "Coming soon" badges.)
@@ -509,7 +507,7 @@ When on, a daily job publishes ONE post from your next un-blogged YouTube
 video, on a schedule you choose: every day, every other day, or specific days
 (3x / 2x / 1x a week). You can also have it auto-post to the socials you pick
 as each post goes live. One post a day is the max on EVERY plan — if you want
-more, generate them manually. Every day suits Studio and Pro; on Creator, pick
+more, generate them manually. Every day fits the Pro allowance; on a smaller one, pick
 a lighter cadence so it lasts the month. If you hit your monthly post
 allowance it pauses, emails you, and resumes next billing cycle. When it's on,
 the button turns purple and says it's ON.
@@ -731,7 +729,7 @@ Then use them on /newsletter/compose → "Send to a segment only" → Tags.
 /billing. Stripe checkout. Tier updates immediately on webhook.
 
 **"Can I connect more than one WordPress site?"** — Yes on Pro (up to 5).
-On Creator/Studio: 1 site. Add via the manager view at /setup.
+On Amazon: no site. Add via the manager view at /setup.
 
 **"How does affiliate link routing work?"** — On /brand → Affiliate Link
 Routing. Geniuslink (preferred — geo-targets shoppers to their local

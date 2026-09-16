@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     const tier = (tierRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'bluesky')) {
       return NextResponse.json(
-        { error: 'Bluesky auto-publish is a Creator plan feature. Upgrade to Creator or Pro to post to Bluesky.' },
+        { error: 'Bluesky auto-publish is on the Pro plan. Upgrade to Pro to post to Bluesky.' },
         { status: 403 },
       )
     }

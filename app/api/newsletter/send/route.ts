@@ -158,7 +158,7 @@ export async function POST(req: Request) {
   // subject_b / segment_filter and bypass.
   if (body.scheduled_at && !tierHas(tier, 'newsletterScheduling')) {
     return NextResponse.json({
-      error: 'Scheduling broadcasts is a Studio + Pro feature.',
+      error: 'Scheduling broadcasts is a Pro feature.',
       code: 'tier_not_allowed_scheduling',
     }, { status: 403 })
   }

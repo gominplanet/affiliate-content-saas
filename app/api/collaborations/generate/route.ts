@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       // it and did not pay" stop looking identical. See lib/paywall-signal.ts.
       reportPaywallReached({ userId: user.id, email: user.email, surface: 'brand-pitch', tier })
       return NextResponse.json({
-        error: 'Brand-collab pitch emails are a paid-tier feature. Upgrade to Creator+ to start landing deals.',
+        error: 'Brand-collab pitch emails are a paid feature. Upgrade to Amazon or Pro to start landing deals.',
         currentTier: tier,
         code: 'tier_not_allowed',
       }, { status: 403 })

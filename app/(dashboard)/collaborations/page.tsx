@@ -273,7 +273,7 @@ export default function CollaborationsPage() {
           'Pulls your cross-platform reach automatically (no manual stats lookup)',
           'Editable subject line + email body — copy and send from your own inbox',
           'Track which brands you pitched, when, and the outcome',
-          'Creator: 5 pitches / month · Studio: 15 / month · Pro: 100 / month',
+          'Amazon: 60 drafted pitches / month · Pro: 100 / month (messaging brands is unlimited on both)',
         ]}
         requiredTier="creator"
         currentTier={tier}

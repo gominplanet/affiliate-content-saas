@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   // and burn FAL credits even though /seo and Library UIs hide the button.)
   if (!tierHas(tier, 'refreshImages')) {
     return NextResponse.json({
-      error: 'Refresh Images is a Studio + Pro feature. Upgrade to re-render the photos on any of your published posts.',
+      error: 'Refresh Images is a Pro feature. Upgrade to re-render the photos on any of your published posts.',
       code: 'tier_not_allowed',
     }, { status: 403 })
   }

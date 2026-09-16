@@ -102,7 +102,7 @@ export async function POST(request: Request) {
   const link = rawLink || undefined
   const tier = (ig?.tier as Tier) ?? 'trial'
   if (!tierAllowsSocial(tier, 'pinterest')) {
-    return NextResponse.json({ error: 'Pinterest is a Studio plan feature.' }, { status: 403 })
+    return NextResponse.json({ error: 'Pinterest is on the Amazon and Pro plans.' }, { status: 403 })
   }
   if (!ig?.pinterest_access_token) {
     return NextResponse.json({ error: "Pinterest isn't connected. Connect it in Integrations first.", reconnectRequired: true }, { status: 412 })

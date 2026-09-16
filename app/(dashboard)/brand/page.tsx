@@ -421,7 +421,7 @@ export default function BrandPage() {
   async function selectLinkStyle(style: 'passport' | 'geniuslink' | 'bitly' | 'direct') {
     if (passportSaving) return
     if (style === 'passport') {
-      if (!passportCanUse) { toast.info('Passport Links is on the Amazon, Studio, and Pro plans.'); return }
+      if (!passportCanUse) { toast.info('Passport Links is on the Amazon and Pro plans.'); return }
       if (passportEnabled) return
       setPassportEnabled(true); setPassportSaving(true) // optimistic
       try {

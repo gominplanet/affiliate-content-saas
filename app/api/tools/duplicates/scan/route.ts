@@ -77,7 +77,7 @@ export async function POST() {
       .from('integrations').select('tier').eq('user_id', ownerId).maybeSingle()
     const tier = normalizeTier((tierRow?.tier as Tier) ?? 'trial')
     if (tier === 'trial') {
-      return NextResponse.json({ error: 'Upgrade to Creator or higher to scan for duplicate posts.' }, { status: 403 })
+      return NextResponse.json({ error: 'Upgrade to Pro to scan for duplicate posts.' }, { status: 403 })
     }
 
     // ── MVP's own records — used to ENRICH the live WP posts (indexed state,

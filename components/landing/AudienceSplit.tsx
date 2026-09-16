@@ -78,7 +78,7 @@ const PANELS: Panel[] = [
       { icon: <Youtube size={16} />, text: 'YouTube video → blog, thumbnails, scripts & social posts' },
       { icon: <Scale size={16} />, text: 'Comparison posts & buying guides that win search' },
       { icon: <Mail size={16} />, text: 'Your own newsletter, with scheduling & segments' },
-      { icon: <Store size={16} />, text: 'Auto-post to 9+ networks, plus the full Amazon storefront toolkit on Studio & Pro' },
+      { icon: <Store size={16} />, text: 'Auto-post to 9+ networks, plus the full Amazon storefront toolkit' },
     ],
   },
 ]

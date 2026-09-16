@@ -403,39 +403,25 @@ function PricingSection() {
           </a>
         </div>
 
-        {/* 3-tier grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
+        {/* THE COLUMN COUNT FOLLOWS THE PLANS, and the row narrows with it.
+            This was lg:grid-cols-3 from when three plans were sold. The array
+            above already says TWO PLANS in its own comment, so two cards landed
+            in a three-column row and the empty third column read as a tier that
+            had failed to load. Widening the pair also buys each card the room
+            to carry more detail, which is the point of having only two. */}
+        <div className={`grid gap-4 lg:gap-5 mx-auto ${LANDING_PLAN_GRID[PRICING_TIERS.length] ?? LANDING_PLAN_GRID[3]}`}>
           {PRICING_TIERS.map(tier => (
             <PricingCard key={tier.name} tier={tier} />
           ))}
         </div>
 
-        {/* Amazon Influencer — a DIFFERENT track (no blog, no YouTube). Own band
-            below the blog ladder so storefront creators see there's a plan built
-            for them without hunting on a second page. Orange to match its hub. */}
-        <a
-          href="/amazon-influencer"
-          className="group mt-5 rounded-2xl border p-6 sm:p-7 flex flex-col lg:flex-row lg:items-center gap-5 transition-all hover:-translate-y-0.5"
-          style={{ borderColor: 'rgba(234,88,12,0.35)', background: 'linear-gradient(180deg, rgba(234,88,12,0.10), rgba(234,88,12,0.03))' }}
-        >
-          <div className="flex items-center gap-3 lg:w-[32%]">
-            <span className="w-11 h-11 rounded-xl grid place-items-center flex-shrink-0 text-white" style={{ backgroundColor: '#C2410C' }}><ShoppingBag size={20} /></span>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: '#C2410C' }}>Amazon Associates & Influencers</p>
-              <p className="text-[19px] font-extrabold" style={{ color: 'var(--text)' }}>No blog? No YouTube? Start here.</p>
-            </div>
-          </div>
-          <p className="text-[13.5px] leading-relaxed lg:flex-1" style={{ color: 'var(--text-soft)' }}>
-            Incredible Amazon video-review thumbnails in one click, ready-to-post pins, Reels & Facebook
-            designs with your face on them, and paid brand deals. <span style={{ color: 'var(--text)' }}>From ${TIERS.amazon.price}/mo.</span>
-          </p>
-          <span className="inline-flex items-center gap-1.5 px-5 py-3 rounded-xl text-[13.5px] font-semibold text-white whitespace-nowrap transition-all group-hover:gap-2.5" style={{ backgroundColor: '#C2410C' }}>
-            See the Amazon plan <ArrowRight size={14} />
-          </span>
-        </a>
-        <p className="mt-3 text-center text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
-          Already on <span className="font-semibold" style={{ color: 'var(--text)' }}>Studio</span> or <span className="font-semibold" style={{ color: 'var(--text)' }}>Pro</span>? The full Amazon toolkit is already in your plan, on top of the blog + YouTube engine. This plan is for storefront creators who don’t want the website side.
-        </p>
+        {/* The Amazon band that used to sit here is gone. It pitched "No blog?
+            No YouTube? Start here." and linked to /amazon-influencer, which
+            made sense while the cards above were the blog ladder only. Amazon
+            is one of the two cards now, so the band re-sold a plan the reader
+            had just been shown and made the section look like it had a
+            leftover. Its footnote went with it: it named Studio, a frozen tier
+            nobody can buy. */}
 
         {/* Link to the full pricing page (bundle math + free-research breakdown). */}
         <div className="mt-6 text-center">
@@ -492,6 +478,15 @@ interface PricingTier {
 // Studio and Pro lead with "Everything in <lower>, plus:" then their net-new
 // unlocks — so every capability in the product is represented across the three
 // cards without a wall of repeated text.
+/** Grid classes per plan count, written out in full because Tailwind scans for
+ *  literal class names. The max-width tightens as the count drops so two cards
+ *  sit as a centred pair rather than as three with one missing. */
+const LANDING_PLAN_GRID: Record<number, string> = {
+  1: 'grid-cols-1 max-w-md',
+  2: 'grid-cols-1 lg:grid-cols-2 max-w-4xl',
+  3: 'grid-cols-1 lg:grid-cols-3 max-w-6xl',
+}
+
 const PRICING_TIERS: PricingTier[] = [
   // TWO PLANS (2026-09-15). Creator and Studio are frozen legacy tiers — five
   // existing subscribers keep them, nobody new can buy one, and they are no

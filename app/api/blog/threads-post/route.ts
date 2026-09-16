@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const tier = (tierRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'threads')) {
       return NextResponse.json(
-        { error: 'Threads auto-publish is a Creator plan feature. Upgrade to Creator or Pro to post to Threads.' },
+        { error: 'Threads auto-publish is on the Pro plan. Upgrade to Pro to post to Threads.' },
         { status: 403 },
       )
     }

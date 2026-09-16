@@ -34,7 +34,7 @@ const CAMPAIGN = {
 } as const
 
 const RATE = CAMPAIGN.commissionPct / 100
-const TIERS = { Creator: 49, Studio: 99, Pro: 199 } as const
+const TIERS = { Amazon: 99, Pro: 199 } as const
 type PlanKey = keyof typeof TIERS
 const money = (n: number) => '$' + Math.round(n).toLocaleString('en-US')
 
@@ -94,10 +94,10 @@ function Nav() {
 }
 
 function Hero() {
-  // Earnings card amounts are honest at 10%: Pro $199→$19.90, Studio $99→$9.90.
+  // Earnings card amounts are honest at 10%: Pro $199→$19.90, Amazon $99→$9.90.
   const rows = [
     { in: 'JM', nm: 'Jordan M.', ac: 'Upgraded to Pro', amt: '+$19.90', grad: 'linear-gradient(135deg,#3C60F0,#6A3CF0)' },
-    { in: 'AK', nm: 'Aisha K.', ac: 'Studio plan', amt: '+$9.90', grad: 'linear-gradient(135deg,#6A3CF0,#9B5CF0)' },
+    { in: 'AK', nm: 'Aisha K.', ac: 'Amazon plan', amt: '+$9.90', grad: 'linear-gradient(135deg,#6A3CF0,#9B5CF0)' },
     { in: 'TR', nm: 'Theo R.', ac: 'Upgraded to Pro', amt: '+$19.90', grad: 'linear-gradient(135deg,#2945C9,#3C60F0)' },
   ]
   return (
@@ -237,7 +237,7 @@ function Deal() {
 }
 
 function Estimator() {
-  const [plan, setPlan] = useState<PlanKey>('Studio')
+  const [plan, setPlan] = useState<PlanKey>('Amazon')
   const [n, setN] = useState(10)
   const mo = n * TIERS[plan] * RATE
   return (
@@ -316,7 +316,7 @@ function Proof() {
 
 function Faq() {
   const items = [
-    { q: 'How much can I realistically earn?', a: `It depends on your audience and plan mix. At ${CAMPAIGN.commissionPct}% recurring: every Creator referral is about $${(49 * RATE).toFixed(2)}/mo, Studio about $${(99 * RATE).toFixed(2)}/mo, and Pro about $${(199 * RATE).toFixed(2)}/mo — for as long as they stay. Use the estimator above to model your own numbers.` },
+    { q: 'How much can I realistically earn?', a: `It depends on your audience and plan mix. At ${CAMPAIGN.commissionPct}% recurring: every Amazon referral is about $${(TIERS.Amazon * RATE).toFixed(2)}/mo and every Pro referral about $${(TIERS.Pro * RATE).toFixed(2)}/mo — for as long as they stay. Use the estimator above to model your own numbers.` },
     { q: 'When and how do I get paid?', a: `Monthly, via ${CAMPAIGN.payoutMethod}, once your balance clears $${CAMPAIGN.payoutThreshold} and the commission passes a ${CAMPAIGN.clearanceDays}-day refund-protection window. You connect your payout account once during onboarding and commissions land automatically after that.` },
     { q: 'Does my audience get anything?', a: `Yes — it's a double-sided deal. Anyone who signs up through your referral link automatically gets ${CAMPAIGN.audienceDiscount}, and the sale is credited to you. Prefer a code? Once you're approved you can mint your own promo codes in your dashboard for places a link won't fit — each one carries the same discount and credits you.` },
     { q: 'How long does the referral cookie last?', a: `${CAMPAIGN.cookieDays} days. If someone clicks your link and signs up any time in that window, the referral is credited to you — so slow decisions still earn.` },

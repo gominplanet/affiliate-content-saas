@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     const tier = (tierRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'linkedin')) {
       return NextResponse.json(
-        { error: 'LinkedIn posting is a Creator plan feature. Upgrade to Creator or Pro to publish to LinkedIn.' },
+        { error: 'LinkedIn posting is on the Pro plan. Upgrade to Pro to publish to LinkedIn.' },
         { status: 403 },
       )
     }

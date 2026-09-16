@@ -1191,7 +1191,7 @@ export async function checkArticlesUsage(
   if (cap === 0) {
     return {
       allowed: false,
-      reason: 'Articles is a Creator, Studio and Pro feature. Upgrade to publish researched informational articles alongside your reviews.',
+      reason: 'Articles is a Pro feature. Upgrade to publish researched informational articles alongside your reviews.',
       tier,
       used: 0,
       cap: 0,

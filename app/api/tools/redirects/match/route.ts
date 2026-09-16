@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     const { data: tierRow } = await supabase
       .from('integrations').select('tier').eq('user_id', ownerId).maybeSingle()
     const tier = normalizeTier((tierRow?.tier as Tier) ?? 'trial')
-    if (tier === 'trial') return NextResponse.json({ error: 'Upgrade to Creator or higher to fix 404s.' }, { status: 403 })
+    if (tier === 'trial') return NextResponse.json({ error: 'Upgrade to Pro to fix 404s.' }, { status: 403 })
 
     const body = await request.json().catch(() => ({})) as { urls?: string[] }
     const rawUrls = Array.from(new Set((body.urls || []).map(u => (u || '').trim()).filter(Boolean))).slice(0, 1000)

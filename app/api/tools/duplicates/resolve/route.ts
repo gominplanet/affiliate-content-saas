@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     const { data: tierRow } = await supabase
       .from('integrations').select('tier').eq('user_id', ownerId).maybeSingle()
     const tier = normalizeTier((tierRow?.tier as Tier) ?? 'trial')
-    if (tier === 'trial') return NextResponse.json({ error: 'Upgrade to Creator or higher to merge duplicate posts.' }, { status: 403 })
+    if (tier === 'trial') return NextResponse.json({ error: 'Upgrade to Pro to merge duplicate posts.' }, { status: 403 })
 
     const body = await request.json().catch(() => ({})) as { merges?: Merge[] }
     const merges = (body.merges || [])

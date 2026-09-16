@@ -262,7 +262,7 @@ export async function POST(req: Request) {
     .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(integ?.tier)
   if (TIERS[tier].articlesPerMonth === 0) {
-    return NextResponse.json({ error: 'Articles is a Creator, Studio and Pro feature.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
+    return NextResponse.json({ error: 'Articles is a Pro feature.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
   }
 
   // Monthly AI-spend circuit breaker (Sonnet writer + web search).

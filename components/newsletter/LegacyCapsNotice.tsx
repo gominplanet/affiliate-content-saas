@@ -61,7 +61,7 @@ export function LegacyCapsNotice() {
           We lowered the Creator newsletter caps on 2026-06-04 (now 500 subscribers + 1 send/month for new sign-ups). You&apos;re grandfathered: you keep <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">1,000 subscribers</strong> and <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">4 sends per month</strong> for as long as you stay on Creator. If you cancel and re-subscribe, you&apos;ll move to the new caps.
         </p>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">
-          Need more headroom? <a href="/billing?plan=studio" className="text-[#7C3AED] hover:underline font-medium">Studio unlocks 5,000 subs + 4 sends/mo</a> with everything else Creator has.
+          Need more headroom? <a href="/billing?plan=pro" className="text-[#7C3AED] hover:underline font-medium">Pro unlocks 10,000 subs + 4 sends/mo</a> with everything else Creator has.
         </p>
       </div>
       <button

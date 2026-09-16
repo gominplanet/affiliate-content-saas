@@ -1,17 +1,19 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Amazon Influencer and the blog ladder are two products, not four rungs.
+// Amazon Influencer and the publishing plan are two products, not two rungs.
 //
-// On a pricing page they look like one ladder, and the price makes it worse:
-// $79 sits between Creator at $49 and Studio at $99, so Amazon Influencer reads
-// as the middle option of a range rather than a different product entirely. A
-// storefront creator scanning that page has no reason to think the $79 plan is
-// the one built for them, and a blogger has no reason to think it is not.
-//
-// The difference is not a matter of size. One plan has no blog at all and asks
-// for no website and no channel; the other three are a content engine that
-// cannot start without both. That is the sentence the page has to make
+// Read as a price list they look like one ladder, and a storefront creator
+// scanning it has no reason to think the cheaper one is the plan built for
+// them. The difference is not size. One plan has no blog at all and asks for no
+// website and no channel; the other is a content engine, and it will build the
+// site for someone who has none. That is the sentence the page has to make
 // unmissable, and these rows are how.
+//
+// TWO PLANS, NAMED. Creator and Studio are frozen: existing subscribers keep
+// them and nobody new can buy one, so every row here compares the two plans
+// that are actually for sale. A marketing surface that names a retired tier is
+// selling something checkout will refuse, and the rows used to give three
+// values per line for exactly that reason.
 //
 // EVERY NUMBER HERE IS READ FROM lib/tier.ts.
 //
@@ -29,7 +31,7 @@ export interface CompareRow {
   label: string
   /** What the Amazon Influencer plan does. */
   amazon: string
-  /** What Creator / Studio / Pro do, given in that order where they differ. */
+  /** What the Pro publishing plan does. */
   ladder: string
   /** True for the rows that carry the actual distinction, so the page can lead
    *  with them rather than burying them in a list of equals. */
@@ -39,21 +41,22 @@ export interface CompareRow {
 /** The comparison, shortest form that still answers "which one am I". */
 export function planCompareRows(): CompareRow[] {
   const A = TIERS.amazon
-  const C = TIERS.creator
-  const S = TIERS.studio
   const P = TIERS.pro
 
   return [
     {
       label: 'Who it is for',
       amazon: 'You post Amazon products to your storefront and socials',
-      ladder: 'You run a blog, a YouTube channel, or both',
+      ladder: 'You publish reviews on a site of your own, with or without a YouTube channel',
       decisive: true,
     },
     {
       label: 'What you need to start',
       amazon: 'An Amazon Associates tag. Nothing to connect.',
-      ladder: 'A WordPress site and a YouTube channel',
+      // NOT "a WordPress site and a YouTube channel". MVP installs WordPress,
+      // so requiring one turned this row into a reason not to buy for everybody
+      // who has not started yet.
+      ladder: 'An Amazon Associates tag. Bring a WordPress site or let MVP build you one.',
       decisive: true,
     },
     {
@@ -61,36 +64,42 @@ export function planCompareRows(): CompareRow[] {
       // Stated as an absence, on purpose. "0 per month" reads like a limit you
       // could hit; "no blog" is the product boundary.
       amazon: A.postsPerMonth === 0 ? 'None. This plan has no blog.' : `${n(A.postsPerMonth)} a month`,
-      ladder: `${n(C.postsPerMonth)} · ${n(S.postsPerMonth)} · ${n(P.postsPerMonth)} a month`,
+      ladder: `${n(P.postsPerMonth)} a month`,
       decisive: true,
     },
     {
       label: 'Thumbnails',
       amazon: `${n(A.thumbnailsPerMonth)} a month`,
-      ladder: `${n(C.thumbnailsPerMonth)} · ${n(S.thumbnailsPerMonth)} · ${n(P.thumbnailsPerMonth)} a month`,
+      ladder: `${n(P.thumbnailsPerMonth)} a month`,
     },
     {
       label: 'Ready-to-post designs',
       amazon: `${n(A.pinsPerMonth)} pins · ${n(A.igPostsPerMonth)} Reels · ${n(A.facebookPostsPerMonth)} Facebook`,
-      ladder: C.pinsPerMonth === 0
-        ? `Not on Creator · ${n(S.pinsPerMonth)} · ${n(P.pinsPerMonth)} pins`
-        : `${n(C.pinsPerMonth)} · ${n(S.pinsPerMonth)} · ${n(P.pinsPerMonth)} pins`,
+      ladder: `${n(P.pinsPerMonth)} pins · ${n(P.igPostsPerMonth)} Reels · ${n(P.facebookPostsPerMonth)} Facebook`,
     },
     {
       label: 'Publishes to',
-      amazon: 'Facebook, Instagram and Pinterest',
-      ladder: `Your blog, plus ${C.socials.length} · ${S.socials.length} · ${P.socials.length} networks`,
+      amazon: `${A.socials.length} networks: Facebook, Instagram and Pinterest`,
+      ladder: `Your blog, plus ${P.socials.length} networks`,
       decisive: true,
     },
     {
-      label: 'Brand deals (Creator Connections)',
-      amazon: `${n(A.collabsPerMonth)} pitches a month`,
-      ladder: `${n(C.collabsPerMonth)} · ${n(S.collabsPerMonth)} · ${n(P.collabsPerMonth)} a month`,
+      label: 'Messaging brands on Creator Connections',
+      // Uncapped on both, and worth a row of its own. The cap below is a
+      // different tool, and putting one number beside this line is what made
+      // people read a limit into outreach that has none.
+      amazon: 'Unlimited',
+      ladder: 'Unlimited',
+    },
+    {
+      label: 'Brand pitches drafted for you',
+      amazon: `${n(A.collabsPerMonth)} a month`,
+      ladder: `${n(P.collabsPerMonth)} a month`,
     },
     {
       label: 'Your face on the designs',
-      amazon: `${n(A.maxFaces)} model, ${n(A.photoboothPerMonth)} headshots`,
-      ladder: `${n(C.maxFaces)} · ${n(S.maxFaces)} · ${n(P.maxFaces)} models`,
+      amazon: `${n(A.maxFaces)} models, ${n(A.photoboothPerMonth)} headshots`,
+      ladder: `${n(P.maxFaces)} models, ${n(P.photoboothPerMonth)} headshots`,
     },
     {
       label: 'Amazon research + Deal Radar',
@@ -100,7 +109,7 @@ export function planCompareRows(): CompareRow[] {
     {
       label: 'Price',
       amazon: `$${A.price} a month`,
-      ladder: `$${C.price} · $${S.price} · $${P.price} a month`,
+      ladder: `$${P.price} a month`,
     },
   ]
 }

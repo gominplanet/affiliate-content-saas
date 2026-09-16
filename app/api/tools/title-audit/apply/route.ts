@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     const tier = normalizeTier((tierRow?.tier as Tier) ?? 'trial')
     if (tier === 'trial') {
       return NextResponse.json(
-        { error: 'Upgrade to Creator or higher to apply title fixes.' },
+        { error: 'Upgrade to Pro to apply title fixes.' },
         { status: 403 },
       )
     }

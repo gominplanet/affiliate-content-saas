@@ -97,7 +97,7 @@ export function TrackCompare({ className = '' }: { className?: string }) {
             <tr className="border-b border-gray-200 dark:border-white/10">
               <th className="p-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[#86868b]"> </th>
               <th className="p-3 text-[12px] font-bold" style={{ color: AMZ }}>Amazon Influencer</th>
-              <th className="p-3 text-[12px] font-bold" style={{ color: LADDER }}>Creator · Studio · Pro</th>
+              <th className="p-3 text-[12px] font-bold" style={{ color: LADDER }}>Pro</th>
             </tr>
           </thead>
           <tbody>
@@ -118,7 +118,7 @@ export function TrackCompare({ className = '' }: { className?: string }) {
         </table>
       </div>
       <p className="mt-3 text-[12.5px] text-[#86868b] dark:text-[#8e8e93] text-center">
-        On Studio or Pro the whole Amazon toolkit is already included, on top of the blog engine.
+        On Pro the whole Amazon toolkit is already included, on top of the blog engine.
       </p>
     </section>
   )
