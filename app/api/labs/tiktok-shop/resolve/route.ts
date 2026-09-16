@@ -41,6 +41,12 @@ import {
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
+// TikTok Shop serves a real page to a supported region and a wall to everyone
+// else, so where this function RUNS decides whether the feature works at all.
+// Nothing in vercel.json pins a region, which means this inherited the project
+// default: correct today and silently breakable by a settings change nobody
+// would connect to TikTok. Pinned to US East, which is a TikTok Shop region.
+export const preferredRegion = 'iad1'
 
 /** A real browser UA. TikTok serves the product page to an ordinary client;
  *  it is the SHOWCASE that is app-only, not this. */

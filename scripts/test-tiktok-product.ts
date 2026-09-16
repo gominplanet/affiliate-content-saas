@@ -198,6 +198,8 @@ const p = parseTikTokProduct(HTML, URL)
     'it exists to re-read the page, and must never be the thing published')
   check('the pasted url is what we FETCH too', /fetchWithTimeout\(pasted/.test(rcode),
     'reading the canonical URL would follow a different path than a real visitor')
+  check('the route is pinned to a TikTok Shop region', /preferredRegion = 'iad1'/.test(rcode),
+    'nothing in vercel.json pins one, so without this the feature depends on a project setting nobody would connect to TikTok')
   check('the fetch has a deadline', /timeoutMs: DEFAULT_TIMEOUT_MS/.test(rcode),
     'Node fetch has no default timeout and this route runs on a creator watching a spinner')
   check('a missing table names the migration', /334_tiktok_products/.test(ROUTE),
