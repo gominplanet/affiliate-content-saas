@@ -8,6 +8,7 @@
  * user's own connected Geniuslink account (integrations.geniuslink_api_*).
  */
 import { NextResponse } from 'next/server'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { createServerClient } from '@/lib/supabase/server'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { sanitizeGeniuslinkGroupName } from '@/lib/geniuslink-group'
@@ -19,12 +20,19 @@ async function creds(): Promise<{ key: string; secret: string } | null> {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
-  const { data } = await supabase
+  const { data: raw } = await supabase
     .from('integrations')
     .select('geniuslink_api_key,geniuslink_api_secret')
     .eq('user_id', user.id).maybeSingle()
-  const key = ((data as { geniuslink_api_key?: string | null } | null)?.geniuslink_api_key || '').trim()
-  const secret = ((data as { geniuslink_api_secret?: string | null } | null)?.geniuslink_api_secret || '').trim()
+  // DECRYPT. Both columns are encrypted at rest and this endpoint sent the
+  // ciphertext to Geniuslink as the key, which answers 401. The sibling
+  // /api/geniuslink/test DOES decrypt, so one settings screen reported
+  // "Working — 14 groups" from the test button and "401 Unauthorized" from the
+  // group list at the same moment. A creator reported exactly that pair.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = decryptIntegrationRow(raw as any)
+  const key = (data?.geniuslink_api_key || '').trim()
+  const secret = (data?.geniuslink_api_secret || '').trim()
   if (!key || !secret) return null
   return { key, secret }
 }

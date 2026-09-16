@@ -868,7 +868,27 @@ if (!function_exists('mvp_affiliate_sanitize_customizations')) {
         if (preg_match('#/(html|content|body|blockHtml)$#i', $key_path)) {
             return wp_kses_post($val);
         }
-        if (preg_match('#/(url|href|src|link|logo|image|photo|banner)#i', $key_path)) {
+        // THE LAST SEGMENT, and it has to END with a URL-ish word.
+        //
+        // This was `#/(url|href|src|link|logo|image|photo|banner)#i`, unanchored
+        // and matching a PREFIX anywhere in the path, which produced three
+        // separate wrongs:
+        //
+        //   /footer/links/0/label  esc_url_raw('About') is 'http://About', and
+        //                          'Affiliate Disclosure' becomes
+        //                          'http://Affiliate%20Disclosure'. Every footer
+        //                          label on every site rendered as a mangled
+        //                          URL while its href stayed perfectly correct.
+        //                          Matched because 'link' is a prefix of 'links'.
+        //   /theme/linkColor       same reason, and esc_url_raw on '#1a1a2e'
+        //                          destroys the colour.
+        //   /profile/headshotUrl   NOT matched, because nothing in the path is
+        //                          a bare 'url' segment. A real URL got
+        //                          sanitize_text_field instead.
+        //
+        // A creator spent a while proving it was a render bug and re-saving to
+        // fix it. Re-saving was the thing applying it.
+        if (preg_match('#/[^/]*(url|href|src|logo|image|photo|banner|avatar|icon)$#i', $key_path)) {
             return esc_url_raw($val);
         }
         if (preg_match('#/(color|bg|background)#i', $key_path)) {

@@ -88,7 +88,16 @@ function readsSafely(src: string, col: string): boolean {
   // Presence-only: every mention of the column is inside a truthiness test or a
   // boolean assignment, so the value itself never leaves the route.
   const mentions = [...src.matchAll(new RegExp(`[^\\n]*\\b${col}\\b[^\\n]*`, 'g'))].map(m => m[0])
-  const nonSelect = mentions.filter(l => !/\.select\(|^\s*\*|^\s*\/\/|:\s*string \| null|\?:\s*string/.test(l))
+  // A type annotation is only skipped when it is the WHOLE line, as in an
+  // interface member. Anchoring matters: /api/geniuslink/groups reads the key
+  // on a line that also carries an inline cast, so an unanchored `\?:\s*string`
+  // threw the real read away with the type and the file passed. That endpoint
+  // was answering 401 on the same settings screen where the test button said
+  // "Working — 14 groups", which is what the omission looks like to a creator.
+  const nonSelect = mentions.filter(l =>
+    !/\.select\(/.test(l)
+    && !/^\s*(\*|\/\/)/.test(l)
+    && !/^\s*\w+\??:\s*string/.test(l))
   if (nonSelect.length === 0) return true
   // `if (row?.col && row?.other)` is presence-only too: the value is tested and
   // never read. Added when widening the scan to select('*') files surfaced
