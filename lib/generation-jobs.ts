@@ -57,6 +57,39 @@ export async function enqueueGenerationJob(
   args: EnqueueArgs,
 ): Promise<string | null> {
   try {
+    // ── ONE IN-FLIGHT JOB PER VIDEO ──────────────────────────────────────────
+    //
+    // A creator found three near-identical posts about the same product on his
+    // site, on two days running, published a minute apart. A minute is the job
+    // worker's tick, so three jobs for one video had been queued and each wrote
+    // its own post. This insert had no dedupe of any kind: the same video could
+    // be queued any number of times, by a double-click, by a retry after a slow
+    // response, or by a bulk action that included it twice.
+    //
+    // Only QUEUED OR RUNNING counts. A finished job is not a duplicate: it is
+    // an earlier post, and re-generating one deliberately is a real thing
+    // creators do. So this blocks the case that is never intentional and leaves
+    // the one that often is.
+    //
+    // The EXISTING id is returned rather than null, so a double-submit polls
+    // the job that is actually running instead of being told the queue is
+    // broken. The caller cannot tell the difference, which is the point.
+    const dedupeVideoId = args.kind === 'blog'
+      ? (args.input as { videoId?: unknown } | null)?.videoId
+      : null
+    if (typeof dedupeVideoId === 'string' && dedupeVideoId) {
+      const { data: live } = await supabase
+        .from('generation_jobs')
+        .select('id')
+        .eq('owner_id', args.ownerId)
+        .eq('kind', 'blog')
+        .in('status', ['queued', 'running'])
+        .contains('input', { videoId: dedupeVideoId })
+        .limit(1)
+        .maybeSingle()
+      if (live?.id) return live.id as string
+    }
+
     const { data, error } = await supabase
       .from('generation_jobs')
       .insert({
