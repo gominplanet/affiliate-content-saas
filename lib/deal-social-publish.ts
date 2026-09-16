@@ -19,6 +19,7 @@ import {
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { createTweet, refreshAccessToken as refreshTwitter } from '@/services/twitter'
+import { resolveXMedia, rememberXScopes } from '@/lib/x-media'
 import { reserveXPost, refundXPost, xCapMessage } from '@/lib/x-cap'
 import { createFacebookService } from '@/services/facebook'
 import { ThreadsService } from '@/services/threads'
@@ -33,7 +34,17 @@ export const QUICK_POST_LABELS: Record<QuickPostPlatform, string> = {
 }
 
 export interface DealForPost { asin: string; title: string; imageUrl: string | null }
-export interface PlatformResult { platform: QuickPostPlatform; ok: boolean; url?: string; error?: string }
+export interface PlatformResult {
+  platform: QuickPostPlatform
+  ok: boolean
+  url?: string
+  error?: string
+  /** A post that SUCCEEDED but is not what was asked for — today, an X post
+   *  whose image could not be attached. Distinct from `error`, which means the
+   *  post never went out, because folding the two together would either hide a
+   *  missing image or report a live post as a failure. */
+  note?: string
+}
 
 interface PublishOpts {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,6 +117,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         // catch doesn't refund. Sibling paths (process-scheduled, blog/twitter-
         // post) also refresh-then-reserve.
         const expiry = ig.twitter_expires_at ? new Date(ig.twitter_expires_at).getTime() : 0
+        let twScopes = (ig.twitter_scopes as string | null) ?? null
         if (expiry && Date.now() > expiry - 60_000 && ig.twitter_refresh_token) {
           const r = await refreshTwitter(ig.twitter_refresh_token as string)
           token = r.access_token
@@ -114,20 +126,29 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
             twitter_refresh_token: r.refresh_token ?? ig.twitter_refresh_token,
             twitter_expires_at: new Date(Date.now() + r.expires_in * 1000).toISOString(),
           })).eq('user_id', userId)
+          if (r.scope) { twScopes = r.scope; await rememberXScopes(supabase, userId, r.scope) }
         }
+        // The deal's product photo, which every other platform here already
+        // attaches. X was the only one posting a bare link and hoping the card
+        // rendered. Resolved BEFORE the cap reservation so a slow image download
+        // cannot widen the window a concurrent post races through.
+        const xMedia = await resolveXMedia({ accessToken: token!, imageUrl: img, grantedScopes: twScopes })
         // X is the only paid-per-post channel — reserve a slot atomically before
         // posting so concurrent posts can't overspend the cap. Refund on failure.
         const xres = await reserveXPost(supabase, userId)
         if (!xres.ok) throw new Error(xCapMessage(xres.resetLabel))
         let t
         try {
-          t = await createTweet(token!, composeText(baseCaption, 'twitter', link, disclaimer, retailer))
+          t = await createTweet(token!, composeText(baseCaption, 'twitter', link, disclaimer, retailer), xMedia.mediaIds)
         } catch (e) {
           await refundXPost(supabase, xres.reservationId) // failed → don't burn the slot
           throw e
         }
         // The reservation already counted this post (no recordXPost).
-        return { platform, ok: true, url: `https://x.com/i/web/status/${t.id}` }
+        // ok:true AND a note: the post went out, and it went out without the
+        // picture the creator saw in the preview. Neither half is the whole
+        // truth on its own.
+        return { platform, ok: true, url: `https://x.com/i/web/status/${t.id}`, note: xMedia.note ?? undefined }
 
       } else if (platform === 'facebook') {
         // Facebook Pages live in social_accounts (modern connect flow), with the

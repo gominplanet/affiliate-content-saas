@@ -21,6 +21,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createSession as createBlueskySession, createPost as createBlueskyPost } from '@/services/bluesky'
 import { createTweet, refreshAccessToken as refreshTwitterToken } from '@/services/twitter'
+import { resolveXMedia, rememberXScopes } from '@/lib/x-media'
 import { reserveXPost, refundXPost, xCapMessage } from '@/lib/x-cap'
 import { ThreadsService } from '@/services/threads'
 import { recordSocialPermalink } from '@/lib/social-permalink'
@@ -120,6 +121,10 @@ interface IntegrationRow {
   // X is the one platform whose expiry column is a timestamptz named
   // twitter_expires_at. The others are `<platform>_token_expiry` epoch ms.
   twitter_expires_at?: string | null
+  /** Space-separated scopes X granted (migration 337). Null on every
+   *  connection made before we recorded it — lib/x-media treats that as
+   *  "unknown" and tries the upload rather than assuming either way. */
+  twitter_scopes?: string | null
   linkedin_access_token?: string | null
   linkedin_person_id?: string | null
   bluesky_handle?: string | null
@@ -268,6 +273,12 @@ export async function GET(request: Request) {
         .update({
           status: 'completed',
           external_id: result.externalId ?? null,
+          // A completed row can still carry a message: the post went out, and
+          // something about it is not what was asked for. The column is reused
+          // rather than duplicated, and the SURFACES read it by status — red on
+          // failed, amber on completed — so "published, no image" never reads
+          // as either a clean success or a failure.
+          error_message: result.note ?? null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', row.id)
@@ -340,7 +351,10 @@ async function publishOne(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   admin: any,
   row: ScheduledRow,
-): Promise<{ externalId?: string }> {
+  // `note` is a post that WENT OUT but is not quite what was asked for — an X
+  // post whose image could not be attached. It rides alongside externalId
+  // rather than being thrown, because throwing would mark a live post failed.
+): Promise<{ externalId?: string; note?: string }> {
   if (row.kind === 'blog_publish') {
     return flipBlogPostToPublished(admin, row)
   }
@@ -592,6 +606,7 @@ async function publishOne(
       let accessToken = integration.twitter_access_token
       if (!accessToken) throw new Error('X not connected')
       let refreshToken = integration.twitter_refresh_token
+      let twScopes = (integration.twitter_scopes as string | null) ?? null
 
       // Persist a freshly-refreshed token pair (encrypted) so the next tick
       // and any 401-retry reuse it. Returns the new access token.
@@ -609,6 +624,7 @@ async function publishOne(
         // refresh 400s until the user reconnects — fail loudly rather than post
         // once and break tomorrow.
         if (saveErr) throw new Error(`X token saved failed — reconnect X: ${saveErr.message}`)
+        if (refreshed.scope) { twScopes = refreshed.scope; await rememberXScopes(admin, row.user_id, refreshed.scope) }
         return refreshed.access_token
       }
 
@@ -631,10 +647,17 @@ async function publishOne(
       // and X rejected the whole scheduled post. Matches the immediate path.
       const xSuffix = row.body_text.includes(url) ? '' : ` ${url}`
       const finalText = capSocialText(stripLinkPlaceholders(row.body_text), SOCIAL_LIMITS.twitter, xSuffix)
+      // The same image Telegram already attaches on this row: the video's
+      // thumbnail, or the post's own og:image. Resolved AFTER the cap check
+      // above and never allowed to throw, so an unreachable image costs the
+      // picture and not the scheduled post.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const xImage = ((post as any).youtube_videos?.thumbnail_url as string | null) || (await fetchOgImage(url)) || null
+      let xMedia = await resolveXMedia({ accessToken: accessToken!, imageUrl: xImage, grantedScopes: twScopes })
       let result
       try {
         try {
-          result = await createTweet(accessToken!, finalText)
+          result = await createTweet(accessToken!, finalText, xMedia.mediaIds)
         } catch (e) {
           // Reactive refresh: a 401 means the access token is dead even though
           // expiry looked fine (missing/stale expiry, or token revoked then
@@ -642,7 +665,13 @@ async function publishOne(
           const msg = e instanceof Error ? e.message : String(e)
           if (/\b401\b|unauthorized/i.test(msg) && refreshToken) {
             accessToken = await doRefresh()
-            result = await createTweet(accessToken, finalText)
+            // Re-resolve the image too. A 401 on the tweet means the token was
+            // already dead when the upload ran, so xMedia is almost certainly a
+            // 401 note rather than a media id; reusing it would post the retry
+            // without a picture and then report a scope problem that was really
+            // an expired token.
+            xMedia = await resolveXMedia({ accessToken, imageUrl: xImage, grantedScopes: twScopes })
+            result = await createTweet(accessToken, finalText, xMedia.mediaIds)
           } else {
             throw e
           }
@@ -654,7 +683,7 @@ async function publishOne(
       // Success: the reservation already counted this post (no recordXPost).
       await admin.from('blog_posts').update({ twitter_post_id: result.id }).eq('id', row.blog_post_id)
       await recordSocialPermalink(admin, row.blog_post_id, 'x', socialPermalink.x(result.id))
-      return { externalId: result.id }
+      return { externalId: result.id, note: xMedia.note ?? undefined }
     }
 
     // ─────────────────────────── THREADS ──────────────────────────────────

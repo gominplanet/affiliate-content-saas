@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { createServerClient } from '@/lib/supabase/server'
 import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForToken, getProfile } from '@/services/twitter'
+import { rememberXScopes } from '@/lib/x-media'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 
 export async function GET(request: NextRequest) {
@@ -79,6 +80,13 @@ export async function GET(request: NextRequest) {
       { onConflict: 'user_id' },
     )
     if (saveErr) throw new Error(`could not save the connection: ${saveErr.message}`)
+
+    // What X granted, recorded on its OWN update for exactly the reason the
+    // comment above gives: PostgREST rejects the whole write over one unknown
+    // column, so folding twitter_scopes into that upsert would mean a database
+    // without migration 337 saves no tokens while the screen says Connected.
+    // A swallowed failure here costs a hint, not a connection.
+    await rememberXScopes(supabase, userId, tokens.scope)
 
     // Clear the verifier cookie — it's single-use.
     cookieStore.delete('twitter_pkce_verifier')

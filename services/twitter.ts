@@ -6,14 +6,28 @@
  * Scopes we request:
  *   - tweet.read       — read user info
  *   - tweet.write      — post tweets on the user's behalf
+ *   - media.write      — upload the image that goes WITH the tweet
  *   - users.read       — fetch the connected user's @handle / display name
  *   - offline.access   — receive a refresh_token for long-lived sessions
  */
-import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { fetchWithTimeout, UPLOAD_TIMEOUT_MS } from '@/lib/fetch-timeout'
+// Re-exported so existing importers of services/twitter keep working, and so
+// the browser-safe copy stays the only definition.
+export { MEDIA_SCOPE, mediaCapability, type MediaCapability } from '@/lib/x-scopes'
+import { MEDIA_SCOPE } from '@/lib/x-scopes'
 
 const TWITTER_API = 'https://api.twitter.com'
+/** Media upload lives on the x.com host. api.twitter.com still answers for the
+ *  rest of v2, so the two are kept apart rather than swapped wholesale. */
+const X_API = 'https://api.x.com'
 
-export const TWITTER_SCOPES = ['tweet.read', 'tweet.write', 'users.read', 'offline.access']
+/**
+ * A SCOPE IS FIXED AT AUTHORIZATION. Adding media.write here changes nothing
+ * for anyone already connected: refreshing a token re-issues the same grant, so
+ * every existing creator keeps a token that cannot upload until they reconnect.
+ * lib/x-media is built around that fact rather than assuming it away.
+ */
+export const TWITTER_SCOPES = ['tweet.read', 'tweet.write', MEDIA_SCOPE, 'users.read', 'offline.access']
 
 /** Build the auth header for Twitter's token endpoint (Basic client_id:client_secret). */
 function basicAuth(): string {
@@ -105,15 +119,67 @@ export async function getProfile(accessToken: string): Promise<TwitterUserProfil
   return json.data
 }
 
-/** Create a single tweet on the authenticated user's behalf. */
-export async function createTweet(accessToken: string, text: string): Promise<{ id: string; text: string }> {
+/**
+ * Upload one image and return its media id.
+ *
+ * Single-request multipart, which X supports for stills; the INIT/APPEND/
+ * FINALIZE dance is only needed for video and for files past 5 MB, and
+ * lib/x-media refuses those before we get here.
+ *
+ * Content-Type is deliberately NOT set: fetch derives it from the FormData and
+ * appends the multipart boundary, and a hand-written header loses the boundary
+ * and makes X reject a body it cannot split.
+ */
+export async function uploadMedia(
+  accessToken: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<string> {
+  const form = new FormData()
+  form.append('media', new Blob([bytes as unknown as BlobPart], { type: contentType }), 'image')
+  form.append('media_category', 'tweet_image')
+
+  const res = await fetchWithTimeout(`${X_API}/2/media/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+    timeoutMs: UPLOAD_TIMEOUT_MS,
+  })
+  if (!res.ok) {
+    const errText = await res.text()
+    // The status is kept IN the message on purpose: lib/x-media reads it to tell
+    // "this token has no media.write" apart from "this file is wrong", and those
+    // two get different sentences on screen.
+    throw new Error(`X media upload failed (${res.status}): ${errText.slice(0, 300)}`)
+  }
+  const json = await res.json() as { data?: { id?: string; media_key?: string } }
+  const id = json?.data?.id
+  if (!id) throw new Error('X accepted the image but returned no media id.')
+  return id
+}
+
+/**
+ * Create a single tweet on the authenticated user's behalf.
+ *
+ * `mediaIds` are ids from uploadMedia. Omitted or empty, the payload is exactly
+ * what it was before media existed, so a text-only post is byte-identical to
+ * the call this function has always made.
+ */
+export async function createTweet(
+  accessToken: string,
+  text: string,
+  mediaIds?: string[],
+): Promise<{ id: string; text: string }> {
+  const payload: { text: string; media?: { media_ids: string[] } } = { text }
+  if (mediaIds && mediaIds.length) payload.media = { media_ids: mediaIds }
+
   const res = await fetchWithTimeout(`${TWITTER_API}/2/tweets`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(payload),
   })
   if (!res.ok) {
     const errText = await res.text()

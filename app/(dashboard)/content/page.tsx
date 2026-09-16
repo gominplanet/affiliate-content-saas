@@ -2312,8 +2312,18 @@ function ScheduledList({
                   No socials scheduled with this post.
                 </p>
               )}
+              {/* On a COMPLETED row this is not an error: the post went out and
+                  something about it is not what was asked for (an X post whose
+                  image could not attach). Red would say the post failed, which
+                  would send the creator to re-publish a post that is already
+                  live. Amber, and a different lead-in word. */}
               {item.error_message && (
-                <p className="text-[11px] text-[#ff3b30] mt-2 break-all">⚠ {item.error_message}</p>
+                <p
+                  className="text-[11px] mt-2 break-all"
+                  style={{ color: item.status === 'completed' ? '#d97706' : '#ff3b30' }}
+                >
+                  {item.status === 'completed' ? '' : '⚠ '}{item.error_message}
+                </p>
               )}
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">

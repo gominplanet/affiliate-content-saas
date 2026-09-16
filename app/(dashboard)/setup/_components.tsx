@@ -9,6 +9,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { FacebookFixHelper } from '@/components/setup/FacebookFixHelper'
 import { PinterestBoardPicker } from '@/components/setup/PinterestBoardPicker'
 import { socialEnabled, type GatedSocialPlatform } from '@/lib/feature-flags'
+import { mediaCapability } from '@/lib/x-scopes'
 import { effectiveTier } from '@/lib/view-as'
 
 // ─── Integrations panel (shown after WordPress is connected) ──────────────────
@@ -66,7 +67,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
   const [linkedin, setLinkedin] = useState({ connected: false, personName: '' })
   const [liDisconnecting, setLiDisconnecting] = useState(false)
   const [liNotice, setLiNotice] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [twitter, setTwitter] = useState({ connected: false, handle: '' })
+  const [twitter, setTwitter] = useState({ connected: false, handle: '', canPostImages: true })
   const [twDisconnecting, setTwDisconnecting] = useState(false)
   const [twNotice, setTwNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [bluesky, setBluesky] = useState({ connected: false, handle: '' })
@@ -192,7 +193,16 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       setPinterest({ connected: !!row.pinterest_access_token, boardId: row.pinterest_board_id ?? '', boardName: row.pinterest_board_name ?? '', boards, fallbackBoard: row.pinterest_fallback_board ?? '' })
       setThreads({ connected: !!row.threads_access_token, userId: row.threads_user_id ?? '', username: row.threads_username ?? '' })
       setLinkedin({ connected: !!row.linkedin_access_token, personName: row.linkedin_person_name ?? '' })
-      setTwitter({ connected: !!row.twitter_access_token, handle: row.twitter_handle ?? '' })
+      // `canPostImages` is deliberately optimistic when the grant is unknown.
+      // A connection made before migration 337 has no recorded scopes and may
+      // be perfectly capable; telling every one of those creators to reconnect
+      // would be nagging on a guess. false only when X told us, in writing,
+      // that media.write was not granted.
+      setTwitter({
+        connected: !!row.twitter_access_token,
+        handle: row.twitter_handle ?? '',
+        canPostImages: mediaCapability(row.twitter_scopes as string | null) !== 'no',
+      })
       setBluesky({ connected: !!row.bluesky_handle && !!row.bluesky_app_password, handle: row.bluesky_handle ?? '' })
       setTelegram({
         connected: !!row.telegram_channel_id,
@@ -506,7 +516,11 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
     setTwDisconnecting(true)
     try {
       const res = await fetch('/api/auth/twitter/disconnect', { method: 'POST' })
-      if (res.ok) setTwitter({ connected: false, handle: '' })
+      // canPostImages back to true, not false: a disconnected account has no
+      // grant to be wrong about, and the reconnect banner is for a LIVE
+      // connection that cannot carry images. Leaving it false would show the
+      // warning under a card that offers nothing but a Connect button.
+      if (res.ok) setTwitter({ connected: false, handle: '', canPostImages: true })
     } finally { setTwDisconnecting(false) }
   }
 
@@ -954,7 +968,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           {twitter.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Click <strong>Connect X</strong> and you&apos;ll be redirected to X to authorise the connection. We only request permission to post a single tweet per published review on your behalf — we never read, follow, like, or engage with other accounts.
+          Click <strong>Connect X</strong> and you&apos;ll be redirected to X to authorise the connection. We request permission to post a single tweet per published review on your behalf, and to upload the image that goes with it. We never read, follow, like, or engage with other accounts.
         </p>
         {twNotice && <p className={`text-xs mb-3 ${twNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{twNotice.msg}</p>}
         {twitter.connected ? (
@@ -963,6 +977,22 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
               <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" />
               Connected as <strong>@{twitter.handle || 'your X account'}</strong>
             </p>
+            {/* X fixes a token's permissions at authorisation and a refresh
+                re-issues the SAME ones, so a connection made before MVP could
+                upload images can never gain that on its own. There is no
+                server-side repair and no error to read: the posts simply keep
+                going out without a picture. Saying so here is the only way a
+                creator learns that one reconnect changes it. */}
+            {!twitter.canPostImages && (
+              <div className="rounded-lg border p-3 flex flex-col gap-2 items-start" style={{ borderColor: '#d9770655', background: 'rgba(217,119,6,0.06)' }}>
+                <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  Your posts to X are going out without their image. This connection was made before MVP could upload pictures to X, and X will not add that permission to a token after the fact.
+                </p>
+                <a href="/api/auth/twitter" className="text-xs font-semibold underline" style={{ color: '#d97706' }}>
+                  Reconnect X to post images
+                </a>
+              </div>
+            )}
             <button onClick={disconnectTwitter} disabled={twDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
               {twDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
             </button>

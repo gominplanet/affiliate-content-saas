@@ -176,7 +176,11 @@ export default function NotificationBell() {
                       <span className="mt-0.5 flex-shrink-0">
                         {isFailed
                           ? <AlertCircle size={14} className="text-[#ff3b30]" />
-                          : <CheckCircle2 size={14} className="text-[#34c759]" />}
+                          : e.error_message
+                            // Published, with a caveat. A green tick here would
+                            // say the opposite of the line underneath it.
+                            ? <AlertCircle size={14} style={{ color: '#d97706' }} />
+                            : <CheckCircle2 size={14} className="text-[#34c759]" />}
                       </span>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold">
@@ -189,8 +193,18 @@ export default function NotificationBell() {
                         <p className="text-[11px] truncate" style={{ color: 'var(--text-soft, rgba(255,255,255,0.7))' }}>
                           {e.blog_post_title || 'Untitled post'}
                         </p>
-                        {isFailed && e.error_message && (
-                          <p className="text-[11px] mt-0.5 text-[#ff3b30] truncate" title={e.error_message}>
+                        {/* Red when the post never went out, amber when it did
+                            and something about it is not what was asked for —
+                            today, an X post whose image could not attach. The
+                            bell used to show a message only on a failure, so a
+                            caveat on a successful post had nowhere to appear
+                            and read as an ordinary green tick. */}
+                        {e.error_message && (
+                          <p
+                            className="text-[11px] mt-0.5 truncate"
+                            style={{ color: isFailed ? '#ff3b30' : '#d97706' }}
+                            title={e.error_message}
+                          >
                             {e.error_message}
                           </p>
                         )}

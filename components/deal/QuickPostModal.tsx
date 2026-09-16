@@ -32,6 +32,10 @@ function defaultSchedule(): { date: string; time: string } {
 export interface QuickPostDeal { asin: string; title: string; imageUrl: string | null }
 interface PostResult {
   platform: string; ok: boolean; url?: string; error?: string
+  /** The post went out and is not quite what was asked for — an X post whose
+   *  image could not be attached. Separate from `error`, which means nothing
+   *  was posted at all. */
+  note?: string
   /** Pinterest only, and not really a failure: the pin was refused because
    *  there is no page of the creator's to point at yet (Pinterest does not
    *  accept affiliate redirect links). One setup step from working, so it is
@@ -206,7 +210,11 @@ export default function QuickPostModal({
       const failCount = posted.length - okCount
       if (okCount > 0) toast.success(`Posted to ${okCount} platform${okCount > 1 ? 's' : ''}.`)
       if (data.caption && !caption) setCaption(data.caption)
-      if (okCount > 0 && failCount === 0 && !note) setTimeout(onClose, 900)
+      // Auto-close only when there is nothing left to read. A per-platform note
+      // (an X post with no image) is on screen in the results list, and closing
+      // the modal under it would make the warning unreadable by design.
+      const hasPlatformNote = posted.some((r) => r.ok && r.note)
+      if (okCount > 0 && failCount === 0 && !note && !hasPlatformNote) setTimeout(onClose, 900)
     } catch {
       toast.error('Could not post.')
     } finally {
@@ -325,12 +333,26 @@ export default function QuickPostModal({
                 const setup = !r.ok && r.needsLinkPage
                 return (
                   <div key={r.platform} className="flex items-start gap-2 text-sm">
-                    {r.ok
+                    {r.ok && !r.note
                       ? <Check size={15} className="text-emerald-600 mt-0.5" />
+                      : r.ok
+                      ? <AlertCircle size={15} className="text-amber-600 mt-0.5 shrink-0" />
                       : <AlertCircle size={15} className={`mt-0.5 shrink-0 ${setup ? 'text-amber-600' : 'text-red-600'}`} />}
                     <span className="capitalize font-medium shrink-0">{r.platform === 'instagram_story' ? 'Instagram Story' : (QUICK_PLATFORMS.find((p) => p.key === r.platform)?.label || r.platform)}</span>
                     {r.ok
-                      ? (r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs mt-0.5">view</a> : <span className="text-xs text-muted-foreground mt-0.5">posted</span>)
+                      ? (
+                        <span className="min-w-0">
+                          {r.url
+                            ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">view</a>
+                            : <span className="text-xs text-muted-foreground">posted</span>}
+                          {/* Posted, and not carrying what it was meant to. A
+                              bare green tick here is exactly how a creator
+                              keeps posting imageless tweets for months. */}
+                          {r.note && (
+                            <span className="block text-xs text-amber-700 dark:text-amber-500">{r.note}</span>
+                          )}
+                        </span>
+                      )
                       : setup ? (
                         <span className="text-xs text-amber-700 dark:text-amber-500 min-w-0">
                           {r.error}

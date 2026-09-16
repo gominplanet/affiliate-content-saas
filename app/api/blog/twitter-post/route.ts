@@ -9,6 +9,8 @@ import {
   createTweet,
   refreshAccessToken,
 } from '@/services/twitter'
+import { resolveXMedia, rememberXScopes } from '@/lib/x-media'
+import { fetchOgImage } from '@/lib/og-image'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { checkXPostCap, reserveXPost, refundXPost, xCapMessage } from '@/lib/x-cap'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -53,9 +55,13 @@ export async function POST(request: NextRequest) {
 
     // ── 1. Fetch blog post ─────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // select('*') rather than a named list. The post now also supplies the
+    // IMAGE for the tweet, and one of its sources (hero_source_url) arrived in
+    // migration 336: naming it would break the entire read, not just the image,
+    // on any database that has not run it.
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,geniuslink_channel_urls,social_publish_counts')
+      .select('*, youtube_videos(thumbnail_url)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -91,7 +97,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await supabase
       .from('integrations')
-      .select('twitter_access_token,twitter_refresh_token,twitter_expires_at,geniuslink_api_key,geniuslink_api_secret')
+      .select('*')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -108,6 +114,10 @@ export async function POST(request: NextRequest) {
 
     // ── 3a. Refresh the access token if it's expired or expiring soon ─────
     let accessToken = integration.twitter_access_token as string
+    // A refresh RE-ISSUES the same grant, so this never gains media.write. It is
+    // read here only so a token refreshed since connect keeps the freshest copy
+    // of what it was always allowed to do.
+    let grantedScopes = (integration.twitter_scopes as string | null) ?? null
     const expiresAtMs = integration.twitter_expires_at
       ? new Date(integration.twitter_expires_at).getTime()
       : 0
@@ -125,6 +135,10 @@ export async function POST(request: NextRequest) {
           twitter_refresh_token: refreshed.refresh_token ?? integration.twitter_refresh_token,
           twitter_expires_at: newExpiry,
         })).eq('user_id', user.id)
+        if (refreshed.scope) {
+          grantedScopes = refreshed.scope
+          await rememberXScopes(supabase, user.id, refreshed.scope)
+        }
       } catch (e) {
         return NextResponse.json(
           { error: 'X token refresh failed. Please reconnect X in Settings.', detail: e instanceof Error ? e.message : String(e) },
@@ -209,9 +223,32 @@ Return ONLY the tweet text.`,
     if (!xres.ok) {
       return NextResponse.json({ error: xCapMessage(xres.resetLabel), limitReached: true }, { status: 429 })
     }
+
+    // ── 5a. The picture ────────────────────────────────────────────────────
+    //
+    // og:image FIRST, because that is literally the image the post shows, and
+    // matching the card a reader would otherwise have got is the whole point.
+    // The other two are fallbacks for a post whose og:image is missing, which
+    // is the exact condition that started this: a creator's X posts had a title
+    // and description and a blank rectangle, because the WordPress post had no
+    // featured image for X to read.
+    //
+    // resolveXMedia never throws. A post that cannot carry its image still goes
+    // out, and comes back with a note saying so.
+    const heroCandidates = [
+      await fetchOgImage(post.wordpress_url as string),
+      (post.youtube_videos as { thumbnail_url?: string } | null)?.thumbnail_url,
+      post.hero_source_url as string | null | undefined,
+    ]
+    const media = await resolveXMedia({
+      accessToken,
+      imageUrl: heroCandidates.find(u => typeof u === 'string' && u.trim()) || null,
+      grantedScopes,
+    })
+
     let tweet
     try {
-      tweet = await createTweet(accessToken, finalText)
+      tweet = await createTweet(accessToken, finalText, media.mediaIds)
     } catch (e) {
       await refundXPost(supabase, xres.reservationId) // failed → don't burn the slot
       throw e
@@ -233,6 +270,14 @@ Return ONLY the tweet text.`,
       tweetId: tweet.id,
       publishCount: twSocialCount + 1,
       isLastAllowed: twCap.willBeLast,
+      // A tweet WITH its picture and a tweet without one both return ok:true and
+      // a tweet id, so the difference has to be said out loud or it is invisible
+      // on screen — which is how this went unnoticed long enough for a creator
+      // to be the one who spotted it. Named to match the Facebook route so the
+      // shared preview modal already shows it: it toasts `mediaNote` on any
+      // publish, and a second spelling would just be a note nothing renders.
+      mediaUsed: media.attached ? 'image' : 'link-only',
+      mediaNote: media.note,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
