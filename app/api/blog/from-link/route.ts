@@ -691,8 +691,15 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   // without it MVP has no record of the post, so no Passport links, no SEO
   // tracking, no social push, and no way to find it again from the dashboard.
   // Regenerating is not a fix either, because it would publish a duplicate.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: saveErr } = await (supabase as any).from('blog_posts').insert({
+  // RECORD A MISSING FEATURED IMAGE, the way blog/generate has since migration
+  // 177. This path never set the flag, so its posts were invisible to
+  // /api/cron/heal-thumbnails, to /api/admin/thumbnail-blocks and to the SEO
+  // page's "N posts published without a thumbnail" row. One creator has 123
+  // posts through here, every one of them post_type 'review' with the flag
+  // false, on a host whose /wp-json answers a bot CAPTCHA rather than
+  // WordPress. A false flag on a post that genuinely has no image is worse
+  // than no flag at all: it is an answer, and it is the wrong one.
+  const blogRow: Record<string, unknown> = {
     user_id: ownerId,
     video_id: null,
     title,
@@ -707,7 +714,22 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     ai_model: 'claude-sonnet-4-6',
     generation_prompt_version: 'from-link-v1',
     published_at: new Date().toISOString(),
-  })
+    thumbnail_blocked: !featuredMedia,
+    // The heal's third source. Without it a flagged from-link post is skipped
+    // forever, because the other two sources both come from a video this post
+    // does not have.
+    hero_source_url: productImageUrl || null,
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let { error: saveErr } = await (supabase as any).from('blog_posts').insert(blogRow)
+  // Same drift safety net generate uses: a database that has not run migration
+  // 177 must lose the flag, not the whole post.
+  if (saveErr && /column .*(thumbnail_blocked|hero_source_url).* does not exist/i.test(saveErr.message || '')) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { thumbnail_blocked, hero_source_url, ...withoutFlag } = blogRow
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;({ error: saveErr } = await (supabase as any).from('blog_posts').insert(withoutFlag))
+  }
 
   if (saveErr) {
     console.error('[blog/from-link] post is live but the row was not saved:', saveErr.message)

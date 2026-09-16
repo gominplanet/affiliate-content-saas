@@ -49,11 +49,18 @@ export async function reattachThumbnailsForOwner(
 
   let q = supabase
     .from('blog_posts')
-    .select('id, title, wordpress_post_id, video_id, youtube_videos(youtube_video_id, blog_thumbnail_url)')
+    // select('*') for the post's own columns, NOT a named list. hero_source_url
+    // arrives in migration 336 and PostgREST rejects the WHOLE statement when
+    // one named column is missing, so naming it would turn "336 not applied
+    // yet" into "the heal stops running for everybody".
+    .select('*, youtube_videos(youtube_video_id, blog_thumbnail_url)')
     .eq('user_id', ownerId)
     .eq('status', 'published')
     .not('wordpress_post_id', 'is', null)
-    .not('video_id', 'is', null)
+    // video_id IS NULL is no longer excluded. That filter is why a post written
+    // from a link could never be healed: it was dropped here, before the loop
+    // that would have skipped it anyway. Both are fixed, and the loop's own
+    // guard still skips any post with no usable source image.
     .order('created_at', { ascending: false })
     .limit(limit)
   if (siteId) q = q.eq('wordpress_site_id', siteId)
@@ -101,7 +108,12 @@ export async function reattachThumbnailsForOwner(
     const wpId = p.wordpress_post_id as number
     const ytId = (p.youtube_videos?.youtube_video_id as string) || ''
     const customThumb = (p.youtube_videos?.blog_thumbnail_url as string | null)?.trim() || null
-    if (!wpId || (!ytId && !customThumb)) continue
+    // The third source (migration 336). Both of the others come from a source
+    // VIDEO, so a post written from a link had neither and was skipped here
+    // forever — which would have turned the flag into a number that only ever
+    // goes up.
+    const heroSource = (p.hero_source_url as string | null)?.trim() || null
+    if (!wpId || (!ytId && !customThumb && !heroSource)) continue
     checked++
     try {
       // Already has a featured image → nothing to do. A wpId missing from the
@@ -112,6 +124,9 @@ export async function reattachThumbnailsForOwner(
       let media
       if (customThumb) {
         media = await wpService.uploadImageFromUrl(customThumb, `${ytId || wpId}-blogthumb.jpg`)
+      } else if (!ytId && heroSource) {
+        // A link-written post. Its product photo is the only image it ever had.
+        media = await wpService.uploadImageFromUrl(heroSource, `${wpId}-product.jpg`)
       } else {
         try {
           media = await wpService.uploadImageFromUrl(`https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`, `${ytId}.jpg`)
