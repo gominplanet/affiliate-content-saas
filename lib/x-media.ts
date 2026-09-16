@@ -37,8 +37,24 @@ import { mediaCapability, MEDIA_SCOPE } from '@/lib/x-scopes'
 /** X's ceiling for a still image on a post. Bigger uploads are rejected. */
 export const X_IMAGE_MAX_BYTES = 5 * 1024 * 1024
 
-/** What X accepts as a post image. Anything else is not worth the round trip. */
+/** What X accepts as a post image. Anything else gets re-encoded to JPEG. */
 export const X_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+
+/**
+ * The size past which we will not even pull the file down.
+ *
+ * NOT X's limit. This is the point where the download and the decode are
+ * themselves the problem inside a serverless function. Anything between X's
+ * 5 MB and this gets resized instead of refused, which is the whole difference
+ * between "your hero is 5.4 MB, no picture for you" and a post that works.
+ */
+export const X_DOWNLOAD_MAX_BYTES = 25 * 1024 * 1024
+
+/** Widths tried when fitting, largest first. 1600 is past what X displays, so
+ *  the first pass keeps a hero sharp on a retina timeline. */
+export const X_FIT_WIDTHS = [1600, 1200, 900]
+/** Quality steps within each width. The first pass that fits wins. */
+export const X_FIT_QUALITIES = [85, 72, 60]
 
 /**
  * The sentence a creator sees when their connection is too old to carry images.
@@ -93,28 +109,103 @@ export async function fetchImageForX(imageUrl: string): Promise<XImageBytes> {
   })
   if (!res.ok) throw new Error(`The image could not be downloaded (${res.status}).`)
 
-  // Content-Length first: a 60 MB file should not be pulled into memory just to
-  // measure it. It is advisory, so the real length is checked again below.
+  // Content-Length is advisory, and it is only used to refuse the ABSURD. The
+  // first real post this shipped on hit a 5.4 MB hero and was refused outright,
+  // which was the wrong call: 5.4 MB is a large picture, not an impossible one,
+  // and re-encoding it is a second of CPU. So the ceiling here is the size past
+  // which pulling the bytes into a serverless function is itself the problem,
+  // not X's limit.
   const declared = Number(res.headers.get('content-length') || 0)
-  if (declared > X_IMAGE_MAX_BYTES) {
-    throw new Error(`The image is ${(declared / 1048576).toFixed(1)} MB and X's limit is 5 MB.`)
+  if (declared > X_DOWNLOAD_MAX_BYTES) {
+    throw new Error(`The image is ${(declared / 1048576).toFixed(1)} MB, which is too large to process.`)
   }
 
   const contentType = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
-  if (contentType && !X_IMAGE_TYPES.has(contentType)) {
-    throw new Error(`X does not accept ${contentType} images.`)
-  }
-
   const bytes = new Uint8Array(await res.arrayBuffer())
   if (!bytes.byteLength) throw new Error('The image came back empty.')
-  if (bytes.byteLength > X_IMAGE_MAX_BYTES) {
-    throw new Error(`The image is ${(bytes.byteLength / 1048576).toFixed(1)} MB and X's limit is 5 MB.`)
+  if (bytes.byteLength > X_DOWNLOAD_MAX_BYTES) {
+    throw new Error(`The image is ${(bytes.byteLength / 1048576).toFixed(1)} MB, which is too large to process.`)
   }
 
   // A server that sends no content-type still has to be given one, and sniffing
   // the magic bytes beats defaulting to jpeg and having X reject the upload
   // with a message about the thing we guessed.
-  return { bytes, contentType: contentType || sniffImageType(bytes) }
+  const type = contentType || sniffImageType(bytes)
+
+  // Already fine: hand it over untouched. Re-encoding a picture that does not
+  // need it would only lose quality, and would turn a transparent PNG opaque
+  // for no reason.
+  if (bytes.byteLength <= X_IMAGE_MAX_BYTES && X_IMAGE_TYPES.has(type)) {
+    return { bytes, contentType: type }
+  }
+
+  return fitForX(bytes, type)
+}
+
+/**
+ * Make an image X will accept: small enough, and in a format it takes.
+ *
+ * Reached in two cases, and both used to be a refusal:
+ *
+ *   TOO BIG      a designed hero at full resolution runs past 5 MB easily. The
+ *                first live post on this feature was 5.4 MB.
+ *   WRONG FORMAT AVIF, TIFF, a PNG from a plugin. X takes JPEG, PNG, WEBP, GIF.
+ *
+ * Quality is stepped down rather than guessed at, because the size of a JPEG is
+ * a property of the picture, not of the number: the same quality that puts a
+ * flat graphic at 300 KB puts a detailed photograph past the limit. The loop
+ * stops at the first pass that fits, so a typical hero is re-encoded once.
+ */
+export async function fitForX(bytes: Uint8Array, contentType: string): Promise<XImageBytes> {
+  // An animated GIF cannot survive this. Re-encoding it to JPEG would silently
+  // post a still frame of something the creator chose because it moves, which
+  // is worse than saying it did not fit.
+  if (contentType === 'image/gif') {
+    throw new Error(`The GIF is ${(bytes.byteLength / 1048576).toFixed(1)} MB and X's limit is 5 MB. Resizing it would drop the animation.`)
+  }
+
+  // The DEFAULT export is the callable factory; the module namespace itself is
+  // not, which typechecks fine under tsx and fails the real build.
+  let sharp: (typeof import('sharp'))['default']
+  try {
+    sharp = (await import('sharp')).default
+  } catch {
+    throw new Error(`The image is ${(bytes.byteLength / 1048576).toFixed(1)} MB and X's limit is 5 MB.`)
+  }
+
+  const read = () => sharp(bytes as unknown as Buffer, { failOn: 'none' })
+  let hasAlpha = false
+  try {
+    // Flatten onto white when the source has transparency. JPEG has no alpha,
+    // and sharp's default fill is BLACK, which turns a logo on a transparent
+    // background into a black rectangle on the timeline.
+    hasAlpha = (await read().metadata()).hasAlpha === true
+  } catch {
+    throw new Error('That image could not be read, so it could not be resized to fit X.')
+  }
+  const flatten = hasAlpha
+
+  for (const width of X_FIT_WIDTHS) {
+    for (const quality of X_FIT_QUALITIES) {
+      let out: Buffer
+      try {
+        let pipeline = read()
+          // EXIF orientation applied before the metadata is stripped, or a
+          // phone photo posts sideways.
+          .rotate()
+          .resize({ width, withoutEnlargement: true })
+        if (flatten) pipeline = pipeline.flatten({ background: '#ffffff' })
+        out = await pipeline.jpeg({ quality, mozjpeg: true }).toBuffer()
+      } catch {
+        throw new Error('That image could not be resized to fit X.')
+      }
+      if (out.byteLength <= X_IMAGE_MAX_BYTES) {
+        return { bytes: new Uint8Array(out), contentType: 'image/jpeg' }
+      }
+    }
+  }
+
+  throw new Error(`The image is ${(bytes.byteLength / 1048576).toFixed(1)} MB and would not fit X's 5 MB limit even resized.`)
 }
 
 /** Identify an image from its first bytes, for servers that send no type. */

@@ -26,9 +26,11 @@ import { readFileSync } from 'node:fs'
 import { mediaCapability, MEDIA_SCOPE } from '../lib/x-scopes'
 import { TWITTER_SCOPES } from '../services/twitter'
 import {
-  sniffImageType, fetchImageForX, resolveXMedia, looksLikeMissingMediaScope,
-  RECONNECT_FOR_IMAGES, X_IMAGE_MAX_BYTES, X_IMAGE_TYPES,
+  sniffImageType, fetchImageForX, resolveXMedia, looksLikeMissingMediaScope, fitForX,
+  RECONNECT_FOR_IMAGES, X_IMAGE_MAX_BYTES, X_IMAGE_TYPES, X_DOWNLOAD_MAX_BYTES,
+  X_FIT_WIDTHS, X_FIT_QUALITIES,
 } from '../lib/x-media'
+import sharp from 'sharp'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -126,6 +128,50 @@ const cron = strip(CRON)
 // unit the post was about to spend. These call the real function, which is why
 // they live in an async block: everything else here is synchronous.
 async function liveChecks() {
+  // ── an oversized image is RESIZED, not refused ───────────────────────────
+  //
+  // Real images through the real function. Noise on purpose: a flat colour
+  // compresses to nothing and would prove the resize works on the one case
+  // that never needed it.
+  {
+    const w = 2000, h = 1500
+    const noise = Buffer.alloc(w * h * 3)
+    for (let i = 0; i < noise.length; i++) noise[i] = (i * 2654435761) % 256
+    const big = await sharp(noise, { raw: { width: w, height: h, channels: 3 } })
+      .png({ compressionLevel: 0 }).toBuffer()
+    check('the test image is actually over the limit', big.byteLength > X_IMAGE_MAX_BYTES,
+      `${(big.byteLength / 1048576).toFixed(1)} MB`)
+
+    const fitted = await fitForX(new Uint8Array(big), 'image/png')
+    check('an oversized image comes back under X\'s limit',
+      fitted.bytes.byteLength <= X_IMAGE_MAX_BYTES,
+      `${(fitted.bytes.byteLength / 1048576).toFixed(2)} MB`)
+    check('and in a format X takes', X_IMAGE_TYPES.has(fitted.contentType))
+
+    // Transparency. JPEG has no alpha and sharp's default fill is BLACK, so a
+    // logo on a transparent background becomes a black rectangle on the
+    // timeline. Checked on a real pixel rather than on the flatten() call.
+    const alpha = await sharp({ create: { width: 1200, height: 800, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 0 } } })
+      .png().toBuffer()
+    const flat = await fitForX(new Uint8Array(alpha), 'image/png')
+    const px = await sharp(flat.bytes).extract({ left: 5, top: 5, width: 1, height: 1 }).raw().toBuffer()
+    check('transparency is flattened onto WHITE, not black',
+      px[0] > 240 && px[1] > 240 && px[2] > 240, `rgb(${px[0]},${px[1]},${px[2]})`)
+
+    // An animated GIF cannot survive a re-encode. Posting a still frame of
+    // something chosen because it moves is worse than saying it did not fit.
+    let gifRefused = ''
+    try { await fitForX(new Uint8Array(Buffer.alloc(6 * 1024 * 1024)), 'image/gif') }
+    catch (e) { gifRefused = e instanceof Error ? e.message : '' }
+    check('an oversized GIF is refused rather than flattened to one frame',
+      /animation/i.test(gifRefused), gifRefused || 'it was not refused at all')
+
+    // A format X does not accept is converted, not rejected.
+    const tiff = await sharp({ create: { width: 900, height: 600, channels: 3, background: '#336699' } }).tiff().toBuffer()
+    const conv = await fitForX(new Uint8Array(tiff), 'image/tiff')
+    check('a format X does not take is converted', conv.contentType === 'image/jpeg', conv.contentType)
+  }
+
   // No scope → refused without a single network call, so the fake token is
   // never used and this is deterministic offline.
   const noScope = await resolveXMedia({
@@ -176,10 +222,37 @@ async function liveChecks() {
     ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].every(t => X_IMAGE_TYPES.has(t))
     && !X_IMAGE_TYPES.has('image/svg+xml'),
     'SVG is a script container and X does not accept it as post media')
+  check('an image that already fits is passed through untouched',
+    /if \(bytes\.byteLength <= X_IMAGE_MAX_BYTES && X_IMAGE_TYPES\.has\(type\)\)/.test(XMEDIA),
+    're-encoding a picture that does not need it only loses quality, and turns a transparent PNG opaque for nothing')
   check('content-length is read before the body', /content-length/.test(XMEDIA),
-    'a 60 MB file should be refused by its header, not pulled into a serverless function to be measured')
-  check('and the real length is checked again after', (XMEDIA.match(/X_IMAGE_MAX_BYTES/g) || []).length >= 3,
+    'an absurd file should be refused by its header, not pulled into a serverless function to be measured')
+  check('and the real length is checked again after', /bytes\.byteLength > X_DOWNLOAD_MAX_BYTES/.test(XMEDIA),
     'content-length is advisory; a server that lies about it would otherwise get through')
+
+  // THE BUG THAT SHIPPED. The first real post on this feature had a 5.4 MB
+  // hero and was refused outright with "X's limit is 5 MB", which is true and
+  // useless: 5.4 MB is a large picture, not an impossible one, and the creator
+  // has no way to act on it. The download ceiling exists so the two limits can
+  // differ, and everything between them gets resized instead of rejected.
+  check('the download ceiling is well above X\'s limit', X_DOWNLOAD_MAX_BYTES > X_IMAGE_MAX_BYTES * 2,
+    'if these are the same number, an oversized image is refused and nothing is ever resized')
+  // And the one that ROUTES an oversized image into the resize. The live
+  // checks below call fitForX directly, so they keep passing while
+  // fetchImageForX goes back to throwing — which is exactly the shipped bug.
+  check('an image that does not fit is handed to the resize, not thrown',
+    /return fitForX\(bytes, type\)/.test(XMEDIA),
+    'this line IS the fix; without it fitForX is dead code and a 5.4 MB hero is refused again')
+  // The ladder has to descend, or "resize" is one pass at whatever it started
+  // at and a big picture still will not fit.
+  check('the fit ladder actually steps down',
+    X_FIT_WIDTHS.length > 1 && X_FIT_QUALITIES.length > 1
+    && X_FIT_WIDTHS.every((w, i, a) => i === 0 || w < a[i - 1])
+    && X_FIT_QUALITIES.every((q, i, a) => i === 0 || q < a[i - 1]),
+    `widths ${X_FIT_WIDTHS.join('/')}, qualities ${X_FIT_QUALITIES.join('/')}`)
+  check('and starts somewhere sensible for a timeline',
+    X_FIT_WIDTHS[0] >= 1200 && X_FIT_WIDTHS[0] <= 2048 && X_FIT_QUALITIES[0] >= 75,
+    'too small or too soft and every hero posts blurry to fix a problem most of them do not have')
 
   // Magic-number sniffing, for the servers that send no content-type.
   check('JPEG is recognised', sniffImageType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0])) === 'image/jpeg')
