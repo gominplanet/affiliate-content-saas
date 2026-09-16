@@ -35,6 +35,16 @@ import type { Tier } from '@/lib/tier'
 const PAID = ['creator', 'amazon', 'studio', 'pro', 'admin'] as const
 const PRO = ['pro', 'admin'] as const
 const STUDIO_UP = ['studio', 'pro', 'admin'] as const
+/** Every PAID plan that can actually publish a blog post.
+ *
+ *  PAID minus 'amazon', and the exclusion is a capability rather than a price:
+ *  the Amazon plan is `sites: 0` and `postsPerMonth: 0`, so a feature whose
+ *  output is a WordPress post cannot complete there. /api/deals already answers
+ *  an Amazon user with "Connect a WordPress site first", which is honest but is
+ *  still a sidebar entry that can never succeed, so it is not offered.
+ *
+ *  Use this, not PAID, for anything that ends in a published post. */
+const BLOGGING_PAID = ['creator', 'studio', 'pro', 'admin'] as const
 
 export interface NavAccessRule {
   /** Sidebar label, so this table reads like the menu it controls. */
@@ -60,9 +70,14 @@ export const NAV_ACCESS = {
   },
   deals: {
     label: 'Deals Hub',
-    tiers: STUDIO_UP,
-    enforcedBy: 'POST /api/deals',
-    extraLocks: 'Globally paused via DEALS_HUB_PAUSED in lib/deal-occasion.ts',
+    // Opened from STUDIO_UP to every paid plan that has a blog (2026-09-16).
+    // Creator was paying for a plan with a post allowance and could not spend
+    // any of it here. A deal post already comes out of that allowance through
+    // checkGenerationLimit, so this grants access to a feature, not to extra
+    // volume. Amazon is excluded by BLOGGING_PAID, not by price — see there.
+    tiers: BLOGGING_PAID,
+    enforcedBy: 'POST /api/deals (canUseDealsHub) + DELETE /api/deals',
+    extraLocks: 'A deal post spends one of the tier\'s postsPerMonth; Amazon has its own dealsPerMonth because it has no post pool. Globally pausable via DEALS_HUB_PAUSED in lib/deal-occasion.ts',
   },
   burner: {
     label: 'Shop Burner',
@@ -121,6 +136,14 @@ export function canUseDealRadar(tier: Tier | null | undefined): boolean {
  *  extension can call the link-mint route, so this must be enforced server-side. */
 export function canUsePassport(tier: Tier | null | undefined): boolean {
   return canSeeNav('passport', tier)
+}
+
+/** Can this tier use the Deals Hub (build and publish a deal post)? Every paid
+ *  plan that has a blog. Single source of truth; the routes call this rather
+ *  than listing tier names, which is what let the nav and the API drift apart
+ *  in the first place. */
+export function canUseDealsHub(tier: Tier | null | undefined): boolean {
+  return canSeeNav('deals', tier)
 }
 
 /** Can this tier BROWSE the Deal Radar feed? Every signed-in plan, including the

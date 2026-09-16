@@ -49,7 +49,11 @@ if (!existsSync(srcPath)) {
 const src = readFileSync(srcPath, 'utf8')
 
 const aliases = {}
-for (const [, name, body] of src.matchAll(/^const (PAID|PRO|STUDIO_UP) = \[([^\]]+)\]/gm)) {
+// Any SCREAMING_CASE tier const, not a fixed list of three. Adding
+// BLOGGING_PAID to feature-access made `deals` read as "no tiers listed", which
+// is a guard failing on a correct change rather than on a bug — and the fix it
+// invites is to inline the array and lose the named concept.
+for (const [, name, body] of src.matchAll(/^const ([A-Z][A-Z_]*) = \[([^\]]+)\] as const/gm)) {
   aliases[name] = [...body.matchAll(/'([a-z]+)'/g)].map(m => m[1])
 }
 

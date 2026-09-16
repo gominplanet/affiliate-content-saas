@@ -1113,14 +1113,19 @@ export async function checkDealsUsage(
     periodEnd: ig?.subscription_period_end ?? null,
   })
 
-  // Admin — uncapped.
+  // cap === null means THIS COUNTER DOES NOT APPLY, not "unlimited for admin".
+  // Creator, Studio and Pro all have a real post allowance, so a deal post
+  // spends one of those through checkGenerationLimit and never reaches here.
+  // (The comment that used to sit here said "Studio + Pro have caps > 0. Trial
+  // + Creator have cap 0", which was wrong in both halves: the only tier with a
+  // cap above zero is Amazon, and it is the one the sentence left out.)
   if (cap === null) return { allowed: true, tier, used: 0, cap: null, resetLabel }
 
-  // Studio + Pro have caps > 0. Trial + Creator have cap 0 → upsell card.
+  // cap 0 is the free trial.
   if (cap === 0) {
     return {
       allowed: false,
-      reason: 'Deals Hub is a Studio + Pro feature. Upgrade to publish timely deal posts with countdown banners and bulk-import from your Amazon Associates dashboard.',
+      reason: 'Deals Hub is a paid feature. Upgrade to publish timely deal posts with countdown banners and bulk-import from your Amazon Associates dashboard.',
       tier,
       used: 0,
       cap: 0,

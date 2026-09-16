@@ -30,8 +30,11 @@
 //
 //   DELETE /api/deals  body: { id }  (mirrors buying-guides DELETE shape)
 //
-// Tier gate: canUseDealRadar(tier) — all PAID tiers (creator/studio/pro/admin),
-// since Deal Radar posts through this endpoint. Trial → 403 'tier_not_allowed'.
+// Tier gates, and there are two because two features publish through here:
+//   POST   canUseDealRadar — every PAID tier, since Deal Radar posts through
+//          this endpoint. Trial → 403 'tier_not_allowed'.
+//   DELETE canUseDealsHub — the paid tiers that have a blog, matching the
+//          sidebar. Both read lib/feature-access rather than listing tiers.
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -60,7 +63,7 @@ import { scrubEmDashes } from '@/lib/html-scrub'
 import { getOccasion, detectOccasion, listOccasions, type DealOccasionSlug } from '@/lib/deal-occasion'
 import { dealEmbargo, type DealEmbargoVerdict } from '@/lib/deal-embargo'
 import { normalizeTier, checkGenerationLimit, checkDealsUsage, TIERS } from '@/lib/tier'
-import { canUseDealRadar } from '@/lib/feature-access'
+import { canUseDealRadar, canUseDealsHub } from '@/lib/feature-access'
 import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
 import { writeContentSchema } from '@/lib/content-schema'
@@ -283,8 +286,11 @@ export async function DELETE(req: Request) {
   const { data: integ } = await supabase
     .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = (integ?.tier as string | undefined) ?? 'trial'
-  if (tier !== 'studio' && tier !== 'pro' && tier !== 'admin') {
-    return NextResponse.json({ error: 'Studio or Pro tier required.', code: 'tier_not_allowed' }, { status: 403 })
+  // Reads the SAME gate the sidebar does. This used to list tier names inline,
+  // which is exactly how the nav and the API drift apart: opening the feature in
+  // one place left the other 403ing on a menu item the creator could see.
+  if (!canUseDealsHub(normalizeTier(tier))) {
+    return NextResponse.json({ error: 'Deals Hub is available on paid plans with a blog.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
   let body: { id?: string }
