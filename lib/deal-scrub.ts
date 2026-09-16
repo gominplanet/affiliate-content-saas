@@ -60,6 +60,22 @@ const REWRITES: Array<[RegExp, string]> = [
   // slipped past more-specific patterns above)
   [/\b(I|we)(?:'ve| have)?\s+tested\b/gi, "$1've been tracking"],
   [/\b(I|we)\s+tested\b/gi, "$1 tracked"],
+
+  // TWO THE RULES ALREADY BANNED AND THE SCRUB LET THROUGH.
+  //
+  // DEAL_VOICE_RULES names "in my experience" and "I bought" explicitly, but
+  // the patterns above only caught them in their longer forms: "in my
+  // experience WITH this" and "I bought THIS/IT/THE x". Bare "In my experience
+  // the battery lasts all day" and "I bought one" both sailed through, on the
+  // deal path as well as this one. Placed LAST so the specific rewrites above
+  // still win where they apply.
+  // Sentence-start first, case-SENSITIVELY, or "In my experience the battery
+  // lasts" becomes "from what owners report the battery lasts" with a lowercase
+  // opening. Every other rewrite here happens to start with "I", so this is the
+  // first one where the replacement's case is visible.
+  [/\bIn\s+my\s+experience\b/g, 'From what owners report'],
+  [/\bin\s+my\s+experience\b/gi, 'from what owners report'],
+  [/\bI(?:'ve| have)?\s+bought\s+(?:one|mine|a\s+few|two|three)\b/gi, "I've been tracking this"],
 ]
 
 /** Rewrite reviewer-voice phrases to deal-spotter equivalents. Runs before

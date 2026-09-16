@@ -39,6 +39,8 @@ import { passportLinkForUser } from '@/lib/passport-links'
 import { getLinkStyle, resolveShowcaseLink, resolveProductShopLink } from '@/lib/link-cloak'
 import { SHOWCASE_DISCLAIMER } from '@/lib/post-destination'
 import { upgradeTikTokImage } from '@/lib/tiktok-product'
+import { normalizeOwnership, ownershipDisclosure, ownershipVoiceRule, hasHandsOn } from '@/lib/product-ownership'
+import { DEAL_VOICE_RULES, scrubReviewLanguage } from '@/lib/deal-scrub'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -132,6 +134,9 @@ export async function POST(req: Request) {
   const link = (body.link || '').trim()
   const providedName = (body.productName || '').trim()
   const tiktokProductId = (body.tiktokProductId || '').trim()
+  // Filled from the saved product below. Declared here because the disclosure
+  // and the writer prompt both read it, and they sit either side of the lookup.
+  let ownership = normalizeOwnership(null)
   const angle = (body.angle || '').trim()
   const category = (body.category || '').trim()
   const siteId = body.siteId
@@ -265,6 +270,7 @@ export async function POST(req: Request) {
     // Re-run the upgrade on the STORED url: it is idempotent, and a product
     // saved before the jpeg fix still holds a WebP that WordPress will not take.
     productImageUrl = upgradeTikTokImage(tp.image_url as string | null)
+    ownership = normalizeOwnership(tp.ownership as string | null)
     // Facts read off the product's own page. Handed to the writer as grounding
     // so it states what is true instead of inventing specifics from a title,
     // which is the failure mode that matters most on an affiliate post.
@@ -386,7 +392,12 @@ export async function POST(req: Request) {
   // full title for ONE exact-match mention (long-tail search).
   const pn = deriveProductName(productName, (scraped?.brand as string | null | undefined) ?? null)
   const anthropic = createAnthropicClient()
-  const sys = `You are the creator writing a FIRST-PERSON ("I"/"we") affiliate review of ONE product — you personally recommend it. Never write in third person or refer to "the reviewer". Only state facts present in the PRODUCT DATA or RESEARCH below — NEVER invent specs, numbers, prices, test results, or personal anecdotes you cannot support from that data. If first-hand detail is thin, write only at the level the data supports rather than fabricating. Lead each section answer-first. ${BANNED_RULE}\n${learnBlock}`
+  // A creator who has not used the product gets the deal-spotter voice rules:
+  // first person kept, hands-on claims gone. No disclaimer can repair a review
+  // of a product the writer never handled, but a different voice can, and
+  // lib/deal-scrub already writes exactly that voice for the Deals path.
+  const voiceRule = tiktokProductId ? ownershipVoiceRule(ownership, DEAL_VOICE_RULES) : null
+  const sys = `${voiceRule ? `${voiceRule}\n\n` : ''}You are the creator writing a FIRST-PERSON ("I"/"we") affiliate review of ONE product — you personally recommend it. Never write in third person or refer to "the reviewer". Only state facts present in the PRODUCT DATA or RESEARCH below — NEVER invent specs, numbers, prices, test results, or personal anecdotes you cannot support from that data. If first-hand detail is thin, write only at the level the data supports rather than fabricating. Lead each section answer-first. ${BANNED_RULE}\n${learnBlock}`
 
   const userPrompt = `Write a complete, SEO- and AI-Overview-optimized affiliate review blog post about ONE product.
 ${angle ? `ANGLE / FOCUS: ${angle}\n` : ''}${category ? `CATEGORY: ${category}\n` : ''}
@@ -465,7 +476,16 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   // on header-stripping hosts (Hostinger LiteSpeed / WAF) after the AI cost was
   // already billed — every other write route passes this.
   const wpService = createWordPressService(site.wordpress_url ?? '', site.wordpress_username ?? '', site.wordpress_app_password ?? '', site.wordpress_api_token ?? undefined)
-  const scrub = (s: string) => scrubBanned(s || '')
+  // THE PROMPT RULE IS NOT THE GUARD. Every other ban in this codebase learned
+  // the same lesson: a model told not to say something says it anyway often
+  // enough that scrubBanned exists at all. So a creator who has not used the
+  // product gets the deal-spotter rewrite applied to the OUTPUT as well, at the
+  // one chokepoint every piece of copy in this post passes through.
+  const stripHandsOn = !!tiktokProductId && !hasHandsOn(ownership)
+  const scrub = (s: string) => {
+    const cleaned = scrubBanned(s || '')
+    return stripHandsOn ? scrubReviewLanguage(cleaned) : cleaned
+  }
   // Enforce the canonical product name in the title (belt-and-braces on the
   // prompt): if the model's title dropped the brand AND the product's core
   // words, fall back to a clean "<canonical> Review". Keeps every review title
@@ -485,7 +505,17 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 
   let bodyHtml = ''
   // Affiliate disclosure banner.
-  bodyHtml += `<!-- wp:group {"style":{"color":{"background":"#fffbe6"},"spacing":{"padding":{"top":"16px","bottom":"16px","left":"20px","right":"20px"}},"border":{"left":{"color":"#FFC200","width":"4px"}}},"layout":{"type":"constrained"}} -->\n<div class="wp-block-group has-background" style="border-left-color:#FFC200;border-left-width:4px;background-color:#fffbe6;padding:16px 20px"><!-- wp:paragraph {"style":{"typography":{"fontSize":"13px"}}} --><p style="font-size:13px">${scrub(disclaimer)}</p><!-- /wp:paragraph --></div>\n<!-- /wp:group -->\n`
+  //
+  // TWO SENTENCES, NOT ONE. The affiliate line discloses a commission. The
+  // ownership line discloses how the creator came by the product, which is a
+  // different material connection the first says nothing about: a free sample
+  // from the brand has to be stated whether or not there is also a commission.
+  // Null for 'bought', because buying it yourself is not a material connection
+  // and asserting hands-on use would be us making a claim on the creator's
+  // behalf rather than disclosing one.
+  const ownLine = tiktokProductId ? ownershipDisclosure(ownership) : null
+  const disclosureHtml = [scrub(disclaimer), ownLine ? scrub(ownLine) : ''].filter(Boolean).join(' ')
+  bodyHtml += `<!-- wp:group {"style":{"color":{"background":"#fffbe6"},"spacing":{"padding":{"top":"16px","bottom":"16px","left":"20px","right":"20px"}},"border":{"left":{"color":"#FFC200","width":"4px"}}},"layout":{"type":"constrained"}} -->\n<div class="wp-block-group has-background" style="border-left-color:#FFC200;border-left-width:4px;background-color:#fffbe6;padding:16px 20px"><!-- wp:paragraph {"style":{"typography":{"fontSize":"13px"}}} --><p style="font-size:13px">${disclosureHtml}</p><!-- /wp:paragraph --></div>\n<!-- /wp:group -->\n`
   bodyHtml += `${scrub(parsed.intro_html)}\n`
 
   // Top CTA button (if we have an affiliate link).

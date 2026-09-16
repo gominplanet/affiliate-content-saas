@@ -41,6 +41,11 @@ import {
   parseTikTokProduct, tiktokProductIdFromUrl, isTikTokProductUrl,
   tiktokRegionFromUrl, upgradeTikTokImage,
 } from '../lib/tiktok-product'
+import {
+  normalizeOwnership, ownershipDisclosure, ownershipVoiceRule, hasHandsOn,
+  DEFAULT_OWNERSHIP, OWNERSHIP_CHOICES,
+} from '../lib/product-ownership'
+import { scrubReviewLanguage, DEAL_VOICE_RULES } from '../lib/deal-scrub'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -336,6 +341,107 @@ const p = parseTikTokProduct(HTML, URL)
     'a page-wide spinner hides which product is running')
   check('both notes reach the screen', /j\.note/.test(UI) && /j\.linkNote/.test(UI),
     'one means the post is live but unrecorded, the other means the link style changed; neither is a failure')
+}
+
+// ── did they actually use it, and how did they get it ──────────────────────
+//
+// The blog writer's prompt says "you are the creator writing a FIRST-PERSON
+// affiliate review of ONE product — you personally recommend it", and the
+// first post this feature published duly opened "I was super excited when the
+// Enya NOVA GO SP1…". For most TikTok Shop affiliates that is true. For one
+// who has not got the product it is fabricated experience, and the FTC's
+// position is that you cannot endorse a product you have not used.
+//
+// THE OBVIOUS FIX IS THE WRONG ONE. Adding a fixed line to every post saying
+// the review is based on the creator's own use is STRONGER than what the
+// writer currently implies: it turns an implied claim into an explicit one, so
+// on a post by a creator who has not used the product it upgrades a bad post
+// into a false statement. Hence a per-product answer that changes the VOICE,
+// not a sentence that papers over it.
+{
+  check('the default is bought', DEFAULT_OWNERSHIP === 'bought',
+    'most of these creators have the product; defaulting to not-used would downgrade every existing row')
+  check('an unknown value reads as the default', normalizeOwnership('nonsense') === 'bought'
+    && normalizeOwnership(null) === 'bought' && normalizeOwnership('') === 'bought',
+    'a creator who never saw the question must still get a working product')
+  check('the three real values survive', normalizeOwnership('gifted') === 'gifted'
+    && normalizeOwnership('not-used') === 'not-used' && normalizeOwnership('bought') === 'bought')
+  check('every choice is offered on screen', OWNERSHIP_CHOICES.length === 3)
+
+  check('bought adds NO disclosure', ownershipDisclosure('bought') === null,
+    'buying it yourself is not a material connection, and asserting hands-on use would be us making the claim')
+  check('gifted discloses the gift', /sent me this product/i.test(ownershipDisclosure('gifted') || ''),
+    'a free sample is a material connection and "contains affiliate links" says nothing about it')
+  check('and says the brand did not control the post', /did not pay for or approve/i.test(ownershipDisclosure('gifted') || ''))
+  check('not-used says so plainly', /have not used this one myself/i.test(ownershipDisclosure('not-used') || ''))
+
+  check('only not-used changes the voice',
+    ownershipVoiceRule('bought', DEAL_VOICE_RULES) === null
+    && ownershipVoiceRule('gifted', DEAL_VOICE_RULES) === null
+    && ownershipVoiceRule('not-used', DEAL_VOICE_RULES) === DEAL_VOICE_RULES,
+    'a creator who HAS the product should keep the review voice; that is the common case')
+  check('hands-on tracks the same split',
+    hasHandsOn('bought') && hasHandsOn('gifted') && !hasHandsOn('not-used'))
+}
+
+// ── the prompt rule is not the guard ───────────────────────────────────────
+//
+// Every other ban in this codebase learned this: a model told not to say
+// something says it anyway often enough that scrubBanned exists at all. So the
+// not-used case rewrites the OUTPUT too.
+{
+  const FL3 = readFileSync('app/api/blog/from-link/route.ts', 'utf8')
+  const f3 = FL3.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')
+  check('the voice rule reaches the prompt', /voiceRule \? `\$\{voiceRule\}/.test(f3))
+  check('AND the output is scrubbed', /stripHandsOn \? scrubReviewLanguage\(cleaned\)/.test(f3),
+    'a prompt rule alone has never held for any other ban in this codebase')
+  check('the scrub runs at the one chokepoint', /const scrub = \(s: string\) => \{/.test(f3),
+    'every piece of copy in the post goes through scrub(); anything else leaves gaps')
+  check('and only when they have not used it', /const stripHandsOn = !!tiktokProductId && !hasHandsOn\(ownership\)/.test(f3),
+    'rewriting a real owner\'s "I tested this" would be MVP inventing a limitation they do not have')
+
+  check('the two disclosures are separate sentences', /\[scrub\(disclaimer\), ownLine \? scrub\(ownLine\) : ''\]/.test(f3),
+    'one discloses a commission and the other a gift; a reader is entitled to both')
+  check('and the ownership line is TikTok-only', /tiktokProductId \? ownershipDisclosure\(ownership\) : null/.test(f3),
+    'an Amazon post has its own disclosure and this must not leak into it')
+
+  // The scrub itself. DEAL_VOICE_RULES names both of these explicitly and the
+  // patterns caught neither in its bare form, on the deal path as well.
+  check('"in my experience" is rewritten',
+    !/in my experience/i.test(scrubReviewLanguage('In my experience the battery lasts all day.')),
+    'DEAL_VOICE_RULES bans it by name and only the "with this" form was caught')
+  check('and keeps its sentence-start capital',
+    /^From what owners report/.test(scrubReviewLanguage('In my experience the battery lasts all day.')),
+    'every other rewrite starts with "I", so this is the first one whose case shows')
+  check('"I bought one" is rewritten',
+    !/I bought one/i.test(scrubReviewLanguage('I bought one and it has been fine.')),
+    'only "I bought this/it/the X" was caught')
+  check('the specific rules still win over the new catch-alls',
+    scrubReviewLanguage('In my experience with this, the battery lasts.').startsWith('with this'),
+    'the bare patterns are placed last for exactly this reason')
+  check('and unrelated copy is not mangled',
+    scrubReviewLanguage('I have owned three cars and none were this loud.')
+      === 'I have owned three cars and none were this loud.',
+    'too aggressive a rewrite breaks copy, which is why the possessive rules are narrow')
+}
+
+// ── the answer is askable and changeable ───────────────────────────────────
+{
+  const RT = readFileSync('app/api/labs/tiktok-shop/resolve/route.ts', 'utf8')
+  check('the add route stores it', /ownership,/.test(RT))
+  check('and normalizes rather than rejecting', /normalizeOwnership\(body\.ownership\)/.test(RT),
+    'failing the add over an unrecognised value would break the one path that works')
+  check('it can be changed later', /export async function PATCH/.test(RT),
+    'the answer is often known after the product is added, not at the moment of pasting')
+  check('the change is scoped to the owner', /\.eq\('id', id\)\.eq\('user_id', g\.user!\.id\)/.test(RT))
+  check('a missing column names migration 335', /335_tiktok_product_ownership/.test(RT),
+    'Seb runs SQL by pasting it; "column does not exist" sends him nowhere')
+
+  const UI2 = readFileSync('components/labs/TikTokShop.tsx', 'utf8')
+  check('the question is on the add form', /OWNERSHIP_CHOICES\.map/.test(UI2))
+  check('and on every card afterwards', /setOwn\(p, e\.target\.value/.test(UI2))
+  check('an optimistic change reverts on failure', /ownership: before/.test(UI2),
+    'a control that silently keeps the wrong value is worse than a slow one')
 }
 
 if (failures.length) {

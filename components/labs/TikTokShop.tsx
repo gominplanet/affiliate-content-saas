@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Plus, Trash2, Star, ShoppingBag, ExternalLink, FlaskConical, PenLine } from 'lucide-react'
 import { toast } from 'sonner'
+import { OWNERSHIP_CHOICES, type ProductOwnership } from '@/lib/product-ownership'
 
 const muted = { color: 'var(--text-2)' } as const
 
@@ -32,6 +33,7 @@ interface Row {
   sold_count: number | null
   seller_name: string | null
   region: string | null
+  ownership: ProductOwnership | null
   created_at: string
 }
 
@@ -48,6 +50,7 @@ export default function TikTokShop() {
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [url, setUrl] = useState('')
+  const [ownership, setOwnership] = useState<ProductOwnership>('bought')
   const [adding, setAdding] = useState(false)
   // Held ON SCREEN rather than only in a toast. Adding a product is the one
   // thing this page does, and a creator whose link was refused needs the reason
@@ -82,7 +85,7 @@ export default function TikTokShop() {
     try {
       const r = await fetch('/api/labs/tiktok-shop/resolve', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: pasted }),
+        body: JSON.stringify({ url: pasted, ownership }),
       })
       const j = await r.json().catch(() => ({}))
       if (j.migrationNeeded) setMigrationNeeded(j.migrationNeeded as string)
@@ -129,6 +132,22 @@ export default function TikTokShop() {
     } finally { setWriting(null) }
   }
 
+  async function setOwn(row: Row, value: ProductOwnership) {
+    const before = row.ownership
+    // Optimistic, because it is a select and a round trip of lag on one reads
+    // as the control being broken. Reverted on failure rather than left lying.
+    setRows(prev => prev.map(x => x.id === row.id ? { ...x, ownership: value } : x))
+    const r = await fetch('/api/labs/tiktok-shop/resolve', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: row.id, ownership: value }),
+    })
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}))
+      setRows(prev => prev.map(x => x.id === row.id ? { ...x, ownership: before } : x))
+      toast.error((j.error as string) || 'Could not change that.', { duration: 10000 })
+    }
+  }
+
   async function remove(id: string, title: string) {
     if (!window.confirm(`Remove "${title.slice(0, 60)}" from your TikTok Shop products? The product stays on TikTok; this only removes it from MVP.`)) return
     const r = await fetch('/api/labs/tiktok-shop/resolve', {
@@ -163,6 +182,24 @@ export default function TikTokShop() {
               "import all" button that cannot exist. */}
           <p className="text-[12px] mb-3" style={muted}>
             One at a time. TikTok does not publish your showcase anywhere MVP can read it, so there is no bulk import. Open the product in TikTok Shop, tap Share, copy the link, paste it here.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {/* Asked at add time because the answer changes what the post can
+                say. 'Bought' is the default and adds nothing, so a creator who
+                ignores this control gets exactly today's behaviour. */}
+            <span className="text-[12px]" style={muted}>This product:</span>
+            {OWNERSHIP_CHOICES.map(c => (
+              <button key={c.value} type="button" onClick={() => setOwnership(c.value)} title={c.help}
+                className="px-2.5 py-1 rounded-lg border text-[12px] font-medium"
+                style={{
+                  borderColor: ownership === c.value ? '#DC2626' : 'var(--border)',
+                  borderWidth: ownership === c.value ? 2 : 1,
+                  color: 'var(--text)',
+                }}>{c.label}</button>
+            ))}
+          </div>
+          <p className="text-[11px] mb-3" style={muted}>
+            {OWNERSHIP_CHOICES.find(c => c.value === ownership)?.help}
           </p>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -241,6 +278,12 @@ export default function TikTokShop() {
                     {p.sold_count !== null && <span>{compactCount(p.sold_count)} sold</span>}
                   </div>
                   {p.seller_name && <p className="text-[11px] truncate" style={muted}>Sold by {p.seller_name}</p>}
+                  <select value={p.ownership || 'bought'}
+                    onChange={e => void setOwn(p, e.target.value as ProductOwnership)}
+                    className="text-[11px] px-2 py-1 rounded-lg border w-full"
+                    style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text-2)' }}>
+                    {OWNERSHIP_CHOICES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
                   <div className="mt-auto pt-2 flex flex-col gap-2">
                     <button type="button" onClick={() => void writePost(p)} disabled={!!writing}
                       className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-60"

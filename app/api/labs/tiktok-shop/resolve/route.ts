@@ -38,6 +38,7 @@ import { fetchWithTimeout, DEFAULT_TIMEOUT_MS } from '@/lib/fetch-timeout'
 import {
   parseTikTokProduct, tiktokProductIdFromUrl, TIKTOK_PRODUCT_HINT,
 } from '@/lib/tiktok-product'
+import { normalizeOwnership } from '@/lib/product-ownership'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -86,8 +87,11 @@ export async function GET() {
 export async function POST(req: Request) {
   const g = await gate()
   if (g.error) return g.error
-  const body = await req.json().catch(() => ({})) as { url?: string }
+  const body = await req.json().catch(() => ({})) as { url?: string; ownership?: string }
   const pasted = String(body.url ?? '').trim()
+  // Unrecognised reads as the default rather than failing the add: a creator
+  // who never saw the question still gets a working product.
+  const ownership = normalizeOwnership(body.ownership)
   const productId = tiktokProductIdFromUrl(pasted)
   if (!productId) return NextResponse.json({ error: TIKTOK_PRODUCT_HINT }, { status: 400 })
 
@@ -143,6 +147,7 @@ export async function POST(req: Request) {
     sold_count: product.soldCount,
     seller_name: product.sellerName,
     region: product.region || region,
+    ownership,
     refreshed_at: new Date().toISOString(),
   }
   const { data: saved, error } = await sb.from('tiktok_products')
@@ -153,14 +158,37 @@ export async function POST(req: Request) {
     // not save, rather than returning a 500 that reads as "the link is bad".
     return NextResponse.json({
       ok: false, product, saved: false,
-      error: /relation .* does not exist|column .* does not exist/i.test(error.message)
-        ? 'MVP read the product, but your database is missing the TikTok products table. Run migration 334, then add it again.'
-        : `MVP read the product but could not save it: ${error.message}`,
-      migrationNeeded: /does not exist/i.test(error.message) ? '334_tiktok_products' : undefined,
+      error: /column .*ownership.* does not exist/i.test(error.message)
+        ? 'MVP read the product, but your database is missing the ownership column. Run migration 335, then add it again.'
+        : /relation .* does not exist|column .* does not exist/i.test(error.message)
+          ? 'MVP read the product, but your database is missing the TikTok products table. Run migration 334, then add it again.'
+          : `MVP read the product but could not save it: ${error.message}`,
+      migrationNeeded: /column .*ownership.* does not exist/i.test(error.message) ? '335_tiktok_product_ownership'
+        : /does not exist/i.test(error.message) ? '334_tiktok_products' : undefined,
     }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true, product, saved: saved ?? null })
+}
+
+export async function PATCH(req: Request) {
+  const g = await gate()
+  if (g.error) return g.error
+  const { id, ownership } = await req.json().catch(() => ({})) as { id?: string; ownership?: string }
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (g.supabase as any).from('tiktok_products')
+    .update({ ownership: normalizeOwnership(ownership) })
+    .eq('id', id).eq('user_id', g.user!.id).select('*').maybeSingle()
+  if (error) {
+    return NextResponse.json({
+      error: /column .*ownership.* does not exist/i.test(error.message)
+        ? 'Your database is missing the ownership column. Run migration 335, then try again.'
+        : error.message,
+      migrationNeeded: /does not exist/i.test(error.message) ? '335_tiktok_product_ownership' : undefined,
+    }, { status: 500 })
+  }
+  return NextResponse.json({ ok: true, product: data ?? null })
 }
 
 export async function DELETE(req: Request) {
