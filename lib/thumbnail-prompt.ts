@@ -28,6 +28,7 @@
 // always produce the same prompt and a test can hold it to that.
 
 import { framingLine, type EffectiveFraming, type BuildKey, type HeightKey } from '@/lib/body-framing'
+import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 
 export interface ThumbnailPromptInput {
   /** Headline, already upper-cased and split by the copy step. */
@@ -205,6 +206,11 @@ export function creativeHead(input: ThumbnailPromptInput): string[] {
   ].filter(Boolean)
 }
 
+/** The last word on logos. Short on purpose: a final check that runs long is
+ *  read as more design direction. */
+const LOGO_FINAL_CHECK =
+  'FINAL CHECK — LOGOS: look over the finished design and confirm there is no retailer, marketplace, store or delivery-service mark anywhere in it: no Amazon name, no smile or swoosh arrow, no Prime, no Walmart, Target, Best Buy, eBay, Etsy, AliExpress or Costco, no app icons, no invented store signage. The only brand mark allowed is the one physically printed on the product itself. If one crept in, remove it.'
+
 /**
  * The whole thing, in the order the model reads it.
  *
@@ -220,7 +226,15 @@ export function buildGraphicThumbnailPrompt(input: ThumbnailPromptInput): string
     ...(input.expressionLine ? [input.expressionLine] : []),
     ...creativeHead(input),
     '',
-    "BRAND: if the product's brand or logo is clear, include it as a clean logo lockup.",
+    // "if the product's brand or logo is clear, include it as a clean logo
+    // lockup" is what put an Amazon logo on a creator's thumbnail, and he took
+    // the video down over it. The line meant the MANUFACTURER's mark; the model
+    // read "logo" against a product reference that came from a marketplace
+    // listing and drew the storefront's. An associate putting Amazon's mark on
+    // a thumbnail is a trademark problem and an Associates Operating Agreement
+    // problem, so this now says which brand and rules the rest out by name.
+    "BRAND: the only mark that may appear is the one physically printed on the product itself, by whoever makes it. Render that faithfully. Never add a retailer's, a marketplace's or a platform's mark.",
+    NO_BRAND_IMAGE_CLAUSE,
     '',
     'INTEGRATION (important): the person and the product must sit NATURALLY in the scene with realistic lighting and grounded shadows, like a real photo. Do NOT put a glowing outline, rim-light halo, coloured aura or cut-out edge around the person or the product — no haloing, nothing that makes them look pasted on. Keep edges clean and photographic.',
     '',
@@ -232,6 +246,13 @@ export function buildGraphicThumbnailPrompt(input: ThumbnailPromptInput): string
     '',
     'FRAMING: the canvas is a full 16:9 landscape (1536×864) and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout, the person\'s full head and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.',
     'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — make it POP.',
+    // Twice, on purpose, exactly as the doc comment above this function says:
+    // an image model weights the last thing it read, and an instruction placed
+    // only at the top loses to a paragraph of design direction. This is the one
+    // rule where losing costs a creator their Associates account, so it gets the
+    // last word as well as an early one.
+    '',
+    LOGO_FINAL_CHECK,
     ...(input.wearLine ? ['', garmentFinalCheck(input.refsAreHeadOnly)] : []),
     ...(input.expressionLine ? ['', expressionFinalCheck(input.expressionLine, input.expressionInReference === true)] : []),
   ].filter(Boolean).join('\n')

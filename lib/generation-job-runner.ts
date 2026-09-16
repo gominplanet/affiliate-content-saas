@@ -20,6 +20,7 @@ import { normalizeTier, tierAllowsSocial } from '@/lib/tier'
 import { getConnectedPlatforms } from '@/lib/channel-health'
 import { DEFAULT_SOCIAL_OFFSETS_MIN, type SchedulableSocial } from '@/lib/schedule-types'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { tagIfTimeout } from '@/lib/job-timeout'
 
 const AUTOPILOT_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
 
@@ -273,14 +274,18 @@ async function runServiceRouteJob(
       throw new Error(`PERMANENT: self-call stuck in a redirect loop (${hops.join(' | ')}) — check the domain redirect configuration for ${resolveSelfBaseUrl()}`)
     }
   } catch (e) {
-    // AbortSignal.timeout throws a DOMException named 'TimeoutError' (also handle
-    // 'AbortError'). TAG it so the worker leaves the job 'running' for stale
-    // recovery instead of requeuing into a concurrent double-run — the route may
-    // still be publishing on its side (it doesn't abort on our disconnect).
-    const name = (e as { name?: string } | null)?.name
-    if (name === 'TimeoutError' || name === 'AbortError') {
-      throw new Error(`TIMEOUT: ${label} exceeded the worker budget`)
-    }
+    // TAG a deadline so the worker leaves the job 'running' for stale recovery
+    // instead of requeuing into a concurrent double-run — the route does not
+    // abort when we disconnect, so it may still be publishing on its side.
+    //
+    // This used to read `e.name` directly and had not fired since fetchWithTimeout
+    // started rewording timeouts: that rewording threw a plain Error, whose name
+    // is "Error", so every self-call timeout took the ordinary-failure branch and
+    // was requeued. The route it had abandoned published anyway, the retry
+    // published again, and a creator got three copies of the same post a minute
+    // apart. Ask the module that raised it, which knows all four shapes.
+    const tagged = tagIfTimeout(e, label)
+    if (tagged) throw tagged
     throw e
   }
 

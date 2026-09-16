@@ -65,6 +65,7 @@ import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 import AmazonUpgradeGate from '@/components/upgrade/AmazonUpgradeGate'
 import PermalinkAutoHeal from '@/components/PermalinkAutoHeal'
 import AnnouncementModal from '@/components/dashboard/AnnouncementModal'
+import ReconnectCheckup from '@/components/dashboard/ReconnectCheckup'
 
 // Wrapper to handle context safely
 function HelpDeskButtonWrapper() {
@@ -1284,6 +1285,7 @@ export default function DashboardShellV2({
           <PermalinkAutoHeal />
           {/* Action-needed announcement popup (admin-managed, variant 'modal'). */}
           <AnnouncementModal />
+          <ReconnectCheckup />
           <div className="max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 pb-12">
             {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} redirect={amazonLocked.redirect} /> : children}
           </div>

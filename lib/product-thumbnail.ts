@@ -9,6 +9,7 @@
 import { fetchAmazonProduct } from '@/services/amazon'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { rehostAll, composeWithNanoBananaPro, composeWithNanoBanana } from '@/lib/thumbnail-generators'
+import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
@@ -100,7 +101,9 @@ export async function buildProductThumbnail(
       ? `Bake in LARGE, perfectly spelled overlay text reading exactly "${hook}" and nothing else — no subtitle, no second line, no other words. `
       : 'Do NOT put ANY text, words, letters, captions or logos anywhere on the image. '
     const prompt = `Design a bold, high-contrast YouTube-style thumbnail (16:9) for a product review.
-${faceLine}${productLine}${textLine}Bright, punchy, modern, saturated colours, clean composition. No watermark.`
+${faceLine}${productLine}${textLine}Bright, punchy, modern, saturated colours, clean composition. No watermark.
+
+${NO_BRAND_IMAGE_CLAUSE}`
 
     let imgs = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
     let model = 'nano-banana-pro'

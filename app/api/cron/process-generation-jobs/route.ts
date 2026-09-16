@@ -27,6 +27,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { claimNextJob, completeJob, failJob, type GenerationJob } from '@/lib/generation-jobs'
 import { runGenerationJob } from '@/lib/generation-job-runner'
+import { isTaggedTimeout } from '@/lib/job-timeout'
 import { alertOps } from '@/lib/ops-alert'
 
 // ── Failure-spike alert ─────────────────────────────────────────────────────
@@ -108,7 +109,7 @@ async function processOneJob(
     // concurrent run risks a duplicate post. Leave the job 'running'; the
     // stale-claim window (600s, > the route's 300s ceiling) re-runs it only if
     // it truly died, and a re-run UPDATES in place (isRewrite), so no dup.
-    if (/^TIMEOUT/i.test(msg)) {
+    if (isTaggedTimeout(msg)) {
       // MONEY-SAFETY (2026-06-12): a timed-out job left 'running' got re-run by
       // the 600s stale-claim every ~10 min, re-billing a full Opus generation
       // each time. Once the attempts budget is spent, fail it terminally.

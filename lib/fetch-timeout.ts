@@ -51,6 +51,66 @@ export function hostOf(input: string | URL | Request): string {
   try { return new URL(url).host } catch { return String(url).slice(0, 60) }
 }
 
+/**
+ * The name carried by every error this module throws for a deadline.
+ *
+ * It matters because the message is not the contract. This wrapper replaces
+ * undici's bare TimeoutError with a readable sentence, and in doing so it threw
+ * a plain `new Error(...)`, whose `name` is "Error". Every caller downstream
+ * that asked `e.name === 'TimeoutError'` therefore stopped recognising a
+ * timeout the moment the wrapper was introduced, and none of them failed
+ * loudly: they just took the ordinary-error branch instead.
+ *
+ * The generation worker was one of those callers, and its ordinary-error branch
+ * requeues the job. See isTimeoutError below for what that cost.
+ */
+export const TIMEOUT_ERROR_NAME = 'TimeoutError'
+
+/** undici's codes for "the connection opened and then nothing arrived". These
+ *  are deadlines too, even though they surface as a transport failure. */
+const TIMEOUT_CODES = /UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT|UND_ERR_CONNECT_TIMEOUT|ETIMEDOUT|ESOCKETTIMEDOUT/i
+
+/**
+ * Was this error a deadline, whoever raised it and however it was reworded?
+ *
+ * A TIMEOUT IS NOT AN ORDINARY FAILURE, and one caller in particular has to be
+ * able to tell them apart. When the generation worker's internal call to the
+ * blog route times out, the route on the other side DOES NOT STOP: it is a
+ * separate serverless invocation that never learns the caller hung up, and it
+ * carries on and publishes the post. So the job must be left alone for stale
+ * recovery, never requeued. Requeuing runs a second full generation alongside
+ * the first, and both publish.
+ *
+ * That is exactly what happened. A creator found three near-identical posts on
+ * his site, a minute apart, two days running. The runner tried to prevent it and
+ * could not, because it recognised a timeout by `e.name` and this module had
+ * already rewritten the error into a plain one.
+ *
+ * So the question is asked here, once, against every shape a deadline actually
+ * arrives in: the name, the cause's name, undici's codes, and the two sentences
+ * this module itself produces. Pure, so a test can hold it to all four without a
+ * network.
+ */
+export function isTimeoutError(err: unknown): boolean {
+  if (!err) return false
+  const e = err as { name?: unknown; message?: unknown; code?: unknown; cause?: { name?: unknown; code?: unknown; message?: unknown } }
+
+  for (const name of [e.name, e.cause?.name]) {
+    if (name === TIMEOUT_ERROR_NAME || name === 'AbortError') return true
+  }
+  for (const code of [e.code, e.cause?.code]) {
+    if (typeof code === 'string' && TIMEOUT_CODES.test(code)) return true
+  }
+  for (const msg of [e.message, e.cause?.message]) {
+    if (typeof msg !== 'string') continue
+    // The two sentences thrown below, and undici's code when it has been folded
+    // into a message by describeFetchFailure.
+    if (/timed out after \d+s|aborted by its caller's deadline/i.test(msg)) return true
+    if (TIMEOUT_CODES.test(msg)) return true
+  }
+  return false
+}
+
 /** Turn a network failure into a sentence that names the host and the cause,
  *  or null when this is not that kind of error.
  *
@@ -116,16 +176,33 @@ export async function fetchWithTimeout(input: string | URL | Request, init: Time
     // A transport failure names the host and the real cause. Undici's bare
     // "fetch failed" is what made a 34-post batch report nothing actionable.
     const network = describeFetchFailure(e, input)
-    if (network) throw new Error(network, { cause: e })
-    if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+    if (network) {
+      const wrapped = new Error(network, { cause: e })
+      // A headers/body timeout arrives as a transport failure and reads as one,
+      // but it IS a deadline: the connection opened and the other side never
+      // answered. Carrying the name across means a caller that must not requeue
+      // on a timeout still recognises this one. Observed in production as
+      // "Could not reach www.mvpaffiliate.io (UND_ERR_HEADERS_TIMEOUT)", which
+      // was retried three times, each retry a fresh full generation.
+      if (isTimeoutError(e)) wrapped.name = TIMEOUT_ERROR_NAME
+      throw wrapped
+    }
+    if (e instanceof Error && (e.name === TIMEOUT_ERROR_NAME || e.name === 'AbortError')) {
       const host = hostOf(input)
       // Name the budget that was actually in force. Reporting the default when
       // the caller's own signal is what fired sends whoever reads the log
       // hunting for a 30-second setting that was never involved.
       const budget = effectiveTimeout ?? null
-      throw new Error(budget == null
+      // KEEP THE NAME. Rewording the error is the whole point of this branch,
+      // and a plain `new Error` silently drops `TimeoutError`, which is what
+      // every caller downstream tests for. That drop is how a timeout started
+      // reading as an ordinary failure, and how a job that was still publishing
+      // got requeued into a second one.
+      const reworded = new Error(budget == null
         ? `Request to ${host} was aborted by its caller's deadline`
-        : `Request to ${host} timed out after ${Math.round(budget / 1000)}s`)
+        : `Request to ${host} timed out after ${Math.round(budget / 1000)}s`, { cause: e })
+      reworded.name = TIMEOUT_ERROR_NAME
+      throw reworded
     }
     throw e
   }

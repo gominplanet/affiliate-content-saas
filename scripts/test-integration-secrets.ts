@@ -77,6 +77,17 @@ const EXEMPT = new Map<string, string>([
   ['lib/integration-secrets.ts', 'defines the encrypt and decrypt helpers'],
   ['lib/secrets.ts', 'the cipher itself'],
   ['lib/types/database.ts', 'generated types, no runtime reads'],
+  // This route asks whether the stored key can still be READ, and never uses
+  // the value. It does decrypt, inside isUnreadableSecret, but what it wants is
+  // the SHAPE of the result: another enc:v1: envelope means the key was
+  // encrypted twice and the original is gone, and a throw means the envelope no
+  // longer authenticates. Both are reported to the creator as "re-enter your
+  // key", which is the only repair. Rewriting the call so the decrypt and the
+  // column name sit in one expression would satisfy the pattern below and make
+  // the code worse, because a corrupt key has to throw INSIDE the try to be
+  // classified rather than crash the checkup.
+  ['app/api/connections/checkup/route.ts',
+    'classifies whether the stored key is readable; the value itself is never used or sent anywhere'],
 ])
 
 /** A read is safe when the file decrypts the row, decrypts the field, or only
@@ -149,6 +160,31 @@ const NEWLY_ENCRYPTED = ['geniuslink_api_key', 'geniuslink_api_secret', 'hosting
   }
   for (const o of offenders) {
     check(o, false, 'the value goes to the provider as-is, so ciphertext would read as a wrong key')
+  }
+}
+
+// ── an exemption has to stay true ──────────────────────────────────────────
+//
+// Every entry above is a promise that the file only inspects a secret and never
+// sends it. A promise nobody rechecks is how an exemption widens: the file keeps
+// its pass while its behaviour changes underneath. So each exempt file must
+// still exist, and the two that are ordinary route/helper code must still be
+// free of any outbound call carrying a secret.
+{
+  for (const [file, why] of EXEMPT) {
+    let src = ''
+    try { src = readFileSync(join(root, file), 'utf8') } catch { /* flagged next */ }
+    check(`the exemption for ${file} points at a real file`, src.length > 0,
+      `exempt because: ${why}`)
+    if (!src) continue
+    if (file === 'lib/secrets.ts' || file === 'lib/integration-secrets.ts' || file === 'lib/types/database.ts') continue
+
+    check(`${file} makes no outbound call`,
+      !/\bfetch\s*\(|fetchWithTimeout\s*\(|axios\./.test(src),
+      'it is exempt on the grounds that it only inspects a secret; an outbound call is where "inspect" quietly becomes "send"')
+    check(`${file} does not build a provider URL`,
+      !/geniuslink\.com|api\.geni\.us|hostinger\.com/i.test(src),
+      'the same reason: a provider endpoint here means the value is going somewhere')
   }
 }
 

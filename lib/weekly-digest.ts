@@ -14,6 +14,7 @@ import { shortenBitly } from '@/lib/bitly'
 import { scrubBanned } from '@/lib/scrub'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { rehostAll, composeWithNanoBananaPro, composeWithNanoBanana } from '@/lib/thumbnail-generators'
+import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { recordUsage } from '@/lib/ai-usage'
 
 export interface DigestDealRow {
@@ -315,7 +316,9 @@ export async function buildDigestThumbnail(
     const prompt = `Design a bold, high-contrast YouTube-style thumbnail (16:9) for a WEEKLY DEALS roundup.
 FEATURE THE PERSON from the FIRST reference image — preserve their exact face and likeness — on one side, looking excited and pointing toward the deals. Do NOT invent a different person.
 Bake in LARGE, perfectly spelled headline text reading exactly "WEEKLY${themeWord} DEALS" with a smaller "PRICE DROPS" tag.
-Include a few tidy product boxes / price-tag graphics on the other side (use the product reference if provided). Bright, punchy, modern, saturated colours, clean composition. No watermark, no extra sentences.`
+Include a few tidy product boxes / price-tag graphics on the other side (use the product reference if provided). Bright, punchy, modern, saturated colours, clean composition. No watermark, no extra sentences.
+
+${NO_BRAND_IMAGE_CLAUSE}`
 
     let imgs = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
     let model = 'nano-banana-pro'

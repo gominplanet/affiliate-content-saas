@@ -53,6 +53,7 @@ import { getLinkStyle } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { composeWithGptImage, composeWithNanoBanana, rehostToFal, GPT_IMAGE_COMPOSE_LOW_COST_MODEL } from '@/lib/thumbnail-generators'
+import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { recallProductImage } from '@/lib/product-image-memory'
 import {
   resolvePostDestination, styleForDestination, styleSwapNote, disclaimerForDestination,
@@ -1405,7 +1406,9 @@ Bake a single high-contrast deal badge in the upper-left corner:
 - Use a heavy sans-serif font with crisp legible kerning
 - Slight drop shadow under the badge so it pops against the scene
 
-No other text anywhere in the image. No watermarks. No URL bars. No price tags or stickers ON the product itself — the badge is the only graphic overlay. Landscape 16:9 photorealistic editorial product photography for a thumbnail.`
+No other text anywhere in the image. No watermarks. No URL bars. No price tags or stickers ON the product itself — the badge is the only graphic overlay. Landscape 16:9 photorealistic editorial product photography for a thumbnail.
+
+${NO_BRAND_IMAGE_CLAUSE}`
 }
 
 function buildBodyImagePrompt(opts: { productTitle: string; slotIndex: number }): string {
@@ -1421,7 +1424,9 @@ function buildBodyImagePrompt(opts: { productTitle: string; slotIndex: number })
 
 ${scene}
 
-The product is the ONLY thing carried over from the reference. The scene, lighting, camera, and surroundings must all be different from the reference and different from other images of this product. Landscape 4:3, photorealistic editorial product photography, no added text/captions/watermarks/badges anywhere.`
+The product is the ONLY thing carried over from the reference. The scene, lighting, camera, and surroundings must all be different from the reference and different from other images of this product. Landscape 4:3, photorealistic editorial product photography, no added text/captions/watermarks/badges anywhere.
+
+${NO_BRAND_IMAGE_CLAUSE}`
 }
 
 // ─── HTML helpers ──────────────────────────────────────────────────────────
