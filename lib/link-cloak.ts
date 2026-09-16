@@ -14,6 +14,7 @@
 // credentials are missing falls back to direct so a link never fails to generate.
 
 import { canUsePassport } from '@/lib/feature-access'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { normalizeTier } from '@/lib/tier'
 import { passportLinkForUser, getOrCreatePassportLink, passportLinkUrl } from '@/lib/passport-links'
 import { channelWrapLink, channelWrapLinkDetailed } from '@/lib/channel-share-url'
@@ -81,11 +82,24 @@ export async function getLinkStyle(supabase: Db, userId: string): Promise<LinkSt
     // style, and there is nothing on screen that could ever have shown it: the
     // chooser reads through a route that already used select('*') and so
     // displayed the right answer while generation used the wrong one.
-    const { data: ig } = await supabase
+    const { data: raw } = await supabase
       .from('integrations')
       .select('*')
       .eq('user_id', userId).maybeSingle()
-    if (!ig) return empty
+    if (!raw) return empty
+    // DECRYPT. geniuslink_api_key and geniuslink_api_secret are encrypted at
+    // rest, and this function hands them to whoever calls it, which is every
+    // path that cloaks a link. Reading them raw meant the Geniuslink API was
+    // called with ciphertext as the key, which it rejects, which falls back to
+    // a plain tagged Amazon URL. A creator with Geniuslink correctly configured
+    // had been editing links by hand on Facebook, told MVP twice, and the
+    // second report is what found this.
+    //
+    // The guard that exists for exactly this (scripts/test-integration-secrets)
+    // only inspects NAMED selects, on the stated assumption that a select('*')
+    // file decrypts the row it read. This file was the one that did not.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ig = (decryptIntegrationRow(raw as any) ?? raw) as Record<string, unknown>
     const tier = (ig.tier as string | null) ?? null
     const bitlyToken = (ig.bitly_access_token as string | null)?.trim() || null
     const geniuslinkKey = (ig.geniuslink_api_key as string | null)?.trim() || null

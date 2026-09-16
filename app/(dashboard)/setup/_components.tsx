@@ -88,8 +88,10 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
   const [tiktok, setTiktok] = useState({ connected: false, username: '', displayName: '', avatarUrl: '' })
   const [ttDisconnecting, setTtDisconnecting] = useState(false)
   const [ttNotice, setTtNotice] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [geniuslinkKey, setGeniuslinkKey] = useState('')
-  const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
+  // No geniuslinkKey/Secret state any more. They are encrypted at rest, this is
+  // a client component, and the only thing holding them here ever achieved was
+  // posting the ciphertext back over the creator's real key. Edited on Brand
+  // Profile, read by the server, never by the browser.
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
   const [youtubeOAuthConnected, setYoutubeOAuthConnected] = useState(false)
   const [ytDisconnecting, setYtDisconnecting] = useState(false)
@@ -219,8 +221,6 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         displayName: row.tiktok_display_name ?? '',
         avatarUrl: row.tiktok_avatar_url ?? '',
       })
-      setGeniuslinkKey(row.geniuslink_api_key ?? '')
-      setGeniuslinkSecret(row.geniuslink_api_secret ?? '')
       setAmazonAssociatesTag(row.amazon_associates_tag ?? '')
       setYoutubeOAuthConnected(!!row.youtube_oauth_access_token)
       setYtBacklink(row.yt_backlink_enabled !== false)
@@ -342,9 +342,19 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
     const res = await fetch('/api/affiliate-links/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      // THE GENIUSLINK FIELDS ARE OMITTED, and that is the fix, not an
+      // oversight. /api/affiliate-links/save keeps the stored value for any key
+      // it is not sent (`sent === undefined ? prev : ...`), so leaving them out
+      // is the only way to touch nothing.
+      //
+      // Sending them had two outcomes and both destroyed a working setup. With
+      // the ciphertext in state it was re-encrypted on top of itself, and with
+      // an empty string `''.trim() || null` wiped the creator's keys outright.
+      // Either way Geniuslink silently stopped wrapping and every post went out
+      // as a plain tagged Amazon link. Neither field has been editable on this
+      // page since the settings moved to Brand Profile, so there was never
+      // anything here worth saving.
       body: JSON.stringify({
-        geniuslinkKey: geniuslinkKey || '',
-        geniuslinkSecret: geniuslinkSecret || '',
         amazonTag: amazonAssociatesTag || '',
       }),
     }).catch(() => null)
@@ -1576,11 +1586,11 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
 
       {/* Geniuslink + Amazon-tag moved to Brand Profile on 2026-06-05.
           Leave a pointer so anyone hitting this URL knows where the
-          settings live now. Keep the state above intact so old code paths
-          that read geniuslinkKey/Secret/amazonAssociatesTag still work
-          (the IntegrationsPanel save() still writes them — they just
-          aren&apos;t editable here anymore). The Brand Profile page is the
-          new editing surface.
+          settings live now. The Geniuslink key and secret are no longer
+          read or written by this page at all: they are encrypted at rest,
+          and the browser round-tripping them wrote ciphertext over a
+          working key. Brand Profile is the editing surface, and the server
+          is the only thing that ever sees the value.
           Hidden in 'socials' mode — /connect-socials is a focused page
           about social channels and doesn&apos;t need the affiliate-routing
           breadcrumb. */}

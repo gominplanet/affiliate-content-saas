@@ -90,7 +90,13 @@ function readsSafely(src: string, col: string): boolean {
   const mentions = [...src.matchAll(new RegExp(`[^\\n]*\\b${col}\\b[^\\n]*`, 'g'))].map(m => m[0])
   const nonSelect = mentions.filter(l => !/\.select\(|^\s*\*|^\s*\/\/|:\s*string \| null|\?:\s*string/.test(l))
   if (nonSelect.length === 0) return true
-  return nonSelect.every(l => /!!|Boolean\(|connected|hasGeniuslink|geniuslinkSet|affiliateConnected|setHasGeniuslink|if \(!/.test(l))
+  // `if (row?.col && row?.other)` is presence-only too: the value is tested and
+  // never read. Added when widening the scan to select('*') files surfaced
+  // blog/generate, which does exactly that and is correct.
+  const truthyTest = new RegExp(`(if\\s*\\(|&&|\\|\\||\\?\\s)[^\\n]*\\b${col}\\b\\s*(&&|\\)|\\|\\|)`)
+  return nonSelect.every(l =>
+    /!!|Boolean\(|connected|hasGeniuslink|geniuslinkSet|affiliateConnected|setHasGeniuslink|if \(!/.test(l)
+    || truthyTest.test(l))
 }
 
 /** The columns this test polices.
@@ -115,9 +121,19 @@ const NEWLY_ENCRYPTED = ['geniuslink_api_key', 'geniuslink_api_secret', 'hosting
     if (EXEMPT.has(rel)) continue
     const src = readFileSync(f, 'utf8')
     for (const col of NEWLY_ENCRYPTED) {
-      // Only a NAMED select counts. select('*') hands the whole row on and is
-      // covered by whether the file decrypts the row.
-      if (!new RegExp(`\\.select\\([^)]*\\b${col}\\b`).test(src)) continue
+      // A NAMED select, OR a select('*') on integrations — the second case is
+      // the hole this check used to have, and it is where the bug lived.
+      //
+      // The old comment read: "select('*') hands the whole row on and is
+      // covered by whether the file decrypts the row." That is an assumption,
+      // not a check. lib/link-cloak and lib/channel-share-url each did
+      // select('*') on integrations and handed the ciphertext straight to the
+      // Geniuslink API, so every creator on a Geniuslink style got a plain
+      // tagged Amazon URL. One of them reported it twice before it was found.
+      const named = new RegExp(`\\.select\\([^)]*\\b${col}\\b`).test(src)
+      const starOnIntegrations = /from\('integrations'\)[\s\S]{0,120}?\.select\(\s*['"]\*/.test(src)
+        && new RegExp(`\\b${col}\\b`).test(src)
+      if (!named && !starOnIntegrations) continue
       if (readsSafely(src, col)) continue
       offenders.push(`${rel} reads ${col} without decrypting it`)
     }

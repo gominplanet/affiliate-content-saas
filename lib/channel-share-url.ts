@@ -16,6 +16,7 @@
 // API hiccup, these return the plain URL so a post NEVER fails to go out.
 
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { resolveGeniuslinkChannelGroupId, channelKey } from '@/lib/geniuslink-group'
 import { canUsePassport } from '@/lib/feature-access'
 import { normalizeTier } from '@/lib/tier'
@@ -39,12 +40,17 @@ async function geniuslinkStyleCreds(
     // select('*') so a database missing migration 274 (blog_social_link_mode)
     // costs that one column rather than failing the whole read and silently
     // making every creator 'direct'. See getLinkStyle for the full story.
-    const { data: ig } = await supabase
+    const { data: rawIg } = await supabase
       .from('integrations')
       .select('*')
       .eq('user_id', userId).maybeSingle()
-    if (!ig) return null
-    if (!!ig.passport_links_enabled && canUsePassport(normalizeTier(ig.tier))) return null // Passport wins
+    if (!rawIg) return null
+    // DECRYPT before the keys are handed to geniuslinkCreds, which hands them
+    // to the Geniuslink API. Reading the ciphertext produced a key Geniuslink
+    // rejects, so the wrap failed and a plain tagged Amazon link went out.
+    // Same omission as getLinkStyle, found by scanning for the other half.
+    const ig = (decryptIntegrationRow(rawIg) ?? rawIg) as Record<string, unknown>
+    if (!!ig.passport_links_enabled && canUsePassport(normalizeTier(ig.tier as string | null))) return null // Passport wins
     const creds = geniuslinkCreds(
       { geniuslinkKey: ig.geniuslink_api_key as string | null, geniuslinkSecret: ig.geniuslink_api_secret as string | null },
       { geniuslink_api_key: apiKey, geniuslink_api_secret: apiSecret },
