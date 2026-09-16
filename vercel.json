@@ -104,5 +104,10 @@
       "path": "/api/cron/drain-global-sync",
       "schedule": "* * * * *"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "claude/youtube-shorts-generator-n6yr08": false
+    }
+  }
 }
