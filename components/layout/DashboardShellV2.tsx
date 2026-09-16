@@ -632,6 +632,13 @@ export default function DashboardShellV2({
         // SocialCrawl) → the brands a creator has worked with. Ships dark until a
         // provider token is set; Pro/admin-only while it's experimental.
         { href: '/brand-radar', icon: <Radar size={15} />, label: 'Brand Radar', gate: isPro },
+        // TikTok Shop — add a TikTok Shop product by pasting its link, so the
+        // publishing engine can write about it and point the link back at it.
+        // In LABS while the composer side is built: today it reads and lists
+        // products, it does not yet make a post from one. A showcase cannot be
+        // scanned (it is an in-app mini program with no web page), so this is
+        // deliberately one product at a time and the page says so.
+        { href: '/tiktok-shop', icon: <ShoppingBag size={15} />, label: 'TikTok Shop', gate: isPro, badge: 'New' },
         // MVP x Wayward graduated out of Labs 2026-08 → now under the network
         // finders, right below MVP x PartnerBoost.
         // Clip Factory graduated out of Labs 2026-08 → now lives under Create
