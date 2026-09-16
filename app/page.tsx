@@ -18,6 +18,7 @@
  * below and in app/pricing/page.tsx. If you change one, change all three.
  */
 import { TIERS } from '@/lib/tier'
+import { FREE_TRIAL } from '@/lib/free-trial'
 import {
   FileText, Image as ImageIcon, Mail, Scale, Calendar,
   Play, Sparkles, ArrowRight, Bookmark,
@@ -162,7 +163,7 @@ function AmazonRouter({ variant }: { variant: 'strip' | 'callout' }) {
         <p className="max-w-3xl mx-auto text-center text-[14px]" style={{ color: 'var(--text-soft)' }}>
           Not building a blog? The{' '}
           <a href="/amazon-influencer" className="font-bold" style={{ color: '#EA580C' }}>Amazon storefront plan</a>{' '}
-          covers thumbnails, designs, storefront and brand deals only, from $79/mo.
+          covers thumbnails, designs, storefront and brand deals only, from ${TIERS.amazon.price}/mo.
         </p>
       </section>
     )
@@ -171,7 +172,7 @@ function AmazonRouter({ variant }: { variant: 'strip' | 'callout' }) {
     <div style={{ background: 'linear-gradient(90deg, rgba(234,88,12,0.09), rgba(192,38,211,0.06))', borderBottom: '1px solid var(--border)' }}>
       <div className="max-w-6xl mx-auto px-6 lg:px-8 py-3.5 flex items-center justify-center gap-x-4 gap-y-1.5 flex-wrap text-center text-[13.5px]">
         <b style={{ color: 'var(--text)' }}>Not building a blog or YouTube?</b>
-        <span style={{ color: 'var(--text-soft)' }}>MVP has an Amazon storefront plan: thumbnails, designs, storefront and brand deals, from $79/mo.</span>
+        <span style={{ color: 'var(--text-soft)' }}>MVP has an Amazon storefront plan: thumbnails, designs, storefront and brand deals, from ${TIERS.amazon.price}/mo.</span>
         <a href="/amazon-influencer" className="font-bold whitespace-nowrap inline-flex items-center gap-1" style={{ color: '#EA580C' }}>
           See the Amazon plan <ArrowRight size={13} />
         </a>
@@ -390,7 +391,7 @@ function PricingSection() {
               Free to start. No card required.
             </p>
             <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              Product research and Deal Radar are free forever. Plus 5 full posts on the house, so you can generate, publish and share before you pay a cent. No time limit on the trial.
+              Product research and Deal Radar are free forever. Plus {FREE_TRIAL.thumbnails} Art Director thumbnails and {FREE_TRIAL.socialDesigns} ready-to-post designs on the house, with your own face on them, free for {FREE_TRIAL.trialDays} days.
             </p>
           </div>
           <a
@@ -426,7 +427,7 @@ function PricingSection() {
           </div>
           <p className="text-[13.5px] leading-relaxed lg:flex-1" style={{ color: 'var(--text-soft)' }}>
             Incredible Amazon video-review thumbnails in one click, ready-to-post pins, Reels & Facebook
-            designs with your face on them, and paid brand deals. <span style={{ color: 'var(--text)' }}>From $79/mo.</span>
+            designs with your face on them, and paid brand deals. <span style={{ color: 'var(--text)' }}>From ${TIERS.amazon.price}/mo.</span>
           </p>
           <span className="inline-flex items-center gap-1.5 px-5 py-3 rounded-xl text-[13.5px] font-semibold text-white whitespace-nowrap transition-all group-hover:gap-2.5" style={{ backgroundColor: '#C2410C' }}>
             See the Amazon plan <ArrowRight size={14} />
@@ -998,7 +999,7 @@ function FinalCTASection() {
           className="text-[17px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto mb-8"
           style={{ color: 'var(--text-soft)' }}
         >
-          Five free posts. No card. No time limit. See if MVP fits your workflow before you pay a cent.
+          {FREE_TRIAL.thumbnails} free thumbnails and {FREE_TRIAL.socialDesigns} designs. No card. {FREE_TRIAL.trialDays} days. See if MVP fits your workflow before you pay a cent.
         </p>
 
         {/* Twin CTAs — primary action + lower-friction demo link. */}
@@ -1034,7 +1035,7 @@ function FinalCTASection() {
             <Check size={12} className="text-[#10B981]" /> No card required
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Check size={12} className="text-[#10B981]" /> 5 full posts free
+            <Check size={12} className="text-[#10B981]" /> {FREE_TRIAL.thumbnails} thumbnails + {FREE_TRIAL.socialDesigns} designs free
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Check size={12} className="text-[#10B981]" /> Cancel anytime

@@ -133,8 +133,8 @@ export default function PricingPage() {
       </div>
 
       {/* Which of the two products is this visitor? Asked FIRST, because the
-          four prices read as one ladder ($49, $79, $99, $199) and a storefront
-          creator scanning that has no reason to think the $79 one is theirs. */}
+          four prices read as one ladder ($49, $99, $99, $199) and a storefront
+          creator scanning that has no reason to think the Amazon one is theirs. */}
       <TrackPicker />
 
       {/* ───────────────────────────────────────────────────────────────────
@@ -264,9 +264,12 @@ export default function PricingPage() {
           {/* Header + price + CTA. Amazon Influencer is a separate buyer with no
               blog and no YouTube, so it gets its own explained track rather than
               sitting in the blog-ladder grid above. */}
-          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-8">
-            <div className="max-w-2xl">
-              <NextImage src="/png/mvp-affiliate-amz.png" alt="MVP Amazon Influencer" width={56} height={56} className="w-14 h-14 rounded-2xl shadow-sm mb-3" />
+          {/* CENTRED, and the price is its own full-width band rather than a
+              narrow right rail. The number is the thing a buyer is looking for
+              on this card, and it was the smallest element on it. */}
+          <div className="flex flex-col items-center text-center gap-6 mb-8">
+            <div className="max-w-3xl flex flex-col items-center">
+              <NextImage src="/png/mvp-affiliate-amz.png" alt="MVP Amazon Influencer" width={56} height={56} className="w-14 h-14 rounded-2xl shadow-sm mb-3 mx-auto" />
               <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: '#C2410C' }}>
                 For Amazon storefront creators · no blog · no YouTube
               </p>
@@ -282,16 +285,19 @@ export default function PricingPage() {
                 Already on Studio or Pro? This whole toolkit is already included in your plan, on top of the blog + YouTube engine.
               </p>
             </div>
-            <div className="lg:text-right shrink-0">
-              <div className="flex items-baseline gap-2 lg:justify-end">
-                <span className="text-4xl font-extrabold text-[#1d1d1f] dark:text-[#f5f5f7]">$79</span>
-                <span className="text-sm text-[#86868b] dark:text-[#8e8e93]">/month</span>
+            <div className="w-full max-w-lg rounded-2xl px-6 py-6 flex flex-col items-center"
+              style={{ background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(234,88,12,0.25)' }}>
+              <div className="flex items-baseline justify-center gap-2">
+                <span className="text-6xl font-extrabold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">${TIERS.amazon.price}</span>
+                <span className="text-base text-[#86868b] dark:text-[#8e8e93]">/month</span>
               </div>
-              <p className="text-xs mt-1 text-[#86868b] dark:text-[#8e8e93]">
-                <span className="line-through">$129/month</span>{' '}
-                <span className="font-semibold" style={{ color: '#C2410C' }}>Save $50 for life</span>
+              <p className="text-sm mt-2 text-[#86868b] dark:text-[#8e8e93]">
+                <span className="line-through">${TIERS.amazon.regularPrice}/month</span>{' '}
+                <span className="font-semibold" style={{ color: '#C2410C' }}>
+                  Save ${TIERS.amazon.regularPrice - TIERS.amazon.price} for life
+                </span>
               </p>
-              <div className="mt-4 w-full lg:w-56 lg:ml-auto">
+              <div className="mt-5 w-full max-w-sm">
                 <CheckoutButton tier="amazon" highlight={true} salesPaused={SALES_PAUSED} ctaLabel="Get Amazon Influencer" />
               </div>
             </div>
@@ -301,16 +307,23 @@ export default function PricingPage() {
               asked for: the messaging + CC brand deals, the research, the content,
               the designs, publishing, face models, priority. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* EVERY NUMBER FROM TIERS. This card was written when Amazon was the
+                $79 plan and never updated when the caps went up with the price,
+                so every tag on it understated what the buyer actually gets:
+                200 thumbnails against 250, 100 Reels against 150, 40 Facebook
+                against 120, 40 brand deals against 60, 60 posts against 150,
+                and one face model with six headshots against two and twelve.
+                Hardcoding them is what let that happen, so they are read now. */}
             {[
-              { icon: <Wand2 size={20} />, title: 'One-click video-review thumbnails', tag: '200 / month', desc: 'Drop in any Amazon product and get an incredible video-review thumbnail in one click, the scroll-stopping cover that makes shoppers hit play on your storefront review. The same Art Director engine our top video creators use.' },
-              { icon: <LayoutTemplate size={20} />, title: 'Ready-to-post designs', tag: '150 pins · 100 Reels · 40 FB', desc: 'Finished Pinterest pins, Instagram Reels covers and Facebook posts, laid out and captioned for you. No Canva, no templates to fight. Post them as they are.' },
-              { icon: <Handshake size={20} />, title: 'Creator Connections deals', tag: '40 brand deals / month', desc: 'Browse the full campaign catalogue and land the brand collabs worth your time. Every day MVP sends you a fresh digest of campaigns auto-matched to your content and research, done for you, so you never miss a fit.' },
+              { icon: <Wand2 size={20} />, title: 'One-click video-review thumbnails', tag: `${TIERS.amazon.thumbnailsPerMonth} / month`, desc: 'Drop in any Amazon product and get an incredible video-review thumbnail in one click, the scroll-stopping cover that makes shoppers hit play on your storefront review. The same Art Director engine our top video creators use.' },
+              { icon: <LayoutTemplate size={20} />, title: 'Ready-to-post designs', tag: `${TIERS.amazon.pinsPerMonth} pins · ${TIERS.amazon.igPostsPerMonth} Reels · ${TIERS.amazon.facebookPostsPerMonth} FB`, desc: 'Finished Pinterest pins, Instagram Reels covers and Facebook posts, laid out and captioned for you. No Canva, no templates to fight. Post them as they are.' },
+              { icon: <Handshake size={20} />, title: 'Creator Connections deals', tag: `${TIERS.amazon.collabsPerMonth} brand deals / month`, desc: 'Browse the full campaign catalogue and land the brand collabs worth your time. Every day MVP sends you a fresh digest of campaigns auto-matched to your content and research, done for you, so you never miss a fit.' },
               { icon: <MessageSquare size={20} />, title: 'Message brands direct', tag: 'Built in', desc: 'Pitch and negotiate with brands inside MVP. Draft the outreach, keep every conversation in one place, and turn a browse into a paid collaboration.' },
               { icon: <PackageSearch size={20} />, title: 'Amazon Product Research', tag: 'Unlimited browse', desc: 'Filter the whole Amazon catalogue by sales, rating, price, review ratio and competition. Find the products actually worth posting before you spend a design on them.' },
               { icon: <Radar size={20} />, title: 'Deal Radar', tag: 'Unlimited browse', desc: 'Live, price-history-verified Amazon deals. Jump on a real price drop the day it happens and turn it into a post while it is still hot.' },
               { icon: <ShoppingBag size={20} />, title: 'Idea List → Shopping Guide', tag: 'Up to Top 20', desc: 'Point MVP at one of your Amazon idea lists and it checks every product, ranks them by your own sales, demand, live deals and ratings, then writes a full shopping-guide post with your affiliate links and a call-to-action back to the whole list on Amazon.' },
-              { icon: <Send size={20} />, title: 'Publish for you', tag: '60 posts / month', desc: 'Push product and deal posts straight to Facebook, Pinterest and Instagram, all three at once, from one screen. The copy is written, the design is done, you approve and it goes.' },
-              { icon: <UserSquare size={20} />, title: 'Your face on every design', tag: '1 model · 6 headshots', desc: 'Add one face model and MVP puts you in the designs. Run the photobooth for 6 studio-quality headshots so your posts look like you, not stock.' },
+              { icon: <Send size={20} />, title: 'Publish for you', tag: `${TIERS.amazon.dealsPerMonth} posts / month`, desc: 'Push product and deal posts straight to Facebook, Pinterest and Instagram, all three at once, from one screen. The copy is written, the design is done, you approve and it goes.' },
+              { icon: <UserSquare size={20} />, title: 'Your face on every design', tag: `${TIERS.amazon.maxFaces} models · ${TIERS.amazon.photoboothPerMonth} headshots`, desc: `Add your face models and MVP puts you in the designs. Run the photobooth for ${TIERS.amazon.photoboothPerMonth} studio-quality headshots so your posts look like you, not stock.` },
               { icon: <Zap size={20} />, title: 'Priority queue + support', tag: 'Included', desc: 'Your renders jump the line and your questions get answered first. When a deal is live you are not waiting behind the free tier.' },
             ].map((t) => (
               <div key={t.title} className="rounded-2xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 p-5 flex flex-col">

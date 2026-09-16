@@ -9,6 +9,7 @@
 //
 // Static (just links), so it renders as a Server Component — no client JS.
 
+import { TIERS } from '@/lib/tier'
 import NextImage from 'next/image'
 import {
   ShoppingBag, Rocket, Wand2, Share2, BadgePercent, Radar, UserSquare, Store,
@@ -43,8 +44,10 @@ const PANELS: Panel[] = [
     logo: '/png/mvp-affiliate-amz.png',
     headline: 'No blog. No YouTube.\nJust your storefront.',
     blurb: 'Generate incredible Amazon video-review thumbnails in one click, turn any product into scroll-stopping designs, publish everywhere at once, and land paid brand deals.',
-    price: '$79',
-    regular: '$129',
+    // From TIERS, not typed in. These read $79 / $129 against a real 99 / 179,
+    // so the landing page quoted a price Stripe does not charge.
+    price: `$${TIERS.amazon.price}`,
+    regular: `$${TIERS.amazon.regularPrice}`,
     cta: 'See the Amazon plan',
     href: '/amazon-influencer',
     secondary: null,
