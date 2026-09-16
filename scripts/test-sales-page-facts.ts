@@ -28,7 +28,8 @@
 // So this file does not check the values. It checks that the marketing surfaces
 // cannot state a number the product does not agree with.
 import { readFileSync } from 'node:fs'
-import { TIERS } from '../lib/tier'
+import { SELLABLE_TIERS, TIERS } from '../lib/tier'
+import { trackCards } from '../lib/plan-compare'
 import { FREE_TRIAL } from '../lib/free-trial'
 
 const failures: string[] = []
@@ -209,6 +210,56 @@ const split = strip(SPLIT)
       !/keep every conversation in one place|negotiate with brands inside MVP/i.test(raw),
       'MVP hands over a link to Amazon\'s message box and stores no thread')
   }
+}
+
+// ── the plan grid has as many columns as there are plans ───────────────────
+//
+// It was a fixed lg:grid-cols-4, written when four plans were sold. Creator and
+// Studio froze, two cards were left, and they rendered into a four-column row:
+// each squeezed to a quarter width, packed to the left, the right half of the
+// section empty and the copy wrapping every three words. On the one page whose
+// job is to sell. Nothing caught it because it is a layout fact, not a number.
+{
+  const grid = PRICING.match(/const PLAN_GRID: Record<number, string> = \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  check('the plan grid is a lookup by count', grid.length > 0,
+    'a fixed column count is what broke this; the layout has to follow plans.length')
+  const entries = [...grid.matchAll(/(\d+):\s*'([^']+)'/g)]
+  check('it covers one through four plans', entries.length >= 4, `${entries.length} entries`)
+  for (const [, key, classes] of entries) {
+    const cols = [...classes.matchAll(/grid-cols-(\d+)/g)].map(m => Number(m[1]))
+    check(`${key} plan(s) lay out in ${key} column(s)`, Math.max(...cols) === Number(key),
+      `widest breakpoint is grid-cols-${Math.max(...cols)}`)
+  }
+  check('and the grid is keyed on the real count', /PLAN_GRID\[plans\.length\]/.test(pricing),
+    'hardcoding the key here would leave the lookup correct and unused')
+}
+
+// ── the two-door chooser quotes a price you can actually buy ───────────────
+//
+// The ladder card said "From $49 a month", which is Creator: a frozen tier that
+// existing subscribers keep and nobody new can purchase. The front page of the
+// pricing site was quoting a price checkout will not sell, and it had been
+// since the lineup changed.
+//
+// It also said "I have a blog or a YouTube channel", which turned the door away
+// from everyone who has not started one, on a product whose Hostinger flow
+// installs WordPress for them.
+{
+  const cards = trackCards()
+  // Widened to number: TIERS prices are a literal union, so .includes() on the
+  // narrowed array rejects an arbitrary parsed number.
+  const sellablePrices: number[] = SELLABLE_TIERS.map(t => TIERS[t].price as number)
+  for (const c of cards) {
+    const stated = Number(c.price.match(/\$(\d+)/)?.[1] ?? NaN)
+    check(`the ${c.key} card quotes a sellable price`, sellablePrices.includes(stated),
+      `it says $${stated}; the plans anyone can buy are ${sellablePrices.map(p => '$' + p).join(', ')}`)
+  }
+  const ladder = cards.find(c => c.key === 'ladder')!
+  check('the ladder door does not require an existing site',
+    !/I have a blog|publish to a website of your own/i.test(`${ladder.title} ${ladder.tell}`),
+    'MVP installs WordPress for a creator with no site; this door excluded them')
+  check('and says so', /build|set (one )?up/i.test(`${ladder.blurb} ${ladder.tell}`),
+    'the fact that MVP makes the site is the reason the door is open to them')
 }
 
 // ── the claims that are NOT numbers ────────────────────────────────────────

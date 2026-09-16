@@ -21,7 +21,7 @@
 // A comparison table is the worst possible place for that: it is read by
 // somebody deciding what to pay for.
 
-import { TIERS } from '@/lib/tier'
+import { SELLABLE_TIERS, TIERS } from '@/lib/tier'
 
 const n = (v: number | null | undefined, fallback = 'unlimited') => (v == null ? fallback : String(v))
 
@@ -118,6 +118,16 @@ export interface TrackCard {
   href: string
 }
 
+/** Cheapest SELLABLE plan on the blog track. Derived, never typed: the last
+ *  hardcoded number here outlived the plan it named. */
+function ladderEntryPrice(): number {
+  const prices = SELLABLE_TIERS
+    .filter(t => t !== 'amazon')
+    .map(t => TIERS[t].price)
+    .filter(p => typeof p === 'number' && p > 0)
+  return Math.min(...prices)
+}
+
 export function trackCards(): TrackCard[] {
   return [
     {
@@ -132,10 +142,18 @@ export function trackCards(): TrackCard[] {
     {
       key: 'ladder',
       eyebrow: 'Blog + YouTube engine',
-      title: 'I have a blog or a YouTube channel',
-      blurb: 'Turn your videos into full written reviews on your own site, with thumbnails, metadata, scripts, a newsletter and social posts, all in your voice.',
-      tell: 'If you publish to a website of your own, this is your ladder.',
-      price: `From $${TIERS.creator.price} a month`,
+      // NOT "I have a blog". MVP builds the site: the Hostinger flow installs
+      // WordPress, and the setup step wires the theme, categories and pages. The
+      // old title turned this door away from everybody who has not started yet,
+      // which is the group the product is best at serving.
+      title: 'I want a site of my own',
+      blurb: 'Turn your videos and product links into full written reviews on your own site, with thumbnails, metadata, scripts, a newsletter and social posts, all in your voice. No site yet? MVP builds you one.',
+      tell: 'Bring a WordPress site or let MVP set one up for you. Either way, this is your plan.',
+      // THE CHEAPEST PLAN SOMEONE CAN ACTUALLY BUY on this track, read from
+      // SELLABLE_TIERS. It said "From $49", which is Creator: a frozen tier that
+      // existing subscribers keep and nobody new can purchase. The pricing page
+      // was quoting a price checkout will not sell.
+      price: `$${ladderEntryPrice()} a month`,
       href: '#plans',
     },
   ]

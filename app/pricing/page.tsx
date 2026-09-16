@@ -40,6 +40,17 @@ type PlanExt = Plan & { bonus?: string; badge?: string }
 // Caps + feature flags rewritten 2026-06-04 to match the new tier matrix
 // (see lib/tier.ts). Source of truth lives in tier.ts; this list is the
 // marketing surface that mirrors it. If you change tier.ts, change this.
+/** Grid classes per plan count. Written out in full because Tailwind scans for
+ *  literal class names and would purge anything assembled from a variable. The
+ *  max-width narrows with the count so two cards read as a deliberate pair
+ *  rather than as four cards with two missing. */
+const PLAN_GRID: Record<number, string> = {
+  1: 'grid-cols-1 max-w-md',
+  2: 'grid-cols-1 sm:grid-cols-2 max-w-4xl',
+  3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl',
+  4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 max-w-6xl',
+}
+
 const plans: PlanExt[] = [
   {
     tier: 'trial',
@@ -99,6 +110,11 @@ const plans: PlanExt[] = [
       'Priority generation queue + priority support',
     ],
     highlight: false,
+    // The badge, not `highlight`. The highlight branch paints the whole card
+    // purple, which reads well on a short card and not on this one: Pro carries
+    // twenty-two bullets and a solid block that tall shouts over the page it is
+    // meant to lead. The badge plus a ring distinguishes it and stays quiet.
+    badge: 'Most complete',
     ctaLabel: 'Get Pro',
   },
 ]
@@ -186,14 +202,24 @@ export default function PricingPage() {
         </div>
       )}
 
-      <div id="plans" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 w-full max-w-6xl scroll-mt-8">
+      {/* THE COLUMN COUNT FOLLOWS THE NUMBER OF PLANS.
+          This was a fixed lg:grid-cols-4 from when four plans were sold. Creator
+          and Studio are frozen legacy tiers now, so two cards rendered into a
+          four-column row: both squeezed to a quarter width, packed to the left,
+          with the right half of the section empty. The text wrapped every three
+          words and the page looked broken on the one screen that has to sell.
+          Driving it off plans.length means freezing or adding a plan lays itself
+          out instead of needing this line remembered. */}
+      <div id="plans" className={`grid gap-5 w-full mx-auto scroll-mt-8 items-start ${PLAN_GRID[plans.length] ?? PLAN_GRID[4]}`}>
         {plans.map((plan) => (
           <div
             key={plan.tier}
             className={`rounded-2xl p-6 lg:p-7 flex flex-col ${
               plan.highlight
                 ? 'bg-[#7C3AED] text-white shadow-2xl lg:scale-105 ring-1 ring-[#7C3AED]/40'
-                : 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm border border-gray-200 dark:border-white/10'
+                : plan.badge
+                  ? 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-lg border-2 border-[#7C3AED]/60'
+                  : 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm border border-gray-200 dark:border-white/10'
             }`}
           >
             {plan.highlight && (
@@ -206,6 +232,20 @@ export default function PricingPage() {
               <div className="flex items-center gap-1.5 mb-4">
                 <Zap size={14} className="text-[#7C3AED]" />
                 <span className="text-xs font-semibold text-[#7C3AED] uppercase tracking-wide">{plan.badge}</span>
+              </div>
+            )}
+            {/* The same row, reserved and invisible, on a card with no badge.
+                Without it the badged card's title, price and "/month" all sit a
+                row lower than its neighbour's, so two cards meant to be compared
+                side by side have their prices at different heights. Built from
+                the identical markup rather than a guessed height, so it stays
+                aligned if the badge's type size ever changes. Hidden below sm,
+                where the cards stack and there is nothing to line up with: an
+                invisible row there is only wasted height on a phone. */}
+            {!plan.highlight && !plan.badge && (
+              <div className="hidden sm:flex items-center gap-1.5 mb-4 invisible" aria-hidden="true">
+                <Zap size={14} />
+                <span className="text-xs font-semibold uppercase tracking-wide">&nbsp;</span>
               </div>
             )}
             <p className={`text-sm font-semibold mb-1 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>{plan.label}</p>

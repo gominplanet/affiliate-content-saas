@@ -2,11 +2,15 @@
 //
 // The fork, and the table behind it.
 //
-// Amazon Influencer and the blog ladder look like one price range: $49, $79,
-// $99, $199. Read that way, the $79 plan is the middle option, and a storefront
-// creator has no reason to think it is the one built for them. It is a
-// different product. One has no blog and needs no website or channel; the other
-// three cannot start without both.
+// Amazon Influencer and the blog track look like one price range, so a
+// storefront creator reading down a list of numbers has no reason to think the
+// cheaper one is the plan built for them. They are different products: one has
+// no blog and needs no website or channel, the other is the publishing engine.
+//
+// No prices in this comment. The numbers that used to be here named a lineup
+// that has since changed, and the card beside them went on quoting a frozen
+// tier's price long after nobody could buy it. Every figure is derived in
+// lib/plan-compare from SELLABLE_TIERS.
 //
 // Two server components, no interactivity, so they cost nothing to ship: a
 // two-door chooser for someone who has not decided, and a comparison table for
@@ -31,8 +35,8 @@ export function TrackPicker() {
         </h2>
         <p className="mt-3 text-[15px] text-[#6e6e73] dark:text-[#ebebf0] max-w-2xl mx-auto">
           MVP is not one ladder. One plan is built for creators who live on their Amazon storefront
-          and never touch a website. The other three are a blog and YouTube engine. The prices sit
-          close together, so pick by what you post, not by the number.
+          and never touch a website. The other is a blog and YouTube engine, and it will build you
+          the site if you do not have one. Pick by what you post, not by the number.
         </p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

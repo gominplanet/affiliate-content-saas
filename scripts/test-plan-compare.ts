@@ -17,7 +17,7 @@
 // these are two different products rather than four rungs of one ladder. The
 // prices make that easy to miss ($49, $79, $99, $199 reads as a range), so the
 // rows that carry the distinction are marked, and they have to stay marked.
-import { TIERS } from '../lib/tier'
+import { SELLABLE_TIERS, TIERS } from '../lib/tier'
 import { planCompareRows, trackCards } from '../lib/plan-compare'
 
 const failures: string[] = []
@@ -153,9 +153,20 @@ const row = (label: string) => rows.find(r => r.label === label)
   check('both doors carry a tie-breaker', !!amz.tell && !!lad.tell)
   check('and the Amazon one names the blog test', /blog/i.test(amz.tell), amz.tell)
 
+  // A SELLABLE price, not just any configured one. This used to assert the
+  // ladder card quoted TIERS.creator.price, so it held the page to advertising
+  // "From $49" long after Creator froze and checkout stopped selling it. The
+  // guard was enforcing the bug.
+  const sellable = SELLABLE_TIERS.map(t => TIERS[t].price)
   check('prices come from the plan config',
-    amz.price.includes(String(TIERS.amazon.price)) && lad.price.includes(String(TIERS.creator.price)),
-    `${amz.price} | ${lad.price}`)
+    amz.price.includes(String(TIERS.amazon.price))
+    && sellable.some(p => lad.price.includes(String(p))),
+    `${amz.price} | ${lad.price} — sellable: ${sellable.map(p => '$' + p).join(', ')}`)
+  // No second check for "does not quote a FROZEN tier". Studio is $99 and so is
+  // Amazon, so a price alone cannot tell a live plan from a retired one, and a
+  // check that cannot distinguish them would fail on correct copy. The sellable
+  // test above is the one that holds: $49 is on no sellable plan, which is what
+  // made the old claim wrong.
   check('the Amazon door points at its own page', amz.href === '/amazon-influencer')
 }
 
