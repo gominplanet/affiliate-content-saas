@@ -120,6 +120,7 @@ export default function TikTokShop() {
       // live but MVP did not record it; `linkNote` means the link style was
       // swapped for this destination. Neither is a failure of the request.
       if (j.note) toast.warning(j.note as string, { duration: 12000 })
+      if (j.imageNote) toast.warning(j.imageNote as string, { duration: 14000 })
       if (j.linkNote) toast.message(j.linkNote as string, { duration: 10000 })
       toast.success('Published. Opening it now.')
       if (j.url) window.open(j.url as string, '_blank', 'noopener')

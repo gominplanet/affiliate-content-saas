@@ -112,8 +112,21 @@ export function upgradeTikTokImage(url: string | null | undefined, size = 1200):
   const n = Math.max(100, Math.min(2000, Math.round(size)))
   // Leave anything without the transform exactly as it is: a URL we do not
   // recognise is more likely to break than to improve.
-  if (!/resize-webp:\d+:\d+/.test(s)) return s
-  return s.replace(/resize-webp:\d+:\d+/, `resize-webp:${n}:${n}`)
+  if (!/resize-(?:webp|jpeg|image):\d+:\d+/.test(s)) return s
+  // AND ASK FOR JPEG, NOT WEBP.
+  //
+  // og:image ships a WebP. WordPress then received a file named "<slug>.jpg"
+  // carrying Content-Type: image/webp, and a post published with no featured
+  // image at all, which on a post whose whole purpose is being pushed to
+  // Pinterest and Facebook means nothing to show. Changing the extension is
+  // enough: the same CDN object answers 200 as image/jpeg (121KB against the
+  // WebP's 59KB at 1200px), so no conversion step is needed anywhere.
+  //
+  // Idempotent, so running it over an already-upgraded URL from an older saved
+  // row repairs that row rather than needing it re-added.
+  return s
+    .replace(/resize-(?:webp|jpeg|image):\d+:\d+/, `resize-jpeg:${n}:${n}`)
+    .replace(/\.webp(?=\?|$)/, '.jpeg')
 }
 
 /** Decode the escaping TikTok uses inside its embedded JSON and HTML. */

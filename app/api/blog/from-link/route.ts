@@ -38,6 +38,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { getLinkStyle, resolveShowcaseLink, resolveProductShopLink } from '@/lib/link-cloak'
 import { SHOWCASE_DISCLAIMER } from '@/lib/post-destination'
+import { upgradeTikTokImage } from '@/lib/tiktok-product'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -261,7 +262,9 @@ export async function POST(req: Request) {
     }
     productName = providedName || (tp.title as string)
     pDescription = (tp.description as string) || ''
-    productImageUrl = (tp.image_url as string) || null
+    // Re-run the upgrade on the STORED url: it is idempotent, and a product
+    // saved before the jpeg fix still holds a WebP that WordPress will not take.
+    productImageUrl = upgradeTikTokImage(tp.image_url as string | null)
     // Facts read off the product's own page. Handed to the writer as grounding
     // so it states what is true instead of inventing specifics from a title,
     // which is the failure mode that matters most on an affiliate post.
@@ -537,6 +540,9 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   // now the second choice rather than the first.
   let featuredMedia: number | undefined
   let heroSourceUrl: string | null = null
+  // Why there is no featured image, when there is none. Three separate attempts
+  // run below and every one of them used to fail in silence.
+  let heroNote: string | null = null
   if (productImageUrl) {
     const designed = await attachPostHero({
       wpService, db: supabase, userId: user.id, tier,
@@ -548,7 +554,11 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
       brandName: null,
     })
     if (designed.mediaId) { featuredMedia = designed.mediaId; heroSourceUrl = designed.sourceUrl }
-    if (designed.note) console.warn('[blog/from-link] hero:', designed.note)
+    // attachPostHero already explains exactly what went wrong ("the product
+    // photo could not be uploaded either"). Dropping that into console.warn and
+    // publishing anyway is how a post ships with no featured image and the
+    // creator is told "Published." Kept, and reported below if nothing lands.
+    if (designed.note) { heroNote = designed.note; console.warn('[blog/from-link] hero:', designed.note) }
   }
   try {
     if (!featuredMedia && process.env.FAL_KEY) {
@@ -567,7 +577,11 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
         if (media?.id) featuredMedia = media.id
       }
     }
-  } catch { /* publish without a generated hero — the product photo fallback below covers it */ }
+  } catch (e) {
+    // Not fatal, but not nothing either: if the fallback below also fails, this
+    // is half the reason the post has no image.
+    heroNote = heroNote || `The generated hero failed: ${e instanceof Error ? e.message : 'unknown error'}.`
+  }
 
   // Fallback: no generated hero (FAL_KEY unset or flux failed) → use the real
   // product/brand photo so EVERY post still ships with a featured thumbnail.
@@ -575,7 +589,9 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     try {
       const media = await wpService.uploadImageFromUrl(productImageUrl, `${slug}-product.jpg`)
       if (media?.id) featuredMedia = media.id
-    } catch { /* publish without a featured image as a last resort */ }
+    } catch (e) {
+      heroNote = `The product photo could not be uploaded to WordPress either: ${e instanceof Error ? e.message : 'unknown error'}.`
+    }
   }
 
   // ── 6. JSON-LD (BlogPosting + FAQPage) ──────────────────────────────────────
@@ -688,5 +704,11 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     // because the post went out fine and there is still something true to say
     // about which link is in it.
     linkNote: tiktokNote,
+    // A post with no featured image has no og:image, so a push to Pinterest or
+    // Facebook has nothing to show. That is worth a sentence on a SUCCESSFUL
+    // publish rather than a surprise when the first pin comes out blank.
+    imageNote: featuredMedia ? null : (heroNote
+      ? `This post published without a featured image. ${heroNote} Social pushes from it will have no picture until you set one in WordPress.`
+      : 'This post published without a featured image, so social pushes from it will have no picture until you set one in WordPress.'),
   })
 }

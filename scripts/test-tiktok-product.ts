@@ -144,13 +144,18 @@ const p = parseTikTokProduct(HTML, URL)
 
 // ── the image is usable, not a 260px thumbnail ─────────────────────────────
 {
-  check('og:image is upgraded', /resize-webp:1200:1200/.test(p.imageUrl || ''), String(p.imageUrl).slice(0, 90))
+  check('og:image is upgraded to 1200', /resize-jpeg:1200:1200/.test(p.imageUrl || ''), String(p.imageUrl).slice(0, 90))
+  check('and asks for JPEG, not WebP', /\.jpeg/.test(p.imageUrl || '') && !/webp/.test(p.imageUrl || ''),
+    'WordPress refused a .jpg carrying WebP bytes and the first post shipped with no featured image')
   check('and it is still the same image', /b9f44ae9ec3244848e06056d92100879/.test(p.imageUrl || ''),
     'rewriting the size must not rewrite the object')
   check('the CDN query survives', /idc=useast8/.test(p.imageUrl || ''),
     'those parameters are part of the signed URL; dropping them 400s')
-  check('a custom size is honoured', /resize-webp:800:800/.test(upgradeTikTokImage(p.imageUrl, 800) || ''))
-  check('a silly size is clamped', /resize-webp:2000:2000/.test(upgradeTikTokImage(p.imageUrl, 99999) || ''))
+  check('a custom size is honoured', /resize-jpeg:800:800/.test(upgradeTikTokImage(p.imageUrl, 800) || ''))
+  check('a silly size is clamped', /resize-jpeg:2000:2000/.test(upgradeTikTokImage(p.imageUrl, 99999) || ''))
+  check('re-upgrading an upgraded url is a no-op',
+    upgradeTikTokImage(upgradeTikTokImage(p.imageUrl)) === upgradeTikTokImage(p.imageUrl),
+    'the blog route re-runs it over stored rows to repair them, so it must not erode')
   check('a URL with no transform is left alone',
     upgradeTikTokImage('https://example.com/a.jpg') === 'https://example.com/a.jpg',
     'a URL we do not recognise is likelier to break than to improve')
@@ -288,7 +293,42 @@ const p = parseTikTokProduct(HTML, URL)
     /!link && !providedName && !tiktokProductId/.test(fl),
     'the product carries its own name; demanding a link too would block the one path that has everything')
 
+  // ── the post has a picture, or says why not ─────────────────────────────
+  //
+  // The first post this feature published had NO featured image and no
+  // og:image, and reported "Published." Three separate attempts at a hero ran
+  // and all three failed quietly: one logged to console.warn, two had empty
+  // catch blocks. On a post whose entire purpose is being pushed to Pinterest
+  // and Facebook, no og:image means nothing to show.
+  //
+  // The cause was one character of mismatch. og:image is a WebP, and WordPress
+  // was handed a file named "<slug>.jpg" carrying Content-Type: image/webp. The
+  // same CDN object answers 200 as image/jpeg if the extension is .jpeg, so
+  // asking for that is the whole fix.
+  const LIBT = readFileSync('lib/tiktok-product.ts', 'utf8')
+  check('the image is requested as JPEG', /resize-jpeg:\$\{n\}:\$\{n\}/.test(LIBT),
+    'WordPress will not take a .jpg whose bytes are WebP, and the post ships with no picture')
+  check('and the .webp extension is rewritten too', /\\.webp\(\?=\\\?\|\$\)/.test(LIBT) || /'\.jpeg'/.test(LIBT),
+    'the CDN keys the format off the extension, not the transform alone')
+  check('the upgrade is idempotent over jpeg', /resize-\(\?:webp\|jpeg\|image\)/.test(LIBT),
+    'a product saved before this fix still holds a WebP, and re-running must repair it rather than no-op')
+
+  check('the blog route re-upgrades the stored url', /upgradeTikTokImage\(tp\.image_url/.test(fl),
+    'rows saved before the fix would otherwise keep failing forever')
+  check('the hero note is kept, not only logged', /heroNote = designed\.note/.test(fl),
+    'attachPostHero already explains what went wrong; console.warn is where that explanation went to die')
+  const heroAssigns = (fl.match(/heroNote =/g) || []).length
+  check('every image failure path records why', heroAssigns >= 3, `${heroAssigns} assignment(s)`)
+  check('the generated-hero catch records', /catch \(e\) \{[\s\S]{0,200}?heroNote = heroNote \|\|/.test(fl),
+    'an empty catch is how three separate failures became one silent success')
+  check('and so does the WordPress upload catch',
+    /uploadImageFromUrl\(productImageUrl[\s\S]{0,300}?catch \(e\) \{[\s\S]{0,160}?heroNote =/.test(fl),
+    'this is the last of the three, so its silence is the one that ships the post')
+  check('and a post with no image says so', /imageNote: featuredMedia \? null/.test(fl),
+    'no og:image means a pin or a Facebook post from it comes out blank')
+
   const UI = readFileSync('components/labs/TikTokShop.tsx', 'utf8')
+  check('the screen shows the image warning', /j\.imageNote/.test(UI))
   check('the card can start one', /tiktokProductId: p\.product_id/.test(UI))
   check('and says how long it takes', /takes a couple of minutes/.test(UI),
     'a silent two-minute wait reads as a hang')
