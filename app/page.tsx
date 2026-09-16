@@ -391,7 +391,7 @@ function PricingSection() {
               Free to start. No card required.
             </p>
             <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              Product research and Deal Radar are free forever. Plus {FREE_TRIAL.thumbnails} Art Director thumbnails and {FREE_TRIAL.socialDesigns} ready-to-post designs on the house, with your own face on them, free for {FREE_TRIAL.trialDays} days.
+              Product research and Deal Radar are free forever. Plus {TIERS.trial.lifetimeMax} full posts once you connect a WordPress site, and {FREE_TRIAL.thumbnails} Art Director thumbnails and {FREE_TRIAL.socialDesigns} designs with your own face on them, free for your first {FREE_TRIAL.trialDays} days.
             </p>
           </div>
           <a
@@ -999,7 +999,7 @@ function FinalCTASection() {
           className="text-[17px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto mb-8"
           style={{ color: 'var(--text-soft)' }}
         >
-          {FREE_TRIAL.thumbnails} free thumbnails and {FREE_TRIAL.socialDesigns} designs. No card. {FREE_TRIAL.trialDays} days. See if MVP fits your workflow before you pay a cent.
+          {TIERS.trial.lifetimeMax} free posts, plus {FREE_TRIAL.thumbnails} thumbnails and {FREE_TRIAL.socialDesigns} designs for {FREE_TRIAL.trialDays} days. No card. See if MVP fits your workflow before you pay a cent.
         </p>
 
         {/* Twin CTAs — primary action + lower-friction demo link. */}
@@ -1035,7 +1035,7 @@ function FinalCTASection() {
             <Check size={12} className="text-[#10B981]" /> No card required
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Check size={12} className="text-[#10B981]" /> {FREE_TRIAL.thumbnails} thumbnails + {FREE_TRIAL.socialDesigns} designs free
+            <Check size={12} className="text-[#10B981]" /> {TIERS.trial.lifetimeMax} free posts + {FREE_TRIAL.thumbnails} thumbnails
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Check size={12} className="text-[#10B981]" /> Cancel anytime

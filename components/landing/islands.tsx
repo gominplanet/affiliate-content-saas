@@ -298,7 +298,7 @@ export function FAQSection() {
 const FAQS = [
   {
     q: 'How does the free trial work?',
-    a: 'You get 5 full posts on the house. No card required, no time limit. Generate, publish, share, see how it fits your workflow. If you decide MVP is for you, pick a plan (Creator, Studio, or Pro) and you keep going. If not, no charge, no follow-up emails. Your trial just sits there.',
+    a: 'You get 5 full posts on the house once you connect a WordPress site, plus 5 Art Director thumbnails and 5 designs for your first 30 days. No card required. Generate, publish, share, see how it fits your workflow. If you decide MVP is for you, pick a plan (Creator, Studio, or Pro) and you keep going. If not, no charge, no follow-up emails. Your trial just sits there.',
   },
   {
     q: 'Do I need to host my own WordPress site?',

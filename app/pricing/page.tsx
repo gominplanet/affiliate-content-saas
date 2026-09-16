@@ -56,7 +56,7 @@ const plans: PlanExt[] = [
       'Amazon Product Research: the whole catalogue, filter by sales, rating, price, reviews & best-sellers',
       'Levanta + PartnerBoost finders: search your own connected campaigns',
       'Creator Connections catalogue search (needs your own CC access + the free Scout extension)',
-      '5 full published reviews if you connect a WordPress site (blog + thumbnail + metadata)',
+      `${TIERS.trial.lifetimeMax} full published reviews if you connect a WordPress site (blog + thumbnail + metadata)`,
       'YouTube Co-Pilot: description, tags, hashtags & thumbnail pushed back to YouTube',
       'MVP Help Desk: 20 messages / month',
     ],
@@ -173,7 +173,7 @@ export default function PricingPage() {
               <CheckoutButton tier="trial" highlight={false} salesPaused={SALES_PAUSED} ctaLabel="Start free, no card" />
             </div>
             <p className="text-[13px] text-[#86868b] dark:text-[#8e8e93] text-center sm:text-left">
-              The free tier also includes 5 full published reviews to try the content engine.
+              The free tier also includes {TIERS.trial.lifetimeMax} full published reviews, once you connect a WordPress site, to try the content engine.
             </p>
           </div>
         </div>

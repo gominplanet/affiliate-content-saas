@@ -104,21 +104,41 @@ const split = strip(SPLIT)
 
 // ── the free trial is described as what it is ──────────────────────────────
 //
-// The one place the page OVERSTATED. FREE_TRIAL contains no posts at all, and
-// TIERS.trial.articlesPerMonth is 0, so "5 full posts" was not a smaller
-// version of the truth but a different product. "No time limit" contradicted
-// trialDays outright.
+// TWO OFFERS, AND THE FIRST VERSION OF THIS CHECK GOT IT BACKWARDS. It read
+// TIERS.trial.articlesPerMonth === 0 as "the trial has no posts" and asserted
+// the page must not mention any. But lifetimeMax and basePosts are both 5, and
+// lib/free-tier-gate says "the free plan includes 5 lifetime posts" outright,
+// so "5 full posts" was true and acting on that check DELETED a real claim from
+// the sales page. The clock is real as well, but only on the design surfaces:
+// freeTrialExpiredBlock is enforced on face-models, photobooth and
+// generate-thumbnail, and on nothing in the blog path.
 {
-  check('the trial contains no posts', TIERS.trial.articlesPerMonth === 0,
-    'if this changes, the copy below can start mentioning posts again')
-  check('and it has a clock', FREE_TRIAL.trialDays > 0, `${FREE_TRIAL.trialDays} days`)
+  check('the post allowance is still five', TIERS.trial.lifetimeMax === 5 && TIERS.trial.basePosts === 5,
+    'the copy states this number, so a change here has to reach the page')
+  check('and the design clock is still real', FREE_TRIAL.trialDays > 0, `${FREE_TRIAL.trialDays} days`)
+  const GATE = readFileSync('lib/free-tier-gate.ts', 'utf8')
+  check('the gate still requires a WordPress site', /Connect a WordPress site/.test(GATE),
+    'the copy now says "once you connect a WordPress site", which it never used to mention')
 
-  check('the page no longer promises posts', !/\d+ full posts|Five free posts/i.test(landing),
-    'the trial gives thumbnails and designs; a post is a different thing and the trial has none')
-  check('nor claims there is no time limit', !/no time limit/i.test(landing),
-    `the trial runs ${FREE_TRIAL.trialDays} days`)
-  check('the trial numbers are read', /FREE_TRIAL\.thumbnails/.test(landing) && /FREE_TRIAL\.socialDesigns/.test(landing))
-  check('and so is the length', /FREE_TRIAL\.trialDays/.test(landing))
+  check('the posts are stated, and READ', /TIERS\.trial\.lifetimeMax/.test(landing),
+    'they are real; the page should say so, from the constant')
+  // The literal is the regression. A presence check on the read passes while
+  // one of its three uses is typed back in as a number.
+  for (const [name, src] of [['landing', landing], ['pricing', pricing]] as const) {
+    check(`${name} types no post count`, !/\b\d+ (full |free )?(posts|published reviews)\b/i.test(src),
+      'the count is TIERS.trial.lifetimeMax; typed beside it, it goes stale the way every price on this page did')
+  }
+  check('the design allowance is read too',
+    /FREE_TRIAL\.thumbnails/.test(landing) && /FREE_TRIAL\.socialDesigns/.test(landing))
+  check('and the window', /FREE_TRIAL\.trialDays/.test(landing))
+  // The one thing that was simply false. The designs stop after trialDays.
+  for (const [name, src] of [['landing', landing], ['pricing', pricing]] as const) {
+    check(`${name} does not claim there is no time limit`, !/no time limit/i.test(src),
+      `freeTrialExpiredBlock cuts the design surfaces off after ${FREE_TRIAL.trialDays} days`)
+  }
+  const FAQ = strip(readFileSync('components/landing/islands.tsx', 'utf8'))
+  check('nor does the FAQ', !/no time limit/i.test(FAQ),
+    'it is the longest-form answer on the site and it said it outright')
 }
 
 // ── the claims that are NOT numbers ────────────────────────────────────────
