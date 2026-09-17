@@ -11,6 +11,7 @@ import { deriveProductName } from '@/lib/product-name'
 import { asinPathRegex } from '@/lib/asin'
 import { pickBlogWriter, BLOG_WRITER_DEFAULT, type WriterArm } from '@/lib/blog-writer'
 import { planSourceBudget, planFaqCount, type SourceBudget } from '@/lib/source-budget'
+import { planPostStructure, structureToPrompt, type StructurePlan } from '@/lib/post-structure'
 
 /** Caller identity for cost telemetry (optional — logging is best-effort). */
 export interface UsageCtx {
@@ -106,6 +107,13 @@ export interface BlogGenerationOutput {
    *  compared per post rather than inferred from timestamps. */
   writerModel?: string
   writerArm?: WriterArm
+  /** The body shape this post was planned with, e.g.
+   *  "hook>performance>friction>advice|vsp". Stored on blog_posts so the next
+   *  post for this creator can be given a shape they have not just published.
+   *  Without persisting it the planner varies every post and still lands on
+   *  last week's shape, which is the difference between variance being real and
+   *  variance being likely. */
+  structureSignature?: string
   title: string
   slug: string
   excerpt: string
@@ -175,6 +183,10 @@ function buildSystemPrompt(
    *  length whether or not there was anything to fill it with. See
    *  lib/source-budget.ts for what that cost. */
   sourceBudget: SourceBudget,
+  /** This post's body shape, chosen per post and checked against the creator's
+   *  recent ones. Required for the same reason the budget is: an optional
+   *  parameter with a fallback is how the fixed template comes back. */
+  structurePlan: StructurePlan,
   voiceProfile?: string,
   /** Whether the resolved affiliate destination is Amazon. Drives the CTA
    *  button/eyebrow copy and the default disclaimer. Defaults to true so
@@ -237,6 +249,76 @@ function buildSystemPrompt(
   // How many FAQ questions this post has earned. Zero is a legitimate answer and
   // the most important one: it is what stops a thin post growing a manufactured
   // Q&A block purely because the template has a slot for one.
+  // The body's shape, decided per post in lib/post-structure.ts rather than
+  // hardcoded here. What used to sit at [4] was a fixed list of seven sections,
+  // A through G, in one order, on every post. This prompt separately instructed
+  // the writer that "no two posts may have the same shape" and to "never default
+  // to seven because the template said so", four hundred lines apart. A model
+  // given an abstract instruction and a concrete template follows the template.
+  //
+  // The craft guidance below survives that change, because it was never the
+  // problem. It is stated once and applies to whichever sections got planned,
+  // instead of being welded to a section that may not exist on this post.
+  const structureBlock = `${structureToPrompt(structurePlan)}
+
+FIRST SENTENCE OF THE BODY (applies to whichever section opens this post)
+    The FIRST sentence of the body is the single highest-stakes line in the
+    entire post. Readers decide in ~5 seconds whether to keep reading or
+    bounce. A generic "We tested X" / "Here's my review of X" / "This is a
+    review of X" opener loses them. The first sentence MUST be one of:
+
+      (a) A specific personal moment from the test — what you did, felt,
+          noticed, or said in the video. Examples from posts that landed:
+            "I forgot to blow out candles one too many times."
+            "I ran it across my arm. Not carefully."
+            "The Step to Bed is one of those products I didn't know existed
+             until I had it in my hands."
+
+      (b) A surprising or contrarian observation about the product:
+            "The Wahl Peanut is only 4 oz but packs way more power than expected."
+
+      (c) A concrete stake / pain the product addresses — written as
+          something YOU lived, not a category generalization:
+            "Getting out of bed in the dark is one of the riskier things
+             people do every night, and after testing this I think most
+             of us are doing it wrong."
+
+    ⛔ BANNED first-sentence shapes (any variant — these are the bounce-
+    inducing openers we keep seeing on the catalogue):
+      • "We tested [product]." / "We tried out [product]."
+      • "Here's my review of [product]." / "Here's our take on [product]."
+      • "This is a review of [product]."
+      • "Today we're looking at [product]."
+      • "In this review I'll cover [product]."
+      • Any sentence whose subject is "we" or "I" + a generic test verb
+        (tested / tried / reviewed / checked out / unboxed) + the product
+        name. Those are summary frames, not hooks. CUT them and start with
+        the actual moment instead.
+      • Opening with the product name as the literal subject of a category
+        sentence: "The [product] is a [category]" / "The [product] is one
+        of those products that…" UNLESS the second half of the sentence
+        is a specific lived observation (see Step-to-Bed example above —
+        the "I didn't know existed until I had it in my hands" is what
+        saves it).
+
+    First sentence rules:
+      - Under 22 words. Short sentences hook harder.
+      - First person ("I" / "we") OR observation about the product. Never
+        third-person about the reader ("If you've ever wondered…").
+      - Grounded in the transcript — mine for the first specific moment
+        the reviewer mentions, the surprise reaction, the "wait" / "huh"
+        / "didn't expect" beat. If the transcript opens with chat, find
+        the first real observation later in it.
+      - The affiliate link goes in the FIRST PARAGRAPH but not necessarily
+        in the first sentence. Don't sacrifice the hook to land the link
+        — sentence 2 or 3 can introduce the product + link.
+
+SPECS AND NUMBERS (applies to every section, not one of them)
+    Only the features and specs ACTUALLY stated in the transcript or product info.
+    Quote the real numbers and measurements when they are given, otherwise
+    describe what the reviewer showed or demonstrated. Never invent, estimate or
+    guess a spec. No vague claims.`
+
   const faqCount = planFaqCount(sourceBudget.sourceWords)
   const faqHeading = '<!-- wp:heading {"level":2} --><h2>Frequently Asked Questions</h2><!-- /wp:heading -->'
 
@@ -339,11 +421,18 @@ function buildSystemPrompt(
   // review without the structured add-on blocks.
   //
   // Default to true so undefined / missing column = current behavior.
+  //
+  // 2026-09-17: these are now a CEILING, not the answer. The brand toggle says
+  // what a creator will allow; the per-post plan says what this particular post
+  // gets. Set once per brand, they applied identically to every post on the
+  // site, so every URL carried the same furniture in the same order and the
+  // whole catalogue read as one page repeated. A plan may drop a block the
+  // brand allows. It may never add one the brand switched off.
   const sec = {
-    quickVerdict: brand.include_quick_verdict !== false,
-    prosCons:     brand.include_pros_cons !== false,
-    scorecard:    brand.include_scorecard !== false,
-    faq:          brand.include_faq !== false,
+    quickVerdict: brand.include_quick_verdict !== false && structurePlan.blocks.verdictBox,
+    prosCons:     brand.include_pros_cons !== false && structurePlan.blocks.prosCons,
+    scorecard:    brand.include_scorecard !== false && structurePlan.blocks.scorecard,
+    faq:          brand.include_faq !== false && faqCount > 0,
   }
   const disabledSections: string[] = []
   if (!sec.quickVerdict) disabledSections.push('• Section [3] QUICK VERDICT BOX — OMIT the entire <div class="gr-verdict-box"> block. No Buy-if / Skip-if. The hook opener handles the framing.')
@@ -1282,163 +1371,8 @@ Numbers must come from the product info. Don't invent specs to fill rows.
 If a spec is uncertain, prefix with "~" (e.g. "~2.5 lbs"). If totally
 unknown, leave that spec out.
 
-[4] BODY — 7 REQUIRED SECTIONS (WordPress heading + paragraph blocks)
+${structureBlock}
 
-  Section A: <!-- wp:heading --> H2 — Hook opener
-    The FIRST sentence of the body is the single highest-stakes line in the
-    entire post. Readers decide in ~5 seconds whether to keep reading or
-    bounce. A generic "We tested X" / "Here's my review of X" / "This is a
-    review of X" opener loses them. The first sentence MUST be one of:
-
-      (a) A specific personal moment from the test — what you did, felt,
-          noticed, or said in the video. Examples from posts that landed:
-            "I forgot to blow out candles one too many times."
-            "I ran it across my arm. Not carefully."
-            "The Step to Bed is one of those products I didn't know existed
-             until I had it in my hands."
-
-      (b) A surprising or contrarian observation about the product:
-            "The Wahl Peanut is only 4 oz but packs way more power than expected."
-
-      (c) A concrete stake / pain the product addresses — written as
-          something YOU lived, not a category generalization:
-            "Getting out of bed in the dark is one of the riskier things
-             people do every night, and after testing this I think most
-             of us are doing it wrong."
-
-    ⛔ BANNED first-sentence shapes (any variant — these are the bounce-
-    inducing openers we keep seeing on the catalogue):
-      • "We tested [product]." / "We tried out [product]."
-      • "Here's my review of [product]." / "Here's our take on [product]."
-      • "This is a review of [product]."
-      • "Today we're looking at [product]."
-      • "In this review I'll cover [product]."
-      • Any sentence whose subject is "we" or "I" + a generic test verb
-        (tested / tried / reviewed / checked out / unboxed) + the product
-        name. Those are summary frames, not hooks. CUT them and start with
-        the actual moment instead.
-      • Opening with the product name as the literal subject of a category
-        sentence: "The [product] is a [category]" / "The [product] is one
-        of those products that…" UNLESS the second half of the sentence
-        is a specific lived observation (see Step-to-Bed example above —
-        the "I didn't know existed until I had it in my hands" is what
-        saves it).
-
-    First sentence rules:
-      - Under 22 words. Short sentences hook harder.
-      - First person ("I" / "we") OR observation about the product. Never
-        third-person about the reader ("If you've ever wondered…").
-      - Grounded in the transcript — mine for the first specific moment
-        the reviewer mentions, the surprise reaction, the "wait" / "huh"
-        / "didn't expect" beat. If the transcript opens with chat, find
-        the first real observation later in it.
-      - The affiliate link goes in the FIRST PARAGRAPH but not necessarily
-        in the first sentence. Don't sacrifice the hook to land the link
-        — sentence 2 or 3 can introduce the product + link.
-
-  Section B: <!-- wp:heading {"level":3} --> H3 — Product mechanics
-    Only the features and specs ACTUALLY stated in the transcript or product info — quote
-    the real numbers/measurements when they're given, otherwise describe what the reviewer
-    showed or demonstrated. Never invent, estimate, or guess a spec. No vague claims.
-
-    AFTER Section B's prose, IF the source contains ≥3 concrete specs
-    (dimensions, weight, capacity, materials, run-time, etc.), insert a
-    structured Specs table — every major review site (PCMag, TechRadar,
-    Digital Trends, Tom's Guide) renders one. Buyers scan it before
-    reading prose. Format below; OMIT the entire block if the source
-    has fewer than 3 specs (don't fabricate to fill the table).
-
-    <!-- wp:html -->
-    <table class="gr-specs" style="width:100%;border-collapse:collapse;margin:16px 0 28px;font-size:14px;border:1px solid #e5e5e7;border-radius:6px;overflow:hidden">
-      <tbody>
-        <tr style="background:#fafafa">
-          <th style="text-align:left;padding:10px 14px;width:38%;font-weight:700;color:#86868b;text-transform:uppercase;font-size:11px;letter-spacing:.8px;border-bottom:1px solid #e5e5e7">Spec</th>
-          <th style="text-align:left;padding:10px 14px;font-weight:700;color:#86868b;text-transform:uppercase;font-size:11px;letter-spacing:.8px;border-bottom:1px solid #e5e5e7">Detail</th>
-        </tr>
-        <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#1d1d1f;font-weight:600">{spec name 1}</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#3a3a3c">{spec value 1, with units}</td></tr>
-        <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#1d1d1f;font-weight:600">{spec name 2}</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#3a3a3c">{spec value 2, with units}</td></tr>
-        {repeat for 4–8 rows total, only specs actually stated in source}
-      </tbody>
-    </table>
-    <!-- /wp:html -->
-
-    Eligible row keys (use whichever the source provides — keep order
-    consistent: physical specs first, performance/electrical second,
-    inclusions last):
-      Dimensions · Weight · Material · Color / Finish · Capacity ·
-      Power / Wattage · Battery / Run-time · Connectivity · Resolution ·
-      Compatibility · Included accessories · Warranty
-    Do NOT include Price (rule 10 bans prices in the body).
-    Do NOT include vague entries like "Premium quality" — every row
-    must have a measurable detail.
-
-  Section C: <!-- wp:heading {"level":3} --> H3 — Real-world performance
-    What happened when they used it. Specific conditions from transcript.
-
-  Section D: <!-- wp:heading {"level":3} --> H3 — The honest friction
-    Pull ONE concrete frustration, imperfection, or trade-off the reviewer
-    actually hit during the test — something the manufacturer would NOT put on
-    the box. Not an "edge case won't fit this" caveat; a lived-experience
-    annoyance from real use. Mine the transcript for moments of: hesitation,
-    surprise, "I would have liked", "the only thing", "it didn't quite",
-    "got me thinking", "almost", "could be better". If the reviewer genuinely
-    found nothing wrong, write ONE specific minor friction grounded in what
-    they showed (a small UX papercut, a setup gotcha, a missing accessory,
-    a quirk you have to learn). NEVER invent. Heading must NOT use the phrase
-    "nobody talks about", "most reviews miss", "what other reviewers won't
-    mention", or any "insider knowledge" framing — those are banned outright.
-    Heading examples: "The Cable Snaps If You Yank It", "It Needs a Few
-    Minutes to Wake Up", "The Velcro Anchor Is the Step You'll Forget".
-
-  After Section D insert mid-article CTA card (HTML block — exact same markup as [7]).
-  Fill the product-name span with a clean 2–6 word product name derived from the video
-  title + transcript (drop the ASIN, drop generic words like "Review" or "Unboxing", drop
-  prefixes like "We tested" — keep brand + product type, e.g. "Kieba Cervical Neck Massager"):
-  <!-- wp:html -->
-  <div class="gr-cta-card">
-    <div class="gr-cta-body">
-      <p class="gr-cta-eyebrow">${ctaEyebrow}</p>
-      <p class="gr-cta-product-name">{Clean product name — 2-6 words, no ASIN, no fluff}</p>
-      <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored nofollow" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:${ctaBg};color:${ctaText};font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
-        ${ctaButton}
-      </a>
-      <p class="gr-cta-disclaimer" style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${disclaimer}</p>
-    </div>
-    <div class="gr-cta-thumb-wrap">
-      <img src="https://i.ytimg.com/vi/{VIDEO_ID}/mqdefault.jpg" alt="" loading="lazy" class="gr-cta-thumb" />
-    </div>
-  </div>
-  <!-- /wp:html -->
-
-  Section E: <!-- wp:heading {"level":3} --> H3 — Who this is actually for
-    Specific scenarios. Real household/lifestyle contexts.
-
-  Section F: <!-- wp:heading {"level":3} --> H3 — Direct comparison (CONDITIONAL)
-    INCLUDE this section ONLY when at least ONE of these is true:
-      (i)  The transcript explicitly compares the product to a real named or
-           clearly described alternative (e.g. "vs. a basic bed rail",
-           "compared to a tealight wax warmer", "vs. a corded trimmer").
-      (ii) The product belongs to a category where readers ARE actively
-           choosing between two well-defined formats (e.g. "wired security
-           cameras vs. solar-wireless", "stevia vs. allulose for keto") —
-           and the comparison genuinely changes the buying decision.
-
-    Audit found this section was being written even when no real comparison
-    existed in the source — the model invented one to fill the slot, which
-    padded wordcount with low-value generic comparisons readers skim past.
-
-    If NEITHER (i) nor (ii) is true, SKIP Section F entirely. Do not insert
-    a placeholder heading. Do not invent a comparison. Renumber the
-    remaining sections (E → F → G becomes E → G when F is dropped).
-
-    When Section F IS included: name the specific alternative the reviewer
-    or the category implies (not a vague "other options"). Cover at least
-    one HONEST trade-off where the alternative wins, not a one-sided pitch
-    for the reviewed product. If the reviewer themselves said the
-    alternative is better for some use case, surface that too.
-
-  Section G: <!-- wp:heading {"level":3} --> H3 — Advice for buyers
-    Honest retrospective. Setup tips. Mistakes to avoid.
 ${prosConsBlock}
 [4b] INLINE MINI-COMPARISON (2026-06-08, OPTIONAL) — IF and only IF the
 transcript explicitly names at least TWO specific alternative products by
@@ -2170,6 +2104,12 @@ ${t}`,
      *  has typed into the Rewrite modal across all their posts. The
      *  AI treats these as standing rules for THIS user's voice. */
     persistentFeedback?: string[] | null,
+    /** Structure signatures of this user's recent posts, newest first, so this
+     *  one can be given a shape they have not just published. Without it the
+     *  plan is still varied per post but nothing stops it landing on a shape
+     *  used last week, which is the check that makes variance real rather than
+     *  probable. The route reads blog_posts.structure_signature. */
+    recentStructures?: string[] | null,
   ): Promise<BlogGenerationOutput> {
     // Caller pre-resolves the link and passes it as affiliateUrlOverride —
     // this may be an Amazon link (with asinOverride) OR a direct store /
@@ -2241,7 +2181,26 @@ ${t}`,
       })
     }
 
-    const systemPrompt = buildSystemPrompt(brand, sourceBudget, undefined, ctaIsAmazon, nicheScaffold)
+    // This post's shape. Seeded on the video id so a rebuild reproduces the
+    // same article rather than silently restructuring a published one, and
+    // checked against the shapes this creator recently shipped.
+    const structurePlan = planPostStructure({
+      seed: video.videoId || video.title || 'post',
+      sourceWords: sourceBudget.sourceWords,
+      hasComparison: /\bvs\.?\b|compared to|versus|instead of/i.test(video.transcript || ''),
+      recentSignatures: recentStructures ?? [],
+      permissions: {
+        verdictBox: brand.include_quick_verdict !== false,
+        prosCons: brand.include_pros_cons !== false,
+        scorecard: brand.include_scorecard !== false,
+        improvements: brand.include_improvements_section === true,
+      },
+    })
+    if (structurePlan.repeated) {
+      console.log('[blog/generate] structure repeated', { seed: video.videoId, signature: structurePlan.signature })
+    }
+
+    const systemPrompt = buildSystemPrompt(brand, sourceBudget, structurePlan, undefined, ctaIsAmazon, nicheScaffold)
     const voiceBlock = buildVoiceBlock(voiceProfile || undefined)
 
     const feedbackBlock = rewriteFeedback?.trim()
@@ -2501,6 +2460,7 @@ ${video.transcript ? video.transcript.slice(0, sourceBudget.transcriptChars) : '
     const parsed: BlogGenerationOutput = {
       writerModel: writer.model,
       writerArm: writer.arm,
+      structureSignature: structurePlan.signature,
       ...meta,
       content: contentMatch[1].replace(/{VIDEO_ID}/g, video.videoId),
     }
@@ -2540,7 +2500,21 @@ ${video.transcript ? video.transcript.slice(0, sourceBudget.transcriptChars) : '
       productInfo: [input.product.title, input.product.description, ...(input.product.bullets ?? [])]
         .filter(Boolean).join(' '),
     })
-    const systemPrompt = buildSystemPrompt(brand, sourceBudget, undefined, isAmazon, campaignScaffold, retailerLabel)
+    // Same per-post shape on the campaign path, seeded on the ASIN. No recent
+    // signatures here: this path has no user post history in scope, so the plan
+    // is varied but unchecked, which is honest about what it can guarantee.
+    const structurePlan = planPostStructure({
+      seed: input.product.asin || input.product.title || 'campaign',
+      sourceWords: sourceBudget.sourceWords,
+      hasComparison: /\bvs\.?\b|compared to|versus/i.test(input.researchBrief || ''),
+      permissions: {
+        verdictBox: brand.include_quick_verdict !== false,
+        prosCons: brand.include_pros_cons !== false,
+        scorecard: brand.include_scorecard !== false,
+        improvements: brand.include_improvements_section === true,
+      },
+    })
+    const systemPrompt = buildSystemPrompt(brand, sourceBudget, structurePlan, undefined, isAmazon, campaignScaffold, retailerLabel)
     const p = input.product
 
     // Clean, searchable product name (brand + short core) distilled from the

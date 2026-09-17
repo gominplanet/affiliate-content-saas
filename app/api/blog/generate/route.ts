@@ -955,6 +955,31 @@ async function handleGenerate(request: Request) {
     .neq('video_id', videoId)
     .order('published_at', { ascending: false, nullsFirst: false })
     .limit(2)
+  // The shapes this creator recently shipped, so the planner can avoid handing
+  // them another one. Separate query from priorExamples on purpose: that one is
+  // two PUBLISHED posts used as voice anchors, this one wants a wider window and
+  // counts drafts too, because a draft's shape is already spoken for.
+  //
+  // A failure here must not block generation. An empty list means the plan is
+  // varied but unchecked, which is strictly better than no post, and the column
+  // is nullable so every post written before migration 341 simply has nothing to
+  // contribute rather than a guessed value.
+  let recentStructures: string[] = []
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: sigRows } = await (supabase as any)
+      .from('blog_posts')
+      .select('structure_signature')
+      .eq('user_id', ownerId)
+      .not('structure_signature', 'is', null)
+      .neq('video_id', videoId)
+      .order('created_at', { ascending: false })
+      .limit(12)
+    recentStructures = ((sigRows ?? []) as Array<{ structure_signature: string | null }>)
+      .map(r => r.structure_signature)
+      .filter((s): s is string => !!s)
+  } catch { /* no signatures yet, so nothing to avoid */ }
+
   const priorExamples = (priorRows as Array<{ title: string; content: string }> | null)?.map(p => ({
     title: p.title,
     // Strip WP blocks + HTML tags so the example reads as the prose
@@ -1262,6 +1287,7 @@ async function handleGenerate(request: Request) {
       isRewrite ? (rewriteFeedback?.trim() || null) : null,
       priorExamples,
       persistentFeedback,
+      recentStructures,
     )
   } catch (err: unknown) {
     const rawMsg = err instanceof Error ? err.message : (errToMessage(err) || 'generation failed')
@@ -1891,6 +1917,12 @@ async function handleGenerate(request: Request) {
     slug,
     content,
     excerpt: generated.excerpt,
+    // The shape this post was written to, so the next one can avoid it.
+    // Stripped and retried below when the column is missing, same as the
+    // schedule keys: PostgREST rejects the WHOLE statement when one named
+    // column does not exist, so an un-migrated database would lose the post
+    // rather than lose the signature.
+    structure_signature: (generated as { structureSignature?: string }).structureSignature ?? null,
     // The blog_posts.status column is the MVP-side lifecycle, separate
     // from the WP-side status. We use 'published' even for scheduled
     // posts so the Library's status='published' filter still picks them
@@ -1958,7 +1990,7 @@ async function handleGenerate(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stripScheduleKeys = (p: any) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { scheduled_for, schedule_mode, thumbnail_blocked, ...rest } = p
+    const { scheduled_for, schedule_mode, thumbnail_blocked, structure_signature, ...rest } = p
     return rest
   }
   // Also matches thumbnail_blocked (migration 177) — same drift safety net: if a
@@ -1966,7 +1998,7 @@ async function handleGenerate(request: Request) {
   // post still saves (the flag just won't persist until the migration runs).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isMissingColumn104 = (err: any) =>
-    err && typeof err.message === 'string' && /column .* (scheduled_for|schedule_mode|thumbnail_blocked).* does not exist/i.test(err.message)
+    err && typeof err.message === 'string' && /column .* (scheduled_for|schedule_mode|thumbnail_blocked|structure_signature).* does not exist/i.test(err.message)
   if (ep?.id) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let { data, error: upErr } = await (supabase as any)
