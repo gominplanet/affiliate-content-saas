@@ -1,6 +1,6 @@
 import type { NextConfig } from 'next'
 
-// Cache-bust marker (build-cache-bust-3): webpack keys its persistent
+// Cache-bust marker (build-cache-bust-4): webpack keys its persistent
 // filesystem cache on this config file via buildDependencies, so changing this
 // file forces Vercel to fully invalidate the restored .next/cache and rebuild
 // from scratch, the git equivalent of a no-cache redeploy.
@@ -9,19 +9,42 @@ import type { NextConfig } from 'next'
 // content/page.tsx#default after a new client component entered its import
 // graph.
 //
-// bust-3 clears the production lane after a682505 was killed at Vercel's
-// 45-minute ceiling. Vercel caches per lane, and every production build since
-// that kill has failed in under three and a half minutes while the identical
-// commit built green as a preview:
+// bust-3 cleared the production lane after a682505 was killed at Vercel's
+// 45-minute ceiling. Same code, same build command, one lane green and one lane
+// dead, so: a cache, not a compile. It worked, and it left the question of why
+// the cache went bad unanswered. The note ended "if a production build fails
+// again after this commit the theory is wrong". It did, so here is the measured
+// answer rather than a fourth guess.
 //
-//   a74de65  production Ready 4m21
-//   a682505  production Error 46m11   preview Ready  4m29
-//   4a3b5f2e production Error  3m24   preview Ready 14m10
-//   6ec78c9f production Error  2m40   preview Ready  5m12
+// bust-4. Production stuck on bc86968 while four commits sat undeployed:
 //
-// Same code, same build command, same test suites, one lane green and one lane
-// dead. That is a cache, not a compile. If a production build fails again after
-// this commit the theory is wrong and the build log is the next thing to read.
+//   bc86968  production Ready  5m05
+//   3c65a2b  production Error  7m38
+//   16e7903  production Error 46m11   killed at the ceiling
+//   4d8c1e9  production Building 32m+
+//   38a0ee4  production Building 22m+
+//
+// 38a0ee4 builds green from a deleted .next in 3m36 on an ordinary container:
+// 120 test suites, a 51s compile, type check, 446 static pages. Nothing in the
+// code takes 46 minutes. What does is this, measured on that build:
+//
+//   .next/cache/webpack      1.2 GB
+//   .next/cache/fetch-cache   24 KB
+//   .next/cache/swc           12 KB
+//
+// Vercel's build cache ceiling is 1 GB. The webpack pack cache passed it as the
+// app grew, so every build now writes a cache too big to be stored whole and
+// restores whatever fragment survived. Deserializing a truncated pack cache is
+// what the 22 and 32 minute builds were doing, and a build killed mid-write is
+// what leaves the next one a worse fragment. That is the loop, and busting the
+// marker only resets it until the cache crosses 1 GB again, which it does on the
+// first build.
+//
+// So the cache is off for production builds below. It buys a 51 second compile
+// that was already inside the 3m36, and it removes the only piece of state that
+// differs between a lane that builds and a lane that does not. Dev keeps its
+// cache: that one lives on the machine, is never uploaded, and is the one place
+// the speed is actually felt.
 
 const nextConfig: NextConfig = {
   typescript: {
@@ -66,6 +89,15 @@ const nextConfig: NextConfig = {
   // only the icons actually used get bundled. Near-zero risk, big bundle win.
   experimental: {
     optimizePackageImports: ['lucide-react'],
+  },
+  // Production builds do not keep a webpack filesystem cache. See bust-4 at the
+  // top of this file: it had grown to 1.2 GB against Vercel's 1 GB ceiling, so
+  // what came back on each build was a fragment, and reading a fragment is
+  // slower than compiling from nothing. Off, a production build is honest about
+  // its cost every time. Dev is left alone deliberately.
+  webpack(config, { dev }) {
+    if (!dev) config.cache = false
+    return config
   },
   // Old route slug → new. The YouTube Co-Pilot page moved from /studio to
   // /co-pilot (its real product name); 308-redirect so old bookmarks and any
