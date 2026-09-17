@@ -202,6 +202,23 @@ export async function POST(request: Request) {
     // If a reused row already holds content from a prior run whose PUBLISH
     // failed (the WAF case), we RE-PUBLISH it with zero new AI spend.
     let storedDraft: { title: string; content: string; excerpt: string; slug: string } | null = null
+    /**
+     * The WordPress post this campaign already published, if it did.
+     *
+     * A creator found three near-identical posts on his blog from one blog job;
+     * the same shape lives here. The row is only marked `published` at the very
+     * end, after three image uploads and an updatePost, so an attempt that dies
+     * anywhere in that stretch leaves a live post and a row that does not know
+     * about it. The status claim above blocks an AUTOMATIC retry (a dead run
+     * leaves the row at `researching`, which is not claimable), but
+     * reset-stuck-campaigns flips `researching` to `failed` after 10 minutes and
+     * a `failed` row is claimable and shows a Retry button. So the product
+     * offers the creator a button that publishes a duplicate.
+     *
+     * Recording the id the instant WordPress accepts it closes that: a re-run
+     * updates the post it already made.
+     */
+    let existingWpPostId: number | null = null
     if (body.campaignId) {
       // Atomically CLAIM the scouted campaign — only proceed if it's still
       // claimable (pending/failed). If it's already 'researching' or
@@ -223,12 +240,22 @@ export async function POST(request: Request) {
         .eq('user_id', user.id)
         // 'queued' = the async enqueue parked it for the worker; claim it too.
         .in('status', ['pending', 'failed', 'queued'])
-        .select('id,generated_title,generated_content,generated_excerpt,generated_slug')
+        // select('*') on purpose. Naming wordpress_post_id here would make this
+        // claim fail outright on any deployment where migration 338 has not run
+        // yet, and PostgREST rejects the WHOLE statement over one missing
+        // column, so campaign generation would stop for everyone in the window
+        // between the deploy and the migration.
+        .select('*')
         .maybeSingle()
       if (reused?.id) {
         campaignId = reused.id as string
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = reused as any
+        // A post this campaign ALREADY published. See the publish block below:
+        // without this, a retry of a run that died after WordPress accepted the
+        // post creates a second one.
+        const prior = Number(r.wordpress_post_id)
+        if (Number.isFinite(prior) && prior > 0) existingWpPostId = prior
         if (r.generated_content && String(r.generated_content).trim()) {
           storedDraft = {
             title: r.generated_title || '',
@@ -515,19 +542,58 @@ export async function POST(request: Request) {
 
     let wpPost
     try {
-      wpPost = await wpService.createPost({
+      const payload = {
         title: generated.title,
         slug,
         content: generated.content,
         excerpt: generated.excerpt,
-        status: 'publish',
+        status: 'publish' as const,
         tags: tagIds,
         categories: categoryIds,
-        comment_status: 'closed',
-        ping_status: 'closed',
-      })
+        comment_status: 'closed' as const,
+        ping_status: 'closed' as const,
+      }
+      // UPDATE the post this campaign already published, rather than making a
+      // second one. existingWpPostId is only ever set from a row that records a
+      // real WordPress id, so this cannot silently edit an unrelated post.
+      wpPost = existingWpPostId
+        ? await wpService.updatePost(existingWpPostId, payload)
+        : await wpService.createPost(payload)
     } catch (err) {
       return fail(`WordPress publish failed: ${err instanceof Error ? err.message : 'unknown'}`)
+    }
+
+    // RECORD IT NOW, not at the end.
+    //
+    // Everything between here and the final update is a chance for the attempt
+    // to die: three image uploads and an updatePost, each a slow call to the
+    // creator's own host. The row used to learn about this post only after all
+    // of that, so a death in the middle left a published post that nothing knew
+    // about, and the Retry button the creator was then shown published another.
+    // The gap is the bug, so nothing goes between the publish and this write.
+    if (campaignId && wpPost?.id) {
+      existingWpPostId = wpPost.id
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const client = supabase as any
+      // Only write a url we actually have. Blanking wordpress_url on a re-run
+      // would lose the link to a post that is live, which is the same class of
+      // damage as the duplicate: the row stops describing reality.
+      const stamp: Record<string, unknown> = { wordpress_post_id: wpPost.id }
+      if (wpPost.link) stamp.wordpress_url = wpPost.link
+      const { error: stampErr } = await client.from('campaigns')
+        .update(stamp).eq('id', campaignId)
+      // Migration 338 adds wordpress_post_id. Until it runs, PostgREST rejects
+      // the whole statement over the unknown column, and losing wordpress_url
+      // with it would be a worse regression than the one being fixed. So fall
+      // back to the column that has always existed.
+      if (stampErr && /column|does not exist|schema cache/i.test(stampErr.message || '')) {
+        if (wpPost.link) {
+          await client.from('campaigns')
+            .update({ wordpress_url: wpPost.link })
+            .eq('id', campaignId)
+        }
+        console.warn('[campaigns/generate] wordpress_post_id not stored — migration 338 has not run; a retry after a mid-publish death can still duplicate')
+      }
     }
 
     // Fire IndexNow (Bing / Copilot / Yandex) — best-effort, non-blocking.

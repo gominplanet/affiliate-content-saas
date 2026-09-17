@@ -11,6 +11,8 @@
  * adding more. Self-fetches from /api/youtube/channels.
  */
 
+import { channelAllowance } from '@/lib/channel-allowance'
+import type { Tier } from '@/lib/tier'
 import { useEffect, useState, useCallback } from 'react'
 import { Loader2, Plus, Star, Trash2, Youtube, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -24,6 +26,7 @@ export function YouTubeChannelsManager({ refreshNonce = 0 }: { refreshNonce?: nu
   const [sites, setSites] = useState<SiteRow[]>([])
   const [isPro, setIsPro] = useState(false)
   const [cap, setCap] = useState(1)
+  const [tier, setTier] = useState<string>('trial')
   const [busy, setBusy] = useState<string | null>(null)
   const [channelUrl, setChannelUrl] = useState('')
 
@@ -36,6 +39,7 @@ export function YouTubeChannelsManager({ refreshNonce = 0 }: { refreshNonce?: nu
         setSites(d.sites ?? [])
         setCap(d.cap ?? 1)
         setIsPro(d.tier === 'pro' || d.tier === 'admin')
+        setTier(d.tier ?? 'trial')
       }
     } catch { /* ignore */ }
     finally { setLoading(false) }
@@ -102,6 +106,9 @@ export function YouTubeChannelsManager({ refreshNonce = 0 }: { refreshNonce?: nu
   }
 
   const canAddMore = channels.length < cap
+  // Built from the tier table rather than written here, so the number in the
+  // sentence can never drift from the number the API enforces.
+  const allowance = channelAllowance(tier as Tier, channels.length)
 
   return (
     <div className="card p-6 mt-4">
@@ -116,10 +123,17 @@ export function YouTubeChannelsManager({ refreshNonce = 0 }: { refreshNonce?: nu
           </a>
         )}
       </div>
+      {/* The number, always. A creator with four channels saw one slot and
+          concluded MVP runs one; the old line named a plan but no capacity,
+          which does not answer the only question he was asking. */}
       <p className="text-xs text-[#6e6e73] dark:text-[#8e8e93] mb-4">
-        {isPro
-          ? 'Run several channels from one account. Set a default, and choose which channel each blog pulls from below.'
-          : 'Connecting more than one YouTube channel is a Pro feature.'}
+        {allowance.line}
+        {allowance.needsUpgrade && (
+          <>
+            {' '}
+            <a href="/pricing" className="font-semibold text-[#7C3AED] hover:underline">See plans</a>
+          </>
+        )}
       </p>
 
       {/* Channel list */}

@@ -90,6 +90,64 @@ const JOBS = readFileSync('lib/generation-jobs.ts', 'utf8')
     'that ordering is what makes a resume cheap, and what made it dangerous')
 }
 
+// ── AND THE SAME THING IN THE CAMPAIGN ROUTE ───────────────────────────────
+//
+// Found by asking "can this still happen by our fault", which is a different
+// question from "is the reported bug fixed". The campaign route publishes to
+// WordPress at one point and marks its row `published` about 130 lines later,
+// after three image uploads against the creator's own host. Anything that dies
+// in that stretch leaves a live post and a row that does not know.
+//
+// An automatic retry is blocked: the status claim only accepts pending/failed/
+// queued and a dead run leaves the row at `researching`. But
+// reset-stuck-campaigns flips `researching` to `failed` after 10 minutes, a
+// `failed` row IS claimable, and the creator is shown a Retry button. So the
+// product invited the duplicate instead of looping into it.
+{
+  const CAMP = readFileSync('app/api/campaigns/generate/route.ts', 'utf8')
+  const camp = CAMP
+    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+    .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n')
+
+  check('the campaign route records the WP post id', /wordpress_post_id: wpPost\.id/.test(camp),
+    'without it a Retry on a campaign that already published makes a second post')
+
+  const atPublish = camp.search(/wpPost = existingWpPostId/)
+  const atStamp = camp.indexOf('wordpress_post_id: wpPost.id')
+  check('and records it AFTER the post exists', atPublish !== -1 && atStamp > atPublish)
+
+  // The gap is the whole defect. Nothing slow may sit between the publish and
+  // the write that records it.
+  const between = camp.slice(atPublish, atStamp)
+  check('with no image upload between the publish and the record',
+    !/uploadImageFrom(Url|Base64)/.test(between),
+    'each upload is a slow call to the creator\'s host, and each one is a chance to die holding an unrecorded post')
+
+  check('a re-run updates instead of creating', /await wpService\.updatePost\(existingWpPostId, payload\)/.test(camp),
+    'createPost on a campaign that already published is the duplicate')
+  check('and the id comes from the claimed row', /const prior = Number\(r\.wordpress_post_id\)/.test(camp))
+  check('and a junk value is ignored', /Number\.isFinite\(prior\) && prior > 0/.test(camp),
+    'a 0 or a NaN handed to updatePost edits a post that is not there')
+
+  // The claim must not name the new column, or the whole route dies on any
+  // deployment where the migration has not run yet.
+  // Anchored to the CLAIM, not to any select in the file. The first version of
+  // this check matched a select('*') elsewhere in the route, so pointing the
+  // claim at a named column list passed cleanly.
+  const atClaim = camp.indexOf("    .in('status', ['pending', 'failed', 'queued'])")
+  const afterClaim = atClaim === -1 ? '' : camp.slice(atClaim, atClaim + 400)
+  check('the claim itself is still in the file', atClaim !== -1,
+    'if the status claim moved, the protection it provides moved with it')
+  check("the claim reads the row with select('*')", /\.select\(\s*'\*'\s*\)/.test(afterClaim),
+    'PostgREST rejects the entire statement over one unknown column, so naming wordpress_post_id here stops campaign generation for everyone until the migration runs')
+  check('and the stamp survives the column being absent', /schema cache/.test(camp),
+    'between the deploy and the migration the write must degrade, not throw away wordpress_url with it')
+
+  check('the migration exists', (() => {
+    try { return readFileSync('supabase/migrations/338_campaigns_wordpress_post_id.sql', 'utf8').includes('add column if not exists wordpress_post_id') } catch { return false }
+  })(), 'the code above does nothing until the column is there')
+}
+
 if (failures.length) {
   console.error(`\n❌ publish-once: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
