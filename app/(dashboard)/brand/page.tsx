@@ -788,6 +788,14 @@ export default function BrandPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) {
         setWpPushNote(`Brand saved, but affiliate routing keys failed: ${data.error || res.statusText}`)
+      } else if (data.geniuslinkVerified === false && typeof data.geniuslinkMessage === 'string') {
+        // FIRST, because it beats every other note here. The key was stored and
+        // Geniuslink refused it, which means links keep publishing plain. A
+        // creator told to re-enter a key needs to know in this moment whether
+        // the re-entry worked, not on their next article.
+        setWpPushNote(data.geniuslinkMessage)
+      } else if (data.geniuslinkVerified === true && typeof data.geniuslinkMessage === 'string') {
+        setWpPushNote(data.geniuslinkMessage)
       } else if (typeof data.showcaseWarning === 'string' && data.showcaseWarning) {
         // The save WORKED. This is what a viewer will actually experience when
         // they click the link, which is a different thing from whether it

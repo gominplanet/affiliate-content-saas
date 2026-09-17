@@ -17,6 +17,7 @@
  * NOT in INTEGRATION_SECRET_COLUMNS (they're stored plaintext), so no encryption
  * step is needed here.
  */
+import { createGeniuslinkService } from '@/services/geniuslink'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -216,6 +217,42 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: toUserMessage(coreErr, 'Could not save your link settings. Please try again.') }, { status: 500 })
     }
 
+    // ── Did the key they just typed actually work? ──────────────────────────
+    //
+    // This route stored a Geniuslink key and said "Saved", which is true and is
+    // not what anybody wants to know. A creator whose links were publishing
+    // plain was told to re-enter his key; he would have re-entered it, seen
+    // "Saved", and found out on his next post that it still did not work. The
+    // round trip to learn that is a whole article and however long it takes him
+    // to notice.
+    //
+    // /api/geniuslink/test already asks Geniuslink directly. Asking the same
+    // question here, on the values just written, turns Saved into Saved and
+    // working, or Saved and Geniuslink rejected it, which are the two answers
+    // that exist.
+    //
+    // Only when NEW credentials were supplied. Re-verifying a value carried
+    // over unchanged would put a network call on every unrelated save of this
+    // form, and would report a Geniuslink outage as a failure to save a
+    // Pinterest preference.
+    let geniuslinkVerified: boolean | null = null
+    let geniuslinkMessage: string | null = null
+    const suppliedKey = (b.geniuslinkKey ?? '').trim()
+    const suppliedSecret = (b.geniuslinkSecret ?? '').trim()
+    if (suppliedKey && suppliedSecret) {
+      try {
+        const groups = await createGeniuslinkService(suppliedKey, suppliedSecret).listGroups()
+        geniuslinkVerified = true
+        geniuslinkMessage = `Geniuslink accepted your key. ${groups.length} link group${groups.length === 1 ? '' : 's'} found.`
+      } catch (e) {
+        // Saved anyway, and said plainly. Refusing the write would strand
+        // somebody whose key is right while Geniuslink is having an outage, and
+        // silently keeping it would repeat the bug this exists to close.
+        geniuslinkVerified = false
+        geniuslinkMessage = `Saved, but Geniuslink rejected these credentials, so your links will keep publishing as plain Amazon links until this is sorted. ${e instanceof Error ? e.message : 'Geniuslink did not accept the key.'}`
+      }
+    }
+
     // ── Newer columns — each best-effort so a DB missing one still saves the rest.
     const extras: Record<string, string> = {
       ...(mode ? { blog_social_link_mode: mode } : {}),
@@ -269,7 +306,15 @@ export async function POST(request: Request) {
 
     // showcaseWarning rides on a SUCCESSFUL save: the link was stored and
     // will be used, and there is still something true to say about it.
-    return NextResponse.json({ ok: true, skipped, showcaseWarning })
+    return NextResponse.json({
+      ok: true,
+      skipped,
+      showcaseWarning,
+      // true, false, or null when no new credentials were supplied. Three
+      // states because "we did not check" must not render as "it works".
+      geniuslinkVerified,
+      geniuslinkMessage,
+    })
   } catch (err) {
     console.error('[affiliate-links/save]', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, "Couldn't save your link settings just now. Please try again.") }, { status: 500 })
