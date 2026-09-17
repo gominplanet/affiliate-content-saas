@@ -145,13 +145,30 @@ export default function HotlinkedPage() {
           </p>
           {(run.results ?? []).length > 0 && (
             <ul className="flex flex-col gap-1.5 mt-3">
-              {(run.results ?? []).map((r, i) => (
-                <li key={i} className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">
-                  <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">{String(r.site ?? r.ownerId ?? 'unknown')}</span>
-                  {': '}
-                  {String(r.skipped ?? r.summary ?? 'no result')}
-                </li>
-              ))}
+              {(run.results ?? []).map((r, i) => {
+                // WHAT THE SITE ACTUALLY SAID. The runner has carried the
+                // upload error all along and nothing rendered it, so "the site
+                // refused all 16 uploads" was as far as anyone could get
+                // without going and asking the creator to run a test. The
+                // reason is the difference between a permissions problem, a
+                // size limit, a WAF, and a plugin that is not there.
+                const fails = (r.failures ?? []) as Array<{ url?: string; reason?: string }>
+                const reasons = Array.from(new Set(fails.map(f => String(f.reason ?? '')).filter(Boolean))).slice(0, 2)
+                return (
+                  <li key={i} className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">
+                    <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">{String(r.site ?? r.ownerId ?? 'unknown')}</span>
+                    {': '}
+                    {String(r.skipped ?? r.summary ?? 'no result')}
+                    {reasons.length > 0 && (
+                      <ul className="mt-1 mb-1 ml-3 flex flex-col gap-0.5">
+                        {reasons.map((why, j) => (
+                          <li key={j} className="text-[11px] text-[#86868b] font-mono break-all">{why}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>

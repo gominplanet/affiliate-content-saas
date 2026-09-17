@@ -353,6 +353,17 @@ async function main() {
     check('and it is admin only', /tier !== 'admin'/.test(runApi))
     check('the page can trigger it', /\/api\/admin\/rehost-run/.test(page))
     check('and shows what came back', /Last run/.test(page) && /run\.summary/.test(page))
+    // "The site refused all 16 uploads" is where the screen stopped, and the
+    // next question is always the same: refused HOW. The runner has carried the
+    // upload error the whole time and nothing rendered it, so answering it meant
+    // asking the creator to go and run a test on their own site.
+    check('the page shows what the site actually said',
+      /r\.failures \?\? \[\]/.test(page) && /f\.reason/.test(page),
+      'a refusal with no reason is the difference between a permission, a size limit, a WAF and a missing plugin')
+    check('and it does not repeat one reason sixteen times',
+      /Array\.from\(new Set\(fails\.map/.test(page),
+      'one line per refused picture buries the one fact worth reading')
+
     check('a sweep that could not start is not shown as a sweep that did nothing',
       /could not run, so nothing was attempted/.test(page),
       'those are different facts and they must not share a sentence')
