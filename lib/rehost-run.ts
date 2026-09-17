@@ -107,6 +107,16 @@ function outcomeFor(post: RehostTarget, skipped: string): PostOutcome {
   return { id: post.id, title: post.title ?? '', moved: 0, refused: 0, gone: 0, skipped }
 }
 
+/** Same blog, ignoring a leading www and the scheme. */
+export function sameSiteHost(a: string | null | undefined, b: string | null | undefined): boolean {
+  const host = (u: string | null | undefined): string | null => {
+    try { return new URL(String(u)).hostname.replace(/^www\./i, '').toLowerCase() } catch { return null }
+  }
+  const x = host(a)
+  const y = host(b)
+  return !!x && !!y && x === y
+}
+
 /**
  * Repair a batch of posts against one site.
  *
@@ -140,6 +150,19 @@ export async function rehostPosts(
       // our copy would leave the live post pointing at the old URL while our
       // records claimed it was repaired.
       outcomes.push(outcomeFor(post, 'no WordPress post id on record, so the live post cannot be updated'))
+      continue
+    }
+
+    // NEVER write to a site the post does not live on.
+    //
+    // A creator can have up to ten blogs, and a WordPress post id is only
+    // meaningful within one of them. Post 42 on the wrong site is a completely
+    // different article, so running this with the wrong credentials would
+    // overwrite somebody's unrelated published post with this one's body. The
+    // recorded URL is the cheapest possible check and it does not depend on
+    // site ids being right in our own tables.
+    if (post.wordpress_url && !sameSiteHost(post.wordpress_url, siteUrl)) {
+      outcomes.push(outcomeFor(post, 'it is published on a different site from the one these credentials open, so it was left alone'))
       continue
     }
 

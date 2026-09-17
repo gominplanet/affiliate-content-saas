@@ -153,7 +153,40 @@ async function main() {
     check('which is not a site-refused-everything run', !r.siteRefusedEverything)
   }
 
-  // ── posts it must decline to touch, and say why ───────────────────────────
+    // ── A POST ON ANOTHER BLOG IS NEVER WRITTEN TO ──────────────────────────
+  //
+  // A creator can have up to ten sites, and a WordPress post id only means
+  // anything inside one of them. Repairing post 42 with the wrong site's
+  // credentials would overwrite a completely unrelated published article with
+  // this one's body. That is the only irreversible thing this sweep could
+  // possibly do, so it is checked on the recorded URL, which does not depend on
+  // our own site ids being right.
+  {
+    const elsewhere = post({ wordpress_url: 'https://his-other-blog.com/kolbs/' })
+    const h = io()
+    const r = await rehostPosts([elsewhere], SITE, h)
+
+    check('a post on another blog is not touched', h.pushed.length === 0,
+      'this would overwrite a different article on a different site')
+    check('nothing was uploaded for it either', r.attempted === 0)
+    check('and our copy was not rewritten', h.saved.length === 0)
+    check('it is reported as skipped, with the reason',
+      /different site/.test(r.posts[0]?.skipped ?? ''), r.posts[0]?.skipped)
+    check('and it is not counted as repaired', r.moved === 0)
+
+    // www is not a different blog.
+    const wwwd = post({ wordpress_url: 'https://www.jdtheot.com/kolbs/' })
+    const r2 = await rehostPosts([wwwd], SITE, io())
+    check('www is the same blog', r2.moved === 2, String(r2.moved))
+
+    // A post with no recorded URL cannot be checked this way. It still belongs
+    // to the site its batch was resolved for, so it is repaired.
+    const noUrl = post({ wordpress_url: null })
+    const r3 = await rehostPosts([noUrl], SITE, io())
+    check('a post with no recorded URL is still repaired', r3.moved === 2, String(r3.moved))
+  }
+
+// ── posts it must decline to touch, and say why ───────────────────────────
   {
     const noId = await rehostPosts([post({ wordpress_post_id: null })], SITE, io())
     check('a post with no WordPress id is skipped', noId.posts[0]?.skipped !== undefined)
@@ -285,6 +318,19 @@ async function main() {
     check('and takes the biggest backlog first',
       /b\[1\] - a\[1\]/.test(sweepSrc),
       'draining the smallest first leaves the worst case untouched the longest')
+
+    // The runner refuses a post on another host, so without this grouping a
+    // multi-site creator's second blog would be skipped forever rather than
+    // repaired: safe, and permanently stuck.
+    check('the sweep resolves credentials per site, not per creator',
+      /getWordPressCredentials\(admin, ownerId, siteKey \|\| undefined/.test(sweepSrc),
+      'one set of credentials per owner cannot repair a creator with more than one blog')
+    check('and it reads which site each post went to',
+      /wordpress_site_id/.test(sweepSrc),
+      'without it there is nothing to group by')
+    check('posts the runner declined are counted separately from failures',
+      /skippedPosts: result\.posts\.filter\(x => x\.skipped\)\.length/.test(sweepSrc),
+      'a declined post is not an attempted one, and folding them together hides both')
   }
 
   // ── house style ───────────────────────────────────────────────────────────
