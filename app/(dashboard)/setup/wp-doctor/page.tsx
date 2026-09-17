@@ -49,6 +49,16 @@ interface DoctorResponse {
   summary: string
 }
 
+interface RehostResult {
+  ok: boolean
+  headline: string
+  moved: number
+  failed: { url: string; reason: string }[]
+  outcome?: string
+  postsExamined?: number
+  moreLikely?: boolean
+}
+
 interface ImageTest {
   ok: boolean
   verdict: 'refused' | 'orphaned' | 'invisible' | 'unknown' | 'no-site'
@@ -75,6 +85,26 @@ export default function WpDoctorPage() {
   // surprise.
   const [img, setImg] = useState<ImageTest | null>(null)
   const [imgLoading, setImgLoading] = useState(false)
+  const [rehost, setRehost] = useState<RehostResult | null>(null)
+  const [rehostLoading, setRehostLoading] = useState(false)
+
+  async function runRehost() {
+    setRehostLoading(true)
+    setRehost(null)
+    try {
+      const res = await fetch('/api/blog/rehost-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(siteId ? { siteId } : {}),
+      })
+      const json = await res.json().catch(() => null)
+      setRehost((json as RehostResult) ?? { ok: false, headline: 'The repair could not run.', moved: 0, failed: [] })
+    } catch (e) {
+      setRehost({ ok: false, headline: e instanceof Error ? e.message : 'The repair could not run.', moved: 0, failed: [] })
+    } finally {
+      setRehostLoading(false)
+    }
+  }
 
   async function runImageTest() {
     setImgLoading(true)
@@ -284,6 +314,55 @@ export default function WpDoctorPage() {
                       </>
                     )}
                   </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Move pictures off our servers and onto theirs.
+              When a site refuses an upload the generator embeds the URL it
+              generated the picture from, so the post still reads properly and
+              nothing ever says the picture is not theirs. fal deletes expired
+              files permanently and publishes no default retention, so this is
+              a debt with an unknown clock on it. The repair re-uploads the
+              picture that already exists: no regeneration, no AI spend. */}
+          <div className="card p-5 mb-6">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div>
+                <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pictures stored on our servers</h3>
+                <p className="text-[12px] text-[#6e6e73] dark:text-[#8e8e93] mt-0.5">
+                  When your site turns an upload away, MVP leaves the picture on its own server and points your post at it.
+                  Those posts look right and the picture is not yours. This moves them across. It re-uploads the picture
+                  you already have, so nothing is regenerated and nothing is charged.
+                </p>
+              </div>
+              <button
+                onClick={runRehost}
+                disabled={rehostLoading}
+                className="btn-secondary text-xs flex-shrink-0 inline-flex items-center gap-1.5"
+              >
+                {rehostLoading ? <Loader2 size={13} className="animate-spin" /> : <RotateCw size={13} />}
+                {rehostLoading ? 'Moving' : 'Move them to my site'}
+              </button>
+            </div>
+
+            {rehost && (
+              <div
+                className="mt-3 rounded-lg p-3"
+                style={{ backgroundColor: rehost.moved > 0 ? '#34c75912' : '#ff3b3012' }}
+              >
+                <p className="text-[13px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">{rehost.headline}</p>
+                {rehost.moreLikely && rehost.moved > 0 && (
+                  <p className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0] mt-1">
+                    There are likely more. Press it again to carry on.
+                  </p>
+                )}
+                {rehost.failed?.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {rehost.failed.slice(0, 6).map((f, i) => (
+                      <li key={i} className="text-[11px] text-[#86868b] font-mono break-all">{f.reason}</li>
+                    ))}
+                  </ul>
                 )}
               </div>
             )}

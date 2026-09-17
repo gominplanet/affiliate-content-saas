@@ -70,6 +70,16 @@ export interface CheckupInput {
    * creator has already lost them.
    */
   staleTokens: { platform: string; label: string }[]
+  /**
+   * Posts whose pictures are still pointing at MVP's generation CDN because the
+   * creator's site refused the upload.
+   *
+   * Six creators were in this state and not one of them knew, because the posts
+   * look finished. fal deletes expired files permanently and publishes no
+   * default retention, so the only honest thing to do is tell them and offer the
+   * repair.
+   */
+  hotlinkedPosts: number
 }
 
 import { mediaCapability } from '@/lib/x-scopes'
@@ -153,6 +163,24 @@ export function buildCheckup(input: CheckupInput): CheckupItem[] {
         state: 'ok',
         detail: 'Connected, and accepting posts.',
       })
+  }
+
+  // ── Pictures living on our server instead of theirs ──────────────────────
+  //
+  // Ahead of the connection rows because it is the one with a clock on it. The
+  // post reads correctly today, so nothing on any screen has ever mentioned it,
+  // and the file it depends on is one we do not control and fal will eventually
+  // delete.
+  if (input.hotlinkedPosts > 0) {
+    const n = input.hotlinkedPosts
+    items.push({
+      key: 'hotlinked-images',
+      label: 'Pictures on your posts',
+      state: 'action',
+      detail: `${n} of your ${n === 1 ? 'posts is' : 'posts are'} showing pictures that are stored on our servers rather than yours, because your site turned the uploads away. They look right today. They are not on your site, so they are not yours to keep. Moving them across takes one click and does not regenerate anything.`,
+      href: HREF.wordpress,
+      actionLabel: 'Move them to my site',
+    })
   }
 
   // ── A token the nightly refresh found dead ───────────────────────────────

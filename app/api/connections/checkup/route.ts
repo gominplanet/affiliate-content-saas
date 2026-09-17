@@ -64,11 +64,21 @@ export async function GET() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const client = supabase as any
 
-    const [integRes, siteRes, wpHealth, dead] = await Promise.all([
+    const [integRes, siteRes, wpHealth, dead, hotlinked] = await Promise.all([
       client.from('integrations').select('*').eq('user_id', ownerId).maybeSingle(),
       client.from('wordpress_sites').select('id').eq('user_id', ownerId).limit(1),
       getWpConnectionHealth(supabase, ownerId).catch(() => ({ needsAttention: false })),
       getDeadChannels(supabase, ownerId).catch(() => []),
+      // Counted from the stored content rather than from images_status,
+      // because images_status only started telling the truth with migration
+      // 339 and every post that needs this predates it. head + count so the
+      // bodies are never pulled back.
+      client.from('blog_posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', ownerId)
+        .ilike('content', '%fal.media%')
+        .then((r: { count: number | null }) => r?.count ?? 0)
+        .catch(() => 0),
     ])
 
     const integ = (integRes?.data ?? {}) as Record<string, unknown>
@@ -89,6 +99,7 @@ export async function GET() {
         || isUnreadableSecret(str('geniuslink_api_secret')),
       wordpressConfigured: Array.isArray(siteRes?.data) ? siteRes.data.length > 0 : !!str('wordpress_url'),
       wordpressNeedsAttention: !!wpHealth?.needsAttention,
+      hotlinkedPosts: hotlinked ?? 0,
       // Proactive: what the nightly refresh recorded. Read defensively because
       // connection_health is a jsonb column added by migration, and this route
       // must keep answering on a deployment where it is absent.

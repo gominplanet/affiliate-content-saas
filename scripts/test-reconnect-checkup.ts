@@ -35,6 +35,7 @@ const NOTHING: CheckupInput = {
   wordpressNeedsAttention: false,
   deadChannels: [],
   staleTokens: [],
+  hotlinkedPosts: 0,
 }
 const input = (over: Partial<CheckupInput>): CheckupInput => ({ ...NOTHING, ...over })
 const find = (items: ReturnType<typeof buildCheckup>, key: string) => items.find(i => i.key === key)
@@ -148,6 +149,34 @@ const find = (items: ReturnType<typeof buildCheckup>, key: string) => items.find
   check('and it leads the headline', /needs redoing/.test(s2.headline), s2.headline)
 }
 
+// ── pictures living on our server instead of theirs ────────────────────────
+//
+// Six creators were carrying 186 posts in this state and not one of them knew,
+// because the post reads correctly. fal deletes expired files permanently and
+// publishes no default retention, so the only honest move is to say so and
+// offer the repair rather than wait for the pictures to vanish.
+{
+  const one = find(buildCheckup(input({ hotlinkedPosts: 1 })), 'hotlinked-images')
+  check('a single hotlinked post is raised', one?.state === 'action', one?.state)
+  check('and reads as singular', /1 of your posts is/i.test(one?.detail ?? ''), one?.detail)
+
+  const many = find(buildCheckup(input({ hotlinkedPosts: 81 })), 'hotlinked-images')
+  check('the count is the creator\'s own', /81 of your posts are/i.test(many?.detail ?? ''), many?.detail)
+  check('and it explains why they look fine', /look right today/i.test(many?.detail ?? ''), many?.detail)
+  check('and says whose fault it is not', /your site turned the uploads away/i.test(many?.detail ?? ''), many?.detail)
+  check('and promises no regeneration', /does not regenerate/i.test(many?.detail ?? ''),
+    'a creator who thinks this reruns the AI will not press it, and it costs nothing')
+  check('and offers the repair', !!many?.href && /move them/i.test(many?.actionLabel ?? ''), many?.actionLabel)
+
+  check('and nothing is said when there are none',
+    !find(buildCheckup(input({ hotlinkedPosts: 0 })), 'hotlinked-images'),
+    'a row about a problem somebody does not have is what makes the real rows ignorable')
+
+  const s2 = checkupSummary(buildCheckup(input({ hotlinkedPosts: 81 })))
+  check('it counts toward the actions', s2.actions === 1, String(s2.actions))
+  check('and never reads as all current', !/all current|nothing to do/i.test(s2.headline), s2.headline)
+}
+
 // ── the sentence at the top ────────────────────────────────────────────────
 //
 // This is the line that decides whether anybody acts, so it is held to the one
@@ -221,6 +250,7 @@ const find = (items: ReturnType<typeof buildCheckup>, key: string) => items.find
     }),
     input({ twitterConnected: true, twitterScopes: null }),
     input({ staleTokens: [{ platform: 'threads', label: 'Threads' }] }),
+    input({ hotlinkedPosts: 81 }),
     input({}),
   ]
   const everything = scenarios.flatMap(s => buildCheckup(s))
