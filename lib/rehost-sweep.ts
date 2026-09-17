@@ -54,6 +54,7 @@ export const MAX_POSTS_PER_USER = 8
 export interface SweepReport {
   ok: boolean
   owners?: number
+  sites?: number
   moved?: number
   refused?: number
   gone?: number
@@ -212,7 +213,11 @@ export async function runHotlinkedSweep(): Promise<SweepReport> {
 
   return {
     ok: true,
-    owners: perOwner.length,
+    // perOwner holds one entry per (creator, blog) pair now that posts are
+    // grouped by site, so calling its length "owners" would overcount a creator
+    // with two blogs as two people.
+    owners: ownerIds.length,
+    sites: perOwner.length,
     moved,
     refused,
     gone,

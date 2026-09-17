@@ -378,6 +378,13 @@ async function main() {
     check('posts the runner declined are counted separately from failures',
       /skippedPosts: result\.posts\.filter\(x => x\.skipped\)\.length/.test(sweepSrc),
       'a declined post is not an attempted one, and folding them together hides both')
+
+    // The per-site grouping means one entry per (creator, blog) pair. Reporting
+    // that count as "owners" would tell you three people were repaired when it
+    // was one person with three blogs.
+    check('creators and blogs are counted separately',
+      /owners: ownerIds\.length/.test(sweepSrc) && /sites: perOwner\.length/.test(sweepSrc),
+      'a creator with two blogs would otherwise be reported as two creators')
   }
 
   // ── house style ───────────────────────────────────────────────────────────
