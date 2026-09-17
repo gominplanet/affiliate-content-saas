@@ -186,17 +186,29 @@ export function creativeHead(input: ThumbnailPromptInput): string[] {
   const callouts = (input.callouts || []).filter(Boolean)
   const banner = (input.banner || '').trim()
   if (concept) {
+    // The brief was written inside the chosen look (the art director is given
+    // the same preset), but a brief can still drift, and a render follows the
+    // concept more closely than anything else it is handed. So the look's own
+    // rules are restated here as the frame the concept sits inside.
+    const p = resolvePreset(input.presetId)
     return [
-      'Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 16:9 landscape (1536×864) — in the polished style of today\'s top product-review creators. Bring THIS art-director brief (written specifically for this product) to life exactly:',
+      `Design a ${p.name.toLowerCase()} product-review thumbnail, 16:9 landscape (1536x864). ${p.direction}`,
+      '',
+      `TYPOGRAPHY: ${p.typography}`,
+      `BACKGROUND: ${p.background}`,
+      '',
+      'Bring THIS art-director brief (written specifically for this product) to life inside that look:',
       '',
       `DESIGN CONCEPT: ${concept}`,
       input.expressionLine
         ? 'NOTE ON THE CONCEPT ABOVE: follow it for the layout, palette, background, badges and energy. If it describes the person reacting, looking doubtful, smiling, or feeling any way at all, IGNORE that part — the facial expression is specified separately below and that specification wins.'
         : '',
       paletteLine(input),
-      banner ? `BANNER PHRASE: render "${banner}" inside a hand-painted brush-stroke or torn banner as a secondary punch (correct spelling).` : '',
-      callouts.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips, or spec pill badges — correctly spelled, a few words each: ${callouts.join(' · ')}.` : '',
-      'Execute it vibrant, modern, high-contrast and layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
+      p.badges && banner ? `BANNER PHRASE: render "${banner}" inside a hand-painted brush-stroke or torn banner as a secondary punch (correct spelling).` : '',
+      p.badges && callouts.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips, or spec pill badges — correctly spelled, a few words each: ${callouts.join(' · ')}.` : '',
+      p.badges
+        ? 'Execute it vibrant, modern, high-contrast and layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.'
+        : 'NO BADGES: no checkmark chips, no spec pills, no starbursts, no stickers, no banner ribbon. If the brief above described any of those, leave them out. One of them turns this look back into a generic advert, which is what the creator chose this look to avoid.',
       ...(input.boostLines || []),
     ].filter(Boolean)
   }

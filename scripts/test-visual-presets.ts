@@ -19,7 +19,7 @@
 // quiet". A preset that gets appended to the old direction produces MrBeast
 // energy with a serif.
 import {
-  VISUAL_PRESETS, DEFAULT_PRESET_ID, resolvePreset, presetToPrompt,
+  VISUAL_PRESETS, DEFAULT_PRESET_ID, resolvePreset, presetToPrompt, presetToBriefRules,
 } from '../lib/visual-presets'
 import { creativeHead } from '../lib/thumbnail-prompt'
 import { readFileSync } from 'fs'
@@ -144,6 +144,54 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
     withBrand.includes(resolvePreset('studio').direction))
 }
 
+// ── the CONCEPT path is the normal one ──────────────────────────────────────
+// The first version of this steered only the fallback, which runs when the art
+// director fails. The route's own comment says so: "empty concept => fell back
+// to the plain copy generator, so we use the generic design menu below". A
+// creator could have picked Editorial, tested it, and seen no change at all.
+{
+  const brief = 'A vivid purple studio gradient with the blender centre frame, hot-pink type, a starburst badge top right.'
+  const quiet = head('editorial', { concept: brief, banner: 'GAME CHANGER!', callouts: ['144Hz', 'QUIET'] })
+
+  check('the chosen look frames the brief on the concept path',
+    quiet.includes(resolvePreset('editorial').direction), quiet.slice(0, 200))
+  check('and its typography is stated there too',
+    quiet.includes(resolvePreset('editorial').typography))
+  check('a loud banner from a drifting brief is dropped',
+    !/GAME CHANGER/.test(quiet), quiet)
+  check('so are its callout chips', !/144Hz/.test(quiet), quiet)
+  check('and the render is told why', /turns this look back into a generic advert/.test(quiet))
+  check('no loud execution note survives',
+    !/vibrant, modern, high-contrast and layered/.test(quiet))
+
+  // The loud look keeps all of it, because there the brief furniture belongs.
+  const loud = head('bold', { concept: brief, banner: 'GAME CHANGER!', callouts: ['144Hz', 'QUIET'] })
+  check('the loud look still renders the banner', /GAME CHANGER/.test(loud))
+  check('and the callouts', /144Hz/.test(loud))
+}
+
+// ── the art director writes inside the look ─────────────────────────────────
+// A brief written loud cannot be rendered quiet, so the look has to reach the
+// brief first rather than only the renderer.
+{
+  const rules = presetToBriefRules(resolvePreset('premium'))
+  check('the brief rules carry the direction', rules.includes(resolvePreset('premium').direction))
+  check('and forbid badge fields outright',
+    /THIS LOOK CARRIES NO BADGES/.test(rules)
+    && /Return "" for banner and "" for badge/.test(rules)
+    && /empty array for callouts/.test(rules),
+    rules)
+  check('the prohibition is stated as a rule, not an option',
+    !/optional|if you like|where they fit/i.test(rules.split('THIS LOOK CARRIES NO BADGES')[1] ?? ''),
+    'a softened rule is how a starburst ends up on an editorial layout')
+  check('and forbid the loud vocabulary by name',
+    /scroll-stopping/.test(rules) && /vibrant/.test(rules), rules)
+
+  const loudRules = presetToBriefRules(resolvePreset('bold'))
+  check('while the loud look invites them',
+    /Banners, starburst badges and callout chips all belong/.test(loudRules))
+}
+
 // ── the wiring ──────────────────────────────────────────────────────────────
 {
   const strip = (s: string) => s.split('\n').filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
@@ -161,7 +209,16 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
 
   const ROUTE = read('app/api/youtube/generate-thumbnail/route.ts')
   check('the route reads the chosen look', /select\('thumbnail_brand_style,visual_preset'\)/.test(ROUTE))
-  check('and passes it to the prompt', /presetId: visualPreset/.test(ROUTE))
+  check('and passes it to the renderer', /presetId: visualPreset/.test(ROUTE))
+  check('and to the art director, which is the path that normally runs',
+    /\.replace\('__PRESET_RULES__', presetToBriefRules/.test(ROUTE),
+    'steering only the renderer leaves the brief loud')
+  check('at every brief call site',
+    (ROUTE.match(/presetId: visualPreset/g) || []).length >= 3,
+    'one renderer call and both brief calls')
+  check('the art director no longer hardcodes one aesthetic',
+    !/impossible to scroll past/.test(ROUTE),
+    'it wrote loud briefs whatever the creator picked')
 
   const BRAND = read('app/(dashboard)/brand/page.tsx')
   check('the picker is on the brand page', /<VisualPresetPicker/.test(BRAND))
@@ -208,7 +265,19 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
   broke('a changed default is caught', resolvePreset(null).id === DEFAULT_PRESET_ID
     && resolvePreset(null).badges === true)
 
-  // Break 6: one surface drifting from the others, which gives a creator three
+  // Break 6: the preset reaching only the fallback path, which is what the
+  // first version did. A creator could pick a look and see no change.
+  const conceptQuiet = head('editorial', { concept: 'A vivid gradient.', banner: 'GAME CHANGER!' })
+  broke('a preset that misses the concept path is caught',
+    conceptQuiet.includes(resolvePreset('editorial').direction) && !/GAME CHANGER/.test(conceptQuiet))
+
+  // Break 7: the art director's badge prohibition softened into a suggestion.
+  const quietRules = presetToBriefRules(resolvePreset('editorial'))
+  broke('a softened badge rule is caught',
+    /THIS LOOK CARRIES NO BADGES/.test(quietRules)
+    && /Return "" for banner/.test(quietRules))
+
+  // Break 8: one surface drifting from the others, which gives a creator three
   // brands across three places they publish.
   const p = resolvePreset('retro')
   broke('a surface dropping the direction is caught',

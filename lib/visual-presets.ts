@@ -180,6 +180,37 @@ export function resolvePreset(id: string | null | undefined): VisualPreset {
 }
 
 /**
+ * The constraints the art director writes its briefs under.
+ *
+ * Steering the renderer alone was not enough, and the code said so plainly:
+ * the concept path is the NORMAL one and the preset only reached the fallback,
+ * which runs when the art director fails. So a creator could pick Editorial and
+ * still receive a loud brief, because the art director's own system prompt is
+ * hardcoded to one aesthetic: "vibrant, high-contrast, modern, impossible to
+ * scroll past", starburst badges, "GAME CHANGER!" banners.
+ *
+ * A brief written loud cannot be rendered quiet. This is where the look has to
+ * be applied first.
+ */
+export function presetToBriefRules(preset: VisualPreset): string {
+  const lines = [
+    `HOUSE LOOK (non-negotiable): ${preset.direction}`,
+    `TYPOGRAPHY: ${preset.typography}`,
+    `BACKGROUND: ${preset.background}`,
+    `Default colour direction when the product suggests nothing better: ${preset.fallbackPalette}.`,
+  ]
+  if (!preset.badges) {
+    lines.push(
+      'THIS LOOK CARRIES NO BADGES. Return "" for banner and "" for badge, and return an empty array for callouts. Do not describe checkmark chips, spec pills, starbursts or stickers in the concept. One of them turns this look back into a generic advert, which is the thing the creator chose this look to avoid.',
+      'The concept must not ask for anything "vibrant", "high-contrast", "scroll-stopping" or "impossible to miss". Those belong to a different look.',
+    )
+  } else {
+    lines.push('Banners, starburst badges and callout chips all belong in this look. Use them where they fit.')
+  }
+  return lines.join('\n')
+}
+
+/**
  * The art direction block for an image prompt.
  *
  * `surface` changes the frame and nothing else. A look must survive being a

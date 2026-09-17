@@ -23,6 +23,7 @@ import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { detectWearable, wearDirective } from '@/lib/wear-product'
 import { normalizeExpression, expressionDirective, expressionDescription, EXPRESSION_LABEL, politeSmileIsWrong } from '@/lib/face-expression'
 import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt, type GarmentVerdict } from '@/lib/garment-match'
+import { resolvePreset, presetToBriefRules } from '@/lib/visual-presets'
 import { buildGraphicThumbnailPrompt } from '@/lib/thumbnail-prompt'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
 import { FACE_BOX_PROMPT, parseFaceBox, headCropRect, headCropNote } from '@/lib/head-crop'
@@ -338,7 +339,11 @@ interface ThumbBrief extends ThumbCopy {
   pose: string
 }
 
-const ART_DIRECTOR_SYSTEM = `You are a world-class YouTube thumbnail ART DIRECTOR for product-review channels. You design the kind of thumbnails top creators use: vibrant, high-contrast, modern, impossible to scroll past. You brief an image model that renders your design.
+const ART_DIRECTOR_SYSTEM = `You are a world-class YouTube thumbnail ART DIRECTOR for product-review channels. You brief an image model that renders your design.
+
+__PRESET_RULES__
+
+Every brief below must sit inside that house look. It is the creator's own choice and it outranks any instinct you have about what a thumbnail should be.
 
 For the product given, output N_BRIEFS DISTINCT design briefs — each a different creative take (different palette, layout, headline approach), the way you'd pitch a few options. Ground every choice in the REAL product (its category, brand colours, standout feature, specs). Never invent specs.
 
@@ -369,6 +374,10 @@ BANNED IN THE QUESTION (non-negotiable): NEVER mention money, price, cost, "chea
 const BANNED_Q_THUMB = /\b(money|price|pricing|priced|cost|costs|costly|cheap|cheaper|expensive|amazon|purchase|purchasing|buy|buys|buying|bought|worth\s+(?:it|the)|game[-\s]?changer)\b/i
 
 async function designThumbnailBriefs(input: {
+  /** The brand's chosen look. The art director writes INSIDE it, because a
+   *  brief written loud cannot be rendered quiet, and the concept path is the
+   *  normal one. See lib/visual-presets.ts. */
+  presetId?: string | null
   count: number
   videoTitle: string
   productTitle?: string
@@ -444,7 +453,10 @@ async function designThumbnailBriefs(input: {
     const msg = await withAnthropicRetry(() => anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1600,
-      system: ART_DIRECTOR_SYSTEM.replace(/N_BRIEFS/g, String(n)) + (isQuestion ? `\n\n${QUESTION_DIRECTIVE}` : ''),
+      system: ART_DIRECTOR_SYSTEM
+        .replace(/N_BRIEFS/g, String(n))
+        .replace('__PRESET_RULES__', presetToBriefRules(resolvePreset(input.presetId)))
+        + (isQuestion ? `\n\n${QUESTION_DIRECTIVE}` : ''),
       messages: [{ role: 'user', content: userMsg }],
     }))
     recordAnthropicUsage(msg, {
@@ -1606,6 +1618,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           userId: user.id,
           briefKey: sharedBriefKey,
           generate: () => designThumbnailBriefs({
+            presetId: visualPreset,
             count: variantCount,
             videoTitle,
             productTitle,
@@ -1794,6 +1807,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           userId: user.id,
           briefKey: sharedBriefKey,
           generate: () => designThumbnailBriefs({
+            presetId: visualPreset,
             count: variantCount,
             videoTitle,
             productTitle,
