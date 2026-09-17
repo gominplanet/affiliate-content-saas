@@ -169,17 +169,26 @@ export async function runHotlinkedSweep(trigger: 'cron' | 'admin' = 'cron'): Pro
     //
     // A null site id is a legacy post from before multi-site, which means the
     // default blog, and that is exactly what an undefined siteId resolves to.
-    const bySite = new Map<string, RehostTarget[]>()
+    const bySiteId = new Map<string, RehostTarget[]>()
     for (const post of posts) {
       const key = (post as RehostTarget & { wordpress_site_id?: string | null }).wordpress_site_id ?? ''
-      const list = bySite.get(key)
+      const list = bySiteId.get(key)
       if (list) list.push(post)
-      else bySite.set(key, [post])
+      else bySiteId.set(key, [post])
     }
 
-    for (const [siteKey, sitePosts] of bySite) {
-      const batch = sitePosts.slice(0, MAX_POSTS_PER_USER)
+    // THEN MERGE THE IDS THAT ARE THE SAME BLOG.
+    //
+    // A null site id is a legacy post from before multi-site, which resolves to
+    // the default blog, and so does that blog's own explicit id. Keyed on the id
+    // alone those are two buckets for one site, which showed up in the first
+    // real run as dougreviewslist.com listed twice, 8 pictures and then 6. The
+    // repair was fine both times; the bound was not, because each bucket took
+    // its own slice and that creator got two batches in a run meant to give one.
+    type SiteBatch = { site: NonNullable<Awaited<ReturnType<typeof getWordPressCredentials>>>; posts: RehostTarget[] }
+    const byHost = new Map<string, SiteBatch>()
 
+    for (const [siteKey, sitePosts] of bySiteId) {
       // skipCapGuard: this is maintenance on already-published posts. A creator
       // who dropped a plan still has those posts live, and leaving their
       // pictures to expire over a billing state is worse than what the cap is
@@ -195,6 +204,17 @@ export async function runHotlinkedSweep(trigger: 'cron' | 'admin' = 'cron'): Pro
         perOwner.push({ ownerId, siteId: siteKey || null, skipped: 'that blog is no longer connected, so there is nowhere to move its pictures to' })
         continue
       }
+      let host: string
+      try { host = new URL(site.wordpress_url).hostname.replace(/^www\./i, '').toLowerCase() }
+      catch { host = site.wordpress_url.toLowerCase() }
+
+      const existing = byHost.get(host)
+      if (existing) existing.posts.push(...sitePosts)
+      else byHost.set(host, { site, posts: sitePosts })
+    }
+
+    for (const { site, posts: sitePosts } of byHost.values()) {
+      const batch = sitePosts.slice(0, MAX_POSTS_PER_USER)
 
       const wp = createWordPressService(
         site.wordpress_url,

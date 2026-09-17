@@ -375,6 +375,20 @@ async function main() {
     check('and it reads which site each post went to',
       /wordpress_site_id/.test(sweepSrc),
       'without it there is nothing to group by')
+
+    // Two site ids can be one blog: a legacy post's null id and that blog's own
+    // explicit id both resolve to the default site. The first real run showed
+    // it, listing dougreviewslist.com twice with 8 pictures and then 6, and
+    // handing that creator two batches in a run meant to give one.
+    check('site ids that resolve to the same blog are merged',
+      /const byHost = new Map<string, SiteBatch>\(\)/.test(sweepSrc),
+      'keyed on the id alone, one blog becomes two buckets and takes two slices')
+    check('merged on the resolved host, not on the id',
+      /new URL\(site\.wordpress_url\)\.hostname\.replace\(\/\^www\\\.\/i, ''\)/.test(sweepSrc),
+      'the id is the thing that was wrong, so it cannot also be the thing that fixes it')
+    check('and the batch is sliced AFTER the merge',
+      sweepSrc.indexOf('const byHost = new Map<string, SiteBatch>()') < sweepSrc.indexOf('sitePosts.slice(0, MAX_POSTS_PER_USER)'),
+      'slicing each bucket before merging is exactly the bound that did not hold')
     check('posts the runner declined are counted separately from failures',
       /skippedPosts: result\.posts\.filter\(x => x\.skipped\)\.length/.test(sweepSrc),
       'a declined post is not an attempted one, and folding them together hides both')
