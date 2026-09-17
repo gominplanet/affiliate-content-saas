@@ -17,7 +17,7 @@
 // candidate. It is ranking. Merging it away throws out a ranking the creator
 // already has, to fix a title problem that takes ten minutes.
 import {
-  buildConsolidationReport, titleKeywords, graceDays, type PostStat,
+  buildConsolidationReport, titleKeywords, graceDays, hasHadItsChance, type PostStat,
 } from '../lib/consolidation'
 import { readVelocity } from '../lib/publish-velocity'
 import { readFileSync } from 'fs'
@@ -233,6 +233,82 @@ const post = (over: Partial<PostStat> & { id: string }): PostStat => ({
   check('and is told nothing', tiny.note === null, tiny.note ?? '')
 }
 
+// ── the failure Seb's own site exposed ──────────────────────────────────────
+// 315 posts, eleven a week, every single one inside the 180 day window. The
+// panel reported "nothing to consolidate" while Google was showing 106 of the
+// 315 and ignoring the other 209. A site publishing at that rate keeps almost
+// every post inside the window permanently, so age alone makes this list useless
+// for exactly the creators who need it most.
+{
+  // 40 posts across the last 100 days. Some indexed, most not. Nothing is
+  // outside a 180 day grace window.
+  const posts: PostStat[] = []
+  for (let i = 0; i < 40; i++) {
+    posts.push(post({
+      id: `p${i}`,
+      title: `Product ${i} Review`,
+      publishedAt: daysAgo(100 - i * 2),
+      // The four most recent are indexed, so Google has demonstrably crawled
+      // past everything older than them.
+      impressions: i >= 36 ? 400 : 0,
+    }))
+  }
+  const r = buildConsolidationReport(posts, { ageMonths: 4, now: NOW, statsAvailable: true })
+  check('posts inside the window are still judged when Google crawled past them',
+    r.candidates.length > 0, `${r.candidates.length} candidates from 40 posts`)
+  check('and the count judged on evidence is reported',
+    r.judgedByEvidence > 0, `${r.judgedByEvidence}`)
+  check('the row says Google indexed something published after it',
+    r.candidates.some(c => /crawled past/.test(c.reason)),
+    r.candidates[0]?.reason ?? 'no candidates')
+  check('the note explains why they were counted despite being new',
+    !!r.note && /newer than the 180 day window but counted anyway/.test(r.note), r.note ?? '')
+
+  // A post published AFTER everything Google has indexed has no evidence
+  // against it, so it must still be left alone however fast the site publishes.
+  const withBrandNew = buildConsolidationReport(
+    [...posts, post({ id: 'brand-new', publishedAt: daysAgo(1), impressions: 0 })],
+    { ageMonths: 4, now: NOW, statsAvailable: true })
+  check('a post newer than every indexed one is still left alone',
+    !withBrandNew.candidates.some(c => c.id === 'brand-new'),
+    'Google has not been past it yet, so its silence means nothing')
+  check('and is counted as too young', withBrandNew.tooYoung >= 1, `${withBrandNew.tooYoung}`)
+}
+
+// ── with nothing indexed anywhere, age is all there is ──────────────────────
+// No indexed post means no evidence Google has looked at the site at all, and
+// condemning every page on that basis would be the worst thing this file does.
+{
+  const posts: PostStat[] = []
+  for (let i = 0; i < 20; i++) {
+    posts.push(post({ id: `n${i}`, publishedAt: daysAgo(60 - i), impressions: 0 }))
+  }
+  const r = buildConsolidationReport(posts, { ageMonths: 4, now: NOW, statsAvailable: true })
+  check('a site with nothing indexed condemns nothing', r.candidates.length === 0,
+    `${r.candidates.length}`)
+  check('and every post is counted as too young instead', r.tooYoung === 20, `${r.tooYoung}`)
+}
+
+// ── the evidence rule, directly ─────────────────────────────────────────────
+{
+  const now = NOW.getTime()
+  const grace = 180 * 86_400_000
+  const old = now - 200 * 86_400_000
+  const recent = now - 10 * 86_400_000
+  const indexedAt = now - 30 * 86_400_000
+
+  check('an old post has had its chance on age alone',
+    hasHadItsChance(old, now, grace, null) === true)
+  check('a recent post with no indexed evidence has not',
+    hasHadItsChance(recent, now, grace, null) === false)
+  check('a post older than the newest indexed one has been crawled past',
+    hasHadItsChance(now - 60 * 86_400_000, now, grace, indexedAt) === true)
+  check('a post newer than every indexed one has not',
+    hasHadItsChance(recent, now, grace, indexedAt) === false)
+  check('a post published on the same day as the newest indexed one counts',
+    hasHadItsChance(indexedAt, now, grace, indexedAt) === true)
+}
+
 // ── the route and the panel never act ───────────────────────────────────────
 // Merging and redirecting are destructive to live content on somebody's own
 // site. The correct shape is a list a person reads and decides on.
@@ -317,6 +393,28 @@ const post = (over: Partial<PostStat> & { id: string }): PostStat => ({
   broke('an undated post on the list is caught',
     buildConsolidationReport([post({ id: 'u', publishedAt: null })],
       { ageMonths: 24, now: NOW, statsAvailable: true }).candidates.length === 0)
+
+  // Break 8: age-only judging, which is what made the panel useless on a site
+  // publishing eleven posts a week.
+  const fast: PostStat[] = []
+  for (let i = 0; i < 40; i++) {
+    fast.push(post({ id: `f${i}`, title: `Product ${i} Review`, publishedAt: daysAgo(100 - i * 2), impressions: i >= 36 ? 400 : 0 }))
+  }
+  broke('age-only judging on a fast site is caught',
+    buildConsolidationReport(fast, { ageMonths: 4, now: NOW, statsAvailable: true }).candidates.length > 0)
+
+  // Break 9: condemning a whole site that has nothing indexed at all.
+  const none: PostStat[] = []
+  for (let i = 0; i < 20; i++) none.push(post({ id: `x${i}`, publishedAt: daysAgo(60 - i), impressions: 0 }))
+  broke('condemning a site with nothing indexed is caught',
+    buildConsolidationReport(none, { ageMonths: 4, now: NOW, statsAvailable: true }).candidates.length === 0)
+
+  // Break 10: condemning a post Google has not reached yet, which on a fast
+  // site would put this week's work on a merge list.
+  broke('condemning a post newer than everything indexed is caught',
+    !buildConsolidationReport(
+      [...fast, post({ id: 'bn', publishedAt: daysAgo(1), impressions: 0 })],
+      { ageMonths: 4, now: NOW, statsAvailable: true }).candidates.some(c => c.id === 'bn'))
 
   for (const b of breaks) failures.push(`BREAK TEST MISSED ${b}`)
 }

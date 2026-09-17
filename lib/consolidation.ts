@@ -69,6 +69,9 @@ export interface ConsolidationReport {
   tooYoung: number
   /** Posts that are working and were never considered. */
   working: number
+  /** How many were judged on evidence rather than the calendar: newer than the
+   *  grace window, but Google indexed something published after them. */
+  judgedByEvidence: number
   /** Groups of candidates that look like the same product, most overlapping
    *  first. These are the merges worth doing. */
   groups: Array<{ key: string; ids: string[]; titles: string[] }>
@@ -82,6 +85,13 @@ export interface ConsolidationReport {
  * a two year old site and a four month old one. On a young site Google is still
  * deciding about the whole domain, so an individual post's silence says almost
  * nothing about that post.
+ *
+ * On its own this is not enough, and a real site showed why. 315 posts, eleven a
+ * week, every single one inside the 180 day window, so the panel reported
+ * "nothing to consolidate" while Google was showing 106 of the 315 and ignoring
+ * the other 209. A site publishing at that rate keeps almost every post inside
+ * the window permanently, so age alone makes this list useless for exactly the
+ * creators who need it most. See hasHadItsChance.
  */
 export function graceDays(ageMonths: number | null | undefined): number {
   const m = Number(ageMonths)
@@ -92,6 +102,36 @@ export function graceDays(ageMonths: number | null | undefined): number {
 
 /** Below this a post is thin however it performs. */
 const THIN_WORDS = 400
+
+/**
+ * Has Google had its chance with this post?
+ *
+ * Two ways to be sure, and the second is the one that matters on a fast site.
+ *
+ * Age: the post is older than the grace window. Fine on a slow site, useless on
+ * a site publishing eleven a week, where nothing ever leaves the window.
+ *
+ * Evidence: Google has indexed a post published LATER than this one. That is
+ * proof it crawled this part of the site and kept going, so this page was not
+ * missed, it was passed over. A stronger signal than a calendar, and it needs no
+ * assumption about how long Google takes.
+ *
+ * `newestIndexed` is the publish date of the most recent post that has actually
+ * been shown in search, or null when nothing has been. Null falls back to age
+ * alone, because with no indexed post anywhere there is no evidence Google has
+ * looked at the site at all, and condemning every page on that basis would be
+ * the worst thing this file could do.
+ */
+export function hasHadItsChance(
+  publishedAt: number,
+  now: number,
+  graceMs: number,
+  newestIndexed: number | null,
+): boolean {
+  if (now - publishedAt >= graceMs) return true
+  if (newestIndexed != null && publishedAt <= newestIndexed) return true
+  return false
+}
 
 const STOP = new Set([
   'the', 'a', 'an', 'and', 'or', 'for', 'with', 'best', 'top', 'review', 'reviews',
@@ -126,7 +166,7 @@ export function buildConsolidationReport(
   // findings.
   if (!opts.statsAvailable) {
     return {
-      candidates: [], tooYoung: 0, working: 0, groups: [],
+      candidates: [], tooYoung: 0, working: 0, judgedByEvidence: 0, groups: [],
       note: 'Connect Google Search Console to see which posts are doing nothing. Without it MVP can see what you published but not whether anyone found it, and guessing at that would be worse than not saying.',
     }
   }
@@ -135,8 +175,19 @@ export function buildConsolidationReport(
   const grace = graceDays(opts.ageMonths)
   const graceMs = grace * 86_400_000
 
+  // The publish date of the newest post Google has actually shown. Anything
+  // published on or before it has demonstrably been crawled past.
+  let newestIndexed: number | null = null
+  for (const p of posts) {
+    if (Number(p.impressions ?? 0) <= 0) continue
+    const t = p.publishedAt ? new Date(p.publishedAt).getTime() : NaN
+    if (!Number.isFinite(t)) continue
+    if (newestIndexed == null || t > newestIndexed) newestIndexed = t
+  }
+
   let tooYoung = 0
   let working = 0
+  let judgedByEvidence = 0
   const candidates: Candidate[] = []
 
   for (const p of posts) {
@@ -144,7 +195,10 @@ export function buildConsolidationReport(
     // A post with no publish date cannot be aged, and guessing would put real
     // work on a delete list. Left out of every bucket rather than assumed old.
     if (!Number.isFinite(t)) continue
-    if (now.getTime() - t < graceMs) { tooYoung++; continue }
+    if (!hasHadItsChance(t, now.getTime(), graceMs, newestIndexed)) { tooYoung++; continue }
+    // Inside the window, but Google indexed something published after it.
+    const byEvidence = now.getTime() - t < graceMs
+    if (byEvidence) judgedByEvidence++
 
     const impressions = Math.max(0, Number(p.impressions ?? 0))
     const clicks = Math.max(0, Number(p.clicks ?? 0))
@@ -155,7 +209,10 @@ export function buildConsolidationReport(
     let reason: string
     if (impressions === 0) {
       weakness = 'never-shown'
-      reason = `Published ${Math.floor((now.getTime() - t) / 86_400_000)} days ago and Google has never shown it to anyone. It is not competing for anything, so folding it into a stronger post on the same subject loses nothing and gives that post more to work with.`
+      const days = Math.floor((now.getTime() - t) / 86_400_000)
+      reason = byEvidence
+        ? `Published ${days} days ago and never shown to anyone, while Google HAS indexed posts you published after it. It was not missed, it was crawled past. It is not competing for anything, so folding it into a stronger post on the same subject loses nothing and gives that post more to work with.`
+        : `Published ${days} days ago and Google has never shown it to anyone. It is not competing for anything, so folding it into a stronger post on the same subject loses nothing and gives that post more to work with.`
     } else if (p.words < THIN_WORDS) {
       weakness = 'thin'
       reason = `Shown ${impressions.toLocaleString()} times with no clicks, and only ${p.words.toLocaleString()} words. Google is putting it in front of people and they are choosing something else, which on a post this short is usually because there is not enough here to be the best answer.`
@@ -216,7 +273,7 @@ export function buildConsolidationReport(
     ? (tooYoung > 0
       ? `Nothing to consolidate. ${tooYoung.toLocaleString()} ${tooYoung === 1 ? 'post is' : 'posts are'} still inside the ${grace} day window where silence means nothing yet, so they were not judged.`
       : 'Nothing to consolidate. Every post old enough to judge is getting clicks.')
-    : `${candidates.length.toLocaleString()} posts are old enough to judge and are earning nothing. ${neverShown.toLocaleString()} of them have never been shown to anyone at all. ${tooYoung > 0 ? `A further ${tooYoung.toLocaleString()} are still inside the ${grace} day window and were not judged. ` : ''}Merging the weakest into your strongest post on the same subject, and redirecting the old URLs to it, gives Google one good page instead of several it has already passed over.`
+    : `${candidates.length.toLocaleString()} posts are earning nothing.${judgedByEvidence > 0 ? ` ${judgedByEvidence.toLocaleString()} of them are newer than the ${grace} day window but counted anyway, because Google has indexed posts you published after them: those were crawled past rather than missed.` : ''} ${neverShown.toLocaleString()} of them have never been shown to anyone at all. ${tooYoung > 0 ? `A further ${tooYoung.toLocaleString()} are still inside the ${grace} day window and were not judged. ` : ''}Merging the weakest into your strongest post on the same subject, and redirecting the old URLs to it, gives Google one good page instead of several it has already passed over.`
 
-  return { candidates, tooYoung, working, groups, note }
+  return { candidates, tooYoung, working, judgedByEvidence, groups, note }
 }
