@@ -150,6 +150,66 @@ const words = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).joi
     'so a post written with no experience is distinguishable afterwards')
 }
 
+// ── owning it earns the first person, without inventing a test ─────────────
+// normalizeOwnership defaults to 'bought', so a creator pasting a link is
+// assumed to own what they link. Telling them they have not used their own
+// product would be MVP inventing a limitation they do not have.
+{
+  const r = resolveExperience({ transcript: null, owned: true })
+  check('an owner may write in the first person', r.mayClaimFirsthand === true)
+  check('and is not scrubbed', r.mustScrub === false)
+  check('the source is recorded as ownership, not as a note', r.source === 'owner', r.source)
+  check('but owning is not a licence to invent a test',
+    /Do not invent a test you never ran/.test(r.prompt), r.prompt)
+  check('and the prompt says why the personal detail has to stay general',
+    /nowhere for it to come from/.test(r.prompt), r.prompt)
+
+  const noted = resolveExperience({ transcript: null, owned: true, creatorNote: 'I have had this on my desk for three weeks and the clamp marks softwood if you overtighten it at all.' })
+  check('a note beats bare ownership, because a note has specifics',
+    noted.source === 'creator-note', noted.source)
+  const notOwned = resolveExperience({ transcript: null, owned: false })
+  check('and someone who says they have not used it still cannot claim',
+    notOwned.mayClaimFirsthand === false && notOwned.mustScrub === true)
+}
+
+// ── the note reaches the writer from both screens ───────────────────────────
+// Seb asked for the field on both no-video paths. A rule with no way to satisfy
+// it is just a permanent refusal.
+{
+  const strip = (s: string) => s.split('\n').filter(l => !l.trim().startsWith('//')).join('\n')
+  const read = (f: string) => strip(readFileSync(join(__dirname, '..', f), 'utf8'))
+
+  const LINK_UI = read('components/content/FromLinkModal.tsx')
+  check('the paste-a-link modal has a note field',
+    /setCreatorNote/.test(LINK_UI) && /<textarea/.test(LINK_UI))
+  check('and sends it', /creatorNote: creatorNote\.trim\(\)/.test(LINK_UI))
+  check('and tells the creator what leaving it blank costs',
+    /no "I tested this", because you have not/.test(LINK_UI), 'the consequence has to be on screen')
+
+  const CAMPAIGN_UI = read('components/campaigns/CreateForCampaignModal.tsx')
+  check('the campaign modal has one too',
+    /setCreatorNote/.test(CAMPAIGN_UI) && /<textarea/.test(CAMPAIGN_UI))
+  check('and passes it to the write callback',
+    /onWrite\(\{[^}]*\}, creatorNote\.trim\(\)\)/.test(CAMPAIGN_UI))
+
+  const LINK_ROUTE = read('app/api/blog/from-link/route.ts')
+  check('the paste-a-link route resolves the experience',
+    /resolveExperience\(\{ transcript: null, creatorNote, owned: hasHandsOn\(ownership\) \}\)/.test(LINK_ROUTE),
+    'ownership counts too: normalizeOwnership defaults to bought')
+  check('and no longer gates the scrub on the TikTok path alone',
+    /const stripHandsOn = !mayClaim/.test(LINK_ROUTE),
+    'a plain pasted link with no notes was getting the first-person prompt and no scrub')
+  check('the instruction reaches that writer too',
+    /\$\{experience\.prompt\}/.test(LINK_ROUTE))
+  check('and the note is read from the request, not stubbed out',
+    /const creatorNote = \(body\.creatorNote \|\| ''\)\.trim\(\)/.test(LINK_ROUTE),
+    'a field on screen that never reaches the writer is worse than no field')
+
+  const CAMPAIGN_ROUTE = read('app/api/campaigns/generate/route.ts')
+  check('the campaign route forwards the note',
+    /creatorNote: \(body\.creatorNote \|\| ''\)\.trim\(\) \|\| null/.test(CAMPAIGN_ROUTE))
+}
+
 // ── break tests ─────────────────────────────────────────────────────────────
 {
   const breaks: string[] = []

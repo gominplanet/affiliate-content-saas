@@ -119,7 +119,7 @@ export async function POST(request: Request) {
       user = { id: sessionUser.id }
     }
 
-    const body = await request.json() as { asin?: string; campaignName?: string; epc?: string; endsAt?: string; campaignId?: string }
+    const body = await request.json() as { asin?: string; campaignName?: string; epc?: string; endsAt?: string; campaignId?: string; creatorNote?: string }
     const asin = extractAsin((body.asin ?? '').toUpperCase()) || (body.asin ?? '').trim()
     if (!asin || !/^[A-Z0-9]{10}$/.test(asin)) {
       return NextResponse.json({ error: 'A valid 10-character ASIN is required' }, { status: 400 })
@@ -453,6 +453,9 @@ export async function POST(request: Request) {
           product: product!,
           researchBrief: research!.brief,
           affiliateUrl,
+          // No video on this path, so this is the only thing that lets the post
+          // write in the first person. See lib/experience-source.ts.
+          creatorNote: (body.creatorNote || '').trim() || null,
         }, { userId: user.id, tier })
       } catch (err) {
         return fail(`Content generation failed: ${err instanceof Error ? err.message : 'unknown'}`)

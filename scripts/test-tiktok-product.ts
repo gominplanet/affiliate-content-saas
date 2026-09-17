@@ -397,7 +397,14 @@ const p = parseTikTokProduct(HTML, URL)
     'a prompt rule alone has never held for any other ban in this codebase')
   check('the scrub runs at the one chokepoint', /const scrub = \(s: string\) => \{/.test(f3),
     'every piece of copy in the post goes through scrub(); anything else leaves gaps')
-  check('and only when they have not used it', /const stripHandsOn = !!tiktokProductId && !hasHandsOn\(ownership\)/.test(f3),
+  // 2026-09-17: the condition moved into lib/experience-source.ts, which folds
+  // ownership, a creator note and a transcript into one answer. The invariant is
+  // unchanged and is what this check defends: a creator who HAS used the product
+  // is never scrubbed. resolveExperience is handed hasHandsOn(ownership), and
+  // mayClaimFirsthand comes back true for an owner.
+  check('and only when they have not used it',
+    /resolveExperience\(\{ transcript: null, creatorNote, owned: hasHandsOn\(ownership\) \}\)/.test(f3)
+    && /const stripHandsOn = !mayClaim/.test(f3),
     'rewriting a real owner\'s "I tested this" would be MVP inventing a limitation they do not have')
 
   check('the two disclosures are separate sentences', /\[scrub\(disclaimer\), ownLine \? scrub\(ownLine\) : ''\]/.test(f3),

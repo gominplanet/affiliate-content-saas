@@ -13,7 +13,7 @@ import { pickBlogWriter, BLOG_WRITER_DEFAULT, type WriterArm } from '@/lib/blog-
 import { planSourceBudget, planFaqCount, type SourceBudget } from '@/lib/source-budget'
 import { planPostStructure, structureToPrompt, type StructurePlan } from '@/lib/post-structure'
 import { buildSignalBrief, type KeepaFacts } from '@/lib/product-signals-brief'
-import { resolveExperience } from '@/lib/experience-source'
+import { resolveExperience, type ExperienceSource } from '@/lib/experience-source'
 import { scrubReviewLanguage } from '@/lib/deal-scrub'
 
 /** Caller identity for cost telemetry (optional — logging is best-effort). */
@@ -128,7 +128,7 @@ export interface BlogGenerationOutput {
    *  video, notes they typed, or nothing. 'none' means the post is an
    *  assessment rather than a review and its output was scrubbed of review
    *  language rather than trusted to have obeyed the instruction. */
-  experienceSource?: 'video' | 'creator-note' | 'none'
+  experienceSource?: ExperienceSource
   /** The body shape this post was planned with, e.g.
    *  "hook>performance>friction>advice|vsp". Stored on blog_posts so the next
    *  post for this creator can be given a shape they have not just published.

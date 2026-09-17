@@ -12,6 +12,7 @@ import { passportLinkForUser } from '@/lib/passport-links'
 import { getLinkStyle, resolveShowcaseLink, type LinkStyleConfig } from '@/lib/link-cloak'
 import { shortenBitly } from '@/lib/bitly'
 import { scrubBanned } from '@/lib/scrub'
+import { planProductDepth } from '@/lib/product-depth'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { rehostAll, composeWithNanoBananaPro, composeWithNanoBanana } from '@/lib/thumbnail-generators'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
@@ -173,8 +174,30 @@ export async function generateDigestContent(opts: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   recordUsage?: (msg: any) => void
 }): Promise<{ title: string; html: string; excerpt: string; theme: string }> {
-  const { client, deals, reviewerName, nicheLabel } = opts
+  const { client, reviewerName, nicheLabel } = opts
   const retailer = opts.retailer || 'Amazon'
+
+  // How many deals this post can actually explain.
+  //
+  // The instruction here used to be "2 short sentences each", roughly thirty
+  // words, and the caller handed over up to twelve deals. That produced a four
+  // hundred word page listing twelve products and explaining none of them, which
+  // is the single thinnest thing MVP publishes and the easiest for Google to
+  // decline. A deal entry is a smaller job than a review entry, so it has its own
+  // floor rather than the review one, but thirty words is below any floor worth
+  // having: it cannot say what the thing is, why the price is worth acting on,
+  // and who it suits.
+  const DIGEST_WORDS = 1800
+  const depth = planProductDepth({
+    candidates: opts.deals.length,
+    requested: opts.deals.length,
+    maxWords: DIGEST_WORDS,
+    contentKind: 'deal',
+  })
+  const deals = opts.deals.slice(0, depth.count)
+  if (depth.dropped > 0) {
+    console.log('[weekly-digest] depth trim', { picked: opts.deals.length, covered: depth.count, wordsEach: depth.wordsEach })
+  }
 
   const dealLines = deals.map((d, i) => {
     const price = money(d.price_now_cents)
@@ -187,7 +210,7 @@ export async function generateDigestContent(opts: {
   try {
     const msg = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1000,
+      max_tokens: 4000,
       messages: [{
         role: 'user',
         content: `You are ${reviewerName}, writing a hand-picked roundup of the best ${retailer} deals for your affiliate review blog.
@@ -203,7 +226,7 @@ Rules:
 - "title": a ROUNDUP title for the WHOLE set, naming the shared category, never a single product or brand. Good examples: "This Week's Best Kitchen Deals", "Weekly Home & Tech Deals", "This Week's Top Pet Finds". Under 55 characters. Title Case. NEVER put a year or date in the title. No single product names, no provider names, no clickbait, no dashes.
 - "theme": 1 to 3 plain lowercase words naming the product category these share, for the URL and site category (e.g. "kitchen", "home office", "pet supplies", "tech"). If they are a genuine mix, use "deals".
 - "intro": 2 sentences. Answer-first — say this is your hand-picked roundup of genuine price drops worth a look. First person.
-- "blurbs": one entry per ASIN above. 2 short sentences each: what it is + why THIS price is worth grabbing now. Present the price context as fact from the product's own price history. NEVER name any data provider, tool, or service (no "Keepa", "price tracker", "our data"). Never claim you personally tested it.
+- "blurbs": one entry per ASIN above, AT LEAST ${depth.minWordsEach} words each. Three things, in this order: what the thing actually is, why THIS price is worth acting on now, and who it suits (and who it does not). Two sentences is not enough to carry any of those. Do not pad to reach the length: if a deal has nothing behind it beyond the discount, say that plainly and keep it short. Present the price context as fact from the product's own price history. NEVER name any data provider, tool, or service (no "Keepa", "price tracker", "our data"). Never claim you personally tested it.
 - "outro": 1 sentence close, a light nudge to grab them before prices bounce back.
 - Plain text values (no HTML). No em-dashes or en-dashes anywhere. No "honest", "moreover", "furthermore", "game-changer".` }],
     })

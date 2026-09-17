@@ -36,7 +36,7 @@
 //   none         nobody touched it. The post is an assessment, not a review,
 //                and the output is scrubbed rather than trusted.
 
-export type ExperienceSource = 'video' | 'creator-note' | 'none'
+export type ExperienceSource = 'video' | 'creator-note' | 'owner' | 'none'
 
 export interface ExperienceInput {
   /** The video transcript, when this post came from one. */
@@ -44,6 +44,14 @@ export interface ExperienceInput {
   /** First-hand notes the creator typed for THIS product, on a path with no
    *  video. Their own words about their own use. */
   creatorNote?: string | null
+  /** The creator has told MVP they bought or were gifted this product.
+   *
+   *  Weaker than a note, because owning a thing is not the same as having said
+   *  anything about using it, but it is still their own declaration and it
+   *  earns the first person. Leaving it out would have this module tell a
+   *  genuine owner they have not used their own product, which is MVP
+   *  inventing a limitation they do not have. */
+  owned?: boolean
 }
 
 export interface ExperienceRule {
@@ -109,6 +117,21 @@ First person is allowed here, and ONLY for what those notes cover. They are
 shorter than a transcript, so the first-hand part of this post is shorter too.
 Use it where it counts and let the rest of the post be assessment rather than
 recollection. Do not extend a single observation into weeks of testing.`,
+    }
+  }
+
+  if (input.owned === true) {
+    return {
+      source: 'owner',
+      mayClaimFirsthand: true,
+      mustScrub: false,
+      prompt: `EXPERIENCE: you own this. There is no video and no notes from you about it.
+
+First person is allowed, because you have it. What you do not have here is a
+record of anything specific you noticed, so keep the personal material general
+and true: that you own it and use it. Do not invent a test you never ran, a
+duration you never tracked, or a problem you never hit. Specific lived detail has
+to come from somewhere, and on this post there is nowhere for it to come from.`,
     }
   }
 

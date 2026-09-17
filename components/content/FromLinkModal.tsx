@@ -32,6 +32,7 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
   const [link, setLink] = useState(initialLink ?? '')
   const [name, setName] = useState(initialName ?? '')
   const [angle, setAngle] = useState('')
+  const [creatorNote, setCreatorNote] = useState('')
   const [category, setCategory] = useState(initialCategory ?? '')
   const [busy, setBusy] = useState(false)
   const [phase, setPhase] = useState<'idle' | 'scout' | 'write' | 'images'>('idle')
@@ -77,7 +78,7 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
       const res = await fetch('/api/blog/from-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ link: raw, productName: name.trim(), angle: angle.trim(), category: category.trim(), scraped }),
+        body: JSON.stringify({ link: raw, productName: name.trim(), angle: angle.trim(), category: category.trim(), creatorNote: creatorNote.trim(), scraped }),
       })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) { toast.error(d.error || 'Generation failed. Try again.'); setBusy(false); setPhase('idle'); return }
@@ -160,6 +161,26 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Category <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
               <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. Electronics & Tech" className={inputCls} style={inputStyle} />
+            </div>
+            {/* There is no video on this path, so without this the post cannot
+                honestly say "I". See lib/experience-source.ts. */}
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>
+                What happened when you used it <span style={{ color: 'var(--text-faint)' }}>(optional)</span>
+              </label>
+              <textarea
+                value={creatorNote}
+                onChange={(e) => setCreatorNote(e.target.value)}
+                rows={4}
+                placeholder="A few sentences in your own words. What you noticed, what annoyed you, what surprised you. Specifics beat adjectives: 'the clamp marks softwood if you overtighten it' is worth more than 'great build quality'."
+                className={inputCls}
+                style={{ ...inputStyle, resize: 'vertical', minHeight: 80 }}
+              />
+              <p className="text-[11px] mt-1" style={{ color: creatorNote.trim().split(/\s+/).filter(Boolean).length >= 15 ? 'var(--text-faint)' : 'var(--text-2)' }}>
+                {creatorNote.trim().split(/\s+/).filter(Boolean).length >= 15
+                  ? 'Enough to write in the first person. The post will only claim what you describe here.'
+                  : 'Leave this blank and the post is written as an assessment, not a review: no "I tested this", because you have not. About 15 words or more unlocks the first person.'}
+              </p>
             </div>
             <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
               Works for any product or service — Amazon, any online store, or a SaaS/subscription. MVP researches it (the link, its name, and the web), writes a review in your voice grounded in real facts, recloaks your link with Geniuslink if connected, and adds a hero image. Counts as one post.

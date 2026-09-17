@@ -40,9 +40,10 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
   row: LibraryRow
   onClose: () => void
   /** Runs the blog generator. Owned by the page so the list refreshes after. */
-  onWrite: (row: LibraryRow) => Promise<void>
+  onWrite: (row: LibraryRow, creatorNote?: string) => Promise<void>
   writing: boolean
 }) {
+  const [creatorNote, setCreatorNote] = useState('')
   const [wrote, setWrote] = useState<string | null>(null)
   const blogViable = row.runway.blog.viable
   const videoViable = row.runway.video.viable
@@ -224,6 +225,26 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
 
           {/* ── Blog post ─────────────────────────────────────────────────── */}
           <div className="rounded-xl border p-3.5" style={{ borderColor: 'var(--border)' }}>
+            <div style={{ marginBottom: 12 }}>
+              {/* No video on this path, so without this the post cannot honestly
+                  say "I". See lib/experience-source.ts. */}
+              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-2)' }}>
+                What happened when you used it <span style={{ color: 'var(--text-faint)' }}>(optional)</span>
+              </label>
+              <textarea
+                value={creatorNote}
+                onChange={(e) => setCreatorNote(e.target.value)}
+                rows={3}
+                placeholder="A few sentences in your own words. What you noticed, what annoyed you, what surprised you."
+                className="w-full rounded-lg px-3 py-2 text-[12px]"
+                style={{ border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', resize: 'vertical' }}
+              />
+              <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-faint)' }}>
+                {creatorNote.trim().split(/\s+/).filter(Boolean).length >= 15
+                  ? 'Enough to write in the first person. The post will only claim what you describe here.'
+                  : 'Blank means the post is written as an assessment rather than a review, with no claim that you used it. About 15 words unlocks the first person.'}
+              </p>
+            </div>
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>Blog post</p>
@@ -243,7 +264,7 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
                     // Both the product id AND the name the writer is given, so a
                     // switched product does not get written up under the
                     // campaign's headline product's name.
-                    await onWrite({ ...row, asin, product: asin === row.asin ? row.product : (chosen?.title ?? null) })
+                    await onWrite({ ...row, asin, product: asin === row.asin ? row.product : (chosen?.title ?? null) }, creatorNote.trim())
                     setWrote('done')
                   }}
                   disabled={writing}

@@ -41,6 +41,7 @@ import { SHOWCASE_DISCLAIMER } from '@/lib/post-destination'
 import { upgradeTikTokImage } from '@/lib/tiktok-product'
 import { normalizeOwnership, ownershipDisclosure, ownershipVoiceRule, hasHandsOn, tiktokProductFacts } from '@/lib/product-ownership'
 import { DEAL_VOICE_RULES, scrubReviewLanguage } from '@/lib/deal-scrub'
+import { resolveExperience } from '@/lib/experience-source'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -127,6 +128,10 @@ export async function POST(req: Request) {
     tiktokProductId?: string
     // Product data SCOUT scraped off a non-Amazon store page in the user's own
     // browser (Walmart/Target/etc. block our server scrape). Best-effort grounding.
+    /** First-hand notes the creator typed about this product. There is no video
+     *  on this path, so without it the post cannot honestly write in the first
+     *  person. See lib/experience-source.ts. */
+    creatorNote?: string
     scraped?: { title?: string; description?: string; bullets?: string[]; brand?: string | null; price?: string | null; rating?: string | null; imageUrl?: string | null; images?: string[]; sourceUrl?: string }
   }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
@@ -138,6 +143,7 @@ export async function POST(req: Request) {
   // and the writer prompt both read it, and they sit either side of the lookup.
   let ownership = normalizeOwnership(null)
   const angle = (body.angle || '').trim()
+  const creatorNote = (body.creatorNote || '').trim()
   const category = (body.category || '').trim()
   const siteId = body.siteId
   if (!link && !providedName && !tiktokProductId) {
@@ -392,8 +398,22 @@ export async function POST(req: Request) {
   // first person kept, hands-on claims gone. No disclaimer can repair a review
   // of a product the writer never handled, but a different voice can, and
   // lib/deal-scrub already writes exactly that voice for the Deals path.
+  // There is never a video on this path. Whether the post may write in the first
+  // person comes down to whether the creator wrote down what they did with the
+  // product, or told us they own it.
+  //
+  // This used to be gated on tiktokProductId, so a plain pasted Amazon link got
+  // the full "you personally recommend it, first person" instruction and no
+  // scrub, for a product the creator may never have touched.
+  //
+  // Ownership counts. normalizeOwnership defaults to 'bought', so a creator
+  // pasting a link is assumed to own what they are linking, and telling them
+  // otherwise would invent a limitation they do not have. A note beats
+  // ownership, because a note contains specifics and ownership does not.
+  const experience = resolveExperience({ transcript: null, creatorNote, owned: hasHandsOn(ownership) })
+  const mayClaim = experience.mayClaimFirsthand
   const voiceRule = tiktokProductId ? ownershipVoiceRule(ownership, DEAL_VOICE_RULES) : null
-  const sys = `${voiceRule ? `${voiceRule}\n\n` : ''}You are the creator writing a FIRST-PERSON ("I"/"we") affiliate review of ONE product — you personally recommend it. Never write in third person or refer to "the reviewer". Only state facts present in the PRODUCT DATA or RESEARCH below — NEVER invent specs, numbers, prices, test results, or personal anecdotes you cannot support from that data. If first-hand detail is thin, write only at the level the data supports rather than fabricating. Lead each section answer-first. ${BANNED_RULE}\n${learnBlock}`
+  const sys = `${experience.prompt}\n\n${voiceRule ? `${voiceRule}\n\n` : ''}You are the creator writing a FIRST-PERSON ("I"/"we") affiliate review of ONE product — you personally recommend it. Never write in third person or refer to "the reviewer". Only state facts present in the PRODUCT DATA or RESEARCH below — NEVER invent specs, numbers, prices, test results, or personal anecdotes you cannot support from that data. If first-hand detail is thin, write only at the level the data supports rather than fabricating. Lead each section answer-first. ${BANNED_RULE}\n${learnBlock}`
 
   const userPrompt = `Write a complete, SEO- and AI-Overview-optimized affiliate review blog post about ONE product.
 ${angle ? `ANGLE / FOCUS: ${angle}\n` : ''}${category ? `CATEGORY: ${category}\n` : ''}
@@ -477,7 +497,10 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   // enough that scrubBanned exists at all. So a creator who has not used the
   // product gets the deal-spotter rewrite applied to the OUTPUT as well, at the
   // one chokepoint every piece of copy in this post passes through.
-  const stripHandsOn = !!tiktokProductId && !hasHandsOn(ownership)
+  // Scrub whenever nothing backs a first-hand claim, not only on the TikTok
+  // path. A pasted link with no notes and no stated ownership is exactly the
+  // case that was slipping through.
+  const stripHandsOn = !mayClaim
   const scrub = (s: string) => {
     const cleaned = scrubBanned(s || '')
     return stripHandsOn ? scrubReviewLanguage(cleaned) : cleaned

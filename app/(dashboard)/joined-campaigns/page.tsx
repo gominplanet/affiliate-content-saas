@@ -205,14 +205,14 @@ export default function JoinedCampaignsPage() {
   }, [load])
 
   // Write the post for a campaign, from the row that says it is missing.
-  const write = useCallback(async (row: LibraryRow) => {
+  const write = useCallback(async (row: LibraryRow, creatorNote?: string) => {
     setWriting(row.asin)
     const tId = `write-${row.asin}`
     toast.loading('Writing your post… (~1-2 min, keep this tab open)', { id: tId, duration: Infinity })
     try {
       const res = await fetch('/api/campaigns/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ asin: row.asin, campaignName: row.product || undefined, endsAt: row.endsAt || undefined }),
+        body: JSON.stringify({ asin: row.asin, campaignName: row.product || undefined, endsAt: row.endsAt || undefined, creatorNote: creatorNote || undefined }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok || j?.error) { toast.error(j?.error || `Failed (${res.status})`, { id: tId, duration: 8000 }); return }
