@@ -16,6 +16,7 @@ import SeoHubTabs from '@/components/seo/SeoHubTabs'
 import AiVisibilityCard from '@/components/seo/AiVisibilityCard'
 import StartHere from '@/components/seo/StartHere'
 import BlogHealthCard from '@/components/seo/BlogHealth'
+import ConsolidationCard from '@/components/seo/Consolidation'
 import AioReadinessCard from '@/components/seo/AioReadinessCard'
 import GetFound404Upload from '@/components/seo/GetFound404Upload'
 import { SeoGuide } from '@/components/guide/tool-guides'
@@ -819,6 +820,7 @@ export default function SeoPage() {
           stopped four days ago needs to know that before they read a list of
           improvements. */}
       <BlogHealthCard />
+      <ConsolidationCard />
 
       <StartHere
         summary={data?.summary ?? null}
