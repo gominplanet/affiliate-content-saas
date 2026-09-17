@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon, ChevronLeft, ChevronRight, Users as UsersIcon, Mail, Send } from 'lucide-react'
+import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon, ChevronLeft, ChevronRight, Users as UsersIcon, Mail, Send, Trash2 } from 'lucide-react'
 
 type Tier = 'trial' | 'creator' | 'amazon' | 'studio' | 'pro' | 'admin'
 
@@ -38,6 +38,22 @@ const TIER_BADGE: Record<Tier, string> = {
   admin:   'bg-[#ff9500]/10 text-[#ff9500]',   // orange
 }
 
+interface UserPost {
+  id: string
+  title: string | null
+  wordpress_post_id: number | null
+  wordpress_url: string | null
+  created_at: string
+  status: string | null
+}
+
+interface DeleteResult {
+  ok: boolean
+  summary?: string
+  error?: string
+  results?: Array<{ id: string; title: string; outcome: string; detail: string; freedSlot: boolean }>
+}
+
 export default function AdminUsersPage() {
   const [email, setEmail] = useState('')
   // Affiliate-link preview for THIS user's posts. Read-only: the route refuses
@@ -57,6 +73,18 @@ export default function AdminUsersPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
 
   // Direct message
+  // Delete a customer's posts on their behalf. Exists because MVP's own delete
+  // is scoped to the caller, so the only person who could clean up a duplicate
+  // WE published was the person it happened to.
+  const [postsOpen, setPostsOpen] = useState(false)
+  const [postsLoading, setPostsLoading] = useState(false)
+  const [userPosts, setUserPosts] = useState<UserPost[]>([])
+  const [postsError, setPostsError] = useState<string | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [deleteResult, setDeleteResult] = useState<DeleteResult | null>(null)
+
   const [msgOpen, setMsgOpen] = useState(false)
   const [msgSubject, setMsgSubject] = useState('')
   const [msgBody, setMsgBody] = useState('')
@@ -105,6 +133,14 @@ export default function AdminUsersPage() {
     setSaveError(null)
     // Never carry a half-typed message across to a DIFFERENT user — that's how
     // the wrong person gets emailed.
+    // Same reason as the message reset below: never carry one creator's
+    // selected posts across to a different creator's card.
+    setPostsOpen(false)
+    setUserPosts([])
+    setPicked(new Set())
+    setDeleteConfirm(false)
+    setDeleteResult(null)
+    setPostsError(null)
     setMsgOpen(false)
     setMsgSubject('')
     setMsgBody('')
@@ -127,6 +163,47 @@ export default function AdminUsersPage() {
       setLookupError(err instanceof Error ? err.message : 'Lookup failed')
     } finally {
       setLooking(false)
+    }
+  }
+
+  async function loadPosts() {
+    if (!user) return
+    setPostsLoading(true)
+    setPostsError(null)
+    try {
+      const res = await fetch(`/api/admin/user-posts?userId=${encodeURIComponent(user.id)}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load posts')
+      setUserPosts((data.posts ?? []) as UserPost[])
+      setPostsOpen(true)
+    } catch (err) {
+      setPostsError(err instanceof Error ? err.message : 'Could not load posts')
+    } finally {
+      setPostsLoading(false)
+    }
+  }
+
+  async function deletePicked() {
+    if (!user || picked.size === 0) return
+    setDeleting(true)
+    setDeleteResult(null)
+    try {
+      const res = await fetch('/api/admin/user-posts', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, postIds: Array.from(picked) }),
+      })
+      const data = await res.json().catch(() => null)
+      // A call that could not report is not a call that deleted nothing, and
+      // the two must not print the same sentence.
+      setDeleteResult((data as DeleteResult) ?? { ok: false, error: 'The delete returned nothing readable.' })
+      setPicked(new Set())
+      setDeleteConfirm(false)
+      await loadPosts()
+    } catch (err) {
+      setDeleteResult({ ok: false, error: err instanceof Error ? err.message : 'The delete could not be started.' })
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -313,6 +390,109 @@ export default function AdminUsersPage() {
               <p className="text-[12px] mt-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(245,158,11,0.10)', color: '#b45309' }}>
                 {linkError}
               </p>
+            )}
+          </div>
+
+          {/* Delete posts on the creator's behalf.
+              The monthly allowance is COUNT(blog_posts) in the billing window,
+              not a counter, so removing the row here is what actually returns
+              the slot. Deleting in WP admin would take the post off their site
+              and leave the slot spent, which is not something a customer should
+              have to know. */}
+          <div className="border-t border-gray-100 dark:border-white/10 pt-4 mb-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Delete posts for this user</p>
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">
+                  Removes them from their site and from MVP, which puts the slot back on their monthly allowance.
+                </p>
+              </div>
+              {!postsOpen && (
+                <button onClick={loadPosts} disabled={postsLoading} className="btn-secondary text-sm flex items-center gap-1.5 flex-shrink-0">
+                  {postsLoading ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  {postsLoading ? 'Loading' : 'Their posts'}
+                </button>
+              )}
+            </div>
+
+            {postsError && <p className="text-[11px] text-[#ff3b30] mt-2">{postsError}</p>}
+
+            {deleteResult && (
+              <div className="mt-3 rounded-lg p-3" style={{ backgroundColor: deleteResult.ok === false ? '#ff3b3012' : '#f5f5f710' }}>
+                <p className="text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  {deleteResult.ok === false
+                    ? `The delete could not run, so nothing was changed. ${deleteResult.error ?? ''}`
+                    : deleteResult.summary}
+                </p>
+                {(deleteResult.results ?? []).length > 0 && (
+                  <ul className="mt-2 flex flex-col gap-1">
+                    {(deleteResult.results ?? []).map(r => (
+                      <li key={r.id} className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">
+                        <span className={r.freedSlot ? 'text-[#34c759]' : 'text-[#ff9500]'}>{r.outcome}</span>
+                        {' · '}{r.title}{' · '}<span className="text-[#86868b]">{r.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {postsOpen && (
+              <div className="mt-3">
+                {userPosts.length === 0 ? (
+                  <p className="text-[12px] text-[#86868b]">This account has no posts on record.</p>
+                ) : (
+                  <>
+                    <ul className="flex flex-col gap-1 max-h-72 overflow-y-auto pr-1">
+                      {userPosts.map(p => (
+                        <li key={p.id} className="flex items-start gap-2 py-1 border-b border-gray-100 dark:border-white/5 last:border-0">
+                          <input
+                            type="checkbox"
+                            className="mt-1 flex-shrink-0"
+                            checked={picked.has(p.id)}
+                            onChange={e => {
+                              const next = new Set(picked)
+                              if (e.target.checked) next.add(p.id)
+                              else next.delete(p.id)
+                              setPicked(next)
+                              setDeleteConfirm(false)
+                            }}
+                          />
+                          <div className="min-w-0">
+                            <p className="text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{p.title || 'Untitled'}</p>
+                            <p className="text-[10px] text-[#86868b]">
+                              {p.created_at?.slice(0, 10)}
+                              {p.wordpress_post_id ? ` · wp #${p.wordpress_post_id}` : ' · never published'}
+                              {p.wordpress_url ? ` · ${(() => { try { return new URL(p.wordpress_url).hostname } catch { return '' } })()}` : ''}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+
+                    {picked.size > 0 && (
+                      <div className="mt-3 flex items-center gap-2 flex-wrap">
+                        {!deleteConfirm ? (
+                          <button onClick={() => setDeleteConfirm(true)} className="btn-secondary text-xs" style={{ color: '#ff3b30' }}>
+                            Delete {picked.size} selected
+                          </button>
+                        ) : (
+                          <>
+                            <span className="text-[11px] text-[#ff3b30]">
+                              This removes {picked.size} post{picked.size === 1 ? '' : 's'} from {user.email}&apos;s live site. It cannot be undone.
+                            </span>
+                            <button onClick={deletePicked} disabled={deleting} className="btn-primary text-xs inline-flex items-center gap-1.5">
+                              {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                              {deleting ? 'Deleting' : 'Yes, delete them'}
+                            </button>
+                            <button onClick={() => setDeleteConfirm(false)} className="btn-secondary text-xs">Cancel</button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             )}
           </div>
 
