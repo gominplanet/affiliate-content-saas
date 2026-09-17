@@ -1,4 +1,5 @@
 import { NextResponse, after } from 'next/server'
+import { getBrandPresetId } from '@/lib/brand-preset'
 import { clickableTitleRulesForBlog } from '@/lib/clickable-titles'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -2424,6 +2425,7 @@ async function handleGenerate(request: Request) {
           })
           if (ref.productImageUrl) {
             const hero = await generateArtDirectorBlogHero({
+        presetId: await getBrandPresetId(user.id),
               productImageUrl: ref.productImageUrl,
               productTitle: ref.productTitle || generated.title,
               productContext: rawDescription?.slice(0, 700),

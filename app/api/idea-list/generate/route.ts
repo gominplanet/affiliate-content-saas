@@ -14,6 +14,7 @@
 //
 // Paid tiers; counts against the monthly generation limit.
 import { NextResponse } from 'next/server'
+import { getBrandPresetId } from '@/lib/brand-preset'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, checkGenerationLimit, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
@@ -227,6 +228,7 @@ ${fullListCta}`)
       if (topImg) {
         try {
           const ad = await generateArtDirectorBlogHero({
+        presetId: await getBrandPresetId(user.id),
             productImageUrl: topImg, productTitle: postTitle || angle, productContext: angle,
             userId: user.id, tier, headlineStyle: heroHeadlineStyle,
           })

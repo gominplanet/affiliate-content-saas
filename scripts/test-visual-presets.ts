@@ -290,6 +290,69 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
     !/update .*brand_profiles.*set .*visual_preset/i.test(MIGRATION))
 }
 
+// ── every surface the picker names is actually wired ────────────────────────
+// The presets shipped wired to YouTube thumbnails only, while the picker said
+// they set "blog headers, YouTube thumbnails and Pinterest pins". That sentence
+// was written before the wiring and was wrong the moment it went out: pick
+// Editorial and you got it on YouTube and the old loud house style on every pin
+// and every article header.
+//
+// A claim in UI copy about which surfaces a setting reaches is exactly the kind
+// of thing nobody re-checks, so it is checked here.
+{
+  const strip = (x: string) => x.split('\n').filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
+  const read = (f: string) => strip(readFileSync(join(__dirname, '..', f), 'utf8'))
+
+  const AD = read('lib/art-director-pin.ts')
+  check('all four pin and hero generators take a preset',
+    (AD.match(/presetId\?: string \| null/g) || []).length === 4,
+    'Pinterest pins and blog heroes carried the same hardcoded loud aesthetic')
+  check('and every one of them renders it',
+    (AD.match(/presetToPrompt\(/g) || []).length >= 4)
+  check('the pin uses the vertical frame and the hero the wide one',
+    /surface: 'pin'/.test(AD) && /surface: 'hero'/.test(AD))
+  check('the loud house style is gone from the pin and hero prompts',
+    !/Vibrant, modern, high-contrast, layered/.test(AD)
+    && !/Vibrant and modern, never flat/.test(AD),
+    'one look handed to every account, exactly as the thumbnail prompt did')
+  check('callout chips are gated on the look carrying them',
+    /badges && callouts\.length/.test(AD),
+    'a chip on a quiet pin collapses it the same way it does on a thumbnail')
+
+  // Every call site must pass one. A generator that accepts a preset and is
+  // called without one renders the default while looking wired.
+  const CALLERS = [
+    'app/api/blog/generate/route.ts',
+    'app/api/idea-list/generate/route.ts',
+    'lib/pin-assets.ts',
+    'lib/deal-pin.ts',
+    'lib/post-hero.ts',
+  ]
+  for (const f of CALLERS) {
+    const src = read(f)
+    const calls = (src.match(/generateArtDirector(Pin|BlogHero|CollagePin|RoundupHero)\(\{/g) || []).length
+    const passes = (src.match(/presetId: await getBrandPresetId\(/g) || []).length
+    if (calls !== passes) {
+      check(`${f} passes a preset at every call site`, false, `${calls} calls, ${passes} pass one`)
+      break
+    }
+  }
+  check('every art-director call site passes the chosen look', true)
+
+  const HELPER = read('lib/brand-preset.ts')
+  check('an unreadable preset falls back rather than failing the image',
+    /catch \{/.test(HELPER) && /return null/.test(HELPER))
+
+  // And the copy itself: it may only name surfaces that are wired.
+  const PICKER = read('components/brand/VisualPresetPicker.tsx')
+  const claimsPins = /Pinterest/i.test(PICKER)
+  const claimsHeroes = /blog header/i.test(PICKER)
+  check('if the copy claims Pinterest, Pinterest is wired',
+    !claimsPins || /surface: 'pin'/.test(AD))
+  check('if the copy claims blog headers, they are wired',
+    !claimsHeroes || /surface: 'hero'/.test(AD))
+}
+
 // ── break tests ─────────────────────────────────────────────────────────────
 {
   const breaks: string[] = []
@@ -344,7 +407,18 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
     /THIS LOOK CARRIES NO BADGES/.test(quietRules)
     && /Return "" for banner/.test(quietRules))
 
-  // Break 9: one surface drifting from the others, which gives a creator three
+  // Break 9: a generator that takes a preset but is called without one, which
+  // is how Pinterest and blog heroes shipped rendering the default while the
+  // picker told creators they were covered.
+  {
+    const strip2 = (x: string) => x.split('\n').filter(l => !l.trim().startsWith('//')).join('\n')
+    const src = strip2(readFileSync(join(__dirname, '..', 'lib/post-hero.ts'), 'utf8'))
+    const calls = (src.match(/generateArtDirector\w+\(\{/g) || []).length
+    const passes = (src.match(/presetId: await getBrandPresetId\(/g) || []).length
+    broke('a call site that drops the preset is caught', calls > 0 && calls === passes)
+  }
+
+  // Break 10: one surface drifting from the others, which gives a creator three
   // brands across three places they publish.
   const p = resolvePreset('retro')
   broke('a surface dropping the direction is caught',

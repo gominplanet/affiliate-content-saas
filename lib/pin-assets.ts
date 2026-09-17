@@ -8,6 +8,7 @@
  * compositing and compliance text stay consistent everywhere.
  */
 import { GoogleGenAI } from '@google/genai'
+import { getBrandPresetId } from '@/lib/brand-preset'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
@@ -264,6 +265,7 @@ Return ONLY valid JSON with these exact keys:
   let artDirected: { data: string; mediaType: string } | null = null
   if ((opts?.aiScene || opts?.artDirector) && !useCollage && referenceImageUrl) {
     artDirected = await generateArtDirectorPin({
+        presetId: await getBrandPresetId(ctx.userId),
       productImageUrl: referenceImageUrl,
       productTitle: fields.product_name,
       productContext: [fields.main_benefit, fields.trust_factor].filter(Boolean).join(' · '),
@@ -310,6 +312,7 @@ Return ONLY valid JSON with these exact keys:
       }))).filter(Boolean) as Array<{ imageUrl: string; title: string }>
       if (resolved.length >= 2) {
         artDirected = await generateArtDirectorCollagePin({
+        presetId: await getBrandPresetId(ctx.userId),
           products: resolved,
           category: fields.product_category,
           kind: roundupKind,

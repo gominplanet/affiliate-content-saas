@@ -41,6 +41,7 @@
 // produce raw product photos for months.
 
 import { TIERS, normalizeTier } from '@/lib/tier'
+import { getBrandPresetId } from '@/lib/brand-preset'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { spendGate } from '@/lib/ai-spend'
 import { generateArtDirectorBlogHero, generateArtDirectorRoundupHero, type HeadlineStyle } from '@/lib/art-director-pin'
@@ -158,6 +159,7 @@ export async function attachPostHero(req: HeroRequest): Promise<HeroOutcome> {
     // wearing one photo of a fridge.
     const hero = usable.length >= 2
       ? await generateArtDirectorRoundupHero({
+        presetId: await getBrandPresetId(req.userId),
         products: usable.slice(0, 4),
         category: req.category || req.title,
         kind: req.kind === 'deal' ? 'deal' : 'guide',
@@ -166,6 +168,7 @@ export async function attachPostHero(req: HeroRequest): Promise<HeroOutcome> {
         tier: req.tier ?? null,
       })
       : await generateArtDirectorBlogHero({
+        presetId: await getBrandPresetId(req.userId),
         productImageUrl: usable[0].imageUrl,
         productTitle: usable[0].title,
         productContext: (req.productContext || '').slice(0, 700),

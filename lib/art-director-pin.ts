@@ -12,6 +12,7 @@ import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { NO_BRAND_IMAGE_CLAUSE, stripDesignBrands } from '@/lib/image-guard'
 import { badDealCopy, dealFallbackHeadline, DEAL_FALLBACK_SUBHEAD } from '@/lib/deal-pin-copy'
 import { scrubBanned } from '@/lib/scrub'
+import { resolvePreset, presetToPrompt } from '@/lib/visual-presets'
 
 interface Brief { line1: string; line2: string; callouts: string[]; concept: string; palette: string }
 
@@ -77,6 +78,10 @@ async function designPinBrief(productTitle: string, productContext: string, user
  * base64 JPEG (data + mediaType) or null on any failure.
  */
 export async function generateArtDirectorPin(opts: {
+  /** The brand's chosen look. Pinterest pins and blog heroes carried the same
+   *  hardcoded loud aesthetic as the thumbnails did, so a creator who picked a
+   *  quiet look got it on YouTube and the old one everywhere else. */
+  presetId?: string | null
   productImageUrl: string
   productTitle: string
   productContext?: string
@@ -98,15 +103,22 @@ export async function generateArtDirectorPin(opts: {
     const line1 = brief?.line1 || stripDesignBrands(opts.productTitle).toUpperCase().slice(0, 16)
     const line2 = brief?.line2 || ''
     const callouts = brief?.callouts?.length ? brief.callouts : []
+    const preset = resolvePreset(opts.presetId)
 
     const prompt = [
-      'FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait). A shopping pin whose only job is to earn the click to buy: a big bold headline across the TOP, a STACKED vertical list of benefit/feature callouts (checkmarks or chips) down the middle, and a strong shop-style call-to-action near the BOTTOM (e.g. "TAP TO SHOP"). Vibrant, modern, high-contrast, layered — never flat or template-like. Fill the tall frame top-to-bottom.',
+      // Layout is Pinterest's requirement and stays. The STYLE came out and is
+      // the brand's choice now: the sentence that used to sit here said
+      // "Vibrant, modern, high-contrast, layered", which is one look handed to
+      // every account exactly as the thumbnail prompt did.
+      `FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait). A shopping pin whose job is to earn the click: headline across the TOP, the product as the hero, and a call to action near the BOTTOM. Fill the tall frame top to bottom.`,
+      '',
+      presetToPrompt(preset, { surface: 'pin', palette: brief?.palette || null }),
+      '',
       brief?.concept ? `DESIGN CONCEPT: ${brief.concept}` : '',
-      brief?.palette ? `COLOUR PALETTE: ${brief.palette}.` : '',
       `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently — its true shape, colours and its own printed branding. Light it naturally with a grounded shadow; no glow ring.`,
       'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections. If Image 1 shows a model or hands, keep ONLY the product.',
       `MAIN HEADLINE — render EXACTLY, spelling perfect: "${line1} ${line2}". A designed, layered look (mixed colour/size/weight), placed where it does NOT cover the product.`,
-      callouts.length ? `CALLOUTS: work these in as small bright checkmark chips or spec pills, correctly spelled: ${callouts.join(' · ')}.` : '',
+      preset.badges && callouts.length ? `CALLOUTS: work these in as small bright checkmark chips or spec pills, correctly spelled: ${callouts.join(' · ')}.` : '',
       'NO YEARS OR DATES anywhere in the image (no "2025", "2026") — keep it evergreen so it never looks dated.',
       NO_BRAND_IMAGE_CLAUSE,
       'FRAMING: the entire canvas is shown — nothing cropped. Keep every headline, badge, callout and the whole product inside a ~5% safe margin on all four sides.',
@@ -142,6 +154,10 @@ export async function generateArtDirectorPin(opts: {
  * the existing thumbnail). Counts a landscape-thumbnail token when it succeeds.
  */
 export async function generateArtDirectorBlogHero(opts: {
+  /** The brand's chosen look. Pinterest pins and blog heroes carried the same
+   *  hardcoded loud aesthetic as the thumbnails did, so a creator who picked a
+   *  quiet look got it on YouTube and the old one everywhere else. */
+  presetId?: string | null
   productImageUrl: string
   productTitle: string
   productContext?: string
@@ -165,13 +181,18 @@ export async function generateArtDirectorBlogHero(opts: {
     const callouts = brief?.callouts?.length ? brief.callouts : []
 
     const prompt = [
-      'FORMAT — READ FIRST: a 16:9 LANDSCAPE blog article hero image (1536×864, wide). A polished, high-contrast product-review header graphic: the product as the hero, a big bold designed headline, small benefit callouts. Vibrant and modern, never flat or template-like. Fill the wide frame with a clean layout.',
+      // Layout stays, style goes to the brand. The sentence removed here read
+      // "polished, high-contrast ... Vibrant and modern", one look for everyone.
+      'FORMAT — READ FIRST: a 16:9 LANDSCAPE blog article hero image (1536×864, wide). The product as the hero with a designed headline. Fill the wide frame with a clean layout.',
+      '',
+      presetToPrompt(resolvePreset(opts.presetId), { surface: 'hero', palette: brief?.palette || null }),
+      '',
       brief?.concept ? `DESIGN CONCEPT: ${brief.concept}` : '',
       brief?.palette ? `COLOUR PALETTE: ${brief.palette}.` : '',
       'PRODUCT (the hero): recreate the product from Image 1 accurately and prominently — its true shape, colours and its own printed branding. Light it naturally with a grounded shadow; no glow ring.',
       'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections. If Image 1 shows a model or hands, keep ONLY the product.',
       `MAIN HEADLINE — render EXACTLY, spelling perfect: "${line1} ${line2}". A designed, layered look (mixed colour/size/weight), placed where it does NOT cover the product.`,
-      callouts.length ? `CALLOUTS: work these in as small bright checkmark chips or spec pills, correctly spelled: ${callouts.join(' · ')}.` : '',
+      resolvePreset(opts.presetId).badges && callouts.length ? `CALLOUTS: work these in as small bright checkmark chips or spec pills, correctly spelled: ${callouts.join(' · ')}.` : '',
       'NO YEARS OR DATES anywhere in the image (no "2025", "2026") — keep it evergreen so it never looks dated.',
       NO_BRAND_IMAGE_CLAUSE,
       'FRAMING: the entire canvas is shown — nothing cropped. Keep every headline, badge, callout and the whole product inside a ~5% safe margin on all four sides.',
@@ -247,6 +268,10 @@ async function designCollageBrief(category: string, productTitles: string[], use
  * failure (caller falls back to the name-grounded collage).
  */
 export async function generateArtDirectorCollagePin(opts: {
+  /** The brand's chosen look. Pinterest pins and blog heroes carried the same
+   *  hardcoded loud aesthetic as the thumbnails did, so a creator who picked a
+   *  quiet look got it on YouTube and the old one everywhere else. */
+  presetId?: string | null
   products: Array<{ imageUrl: string; title: string }>
   category: string
   /** 'deal' = a Deal Radar roundup of price drops; 'guide' = a buying guide.
@@ -291,8 +316,11 @@ export async function generateArtDirectorCollagePin(opts: {
       // guide, where the order means something; on a deals grid they imply a
       // ranking that does not exist.
       isDeal
-        ? `FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait) for a ROUNDUP OF ${n} CURRENT PRICE DROPS. Show ALL ${n} products TOGETHER on ONE design as ${layout}, each in its own clearly separated tile. This is a DEALS board, not a review: energetic, retail-sale feel, with a bold headline band across the TOP and a shop-style call-to-action near the BOTTOM (e.g. "SEE ALL DEALS", "TAP TO SHOP"). Bright, high-contrast, urgent without being tacky. No numbered ranking badges — these are simultaneous deals, not a countdown.`
-        : `FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait) for a MULTI-PRODUCT buying guide. Show ALL ${n} products TOGETHER on ONE design as ${layout}, each product in its own clearly separated tile with a small round number badge (1, 2, 3${n >= 4 ? ', 4' : ''}). A bold headline band across the TOP and a shop-style call-to-action near the BOTTOM (e.g. "SEE ALL PICKS"). Vibrant, modern, high-contrast, magazine-roundup feel — never flat or template-like.`,
+        ? `FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait) for a ROUNDUP OF ${n} CURRENT PRICE DROPS. Show ALL ${n} products TOGETHER on ONE design as ${layout}, each in its own clearly separated tile, with a headline band across the TOP and a call to action near the BOTTOM. This is a DEALS board, not a review: the news is the price. No numbered ranking badges — these are simultaneous deals, not a countdown.`
+        : `FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait) for a MULTI-PRODUCT buying guide. Show ALL ${n} products TOGETHER on ONE design as ${layout}, each in its own clearly separated tile with a small round number badge (1, 2, 3${n >= 4 ? ', 4' : ''}). A headline band across the TOP and a call to action near the BOTTOM.`,
+      '',
+      presetToPrompt(resolvePreset(opts.presetId), { surface: 'pin', palette: brief?.palette || null }),
+      '',
       // An image model reaches for a sale starburst the moment it is told
       // "deals", and it has no idea what anything costs. A made-up "50% OFF"
       // baked into a published pin is a price claim we cannot stand behind, so
@@ -339,6 +367,10 @@ export async function generateArtDirectorCollagePin(opts: {
  * whatever it would have used before.
  */
 export async function generateArtDirectorRoundupHero(opts: {
+  /** The brand's chosen look. Pinterest pins and blog heroes carried the same
+   *  hardcoded loud aesthetic as the thumbnails did, so a creator who picked a
+   *  quiet look got it on YouTube and the old one everywhere else. */
+  presetId?: string | null
   products: Array<{ imageUrl: string; title: string }>
   category: string
   /** 'deal' = current price drops; 'guide' = considered picks. Drives both the
@@ -373,8 +405,11 @@ export async function generateArtDirectorRoundupHero(opts: {
 
     const prompt = [
       isDeal
-        ? `FORMAT — READ FIRST: a 16:9 LANDSCAPE blog article hero (1536×864, wide) for a ROUNDUP OF ${n} CURRENT PRICE DROPS. Show ALL ${n} products TOGETHER across one wide composition, each clearly separated and readable at a glance. This is a DEALS header, not a review: energetic, retail-sale feel, bright and high-contrast, urgent without being tacky. No numbered ranking badges — these are simultaneous deals, not a countdown.`
-        : `FORMAT — READ FIRST: a 16:9 LANDSCAPE blog article hero (1536×864, wide) for a MULTI-PRODUCT buying guide. Show ALL ${n} products TOGETHER across one wide composition, each clearly separated, with a small round number badge (1, 2, 3${n >= 4 ? ', 4' : ''}). Vibrant, modern, magazine-roundup feel — never flat or template-like.`,
+        ? `FORMAT — READ FIRST: a 16:9 LANDSCAPE blog article hero (1536×864, wide) for a ROUNDUP OF ${n} CURRENT PRICE DROPS. Show ALL ${n} products TOGETHER across one wide composition, each clearly separated and readable at a glance. This is a DEALS board, not a review: the news is the price. No numbered ranking badges — these are simultaneous deals, not a countdown.`
+        : `FORMAT — READ FIRST: a 16:9 LANDSCAPE blog article hero (1536×864, wide) for a MULTI-PRODUCT buying guide. Show ALL ${n} products TOGETHER across one wide composition, each clearly separated, with a small round number badge (1, 2, 3${n >= 4 ? ', 4' : ''}).`,
+      '',
+      presetToPrompt(resolvePreset(opts.presetId), { surface: 'hero', palette: brief?.palette || null }),
+      '',
       brief?.palette ? `COLOUR PALETTE: ${brief.palette}.` : '',
       `PRODUCTS (the heroes): the ${n} attached images are the ${n} products IN ORDER. Recreate EACH one accurately — its true shape, colours and its own printed branding — one per slot, equally prominent and crisp. Do NOT merge, duplicate, or invent extra products; exactly ${n} distinct products, matching the ${n} references.`,
       // A wide frame reads better with somewhere for the products to sit than

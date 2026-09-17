@@ -11,6 +11,7 @@
 // the copy, guarantees the FTC disclosure + #ad #sponsored, picks the board, and
 // heals a stale sandbox board. No blog post required.
 import { generateArtDirectorPin } from '@/lib/art-director-pin'
+import { getBrandPresetId } from '@/lib/brand-preset'
 import { publishAmazonPin, type PinIntegration } from '@/lib/amazon-pin-publish'
 import type { Tier } from '@/lib/tier'
 
@@ -55,6 +56,7 @@ export async function publishDealPin(opts: {
 
   // Design the vertical pin from the product photo. Base64 back — no hosting.
   const designed = await generateArtDirectorPin({
+        presetId: await getBrandPresetId(opts.userId),
     productImageUrl: opts.productImageUrl,
     productTitle: opts.title,
     userId: opts.userId,
