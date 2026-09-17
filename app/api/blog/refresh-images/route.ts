@@ -24,6 +24,7 @@ import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/
 import { fal } from '@fal-ai/client'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { imagesStatusOf } from '@/lib/images-status'
 
 export const maxDuration = 300
 
@@ -195,15 +196,22 @@ export async function POST(request: Request) {
   // then the client calls this route with userImageUrls. Mirrors the immediate
   // generate route's user-image block.
   if (userImageUrls.length > 0) {
+    // `hosted` records whether the photo ACTUALLY LANDED on the creator's site,
+    // as opposed to being embedded from wherever it already lived. Without it
+    // `uploaded.length` is the same either way and this route wrote 'ready'
+    // either way, which is how 186 published posts came to be pointing at
+    // pictures their owners do not hold. See lib/images-status.
     const uploaded = (await Promise.all(userImageUrls.map(async (src, i) => {
+      const alt = `${(post.title as string) || 'product'} — photo ${i + 1}`
       try {
         const media = await wpService.uploadImageFromUrl(src, `${post.slug || 'post'}-body${i + 1}.jpg`)
-        const url = media?.source_url || src // fallback: embed the public URL directly
-        return { url, alt: `${(post.title as string) || 'product'} — photo ${i + 1}` }
+        return media?.source_url
+          ? { url: media.source_url, alt, hosted: true }
+          : { url: src, alt, hosted: false } // fallback: embed the public URL directly
       } catch {
-        return { url: src, alt: `${(post.title as string) || 'product'} — photo ${i + 1}` }
+        return { url: src, alt, hosted: false }
       }
-    }))).filter((r): r is { url: string; alt: string } => !!r?.url)
+    }))).filter((r): r is { url: string; alt: string; hosted: boolean } => !!r?.url)
 
     if (uploaded.length === 0) return NextResponse.json({ error: 'Could not attach your photos — try again in a moment.' }, { status: 502 })
 
@@ -214,10 +222,25 @@ export async function POST(request: Request) {
       if (isStalePostError(err)) return NextResponse.json({ error: WP_STALE_POST_MESSAGE, code: 'wp_post_deleted' }, { status: 410 })
       return NextResponse.json({ error: `WordPress update failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
     }
+    const userHostedCount = uploaded.filter(u => u.hosted).length
+    const userImagesStatus = imagesStatusOf(uploaded.length, userHostedCount)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: 'ready' }).eq('id', post.id) } catch { /* non-fatal */ }
-    return NextResponse.json({ ok: true, count: uploaded.length, placed: offsets.length, similarPairs: [], userImages: true })
+    try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_hosted_count: userHostedCount, images_status: userImagesStatus }).eq('id', post.id) } catch {
+      // images_hosted_count arrives with migration 339. PostgREST rejects the
+      // whole statement over one unknown column, so retry without it rather
+      // than lose the status too.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: userImagesStatus }).eq('id', post.id) } catch { /* non-fatal */ }
+    }
+    return NextResponse.json({
+      ok: true,
+      count: uploaded.length,
+      hostedCount: userHostedCount,
+      imagesStatus: userImagesStatus,
+      placed: offsets.length,
+      similarPairs: [],
+      userImages: true,
+    })
   }
 
   // The user hitting Refresh / Re-roll Images / the auto-trigger
@@ -359,19 +382,22 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
       // multipart POST to /wp-json/wp/v2/media is the common case), embed the
       // fal URL directly so the image still renders.
       let finalUrl = url
+      let hosted = false
       try {
         const media = await wpService.uploadImageFromUrl(url, `${post.slug || 'post'}-body${i + 1}.jpg`)
-        if (media?.source_url) finalUrl = media.source_url
+        if (media?.source_url) { finalUrl = media.source_url; hosted = true }
       } catch (e) {
         console.warn(`[refresh-images] item ${i} WP media upload failed, embedding fal URL directly:`, e instanceof Error ? e.message : String(e))
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recordUsageSafe(user.id, tier, bodyModel)
-      return { url: finalUrl, alt: altForThisImage }
+      // `hosted` is the whole difference between a picture the creator owns and
+      // one MVP is lending them until fal collects the file. See lib/images-status.
+      return { url: finalUrl, alt: altForThisImage, hosted }
     } catch { return null }
   }))
 
-  const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
+  const uploaded = results.filter((r): r is { url: string; alt: string; hosted: boolean } => !!r)
   if (uploaded.length === 0) return NextResponse.json({ error: 'Image generation failed — try again in a moment.' }, { status: 502 })
 
   // ── Visual variety check (2026-06-07 P2.3 fix) ──────────────────────
@@ -442,13 +468,30 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
   // page's diagnostic badge ("🖼 N") reflects the refresh result — otherwise a
   // post whose initial generation died at 0 images would keep showing the
   // orange ⚠ even after the user successfully re-rolled them.
+  //
+  // The status is earned from what landed, not assumed from what was asked
+  // for. This line used to write 'ready' unconditionally, which meant a
+  // re-roll onto a site that refuses uploads overwrote an honest 'hotlinked'
+  // with a lie, on the very posts the generate route had marked correctly.
+  const hostedCount = uploaded.filter(u => u.hosted).length
+  const imagesStatus = imagesStatusOf(uploaded.length, hostedCount)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: 'ready' }).eq('id', post.id) } catch { /* non-fatal */ }
+  try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_hosted_count: hostedCount, images_status: imagesStatus }).eq('id', post.id) } catch {
+    // images_hosted_count arrives with migration 339. PostgREST rejects the
+    // whole statement over one unknown column, so retry without it rather than
+    // lose the status as well.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: imagesStatus }).eq('id', post.id) } catch { /* non-fatal */ }
+  }
 
   return NextResponse.json({
     ok: true,
     count: uploaded.length,
+    // How many of `count` reached the creator's own site. The screen needs
+    // both: "added 3 images" and "none of them are on your site" are the same
+    // run, and only reporting the first is what hid this for four months.
+    hostedCount,
+    imagesStatus,
     placed: offsets.length,
     // Surfaced for the Library row's "Re-roll images" toast so the user
     // sees "added 3 images, but 2 look similar — consider re-rolling".

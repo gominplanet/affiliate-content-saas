@@ -58,6 +58,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { toUserMessage } from '@/lib/friendly-error'
 import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { imagesStatusOf } from '@/lib/images-status'
 
 /** Distinct camera perspectives cycled across a post's in-body images so
  *  no two shots look alike — each Kontext/flux call gets a different angle
@@ -2420,9 +2421,7 @@ async function handleGenerate(request: Request) {
             // from: the post looks right today and the creator does not own the
             // picture, so it is a site problem being reported as a success.
             const hostedCount = uploaded.filter(u => u.hosted).length
-            const imagesStatus = uploaded.length === 0
-              ? 'failed'
-              : hostedCount === uploaded.length ? 'ready' : 'hotlinked'
+            const imagesStatus = imagesStatusOf(uploaded.length, hostedCount)
             try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_hosted_count: hostedCount, images_status: imagesStatus }).eq('id', savedPost.id) } catch {
               // images_hosted_count arrives with migration 339. Until it runs,
               // record what the old columns can hold rather than losing the
@@ -2842,9 +2841,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
             // one of them was pointing at fal.media, which renders fine today
             // and is not his.
             const hostedCount = uploaded.filter(u => u.hosted).length
-            const imagesStatus = uploaded.length === 0
-              ? 'failed'
-              : hostedCount === uploaded.length ? 'ready' : 'hotlinked'
+            const imagesStatus = imagesStatusOf(uploaded.length, hostedCount)
             try { await (supabase as any).from('blog_posts').update({ body_images_count: uploaded.length, images_hosted_count: hostedCount, images_status: imagesStatus }).eq('id', savedPost.id) } catch {
               // images_hosted_count arrives with migration 339; until it runs,
               // still record the status rather than losing the write.

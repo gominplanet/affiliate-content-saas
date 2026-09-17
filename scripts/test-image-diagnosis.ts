@@ -38,6 +38,7 @@
 //   unknown    → fold it into any of the above and you have stated a finding
 //                you did not make, which is exactly how this went wrong
 import { diagnoseImages, type ImageProbe } from '../lib/wp-image-diagnosis'
+import { imagesStatusOf } from '../lib/images-status'
 import { readFileSync } from 'node:fs'
 
 const failures: string[] = []
@@ -208,11 +209,24 @@ function probe(over: Partial<ImageProbe>): ImageProbe {
   check('and the creator-upload path derives it from the media response',
     /media\?\.source_url\s*\?\s*\{ url: media\.source_url, alt: altFor\(i\), hosted: true \}/.test(src))
   check('and the hosted ones are counted', /uploaded\.filter\(u => u\.hosted\)/.test(src))
-  check("'ready' requires ALL of them to be hosted",
-    /hostedCount === uploaded\.length \? 'ready'/.test(src),
+  // The rule used to be written out inline here, and this clause grepped for
+  // it. It has since moved to lib/images-status, because the same rule was
+  // needed in /api/blog/refresh-images and that route was writing 'ready'
+  // unconditionally instead: one route honest, the other undoing it on every
+  // re-roll. So the clause follows the rule rather than the spelling. Asking
+  // the function is stronger than matching the source it used to live in.
+  check('the route delegates the rule instead of keeping a copy',
+    /imagesStatusOf\(uploaded\.length, hostedCount\)/.test(src),
+    'two routes holding this rule separately is exactly how refresh-images came to disagree with generate')
+  check("'ready' still requires ALL of them to be hosted",
+    imagesStatusOf(3, 3) === 'ready' && imagesStatusOf(3, 2) !== 'ready' && imagesStatusOf(3, 0) !== 'ready',
     "any looser and a site refusing every upload reports a clean run, which is what happened")
-  check('the in-between state has its own name', /'hotlinked'/.test(src),
+  check('the in-between state has its own name',
+    imagesStatusOf(3, 1) === 'hotlinked',
     'folding it into ready hides it; folding it into failed hides that the post is fine to read today')
+  check('and it is still distinct from nothing at all',
+    imagesStatusOf(0, 0) === 'failed',
+    'a post with no pictures is a different problem from a post whose pictures are not on the site')
   check('and the old always-ready test is gone',
     !/images_status: uploaded\.length > 0 \? 'ready' : 'failed'/.test(src),
     'that expression is true whenever anything was attempted, which is the defect')

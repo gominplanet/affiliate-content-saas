@@ -30,6 +30,7 @@ import { type Tier } from '@/lib/tier'
 import { RewriteFeedbackModal } from '@/components/content/RewriteFeedbackModal'
 import { errText } from '@/lib/err-text'
 import { generateBlogRequest } from '@/lib/blog-generate-client'
+import { describeImages } from '@/lib/images-status'
 
 // ── Generation status ───────────────────────────────────────────────────
 // 'pending' = the job ran past our wait window but is STILL generating in the
@@ -77,7 +78,7 @@ export function GenerateButton({
    *  capture; kept on the call-site signature for backwards compat
    *  but no longer read here (storyboards path handles it server-side). */
   youtubeVideoId?: string
-  existingPost?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; imagesStatus?: string | null } | null
+  existingPost?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; imagesHostedCount?: number | null; imagesStatus?: string | null } | null
   /** Drives whether the Rewrite button shows at all (Pro/Admin only). */
   userTier: Tier
   /** The user's saved Brand Profile → "Images per article" preference
@@ -128,13 +129,29 @@ export function GenerateButton({
       }
       const count = typeof j.count === 'number' ? j.count : 0
       const similarPairs = typeof j.similarPairsCount === 'number' ? j.similarPairsCount : 0
-      setResult((prev) => prev ? { ...prev, bodyImagesCount: count, imagesStatus: count > 0 ? 'ready' : 'failed' } : prev)
-      if (count > 0 && similarPairs > 0) {
-        toast.warning(`Added ${count} image${count === 1 ? '' : 's'}, but ${similarPairs} pair${similarPairs === 1 ? '' : 's'} look similar — consider Re-rolling`, { duration: 7000 })
+      // Take the status the SERVER earned. This line used to compute
+      // `count > 0 ? 'ready' : 'failed'` on the client, which relabelled a
+      // hot-linked run as a success the moment it came back, no matter what
+      // the route had just written to the row.
+      const hostedCount = typeof j.hostedCount === 'number' ? j.hostedCount : null
+      const serverStatus: string | null = typeof j.imagesStatus === 'string'
+        ? j.imagesStatus
+        : count > 0 ? null : 'failed'
+      setResult((prev) => prev ? { ...prev, bodyImagesCount: count, imagesHostedCount: hostedCount, imagesStatus: serverStatus } : prev)
+      if (serverStatus === 'hotlinked') {
+        // The one outcome that used to read as a win. It made pictures and not
+        // one of them is on the creator's site.
+        const notOurs = hostedCount === null ? count : count - hostedCount
+        toast.warning(
+          `Made ${count} picture${count === 1 ? '' : 's'}, but ${notOurs === count ? 'none of them are' : `${notOurs} of them ${notOurs === 1 ? 'is' : 'are'} not`} on your site. Your site refused the upload, so they are served from MVP for now. Run Test pictures in Setup, WordPress Doctor.`,
+          { duration: 12000 },
+        )
+      } else if (count > 0 && similarPairs > 0) {
+        toast.warning(`Added ${count} image${count === 1 ? '' : 's'}, but ${similarPairs} pair${similarPairs === 1 ? '' : 's'} look similar, consider Re-rolling`, { duration: 7000 })
       } else if (count > 0) {
         toast.success(`Added ${count} image${count === 1 ? '' : 's'}`)
       } else {
-        toast.error('Refreshed — but 0 images landed (check WP media upload).')
+        toast.error('Refreshed, but 0 images landed. Check WordPress media upload.')
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Image step failed')
@@ -485,10 +502,26 @@ export function GenerateButton({
             0     → after() ran but failed to insert anything — the actual case
                     we shipped this column to surface (Hostinger WAF, fal
                     hiccup, prompt empty). Orange ⚠ "Images failed".
-            >0    → green count, e.g. "🖼 3". */}
-        {typeof result.bodyImagesCount === 'number' && result.bodyImagesCount > 0 && (
+            >0    → green count, e.g. "🖼 3".
+            EXCEPT when the pictures never reached the creator's site. A green
+            count on a hot-linked post is why 186 of them went four months
+            without anyone noticing: it is the same badge a good post gets. */}
+        {typeof result.bodyImagesCount === 'number' && result.bodyImagesCount > 0 && result.imagesStatus !== 'hotlinked' && (
           <span className="inline-flex items-center gap-0.5 text-[#34c759]" title={`${result.bodyImagesCount} in-article image${result.bodyImagesCount === 1 ? '' : 's'} added to this post.`}>
             <span aria-hidden>🖼</span><span className="text-[10px] font-semibold">{result.bodyImagesCount}</span>
+          </span>
+        )}
+        {/* Pictures were made, and they live on MVP's image server rather than
+            the creator's. The article reads correctly today, which is exactly
+            what makes this worth saying out loud: fal deletes expired files and
+            cannot recover them, so the day one is collected the post has a gap
+            and there is no copy to put back. */}
+        {result.imagesStatus === 'hotlinked' && (
+          <span
+            className="inline-flex items-center gap-0.5 text-[#ff9500] font-semibold"
+            title={describeImages('hotlinked', result.bodyImagesCount ?? 0, result.imagesHostedCount ?? null).detail}
+          >
+            <span aria-hidden>🖼</span><span className="text-[10px]">Not on your site</span>
           </span>
         )}
         {/* Image-pass state — now driven by images_status (migration 246) so we
