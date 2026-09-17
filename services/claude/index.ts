@@ -322,6 +322,22 @@ SPECS AND NUMBERS (applies to every section, not one of them)
   const faqCount = planFaqCount(sourceBudget.sourceWords)
   const faqHeading = '<!-- wp:heading {"level":2} --><h2>Frequently Asked Questions</h2><!-- /wp:heading -->'
 
+  // The CTA card's own disclosure line.
+  //
+  // It used to repeat the full disclaimer verbatim. Measured on a representative
+  // post (lib/boilerplate-weight.ts), the same 20 word sentence appeared three
+  // times: once at the top of the post, once here, and once in the price strip.
+  // 60 of the post's 166 boilerplate words were that one sentence, the single
+  // largest item on the list.
+  //
+  // Two of the three are load-bearing and stay. The top-of-post one is the FTC
+  // disclosure, which has to be before the first affiliate link. The price strip
+  // one sits next to a displayed price and carries the "pricing and availability
+  // subject to change" wording the Amazon Operating Agreement requires there.
+  // This third copy was neither. It is now a short pointer, so the card still
+  // discloses at the point of click without restating the whole sentence.
+  const ctaDisclaimer = 'Affiliate link. See the disclosure at the top of this post.'
+
   const disclaimer = brand.affiliate_disclaimer
     || (isAmazon
       ? 'This post contains affiliate links. As an Amazon Associate, we earn from qualifying purchases at no extra cost to you.'
@@ -1467,7 +1483,7 @@ Use the exact same product name string here as in the mid-article CTA from [4]:
     <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored nofollow" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:${ctaBg};color:${ctaText};font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
       ${ctaButton}
     </a>
-    <p class="gr-cta-disclaimer" style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${disclaimer}</p>
+    <p class="gr-cta-disclaimer" style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${ctaDisclaimer}</p>
   </div>
   <div class="gr-cta-thumb-wrap">
     <img src="https://i.ytimg.com/vi/{VIDEO_ID}/mqdefault.jpg" alt="" loading="lazy" class="gr-cta-thumb" />

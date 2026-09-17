@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.95
+ * Version: 1.0.96
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -1025,6 +1025,70 @@ if (!function_exists('mvp_affiliate_after_verdict_box')) {
         return false;
     }
 }
+
+// ─── Serve the post CSS once, instead of once per post ───────────────────────
+// Every MVP post carried an identical 61 line <style> block inside its own
+// content: the .gr-video-wrap / .gr-verdict-box / .gr-cta-card / .gr-specs /
+// .gr-scorecard / .gr-tags rules. Same bytes, on every article, forever.
+//
+// To be accurate about why this is worth fixing: it is page weight, not a
+// duplicate-content problem. Search engines strip the CONTENTS of <style>
+// before they extract text, so repeated CSS was never feeding the near
+// duplicate signal it got blamed for. It is still hundreds of wasted bytes on
+// every page load, and a stylesheet living inside article bodies cannot be
+// changed without rewriting every post that carries it.
+//
+// The fix lives entirely here, on purpose. The generator keeps emitting the
+// inline block, so nothing depends on a creator updating this plugin:
+//
+//   new plugin, any post (old or new) -> we supply the CSS and strip the copy
+//   old plugin, any post              -> the inline copy renders, as before
+//   no plugin at all                  -> the inline copy renders, as before
+//
+// Every path renders styled. There is no version to gate on and no way for a
+// creator on an older plugin to end up with an unstyled article, which is the
+// failure mode a content-side removal would have created.
+if (!function_exists('mvp_affiliate_post_css')) {
+    function mvp_affiliate_post_css() {
+        return '.gr-video-wrap{margin:0 0 32px;width:100%}'
+            . '.gr-video-wrap .gr-video-container{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:4px;background:#111;box-shadow:0 4px 20px rgba(0,0,0,.15)}'
+            . '.gr-video-wrap .gr-video-container iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}';
+    }
+}
+
+// Printed once per page, in the head, where a stylesheet belongs.
+add_action('wp_head', mvp_affiliate_safe(function () {
+    if (!is_singular('post')) return;
+    echo "\n<style id=\"mvp-affiliate-post-css\">" . mvp_affiliate_post_css() . "</style>\n";
+}), 5);
+
+// Strip the generator's inline copy from the article body. Runs at priority 1,
+// before any filter that injects markup of its own, so it only ever sees the
+// stored content and can never eat a block another MVP filter just added.
+//
+// Deliberately narrow: it removes a <style> element ONLY when that element
+// contains one of our own class names. A creator who pasted their own CSS into
+// a post keeps it.
+add_filter('the_content', mvp_affiliate_safe(function ($content) {
+    if (!is_singular('post') || !is_string($content) || $content === '') return $content;
+    if (strpos($content, '<style') === false) return $content;
+    $out = preg_replace_callback(
+        '#<style\b[^>]*>(.*?)</style>#is',
+        function ($m) {
+            $css = $m[1];
+            $ours = (strpos($css, '.gr-video-wrap') !== false)
+                || (strpos($css, '.gr-cta-card') !== false)
+                || (strpos($css, '.gr-verdict-box') !== false)
+                || (strpos($css, '.gr-scorecard') !== false);
+            return $ours ? '' : $m[0];
+        },
+        $content
+    );
+    // preg_replace_callback returns null on a backtrack limit blowout, which a
+    // very long post can genuinely hit. Returning null there would blank the
+    // article, so fall back to the untouched content.
+    return is_string($out) ? $out : $content;
+}), 1);
 
 add_filter('the_content', mvp_affiliate_safe(function ($content) {
     if (!is_singular('post')) return $content;
