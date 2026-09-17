@@ -141,6 +141,9 @@ export async function GET() {
     velocity,
     ...report,
     // The list is long on a big site and the panel only ever shows the worst.
+    // The full count goes too, so the panel can say it is showing a slice
+    // rather than leaving a creator to notice the numbers disagree.
+    totalCandidates: report.candidates.length,
     candidates: report.candidates.slice(0, 100),
   })
 }

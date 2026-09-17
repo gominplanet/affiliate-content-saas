@@ -27,6 +27,8 @@ import type { VelocityRead } from '@/lib/publish-velocity'
 
 interface Payload extends ConsolidationReport {
   connected: boolean
+  /** How many candidates exist, before the API trimmed the list it sends. */
+  totalCandidates?: number
   totalPosts: number
   ageMonths: number | null
   velocity: VelocityRead
@@ -96,9 +98,11 @@ export default function ConsolidationCard() {
             Same subject, more than once
           </p>
           <p className="text-[12px] mb-2 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-            These cover the same product and none of them is being shown. Keeping the best one, folding
-            the others into it, and redirecting their URLs to it gives Google one page to rank instead
-            of several it has already passed over.
+            These look like they cover the same product, and none of them is being shown. Read each pair
+            before you act: the grouping is done on how rare the shared words are in your own titles, which
+            is a good signal and not a certainty. Where they really are the same thing, keeping the best one,
+            folding the others into it, and redirecting their URLs gives Google one page to rank instead of
+            several it has already passed over.
           </p>
           <div className="flex flex-col gap-1.5">
             {data.groups.slice(0, 6).map(g => (
@@ -136,6 +140,14 @@ export default function ConsolidationCard() {
             <button onClick={() => setExpanded(true)} className="text-[12px] mt-2 underline" style={{ color: 'var(--text-soft)' }}>
               Show the other {data.candidates.length - shown.length}
             </button>
+          )}
+          {/* The API sends the worst 100. Saying "show the other 92" under a
+              heading that counts 174 reads like a bug, so the gap is named. */}
+          {data.totalCandidates != null && data.totalCandidates > data.candidates.length && (
+            <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
+              Showing the {data.candidates.length} weakest of {data.totalCandidates.toLocaleString()}. Work through these
+              first and the rest will be a shorter list next time.
+            </p>
           )}
         </div>
       )}

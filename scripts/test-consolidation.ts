@@ -137,6 +137,16 @@ const post = (over: Partial<PostStat> & { id: string }): PostStat => ({
   check('but the product words survive',
     titleKeywords('DeWalt 20V Battery Adapter Review').includes('dewalt'))
 
+  // Review-title filler, stripped directly. Not load-bearing on its own, since
+  // the rarity rule catches most of it, but a small catalogue has no rarity to
+  // work with and "fix" paired a face mask with a sleep patch on a live site.
+  check('review filler carries no product identity',
+    titleKeywords('The Real Fix: Tested, Honest, Complete').length === 0,
+    titleKeywords('The Real Fix: Tested, Honest, Complete').join(','))
+  check('and "fix" specifically, which caused the live failure',
+    !titleKeywords('Fix Dry Skin?').includes('fix'),
+    titleKeywords('Fix Dry Skin?').join(','))
+
   // The threshold's real job. These share exactly ONE distinctive word, and a
   // kitchen scale is not a kitchen knife. Merging them because both are
   // "kitchen" would destroy a page over a category noun.
@@ -309,6 +319,82 @@ const post = (over: Partial<PostStat> & { id: string }): PostStat => ({
     hasHadItsChance(indexedAt, now, grace, indexedAt) === true)
 }
 
+// ── the groups the live panel got wrong ─────────────────────────────────────
+// Real titles from gominreviews.com. The first version grouped all of these and
+// three of the four groupings were wrong, because a brand name plus a category
+// noun clears a two-word threshold just as easily as a product name does.
+{
+  // The catalogue these live in: a site full of face masks and solar lights, so
+  // "mask", "collagen", "solar" and "lights" are the category, not the product.
+  const catalogue = [
+    'TOLEVITA Snail Mucin Bio-Collagen Face Mask: Fix Dry Skin?',
+    'TOLEVITA Sleep Patches Review: The No-Pill Fix',
+    'TOLEVITA Turmeric Vitamin C Bio-Collagen Mask: Real Glow?',
+    'Karseell Collagen Hair Mask for Damaged Hair Review',
+    'Sheet Mask Multipack Review: Worth The Money?',
+    'Clay Mask for Oily Skin: A Real Test',
+    'Collagen Peptide Powder Review',
+    '20-Inch Solar Landscape Lights: Real-World Performance Review',
+    'Solar Firefly Lights Review: Better Than Expected',
+    'SHONELIGHTING Solar Step Lights: 33 LEDs, Zero Wiring',
+    'Solar Fence Lights: Do They Last?',
+    'Solar Path Lights Review',
+    'String Lights for Patio Review',
+    'NUMANU Collapsible Stool: Portable Seat That Packs Small',
+    'Numanu Portable Telescopic Camping Stool Review',
+  ].map((title, i) => post({ id: `t${i}`, title, publishedAt: daysAgo(300) }))
+
+  const r = buildConsolidationReport(catalogue, { ageMonths: 24, now: NOW, statsAvailable: true })
+  const groupOf = (needle: string) =>
+    r.groups.find(g => g.titles.some(t => t.includes(needle)))
+
+  // WRONG before: a face mask and a sleep patch, joined by the brand and by the
+  // word "fix" meaning two different things.
+  const maskGroup = groupOf('Snail Mucin')
+  check('a face mask is not grouped with sleep patches',
+    !maskGroup?.titles.some(t => t.includes('Sleep Patches')),
+    JSON.stringify(maskGroup?.titles))
+
+  // WRONG before: two different brands, joined by "collagen" and "mask".
+  check('two brands are not grouped by a shared category noun',
+    !maskGroup?.titles.some(t => t.includes('Karseell')),
+    JSON.stringify(maskGroup?.titles))
+
+  // WRONG before: three different solar products, joined by "solar" and "lights".
+  const solarGroup = groupOf('20-Inch Solar')
+  check('three different solar products are not one product',
+    solarGroup === undefined || solarGroup.titles.length < 3,
+    JSON.stringify(solarGroup?.titles))
+
+  // RIGHT before, and must stay right: the same stool written up twice.
+  const stoolGroup = groupOf('NUMANU Collapsible')
+  check('the same product written twice IS still grouped',
+    stoolGroup?.titles.length === 2, JSON.stringify(stoolGroup?.titles))
+  check('and it is the two Numanu posts',
+    stoolGroup?.titles.every(t => /numanu/i.test(t)) === true,
+    JSON.stringify(stoolGroup?.titles))
+}
+
+// ── the count that cannot be right ──────────────────────────────────────────
+// The live panel reported 176 posts judged by evidence out of 174 candidates.
+// The two extra were posts that passed the gate and then turned out to be
+// working, counted before the check that would have excluded them.
+{
+  const posts: PostStat[] = [
+    post({ id: 'indexed-newest', publishedAt: daysAgo(10), impressions: 500, clicks: 30 }),
+    post({ id: 'fine', publishedAt: daysAgo(30), impressions: 900, clicks: 40 }),
+    post({ id: 'dead1', publishedAt: daysAgo(40), impressions: 0, clicks: 0 }),
+    post({ id: 'dead2', publishedAt: daysAgo(50), impressions: 0, clicks: 0 }),
+  ]
+  const r = buildConsolidationReport(posts, { ageMonths: 4, now: NOW, statsAvailable: true })
+  check('posts judged by evidence never exceed the candidates',
+    r.judgedByEvidence <= r.candidates.length,
+    `${r.judgedByEvidence} of ${r.candidates.length}`)
+  check('a working post is not counted as judged by evidence',
+    r.judgedByEvidence === 2, `${r.judgedByEvidence}`)
+  check('and both working posts are counted as such', r.working === 2, `${r.working}`)
+}
+
 // ── the route and the panel never act ───────────────────────────────────────
 // Merging and redirecting are destructive to live content on somebody's own
 // site. The correct shape is a list a person reads and decides on.
@@ -347,6 +433,15 @@ const post = (over: Partial<PostStat> & { id: string }): PostStat => ({
   check('the excluded counts are stated rather than implied by a short list',
     /left out entirely: too soon to tell/.test(PANEL),
     'a panel showing nothing looks identical to a panel that is broken')
+  check('and the trimmed list says it is trimmed',
+    /Showing the \{data\.candidates\.length\} weakest of/.test(PANEL),
+    '"show the other 92" under a heading counting 174 reads like a bug')
+  check('the route sends the full count for that',
+    /totalCandidates: report\.candidates\.length/.test(ROUTE))
+  check('the group copy does not claim certainty it does not have',
+    /look like they cover the same product/.test(PANEL)
+    && /a good signal and not a certainty/.test(PANEL),
+    'the grouping was wrong on three of four real groups before this')
 }
 
 // ── break tests ─────────────────────────────────────────────────────────────
@@ -415,6 +510,32 @@ const post = (over: Partial<PostStat> & { id: string }): PostStat => ({
     !buildConsolidationReport(
       [...fast, post({ id: 'bn', publishedAt: daysAgo(1), impressions: 0 })],
       { ageMonths: 4, now: NOW, statsAvailable: true }).candidates.some(c => c.id === 'bn'))
+
+  // Break 11: grouping on category nouns, which paired a face mask with a
+  // sleep patch and two rival brands with each other on a live site.
+  const cat = [
+    'TOLEVITA Snail Mucin Bio-Collagen Face Mask: Fix Dry Skin?',
+    'Karseell Collagen Hair Mask for Damaged Hair Review',
+    'Sheet Mask Multipack Review: Worth The Money?',
+    'Clay Mask for Oily Skin: A Real Test',
+    'Collagen Peptide Powder Review',
+  ].map((title, i) => post({ id: `c${i}`, title, publishedAt: daysAgo(300) }))
+  broke('grouping two brands on a shared category noun is caught',
+    buildConsolidationReport(cat, { ageMonths: 24, now: NOW, statsAvailable: true }).groups.length === 0)
+
+  // Break 12: dropping the filler stopwords, which a small catalogue has no
+  // rarity signal to fall back on.
+  broke('review filler treated as a product name is caught',
+    titleKeywords('The Real Fix: Tested, Honest, Complete').length === 0)
+
+  // Break 13: a judged-by-evidence count that includes working posts.
+  const mixed = [
+    post({ id: 'a', publishedAt: daysAgo(10), impressions: 500, clicks: 30 }),
+    post({ id: 'b', publishedAt: daysAgo(40), impressions: 0, clicks: 0 }),
+  ]
+  const mr = buildConsolidationReport(mixed, { ageMonths: 4, now: NOW, statsAvailable: true })
+  broke('a judged count above the candidate count is caught',
+    mr.judgedByEvidence <= mr.candidates.length)
 
   for (const b of breaks) failures.push(`BREAK TEST MISSED ${b}`)
 }

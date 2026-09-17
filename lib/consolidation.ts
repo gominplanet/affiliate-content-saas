@@ -137,6 +137,13 @@ const STOP = new Set([
   'the', 'a', 'an', 'and', 'or', 'for', 'with', 'best', 'top', 'review', 'reviews',
   'vs', 'is', 'it', 'to', 'of', 'in', 'on', 'my', 'our', 'your', 'this', 'that',
   'guide', 'worth', 'should', 'you', 'buy', 'are', 'was', 'does', 'do', 'how',
+  // Review-title filler. Generic across any catalogue, not tuned to one site.
+  // "fix" earned its place here on live data: it paired a snail mucin face mask
+  // with a sleep patch review, because one title asked "Fix Dry Skin?" and the
+  // other promised "The No-Pill Fix".
+  'fix', 'real', 'tested', 'honest', 'truth', 'actually', 'really', 'better',
+  'complete', 'ultimate', 'everything', 'need', 'know', 'after', 'tried',
+  'expected', 'performance', 'thoughts', 'verdict', 'first', 'look', 'about',
 ])
 
 /**
@@ -154,8 +161,49 @@ export function titleKeywords(title: string): string[] {
     .filter(w => w.length >= 3 && !STOP.has(w) && !/^\d+$/.test(w))
 }
 
-/** Shared distinctive words needed before two posts are called the same subject. */
+/** Shared identifying words needed before two posts are called the same subject. */
 const OVERLAP_WORDS = 2
+
+/**
+ * A word identifies a PRODUCT only if it is rare across this creator's own
+ * catalogue.
+ *
+ * This is the rule that separates a product name from a category noun, and it
+ * was written against live data that the first version got wrong. On a real
+ * site it grouped these:
+ *
+ *   TOLEVITA Snail Mucin Bio-Collagen Face Mask   +   Karseell Collagen Hair Mask
+ *     shared: "collagen", "mask"                       different brands entirely
+ *
+ *   20-Inch Solar Landscape Lights                +   SHONELIGHTING Solar Step Lights
+ *     shared: "solar", "lights"                        three different products
+ *
+ * and correctly grouped this:
+ *
+ *   NUMANU Collapsible Stool                      +   Numanu Portable Telescopic Stool
+ *     shared: "numanu", "portable", "stool"            the same thing twice
+ *
+ * The difference is not the words themselves, it is how often they appear. On a
+ * site full of solar lights and face masks, "solar" and "mask" are the category
+ * and say nothing about which product a post is about. "numanu" appears twice
+ * in three hundred titles, so it names something.
+ *
+ * Measured from the creator's own titles rather than a hand-written list, so it
+ * adapts to whatever niche they are in: "mask" would be identifying on a site
+ * about power tools.
+ */
+function identifyingWords(posts: PostStat[]): Set<string> {
+  const df = new Map<string, number>()
+  for (const p of posts) {
+    for (const w of new Set(titleKeywords(p.title))) df.set(w, (df.get(w) ?? 0) + 1)
+  }
+  // Rare means "in at most 1% of titles", with a floor of 2 so a small
+  // catalogue still groups anything at all.
+  const maxDf = Math.max(2, Math.floor(posts.length * 0.01))
+  const out = new Set<string>()
+  for (const [w, n] of df) if (n <= maxDf) out.add(w)
+  return out
+}
 
 export function buildConsolidationReport(
   posts: PostStat[],
@@ -198,12 +246,15 @@ export function buildConsolidationReport(
     if (!hasHadItsChance(t, now.getTime(), graceMs, newestIndexed)) { tooYoung++; continue }
     // Inside the window, but Google indexed something published after it.
     const byEvidence = now.getTime() - t < graceMs
-    if (byEvidence) judgedByEvidence++
 
     const impressions = Math.max(0, Number(p.impressions ?? 0))
     const clicks = Math.max(0, Number(p.clicks ?? 0))
 
     if (clicks > 0) { working++; continue }
+    // Counted here, AFTER the working check. Counting it at the gate included
+    // posts that turned out to be fine, which is how a live panel came to report
+    // 176 posts judged by evidence out of 174 candidates.
+    if (byEvidence) judgedByEvidence++
 
     let weakness: Weakness
     let reason: string
@@ -234,10 +285,15 @@ export function buildConsolidationReport(
   const groups: ConsolidationReport['groups'] = []
   const claimed = new Set<string>()
 
+  // Rarity is measured across EVERY post, not just the candidates, because the
+  // category words a creator uses appear throughout their catalogue including
+  // in the posts that are working.
+  const identifying = identifyingWords(posts)
+
   for (let i = 0; i < mergeable.length; i++) {
     const a = mergeable[i]
     if (claimed.has(a.id)) continue
-    const aWords = new Set(titleKeywords(a.title))
+    const aWords = new Set(titleKeywords(a.title).filter(w => identifying.has(w)))
     const members = [a]
     for (let j = i + 1; j < mergeable.length; j++) {
       const b = mergeable[j]
