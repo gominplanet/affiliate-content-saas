@@ -11,7 +11,7 @@
 // The other half is about not being cruel with a true number. A six week old
 // blog with no clicks is behaving exactly as expected, and calling that failure
 // is how people quit two months before it would have worked.
-import { analyseBlogHealth, findCollapse, readReach, type BlogHealthInput, type DailyPoint } from '../lib/blog-health'
+import { analyseBlogHealth, classifyReachUrl, countReach, findCollapse, readReach, type BlogHealthInput, type DailyPoint, type ReachWindows } from '../lib/blog-health'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 
@@ -30,6 +30,15 @@ function series(days: number, impressions: number, clicks = 0, startDay = 0, pos
   return out
 }
 
+/** Three reach windows from post counts, with optional archive counts. */
+function reach(posts: [number, number, number], archives: [number, number, number] = [0, 0, 0]): ReachWindows {
+  return {
+    windows: [0, 1, 2].map(i => ({
+      posts: posts[i], archives: archives[i], total: posts[i] + archives[i],
+    })) as ReachWindows['windows'],
+  }
+}
+
 const base: BlogHealthInput = {
   daily: [], connected: true, posts: 279,
   firstPublishedAt: '2024-01-15T00:00:00Z',
@@ -42,7 +51,7 @@ const base: BlogHealthInput = {
 // traffic stopped and the one-day claim is earned.
 {
   const daily = [...series(30, 45, 2), ...series(6, 0, 0, 30)]
-  const h = analyseBlogHealth({ ...base, daily, reach: { pages: [120, 118, 115] } })
+  const h = analyseBlogHealth({ ...base, daily, reach: reach([120, 118, 115]) })
   check('a collapse is detected at all', !!h.collapse, 'this is the exact case MVP missed')
   check('and dated, so it can be lined up against what changed',
     h.collapse?.date === daily[30].date, `${h.collapse?.date} vs ${daily[30].date}`)
@@ -69,7 +78,7 @@ const base: BlogHealthInput = {
 // is the whole point: only the reach tells them apart.
 {
   const daily = [...series(30, 45, 2), ...series(6, 0, 0, 30)]
-  const h = analyseBlogHealth({ ...base, daily, reach: { pages: [1076, 361, 47] } })
+  const h = analyseBlogHealth({ ...base, daily, reach: reach([1076, 361, 47]) })
   check('the stop is still reported', !!h.collapse)
   check('but it is NOT called a one-day break',
     !/break rather than a slow decline|changed that day: the site going down/i.test(h.doThis), h.doThis)
@@ -106,36 +115,36 @@ const base: BlogHealthInput = {
   check('a reach of null is unknown, not shrinking',
     readReach(null, 0).trend === 'unknown')
   check('zero pages alongside real impressions is a broken measurement, not a dead site',
-    readReach({ pages: [400, 200, 0] }, 900).trend === 'unknown',
-    readReach({ pages: [400, 200, 0] }, 900).trend)
+    readReach(reach([400, 200, 0]), 900).trend === 'unknown',
+    readReach(reach([400, 200, 0]), 900).trend)
   check('but zero pages alongside zero impressions is believable',
-    readReach({ pages: [400, 200, 0] }, 0).trend === 'shrinking',
-    readReach({ pages: [400, 200, 0] }, 0).trend)
+    readReach(reach([400, 200, 0]), 0).trend === 'shrinking',
+    readReach(reach([400, 200, 0]), 0).trend)
 }
 
 // ── a small blog is not deindexing ──────────────────────────────────────────
 {
   check('three pages becoming one is not called a deindexing',
-    readReach({ pages: [3, 2, 1] }, 0).trend === 'unknown')
-  check('a steady site is steady', readReach({ pages: [100, 98, 95] }, 500).trend === 'steady')
-  check('a growing site is growing', readReach({ pages: [100, 130, 180] }, 500).trend === 'growing')
+    readReach(reach([3, 2, 1]), 0).trend === 'unknown')
+  check('a steady site is steady', readReach(reach([100, 98, 95]), 500).trend === 'steady')
+  check('a growing site is growing', readReach(reach([100, 130, 180]), 500).trend === 'growing')
   check('a recovery is not called a slide',
-    readReach({ pages: [100, 40, 95] }, 500).trend === 'steady',
-    readReach({ pages: [100, 40, 95] }, 500).trend)
+    readReach(reach([100, 40, 95]), 500).trend === 'steady',
+    readReach(reach([100, 40, 95]), 500).trend)
 }
 
 // ── caught before it reaches zero ───────────────────────────────────────────
 // The same disease, a month earlier, when the impressions have not flatlined
 // long enough for findCollapse to fire.
 {
-  const h = analyseBlogHealth({ ...base, daily: series(40, 0, 0), reach: { pages: [900, 400, 60] } })
+  const h = analyseBlogHealth({ ...base, daily: series(40, 0, 0), reach: reach([900, 400, 60]) })
   check('a site with no traffic and shrinking reach is told it is being dropped',
     /being dropped rather than never picked up/i.test(h.verdict), h.verdict)
   check('and pointed at the Pages report rather than at internal linking',
     /Search Console, go to Pages/i.test(h.doThis), h.doThis)
 
   // A site Google simply never took gets the original advice, not this one.
-  const never = analyseBlogHealth({ ...base, daily: series(40, 0, 0), reach: { pages: [0, 0, 0] } })
+  const never = analyseBlogHealth({ ...base, daily: series(40, 0, 0), reach: reach([0, 0, 0]) })
   check('a site Google never picked up is not accused of losing pages',
     !/being dropped/i.test(never.verdict), never.verdict)
 }
@@ -290,6 +299,77 @@ const base: BlogHealthInput = {
     /cannot see/i.test(h.verdict) && !/failing|wrong/i.test(h.verdict), h.verdict)
 }
 
+// ── our own cleanup, told apart from the disease ────────────────────────────
+// MVP's WordPress plugin started noindexing tag, author, date, search and
+// paginated archives on 20 August 2026, and dropped tags from the sitemap the
+// same day. On the owner's blog the indexed count went from losing 11 pages a
+// day to losing 55 a day in the week that landed. That was the cleanup working
+// as designed, on pages earning close to nothing.
+//
+// Every creator running that plugin saw the same cliff. If this page calls our
+// own intended change a catastrophe, we manufacture a support ticket for each
+// of them and send every one hunting a fault that does not exist.
+{
+  const daily = [...series(30, 45, 2), ...series(6, 0, 0, 30)]
+  const h = analyseBlogHealth({ ...base, daily, reach: reach([90, 88, 86], [400, 210, 12]) })
+  check('archives leaving while the posts stay is flagged as such', h.reach.archivesOnly === true)
+  check('and the posts are not called dropped', h.reach.trend !== 'shrinking', h.reach.trend)
+  check('the creator is told the drop was us, by name',
+    /MVP noindexes them on purpose/i.test(h.verdict), h.verdict)
+  check('and told plainly to ignore that part',
+    /Ignore the drop in your indexed page count, that part was us/i.test(h.doThis), h.doThis)
+  check('the archive numbers behind the claim are shown',
+    /from 400 to 12/i.test(h.verdict), h.verdict)
+  check('while the separate traffic question is still put to them',
+    /separate question/i.test(h.doThis), h.doThis)
+}
+
+// ── but archives leaving is NO excuse when the posts went too ───────────────
+// This is the dangerous half. Reassuring someone whose articles are actually
+// falling out of Google is worse than the alarm it replaces.
+{
+  const daily = [...series(30, 45, 2), ...series(6, 0, 0, 30)]
+  const h = analyseBlogHealth({ ...base, daily, reach: reach([1076, 361, 47], [400, 210, 12]) })
+  check('posts dropping with the archives is NOT called housekeeping',
+    h.reach.archivesOnly === false)
+  check('and nothing tells them to ignore it',
+    !/Ignore the drop/i.test(h.doThis), h.doThis)
+  check('they are told their posts are being dropped',
+    /dropping out of Google/i.test(h.doThis), h.doThis)
+}
+
+// ── which URL is an article and which is a tag page ─────────────────────────
+// The split above is only as good as this, and a post on a dated permalink
+// misread as a date archive would quietly move real articles into the column
+// the page tells people to ignore.
+{
+  const post = (u: string) => classifyReachUrl(u) === 'post'
+  const arch = (u: string) => classifyReachUrl(u) === 'archive'
+  check('a normal post is a post', post('https://gominreviews.com/dewalt-20v-battery-usb-adapter-review/'))
+  check('a dated permalink is still a post', post('https://gominreviews.com/2026/08/14/dewalt-review/'),
+    'this is the one that would hide real articles')
+  check('a tag page is an archive', arch('https://gominreviews.com/tag/power-tools/'))
+  check('an author page is an archive', arch('https://gominreviews.com/author/seb/'))
+  check('a category page is an archive', arch('https://gominreviews.com/category/home-kitchen/'))
+  check('a bare date is an archive', arch('https://gominreviews.com/2026/08/'))
+  check('a paginated archive is an archive', arch('https://gominreviews.com/page/3/'))
+  check('a search page is an archive', arch('https://gominreviews.com/?s=dewalt'))
+  check('a feed is an archive', arch('https://gominreviews.com/feed/'))
+  check('the homepage is neither', classifyReachUrl('https://gominreviews.com/') === 'other',
+    'counting it as a post puts a permanent +1 on one side of the comparison')
+  check('an unparseable row is neither', classifyReachUrl('not a url') === 'other')
+
+  const w = countReach([
+    'https://gominreviews.com/',
+    'https://gominreviews.com/dewalt-review/',
+    'https://gominreviews.com/2026/08/14/another-review/',
+    'https://gominreviews.com/tag/tools/',
+    'https://gominreviews.com/category/home-kitchen/',
+  ])
+  check('counted into the right columns', w.posts === 2 && w.archives === 2 && w.total === 5,
+    JSON.stringify(w))
+}
+
 // ── the wiring, which no fixture above can reach ────────────────────────────
 // readReach can be perfect and the feature still lie, because the numbers it
 // reads are counted in the route. Two mistakes there produce a confident false
@@ -310,10 +390,16 @@ const base: BlogHealthInput = {
     /querySearchAnalyticsOrNull\(token, property, \{[\s\S]{0,200}?dimensions: \['page'\]/.test(ROUTE),
     'the reach count must not use the [] on error version')
 
+  // Mistake three: tallying rows instead of classifying the URLs, which is the
+  // version that reports our own archive noindex as the site collapsing.
+  check('the URLs are classified, not just counted',
+    /countReach\(/.test(ROUTE) && !/rows\.filter\([^)]*\)\.length/.test(ROUTE),
+    'a bare row count cannot tell a tag page from an article')
+
   // Mistake two: filling in the windows it could read and leaving the rest at
   // zero, which invents a slide out of one failed call.
   check('a window that could not be read voids the whole measurement',
-    /counted\.every\(n => n !== null\)/.test(ROUTE),
+    /counted\.every\(w => w !== null\)/.test(ROUTE),
     'all three windows or none')
 
   // And the two gsc helpers must keep meaning different things.
@@ -334,7 +420,7 @@ const base: BlogHealthInput = {
   const broke = (name: string, cond: boolean) => { if (!cond) breaks.push(name) }
 
   // Break 1: the original bug. Assert a one-day break regardless of reach.
-  const deindexing = analyseBlogHealth({ ...base, daily, reach: { pages: [1076, 361, 47] } })
+  const deindexing = analyseBlogHealth({ ...base, daily, reach: reach([1076, 361, 47]) })
   broke('a deindexing would fail the one-day-break wording check',
     !/break rather than a slow decline/i.test(deindexing.doThis))
   broke('and would fail the changed-that-day check',
@@ -342,20 +428,20 @@ const base: BlogHealthInput = {
 
   // Break 2: drop the small-site floor, so 3 pages to 1 becomes a deindexing.
   broke('the small-site floor is what makes [3,2,1] unknown',
-    readReach({ pages: [3, 2, 1] }, 0).trend === 'unknown'
-    && readReach({ pages: [30, 20, 10] }, 0).trend === 'shrinking')
+    readReach(reach([3, 2, 1]), 0).trend === 'unknown'
+    && readReach(reach([30, 20, 10]), 0).trend === 'shrinking')
 
   // Break 3: drop the impressions cross-check, so a failed newest window reads
   // as total deindexing on a site that is plainly still getting traffic.
   broke('the impressions cross-check is what catches a broken measurement',
-    readReach({ pages: [400, 200, 0] }, 900).trend === 'unknown'
-    && readReach({ pages: [400, 200, 1] }, 900).trend === 'shrinking')
+    readReach(reach([400, 200, 0]), 900).trend === 'unknown'
+    && readReach(reach([400, 200, 1]), 900).trend === 'shrinking')
 
   // Break 4: drop the middle <= oldest requirement, so a dip and recovery gets
   // called a slide.
   broke('the middle window is what separates a slide from a dip',
-    readReach({ pages: [100, 140, 55] }, 500).trend === 'steady'
-    && readReach({ pages: [100, 90, 55] }, 500).trend === 'shrinking')
+    readReach(reach([100, 140, 55]), 500).trend === 'steady'
+    && readReach(reach([100, 90, 55]), 500).trend === 'shrinking')
 
   // Break 5: unknown reach falling through to either assertion.
   const unmeasured = analyseBlogHealth({ ...base, daily })
@@ -363,6 +449,22 @@ const base: BlogHealthInput = {
     !/break rather than a slow decline/i.test(unmeasured.doThis)
     && !/dropping out of Google/i.test(unmeasured.doThis)
     && unmeasured.doThis.length > 80)
+
+  // Break 6: archivesOnly dropping the "posts held" half of its condition, which
+  // would tell someone whose articles ARE falling out of Google to ignore it.
+  broke('archivesOnly requires the posts to have held',
+    readReach(reach([90, 88, 86], [400, 210, 12]), 5).archivesOnly === true
+    && readReach(reach([1076, 361, 47], [400, 210, 12]), 5).archivesOnly === false)
+
+  // Break 7: classifying a dated permalink as a date archive, which silently
+  // moves real articles into the column the page says to ignore.
+  broke('a dated post permalink is not a date archive',
+    classifyReachUrl('https://x.com/2026/08/14/a-real-post/') === 'post'
+    && classifyReachUrl('https://x.com/2026/08/') === 'archive')
+
+  // Break 8: counting the homepage as a post, a permanent +1 on one side.
+  broke('the homepage is excluded from both columns',
+    countReach(['https://x.com/']).posts === 0 && countReach(['https://x.com/']).archives === 0)
 
   for (const b of breaks) failures.push(`BREAK TEST MISSED ${b}`)
 }

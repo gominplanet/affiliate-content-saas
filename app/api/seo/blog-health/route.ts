@@ -16,7 +16,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { getValidGscToken, querySearchAnalytics, querySearchAnalyticsOrNull } from '@/lib/gsc'
-import { analyseBlogHealth, type DailyPoint, type ReachWindows } from '@/lib/blog-health'
+import { analyseBlogHealth, countReach, type DailyPoint, type ReachWindow, type ReachWindows } from '@/lib/blog-health'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -142,23 +142,31 @@ export async function GET() {
       // distinct pages that got any impression at all is the closest the
       // Search Analytics API comes to that number, and it moves with it.
       //
+      // The URLs are kept, not just tallied, because posts and archives have to
+      // be counted apart. MVP's own plugin noindexes tag/author/date/paginated
+      // archives, which drops a creator's indexed page count off a cliff on
+      // purpose, and a single tally would report our intended cleanup to them
+      // as their site dying.
+      //
       // querySearchAnalyticsOrNull, not the plain one, because a timeout
       // returning [] would be counted as zero pages and reported to the creator
       // as their whole site falling out of Google.
-      const windows = [83, 55, 27].map((back, i) => {
+      const spans = [83, 55, 27].map((back, i) => {
         const from = new Date(end); from.setDate(from.getDate() - back)
         const to = new Date(end); to.setDate(to.getDate() - [56, 28, 0][i])
         return { startDate: ymd(from), endDate: ymd(to) }
       })
-      const counted = await Promise.all(windows.map(w =>
+      const counted = await Promise.all(spans.map(w =>
         querySearchAnalyticsOrNull(token, property, {
           ...w, dimensions: ['page'], rowLimit: 5000,
-        }).then(rows => rows === null ? null : rows.filter(r => (r.impressions ?? 0) > 0).length)
+        }).then(rows => rows === null ? null : countReach(
+          rows.filter(r => (r.impressions ?? 0) > 0).map(r => String(r.keys?.[0] ?? '')),
+        ))
       ))
       // All three or none. A window we could not read is not a window with no
       // pages in it, and mixing the two invents a trend.
-      if (counted.every(n => n !== null)) {
-        reach = { pages: counted as [number, number, number] }
+      if (counted.every(w => w !== null)) {
+        reach = { windows: counted as [ReachWindow, ReachWindow, ReachWindow] }
       }
     }
   }

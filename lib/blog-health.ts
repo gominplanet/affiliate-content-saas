@@ -83,18 +83,90 @@ export interface BlogHealthInput {
  *
  * Distinct pages with at least one impression is the closest thing to that
  * index count the Search Analytics API will give us, and it moves the same way.
+ *
+ * Posts and archives are counted apart, and that split is the whole point of
+ * the second version of this. MVP's own WordPress plugin started noindexing tag,
+ * author, date, search and paginated archive pages on 20 August 2026, and
+ * dropped tags out of the sitemap at the same time. On the same blog as above,
+ * the indexed count went from losing 11 pages a day to losing 55 a day in the
+ * week that landed. That was the cleanup working exactly as designed, on pages
+ * that were bringing in close to nothing, and it looked identical to a disaster.
+ * A single page count cannot tell those apart, so it would have reported our own
+ * intended change to every creator running the plugin as their site collapsing.
  */
+export interface ReachWindow {
+  /** Distinct article and page URLs Google showed at least once. The number
+   *  that actually matters, because these are what earn traffic. */
+  posts: number
+  /** Distinct archive URLs: tag, author, date, search, category, paginated.
+   *  Counted so their disappearance can be named as the cleanup it is. */
+  archives: number
+  /** Every distinct URL shown, whatever kind. Only used to catch a measurement
+   *  that contradicts the impressions it is meant to explain. */
+  total: number
+}
+
 export interface ReachWindows {
   /** [oldest 28 days, middle 28 days, most recent 28 days]. */
-  pages: [number, number, number]
+  windows: [ReachWindow, ReachWindow, ReachWindow]
 }
 
 export type ReachTrend = 'shrinking' | 'steady' | 'growing' | 'unknown'
 
 export interface ReachRead {
+  /** The trend in POSTS. Archives leaving is not the creator's problem. */
   trend: ReachTrend
   oldest: number
   newest: number
+  /** True when the archive pages left and the posts did not. That is MVP's own
+   *  noindex doing its job, and the creator needs to be told so by name rather
+   *  than left to discover a cliff in Search Console and assume the worst. */
+  archivesOnly: boolean
+  /** The archive counts behind that claim, or null when not worth stating. */
+  archives: { oldest: number; newest: number } | null
+}
+
+/** Archive URL shapes, in WordPress's default permalink vocabulary. */
+const ARCHIVE_SEGMENT = /\/(tag|author|category|date|page)\/[^/]/i
+/** A date archive is a path that is ONLY a date. /2026/08/14/some-post/ is a
+ *  post using the dated permalink structure and must not be counted as one. */
+const DATE_ARCHIVE = /^\/(19|20)\d{2}(\/\d{1,2}){0,2}\/?$/
+
+/**
+ * Is this URL an article, an archive, or neither.
+ *
+ * 'other' is the site root and anything unparseable. The homepage is neither a
+ * post nor a thin archive, and counting it as either would put a permanent +1
+ * on one side of a comparison that is supposed to be about articles.
+ */
+export function classifyReachUrl(raw: string): 'post' | 'archive' | 'other' {
+  let path: string
+  let search: string
+  try {
+    const u = new URL(raw)
+    path = u.pathname
+    search = u.search
+  } catch {
+    return 'other'
+  }
+  if (/[?&]s=/.test(search)) return 'archive'
+  if (path === '/' || path === '') return 'other'
+  if (ARCHIVE_SEGMENT.test(path)) return 'archive'
+  if (DATE_ARCHIVE.test(path)) return 'archive'
+  if (/\/feed\/?$/i.test(path)) return 'archive'
+  return 'post'
+}
+
+/** Count one window's URLs into a ReachWindow. */
+export function countReach(urls: string[]): ReachWindow {
+  let posts = 0
+  let archives = 0
+  for (const u of urls) {
+    const kind = classifyReachUrl(u)
+    if (kind === 'post') posts++
+    else if (kind === 'archive') archives++
+  }
+  return { posts, archives, total: urls.length }
 }
 
 export type FunnelStage = 'not-shown' | 'not-ranking' | 'not-clicked' | 'not-following-links' | 'not-buying' | 'working'
@@ -186,23 +258,47 @@ export function findCollapse(daily: DailyPoint[]): { date: string; before: numbe
  * anything at all in the last 28 days then the count of pages it showed cannot
  * be zero, so a zero there is a broken measurement rather than a dead site, and
  * the only honest answer is that we do not know.
+ *
+ * The trend reported is the trend in POSTS. Archives are read separately and
+ * only to answer one question: did the archives go while the posts stayed. That
+ * is MVP's own noindex cleanup, it is not a fault, and a creator who is not told
+ * so by name is left staring at a cliff in Search Console assuming the worst.
  */
 export function readReach(reach: ReachWindows | null | undefined, recentImpressions: number): ReachRead {
-  const unknown: ReachRead = { trend: 'unknown', oldest: 0, newest: 0 }
+  const unknown: ReachRead = { trend: 'unknown', oldest: 0, newest: 0, archivesOnly: false, archives: null }
   if (!reach) return unknown
-  const [oldest, middle, newest] = reach.pages ?? []
-  if (![oldest, middle, newest].every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0)) return unknown
+  const w = reach.windows
+  if (!Array.isArray(w) || w.length !== 3) return unknown
+  const ok = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n >= 0
+  if (!w.every(x => x && ok(x.posts) && ok(x.archives) && ok(x.total))) return unknown
 
-  // Too few pages for a ratio to mean anything. Three pages becoming one is not
-  // a deindexing, it is a small blog having a slow month.
-  if (oldest < 10) return unknown
+  // The measurement contradicts the traffic it is supposed to explain. Google
+  // cannot have shown the site 900 times across no pages at all, so this is a
+  // failed count, and reporting it would invent a catastrophe.
+  if (recentImpressions > 0 && w[2].total === 0) return unknown
 
-  // The measurement contradicts the traffic it is supposed to explain.
-  if (recentImpressions > 0 && newest === 0) return unknown
+  // Same rule applied to whichever series is being read. Kept as one function so
+  // posts and archives can never drift into being judged differently.
+  const trendOf = (oldest: number, middle: number, newest: number): ReachTrend => {
+    // Too few pages for a ratio to mean anything. Three becoming one is not a
+    // deindexing, it is a small blog having a slow month.
+    if (oldest < 10) return 'unknown'
+    if (newest <= oldest * 0.6 && middle <= oldest) return 'shrinking'
+    if (newest >= oldest * 1.4) return 'growing'
+    return 'steady'
+  }
 
-  if (newest <= oldest * 0.6 && middle <= oldest) return { trend: 'shrinking', oldest, newest }
-  if (newest >= oldest * 1.4) return { trend: 'growing', oldest, newest }
-  return { trend: 'steady', oldest, newest }
+  const trend = trendOf(w[0].posts, w[1].posts, w[2].posts)
+  const archiveTrend = trendOf(w[0].archives, w[1].archives, w[2].archives)
+  const archives = { oldest: w[0].archives, newest: w[2].archives }
+
+  // The cleanup, told apart from the disease. Both halves are required: the
+  // archives must actually have gone, AND the posts must have held. If the posts
+  // went too then something real is happening and calling it housekeeping would
+  // be the worst thing this function could say.
+  const archivesOnly = archiveTrend === 'shrinking' && trend !== 'shrinking' && trend !== 'unknown'
+
+  return { trend, oldest: w[0].posts, newest: w[2].posts, archivesOnly, archives: archiveTrend === 'unknown' ? null : archives }
 }
 
 export function analyseBlogHealth(input: BlogHealthInput): BlogHealth {
@@ -256,8 +352,14 @@ export function analyseBlogHealth(input: BlogHealthInput): BlogHealth {
       // The day the impressions hit zero is the END of this, not the start of
       // it, and saying otherwise sends someone looking for a change that was
       // never made.
-      verdict += ` It did not start that day. Over the last three months the number of your pages Google shows at all fell from ${reach.oldest} to ${reach.newest}.`
-      doThis = 'Your pages have been dropping out of Google for weeks, so there is no single day to investigate and nothing broke. Open Search Console, go to Pages, and read the reasons it gives for the pages it is no longer indexing. Fix whichever reason covers your actual posts, then ask Google to recrawl them.'
+      verdict += ` It did not start that day. Over the last three months the number of your POSTS Google shows at all fell from ${reach.oldest} to ${reach.newest}.`
+      doThis = 'Your posts have been dropping out of Google for weeks, so there is no single day to investigate and nothing broke. Open Search Console, go to Pages, and read the reasons it gives for the pages it is no longer indexing. Fix whichever reason covers your actual posts, then ask Google to recrawl them.'
+    } else if (reach.archivesOnly) {
+      // The cleanup, not the disease. MVP's own plugin noindexed the archives on
+      // 20 August 2026, and a creator who reads that cliff in Search Console
+      // without being told what made it assumes their site is dying.
+      verdict += ` Your posts are still in Google: ${reach.newest} of them were shown over that period. What left was your tag and archive pages, which went from ${reach.archives?.oldest} to ${reach.archives?.newest} because MVP noindexes them on purpose.`
+      doThis = 'Ignore the drop in your indexed page count, that part was us. Those tag and date pages were thin, they earned you almost nothing, and removing them is meant to concentrate Google on your actual posts. The traffic stopping is a separate question: your posts are still indexed, so check the site loads and that nothing changed that day.'
     } else if (reach.trend === 'unknown') {
       // We know when it stopped. We do NOT know why, and there are two causes
       // that look identical here, so this gives an order to check rather than
@@ -275,7 +377,7 @@ export function analyseBlogHealth(input: BlogHealthInput): BlogHealth {
       : `Google is not showing your posts to anyone.`
     if (!tooEarly && reach.trend === 'shrinking') {
       // Same disease as the collapse case, caught before it reached zero.
-      verdict += ` The number of your pages it shows at all fell from ${reach.oldest} to ${reach.newest} over the last three months, so they are being dropped rather than never picked up.`
+      verdict += ` The number of your posts it shows at all fell from ${reach.oldest} to ${reach.newest} over the last three months, so they are being dropped rather than never picked up.`
     }
     doThis = tooEarly
       ? 'Nothing is wrong. A new site usually waits weeks before Google shows it to anyone, and months before that turns into real traffic. Keep publishing.'
