@@ -103,6 +103,10 @@
     {
       "path": "/api/cron/drain-global-sync",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/rehost-hotlinked",
+      "schedule": "20 */2 * * *"
     }
   ],
   "git": {

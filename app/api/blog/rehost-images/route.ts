@@ -22,7 +22,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
-import { findRehostable, replaceImageUrl, describeRehost } from '@/lib/rehost-images'
+import { describeRehost } from '@/lib/rehost-images'
+import { rehostPosts, describeRun, defaultSourceAlive } from '@/lib/rehost-run'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -84,91 +85,42 @@ export async function POST(request: Request) {
     wordpress_url: string | null
   }>
 
-  let moved = 0
-  let attempted = 0
-  const failed: { url: string; reason: string }[] = []
-  const perPost: Array<{ id: string; title: string; moved: number; failed: number; skipped?: string }> = []
-
-  for (const post of posts) {
-    const html = post.content ?? ''
-    const candidates = findRehostable(html, site.wordpress_url)
-    if (candidates.length === 0) {
-      perPost.push({ id: post.id, title: post.title ?? '', moved: 0, failed: 0, skipped: 'nothing to move' })
-      continue
-    }
-    if (!post.wordpress_post_id) {
-      // Without the WordPress id there is nothing to update, and rewriting only
-      // our copy would leave the live post pointing at the old URL while our
-      // records claimed it was repaired. Say so rather than half doing it.
-      perPost.push({
-        id: post.id, title: post.title ?? '', moved: 0, failed: 0,
-        skipped: 'no WordPress post id on record, so the live post cannot be updated',
-      })
-      continue
-    }
-
-    let updated = html
-    let postMoved = 0
-
-    for (const c of candidates) {
-      attempted++
+  // The repair loop itself lives in lib/rehost-run, shared with the
+  // /api/cron/rehost-hotlinked sweep. Two callers doing this job from two
+  // copies of the logic is exactly how /api/blog/refresh-images came to
+  // disagree with /api/blog/generate about what "ready" means.
+  const run = await rehostPosts(posts, site.wordpress_url, {
+    uploadFromUrl: async (url, filename) => (await wp.uploadImageFromUrl(url, filename))?.source_url ?? null,
+    updatePost: async (id, content) => { await wp.updatePost(id, { content }) },
+    saveContent: async (postId, content, hostedCount, status) => {
       try {
-        const media = await wp.uploadImageFromUrl(c.url, `rehost-${post.id.slice(0, 8)}-${postMoved + 1}.jpg`)
-        const newUrl = media?.source_url
-        if (!newUrl) {
-          failed.push({ url: c.url, reason: 'the site accepted the upload but returned no URL' })
-          continue
-        }
-        updated = replaceImageUrl(updated, c.url, newUrl)
-        postMoved++
-        moved++
-      } catch (e) {
-        failed.push({ url: c.url, reason: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
+        await client.from('blog_posts').update({ content, images_hosted_count: hostedCount, images_status: status }).eq('id', postId)
+      } catch {
+        // images_hosted_count needs migration 339. Keep the content write,
+        // which is the part that matters, rather than losing the whole update.
+        await client.from('blog_posts').update({ content }).eq('id', postId)
       }
-    }
+    },
+    sourceAlive: defaultSourceAlive,
+  })
 
-    if (postMoved === 0) {
-      perPost.push({ id: post.id, title: post.title ?? '', moved: 0, failed: candidates.length })
-      continue
-    }
-
-    // Live post FIRST. If the site update fails, our copy is left alone, so the
-    // row keeps describing what is actually published. The other order would
-    // record a repair that the creator's readers never see, which is the same
-    // class of lie that made this repair necessary.
-    try {
-      await wp.updatePost(post.wordpress_post_id, { content: updated })
-    } catch (e) {
-      failed.push({
-        url: post.wordpress_url ?? post.id,
-        reason: `pictures uploaded, but the post could not be updated: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`,
-      })
-      perPost.push({ id: post.id, title: post.title ?? '', moved: 0, failed: candidates.length })
-      continue
-    }
-
-    try {
-      await client.from('blog_posts').update({
-        content: updated,
-        images_hosted_count: postMoved,
-        images_status: findRehostable(updated, site.wordpress_url).length === 0 ? 'ready' : 'hotlinked',
-      }).eq('id', post.id)
-    } catch {
-      // images_hosted_count needs migration 339. Keep the content write, which
-      // is the part that matters, rather than losing the whole update.
-      try {
-        await client.from('blog_posts').update({ content: updated }).eq('id', post.id)
-      } catch { /* the live post is already correct; our copy catches up later */ }
-    }
-
-    perPost.push({ id: post.id, title: post.title ?? '', moved: postMoved, failed: candidates.length - postMoved })
-  }
+  const moved = run.moved
+  const attempted = run.attempted
+  const failed = run.failures
+  const perPost = run.posts
 
   const report = describeRehost(moved, failed, attempted)
 
   return NextResponse.json({
     ok: true,
     ...report,
+    // The runner's own words, which say the three things the old shape could
+    // not: nothing moved because the site refused everything, some originals
+    // are gone and need remaking, or it genuinely worked.
+    summary: describeRun(run, posts.length),
+    refused: run.refused,
+    gone: run.gone,
+    siteRefusedEverything: run.siteRefusedEverything,
     site: site.wordpress_url,
     postsExamined: posts.length,
     posts: perPost,
