@@ -3790,6 +3790,7 @@ export default function ContentPage() {
     let fixed = 0
     let attempted = 0
     let partial = 0
+    let extraLinks = 0
     const errors: string[] = []
     let styleLabel: string | null = affStyleLabel
     let missingOnWp = 0
@@ -3810,6 +3811,7 @@ export default function ContentPage() {
         fixed += Number(data.fixed) || 0
         attempted += Number(data.attempted) || slice.length
         partial += Number(data.partiallyFixed) || 0
+        extraLinks += Number(data.extraLinksConverted) || 0
         if (Array.isArray(data.errors)) errors.push(...data.errors.map(String))
         if (data.chosenStyleLabel) styleLabel = data.chosenStyleLabel as string
         missingOnWp += Number(data.missingOnWp) || 0
@@ -3846,6 +3848,14 @@ export default function ContentPage() {
         const partialNote = partial
           ? ` ${partial} of them still carr${partial === 1 ? 'ies' : 'y'} another link that isn't ${styleLabel || 'your chosen style'}, so run this again to catch the rest.`
           : ''
+        // Count the links that are NOT the post's product: the inline text
+        // links, the price strip, the showcase button and the sticky mobile
+        // bar. A creator reported four of eight links converting and the screen
+        // said Done, because the one link it knew about really had changed.
+        // Naming this number is how that stops being invisible.
+        const extraNote = extraLinks
+          ? ` ${extraLinks} other link${extraLinks === 1 ? '' : 's'} in those posts were converted too, including the inline text links and the sticky mobile button.`
+          : ''
         // THE FLOATING BAR IS NOT IN THE POST BODY.
         // The WordPress plugin renders it and picks its own URL by scanning the
         // content. Before plugin 1.0.94 that scan did not know Passport, so on a
@@ -3865,7 +3875,7 @@ export default function ContentPage() {
             : unknownVersion
               ? ' The floating bar at the bottom of each post is drawn by the WordPress plugin, not the post body, so check it is on the latest version if that button still points somewhere else.'
               : ''
-        setFixCatResult(`Done. Fixed the affiliate link on ${fixed} post${fixed !== 1 ? 's' : ''}${failed}${missed}.${goneNote}${partialNote}${barNote}`)
+        setFixCatResult(`Done. Fixed the affiliate link on ${fixed} post${fixed !== 1 ? 's' : ''}${failed}${missed}.${goneNote}${partialNote}${extraNote}${barNote}`)
       }
     } catch {
       setFixCatResult(`Something went wrong after ${fixed} post${fixed !== 1 ? 's' : ''}. Those are saved; run it again to continue.`)

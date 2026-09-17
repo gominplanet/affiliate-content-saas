@@ -25,7 +25,6 @@
  * Body: { dryRun?: boolean, mode?: 'broken' | 'regroup' | 'restyle' | 'all' }
  * dryRun returns a preview without writing.
  */
-import { swapUrlEverywhere } from '@/lib/html-url-swap'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -41,6 +40,21 @@ import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { styleOfUrl, type LinkStyle } from '@/lib/link-style'
+import { convertibleLinks } from '@/lib/post-affiliate-links'
+import { swapUrlEverywhere, sameUrl } from '@/lib/html-url-swap'
+import { resolveCloakedLinkDetailed } from '@/lib/link-cloak'
+
+/**
+ * How many DISTINCT destinations one post may mint links for.
+ *
+ * A cap because this spends the creator's Geniuslink quota: a nine-product
+ * roundup is nine links, and finding that out afterwards is not a choice
+ * anybody was offered. Ten covers every real post seen so far (the one that
+ * prompted this holds three) while stopping a pathological page from emptying
+ * an account. convertibleLinks sorts products first, so if the cap ever bites
+ * it is a search link that is left, never the buy button.
+ */
+const MAX_EXTRA_LINKS_PER_POST = 10
 import { asinFromAmazonUrl, amazonProductUrlRegex, asinPathRegex, isAmazonProductUrl } from '@/lib/asin'
 
 export const maxDuration = 300
@@ -352,6 +366,13 @@ export async function POST(request: Request) {
       // click the wrong kind of link is the same lie in a smaller place, so it
       // is checked after the write and reported.
       const partiallyFixed: string[] = []
+      // Places on the page converted BEYOND the post's own product link: the
+      // inline text links, the price strip, the showcase button and the sticky
+      // mobile bar. Counted separately because "8 posts fixed" and "8 posts
+      // fixed, 47 other links converted" are different facts, and the second
+      // one is what a creator who reported half his links staying plain is
+      // waiting to hear.
+      let extraLinksConverted = 0
       // Posts whose WordPress copy is GONE. WP answers rest_post_invalid_id for
       // a stored id that no longer exists there, and it will answer that way
       // forever: retrying is not a fix and counting them as generic failures
@@ -419,6 +440,50 @@ export async function POST(request: Request) {
             new RegExp(`href="${amazonProductUrlRegex('i').source}"`, 'gi'),
             (href) => (badAmazonAsin(href) ? `href="${newUrl}"` : href),
           )
+          // ── Every OTHER link a reader can click ────────────────────────
+          //
+          // The swap above fixes the post's product link. A creator reported
+          // that half his links stayed plain, and his post is why: ten affiliate
+          // links, of which six are Amazon SEARCH links. The inline
+          // product-name links, the "Shop everything in this video" link, and
+          // the sticky mobile button, which is the one phone readers press.
+          //
+          // They were invisible because this file drops search URLs when
+          // deciding what a post is ABOUT, which is correct, and the same drop
+          // was answering "which links get converted", which it should never
+          // have been asked.
+          //
+          // Each distinct destination gets its own cloaked link, because a
+          // search for "MacBook Pro" must not be pointed at the Blackview
+          // product. Deduped by destination, so a link appearing five times
+          // costs one, not five.
+          let extraConverted = 0
+          const extras = convertibleLinks(updated, chosenStyle).slice(0, MAX_EXTRA_LINKS_PER_POST)
+          for (const extra of extras) {
+            // Already handled by the product swap above.
+            if (sameUrl(extra.url, oldUrl)) continue
+            try {
+              const cloaked = await resolveCloakedLinkDetailed({
+                supabase: db,
+                userId: user!.id,
+                destination: extra.url.replace(/&(?:amp|#0*38);/gi, '&'),
+                asin: extra.kind === 'product' ? (extra.url.match(asinPathRegex('i'))?.[1] ?? null) : null,
+                channel: 'blog',
+                label: row.title ?? null,
+              })
+              // Only swap a link that actually came back in the chosen style.
+              // A fallback here returns the destination unchanged, and writing
+              // that back would count a conversion that did not happen.
+              if (!cloaked.cloaked || styleOfUrl(cloaked.url) !== chosenStyle) continue
+              const before = updated
+              updated = swapUrlEverywhere(updated, extra.url, cloaked.url)
+              if (updated !== before) extraConverted += extra.count
+            } catch {
+              // One link failing must not abandon the rest of the post.
+            }
+          }
+          if (extraConverted > 0) extraLinksConverted += extraConverted
+
           if (updated === original) continue
           if (row.wordpress_post_id) {
             // Push the update to the SAME site this post lives on (multi-site).
@@ -430,9 +495,15 @@ export async function POST(request: Request) {
           fixed++
           // Read the post back as a reader sees it: every affiliate href, not
           // just the one that was swapped.
-          const leftovers = (updated.match(new RegExp(AFFILIATE_HREF.source, 'gi')) || [])
-            .map((h) => h.match(/href="([^"]+)"/i)?.[1] || '')
-            .filter((u) => { const st = styleOfUrl(u); return st !== null && st !== chosenStyle })
+          //
+          // Verified with the SAME classifier the conversion uses. styleOfUrl
+          // answers null for an Amazon search URL, which is right for its own
+          // callers and would make a search link that failed to convert
+          // invisible here: the post would be reported clean while the sticky
+          // mobile button still went out plain. That is the reporting failure
+          // this whole pass exists to end, so it must not be reintroduced in
+          // the check that confirms the pass worked.
+          const leftovers = convertibleLinks(updated, chosenStyle)
           if (leftovers.length) partiallyFixed.push(f.postId)
           // Best-effort: refresh the video's stored product link (single reviews
           // store the UUID in video_id; comparison posts store a youtube id and
@@ -467,6 +538,12 @@ export async function POST(request: Request) {
         attempted: selectedFixes.length,
         errors: errs.slice(0, 10),
         partiallyFixed: partiallyFixed.length,
+        // Places converted beyond each post's own product link: inline text
+        // links, the price strip, the showcase button and the sticky mobile
+        // bar. Its own number because "8 posts fixed" and "8 posts fixed, 47
+        // other links converted" are different facts, and the second is the one
+        // a creator who reported half his links staying plain is waiting for.
+        extraLinksConverted,
         missingOnWp: missingOnWp.length,
         missingOnWpTitles: missingOnWp.slice(0, 8),
         chosenStyleLabel: STYLE_LABEL[chosenStyle],
