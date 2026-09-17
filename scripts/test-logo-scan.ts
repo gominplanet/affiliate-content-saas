@@ -19,6 +19,7 @@
 // The prompt and the reading of the reply are both pure, so all three are
 // pinned here rather than needing a model call to check.
 import { readLogoReply, summariseLogoScan, LOGO_SCAN_PROMPT, type LogoFinding } from '../lib/logo-scan'
+import { readFileSync } from 'node:fs'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -150,6 +151,38 @@ const check = (name: string, cond: boolean, detail?: string) => {
     check(`no dash punctuation in "${l.slice(0, 40)}…"`, !/[—–]|\s-\s/.test(l))
     check(`no year in "${l.slice(0, 40)}…"`, !/\b20\d{2}\b/.test(l))
   }
+}
+
+// ── AND SOMEBODY CAN ACTUALLY REACH IT ────────────────────────────────────
+//
+// The scan was built, tested and shipped with no way to open it. A feature
+// nobody can reach is the same as one that does not exist, and it is worse
+// than that when its existence has been reported as done.
+{
+  const strip = (src: string) => src
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, m => m.replace(/[^\n]/g, ' '))
+    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+    .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n')
+
+  let page = ''
+  try { page = strip(readFileSync('app/(dashboard)/tools/logo-check/page.tsx', 'utf8')) } catch { /* reported below */ }
+  check('the page exists', page.length > 0,
+    'the route was shipped with nothing calling it')
+  check('and it calls the scan', /\/api\/thumbnails\/logo-scan/.test(page))
+
+  let tabs = ''
+  try { tabs = strip(readFileSync('components/seo/SeoHubTabs.tsx', 'utf8')) } catch { /* reported below */ }
+  check('and it is linked from the tools tabs', /\/tools\/logo-check/.test(tabs),
+    'a page with no link is a page nobody opens')
+
+  // The scope limit is the part most likely to be quietly dropped, and it is
+  // the one that would let somebody read a clean blog result as a clean channel.
+  check('the page states what it cannot see', /uploaded to YouTube yourself/i.test(page),
+    'a creator reading "no store logos" must not take that as covering their channel')
+  check('and an unopened picture gets its own section, not the clean count',
+    /Not checked/.test(page) && /nothing is known about them either way/i.test(page),
+    'folding those into the pass is how somebody concludes their back catalogue is clear')
+  check('a failed run says it proved nothing', /says nothing about your pictures either way/i.test(page))
 }
 
 if (failures.length) {

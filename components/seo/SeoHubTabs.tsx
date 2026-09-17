@@ -8,7 +8,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { TrendingUp, ShieldCheck, Wand2, Copy, Signpost, Code2 } from 'lucide-react'
+import { TrendingUp, ShieldCheck, Wand2, Copy, Signpost, Code2, ScanSearch } from 'lucide-react'
 
 const TABS = [
   { href: '/seo',                   label: 'SEO & Indexing', icon: TrendingUp },
@@ -17,6 +17,7 @@ const TABS = [
   { href: '/tools/duplicates',      label: 'Duplicates',     icon: Copy },
   { href: '/tools/redirects',       label: 'Fix 404s',       icon: Signpost },
   { href: '/tools/fix-formatting',  label: 'Fix Formatting', icon: Code2 },
+  { href: '/tools/logo-check',      label: 'Logo Check',     icon: ScanSearch },
 ] as const
 
 export default function SeoHubTabs() {
