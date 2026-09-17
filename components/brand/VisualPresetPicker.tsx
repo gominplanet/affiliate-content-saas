@@ -29,36 +29,62 @@
 import { VISUAL_PRESETS, DEFAULT_PRESET_ID, type VisualPreset } from '@/lib/visual-presets'
 import { Check } from 'lucide-react'
 
+/** Display order. Loud first because it holds the default every account is
+ *  already on, so the current selection is visible without scrolling. */
+const FAMILIES = ['Loud', 'Quiet', 'Photographic', 'Graphic'] as const
+
 /** A miniature of the look: ground, type, accent, and badges only where the
  *  preset actually has them. The badge row is the most visible difference
  *  between the loud looks and the restrained ones, so it is not decoration. */
 function Preview({ preset }: { preset: VisualPreset }) {
   const [bg, ink, accent] = preset.swatch
+
+  // The ground tells you what KIND of image this is before you read a word:
+  // a blurred gradient, a flat graphic block, a photograph, a technical grid or
+  // a sheet of paper. Twenty coloured rectangles would say almost nothing.
+  const ground: React.CSSProperties =
+    preset.previewShape === 'gradient'
+      ? { background: `radial-gradient(120% 120% at 20% 0%, ${accent} 0%, ${bg} 62%)` }
+      : preset.previewShape === 'photo'
+        ? { background: `linear-gradient(160deg, ${bg} 0%, ${accent}33 55%, ${bg} 100%)` }
+        : preset.previewShape === 'grid'
+          ? {
+            background: bg,
+            backgroundImage: `linear-gradient(${accent}44 1px, transparent 1px), linear-gradient(90deg, ${accent}44 1px, transparent 1px)`,
+            backgroundSize: '9px 9px',
+          }
+          : preset.previewShape === 'paper'
+            ? { background: bg, boxShadow: `inset 0 0 0 1px ${ink}18, inset 0 -8px 14px -10px ${ink}55` }
+            : { background: bg }
+
   return (
     <div
       aria-hidden
       style={{
-        background: bg, borderRadius: 6, height: 74, padding: 8,
+        ...ground,
+        borderRadius: 6, height: 74, padding: 8,
         display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
         gap: 4, overflow: 'hidden', position: 'relative',
       }}
     >
-      {/* Stands in for the product. */}
+      {/* Stands in for the product. Square on the graphic looks, round on the
+          photographic ones, so the shape carries information too. */}
       <div style={{
         position: 'absolute', right: 8, top: 8, width: 26, height: 26,
-        borderRadius: preset.id === 'technical' ? 2 : 13,
-        background: accent, opacity: 0.85,
+        borderRadius: preset.previewShape === 'grid' || preset.previewShape === 'flat' ? 2 : 13,
+        background: accent,
+        opacity: preset.previewShape === 'photo' ? 0.7 : 0.9,
       }} />
       <div style={{
         color: ink,
         fontWeight: preset.previewWeight,
         fontFamily: preset.previewSerif ? 'Georgia, serif' : 'inherit',
-        fontSize: preset.id === 'premium' ? 8 : 12,
-        letterSpacing: preset.id === 'premium' ? '0.18em' : preset.id === 'retro' ? '-0.02em' : 0,
-        textTransform: preset.id === 'premium' || preset.id === 'retro' ? 'uppercase' : 'none',
+        fontSize: preset.id === 'premium' || preset.id === 'mono' ? 8 : 12,
+        letterSpacing: preset.id === 'premium' || preset.id === 'mono' ? '0.18em' : preset.id === 'retro' ? '-0.02em' : 0,
+        textTransform: preset.id === 'premium' || preset.id === 'retro' || preset.id === 'mono' ? 'uppercase' : 'none',
         lineHeight: 1.05,
       }}>
-        {preset.id === 'retro' ? 'THE ONE TO BUY' : 'The one to buy'}
+        {preset.id === 'retro' || preset.id === 'comic' ? 'THE ONE TO BUY' : 'The one to buy'}
       </div>
       {preset.badges ? (
         <div style={{ display: 'flex', gap: 3 }}>
@@ -94,31 +120,44 @@ export default function VisualPresetPicker({ value, onChange, disabled }: {
         stops your thumbnails looking like everybody else&apos;s. Your brand colours are used on top of
         whichever you pick.
       </p>
-      <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
-        {VISUAL_PRESETS.map(p => {
-          const selected = p.id === current
-          return (
-            <button
-              key={p.id}
-              type="button"
-              disabled={disabled}
-              onClick={() => onChange(p.id)}
-              className="text-left rounded-xl p-2 transition disabled:opacity-50"
-              style={{
-                border: `1.5px solid ${selected ? 'var(--accent, #7C3AED)' : 'var(--border)'}`,
-                background: 'var(--surface)',
-              }}
-            >
-              <Preview preset={p} />
-              <div className="flex items-center gap-1 mt-1.5">
-                <span className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{p.name}</span>
-                {selected && <Check size={12} style={{ color: 'var(--accent, #7C3AED)' }} />}
-              </div>
-              <p className="text-[10.5px] mt-0.5 leading-snug" style={{ color: 'var(--text-faint)' }}>{p.blurb}</p>
-            </button>
-          )
-        })}
-      </div>
+      {/* Grouped, because twenty tiles in one wall is a shop rather than a
+          choice. The families are how somebody narrows down before they look. */}
+      {FAMILIES.map(family => {
+        const inFamily = VISUAL_PRESETS.filter(p => p.family === family)
+        if (!inFamily.length) return null
+        return (
+          <div key={family} className="mb-3">
+            <p className="text-[10.5px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-faint)' }}>
+              {family}
+            </p>
+            <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+              {inFamily.map(p => {
+                const selected = p.id === current
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onChange(p.id)}
+                    className="text-left rounded-xl p-2 transition disabled:opacity-50"
+                    style={{
+                      border: `1.5px solid ${selected ? 'var(--accent, #7C3AED)' : 'var(--border)'}`,
+                      background: 'var(--surface)',
+                    }}
+                  >
+                    <Preview preset={p} />
+                    <div className="flex items-center gap-1 mt-1.5">
+                      <span className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{p.name}</span>
+                      {selected && <Check size={12} style={{ color: 'var(--accent, #7C3AED)' }} />}
+                    </div>
+                    <p className="text-[10.5px] mt-0.5 leading-snug" style={{ color: 'var(--text-faint)' }}>{p.blurb}</p>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

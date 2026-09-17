@@ -2,6 +2,9 @@
 //
 // Do two creators who pick different looks actually get different images?
 //
+// Twenty presets now. Eight was small enough to eyeball for near-duplicates;
+// twenty is not, so every pair is compared here instead.
+//
 // A user asked whether MVP's thumbnails could be customised: they look good,
 // but every account produces the same ones. The cause was not a missing settings
 // screen. It was one hardcoded aesthetic in the image prompt, handed to every
@@ -59,6 +62,49 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
   const shared = [...editorial].filter(w => bold.has(w)).length
   check('two different looks share little vocabulary',
     shared / editorial.size < 0.5, `${Math.round((shared / editorial.size) * 100)}% shared`)
+}
+
+// ── no two of the twenty are near-duplicates ────────────────────────────────
+// The check that matters most once there are twenty. Eight was small enough to
+// eyeball; twenty is not, and two presets differing only in adjective produce
+// the same image while passing every other test in this file.
+{
+  const words = (s: string) => new Set(s.toLowerCase().match(/[a-z]{4,}/g) ?? [])
+  const bags = new Map(VISUAL_PRESETS.map(p =>
+    [p.id, words(`${p.direction} ${p.typography} ${p.background} ${p.fallbackPalette}`)]))
+
+  let worst = { a: '', b: '', overlap: 0 }
+  for (let i = 0; i < VISUAL_PRESETS.length; i++) {
+    for (let j = i + 1; j < VISUAL_PRESETS.length; j++) {
+      const a = VISUAL_PRESETS[i], b = VISUAL_PRESETS[j]
+      const A = bags.get(a.id)!, B = bags.get(b.id)!
+      const shared = [...A].filter(w => B.has(w)).length
+      // Jaccard: shared over the union, so a long description is not penalised
+      // for simply having more words than a short one.
+      const overlap = shared / (A.size + B.size - shared)
+      if (overlap > worst.overlap) worst = { a: a.id, b: b.id, overlap }
+    }
+  }
+  check('no two presets describe the same look',
+    worst.overlap < 0.3,
+    `${worst.a} and ${worst.b} overlap ${Math.round(worst.overlap * 100)}%`)
+
+  check('twenty presets, all with distinct ids',
+    new Set(VISUAL_PRESETS.map(p => p.id)).size === VISUAL_PRESETS.length
+    && VISUAL_PRESETS.length === 20,
+    `${VISUAL_PRESETS.length} presets`)
+  check('and distinct names, since that is what a creator picks by',
+    new Set(VISUAL_PRESETS.map(p => p.name)).size === VISUAL_PRESETS.length)
+
+  // Swatches are how the picker communicates. Two identical ones make two tiles
+  // that look the same, whatever the prompts behind them say.
+  check('every preset has its own preview swatch',
+    new Set(VISUAL_PRESETS.map(p => p.swatch.join())).size === VISUAL_PRESETS.length)
+  check('and every family is populated',
+    new Set(VISUAL_PRESETS.map(p => p.family)).size === 4,
+    [...new Set(VISUAL_PRESETS.map(p => p.family))].join(', '))
+  check('with more than one preview shape in use',
+    new Set(VISUAL_PRESETS.map(p => p.previewShape)).size >= 4)
 }
 
 // ── the loud house style is gone from the quiet looks ───────────────────────
@@ -231,6 +277,11 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
   check('and the preview shows badges only where the preset has them',
     /preset\.badges \?/.test(PICKER),
     'that is the most visible difference between the loud looks and the quiet ones')
+  check('the ground says what KIND of image each look is',
+    /previewShape === 'gradient'/.test(PICKER) && /previewShape === 'grid'/.test(PICKER),
+    'twenty coloured rectangles communicate almost nothing')
+  check('and twenty tiles are grouped rather than stacked in one wall',
+    /FAMILIES\.map\(family/.test(PICKER))
 
   const MIGRATION = readFileSync(
     join(__dirname, '..', 'supabase/migrations/342_brand_visual_preset.sql'), 'utf8')
@@ -265,19 +316,35 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
   broke('a changed default is caught', resolvePreset(null).id === DEFAULT_PRESET_ID
     && resolvePreset(null).badges === true)
 
-  // Break 6: the preset reaching only the fallback path, which is what the
+  // Break 6: two presets that are the same look under two names, which twenty
+  // entries makes easy to do by accident and impossible to spot by eye.
+  {
+    const words = (x: string) => new Set(x.toLowerCase().match(/[a-z]{4,}/g) ?? [])
+    let worst = 0
+    for (let i = 0; i < VISUAL_PRESETS.length; i++) {
+      for (let j = i + 1; j < VISUAL_PRESETS.length; j++) {
+        const A = words(VISUAL_PRESETS[i].direction + VISUAL_PRESETS[i].background)
+        const B = words(VISUAL_PRESETS[j].direction + VISUAL_PRESETS[j].background)
+        const shared = [...A].filter(w => B.has(w)).length
+        worst = Math.max(worst, shared / (A.size + B.size - shared))
+      }
+    }
+    broke('two near-identical presets are caught', worst < 0.4)
+  }
+
+  // Break 7: the preset reaching only the fallback path, which is what the
   // first version did. A creator could pick a look and see no change.
   const conceptQuiet = head('editorial', { concept: 'A vivid gradient.', banner: 'GAME CHANGER!' })
   broke('a preset that misses the concept path is caught',
     conceptQuiet.includes(resolvePreset('editorial').direction) && !/GAME CHANGER/.test(conceptQuiet))
 
-  // Break 7: the art director's badge prohibition softened into a suggestion.
+  // Break 8: the art director's badge prohibition softened into a suggestion.
   const quietRules = presetToBriefRules(resolvePreset('editorial'))
   broke('a softened badge rule is caught',
     /THIS LOOK CARRIES NO BADGES/.test(quietRules)
     && /Return "" for banner/.test(quietRules))
 
-  // Break 8: one surface drifting from the others, which gives a creator three
+  // Break 9: one surface drifting from the others, which gives a creator three
   // brands across three places they publish.
   const p = resolvePreset('retro')
   broke('a surface dropping the direction is caught',
@@ -292,4 +359,4 @@ if (failures.length) {
   for (const f of failures) console.error(`  • ${f}`)
   process.exit(1)
 }
-console.log('✅ visual-presets: eight genuinely different looks, and a quiet one stays quiet')
+console.log('✅ visual-presets: twenty looks, none a duplicate of another, and a quiet one stays quiet')
