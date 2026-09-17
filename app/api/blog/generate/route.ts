@@ -22,7 +22,7 @@ import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl, isAmazonNonProductUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { getLinkStyle, cloakFallbackNote } from '@/lib/link-cloak'
 import { showcaseOverrideFor } from '@/lib/post-destination'
 import { stripTitleYear } from '@/lib/title-year'
 import { geniuslinkCreds } from '@/lib/link-style'
@@ -163,6 +163,22 @@ export async function POST(request: Request) {
 }
 
 async function handleGenerate(request: Request) {
+  // WHY THE LINK IN THIS POST IS NOT THE STYLE THEY CHOSE.
+  //
+  // Every fallback in the link-style chain below can publish a plain tagged
+  // Amazon link, and every one of them used to do it in silence. A creator
+  // reported that generation "ignores the link-style setting entirely". It does
+  // not. It tried, his Geniuslink keys came back 401, the catch swallowed it,
+  // and the post published with a plain link and no explanation anywhere. From
+  // his side those are the same thing, and only one of them is something he can
+  // fix in a minute.
+  //
+  // cloakFallbackNote already writes the exact sentence for each cause,
+  // including "your API key and secret are not working, re-enter them". It was
+  // wired into the deal path and never into this one. Declared at the top of the
+  // handler so it survives to the response rather than dying in the block that
+  // set it.
+  let linkFallbackNote: string | null = null
   // 2026-06-09 Phase 2: resolve the effective owner so a VA's generation
   // reads + writes under the OWNER's user_id (their workspace), while
   // usage caps + generation tracking still bill the caller (the VA).
@@ -698,6 +714,7 @@ async function handleGenerate(request: Request) {
     const blogLinkStyle = await getLinkStyle(supabase, ownerId)
     const blogCreds = geniuslinkCreds(blogLinkStyle, wp)
 
+
     // ── A creator who sells on TikTok, not Amazon ────────────────────────────
     // Their whole account points at their own shop (migration 333), so every
     // link in this article does too. Handled before the style chain below
@@ -794,14 +811,27 @@ async function handleGenerate(request: Request) {
         } else {
           console.warn(`[blog/generate] Geniuslink ${wrapped} resolved to "${trueDest}", not the intended product "${destination}" — falling back to the tagged product URL.`)
           affiliateUrlOverride = tagFallback
+          // Its own sentence: this is not a broken key, it is a Geniuslink that
+          // points somewhere else, and telling them to re-enter credentials
+          // would send them to fix something that is not wrong.
+          linkFallbackNote = 'Geniuslink is your link style, but the short link it created pointed at a different product, so this post uses your plain Amazon link instead. Check for a duplicate or default link in your Geniuslink account.'
         }
       } catch {
         // Geniuslink threw (e.g. rejected/401 API keys). Fall back to the
-        // TAGGED product link so the user's Associates commission still applies.
+        // TAGGED product link so the user's Associates commission still applies,
+        // and SAY SO. A 401 here is almost always a key that was stored wrong,
+        // which the creator can fix in a minute once somebody tells them.
         affiliateUrlOverride = tagFallback
+        linkFallbackNote = cloakFallbackNote({ cloaked: false, reason: 'geniuslink-api-failed', url: tagFallback } as Parameters<typeof cloakFallbackNote>[0])
       }
     } else {
       affiliateUrlOverride = tagFallback
+      // Saved a style, and it could not be used at all. downgradedFrom is set
+      // by pickLinkStyleDetailed when the credentials for the chosen style are
+      // missing, which is a different fix from "the API rejected them".
+      if (blogLinkStyle.downgradedFrom) {
+        linkFallbackNote = cloakFallbackNote({ cloaked: false, reason: 'style-downgraded', url: tagFallback } as Parameters<typeof cloakFallbackNote>[0])
+      }
     }
   }
 
@@ -2910,6 +2940,13 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     // connected WP user lost the upload_files cap). The UI surfaces this so it
     // isn't silent; /api/blog/reattach-thumbnails heals it once unblocked.
     thumbnailBlocked,
+    // Set when the post published with a PLAIN Amazon link because the
+    // creator's chosen link style could not be used. Named rather than silent:
+    // a creator reported that generation "ignores the link-style setting
+    // entirely" when what actually happened was a 401 from Geniuslink that the
+    // catch swallowed. From his side those look the same, and only one of them
+    // is something he can fix.
+    linkFallbackNote,
     // false when both transcript sources failed; the article was grounded on
     // description + product info only. The client can show a soft notice —
     // the post is fine, just a bit shorter / less specific.

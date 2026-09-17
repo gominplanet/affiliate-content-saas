@@ -428,6 +428,16 @@ export function GenerateButton({
       // The Art Director thumbnail renders in the background and lands a minute
       // or two after the post is up — tell the user so it doesn't look skipped.
       if (artThumb) toast.success('Your new thumbnail is rendering and will appear on the post in a minute or two.', { duration: 7000 })
+      // The post published with a plain Amazon link because the creator's
+      // chosen link style could not be used. Said out loud, because the
+      // alternative is what a creator actually reported: "generation ignores
+      // the link-style setting entirely". It did not ignore it. It tried, got a
+      // 401 back from Geniuslink, and told him nothing. A warning rather than
+      // an error, since the post is live and earning; it is the link style that
+      // did not apply. Long duration because it names something to go and fix.
+      if (typeof data.linkFallbackNote === 'string' && data.linkFallbackNote) {
+        toast.warning(data.linkFallbackNote as string, { duration: 14000 })
+      }
       onDone(data.wordpressUrl as string, data.title as string, data.postId as string)
     } catch (err: unknown) {
       let message = err instanceof Error ? err.message : 'Unknown error'
