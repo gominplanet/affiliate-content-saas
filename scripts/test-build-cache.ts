@@ -65,6 +65,24 @@ const CEILING_BYTES = 1024 * 1024 * 1024
     'an unconditional disable makes every local rebuild pay full price, which nobody sees in CI')
 }
 
+// ── and the one already in the lane is dropped ────────────────────────────
+//
+// Turning the cache off stops us WRITING 1.2 GB. It does not remove the 1.2 GB
+// the lane is already carrying: Vercel restores .next/cache before a build and
+// saves it after, and `next build` never deletes it. Without the clearing step
+// the oversized directory is restored, ignored and saved again, every build,
+// and the lane stays broken while every build reports success.
+{
+  const pkg = readFileSync('package.json', 'utf8')
+  check('the stale pack cache is cleared before the build',
+    /npm run build:clear-cache && next build/.test(pkg),
+    'without this the 1.2 GB survives every build forever, and the green log hides it')
+  check('and the clearing step exists', /"build:clear-cache": "tsx scripts\/clear-stale-build-cache\.ts"/.test(pkg))
+  check('it says whether the delete actually worked',
+    /could NOT clear the pack cache/.test(readFileSync('scripts/clear-stale-build-cache.ts', 'utf8')),
+    'a cleared cache and a cache that refused to delete look identical from the next line of the log')
+}
+
 // ── the reason survives, because a bare `false` invites deletion ──────────
 {
   check('the measurement is written down', /1\.2 GB/.test(RAW),
