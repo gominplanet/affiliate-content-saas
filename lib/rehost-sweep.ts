@@ -63,9 +63,36 @@ export interface SweepReport {
   results?: Array<Record<string, unknown>>
 }
 
+/**
+ * Write down what a run did.
+ *
+ * Best effort on purpose: the table arrives with migration 340, and a repair
+ * that already moved somebody's pictures must not be reported as a failure
+ * because the bookkeeping is one deploy behind. The write failing is the only
+ * thing that goes quiet here; the run itself is already done and returned.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function record(admin: any, trigger: string, r: SweepReport): Promise<void> {
+  try {
+    await admin.from('sweep_runs').insert({
+      job: 'rehost-hotlinked',
+      trigger,
+      ok: r.ok,
+      owners: r.owners ?? 0,
+      sites: r.sites ?? 0,
+      moved: r.moved ?? 0,
+      refused: r.refused ?? 0,
+      gone: r.gone ?? 0,
+      summary: r.summary ?? null,
+      error: r.error ?? null,
+      results: r.results ?? null,
+    })
+  } catch { /* migration 340 not applied yet; the run still happened */ }
+}
+
 /** Run the sweep. Returns what actually happened, including when that is
  *  nothing, so the caller can put it on a screen instead of in a log. */
-export async function runHotlinkedSweep(): Promise<SweepReport> {
+export async function runHotlinkedSweep(trigger: 'cron' | 'admin' = 'cron'): Promise<SweepReport> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
 
@@ -95,11 +122,15 @@ export async function runHotlinkedSweep(): Promise<SweepReport> {
       .slice(0, MAX_USERS_PER_RUN)
       .map(([id]) => id)
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'could not list owners' }
+    const failed: SweepReport = { ok: false, error: e instanceof Error ? e.message : 'could not list owners' }
+    await record(admin, trigger, failed)
+    return failed
   }
 
   if (ownerIds.length === 0) {
-    return { ok: true, owners: 0, moved: 0, refused: 0, gone: 0, summary: 'No posts are pointing at our image server.', results: [] }
+    const none: SweepReport = { ok: true, owners: 0, sites: 0, moved: 0, refused: 0, gone: 0, summary: 'No posts are pointing at our image server.', results: [] }
+    await record(admin, trigger, none)
+    return none
   }
 
   const perOwner: Array<Record<string, unknown>> = []
@@ -211,7 +242,7 @@ export async function runHotlinkedSweep(): Promise<SweepReport> {
   const refused = perOwner.reduce((n, o) => n + (Number(o.refused) || 0), 0)
   const gone = perOwner.reduce((n, o) => n + (Number(o.gone) || 0), 0)
 
-  return {
+  const report: SweepReport = {
     ok: true,
     // perOwner holds one entry per (creator, blog) pair now that posts are
     // grouped by site, so calling its length "owners" would overcount a creator
@@ -228,4 +259,6 @@ export async function runHotlinkedSweep(): Promise<SweepReport> {
       : `Moved ${moved}, refused ${refused}, gone ${gone}.`,
     results: perOwner,
   }
+  await record(admin, trigger, report)
+  return report
 }

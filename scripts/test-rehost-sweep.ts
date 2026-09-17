@@ -348,7 +348,7 @@ async function main() {
 
     check('the sweep can be run on demand', runApi.length > 0,
       'a scheduled repair nobody can interrogate is one you have to take on faith')
-    check('and it is the SAME code path as the cron', /runHotlinkedSweep\(\)/.test(runApi),
+    check('and it is the SAME code path as the cron', /runHotlinkedSweep\(/.test(runApi),
       'a Run now that took its own route would report on itself, not on the thing on the schedule')
     check('and it is admin only', /tier !== 'admin'/.test(runApi))
     check('the page can trigger it', /\/api\/admin\/rehost-run/.test(page))
@@ -378,6 +378,42 @@ async function main() {
     check('posts the runner declined are counted separately from failures',
       /skippedPosts: result\.posts\.filter\(x => x\.skipped\)\.length/.test(sweepSrc),
       'a declined post is not an attempted one, and folding them together hides both')
+
+    // ── every run writes down what it did ───────────────────────────────
+    //
+    // After two scheduled runs I measured the one affected site I can reach and
+    // found every post unchanged, and could not tell whether the cron had never
+    // fired, had errored, had been refused by that site, or had worked on
+    // creators I cannot see. Four situations, one observation.
+    check('a run records itself', /await record\(admin, trigger, report\)/.test(sweepSrc),
+      'a repair whose only evidence is a Vercel log cannot be checked by anyone')
+    check('including a run that could not start', /await record\(admin, trigger, failed\)/.test(sweepSrc),
+      'the failures are the runs most worth having written down')
+    check('and a run that found nothing to do', /await record\(admin, trigger, none\)/.test(sweepSrc),
+      'otherwise a quiet period is indistinguishable from a cron that stopped firing')
+    // Asserted on the CODE, not on the comment explaining it. The first version
+    // of this clause matched the comment text, which the strip above blanks
+    // out, so it could never pass. Same trap the fix-comments work hit earlier.
+    check('recording never fails the repair',
+      /\.insert\(\{[\s\S]*?\}\)\s*\n\s*\} catch \{/.test(sweepSrc),
+      'a repair that moved real pictures must not report failure over its own bookkeeping')
+    check('and the reason for that is written down',
+      /the run still happened/.test(readFileSync('lib/rehost-sweep.ts', 'utf8')),
+      'a bare empty catch is the first thing somebody deletes')
+    check('a manual run is labelled as one', /runHotlinkedSweep\('admin'\)/.test(runApi),
+      'a Run now indistinguishable from a scheduled one makes the history useless for the question it exists to answer')
+
+    check('the migration exists', (() => {
+      try { return readFileSync('supabase/migrations/340_sweep_runs.sql', 'utf8').includes('sweep_runs') } catch { return false }
+    })())
+    check('and it is safe to run twice',
+      /create table if not exists/.test(readFileSync('supabase/migrations/340_sweep_runs.sql', 'utf8')))
+
+    check('the page shows the scheduled runs', /Scheduled runs/.test(page))
+    check('and says when it is not keeping history at all',
+      /No history is being kept yet/.test(page),
+      'an empty list because the table is missing is not the same fact as nothing having run')
+    check('which the endpoint reports explicitly', /runsAvailable/.test(stripPage(readFileSync('app/api/admin/hotlinked-posts/route.ts', 'utf8'))))
 
     // The per-site grouping means one entry per (creator, blog) pair. Reporting
     // that count as "owners" would tell you three people were repaired when it

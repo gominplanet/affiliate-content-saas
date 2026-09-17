@@ -36,9 +36,24 @@ interface RunReport {
   results?: Array<Record<string, unknown>>
 }
 
+interface SweepRun {
+  ran_at: string
+  ok: boolean
+  trigger: string
+  owners: number
+  sites: number
+  moved: number
+  refused: number
+  gone: number
+  summary: string | null
+  error: string | null
+}
+
 interface Result {
   ok: boolean
   total?: number
+  runs?: SweepRun[]
+  runsAvailable?: boolean
   owners?: Owner[]
   headline?: string
   leakOpen?: boolean
@@ -135,6 +150,36 @@ export default function HotlinkedPage() {
                   <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">{String(r.site ?? r.ownerId ?? 'unknown')}</span>
                   {': '}
                   {String(r.skipped ?? r.summary ?? 'no result')}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {result?.ok && (
+        <div className="card p-5 mb-6">
+          <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Scheduled runs</h3>
+          {result.runsAvailable === false ? (
+            <p className="text-[12px] text-[#86868b] leading-relaxed">
+              No history is being kept yet, so this says nothing about whether the sweep has been running.
+              Apply migration 340 and every run from then on is listed here.
+            </p>
+          ) : (result.runs ?? []).length === 0 ? (
+            <p className="text-[12px] text-[#86868b]">
+              History is being kept and nothing has run yet.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-1.5 mt-2">
+              {(result.runs ?? []).map((r, i) => (
+                <li key={i} className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">
+                  <span className="text-[#86868b] font-mono text-[11px]">{r.ran_at?.slice(0, 16).replace('T', ' ')}</span>
+                  {' '}
+                  <span className="text-[#86868b]">({r.trigger})</span>
+                  {' '}
+                  {r.ok === false
+                    ? <span className="text-[#ff3b30]">could not run. {r.error}</span>
+                    : <span>{r.summary ?? `moved ${r.moved}, refused ${r.refused}, gone ${r.gone}`}</span>}
                 </li>
               ))}
             </ul>

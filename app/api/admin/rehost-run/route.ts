@@ -36,6 +36,6 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: 'Admin only' }, { status: 403 })
   }
 
-  const report = await runHotlinkedSweep()
+  const report = await runHotlinkedSweep('admin')
   return NextResponse.json(report)
 }

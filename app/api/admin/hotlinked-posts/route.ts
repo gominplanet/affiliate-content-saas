@@ -88,6 +88,25 @@ export async function GET() {
       }
     } catch { /* counts still stand on their own */ }
 
+    // The last few runs, so a scheduled sweep is visible without pressing
+    // anything. Optional until migration 340 is applied: a missing table means
+    // "no history yet", which the screen says, rather than an error that would
+    // hide the counts above it.
+    let runs: Array<Record<string, unknown>> = []
+    let runsAvailable = true
+    try {
+      const { data: r, error: re } = await admin
+        .from('sweep_runs')
+        .select('ran_at,ok,trigger,owners,sites,moved,refused,gone,summary,error')
+        .eq('job', 'rehost-hotlinked')
+        .order('ran_at', { ascending: false })
+        .limit(8)
+      if (re) throw re
+      runs = (r ?? []) as Array<Record<string, unknown>>
+    } catch {
+      runsAvailable = false
+    }
+
     const total = owners.reduce((n, o) => n + o.posts, 0)
     // Anything created in the last two days means the generator is still
     // producing these, which the sweep does not address and cannot.
@@ -97,6 +116,10 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       total,
+      runs,
+      // Said explicitly: an empty list because the table is missing is not the
+      // same fact as an empty list because nothing has run.
+      runsAvailable,
       owners: owners.map(o => ({ ...o, email: emails[o.ownerId] ?? null })),
       // Said plainly rather than left for the reader to work out from dates.
       headline: total === 0
