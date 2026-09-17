@@ -23,14 +23,27 @@
 //              plugin rewriting media URLs. The picture is on the site and the
 //              web cannot fetch it.
 //   INVISIBLE  the upload works and the file serves. The picture is fine and
-//              his THEME is not drawing it. This is the likeliest answer for a
-//              converted site, because a therapy-practice theme has no reason
-//              to render a featured image on a post, and it is the one case
+//              the THEME is not drawing it, which a theme built for something
+//              other than product reviews often does not. It is the one case
 //              where hunting through security plugins wastes a week.
 //
 // The whole value is in telling those apart, so this module's only job is to
 // turn what the site actually did into the right one of them. Pure, so the
 // wording is pinned by tests rather than by having a broken site to hand.
+//
+// WORTH RECORDING HOW THIS WAS FIRST GOT WRONG, because the wrong answer was
+// the plausible one. His converted site made INVISIBLE the obvious guess, and
+// his stored rows appeared to confirm it: 0 failed, 23 ready. Both pointed the
+// same way and both were wrong. His live site, which is public and took one
+// request to read, showed 45 pictures on his own domain in July and none after,
+// with featured images going 73/83 to 0/25 over the same stretch. He was
+// REFUSED, and had been for a month.
+//
+// Two things follow. A stored status is evidence about what the code believed,
+// never about what the site did, and this one was counting a fallback as a
+// success. And this module must only ever return INVISIBLE off a probe that
+// actually uploaded and actually fetched the file back, never off a guess about
+// the kind of site somebody has.
 
 export type ImageVerdict = 'refused' | 'orphaned' | 'invisible' | 'unknown'
 

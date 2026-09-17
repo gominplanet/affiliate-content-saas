@@ -6,27 +6,37 @@
 // therapy practice to product reviews, asked where to even start. Posts
 // publish. Pictures never appear. A second site he built from scratch works.
 //
-// His own data answered it, and the answer was the one nobody would have
-// guessed from the symptom:
+// HIS ROWS SAID THE UPLOAD PATH WAS HEALTHY, AND THAT WAS WRONG:
 //
 //   images_status = 'failed'   0 posts
-//   images_status = 'ready'   23 posts,  46 images
-//   images_status = null     208 posts, 197 images   (predates the column)
+//   images_status = 'ready'   23 posts
 //
-// Not one upload was ever refused. 243 images are sitting on his site right
-// now. The upload path was never the problem; his THEME is not drawing them.
+// Read as "not one upload was ever refused", which is what it looks like. His
+// public site said the opposite, and reading it took one request:
 //
-// Which is the case that had no name. A creator in that state who is told to
-// check security plugins and file permissions will spend a week finding nothing
-// wrong, because nothing is wrong there. So the diagnosis has to be able to say
-// "your site is fine, look at your theme", and it has to only say that when it
-// has actually proved the site is fine.
+//   month   posts   with a featured image   with a picture on his own domain
+//   Jul        83                      73                                 45
+//   Aug        39                      19                                  0
+//   Sep        25                       0                                  0
 //
-// The three verdicts, and what it costs to confuse them:
+// His site had not accepted an image since August. A featured image REQUIRES an
+// upload, so those went to zero. The body pictures survived only because the
+// generator falls back to embedding the URL it generated them from, so his
+// posts point at our generation CDN. They render today. They are not his.
+//
+// The status counted that fallback as a success, so a site refusing everything
+// produced a clean run of 'ready'. That is fixed separately (see the
+// hotlinked-status section at the end of this file); what belongs HERE is the
+// lesson that a symptom this vague has several causes and the product has to
+// tell them apart rather than reason about them.
+//
+// The four verdicts, and what it costs to confuse them:
 //
 //   refused    → send them to the theme and they never fix the real block
 //   orphaned   → send them to the theme and the file still will not load
 //   invisible  → send them to security plugins and they lose a week
+//   unknown    → fold it into any of the above and you have stated a finding
+//                you did not make, which is exactly how this went wrong
 import { diagnoseImages, type ImageProbe } from '../lib/wp-image-diagnosis'
 import { readFileSync } from 'node:fs'
 
