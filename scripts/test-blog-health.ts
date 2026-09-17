@@ -11,7 +11,9 @@
 // The other half is about not being cruel with a true number. A six week old
 // blog with no clicks is behaving exactly as expected, and calling that failure
 // is how people quit two months before it would have worked.
-import { analyseBlogHealth, findCollapse, type BlogHealthInput, type DailyPoint } from '../lib/blog-health'
+import { analyseBlogHealth, findCollapse, readReach, type BlogHealthInput, type DailyPoint } from '../lib/blog-health'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean | undefined, detail?: string) => {
@@ -36,18 +38,106 @@ const base: BlogHealthInput = {
 
 // ── the failure this file exists for ────────────────────────────────────────
 // Traffic ran at ~45 a day for a month, then the site broke and it went to zero.
+// Reach held up through it, so the site really was still in Google when the
+// traffic stopped and the one-day claim is earned.
 {
   const daily = [...series(30, 45, 2), ...series(6, 0, 0, 30)]
-  const h = analyseBlogHealth({ ...base, daily })
+  const h = analyseBlogHealth({ ...base, daily, reach: { pages: [120, 118, 115] } })
   check('a collapse is detected at all', !!h.collapse, 'this is the exact case MVP missed')
   check('and dated, so it can be lined up against what changed',
     h.collapse?.date === daily[30].date, `${h.collapse?.date} vs ${daily[30].date}`)
   check('the verdict leads with the collapse, not with an average',
     /stopped on/i.test(h.verdict), h.verdict)
   check('and it says what kind of problem this is',
-    /break, not a slow decline/i.test(h.doThis), h.doThis)
+    /break rather than a slow decline/i.test(h.doThis), h.doThis)
   check('the previous level is stated so the loss is legible',
     (h.collapse?.before ?? 0) >= 40, `${h.collapse?.before}`)
+  check('and the evidence for calling it a break is shown, not just asserted',
+    /still showing 115 of your pages/i.test(h.verdict), h.verdict)
+}
+
+// ── the second failure: a deindexing wearing a collapse's clothes ───────────
+// Measured, on the owner's own blog. Impressions ran 48 a day on 29 August, 2 on
+// the 30th, then zero for a fortnight. That is the shape of a site going down,
+// and the page said so: "This is a break, not a slow decline, so look for
+// something that changed that day." Nothing changed that day. The indexed page
+// count had been falling since the end of June, 1,076 pages down to 47, and the
+// last of those leaving is what the impression chart was showing. He spent a day
+// hunting a 1 September change that did not exist.
+//
+// The impressions in this case are indistinguishable from the case above, which
+// is the whole point: only the reach tells them apart.
+{
+  const daily = [...series(30, 45, 2), ...series(6, 0, 0, 30)]
+  const h = analyseBlogHealth({ ...base, daily, reach: { pages: [1076, 361, 47] } })
+  check('the stop is still reported', !!h.collapse)
+  check('but it is NOT called a one-day break',
+    !/break rather than a slow decline|changed that day: the site going down/i.test(h.doThis), h.doThis)
+  check('the creator is not sent hunting for a change on the collapse date',
+    !/something changed that day/i.test(h.doThis), h.doThis)
+  check('the slide is named as the cause',
+    /dropping out of Google/i.test(h.doThis), h.doThis)
+  check('and the measurement behind that claim is on screen',
+    /fell from 1076 to 47/i.test(h.verdict), h.verdict)
+  check('with the honest statement that it did not begin on the collapse date',
+    /did not start that day/i.test(h.verdict), h.verdict)
+}
+
+// ── with no reach measurement, assert neither ───────────────────────────────
+// The old wording was wrong not because it picked the wrong cause but because it
+// picked one at all from evidence that cannot distinguish them. Unmeasured must
+// mean undecided.
+{
+  const daily = [...series(30, 45, 2), ...series(6, 0, 0, 30)]
+  const h = analyseBlogHealth({ ...base, daily })
+  check('unmeasured reach is reported as unknown', h.reach.trend === 'unknown', h.reach.trend)
+  check('and no cause is asserted either way',
+    !/break rather than a slow decline/i.test(h.doThis) && !/dropping out of Google/i.test(h.doThis),
+    h.doThis)
+  check('the creator is given a way to tell the two apart themselves',
+    /whether the page still loads/i.test(h.doThis), h.doThis)
+}
+
+// ── a failed API call must never be read as a dead site ─────────────────────
+// querySearchAnalytics returns [] on a timeout as readily as on an empty site.
+// Counting rows off that would tell a creator with a working blog that every
+// page had fallen out of Google.
+{
+  check('a reach of null is unknown, not shrinking',
+    readReach(null, 0).trend === 'unknown')
+  check('zero pages alongside real impressions is a broken measurement, not a dead site',
+    readReach({ pages: [400, 200, 0] }, 900).trend === 'unknown',
+    readReach({ pages: [400, 200, 0] }, 900).trend)
+  check('but zero pages alongside zero impressions is believable',
+    readReach({ pages: [400, 200, 0] }, 0).trend === 'shrinking',
+    readReach({ pages: [400, 200, 0] }, 0).trend)
+}
+
+// ── a small blog is not deindexing ──────────────────────────────────────────
+{
+  check('three pages becoming one is not called a deindexing',
+    readReach({ pages: [3, 2, 1] }, 0).trend === 'unknown')
+  check('a steady site is steady', readReach({ pages: [100, 98, 95] }, 500).trend === 'steady')
+  check('a growing site is growing', readReach({ pages: [100, 130, 180] }, 500).trend === 'growing')
+  check('a recovery is not called a slide',
+    readReach({ pages: [100, 40, 95] }, 500).trend === 'steady',
+    readReach({ pages: [100, 40, 95] }, 500).trend)
+}
+
+// ── caught before it reaches zero ───────────────────────────────────────────
+// The same disease, a month earlier, when the impressions have not flatlined
+// long enough for findCollapse to fire.
+{
+  const h = analyseBlogHealth({ ...base, daily: series(40, 0, 0), reach: { pages: [900, 400, 60] } })
+  check('a site with no traffic and shrinking reach is told it is being dropped',
+    /being dropped rather than never picked up/i.test(h.verdict), h.verdict)
+  check('and pointed at the Pages report rather than at internal linking',
+    /Search Console, go to Pages/i.test(h.doThis), h.doThis)
+
+  // A site Google simply never took gets the original advice, not this one.
+  const never = analyseBlogHealth({ ...base, daily: series(40, 0, 0), reach: { pages: [0, 0, 0] } })
+  check('a site Google never picked up is not accused of losing pages',
+    !/being dropped/i.test(never.verdict), never.verdict)
 }
 
 // ── a quiet blog has not crashed ────────────────────────────────────────────
@@ -198,6 +288,83 @@ const base: BlogHealthInput = {
   const h = analyseBlogHealth({ ...base, connected: false, daily: [] })
   check('without Search Console it says it cannot see, not that things are bad',
     /cannot see/i.test(h.verdict) && !/failing|wrong/i.test(h.verdict), h.verdict)
+}
+
+// ── the wiring, which no fixture above can reach ────────────────────────────
+// readReach can be perfect and the feature still lie, because the numbers it
+// reads are counted in the route. Two mistakes there produce a confident false
+// claim, and both are one word wide.
+{
+  const root = join(__dirname, '..')
+  const strip = (src: string) => src.split('\n').filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('*') && !l.trim().startsWith('/*')).join('\n')
+  const ROUTE = strip(readFileSync(join(root, 'app/api/seo/blog-health/route.ts'), 'utf8'))
+  const GSC = strip(readFileSync(join(root, 'lib/gsc.ts'), 'utf8'))
+
+  check('the comment stripper works',
+    strip('  // querySearchAnalytics(\nreal code').indexOf('querySearchAnalytics(') === -1,
+    'if this fails every check below proves nothing')
+
+  // Mistake one: counting rows off the swallowing version. A timeout returns []
+  // there, and [] counted is zero pages, which reads as the whole site gone.
+  check('the reach windows are counted off the version that can report failure',
+    /querySearchAnalyticsOrNull\(token, property, \{[\s\S]{0,200}?dimensions: \['page'\]/.test(ROUTE),
+    'the reach count must not use the [] on error version')
+
+  // Mistake two: filling in the windows it could read and leaving the rest at
+  // zero, which invents a slide out of one failed call.
+  check('a window that could not be read voids the whole measurement',
+    /counted\.every\(n => n !== null\)/.test(ROUTE),
+    'all three windows or none')
+
+  // And the two gsc helpers must keep meaning different things.
+  check('querySearchAnalyticsOrNull returns null on a bad response',
+    /if \(!res\.ok\) return null/.test(GSC), 'null is the signal that Google did not answer')
+  check('while the plain one still gives callers an array',
+    /querySearchAnalyticsOrNull\(token, property, opts\)\) \?\? \[\]/.test(GSC),
+    'existing callers iterate the result and must not start seeing null')
+}
+
+// ── break tests ─────────────────────────────────────────────────────────────
+// Every check above is worthless if it would also pass against the bug. These
+// reintroduce each one and confirm the guard actually fires. They run here,
+// ahead of the report, because a block appended after it is never read.
+{
+  const daily = [...series(30, 45, 2), ...series(6, 0, 0, 30)]
+  const breaks: string[] = []
+  const broke = (name: string, cond: boolean) => { if (!cond) breaks.push(name) }
+
+  // Break 1: the original bug. Assert a one-day break regardless of reach.
+  const deindexing = analyseBlogHealth({ ...base, daily, reach: { pages: [1076, 361, 47] } })
+  broke('a deindexing would fail the one-day-break wording check',
+    !/break rather than a slow decline/i.test(deindexing.doThis))
+  broke('and would fail the changed-that-day check',
+    !/something changed that day/i.test(deindexing.doThis))
+
+  // Break 2: drop the small-site floor, so 3 pages to 1 becomes a deindexing.
+  broke('the small-site floor is what makes [3,2,1] unknown',
+    readReach({ pages: [3, 2, 1] }, 0).trend === 'unknown'
+    && readReach({ pages: [30, 20, 10] }, 0).trend === 'shrinking')
+
+  // Break 3: drop the impressions cross-check, so a failed newest window reads
+  // as total deindexing on a site that is plainly still getting traffic.
+  broke('the impressions cross-check is what catches a broken measurement',
+    readReach({ pages: [400, 200, 0] }, 900).trend === 'unknown'
+    && readReach({ pages: [400, 200, 1] }, 900).trend === 'shrinking')
+
+  // Break 4: drop the middle <= oldest requirement, so a dip and recovery gets
+  // called a slide.
+  broke('the middle window is what separates a slide from a dip',
+    readReach({ pages: [100, 140, 55] }, 500).trend === 'steady'
+    && readReach({ pages: [100, 90, 55] }, 500).trend === 'shrinking')
+
+  // Break 5: unknown reach falling through to either assertion.
+  const unmeasured = analyseBlogHealth({ ...base, daily })
+  broke('unknown reach reaches neither assertion',
+    !/break rather than a slow decline/i.test(unmeasured.doThis)
+    && !/dropping out of Google/i.test(unmeasured.doThis)
+    && unmeasured.doThis.length > 80)
+
+  for (const b of breaks) failures.push(`BREAK TEST MISSED ${b}`)
 }
 
 console.log(failures.length ? 'FAIL' : 'ALL PASS')

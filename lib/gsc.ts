@@ -143,12 +143,33 @@ export interface SearchAnalyticsRow {
 /**
  * Search Analytics query. `dimensions` e.g. ['query'] for top keywords, or
  * ['page'] for per-URL totals. Optional `page` filter restricts to one URL.
+ *
+ * Swallows errors into an empty array, which is right for the callers that only
+ * want to show what they can and skip what they cannot. It is WRONG for anyone
+ * counting rows, because a failed call and a site with no traffic then look
+ * identical, and a count of zero read off a timeout becomes a false claim that
+ * the site lost all its pages. Those callers use querySearchAnalyticsOrNull.
  */
 export async function querySearchAnalytics(
   token: string,
   property: string,
   opts: { startDate: string; endDate: string; dimensions?: string[]; page?: string; rowLimit?: number },
 ): Promise<SearchAnalyticsRow[]> {
+  return (await querySearchAnalyticsOrNull(token, property, opts)) ?? []
+}
+
+/**
+ * The same query, with failure kept distinguishable from emptiness.
+ *
+ * null means Google did not answer. [] means Google answered and there was
+ * nothing. Collapsing the two is how a broken API call gets reported to a
+ * creator as a catastrophe on their own site.
+ */
+export async function querySearchAnalyticsOrNull(
+  token: string,
+  property: string,
+  opts: { startDate: string; endDate: string; dimensions?: string[]; page?: string; rowLimit?: number },
+): Promise<SearchAnalyticsRow[] | null> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const body: any = {
@@ -166,11 +187,11 @@ export async function querySearchAnalytics(
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
     })
-    if (!res.ok) return []
+    if (!res.ok) return null
     const data = await res.json() as { rows?: SearchAnalyticsRow[] }
     return data.rows ?? []
   } catch {
-    return []
+    return null
   }
 }
 

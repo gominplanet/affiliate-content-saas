@@ -60,6 +60,41 @@ export interface BlogHealthInput {
   /** Everything Amazon paid for links placed away from the storefront. Covers
    *  the blog AND anywhere else, which is why it is never called blog revenue. */
   offsiteEarningsCents: number | null
+  /** How much of the site Google is still willing to show. See ReachWindows.
+   *  Null when it could not be measured, which must stay distinguishable from
+   *  a measured zero. */
+  reach?: ReachWindows | null
+}
+
+/**
+ * How many distinct pages Google showed at all, over three consecutive 28-day
+ * windows, oldest first.
+ *
+ * This exists because impressions alone cannot tell a broken site from a site
+ * being dropped out of the index, and the two have nothing in common to fix.
+ *
+ * Measured, on one real blog: impressions went 48 a day to 2 a day to zero
+ * across 29 and 30 August, which is the exact shape of a site going down. It
+ * had not gone down. Its indexed page count had been falling since the end of
+ * June, 1,076 pages to 47 over ten weeks, and the last of those 47 leaving is
+ * what the impression chart was showing. The page said "this is a break, not a
+ * slow decline, so look for something that changed that day" and sent its owner
+ * hunting a 1 September change that never existed.
+ *
+ * Distinct pages with at least one impression is the closest thing to that
+ * index count the Search Analytics API will give us, and it moves the same way.
+ */
+export interface ReachWindows {
+  /** [oldest 28 days, middle 28 days, most recent 28 days]. */
+  pages: [number, number, number]
+}
+
+export type ReachTrend = 'shrinking' | 'steady' | 'growing' | 'unknown'
+
+export interface ReachRead {
+  trend: ReachTrend
+  oldest: number
+  newest: number
 }
 
 export type FunnelStage = 'not-shown' | 'not-ranking' | 'not-clicked' | 'not-following-links' | 'not-buying' | 'working'
@@ -90,6 +125,10 @@ export interface BlogHealth {
   tooEarly: boolean
   /** Impression-weighted average position, or null when nothing was shown. */
   avgPosition: number | null
+  /** Whether the number of pages Google shows is shrinking, and by how much.
+   *  'unknown' whenever it could not be measured or the numbers are too small
+   *  to mean anything, and 'unknown' never asserts a cause. */
+  reach: ReachRead
   daily: DailyPoint[]
 }
 
@@ -135,6 +174,37 @@ export function findCollapse(daily: DailyPoint[]): { date: string; before: numbe
   }
 }
 
+/**
+ * Read the reach windows, refusing to claim a trend the numbers cannot carry.
+ *
+ * Every refusal here is load-bearing, because the caller turns 'shrinking' into
+ * "your pages are dropping out of Google", which is a different instruction to a
+ * creator than "something changed that day". Saying it wrongly costs them the
+ * same day the old wording did.
+ *
+ * `recentImpressions` is passed in as a cross-check. If Google showed the site
+ * anything at all in the last 28 days then the count of pages it showed cannot
+ * be zero, so a zero there is a broken measurement rather than a dead site, and
+ * the only honest answer is that we do not know.
+ */
+export function readReach(reach: ReachWindows | null | undefined, recentImpressions: number): ReachRead {
+  const unknown: ReachRead = { trend: 'unknown', oldest: 0, newest: 0 }
+  if (!reach) return unknown
+  const [oldest, middle, newest] = reach.pages ?? []
+  if (![oldest, middle, newest].every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0)) return unknown
+
+  // Too few pages for a ratio to mean anything. Three pages becoming one is not
+  // a deindexing, it is a small blog having a slow month.
+  if (oldest < 10) return unknown
+
+  // The measurement contradicts the traffic it is supposed to explain.
+  if (recentImpressions > 0 && newest === 0) return unknown
+
+  if (newest <= oldest * 0.6 && middle <= oldest) return { trend: 'shrinking', oldest, newest }
+  if (newest >= oldest * 1.4) return { trend: 'growing', oldest, newest }
+  return { trend: 'steady', oldest, newest }
+}
+
 export function analyseBlogHealth(input: BlogHealthInput): BlogHealth {
   const { daily, connected, posts, affiliateClicks, offsiteEarningsCents } = input
   const recentRows = daily.slice(-28)
@@ -143,6 +213,7 @@ export function analyseBlogHealth(input: BlogHealthInput): BlogHealth {
   const previous = { clicks: sum(previousRows, r => r.clicks), impressions: sum(previousRows, r => r.impressions) }
   const ageMonths = monthsSince(input.firstPublishedAt)
   const collapse = findCollapse(daily)
+  const reach = readReach(input.reach, recent.impressions)
 
   // Where the chain gives out. Each break has a different fix, and only the
   // last of them is visible from earnings alone.
@@ -181,14 +252,36 @@ export function analyseBlogHealth(input: BlogHealthInput): BlogHealth {
     doThis = 'Write your first post.'
   } else if (collapse) {
     verdict = `Your traffic stopped on ${collapse.date}. Before that Google was showing your posts about ${collapse.before} times a day; since then it has been nothing.`
-    doThis = 'This is a break, not a slow decline, so look for something that changed that day: the site going down, a redirect, or a setting that hid your pages. Fix the cause and the traffic comes back on its own.'
+    if (reach.trend === 'shrinking') {
+      // The day the impressions hit zero is the END of this, not the start of
+      // it, and saying otherwise sends someone looking for a change that was
+      // never made.
+      verdict += ` It did not start that day. Over the last three months the number of your pages Google shows at all fell from ${reach.oldest} to ${reach.newest}.`
+      doThis = 'Your pages have been dropping out of Google for weeks, so there is no single day to investigate and nothing broke. Open Search Console, go to Pages, and read the reasons it gives for the pages it is no longer indexing. Fix whichever reason covers your actual posts, then ask Google to recrawl them.'
+    } else if (reach.trend === 'unknown') {
+      // We know when it stopped. We do NOT know why, and there are two causes
+      // that look identical here, so this gives an order to check rather than
+      // an answer it cannot support.
+      doThis = `Two different things look like this, so check which one it is before changing anything. Open one of your posts in a browser and see whether the page still loads. If it does, search Google for its exact title and see whether the post comes back. A page that loads but is no longer in Google is being dropped from the index, which takes weeks and has no single cause to find on ${collapse.date}. A page that does not load is a site fault, and that is where the change that day will be.`
+    } else {
+      // Reach held up, so the site really was being shown right until it
+      // stopped. Now the one-day claim is earned.
+      verdict += ` Google was still showing ${reach.newest} of your pages over that period, so they had not been dropped from the index.`
+      doThis = 'Your pages are still in Google, so this is a break rather than a slow decline and something changed that day: the site going down, a redirect, or a setting that hid your pages. Fix the cause and the traffic comes back on its own.'
+    }
   } else if (stage === 'not-shown') {
     verdict = tooEarly
       ? `Google has not started showing your ${posts} posts yet, which is normal at ${ageMonths === 0 ? 'under a month' : `${ageMonths} month${ageMonths === 1 ? '' : 's'}`} old.`
       : `Google is not showing your posts to anyone.`
+    if (!tooEarly && reach.trend === 'shrinking') {
+      // Same disease as the collapse case, caught before it reached zero.
+      verdict += ` The number of your pages it shows at all fell from ${reach.oldest} to ${reach.newest} over the last three months, so they are being dropped rather than never picked up.`
+    }
     doThis = tooEarly
       ? 'Nothing is wrong. A new site usually waits weeks before Google shows it to anyone, and months before that turns into real traffic. Keep publishing.'
-      : 'Nobody can click a page they are never shown, so nothing else matters until this moves. Check that your posts are actually in Google, and that they are linked from somewhere on your own site rather than sitting alone.'
+      : reach.trend === 'shrinking'
+        ? 'Pages that were indexed and are not any more is a different problem from pages Google never took, and it is the one you have. Open Search Console, go to Pages, and read the reasons listed for the pages it stopped indexing. Fix whichever reason covers your actual posts, then ask Google to recrawl them.'
+        : 'Nobody can click a page they are never shown, so nothing else matters until this moves. Check that your posts are actually in Google, and that they are linked from somewhere on your own site rather than sitting alone.'
   } else if (stage === 'not-ranking') {
     verdict = `Google showed your posts ${recent.impressions.toLocaleString()} times in the last 28 days, but at an average position of ${Math.round(avgPosition as number)}, which is page ${Math.ceil((avgPosition as number) / 10)} of the results.`
     doThis = 'Almost nobody scrolls that far, so a near-zero click rate here is the position doing what positions do, not your titles. Rewriting them will not help until the pages move up. What moves them is fewer, better posts on questions people actually type, and links between your own posts so the strongest ones pass authority to the rest.'
@@ -211,5 +304,5 @@ export function analyseBlogHealth(input: BlogHealthInput): BlogHealth {
       : 'The chain works as far as the click. Keep publishing, and watch which posts bring the readers so you can make more like them.'
   }
 
-  return { connected, recent, previous, ageMonths, stage, collapse, verdict, doThis, tooEarly, daily, avgPosition }
+  return { connected, recent, previous, ageMonths, stage, collapse, verdict, doThis, tooEarly, daily, avgPosition, reach }
 }

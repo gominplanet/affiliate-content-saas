@@ -15,8 +15,8 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
-import { getValidGscToken, querySearchAnalytics } from '@/lib/gsc'
-import { analyseBlogHealth, type DailyPoint } from '@/lib/blog-health'
+import { getValidGscToken, querySearchAnalytics, querySearchAnalyticsOrNull } from '@/lib/gsc'
+import { analyseBlogHealth, type DailyPoint, type ReachWindows } from '@/lib/blog-health'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -96,6 +96,7 @@ export async function GET() {
   } catch { /* Passport not in use, so no claim about link clicks */ }
 
   let daily: DailyPoint[] = []
+  let reach: ReachWindows | null = null
   let connected = false
   if (property) {
     const token = await getValidGscToken(supabase, ownerId)
@@ -129,6 +130,36 @@ export async function GET() {
         }
         daily = filled
       }
+
+      // How much of the site Google is still willing to show, over three
+      // consecutive 28-day windows.
+      //
+      // Impressions alone cannot tell a site that broke from a site being
+      // dropped out of the index, and those have nothing in common to fix. One
+      // real blog went 48 impressions a day to zero across two days in August,
+      // exactly the shape of an outage, while nothing was wrong with the site:
+      // its indexed page count had been sliding since June. Counting the
+      // distinct pages that got any impression at all is the closest the
+      // Search Analytics API comes to that number, and it moves with it.
+      //
+      // querySearchAnalyticsOrNull, not the plain one, because a timeout
+      // returning [] would be counted as zero pages and reported to the creator
+      // as their whole site falling out of Google.
+      const windows = [83, 55, 27].map((back, i) => {
+        const from = new Date(end); from.setDate(from.getDate() - back)
+        const to = new Date(end); to.setDate(to.getDate() - [56, 28, 0][i])
+        return { startDate: ymd(from), endDate: ymd(to) }
+      })
+      const counted = await Promise.all(windows.map(w =>
+        querySearchAnalyticsOrNull(token, property, {
+          ...w, dimensions: ['page'], rowLimit: 5000,
+        }).then(rows => rows === null ? null : rows.filter(r => (r.impressions ?? 0) > 0).length)
+      ))
+      // All three or none. A window we could not read is not a window with no
+      // pages in it, and mixing the two invents a trend.
+      if (counted.every(n => n !== null)) {
+        reach = { pages: counted as [number, number, number] }
+      }
     }
   }
 
@@ -139,5 +170,6 @@ export async function GET() {
     firstPublishedAt: firstPost?.published_at ?? null,
     affiliateClicks,
     offsiteEarningsCents,
+    reach,
   }))
 }
