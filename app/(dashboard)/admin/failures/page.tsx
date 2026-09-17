@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { generateBlogRequest } from '@/lib/blog-generate-client'
-import { RefreshCw, Trash2, AlertCircle, ChevronDown, ChevronRight, CheckCircle2, Loader2, ImageOff } from 'lucide-react'
+import { RefreshCw, Trash2, AlertCircle, ChevronDown, ChevronRight, CheckCircle2, Loader2, ImageOff, Clock } from 'lucide-react'
 
 type JobType = 'blog_generation' | 'wp_publish' | 'social_draft' | 'youtube_sync'
 type FailureStatus = 'pending_retry' | 'retrying' | 'resolved' | 'dismissed'
@@ -209,6 +209,48 @@ function FailureRow({
 // Ops alert: sites whose new posts are publishing WITHOUT a thumbnail because
 // the host is blocking WP media uploads (blog_posts.thumbnail_blocked). Lets us
 // reach out before the user notices. Self-contained; renders nothing when clean.
+// Scheduled posts whose time came and went with no publish recorded.
+// Reported as "scheduling two posts a day and some don't go through". A
+// wp-native post is handed to WordPress and flipped by ITS cron, which only
+// fires when somebody visits the site, so on a quiet blog it sits in `future`
+// past its time. Nothing here ever asked, so nothing ever said so.
+// Self-contained; renders nothing when clean.
+function MissedSchedulesPanel() {
+  const [data, setData] = useState<{
+    total: number; wpNative: number; ours: number; headline: string; split: string | null
+    groups: Array<{ userId: string; email: string | null; mode: string; late: number; oldestDue: string; sample: string[] }>
+  } | null>(null)
+  useEffect(() => {
+    fetch('/api/admin/missed-schedules')
+      .then(r => r.json())
+      .then(d => { if (d?.ok && d.total > 0) setData(d) })
+      .catch(() => {})
+  }, [])
+  if (!data) return null
+  return (
+    <div className="card p-4 border border-[#ff9500]/30 bg-[#ff9500]/5 mb-5">
+      <div className="flex items-center gap-2 mb-2">
+        <Clock size={16} className="text-[#ff9500]" />
+        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{data.headline}</p>
+      </div>
+      {data.split && (
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
+          {data.split} A late wp-native post is the creator&apos;s own WordPress cron, which only runs when their site gets a visitor. A late one on our side is ours to fix.
+        </p>
+      )}
+      <div className="flex flex-col gap-1">
+        {data.groups.slice(0, 20).map((g, i) => (
+          <div key={i} className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+            <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">{g.email ?? g.userId.slice(0, 8)}</span>
+            {' · '}<span className={g.mode === 'wp-native' ? 'text-[#ff9500]' : 'text-[#ff3b30]'}>{g.mode}</span>
+            {' · '}{g.late} late{' · '}oldest {g.oldestDue?.slice(0, 16).replace('T', ' ')}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ThumbnailBlocksPanel() {
   const [sites, setSites] = useState<Array<{ userId: string; host: string; blocked: number }>>([])
   const [loaded, setLoaded] = useState(false)
@@ -313,6 +355,7 @@ export default function FailuresPage() {
         }
       />
 
+      <MissedSchedulesPanel />
       <ThumbnailBlocksPanel />
 
       {/* Filters */}
