@@ -10,6 +10,8 @@ import { InfoTip } from '@/components/ui/InfoTip'
 import GeniuslinkGroupsPanel from '@/components/brand/GeniuslinkGroupsPanel'
 import LinkStyleTiles from '@/components/brand/LinkStyleTiles'
 import { GENIUSLINK_SIGNUP_URL, GENIUSLINK_PITCH } from '@/lib/geniuslink-signup'
+import VisualPresetPicker from '@/components/brand/VisualPresetPicker'
+import { DEFAULT_PRESET_ID } from '@/lib/visual-presets'
 
 async function uploadBrandImage(
   file: File,
@@ -194,6 +196,8 @@ interface BrandData {
   affiliate_disclaimer: string
   primary_color: string
   secondary_color: string
+  /** Chosen image look. See lib/visual-presets.ts. */
+  visual_preset: string
   // Blog header/footer background colors ('' = use theme default). The theme
   // auto-picks a readable text color from whatever background is chosen.
   header_bg_color: string
@@ -295,6 +299,7 @@ const DEFAULT: BrandData = {
   affiliate_disclaimer: 'This post contains affiliate links. I may earn a commission at no extra cost to you.',
   primary_color: '#7C3AED',
   secondary_color: '#34c759',
+  visual_preset: DEFAULT_PRESET_ID,
   header_bg_color: '',
   footer_bg_color: '',
   facebook_groups: [],
@@ -666,6 +671,9 @@ export default function BrandPage() {
         affiliate_disclaimer: row.affiliate_disclaimer ?? DEFAULT.affiliate_disclaimer,
         primary_color: row.primary_color ?? '#7C3AED',
         secondary_color: row.secondary_color ?? '#34c759',
+        // Generated DB types predate migration 342, and a site that has not run
+        // it yet simply has no column, which is the default look.
+        visual_preset: (row as Record<string, unknown>).visual_preset as string ?? DEFAULT_PRESET_ID,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         header_bg_color: (row as any).header_bg_color ?? '',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2130,6 +2138,17 @@ export default function BrandPage() {
                 value={data.secondary_color}
                 onChange={(c) => set('secondary_color', c)}
               />
+
+              {/* Sits under the colours because the colours are applied ON TOP
+                  of whichever look is chosen, and because this is the setting
+                  that actually stops every MVP creator's thumbnails looking
+                  like every other one's. */}
+              <div className="pt-4 border-t border-gray-100 dark:border-white/10">
+                <VisualPresetPicker
+                  value={data.visual_preset}
+                  onChange={(id: string) => set('visual_preset', id)}
+                />
+              </div>
 
               <div className="pt-4 border-t border-gray-100 dark:border-white/10">
                 <div className="flex items-center gap-1.5 mb-1">

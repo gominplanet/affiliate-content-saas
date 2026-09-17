@@ -27,10 +27,15 @@
 // randomness, no reading of anything it was not handed, so the same inputs
 // always produce the same prompt and a test can hold it to that.
 
+import { resolvePreset, presetToPrompt } from '@/lib/visual-presets'
 import { framingLine, type EffectiveFraming, type BuildKey, type HeightKey } from '@/lib/body-framing'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 
 export interface ThumbnailPromptInput {
+  /** The brand's chosen look. Null falls back to the loud house style, which is
+   *  what every account got before presets existed, so nobody's thumbnails
+   *  change underneath them without being asked. See lib/visual-presets.ts. */
+  presetId?: string | null
   /** Headline, already upper-cased and split by the copy step. */
   line1: string
   line2: string
@@ -195,14 +200,28 @@ export function creativeHead(input: ThumbnailPromptInput): string[] {
       ...(input.boostLines || []),
     ].filter(Boolean)
   }
+  // No brief, so the brand's chosen look is the direction.
+  //
+  // This used to be a single hardcoded aesthetic, handed to every account on the
+  // platform: "VIRAL ... MrBeast-era energy ... vibrant, modern, high-contrast
+  // ... bright coloured CHECKMARKS ... a vivid studio colour gradient". It asked
+  // for something UNIQUE twice while specifying one look in detail, and detail
+  // wins. That is why every creator's thumbnails looked like every other
+  // creator's, and why a creator asked whether they could be customised.
+  //
+  // The preset REPLACES it rather than decorating it. Appending "editorial" to
+  // MrBeast energy produces MrBeast energy with a serif.
+  const preset = resolvePreset(input.presetId)
   return [
-    `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 16:9 landscape (1536×864) — in the style of today's top product-review creators (MrBeast-era energy). It MUST look vibrant, modern and high-contrast and make the viewer want to click. NEVER flat, dull, plain or template-like. Make this one ${input.fallbackVibe || 'bold and colourful'}. YOU are the designer — own the layout, colours, fonts and effects.`,
-    '',
-    'USE THESE MODERN DESIGN TOOLS (pick the ones that fit this product, and mix them freely for variety):',
-    '• TITLE TYPOGRAPHY: never one flat block of text, and do NOT default to the generic "plain white top line + plain yellow bottom line" look. Bold modern display font, colour the words to fit THIS product\'s palette (not always yellow), vary size and weight so the key word jumps out, and drop a short punchy phrase into a hand-painted brush-stroke or torn banner.',
-    '• FEATURE CALLOUTS & ICONS: a short benefit list with bright coloured CHECKMARKS or small circular ICON chips (2–3 words each), and/or spec PILL badges (e.g. "144Hz", "FHD", "360°"), and/or a round hero badge ("#1", "BEST").',
-    '• BACKGROUND: a vivid studio colour gradient, a bold themed graphic scene, OR a real-life setting — always colourful, high-contrast, with real depth (soft focus / bokeh). Never a plain flat wall.',
-    input.productFacts ? `Draw callouts ONLY from these real product details (correctly spelled):\n${input.productFacts}` : '',
+    presetToPrompt(preset, {
+      surface: 'thumbnail',
+      palette: input.palette,
+      productFacts: input.productFacts,
+    }),
+    // Only the loud preset takes a per-variant vibe. On the restrained looks an
+    // extra adjective is exactly how a quiet composition drifts back to loud.
+    preset.badges && input.fallbackVibe ? `Lean this one ${input.fallbackVibe}.` : '',
+    ...(input.boostLines || []),
   ].filter(Boolean)
 }
 

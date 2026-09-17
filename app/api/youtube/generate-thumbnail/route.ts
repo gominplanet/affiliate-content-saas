@@ -900,9 +900,14 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     //   a badge → force it on every thumbnail
     //   'none' OR unset → no badge (the default)
     let forcedDecoration: ThumbDecoration | null = 'none'
+    // The brand's chosen image look. Null is the loud default every account had
+    // before presets existed, so a creator who has not picked one sees no change.
+    let visualPreset: string | null = null
     try {
-      const { data: bp } = await supabase
-        .from('brand_profiles').select('thumbnail_brand_style').eq('user_id', user.id).maybeSingle()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: bp } = await (supabase as any)
+        .from('brand_profiles').select('thumbnail_brand_style,visual_preset').eq('user_id', user.id).maybeSingle()
+      visualPreset = (bp as Record<string, unknown> | null)?.visual_preset as string ?? null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const bs = (bp as any)?.thumbnail_brand_style || {}
       noCheckDecoration = !!bs.noCheck
@@ -2284,6 +2289,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
               // assembled result. scripts/test-thumbnail-prompt.ts now builds all
               // 68 combinations on every build and reads them for exactly that.
               prompt = buildGraphicThumbnailPrompt({
+                presetId: visualPreset,
                 line1, line2,
                 concept: briefConcept,
                 palette: briefPalette,
