@@ -2349,14 +2349,25 @@ async function handleGenerate(request: Request) {
         // Parallel uploads — was sequential ~700ms each → 4 images = 2.8s.
         // The AI-generated path (further down at ~line 1288) already does
         // this; aligning here closes the gap.
+        // `hosted` records whether the picture ACTUALLY LANDED on the
+        // creator's site, or whether we fell back to pointing his post at the
+        // URL we generated it from.
+        //
+        // That distinction was missing and it cost a real diagnosis. Every
+        // element of this array was non-null either way, so `uploaded.length >
+        // 0` was true either way, and images_status was written 'ready' either
+        // way. A creator whose site had stopped accepting uploads entirely had
+        // 23 posts marked 'ready', and reading that as "the images are on his
+        // site" sent the investigation in exactly the wrong direction. The
+        // status described what we attempted, not what happened.
         const uploaded = await Promise.all(userImageUrls.map(async (src, i) => {
           try {
             const media = await wpService.uploadImageFromUrl(src, `${slug}-body${i + 1}.jpg`)
             return media?.source_url
-              ? { url: media.source_url, alt: altFor(i) }
-              : { url: src, alt: altFor(i) } // fallback: embed the public URL directly
+              ? { url: media.source_url, alt: altFor(i), hosted: true }
+              : { url: src, alt: altFor(i), hosted: false } // fallback: embed the public URL directly
           } catch {
-            return { url: src, alt: altFor(i) }
+            return { url: src, alt: altFor(i), hosted: false }
           }
         }))
         heroImageUrl = uploaded[0]?.url ?? heroImageUrl
@@ -2374,7 +2385,21 @@ async function handleGenerate(request: Request) {
           try { await wpService.updatePost(wpPost.id, { content: finalContent }) } catch { /* keep text-only post */ }
           if (savedPost?.id) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: uploaded.length > 0 ? 'ready' : 'failed' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            // 'ready' ONLY when every picture is on the creator's own site.
+            // 'hotlinked' when one or more had to point at the URL we made it
+            // from: the post looks right today and the creator does not own the
+            // picture, so it is a site problem being reported as a success.
+            const hostedCount = uploaded.filter(u => u.hosted).length
+            const imagesStatus = uploaded.length === 0
+              ? 'failed'
+              : hostedCount === uploaded.length ? 'ready' : 'hotlinked'
+            try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_hosted_count: hostedCount, images_status: imagesStatus }).eq('id', savedPost.id) } catch {
+              // images_hosted_count arrives with migration 339. Until it runs,
+              // record what the old columns can hold rather than losing the
+              // status write entirely.
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: imagesStatus }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            }
           }
         }
       } catch {
@@ -2735,7 +2760,12 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                 if (!firstImgError) firstImgError = `wp-media: ${msg}`
                 console.warn(`[blog-images] item ${i} WP media upload failed, embedding fal URL directly:`, msg)
               }
-              return { url: mediaUrl || falUrl, alt: altForThisImage }
+              // `hosted` is the whole difference between a picture the creator
+              // owns and one borrowed from our generation CDN. The comment
+              // above already said the fallback "still renders", and it does,
+              // which is exactly why nothing noticed a site that had stopped
+              // accepting uploads altogether.
+              return { url: mediaUrl || falUrl, alt: altForThisImage, hosted: !!mediaUrl }
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e)
               if (!firstImgError) firstImgError = msg
@@ -2743,7 +2773,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
               return null
             }
           }))
-          const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
+          const uploaded = results.filter((r): r is { url: string; alt: string; hosted: boolean } => !!r)
           heroImageUrl = uploaded[0]?.url ?? heroImageUrl
           console.log('[blog-images] result', { produced: uploaded.length, of: slots.length, firstError: firstImgError, falProduct: !!falProductImageUrl, frames: frameRefs.length })
           if (uploaded.length === 0) {
@@ -2776,7 +2806,21 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
           // stop having to grep Vercel logs to know if image-gen worked.
           if (savedPost?.id) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            try { await (supabase as any).from('blog_posts').update({ body_images_count: uploaded.length, images_status: uploaded.length > 0 ? 'ready' : 'failed' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            // 'ready' ONLY when every picture is on the creator's own site.
+            // This is the path that produced 23 posts marked 'ready' for a
+            // creator whose site had not accepted an image since August: every
+            // one of them was pointing at fal.media, which renders fine today
+            // and is not his.
+            const hostedCount = uploaded.filter(u => u.hosted).length
+            const imagesStatus = uploaded.length === 0
+              ? 'failed'
+              : hostedCount === uploaded.length ? 'ready' : 'hotlinked'
+            try { await (supabase as any).from('blog_posts').update({ body_images_count: uploaded.length, images_hosted_count: hostedCount, images_status: imagesStatus }).eq('id', savedPost.id) } catch {
+              // images_hosted_count arrives with migration 339; until it runs,
+              // still record the status rather than losing the write.
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              try { await (supabase as any).from('blog_posts').update({ body_images_count: uploaded.length, images_status: imagesStatus }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            }
           }
         } else if (savedPost?.id) {
           // No FAL_KEY on the server — the image pass can't run. Write a terminal

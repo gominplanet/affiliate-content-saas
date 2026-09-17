@@ -28,6 +28,7 @@
 //   orphaned   → send them to the theme and the file still will not load
 //   invisible  → send them to security plugins and they lose a week
 import { diagnoseImages, type ImageProbe } from '../lib/wp-image-diagnosis'
+import { readFileSync } from 'node:fs'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -160,6 +161,57 @@ function probe(over: Partial<ImageProbe>): ImageProbe {
       check(`no year in "${s.slice(0, 36)}…"`, !/\b20\d{2}\b/.test(s))
     }
   }
+}
+
+// ── AND THE STATUS THAT SENT THE INVESTIGATION THE WRONG WAY ──────────────
+//
+// This is the part that actually cost time. His rows read:
+//
+//   images_status = 'failed'   0 posts
+//   images_status = 'ready'   23 posts
+//
+// which says the upload path is healthy. It was not. Every picture in those 23
+// posts was pointing at the URL MVP generated it from, because his site refused
+// the upload and the fallback counted as a success. His live site settles it:
+// 45 pictures hosted on his own domain in July, none in August, none in
+// September, and featured images (which REQUIRE an upload) went 73/83 in July
+// to 0/25 in September.
+//
+// So 'ready' now means every picture is on the creator's site, and the
+// in-between state has a name of its own. Checked on the source, because the
+// bug was in what the route WROTE, not in anything a pure function returns.
+{
+  const src = readFileSync('app/api/blog/generate/route.ts', 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+    .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n')
+
+  check('a hosted upload is told apart from a fallback', /hosted: true/.test(src) && /hosted: false/.test(src),
+    'without this the two are the same value and the status cannot distinguish them')
+  // Anchored per branch. There are TWO image paths, the creator's own uploads
+  // and the AI-generated ones, and the first version of this check was
+  // satisfied by literals in whichever branch still had them. The AI path is
+  // the one that matters most here: every picture in the case that prompted
+  // this was AI-generated and pointing at the generation CDN.
+  check('the AI path derives hosted from the actual upload result',
+    /hosted: !!mediaUrl/.test(src),
+    'hardcoding it true there marks every fallback as hosted, which is the defect wearing a new name')
+  check('and the creator-upload path derives it from the media response',
+    /media\?\.source_url\s*\?\s*\{ url: media\.source_url, alt: altFor\(i\), hosted: true \}/.test(src))
+  check('and the hosted ones are counted', /uploaded\.filter\(u => u\.hosted\)/.test(src))
+  check("'ready' requires ALL of them to be hosted",
+    /hostedCount === uploaded\.length \? 'ready'/.test(src),
+    "any looser and a site refusing every upload reports a clean run, which is what happened")
+  check('the in-between state has its own name', /'hotlinked'/.test(src),
+    'folding it into ready hides it; folding it into failed hides that the post is fine to read today')
+  check('and the old always-ready test is gone',
+    !/images_status: uploaded\.length > 0 \? 'ready' : 'failed'/.test(src),
+    'that expression is true whenever anything was attempted, which is the defect')
+
+  check('the migration exists', (() => {
+    try { return readFileSync('supabase/migrations/339_blog_images_hosted_count.sql', 'utf8').includes('images_hosted_count') } catch { return false }
+  })())
+  check('and the write survives the column being absent', /images_hosted_count arrives with migration 339/.test(readFileSync('app/api/blog/generate/route.ts', 'utf8')),
+    'between the deploy and the migration the status must still be recorded')
 }
 
 if (failures.length) {
