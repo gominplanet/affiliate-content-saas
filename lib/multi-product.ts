@@ -120,28 +120,41 @@ ${plain}`,
 /** An affiliate link for a product NAME: Geniuslink-cloaked Amazon search when
  *  Geniuslink is configured (branded + tracked), else a tagged Amazon search.
  *  Returns null if we can't monetise it (no tag and no Geniuslink). */
+export type LinkFallback = null | 'no-credentials' | 'mint-failed'
+
 async function resolveLink(
   name: string,
   amazonTag: string | null | undefined,
   genius: ReturnType<typeof createGeniuslinkService> | null,
   bitlyToken: string | null,
-): Promise<string | null> {
+  wantedGeniuslink: boolean,
+): Promise<{ url: string | null; fellBack: LinkFallback }> {
   const searchUrl = `https://www.amazon.com/s?k=${encodeURIComponent(name)}`
   const tagged = amazonTag ? `${searchUrl}&tag=${amazonTag}` : null
   // Geniuslink style → cloak the tagged search (or the bare search if no tag) so
   // it carries the creator's branded, tracked attribution.
   if (genius) {
-    try { return await genius.createLink(tagged || searchUrl, name) } catch { return tagged }
+    // A mint that throws used to fall back to the plain tagged search and say
+    // nothing. A creator with a broken Geniuslink key therefore got a post full
+    // of plain Amazon links and no hint that anything had happened, which is
+    // exactly what "generation ignores the link-style setting" looks like from
+    // the outside.
+    try { return { url: await genius.createLink(tagged || searchUrl, name), fellBack: null } }
+    catch { return { url: tagged, fellBack: 'mint-failed' } }
   }
   // Bitly style → shorten the tagged search (a search with no tag earns nothing,
   // so there's nothing worth shortening — fall through to null).
   if (bitlyToken && tagged) {
     const short = await shortenBitly(bitlyToken, tagged)
-    return short || tagged
+    return { url: short || tagged, fellBack: short ? null : 'mint-failed' }
   }
   // Direct / Passport → the tagged search (Passport can't geo-route a search with
   // no ASIN). Null when there's no tag and nothing else to monetise it.
-  return tagged
+  //
+  // `wantedGeniuslink` separates "Direct is what they chose" from "Geniuslink is
+  // what they chose and we had no usable credentials". Same plain link, two
+  // completely different facts, and only one of them needs telling.
+  return { url: tagged, fellBack: wantedGeniuslink ? 'no-credentials' : null }
 }
 
 /** "Shop everything in this video" recap — every product as a tidy row with its
@@ -163,12 +176,24 @@ function renderShopEverything(primary: { name: string; url: string } | null, ext
 /** Best-effort: link every product reviewed in a multi-product video + add the
  *  recap box. No-op (returns content unchanged) for single-product videos or
  *  when nothing can be monetised. */
-export async function enrichMultiProductLinks(opts: MultiProductOpts): Promise<{ content: string; productsLinked: number }> {
+export interface MultiProductResult {
+  content: string
+  productsLinked: number
+  /** Links that carry the creator's chosen style. */
+  cloaked: number
+  /** Links written plain when the chosen style was meant to cloak them. */
+  fellBack: number
+  /** Why, when any did. */
+  fallbackReason: LinkFallback
+}
+
+export async function enrichMultiProductLinks(opts: MultiProductOpts): Promise<MultiProductResult> {
   const { content, transcript, primaryName, primaryUrl, amazonTag } = opts
-  if (!transcript || transcript.trim().length < 200) return { content, productsLinked: 0 }
+  const nothing = (c: string): MultiProductResult => ({ content: c, productsLinked: 0, cloaked: 0, fellBack: 0, fallbackReason: null })
+  if (!transcript || transcript.trim().length < 200) return nothing(content)
   // Idempotent: if a previous run already added the recap (e.g. a rebuild),
   // don't stack a second one.
-  if (content.includes('Shop everything in this video')) return { content, productsLinked: 0 }
+  if (content.includes('Shop everything in this video')) return nothing(content)
 
   // Cloak per the creator's ONE chosen Link style: Geniuslink only when picked,
   // Bitly when picked; otherwise the tagged Amazon search.
@@ -177,7 +202,7 @@ export async function enrichMultiProductLinks(opts: MultiProductOpts): Promise<{
     : null
   const bitlyToken = opts.linkStyle === 'bitly' ? (opts.bitlyToken || null) : null
   // Can't monetise without a tag or Geniuslink → leave the post as-is.
-  if (!amazonTag && !genius) return { content, productsLinked: 0 }
+  if (!amazonTag && !genius) return nothing(content)
 
   const all = await extractProducts(opts)
   // Drop the hero product (already linked) + de-dupe.
@@ -189,18 +214,51 @@ export async function enrichMultiProductLinks(opts: MultiProductOpts): Promise<{
     seen.add(k)
     return true
   }).slice(0, 8)
-  if (extras.length === 0) return { content, productsLinked: 0 }  // single-product video
+  if (extras.length === 0) return nothing(content)  // single-product video
 
   // Resolve all links in parallel (each falls back to tagged search instantly).
-  const resolved = (await Promise.all(extras.map(async (p): Promise<LinkedProduct | null> => {
-    const url = await resolveLink(p.name, amazonTag, genius, bitlyToken)
-    return url ? { ...p, url } : null
-  }))).filter((p): p is LinkedProduct => p !== null)
-  if (resolved.length === 0) return { content, productsLinked: 0 }
+  const wantedGeniuslink = opts.linkStyle === 'geniuslink'
+  const outcomes = await Promise.all(extras.map(async (p) => {
+    const r = await resolveLink(p.name, amazonTag, genius, bitlyToken, wantedGeniuslink)
+    return { p, ...r }
+  }))
+  const resolved = outcomes
+    .filter(o => o.url !== null)
+    .map(o => ({ ...o.p, url: o.url as string }))
+  const fellBack = outcomes.filter(o => o.url !== null && o.fellBack !== null).length
+  const fallbackReason = outcomes.find(o => o.fellBack !== null)?.fellBack ?? null
+  if (resolved.length === 0) return nothing(content)
 
   // Inline-link the first mention of each, then append the recap.
   let out = content
   for (const p of resolved) out = linkFirstMention(out, p.shortName || p.name, p.url)
   out += renderShopEverything(primaryName && primaryUrl ? { name: primaryName, url: primaryUrl } : null, resolved)
-  return { content: out, productsLinked: resolved.length }
+  return {
+    content: out,
+    productsLinked: resolved.length,
+    cloaked: resolved.length - fellBack,
+    fellBack,
+    fallbackReason,
+  }
+}
+
+/**
+ * What to tell the creator when the recap links did not get their chosen style.
+ *
+ * The hero product link has had a note like this since the Gina case. These
+ * ones never did, so a post could carry eight plain Amazon links in its inline
+ * mentions and its "Shop everything in this video" box while the screen said
+ * nothing at all. From the outside that is indistinguishable from the setting
+ * being ignored, which is exactly how it was reported.
+ *
+ * Counts, because "some links" is not something anybody can check.
+ */
+export function multiProductFallbackNote(r: MultiProductResult): string | null {
+  if (r.fellBack === 0 || r.fallbackReason === null) return null
+  const n = r.fellBack
+  const links = `${n} of the extra product link${n === 1 ? '' : 's'} in this post`
+  if (r.fallbackReason === 'no-credentials') {
+    return `Geniuslink is your link style, but your API key and secret are not working, so ${links} went out as plain Amazon links. Re-enter them under External Integrations.`
+  }
+  return `Geniuslink is your link style, but Geniuslink did not return a short link, so ${links} went out as plain Amazon links. Usually a temporary outage, and Fix Affiliate Links will re-point them.`
 }

@@ -46,7 +46,7 @@ import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type LinkCandidate } from '@/lib/internal-links'
 import { injectPriceStrip } from '@/lib/price-strip'
-import { enrichMultiProductLinks } from '@/lib/multi-product'
+import { enrichMultiProductLinks, multiProductFallbackNote } from '@/lib/multi-product'
 import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
 import { scoreAio } from '@/lib/aio-score'
@@ -1553,6 +1553,12 @@ async function handleGenerate(request: Request) {
       tier,
     })
     content = mp.content
+    // The recap links get the same treatment the hero link has had since the
+    // Gina case. Without this a post could carry eight plain Amazon links and
+    // say nothing, which reads exactly like the link style being ignored.
+    // The hero note wins when both fired: it is the link most people click.
+    const mpNote = multiProductFallbackNote(mp)
+    if (mpNote && !linkFallbackNote) linkFallbackNote = mpNote
   } catch { /* multi-product enrichment is best-effort; never block generation */ }
 
   // Preserve the slug of any existing live WP post so rebuilds keep the same

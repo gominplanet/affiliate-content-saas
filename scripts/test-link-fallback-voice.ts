@@ -29,6 +29,7 @@
 // pure function can see one of those.
 import { readFileSync } from 'node:fs'
 import { cloakFallbackNote } from '../lib/link-cloak'
+import { multiProductFallbackNote } from '../lib/multi-product'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -128,6 +129,63 @@ const BUTTON = strip(readFileSync('components/content/GenerateButton.tsx', 'utf8
     check(`no dash punctuation in the ${reason} note`, !/[—–]|\s-\s/.test(note), note)
     check(`no year in the ${reason} note`, !/\b20\d{2}\b/.test(note), note)
   }
+}
+
+// ── THE RECAP LINKS HAD NO VOICE AT ALL ───────────────────────────────────
+//
+// Reported as "generation ignores the link-style setting entirely: a brand new
+// post came out with 8/8 plain Amazon links even with Geniuslink selected".
+//
+// It does not ignore the setting. lib/multi-product builds the Geniuslink
+// service only when the style is geniuslink AND both credentials are present,
+// and a mint that throws fell back per link with `catch { return tagged }`.
+// Both silent. A creator whose key had stopped working therefore got a post
+// full of plain links and nothing on any screen said so, which from the outside
+// is indistinguishable from the setting being ignored.
+//
+// The hero product link has had a note since the Gina case. These never did.
+{
+  const base = { content: '', productsLinked: 8, cloaked: 0 }
+
+  const none = multiProductFallbackNote({ ...base, fellBack: 0, fallbackReason: null })
+  check('a fully cloaked recap says nothing', none === null, String(none))
+
+  const noCreds = multiProductFallbackNote({ ...base, fellBack: 8, fallbackReason: 'no-credentials' }) ?? ''
+  check('broken credentials are named as such', /key and secret are not working/.test(noCreds), noCreds)
+  check('and it counts them', /8 of the extra product links/.test(noCreds), noCreds)
+  check('and says where to fix it', /External Integrations/.test(noCreds), noCreds)
+
+  const minted = multiProductFallbackNote({ ...base, fellBack: 3, fallbackReason: 'mint-failed' }) ?? ''
+  check('an outage is told apart from bad credentials',
+    /did not return a short link/.test(minted) && !/not working/.test(minted), minted)
+  check('and points at the repair that fixes it', /Fix Affiliate Links/.test(minted), minted)
+  check('the count is the number that fell back, not the total',
+    /3 of the extra product links/.test(minted), minted)
+
+  const one = multiProductFallbackNote({ ...base, fellBack: 1, fallbackReason: 'mint-failed' }) ?? ''
+  check('one link is singular', /1 of the extra product link in/.test(one), one)
+
+  for (const l of [noCreds, minted, one]) {
+    check(`no dash punctuation in "${l.slice(0, 40)}…"`, !/[—–]|\s-\s/.test(l))
+    check(`no year in "${l.slice(0, 40)}…"`, !/\b20\d{2}\b/.test(l))
+  }
+
+  // And it has to reach the screen, which is the whole point.
+  const gen = readFileSync('app/api/blog/generate/route.ts', 'utf8')
+  check('generate asks for the recap note', /multiProductFallbackNote\(mp\)/.test(gen),
+    'a note nothing calls is the silence this replaces')
+  check('and the hero note still wins when both fired',
+    /if \(mpNote && !linkFallbackNote\)/.test(gen),
+    'overwriting the hero link note would bury the link most people click')
+
+  // The resolver must report WHY rather than swallowing it.
+  const mpSrc = readFileSync('lib/multi-product.ts', 'utf8')
+  check('a failed mint is no longer swallowed',
+    !/catch \{ return tagged \}/.test(mpSrc),
+    'that exact line is what made eight plain links look like an ignored setting')
+  check('and chosen-Direct is told apart from Geniuslink-with-no-credentials',
+    /wantedGeniuslink \? 'no-credentials' : null/.test(mpSrc),
+    'the same plain link for two different reasons, and only one of them needs telling')
 }
 
 if (failures.length) {
