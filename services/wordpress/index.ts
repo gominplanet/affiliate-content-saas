@@ -973,6 +973,13 @@ export class WordPressService {
     await this.request(`/posts/${id}?force=true`, { method: 'DELETE' })
   }
 
+  /** Remove an attachment. Used by the image self-test to take its own probe
+   *  file back out of the creator's media library; force=true because media has
+   *  no trash worth leaving behind. */
+  async deleteMedia(id: number): Promise<void> {
+    await this.request(`/media/${id}?force=true`, { method: 'DELETE' })
+  }
+
   /** Best-effort site cache purge — re-POSTs the current customizations to the
    *  plugin, whose save handler runs litespeed_purge_all() + wp_cache_flush().
    *  Same proven path as the dashboard "Purge All" button.

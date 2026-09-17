@@ -49,6 +49,19 @@ interface DoctorResponse {
   summary: string
 }
 
+interface ImageTest {
+  ok: boolean
+  verdict: 'refused' | 'orphaned' | 'invisible' | 'unknown' | 'no-site'
+  headline: string
+  detail: string
+  site?: string
+  note?: string
+  steps?: {
+    upload: { ok: boolean; status?: number | null; error?: string } | null
+    serve: { ok: boolean | null; status?: number | null; contentType?: string | null; url?: string | null } | null
+  }
+}
+
 export default function WpDoctorPage() {
   // Which connected site to diagnose. Multi-site users see a picker.
   // Single-site users get a hidden picker → defaults to their one site.
@@ -56,6 +69,40 @@ export default function WpDoctorPage() {
   const [data, setData] = useState<DoctorResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The picture test is separate and run on demand, because it WRITES to the
+  // creator's site (a one pixel upload it then removes). The rest of this page
+  // only reads, and a diagnostic that quietly writes on page load would be a
+  // surprise.
+  const [img, setImg] = useState<ImageTest | null>(null)
+  const [imgLoading, setImgLoading] = useState(false)
+
+  async function runImageTest() {
+    setImgLoading(true)
+    setImg(null)
+    try {
+      const res = await fetch('/api/wordpress/image-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(siteId ? { siteId } : {}),
+      })
+      const json = await res.json().catch(() => null)
+      setImg(json as ImageTest ?? {
+        ok: false,
+        verdict: 'unknown',
+        headline: 'The test could not run.',
+        detail: 'Something went wrong before your site was asked anything, so this says nothing about your site either way.',
+      })
+    } catch (e) {
+      setImg({
+        ok: false,
+        verdict: 'unknown',
+        headline: 'The test could not run.',
+        detail: e instanceof Error ? e.message : 'Connection failed.',
+      })
+    } finally {
+      setImgLoading(false)
+    }
+  }
 
   async function runDoctor() {
     setLoading(true)
@@ -182,6 +229,64 @@ export default function WpDoctorPage() {
                 </li>
               ))}
             </ul>
+          </div>
+
+          {/* Pictures. Its own card because "my pictures don't come up" is
+              three different problems and the other checks cannot tell them
+              apart: a refused upload, a file the site stores and will not
+              serve, and a file that is perfectly fine while the theme does not
+              draw it. The last one is the common answer on a site converted
+              from another purpose, and it is the one that sends people hunting
+              through security plugins for a fault that is not there. */}
+          <div className="card p-5 mb-6">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div>
+                <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pictures</h3>
+                <p className="text-[12px] text-[#6e6e73] dark:text-[#8e8e93] mt-0.5">
+                  Uploads a single pixel to your site, fetches it back, then removes it. It answers whether your
+                  site takes pictures at all, which is a different question from whether they show on the page.
+                </p>
+              </div>
+              <button
+                onClick={runImageTest}
+                disabled={imgLoading}
+                className="btn-secondary text-xs flex-shrink-0 inline-flex items-center gap-1.5"
+              >
+                {imgLoading ? <Loader2 size={13} className="animate-spin" /> : <RotateCw size={13} />}
+                {imgLoading ? 'Testing' : 'Test pictures'}
+              </button>
+            </div>
+
+            {img && (
+              <div
+                className="mt-3 rounded-lg p-3"
+                style={{
+                  backgroundColor:
+                    img.verdict === 'invisible' ? '#f59e0b12'
+                      : img.verdict === 'unknown' || img.verdict === 'no-site' ? '#86868b12'
+                        : '#ff3b3012',
+                }}
+              >
+                <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{img.headline}</p>
+                <p className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mt-1">{img.detail}</p>
+                {img.note && (
+                  <p className="text-[11px] text-[#86868b] mt-2">{img.note}</p>
+                )}
+                {/* The raw steps, so a support conversation has something to
+                    read rather than only the sentence we chose. */}
+                {img.steps && (
+                  <p className="text-[11px] text-[#86868b] mt-2 font-mono break-all">
+                    upload: {img.steps.upload?.ok ? 'accepted' : `refused${img.steps.upload?.status ? ` (${img.steps.upload.status})` : ''}${img.steps.upload?.error ? ` ${img.steps.upload.error}` : ''}`}
+                    {img.steps.serve && (
+                      <>
+                        {' · '}serve: {img.steps.serve.ok === true ? 'fetched' : img.steps.serve.ok === false ? `not fetchable${img.steps.serve.status ? ` (${img.steps.serve.status})` : ''}` : 'not checked'}
+                        {img.steps.serve.contentType ? ` ${img.steps.serve.contentType}` : ''}
+                      </>
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Per-stack fix instructions. The first card here is what the
