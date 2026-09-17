@@ -13,6 +13,8 @@ import { pickBlogWriter, BLOG_WRITER_DEFAULT, type WriterArm } from '@/lib/blog-
 import { planSourceBudget, planFaqCount, type SourceBudget } from '@/lib/source-budget'
 import { planPostStructure, structureToPrompt, type StructurePlan } from '@/lib/post-structure'
 import { buildSignalBrief, type KeepaFacts } from '@/lib/product-signals-brief'
+import { resolveExperience } from '@/lib/experience-source'
+import { scrubReviewLanguage } from '@/lib/deal-scrub'
 
 /** Caller identity for cost telemetry (optional — logging is best-effort). */
 export interface UsageCtx {
@@ -91,6 +93,10 @@ export interface VideoInput {
   /** When that Keepa row was read. Null means unknown, which is treated as too
    *  old to make a claim about today rather than assumed fresh. */
   keepaFetchedAt?: string | null
+  /** First-hand notes the creator typed about THIS product, for the paths where
+   *  there is no video. Their own words about their own use, which is what makes
+   *  a first-person claim honest when no transcript backs it. */
+  creatorNote?: string | null
   /**
    * Phase 2 keyword research — a search phrase validated for real buyer demand
    * (mined from the Amazon seller's listing title/bullets + Amazon/Google
@@ -118,6 +124,11 @@ export interface BlogGenerationOutput {
    *  compared per post rather than inferred from timestamps. */
   writerModel?: string
   writerArm?: WriterArm
+  /** Where the first-hand experience in this post came from: the creator's
+   *  video, notes they typed, or nothing. 'none' means the post is an
+   *  assessment rather than a review and its output was scrubbed of review
+   *  language rather than trusted to have obeyed the instruction. */
+  experienceSource?: 'video' | 'creator-note' | 'none'
   /** The body shape this post was planned with, e.g.
    *  "hook>performance>friction>advice|vsp". Stored on blog_posts so the next
    *  post for this creator can be given a shape they have not just published.
@@ -2229,6 +2240,11 @@ ${t}`,
 
     // MVP's own product data, converted into sentences that carry no price.
     // See lib/product-signals-brief.ts for why that conversion is not optional.
+    // What this post may claim the writer did, and whether the output has to be
+    // scrubbed rather than trusted. See lib/experience-source.ts.
+    const experience = resolveExperience({ transcript: video.transcript, creatorNote: video.creatorNote })
+    const experienceBlock = `\n${experience.prompt}\n`
+
     const signalBrief = buildSignalBrief(video.keepaFacts ?? {}, { fetchedAt: video.keepaFetchedAt ?? null })
     const signalBlock = signalBrief.prompt ? `\n${signalBrief.prompt}\n` : ''
     if (signalBrief.dropped.length) {
@@ -2362,7 +2378,7 @@ VIDEO TAGS: ${video.tags.join(', ')}
 
 VIDEO DESCRIPTION:
 ${video.description.slice(0, 2000)}
-${signalBlock}${video.productResearch ? `\nPRODUCT INFO (scraped from the product/brand site linked in the description — use these as FACTUAL product details; the transcript still governs the voice, tone, and the reviewer's actual opinions):\n${video.productResearch.slice(0, 2500)}\n` : ''}
+${experienceBlock}${signalBlock}${video.productResearch ? `\nPRODUCT INFO (scraped from the product/brand site linked in the description — use these as FACTUAL product details; the transcript still governs the voice, tone, and the reviewer's actual opinions):\n${video.productResearch.slice(0, 2500)}\n` : ''}
 TRANSCRIPT:
 ${video.transcript ? video.transcript.slice(0, sourceBudget.transcriptChars) : 'No transcript available — base post on title, description, and tags only.'}${persistentFeedbackBlock}${voiceExamplesBlock}${generalModeOverride}${feedbackBlock}`
 
@@ -2492,12 +2508,18 @@ ${video.transcript ? video.transcript.slice(0, sourceBudget.transcriptChars) : '
       }
     }
 
+    // Where nothing backs a first-hand claim, the output is scrubbed rather
+    // than trusted. The rule existed in the prompt already; what was missing was
+    // anything that checked it. lib/deal-scrub.ts has enforced exactly this on
+    // three other paths since the deal hub was built.
+    const rawContent = contentMatch[1].replace(/{VIDEO_ID}/g, video.videoId)
     const parsed: BlogGenerationOutput = {
       writerModel: writer.model,
       writerArm: writer.arm,
       structureSignature: structurePlan.signature,
+      experienceSource: experience.source,
       ...meta,
-      content: contentMatch[1].replace(/{VIDEO_ID}/g, video.videoId),
+      content: experience.mustScrub ? scrubReviewLanguage(rawContent) : rawContent,
     }
 
     // NOTE: the fact-check pass runs in the route's after() block (post-response)
@@ -2515,7 +2537,7 @@ ${video.transcript ? video.transcript.slice(0, sourceBudget.transcriptChars) : '
    */
   async generateCampaignBlogPost(
     brand: BrandProfile,
-    input: { product: { asin: string; title: string; bullets: string[]; description: string; price: string | null; rating: string | null }; researchBrief: string; affiliateUrl: string; retailer?: { isAmazon: boolean; label: string | null } },
+    input: { product: { asin: string; title: string; bullets: string[]; description: string; price: string | null; rating: string | null }; researchBrief: string; affiliateUrl: string; retailer?: { isAmazon: boolean; label: string | null }; creatorNote?: string | null },
     ctx?: UsageCtx,
   ): Promise<BlogGenerationOutput> {
     // Per-niche scaffold (Sprint 3). The campaign path has a clean product
@@ -2549,6 +2571,12 @@ ${video.transcript ? video.transcript.slice(0, sourceBudget.transcriptChars) : '
         improvements: brand.include_improvements_section === true,
       },
     })
+    // There is never a video on this path. Without a creator note that makes
+    // 'none' the answer, which means the shared prompt's "You ARE that reviewer,
+    // write in first person" instruction is pointed at an empty set, and the
+    // output gets scrubbed rather than trusted.
+    const experience = resolveExperience({ transcript: null, creatorNote: input.creatorNote ?? null })
+    const experienceBlock = `\n${experience.prompt}\n`
     const systemPrompt = buildSystemPrompt(brand, sourceBudget, structurePlan, undefined, isAmazon, campaignScaffold, retailerLabel)
     const p = input.product
 
@@ -2581,7 +2609,7 @@ ${p.price ? `Price: ${p.price}` : ''}
 ${p.rating ? `Amazon rating: ${p.rating}` : ''}
 ${p.bullets.length ? `Features:\n${p.bullets.map(b => `- ${b}`).join('\n')}` : ''}
 ${p.description ? `Description: ${p.description.slice(0, 1500)}` : ''}
-${nameRules}
+${experienceBlock}${nameRules}
 AFFILIATE URL: ${input.affiliateUrl || '[AFFILIATE_LINK]'}
 
 RESEARCH BRIEF (use this as the backbone — it reflects what real buyers ask and the problems this solves):
@@ -2668,7 +2696,14 @@ Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONT
       }
     }
 
-    return { ...meta, content: contentMatch[1] }
+    // Same enforcement as the video path. Asking the model not to claim
+    // hands-on experience and never checking is how a fabricated "after a few
+    // weeks of use" ships under a real person's byline.
+    return {
+      ...meta,
+      experienceSource: experience.source,
+      content: experience.mustScrub ? scrubReviewLanguage(contentMatch[1]) : contentMatch[1],
+    }
   }
 
   async checkConnection(): Promise<boolean> {
