@@ -12,6 +12,7 @@ import { asinPathRegex } from '@/lib/asin'
 import { pickBlogWriter, BLOG_WRITER_DEFAULT, type WriterArm } from '@/lib/blog-writer'
 import { planSourceBudget, planFaqCount, type SourceBudget } from '@/lib/source-budget'
 import { planPostStructure, structureToPrompt, type StructurePlan } from '@/lib/post-structure'
+import { buildSignalBrief, type KeepaFacts } from '@/lib/product-signals-brief'
 
 /** Caller identity for cost telemetry (optional — logging is best-effort). */
 export interface UsageCtx {
@@ -80,6 +81,16 @@ export interface VideoInput {
    *  description (Pro tier). Treated like an Amazon spec sheet — gives
    *  the writer real product facts. The transcript still drives voice. */
   productResearch?: string | null
+  /** MVP's own Keepa signals for this product: price against its 90 day
+   *  average and its record low, sales rank and rank trend, monthly units.
+   *  The only thing on the finished page that is not also on the Amazon
+   *  listing, and for months it was fetched, paid for, and never sent to the
+   *  writer. lib/product-signals-brief.ts converts it into relative,
+   *  historical sentences; no price ever reaches the post. */
+  keepaFacts?: KeepaFacts | null
+  /** When that Keepa row was read. Null means unknown, which is treated as too
+   *  old to make a claim about today rather than assumed fresh. */
+  keepaFetchedAt?: string | null
   /**
    * Phase 2 keyword research — a search phrase validated for real buyer demand
    * (mined from the Amazon seller's listing title/bullets + Amazon/Google
@@ -2216,6 +2227,14 @@ ${t}`,
       console.log('[blog/generate] structure repeated', { seed: video.videoId, signature: structurePlan.signature })
     }
 
+    // MVP's own product data, converted into sentences that carry no price.
+    // See lib/product-signals-brief.ts for why that conversion is not optional.
+    const signalBrief = buildSignalBrief(video.keepaFacts ?? {}, { fetchedAt: video.keepaFetchedAt ?? null })
+    const signalBlock = signalBrief.prompt ? `\n${signalBrief.prompt}\n` : ''
+    if (signalBrief.dropped.length) {
+      console.log('[blog/generate] signals withheld', signalBrief.dropped)
+    }
+
     const systemPrompt = buildSystemPrompt(brand, sourceBudget, structurePlan, undefined, ctaIsAmazon, nicheScaffold)
     const voiceBlock = buildVoiceBlock(voiceProfile || undefined)
 
@@ -2343,7 +2362,7 @@ VIDEO TAGS: ${video.tags.join(', ')}
 
 VIDEO DESCRIPTION:
 ${video.description.slice(0, 2000)}
-${video.productResearch ? `\nPRODUCT INFO (scraped from the product/brand site linked in the description — use these as FACTUAL product details; the transcript still governs the voice, tone, and the reviewer's actual opinions):\n${video.productResearch.slice(0, 2500)}\n` : ''}
+${signalBlock}${video.productResearch ? `\nPRODUCT INFO (scraped from the product/brand site linked in the description — use these as FACTUAL product details; the transcript still governs the voice, tone, and the reviewer's actual opinions):\n${video.productResearch.slice(0, 2500)}\n` : ''}
 TRANSCRIPT:
 ${video.transcript ? video.transcript.slice(0, sourceBudget.transcriptChars) : 'No transcript available — base post on title, description, and tags only.'}${persistentFeedbackBlock}${voiceExamplesBlock}${generalModeOverride}${feedbackBlock}`
 

@@ -2,6 +2,8 @@ import { NextResponse, after } from 'next/server'
 import { clickableTitleRulesForBlog } from '@/lib/clickable-titles'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchKeepaBasicsCached } from '@/lib/keepa-cache'
+import type { KeepaFacts } from '@/lib/product-signals-brief'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 import { maybeCreateBlogShortlink, type BlogSocialLinkMode } from '@/lib/blog-share-url'
@@ -1058,6 +1060,51 @@ async function handleGenerate(request: Request) {
     }
   }
 
+  // ── 5.94. MVP's own product signals, for the writer.
+  //
+  // Price against its 90 day average and its record low, sales rank, rank
+  // trend, monthly units. MVP has fetched and paid for this on every product it
+  // touches for months and never sent a byte of it to the writer, which is why
+  // a generated post had nothing on it that the Amazon listing did not already
+  // have, and why Google kept declining to index them.
+  //
+  // Cache-first, so this costs nothing on a product MVP has already seen. The
+  // row's age matters as much as its contents: lib/product-signals-brief.ts
+  // refuses to make a present-tense claim off data it cannot date, so the
+  // fetched_at timestamp is read alongside the numbers rather than assumed.
+  //
+  // Entirely best-effort. Keepa being down means a post without price context,
+  // never a post that fails to generate.
+  let keepaFacts: KeepaFacts | null = null
+  let keepaFetchedAt: string | null = null
+  if (asinOverride) {
+    try {
+      const admin = createAdminClient()
+      const map = await fetchKeepaBasicsCached(admin, [asinOverride])
+      const basic = map.get(asinOverride.toUpperCase())
+      if (basic) {
+        keepaFacts = {
+          salesRank: basic.salesRank ?? null,
+          salesRankAvg90: basic.salesRankAvg90 ?? null,
+          salesRankCategory: basic.salesRankCategory ?? null,
+          monthlySold: basic.monthlySold ?? null,
+          priceNowCents: basic.priceNowCents ?? null,
+          priceAvg90Cents: basic.priceAvg90Cents ?? null,
+          priceLowestCents: basic.priceLowestCents ?? null,
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: cacheRow } = await (admin as any)
+          .from('keepa_product_cache')
+          .select('fetched_at')
+          .eq('asin', asinOverride.toUpperCase())
+          .maybeSingle()
+        keepaFetchedAt = cacheRow?.fetched_at ?? null
+      }
+    } catch (e) {
+      console.log('[blog/generate] keepa signals unavailable', e instanceof Error ? e.message : e)
+    }
+  }
+
   // ── 5.95. Keyword research (Phase 2 — FREE). The Amazon seller already did
   //          the keyword research for us: the listing TITLE is packed with the
   //          highest-converting buyer search terms (strongest signal), the
@@ -1275,6 +1322,8 @@ async function handleGenerate(request: Request) {
         asinOverride,
         affiliateUrlOverride,
         productResearch,
+        keepaFacts,
+        keepaFetchedAt,
         targetKeyword,
         supportingKeywords,
         gscQueries,
