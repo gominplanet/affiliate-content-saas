@@ -23,7 +23,7 @@ import { getAuthAndOwner } from '@/lib/agency-auth'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
 import { describeRehost } from '@/lib/rehost-images'
-import { rehostPosts, describeRun, defaultSourceAlive } from '@/lib/rehost-run'
+import { rehostPosts, describeRun, defaultSourceAlive, makeOgImageFollower } from '@/lib/rehost-run'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -102,6 +102,7 @@ export async function POST(request: Request) {
       }
     },
     sourceAlive: defaultSourceAlive,
+    afterMoved: makeOgImageFollower(wp),
   })
 
   const moved = run.moved

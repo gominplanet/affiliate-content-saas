@@ -101,6 +101,18 @@ export interface RehostIO {
    * what lets "your site said no" and "the picture is gone" be told apart.
    */
   sourceAlive?(url: string): Promise<boolean>
+
+  /**
+   * Called after a post's body has been repaired, with every picture that
+   * moved. Optional.
+   *
+   * It exists for `mvp_og_image`: the URL the plugin renders as og:image and
+   * twitter:image lives in post meta, written separately from the body. Repair
+   * the body alone and the article is safe while its social card still points
+   * at a file that is going to be deleted. Failing here must never undo the
+   * repair, so implementations swallow their own errors.
+   */
+  afterMoved?(wordpressPostId: number, moves: Array<{ from: string; to: string }>): Promise<void>
 }
 
 function outcomeFor(post: RehostTarget, skipped: string): PostOutcome {
@@ -170,6 +182,7 @@ export async function rehostPosts(
     let postMoved = 0
     let postRefused = 0
     let postGone = 0
+    const moves: Array<{ from: string; to: string }> = []
 
     for (const c of candidates) {
       if (io.sourceAlive) {
@@ -200,6 +213,7 @@ export async function rehostPosts(
           continue
         }
         updated = replaceImageUrl(updated, c.url, newUrl)
+        moves.push({ from: c.url, to: newUrl })
         postMoved++
         moved++
       } catch (e) {
@@ -227,6 +241,14 @@ export async function rehostPosts(
       refused += postMoved
       outcomes.push({ id: post.id, title: post.title ?? '', moved: 0, refused: postRefused + postMoved, gone: postGone })
       continue
+    }
+
+    // The body is repaired. Anything else on the post that named the old URL
+    // has to follow it, or the article is safe while its social card still
+    // points at a picture that is going to be deleted.
+    if (io.afterMoved) {
+      try { await io.afterMoved(post.wordpress_post_id, moves) }
+      catch { /* a social preview is never worth undoing a repair over */ }
     }
 
     // What is left over after the rewrite decides the status, not what we
@@ -275,4 +297,37 @@ export function describeRun(r: RehostRunResult, postCount: number): string {
     return `Looked at ${postCount} post${postCount === 1 ? '' : 's'} and found nothing to move.`
   }
   return parts.join(' ')
+}
+
+/** The shape of the WordPress service this repair needs, so the helper below
+ *  can be handed the real one without importing it here. */
+export interface WpForRehost {
+  getPostMetaValue(id: number, key: string): Promise<string | null>
+  updatePost(id: number, patch: { meta?: Record<string, unknown> }): Promise<unknown>
+}
+
+/**
+ * Follow the pictures that moved into `mvp_og_image`.
+ *
+ * The plugin renders that meta value as og:image AND twitter:image, and it is
+ * written separately from the article body. A post whose body we repaired while
+ * its meta still names the old URL is an article that survives with a social
+ * card that does not, which is the same failure in a place nobody looks.
+ *
+ * Only ever repointed when the meta names a picture this run actually moved.
+ * Overwriting it with "the first thing we moved" would replace a deliberate
+ * social image, often the YouTube thumbnail, with a random in-body picture.
+ *
+ * Shared by the sweep and the button so the two cannot drift, which is the
+ * mistake this whole area is built around avoiding.
+ */
+export function makeOgImageFollower(wp: WpForRehost) {
+  return async function afterMoved(postId: number, moves: Array<{ from: string; to: string }>): Promise<void> {
+    if (moves.length === 0) return
+    const current = await wp.getPostMetaValue(postId, 'mvp_og_image')
+    if (!current) return
+    const hit = moves.find(m => m.from === current)
+    if (!hit) return
+    await wp.updatePost(postId, { meta: { mvp_og_image: hit.to } })
+  }
 }

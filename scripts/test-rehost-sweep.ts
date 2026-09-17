@@ -26,7 +26,7 @@
 // a success is how 186 posts got here.
 //
 // All IO is injected, so every branch below is driven without a WordPress site.
-import { rehostPosts, describeRun, type RehostTarget, type RehostIO } from '../lib/rehost-run'
+import { rehostPosts, describeRun, makeOgImageFollower, type RehostTarget, type RehostIO } from '../lib/rehost-run'
 import { readFileSync } from 'node:fs'
 
 const failures: string[] = []
@@ -153,7 +153,54 @@ async function main() {
     check('which is not a site-refused-everything run', !r.siteRefusedEverything)
   }
 
-    // ── A POST ON ANOTHER BLOG IS NEVER WRITTEN TO ──────────────────────────
+    // ── THE SOCIAL CARD FOLLOWS THE PICTURE ─────────────────────────────────
+  //
+  // mvp_og_image holds the URL the plugin renders as og:image AND
+  // twitter:image, and it is written separately from the article body. In the
+  // Garvee post, four fal references were og:image, twitter:image and two body
+  // pictures, the first of which the meta names. Repair the body alone and the
+  // article survives while its social card points at a file due for deletion.
+  {
+    const metaReads: Array<[number, string]> = []
+    const metaWrites: Array<[number, unknown]> = []
+    const wp = {
+      getPostMetaValue: async (id: number, key: string) => { metaReads.push([id, key]); return FAL_A },
+      updatePost: async (id: number, patch: { meta?: Record<string, unknown> }) => { metaWrites.push([id, patch.meta]); },
+    }
+    const follower = makeOgImageFollower(wp)
+    const h = io({ afterMoved: follower })
+    await rehostPosts([post()], SITE, h)
+
+    check('the meta is read for the repaired post', metaReads.length === 1 && metaReads[0][1] === 'mvp_og_image',
+      JSON.stringify(metaReads))
+    check('and repointed at the moved copy', metaWrites.length === 1, String(metaWrites.length))
+    const written = (metaWrites[0]?.[1] as Record<string, string> | undefined)?.mvp_og_image
+    check('to the NEW url', !!written && !written.includes('fal.media') && written.includes(SITE), String(written))
+
+    // Not "the first thing we moved". Often the deliberate social image is the
+    // YouTube thumbnail, and replacing it with a random in-body picture is a
+    // change nobody asked for.
+    const other = { ...wp, getPostMetaValue: async () => 'https://img.youtube.com/vi/abc/maxresdefault.jpg' }
+    const writes2: Array<unknown> = []
+    other.updatePost = async (_id: number, patch: { meta?: Record<string, unknown> }) => { writes2.push(patch); }
+    await rehostPosts([post()], SITE, io({ afterMoved: makeOgImageFollower(other) }))
+    check('a social image we did NOT move is left alone', writes2.length === 0,
+      'overwriting a deliberate og:image with an in-body picture is a change nobody asked for')
+
+    const none = { ...wp, getPostMetaValue: async () => null }
+    const writes3: Array<unknown> = []
+    none.updatePost = async (_id: number, patch: unknown) => { writes3.push(patch); }
+    await rehostPosts([post()], SITE, io({ afterMoved: makeOgImageFollower(none) }))
+    check('a post with no social image gains none', writes3.length === 0)
+
+    // And it must never cost the repair.
+    const boom = io({ afterMoved: async () => { throw new Error('meta write refused') } })
+    const r = await rehostPosts([post()], SITE, boom)
+    check('a failed meta update does not undo the repair', r.moved === 2, String(r.moved))
+    check('and our copy is still written', boom.saved.length === 1, String(boom.saved.length))
+  }
+
+  // ── A POST ON ANOTHER BLOG IS NEVER WRITTEN TO ──────────────────────────
   //
   // A creator can have up to ten sites, and a WordPress post id only means
   // anything inside one of them. Repairing post 42 with the wrong site's

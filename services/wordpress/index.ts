@@ -1033,6 +1033,28 @@ export class WordPressService {
     return null
   }
 
+  /** Read one of our own post meta values.
+   *
+   *  Needed by the hot-linked repair: `mvp_og_image` holds the URL the plugin
+   *  renders as og:image and twitter:image, and it is written separately from
+   *  the article body. Rewriting the body alone leaves the social card pointing
+   *  at a picture that is going to be deleted, so the repair has to know what
+   *  the meta currently says before it can decide whether to repoint it.
+   *
+   *  Returns null when the post cannot be read or the key is not set. Never
+   *  throws: a repair must not be abandoned over a social preview. */
+  async getPostMetaValue(id: number, key: string): Promise<string | null> {
+    try {
+      const r = await this.request<{ meta?: Record<string, unknown> }>(
+        `/posts/${id}?context=edit&_fields=id,meta`, { method: 'GET' },
+      )
+      const v = r?.meta?.[key]
+      return typeof v === 'string' && v.trim() ? v.trim() : null
+    } catch {
+      return null
+    }
+  }
+
   async deletePost(id: number): Promise<void> {
     await this.request(`/posts/${id}?force=true`, { method: 'DELETE' })
   }

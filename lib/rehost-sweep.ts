@@ -42,7 +42,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
-import { rehostPosts, describeRun, defaultSourceAlive, type RehostTarget } from '@/lib/rehost-run'
+import { rehostPosts, describeRun, defaultSourceAlive, makeOgImageFollower, type RehostTarget } from '@/lib/rehost-run'
 
 // Deliberately small. This edits other people's published posts, so a run that
 // goes wrong should go wrong over a handful of them and be visible in the next
@@ -184,6 +184,7 @@ export async function runHotlinkedSweep(): Promise<SweepReport> {
           }
         },
         sourceAlive: defaultSourceAlive,
+        afterMoved: makeOgImageFollower(wp),
       })
 
       perOwner.push({
