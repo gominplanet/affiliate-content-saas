@@ -27,8 +27,10 @@ import type { VelocityRead } from '@/lib/publish-velocity'
 
 interface Payload extends ConsolidationReport {
   connected: boolean
-  /** How many candidates exist, before the API trimmed the list it sends. */
+  /** How many exist in each pile, before the API trimmed what it sends. */
   totalCandidates?: number
+  totalQuickWins?: number
+  totalMergeCandidates?: number
   totalPosts: number
   ageMonths: number | null
   velocity: VelocityRead
@@ -51,7 +53,8 @@ const weaknessTone: Record<string, string> = {
 export default function ConsolidationCard() {
   const [data, setData] = useState<Payload | null>(null)
   const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState(false)
+  const [expandWins, setExpandWins] = useState(false)
+  const [expandMerge, setExpandMerge] = useState(false)
 
   useEffect(() => {
     fetch('/api/seo/consolidation').then(r => r.json()).then(setData)
@@ -68,7 +71,32 @@ export default function ConsolidationCard() {
   }
   if (!data) return null
 
-  const shown = expanded ? data.candidates : data.candidates.slice(0, 8)
+  const wins = expandWins ? (data.quickWins ?? []) : (data.quickWins ?? []).slice(0, 8)
+  const merges = expandMerge ? (data.mergeCandidates ?? []) : (data.mergeCandidates ?? []).slice(0, 8)
+
+  // One row, used by both piles. The weakness tone is what keeps a ranking post
+  // from reading like a dead one.
+  const row = (c: Payload['candidates'][number]) => (
+    <div key={c.id} className="rounded-lg px-2.5 py-2" style={{ background: 'var(--surface-2)' }}>
+      <div className="flex items-center gap-2">
+        <span className="text-[10.5px] font-semibold uppercase tracking-wide flex-shrink-0" style={{ color: weaknessTone[c.weakness] }}>
+          {weaknessLabel[c.weakness]}
+        </span>
+        <span className="text-[12.5px] truncate flex-1" style={{ color: 'var(--text)' }}>{c.title}</span>
+        {c.impressions > 0 && (
+          <span className="text-[11px] flex-shrink-0 tabular-nums" style={{ color: 'var(--text-faint)' }}>
+            {c.impressions.toLocaleString()} shown
+          </span>
+        )}
+        {c.url && (
+          <a href={c.url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0" style={{ color: 'var(--text-faint)' }}>
+            <ExternalLink size={11} />
+          </a>
+        )}
+      </div>
+      <p className="text-[11.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-soft)' }}>{c.reason}</p>
+    </div>
+  )
 
   return (
     <div className="rounded-2xl border p-4 mb-5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -92,8 +120,36 @@ export default function ConsolidationCard() {
         </div>
       )}
 
+      {/* The quick wins come FIRST, and most-shown first within them. Google is
+          already putting these in front of people. Nothing here needs merging,
+          redirecting or undoing, which is what makes it the place to start. */}
+      {wins.length > 0 && (
+        <div className="mt-4">
+          <p className="text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: '#1c7a35' }}>
+            Start here: rewrite the title
+          </p>
+          <p className="text-[12px] mb-2 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            Google is already showing {(data.totalQuickWins ?? wins.length).toLocaleString()} of your posts and
+            nobody is clicking them. That is the title and the description people read in the results, not a
+            ranking problem, so it is the fastest thing on this page to fix and there is nothing to undo.
+            Most-shown first, because that is where a rewrite is worth the most.
+          </p>
+          <div className="flex flex-col gap-1">{wins.map(row)}</div>
+          {(data.quickWins ?? []).length > wins.length && (
+            <button onClick={() => setExpandWins(true)} className="text-[12px] mt-2 underline" style={{ color: 'var(--text-soft)' }}>
+              Show the other {(data.quickWins ?? []).length - wins.length}
+            </button>
+          )}
+          {data.totalQuickWins != null && data.totalQuickWins > (data.quickWins ?? []).length && (
+            <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
+              Showing the {(data.quickWins ?? []).length} most-shown of {data.totalQuickWins.toLocaleString()}.
+            </p>
+          )}
+        </div>
+      )}
+
       {data.groups.length > 0 && (
-        <div className="mt-3">
+        <div className="mt-4">
           <p className="text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-faint)' }}>
             Same subject, more than once
           </p>
@@ -116,37 +172,25 @@ export default function ConsolidationCard() {
         </div>
       )}
 
-      {shown.length > 0 && (
-        <div className="mt-3">
-          <div className="flex flex-col gap-1">
-            {shown.map(c => (
-              <div key={c.id} className="rounded-lg px-2.5 py-2" style={{ background: 'var(--surface-2)' }}>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10.5px] font-semibold uppercase tracking-wide flex-shrink-0" style={{ color: weaknessTone[c.weakness] }}>
-                    {weaknessLabel[c.weakness]}
-                  </span>
-                  <span className="text-[12.5px] truncate flex-1" style={{ color: 'var(--text)' }}>{c.title}</span>
-                  {c.url && (
-                    <a href={c.url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0" style={{ color: 'var(--text-faint)' }}>
-                      <ExternalLink size={11} />
-                    </a>
-                  )}
-                </div>
-                <p className="text-[11.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-soft)' }}>{c.reason}</p>
-              </div>
-            ))}
-          </div>
-          {data.candidates.length > shown.length && (
-            <button onClick={() => setExpanded(true)} className="text-[12px] mt-2 underline" style={{ color: 'var(--text-soft)' }}>
-              Show the other {data.candidates.length - shown.length}
+      {merges.length > 0 && (
+        <div className="mt-4">
+          <p className="text-[11.5px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-faint)' }}>
+            Then: merge or drop
+          </p>
+          <p className="text-[12px] mb-2 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            Google has never shown these to anyone. Slower and riskier than a title rewrite, and the payoff
+            is concentrating authority rather than winning clicks, so do the list above first.
+          </p>
+          <div className="flex flex-col gap-1">{merges.map(row)}</div>
+          {(data.mergeCandidates ?? []).length > merges.length && (
+            <button onClick={() => setExpandMerge(true)} className="text-[12px] mt-2 underline" style={{ color: 'var(--text-soft)' }}>
+              Show the other {(data.mergeCandidates ?? []).length - merges.length}
             </button>
           )}
-          {/* The API sends the worst 100. Saying "show the other 92" under a
-              heading that counts 174 reads like a bug, so the gap is named. */}
-          {data.totalCandidates != null && data.totalCandidates > data.candidates.length && (
+          {data.totalMergeCandidates != null && data.totalMergeCandidates > (data.mergeCandidates ?? []).length && (
             <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-              Showing the {data.candidates.length} weakest of {data.totalCandidates.toLocaleString()}. Work through these
-              first and the rest will be a shorter list next time.
+              Showing the {(data.mergeCandidates ?? []).length} weakest of {data.totalMergeCandidates.toLocaleString()}. Work
+              through these and the rest will be a shorter list next time.
             </p>
           )}
         </div>

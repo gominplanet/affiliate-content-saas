@@ -395,6 +395,46 @@ const post = (over: Partial<PostStat> & { id: string }): PostStat => ({
   check('and both working posts are counted as such', r.working === 2, `${r.working}`)
 }
 
+// ── the quick wins were being cut off entirely ──────────────────────────────
+// The single list sorted weakest-first and the route cut it to a hundred, so the
+// hundred LOWEST-impression posts were sent and every high-impression title fix
+// was dropped. On a live site with 174 candidates the 74 that got cut were
+// exactly the ones worth doing first.
+{
+  const posts: PostStat[] = []
+  // 10 posts Google shows and nobody clicks, at wildly different volumes.
+  for (let i = 0; i < 10; i++) {
+    posts.push(post({ id: `shown${i}`, impressions: (i + 1) * 500, clicks: 0, words: 1500 }))
+  }
+  // 10 Google has never shown.
+  for (let i = 0; i < 10; i++) {
+    posts.push(post({ id: `dead${i}`, impressions: 0, clicks: 0, words: 1500 }))
+  }
+  const r = buildConsolidationReport(posts, { ageMonths: 24, now: NOW, statsAvailable: true })
+
+  check('the two piles are separated', r.quickWins.length === 10 && r.mergeCandidates.length === 10,
+    `${r.quickWins.length} wins, ${r.mergeCandidates.length} merges`)
+  check('quick wins are MOST shown first, because that is where a rewrite pays',
+    r.quickWins[0].impressions === 5000 && r.quickWins[9].impressions === 500,
+    r.quickWins.map(c => c.impressions).join(','))
+  check('and every quick win is actually being shown',
+    r.quickWins.every(c => c.impressions > 0))
+  check('no quick win is a merge candidate',
+    r.quickWins.every(c => !r.mergeCandidates.some(m => m.id === c.id)))
+  check('and nothing Google shows is in the merge pile',
+    r.mergeCandidates.every(c => c.impressions === 0),
+    'merging a ranking post throws the ranking away')
+  check('the two piles together are the whole list',
+    r.quickWins.length + r.mergeCandidates.length === r.candidates.length,
+    `${r.quickWins.length} + ${r.mergeCandidates.length} vs ${r.candidates.length}`)
+
+  // The bug itself: trimming the OLD single list would have kept the wrong ones.
+  const oldWayTop = r.candidates.slice(0, 10)
+  check('the old weakest-first list really did bury the quick wins',
+    oldWayTop.every(c => c.impressions === 0),
+    'this is what the panel was showing instead of the title fixes')
+}
+
 // ── the route and the panel never act ───────────────────────────────────────
 // Merging and redirecting are destructive to live content on somebody's own
 // site. The correct shape is a list a person reads and decides on.
@@ -423,8 +463,15 @@ const post = (over: Partial<PostStat> & { id: string }): PostStat => ({
     /setDate\(start\.getDate\(\) - 183\)/.test(ROUTE))
 
   const PANEL = read('components/seo/Consolidation.tsx')
-  check('the panel has no action button',
-    !/onClick=\{[^}]*(delete|merge|redirect|remove)/i.test(PANEL))
+  // Narrow on purpose. The first version of this matched setExpandMerge(true),
+  // a show-more toggle, and would have blocked a harmless UI change while
+  // proving nothing. What must not exist is a call that CHANGES anything.
+  check('the panel never writes',
+    !/method:\s*['"](POST|PUT|PATCH|DELETE)/i.test(PANEL)
+    && !/fetch\([^)]*,\s*\{/.test(PANEL),
+    'this panel reads and reports, it never acts on a post')
+  check('and its only fetch is the read',
+    (PANEL.match(/fetch\(/g) || []).length === 1, 'one GET, nothing else')
   check('and says plainly that MVP will not do it for them',
     /MVP does not change any of these for you/.test(PANEL))
   check('a ranking post is styled as the different thing it is',
@@ -433,11 +480,25 @@ const post = (over: Partial<PostStat> & { id: string }): PostStat => ({
   check('the excluded counts are stated rather than implied by a short list',
     /left out entirely: too soon to tell/.test(PANEL),
     'a panel showing nothing looks identical to a panel that is broken')
-  check('and the trimmed list says it is trimmed',
-    /Showing the \{data\.candidates\.length\} weakest of/.test(PANEL),
+  check('the route trims each pile on its own',
+    /quickWins: report\.quickWins\.slice\(0, 50\)/.test(ROUTE)
+    && /mergeCandidates: report\.mergeCandidates\.slice\(0, 50\)/.test(ROUTE),
+    'one trim over a weakest-first list dropped every title fix')
+  check('the panel puts the quick wins first',
+    PANEL.indexOf('Start here: rewrite the title') < PANEL.indexOf('Then: merge or drop'),
+    'the reversible ten minute fix belongs above the destructive one')
+  check('and says why they are the place to start',
+    /nothing to undo/.test(PANEL))
+  check('a quick win shows how many times it was shown',
+    /\{c\.impressions\.toLocaleString\(\)\} shown/.test(PANEL),
+    'the number is what tells a creator which title to rewrite first')
+  check('both trimmed lists say they are trimmed',
+    /most-shown of \{data\.totalQuickWins/.test(PANEL)
+    && /weakest of \{data\.totalMergeCandidates/.test(PANEL),
     '"show the other 92" under a heading counting 174 reads like a bug')
-  check('the route sends the full count for that',
-    /totalCandidates: report\.candidates\.length/.test(ROUTE))
+  check('the route sends the full count of each pile for that',
+    /totalQuickWins: report\.quickWins\.length/.test(ROUTE)
+    && /totalMergeCandidates: report\.mergeCandidates\.length/.test(ROUTE))
   check('the group copy does not claim certainty it does not have',
     /look like they cover the same product/.test(PANEL)
     && /a good signal and not a certainty/.test(PANEL),
@@ -528,7 +589,17 @@ const post = (over: Partial<PostStat> & { id: string }): PostStat => ({
   broke('review filler treated as a product name is caught',
     titleKeywords('The Real Fix: Tested, Honest, Complete').length === 0)
 
-  // Break 13: a judged-by-evidence count that includes working posts.
+  // Break 13: quick wins sorted weakest-first, which is what buried them.
+  const mixedVol: PostStat[] = []
+  for (let i = 0; i < 6; i++) mixedVol.push(post({ id: `q${i}`, impressions: (i + 1) * 500, clicks: 0 }))
+  const qr = buildConsolidationReport(mixedVol, { ageMonths: 24, now: NOW, statsAvailable: true })
+  broke('quick wins sorted lowest-first is caught', qr.quickWins[0].impressions === 3000)
+
+  // Break 14: a shown post leaking into the merge pile.
+  broke('a ranking post in the merge pile is caught',
+    qr.mergeCandidates.every(c => c.impressions === 0))
+
+  // Break 15: a judged-by-evidence count that includes working posts.
   const mixed = [
     post({ id: 'a', publishedAt: daysAgo(10), impressions: 500, clicks: 30 }),
     post({ id: 'b', publishedAt: daysAgo(40), impressions: 0, clicks: 0 }),

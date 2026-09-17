@@ -140,9 +140,16 @@ export async function GET() {
     ageMonths,
     velocity,
     ...report,
-    // The list is long on a big site and the panel only ever shows the worst.
-    // The full count goes too, so the panel can say it is showing a slice
-    // rather than leaving a creator to notice the numbers disagree.
+    // Both piles are trimmed independently.
+    //
+    // The single list was sorted weakest-first and then cut to a hundred, which
+    // sent the hundred LOWEST-impression posts and dropped every high-impression
+    // title fix. On a site with 174 candidates the 74 that got cut were exactly
+    // the ones worth doing first.
+    totalQuickWins: report.quickWins.length,
+    totalMergeCandidates: report.mergeCandidates.length,
+    quickWins: report.quickWins.slice(0, 50),
+    mergeCandidates: report.mergeCandidates.slice(0, 50),
     totalCandidates: report.candidates.length,
     candidates: report.candidates.slice(0, 100),
   })

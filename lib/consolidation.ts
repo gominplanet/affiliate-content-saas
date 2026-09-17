@@ -63,7 +63,23 @@ export interface Candidate {
 }
 
 export interface ConsolidationReport {
+  /** Everything earning nothing, weakest first. Kept for callers that want the
+   *  whole picture; the two lists below are what a person should act on. */
   candidates: Candidate[]
+  /**
+   * Posts Google IS showing that nobody clicks, most-shown first.
+   *
+   * The fastest win on any site and the one that was hardest to see. On a real
+   * catalogue of 174 posts earning nothing, 104 of them were in this pile:
+   * indexed, ranked, put in front of people, and passed over on the strength of
+   * the title. That is a ten minute fix per post with no merging, no redirects
+   * and nothing to undo, and the old single list buried them under the slow
+   * ones by sorting weakest first.
+   */
+  quickWins: Candidate[]
+  /** Posts Google has never shown, weakest first. The merge pile: slower,
+   *  riskier, and the payoff is concentrated authority rather than clicks. */
+  mergeCandidates: Candidate[]
   /** Posts excluded for being too new to judge, with the count so the creator
    *  can see the list is not the whole catalogue. */
   tooYoung: number
@@ -214,7 +230,7 @@ export function buildConsolidationReport(
   // findings.
   if (!opts.statsAvailable) {
     return {
-      candidates: [], tooYoung: 0, working: 0, judgedByEvidence: 0, groups: [],
+      candidates: [], quickWins: [], mergeCandidates: [], tooYoung: 0, working: 0, judgedByEvidence: 0, groups: [],
       note: 'Connect Google Search Console to see which posts are doing nothing. Without it MVP can see what you published but not whether anyone found it, and guessing at that would be worse than not saying.',
     }
   }
@@ -324,6 +340,21 @@ export function buildConsolidationReport(
   groups.sort((a, b) => b.ids.length - a.ids.length)
   candidates.sort((a, b) => a.impressions - b.impressions || b.words - a.words)
 
+  // Two piles, because they want opposite treatment and opposite orderings.
+  //
+  // A post Google shows and nobody clicks is a title problem: reversible, quick,
+  // and the MORE impressions it has the more a rewrite is worth. A post Google
+  // has never shown is a merge candidate: slow, destructive, and the weakest go
+  // first. Sorting one list weakest-first served the second pile and actively
+  // hid the first, since the most valuable title fixes have the most
+  // impressions and therefore sat at the very bottom.
+  const quickWins = candidates
+    .filter(c => c.impressions > 0)
+    .sort((a, b) => b.impressions - a.impressions)
+  const mergeCandidates = candidates
+    .filter(c => c.impressions === 0)
+    .sort((a, b) => b.words - a.words)
+
   const neverShown = candidates.filter(c => c.weakness === 'never-shown').length
   const note = candidates.length === 0
     ? (tooYoung > 0
@@ -331,5 +362,5 @@ export function buildConsolidationReport(
       : 'Nothing to consolidate. Every post old enough to judge is getting clicks.')
     : `${candidates.length.toLocaleString()} posts are earning nothing.${judgedByEvidence > 0 ? ` ${judgedByEvidence.toLocaleString()} of them are newer than the ${grace} day window but counted anyway, because Google has indexed posts you published after them: those were crawled past rather than missed.` : ''} ${neverShown.toLocaleString()} of them have never been shown to anyone at all. ${tooYoung > 0 ? `A further ${tooYoung.toLocaleString()} are still inside the ${grace} day window and were not judged. ` : ''}Merging the weakest into your strongest post on the same subject, and redirecting the old URLs to it, gives Google one good page instead of several it has already passed over.`
 
-  return { candidates, tooYoung, working, judgedByEvidence, groups, note }
+  return { candidates, quickWins, mergeCandidates, tooYoung, working, judgedByEvidence, groups, note }
 }
