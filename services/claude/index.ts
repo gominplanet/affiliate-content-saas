@@ -10,6 +10,7 @@ import { resolveNicheScaffold, nicheScaffoldToPrompt, type NicheScaffold } from 
 import { deriveProductName } from '@/lib/product-name'
 import { asinPathRegex } from '@/lib/asin'
 import { pickBlogWriter, BLOG_WRITER_DEFAULT, type WriterArm } from '@/lib/blog-writer'
+import { planSourceBudget, planFaqCount, type SourceBudget } from '@/lib/source-budget'
 
 /** Caller identity for cost telemetry (optional — logging is best-effort). */
 export interface UsageCtx {
@@ -167,6 +168,13 @@ The opening paragraph of the post MUST start with something close to how they op
 
 function buildSystemPrompt(
   brand: BrandProfile,
+  /** How long this specific post is allowed to be, and how many FAQ questions
+   *  it has earned, both derived from the source material rather than from a
+   *  brand setting. Required, not optional: an omitted budget would silently
+   *  restore the behaviour where every post was asked for the brand's chosen
+   *  length whether or not there was anything to fill it with. See
+   *  lib/source-budget.ts for what that cost. */
+  sourceBudget: SourceBudget,
   voiceProfile?: string,
   /** Whether the resolved affiliate destination is Amazon. Drives the CTA
    *  button/eyebrow copy and the default disclaimer. Defaults to true so
@@ -217,13 +225,20 @@ function buildSystemPrompt(
   // "always the same length" bug, fixed 2026-06-26). Cost is governed by the
   // per-account monthly AI-spend ceiling (lib/ai-spend.ts), not an artificial
   // word cap — so the length the user asks for is the length we write to.
-  const lengthMap: Record<string, string> = {
-    short: '600–900 words',
-    medium: '900–1,500 words',
-    long: '1,500–2,500 words',
-    deep: '2,500–3,200 words',
-  }
-  const targetLength = lengthMap[brand.post_length] || '900–1,500 words'
+  // The tier the creator picked is now the CEILING, not the target. What is
+  // actually asked for comes from lib/source-budget.ts, which will not let the
+  // post run further than the video and product details can carry.
+  //
+  // The old map lived here and was handed straight to the writer: "deep" meant
+  // 2,500 to 3,200 words even when the transcript slice was 2,000 words, so the
+  // model was instructed to produce a thousand words with nothing behind them.
+  // On one site 394 posts ended up in Google's "Crawled, currently not indexed".
+
+  // How many FAQ questions this post has earned. Zero is a legitimate answer and
+  // the most important one: it is what stops a thin post growing a manufactured
+  // Q&A block purely because the template has a slot for one.
+  const faqCount = planFaqCount(sourceBudget.sourceWords)
+  const faqHeading = '<!-- wp:heading {"level":2} --><h2>Frequently Asked Questions</h2><!-- /wp:heading -->'
 
   const disclaimer = brand.affiliate_disclaimer
     || (isAmazon
@@ -433,7 +448,13 @@ ${audienceLine}
 
 Brand niche: ${niches}
 Brand voice: ${tones}
-Target post length: ${targetLength}
+Target post length: ${sourceBudget.label}
+HARD CEILING: ${sourceBudget.maxWords.toLocaleString()} words. This is derived from how much
+source material this post actually has, not from a preference. Do not pad to
+reach it and never exceed it. If you run out of things the transcript or the
+product details genuinely support, STOP. A shorter post that is all substance
+outranks a longer one carrying invented filler, and inventing the remainder is
+the single most reliable way to have Google decline to index the page.
 ${ctaGuidance}
 ${writingGuidance}
 ${avoidLine}
@@ -914,15 +935,23 @@ self-contained way (so a search engine or AI assistant can lift it as the
 answer) — lead with the verdict/number/yes-or-no, THEN add the nuance. Don't
 open a FAQ answer with a question, a story, or "Well,". Still no banned filler.
 
-FAQ COUNT (2026-06-09 Sprint 2): minimum 7 questions, target 8-10. The old
-minimum was 5; we widened it because (1) Google retired FAQ rich results so
-the visible accordion no longer caps display value, but (2) answer engines
-(ChatGPT, Perplexity, Google AI Mode, Bing Copilot) lift Q&A chunks
-verbatim as citations, so MORE high-quality unique Q&A = more chances to be
-the cited source for long-tail queries. Cap at 10 — past that, returns
-diminish and the section reads as filler. Quality > count; if you genuinely
-can't write 7 unique non-repeating questions from the buckets below, write 7
-anyway by mining the bucket marked PEOPLE ALSO ASK below.
+FAQ COUNT: EXACTLY ${faqCount} question${faqCount === 1 ? '' : 's'}${faqCount === 0 ? '' : ', and fewer if you cannot fill them honestly'}.
+
+This number is computed from how much source material the post has, not chosen.
+${faqCount === 0
+  ? 'It is ZERO for this post. Omit the FAQ section entirely. Do not emit the heading, do not emit a single question. There is not enough source here to answer anything a reader could not already tell from the body, and a manufactured FAQ is worse than none.'
+  : 'Do not exceed it. If you run out of questions a real buyer would ask that the body has not already answered, write fewer and stop.'}
+
+This replaces an earlier rule that set a high minimum and then told the writer to
+reach it whether or not the questions existed. That was an instruction to pad,
+and this same prompt separately recorded an audit finding that the FAQ had begun
+echoing the body across recent posts. It was always going to. A floor on question
+count is a floor on invention, which is why there is no floor any more.
+
+The reason for wanting Q&A is still real: answer engines lift Q&A chunks verbatim
+as citations. But a citation comes from a question someone actually asks that the
+source can actually answer. Seven invented ones do not become seven citations,
+they become the same recognisable padding signature on every URL on the site.
 
 FAQ UNIQUENESS — DON'T PARAPHRASE THE BODY.
 The audit found that across 5 recent posts the FAQ section consistently echoes
@@ -1443,13 +1472,18 @@ specific feature). Keep cells to 4 words max — this is a scan-table.
 <p class="gr-vs-source"><em>Comparison drawn from what {reviewer name or "we"} discussed in the video.</em></p>
 <!-- /wp:html -->
 ${improvementsSection}
-[5] FAQ — Minimum 7 questions, target 8-10 (product-specific, not generic).
-See FAQ RULES above for buckets. Draw across MULTIPLE buckets — at least 4
-different ones. PEOPLE ALSO ASK long-tail intent should be represented at
-least twice.
-<!-- wp:heading {"level":2} --><h2>Frequently Asked Questions</h2><!-- /wp:heading -->
+[5] FAQ${faqCount === 0 ? ' — OMITTED ON THIS POST' : ` — EXACTLY ${faqCount} question${faqCount === 1 ? '' : 's'}, product-specific, never generic`}.
+${faqCount === 0
+  ? `SKIP THIS BLOCK ENTIRELY. Emit no heading and no questions, and go straight to
+[6]. This post does not have the source material to answer anything the body has
+not already covered, and a padded FAQ is the clearest signal a page was machine
+filled. A post without an FAQ is a normal post.`
+  : `See FAQ RULES above for buckets. Spread across different buckets rather than
+loading them all from one. Write fewer than ${faqCount} if that is all the source
+honestly supports.
+${faqHeading}
 Each Q: <!-- wp:heading {"level":3} --><h3>{question}</h3><!-- /wp:heading -->
-        <!-- wp:paragraph --><p>{specific candid answer}</p><!-- /wp:paragraph -->
+        <!-- wp:paragraph --><p>{specific candid answer}</p><!-- /wp:paragraph -->`}
 
 [6] SCORECARD GOES HERE (emit the [3b] scorecard block NOW)
 This is where the full scorecard block (defined at [3b] above — overall score,
@@ -1589,7 +1623,7 @@ QUALITY CHECK:
 ✅ Affiliate link 3+ times (intro, body, mid-article button, final CTA)
 ✅ Buy/Skip items specific to THIS product
 ✅ FAQ product-specific
-✅ Content hits ${targetLength}
+✅ Content stays within ${sourceBudget.label} and never pads to reach it
 ✅ No captions anywhere in the HTML
 ✅ Zero AI tells (no em dashes, no "moreover", no "it's worth noting", etc.)
 ✅ Sentence variety — short punchy sentences mixed with longer ones
@@ -2191,7 +2225,23 @@ ${t}`,
     // undefined) so the big rules+templates prefix is a STABLE, cache-readable
     // block. The voice profile is appended as a trailing UNCACHED system block
     // at the stream call below.
-    const systemPrompt = buildSystemPrompt(brand, undefined, ctaIsAmazon, nicheScaffold)
+    // What this post is allowed to be, decided by what it has to work from.
+    // Computed once and used for both the prompt's length ceiling and the
+    // transcript slice below, so the two can never disagree: budgeting for
+    // source the writer is never sent is the original bug in a new costume.
+    const sourceBudget = planSourceBudget(brand.post_length, {
+      transcript: video.transcript,
+      productResearch: video.productResearch,
+      productInfo: [video.title, video.description].filter(Boolean).join(' '),
+    })
+    if (sourceBudget.trimmed || sourceBudget.thin) {
+      console.log('[blog/generate] source budget', {
+        requested: brand.post_length, maxWords: sourceBudget.maxWords,
+        sourceWords: sourceBudget.sourceWords, thin: sourceBudget.thin,
+      })
+    }
+
+    const systemPrompt = buildSystemPrompt(brand, sourceBudget, undefined, ctaIsAmazon, nicheScaffold)
     const voiceBlock = buildVoiceBlock(voiceProfile || undefined)
 
     const feedbackBlock = rewriteFeedback?.trim()
@@ -2320,7 +2370,7 @@ VIDEO DESCRIPTION:
 ${video.description.slice(0, 2000)}
 ${video.productResearch ? `\nPRODUCT INFO (scraped from the product/brand site linked in the description — use these as FACTUAL product details; the transcript still governs the voice, tone, and the reviewer's actual opinions):\n${video.productResearch.slice(0, 2500)}\n` : ''}
 TRANSCRIPT:
-${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available — base post on title, description, and tags only.'}${persistentFeedbackBlock}${voiceExamplesBlock}${generalModeOverride}${feedbackBlock}`
+${video.transcript ? video.transcript.slice(0, sourceBudget.transcriptChars) : 'No transcript available — base post on title, description, and tags only.'}${persistentFeedbackBlock}${voiceExamplesBlock}${generalModeOverride}${feedbackBlock}`
 
     // Pass 2 — generate with extended thinking (streaming required for large
     // max_tokens). Retry once on transient stream drops: a long streamed
@@ -2481,7 +2531,16 @@ ${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available
     // "Get the best price on Walmart →" instead of always saying Amazon.
     const isAmazon = input.retailer ? input.retailer.isAmazon : true
     const retailerLabel = input.retailer?.label ?? null
-    const systemPrompt = buildSystemPrompt(brand, undefined, isAmazon, campaignScaffold, retailerLabel)
+    // No video on this path, so the only source is the listing and the research
+    // brief. That is a genuinely smaller budget than a transcript-backed post
+    // gets, and it should be: there is less here to write from.
+    const sourceBudget = planSourceBudget(brand.post_length, {
+      transcript: null,
+      productResearch: input.researchBrief,
+      productInfo: [input.product.title, input.product.description, ...(input.product.bullets ?? [])]
+        .filter(Boolean).join(' '),
+    })
+    const systemPrompt = buildSystemPrompt(brand, sourceBudget, undefined, isAmazon, campaignScaffold, retailerLabel)
     const p = input.product
 
     // Clean, searchable product name (brand + short core) distilled from the
