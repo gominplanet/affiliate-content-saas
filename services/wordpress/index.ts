@@ -3,6 +3,7 @@
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { WP_USER_AGENT } from '@/lib/wp-user-agent'
 import { repairCorruptedBlocks } from '@/lib/repair-blocks'
+import { planUpload, extensionFor, withExtension } from '@/lib/image-upload-prep'
 
 export interface WPPost {
   id?: number
@@ -826,8 +827,34 @@ export class WordPressService {
     // less posts on hosts that strip Authorization or where the App Password
     // went stale. Returns null on an older plugin / WAF / bad token → we fall
     // through to fetching the bytes and the legacy Basic+nonce upload below.
-    const viaProxy = await this.tryProxyMediaUploadFromUrl(imageUrl, filename)
-    if (viaProxy) return viaProxy
+    // What the source actually is, BEFORE choosing a filename for it. Callers
+    // pass a name built from the post slug, so every body image arrives here
+    // called `.jpg` no matter what the generator returned. The first body image
+    // of every post is upscaled by fal-ai/aura-sr, which returns PNG, and
+    // WordPress refuses an extension that disagrees with the real file type. In
+    // a 40 image sample from the affected posts that split perfectly: 28 JPEGs
+    // accepted, 12 PNGs refused, all of them named `.jpg`.
+    //
+    // A HEAD costs one round trip and is what lets the proxy path, which never
+    // sees the bytes, send a name that matches them.
+    let headType: string | null = null
+    let headBytes = 0
+    try {
+      const head = await fetch(imageUrl, { method: 'HEAD', signal: AbortSignal.timeout(15_000) })
+      if (head.ok) {
+        headType = head.headers.get('content-type')
+        headBytes = Number(head.headers.get('content-length') || 0) || 0
+      }
+    } catch { /* the GET below is the real check; a failed HEAD only costs us the proxy */ }
+
+    const headPlan = planUpload(filename, { contentType: headType, byteLength: headBytes })
+
+    // The proxy hands the site a URL and the site downloads it itself, so it
+    // cannot resize. Only use it when the image is fine as it stands.
+    if (headType && headPlan.action === 'as-is') {
+      const viaProxy = await this.tryProxyMediaUploadFromUrl(imageUrl, headPlan.filename)
+      if (viaProxy) return viaProxy
+    }
 
     // 30s timeout on the source-side fetch (YouTube thumb / fal CDN /
     // Supabase Storage URL). Without it, a slow upstream pinned the whole
@@ -836,9 +863,35 @@ export class WordPressService {
     // try/catch can fall back (e.g. maxres → hqdefault YT thumb).
     const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(30_000) })
     if (!imgRes.ok) throw new Error(`Failed to fetch image from URL: ${imageUrl}`)
-    const buffer = Buffer.from(await imgRes.arrayBuffer())
-    const contentType = imgRes.headers.get('content-type') || 'image/jpeg'
-    return this.mediaUpload(buffer, filename, contentType)
+    let buffer = Buffer.from(await imgRes.arrayBuffer())
+    const contentType = imgRes.headers.get('content-type') || headType || 'image/jpeg'
+
+    let plan = planUpload(filename, { contentType, byteLength: buffer.byteLength })
+
+    if (plan.action === 'resize') {
+      try {
+        const sharp = (await import('sharp')).default
+        // Alpha decides what it becomes. Flattening a logo or a sticker onto a
+        // background to save bytes is a worse outcome than a larger file, and
+        // this same upload carries both.
+        const meta = await sharp(buffer).metadata()
+        plan = planUpload(filename, { contentType, byteLength: buffer.byteLength, hasAlpha: !!meta.hasAlpha })
+        if (plan.action === 'resize') {
+          const pipeline = sharp(buffer).resize({ width: plan.maxWidth, withoutEnlargement: true })
+          buffer = plan.contentType === 'image/png'
+            ? await pipeline.png({ compressionLevel: 9 }).toBuffer()
+            : await pipeline.jpeg({ quality: plan.quality, mozjpeg: true }).toBuffer()
+        }
+      } catch (e) {
+        // Could not resize. Send the original under a name that at least matches
+        // its bytes: too big may still be refused, the wrong extension always is.
+        console.warn('[wp-media] could not resize, sending as it came:', e instanceof Error ? e.message : String(e))
+        const ext = extensionFor(contentType)
+        plan = { action: 'as-is', filename: ext ? withExtension(filename, ext) : filename, contentType }
+      }
+    }
+
+    return this.mediaUpload(buffer, plan.filename, plan.contentType)
   }
 
   // ── Posts ─────────────────────────────────────────────────────────────────
