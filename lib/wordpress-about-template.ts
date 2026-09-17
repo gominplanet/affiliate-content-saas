@@ -1,3 +1,5 @@
+import { absoluteUrl } from '@/lib/absolute-url'
+
 export interface AboutPageOptions {
   brandName: string
   authorName?: string | null
@@ -25,13 +27,21 @@ export function generateAboutPage(opts: AboutPageOptions): { title: string; cont
   const { brandName, authorName, aboutText, accentColor, headshotUrl, contactEmail, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, pinterestUrl, facebookUrl } = opts
   const showBio = opts.showBio !== false
 
+  // absoluteUrl, because a creator types `instagram.com/handle` and a bare host
+  // in an href is a RELATIVE path: it resolved to /about-.../instagram.com and
+  // 404d. Six of one creator's not-found URLs were exactly these six links. The
+  // footer template already did this; this one did not.
   const socials: string[] = []
-  if (youtubeUrl) socials.push(`<a class="ab-social" href="${esc(youtubeUrl)}" target="_blank" rel="noopener">▶ YouTube</a>`)
-  if (instagramUrl) socials.push(`<a class="ab-social" href="${esc(instagramUrl)}" target="_blank" rel="noopener">◈ Instagram</a>`)
-  if (tiktokUrl) socials.push(`<a class="ab-social" href="${esc(tiktokUrl)}" target="_blank" rel="noopener">♪ TikTok</a>`)
-  if (twitterUrl) socials.push(`<a class="ab-social" href="${esc(twitterUrl)}" target="_blank" rel="noopener">✕ Twitter</a>`)
-  if (pinterestUrl) socials.push(`<a class="ab-social" href="${esc(pinterestUrl)}" target="_blank" rel="noopener">📌 Pinterest</a>`)
-  if (facebookUrl) socials.push(`<a class="ab-social" href="${esc(facebookUrl)}" target="_blank" rel="noopener">f Facebook</a>`)
+  const social = (raw: string | undefined, label: string) => {
+    const href = absoluteUrl(raw)
+    if (href) socials.push(`<a class="ab-social" href="${esc(href)}" target="_blank" rel="noopener">${label}</a>`)
+  }
+  social(youtubeUrl, '▶ YouTube')
+  social(instagramUrl, '◈ Instagram')
+  social(tiktokUrl, '♪ TikTok')
+  social(twitterUrl, '✕ Twitter')
+  social(pinterestUrl, '📌 Pinterest')
+  social(facebookUrl, 'f Facebook')
 
   const css = `
 .ab-wrap{max-width:680px;margin:0 auto;padding:20px 0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
