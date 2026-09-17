@@ -102,6 +102,7 @@ export async function POST(request: Request) {
       }
     },
     sourceAlive: defaultSourceAlive,
+    postExists: (id: number) => wp.postExists(id),
     afterMoved: makeOgImageFollower(wp),
   })
 

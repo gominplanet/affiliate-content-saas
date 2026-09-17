@@ -236,6 +236,7 @@ export async function runHotlinkedSweep(trigger: 'cron' | 'admin' = 'cron'): Pro
           }
         },
         sourceAlive: defaultSourceAlive,
+        postExists: (id: number) => wp.postExists(id),
         afterMoved: makeOgImageFollower(wp),
       })
 
@@ -246,6 +247,7 @@ export async function runHotlinkedSweep(trigger: 'cron' | 'admin' = 'cron'): Pro
         moved: result.moved,
         refused: result.refused,
         gone: result.gone,
+        deleted: result.deleted,
         siteRefusedEverything: result.siteRefusedEverything,
         summary: describeRun(result, batch.length),
         // Posts the runner declined to touch, which is not the same as posts it
@@ -261,6 +263,7 @@ export async function runHotlinkedSweep(trigger: 'cron' | 'admin' = 'cron'): Pro
   const moved = perOwner.reduce((n, o) => n + (Number(o.moved) || 0), 0)
   const refused = perOwner.reduce((n, o) => n + (Number(o.refused) || 0), 0)
   const gone = perOwner.reduce((n, o) => n + (Number(o.gone) || 0), 0)
+  const deleted = perOwner.reduce((n, o) => n + (Number(o.deleted) || 0), 0)
 
   const report: SweepReport = {
     ok: true,
@@ -274,9 +277,9 @@ export async function runHotlinkedSweep(trigger: 'cron' | 'admin' = 'cron'): Pro
     gone,
     // The headline says what happened, including when that is nothing. A run
     // reporting ok:true with no numbers beside it is the silence this replaces.
-    summary: moved === 0 && refused === 0 && gone === 0
+    summary: moved === 0 && refused === 0 && gone === 0 && deleted === 0
       ? 'Nothing was moved and nothing was refused, so there was nothing to do this run.'
-      : `Moved ${moved}, refused ${refused}, gone ${gone}.`,
+      : `Moved ${moved}, refused ${refused}, gone ${gone}${deleted > 0 ? `, ${deleted} already deleted on WordPress` : ''}.`,
     results: perOwner,
   }
   await record(admin, trigger, report)

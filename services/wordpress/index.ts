@@ -4,6 +4,7 @@ import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { WP_USER_AGENT } from '@/lib/wp-user-agent'
 import { repairCorruptedBlocks } from '@/lib/repair-blocks'
 import { planUpload, extensionFor, withExtension } from '@/lib/image-upload-prep'
+import { isStalePostError } from '@/lib/wp-errors'
 
 export interface WPPost {
   id?: number
@@ -999,6 +1000,29 @@ export class WordPressService {
       return (p && typeof p.link === 'string') ? p.link : ''
     } catch {
       return ''
+    }
+  }
+
+  /** Does this post still exist on this site?
+   *
+   *  true, false, or NULL for "could not tell". getPostLink returns '' for both
+   *  a missing post and a network wobble, and treating those the same would let
+   *  a bad minute be reported as a deleted article. Only WordPress actually
+   *  saying rest_post_invalid_id counts as gone.
+   *
+   *  Used by the hot-linked repair: a post deleted in WP admin leaves our row
+   *  pointing at an id that no longer resolves, and uploading its pictures
+   *  before finding that out adds orphan attachments to the creator's media
+   *  library on every single run. */
+  async postExists(id: number): Promise<boolean | null> {
+    try {
+      const p = await this.request<{ id?: number }>(
+        `/posts/${id}?_fields=id&context=view`,
+        { method: 'GET' },
+      )
+      return typeof p?.id === 'number'
+    } catch (e) {
+      return isStalePostError(e) ? false : null
     }
   }
 

@@ -36,6 +36,7 @@
 import { findRehostable, replaceImageUrl, type RehostCandidate } from '@/lib/rehost-images'
 import { imagesStatusOf } from '@/lib/images-status'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { isStalePostError } from '@/lib/wp-errors'
 
 /**
  * Is the original still there?
@@ -81,6 +82,16 @@ export interface RehostRunResult {
   moved: number
   refused: number
   gone: number
+  /**
+   * Posts that no longer exist on WordPress, deleted in WP admin, leaving our
+   * row pointing at an id that resolves to nothing.
+   *
+   * NOT a refusal. The first real run called these "the site refused all 3
+   * uploads" and told the creator to go and test their WordPress, when the
+   * uploads had in fact succeeded and the article was simply gone. Their site
+   * was never the problem.
+   */
+  deleted: number
   attempted: number
   failures: { url: string; reason: string }[]
   posts: PostOutcome[]
@@ -101,6 +112,17 @@ export interface RehostIO {
    * what lets "your site said no" and "the picture is gone" be told apart.
    */
   sourceAlive?(url: string): Promise<boolean>
+
+  /**
+   * Does the post still exist on the site? true, false, or null for "could not
+   * tell". Optional.
+   *
+   * Checked BEFORE any upload. Without it a post deleted in WP admin has its
+   * pictures uploaded, the update then fails on an invalid id, and the run
+   * leaves fresh orphan attachments in the creator's media library. Every two
+   * hours, forever.
+   */
+  postExists?(wordpressPostId: number): Promise<boolean | null>
 
   /**
    * Called after a post's body has been repaired, with every picture that
@@ -145,6 +167,7 @@ export async function rehostPosts(
   let moved = 0
   let refused = 0
   let gone = 0
+  let deleted = 0
   let attempted = 0
   const failures: { url: string; reason: string }[] = []
   const outcomes: PostOutcome[] = []
@@ -176,6 +199,25 @@ export async function rehostPosts(
     if (post.wordpress_url && !sameSiteHost(post.wordpress_url, siteUrl)) {
       outcomes.push(outcomeFor(post, 'it is published on a different site from the one these credentials open, so it was left alone'))
       continue
+    }
+
+    // IS THE ARTICLE STILL THERE?
+    //
+    // Asked before a single picture is uploaded. A post deleted in WP admin
+    // leaves our row pointing at an id that resolves to nothing, and without
+    // this the pictures upload, the update fails on an invalid id, and the run
+    // has added orphan attachments to the creator's media library. Every two
+    // hours, forever, for an article nobody can read.
+    //
+    // Only a definite "no" counts. null means the check itself did not complete,
+    // and a bad minute must not be reported as a deleted article.
+    if (io.postExists) {
+      const exists = await io.postExists(post.wordpress_post_id)
+      if (exists === false) {
+        deleted++
+        outcomes.push(outcomeFor(post, 'this post no longer exists on WordPress, so it looks like it was deleted there and there is nothing to repair'))
+        continue
+      }
     }
 
     let updated = html
@@ -231,13 +273,30 @@ export async function rehostPosts(
     try {
       await io.updatePost(post.wordpress_post_id, updated)
     } catch (e) {
+      // The upload happened and the live post did not change, so nothing was
+      // repaired from a reader's point of view. Never counted as moved.
+      moved -= postMoved
+
+      // An invalid post id is not the site refusing anything. The uploads
+      // worked; the article is gone. Calling that a refusal sent a creator off
+      // to test a WordPress that was behaving perfectly.
+      if (isStalePostError(e)) {
+        deleted++
+        failures.push({
+          url: post.wordpress_url ?? post.id,
+          reason: 'this post no longer exists on WordPress, so it looks like it was deleted there and there is nothing to repair',
+        })
+        outcomes.push({
+          id: post.id, title: post.title ?? '', moved: 0, refused: postRefused, gone: postGone,
+          skipped: 'this post no longer exists on WordPress, so it looks like it was deleted there and there is nothing to repair',
+        })
+        continue
+      }
+
       failures.push({
         url: post.wordpress_url ?? post.id,
         reason: `pictures uploaded, but the post could not be updated: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`,
       })
-      // The upload happened and the live post did not change, so nothing was
-      // repaired from a reader's point of view. Counted as refused, not moved.
-      moved -= postMoved
       refused += postMoved
       outcomes.push({ id: post.id, title: post.title ?? '', moved: 0, refused: postRefused + postMoved, gone: postGone })
       continue
@@ -266,6 +325,7 @@ export async function rehostPosts(
     moved,
     refused,
     gone,
+    deleted,
     attempted,
     failures,
     posts: outcomes,
@@ -292,6 +352,11 @@ export function describeRun(r: RehostRunResult, postCount: number): string {
   }
   if (r.gone > 0) {
     parts.push(`${r.gone} original${r.gone === 1 ? '' : 's'} ${r.gone === 1 ? 'is' : 'are'} gone for good and ${r.gone === 1 ? 'has' : 'have'} to be made again.`)
+  }
+  if (r.deleted > 0) {
+    // Deliberately says nothing about their WordPress. These posts were deleted
+    // there, so the site is fine and sending them to test it wastes their time.
+    parts.push(`${r.deleted} post${r.deleted === 1 ? '' : 's'} no longer exist${r.deleted === 1 ? 's' : ''} on WordPress, so ${r.deleted === 1 ? 'it was' : 'they were'} left alone.`)
   }
   if (parts.length === 0) {
     return `Looked at ${postCount} post${postCount === 1 ? '' : 's'} and found nothing to move.`

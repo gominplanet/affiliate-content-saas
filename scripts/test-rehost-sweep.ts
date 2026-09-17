@@ -117,6 +117,54 @@ async function main() {
       /Moved 1 picture/.test(said) && /gone for good/.test(said), said)
   }
 
+  // ── A DELETED POST IS NOT A REFUSED UPLOAD ────────────────────────────────
+  //
+  // The real run said "productdemolab.com refused all 3 uploads, run Test
+  // pictures to find out why". The uploads had SUCCEEDED. The article had been
+  // deleted in WP admin, so our row pointed at an id that resolves to nothing,
+  // and the creator was being sent to test a WordPress that was behaving
+  // perfectly. Worse, each run left 3 fresh orphan attachments in his media
+  // library on the way to finding out, every two hours.
+  {
+    const h = io({ postExists: async () => false })
+    const r = await rehostPosts([post()], SITE, h)
+
+    check('a deleted post is counted as deleted', r.deleted === 1, String(r.deleted))
+    check('and NOT as a refusal', r.refused === 0,
+      'their site did nothing wrong, and saying it did sends them off to fix it')
+    check('NOTHING WAS UPLOADED FOR IT', r.attempted === 0,
+      'uploading first leaves orphan attachments in their library on every run, forever')
+    check('and the live site was not touched', h.pushed.length === 0)
+    check('the outcome says so in plain words',
+      /no longer exists on WordPress/.test(r.posts[0]?.skipped ?? ''), r.posts[0]?.skipped)
+
+    const said = describeRun(r, 1)
+    check('the summary mentions it', /no longer exists on WordPress/.test(said), said)
+    check('and does NOT send them to test their site', !/Test pictures/.test(said),
+      'that advice is for a refusal; here the site is fine')
+  }
+
+  // ── a post that is gone only shows up at update time ──────────────────────
+  //
+  // The probe is optional and can be skipped, so the late path has to classify
+  // it too rather than falling into the refusal branch.
+  {
+    const h = io({ updatePost: async () => { throw new Error('WordPress 404: {"code":"rest_post_invalid_id","message":"Invalid post ID.","data":{"status":404}}') } })
+    const r = await rehostPosts([post()], SITE, h)
+    check('a stale id at update time is deleted, not refused',
+      r.deleted === 1 && r.refused === 0, `deleted=${r.deleted} refused=${r.refused}`)
+    check('and still nothing counts as moved', r.moved === 0, String(r.moved))
+    check('and our copy is not rewritten', h.saved.length === 0)
+  }
+
+  // ── an existence check that could not complete proves nothing ─────────────
+  {
+    const h = io({ postExists: async () => null })
+    const r = await rehostPosts([post()], SITE, h)
+    check('an unknown answer does not declare the post deleted', r.deleted === 0, String(r.deleted))
+    check('and the repair goes ahead', r.moved === 2, String(r.moved))
+  }
+
   // ── a probe that throws proves nothing ────────────────────────────────────
   {
     const h = io({ sourceAlive: async () => { throw new Error('network wobble') } })
@@ -451,11 +499,11 @@ async function main() {
   // ── house style ───────────────────────────────────────────────────────────
   {
     const lines = [
-      describeRun({ moved: 2, refused: 0, gone: 0, attempted: 2, failures: [], posts: [], siteRefusedEverything: false }, 1),
-      describeRun({ moved: 0, refused: 3, gone: 0, attempted: 3, failures: [], posts: [], siteRefusedEverything: true }, 1),
-      describeRun({ moved: 1, refused: 0, gone: 2, attempted: 1, failures: [], posts: [], siteRefusedEverything: false }, 1),
-      describeRun({ moved: 0, refused: 0, gone: 0, attempted: 0, failures: [], posts: [], siteRefusedEverything: false }, 3),
-      describeRun({ moved: 0, refused: 0, gone: 0, attempted: 0, failures: [], posts: [], siteRefusedEverything: false }, 0),
+      describeRun({ moved: 2, refused: 0, gone: 0, deleted: 0, attempted: 2, failures: [], posts: [], siteRefusedEverything: false }, 1),
+      describeRun({ moved: 0, refused: 3, gone: 0, deleted: 0, attempted: 3, failures: [], posts: [], siteRefusedEverything: true }, 1),
+      describeRun({ moved: 1, refused: 0, gone: 2, deleted: 0, attempted: 1, failures: [], posts: [], siteRefusedEverything: false }, 1),
+      describeRun({ moved: 0, refused: 0, gone: 0, deleted: 0, attempted: 0, failures: [], posts: [], siteRefusedEverything: false }, 3),
+      describeRun({ moved: 0, refused: 0, gone: 0, deleted: 0, attempted: 0, failures: [], posts: [], siteRefusedEverything: false }, 0),
     ]
     for (const l of lines) {
       check(`no dash punctuation in "${l.slice(0, 44)}…"`, !/[—–]|\s-\s/.test(l))
