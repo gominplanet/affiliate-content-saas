@@ -494,17 +494,29 @@ if (!function_exists('mvp_affiliate_newsletter_data')) {
 if (!function_exists('mvp_affiliate_extract_affiliate_link')) {
     function mvp_affiliate_extract_affiliate_link(string $html): string {
         if ($html === '') return '';
-        // Capture href values in order. We bail at the first match — the
-        // verdict / buy button is almost always the FIRST sponsored link
-        // a review post wraps with, so order = relevance.
+        // Capture href values in order, then pick by PRIORITY, not by position.
+        //
+        // The loops used to be nested the other way round: for each href, try
+        // every pattern. That makes document order win and the priority list
+        // below decorative, which is not what it is for. A creator reported the
+        // sticky mobile buy button going to an Amazon SEARCH rather than to the
+        // product, and this was why: the first Amazon link in his article was an
+        // inline "MacBook Pro" search link, the catch-all third pattern matched
+        // it, and the /dp/ product link further down never got a look.
+        //
+        // That button is the one phone readers press, so it is the single most
+        // valuable link on the page and it was pointing at a search results page.
+        //
+        // Patterns are most specific first: a cloaked link beats a direct
+        // product link, which beats any other Amazon URL.
         if (!preg_match_all('/href=[\"\']((?:https?:\/\/)?[^\"\']+)[\"\']/i', $html, $m)) return '';
         $patterns = [
             '/(?:^|\.)(geni\.us|gnz\.|amzn\.to|a\.co)\//i',
             '/amazon\.[a-z\.]+\/(?:dp|gp)\//i',
             '/amazon\.[a-z\.]+\//i',
         ];
-        foreach ($m[1] as $href) {
-            foreach ($patterns as $p) {
+        foreach ($patterns as $p) {
+            foreach ($m[1] as $href) {
                 if (preg_match($p, $href)) return $href;
             }
         }

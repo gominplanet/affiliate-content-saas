@@ -25,6 +25,7 @@
  * Body: { dryRun?: boolean, mode?: 'broken' | 'regroup' | 'restyle' | 'all' }
  * dryRun returns a preview without writing.
  */
+import { swapUrlEverywhere } from '@/lib/html-url-swap'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -407,7 +408,13 @@ export async function POST(request: Request) {
           // href seen at preview time; re-read it here so a post edited since
           // then is still matched.
           const oldUrl = bodyLinkOf(original) || f.oldUrl
-          let updated = original.split(oldUrl).join(newUrl)
+          // Swap EVERY encoding of that URL, not just the byte sequence we
+          // happened to read it as. A creator's post held the same product link
+          // five times, four with WordPress's `&#038;` and one with a raw `&`,
+          // written by a different block. The split-on-one-string swap matched
+          // four and walked past the fifth, and he was shown a post the tool had
+          // just reported as fixed with a plain Amazon button still on it.
+          let updated = swapUrlEverywhere(original, oldUrl, newUrl)
           updated = updated.replace(
             new RegExp(`href="${amazonProductUrlRegex('i').source}"`, 'gi'),
             (href) => (badAmazonAsin(href) ? `href="${newUrl}"` : href),
