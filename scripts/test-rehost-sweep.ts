@@ -222,6 +222,41 @@ async function main() {
     check('and the per-creator line carries the refusal flag', /siteRefusedEverything: result\.siteRefusedEverything/.test(cron))
   }
 
+  // ── AND SOMEBODY CAN SEE WHETHER IT IS WORKING ──────────────────────────
+  //
+  // The sweep reports into a Vercel log nobody reads. A repair whose only
+  // evidence is a log line is as invisible as the bug it fixes, working or not.
+  // A feature shipped with no way to reach it is a mistake already made once
+  // today, with the logo scan, so this clause is the one that catches it.
+  {
+    const stripPage = (src: string) => src
+      .replace(/\{\/\*[\s\S]*?\*\/\}/g, m => m.replace(/[^\n]/g, ' '))
+      .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+      .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n')
+
+    let api = ''
+    let page = ''
+    let nav = ''
+    try { api = stripPage(readFileSync('app/api/admin/hotlinked-posts/route.ts', 'utf8')) } catch { /* reported below */ }
+    try { page = stripPage(readFileSync('app/(dashboard)/admin/hotlinked/page.tsx', 'utf8')) } catch { /* reported below */ }
+    try { nav = stripPage(readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')) } catch { /* reported below */ }
+
+    check('the count has an endpoint', api.length > 0)
+    check('and it is admin only', /tier !== 'admin'/.test(api) && /Admin only/.test(api),
+      'this lists other customers by email; it is not a page for everyone')
+    check('the page exists', page.length > 0, 'the sweep would drain with nothing to show for it')
+    check('and it calls the endpoint', /\/api\/admin\/hotlinked-posts/.test(page))
+    check('and it is reachable from the admin menu', /\/admin\/hotlinked/.test(nav),
+      'a page with no link is a page nobody opens, which happened to the logo scan today')
+
+    check('the page separates the backlog from the leak',
+      /still arriving/i.test(page) && /leakNote/.test(page),
+      'a falling total with new ones arriving daily is two different states, and only one of them is progress')
+    check('a failed count says it proved nothing',
+      /says nothing about how many are left/i.test(page),
+      'an empty table after a failed lookup reads exactly like success')
+  }
+
   // ── house style ───────────────────────────────────────────────────────────
   {
     const lines = [
