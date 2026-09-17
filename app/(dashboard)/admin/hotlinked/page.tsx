@@ -18,7 +18,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react'
+import { Loader2, AlertTriangle, CheckCircle2, RefreshCw, Play } from 'lucide-react'
 
 interface Owner {
   ownerId: string
@@ -27,6 +27,13 @@ interface Owner {
   liveOnSite: number
   oldest: string
   newest: string
+}
+
+interface RunReport {
+  ok: boolean
+  summary?: string
+  error?: string
+  results?: Array<Record<string, unknown>>
 }
 
 interface Result {
@@ -46,6 +53,8 @@ const day = (iso: string) => {
 export default function HotlinkedPage() {
   const [loading, setLoading] = useState(true)
   const [result, setResult] = useState<Result | null>(null)
+  const [running, setRunning] = useState(false)
+  const [run, setRun] = useState<RunReport | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -59,6 +68,23 @@ export default function HotlinkedPage() {
       setLoading(false)
     }
   }, [])
+
+  const runNow = useCallback(async () => {
+    setRunning(true)
+    setRun(null)
+    try {
+      const res = await fetch('/api/admin/rehost-run', { method: 'POST' })
+      const json = await res.json().catch(() => null)
+      // A run that could not even report is not a run that did nothing, and
+      // the two must not print the same sentence.
+      setRun((json as RunReport) ?? { ok: false, error: 'The sweep returned nothing readable.' })
+    } catch (e) {
+      setRun({ ok: false, error: e instanceof Error ? e.message : 'The sweep could not be started.' })
+    } finally {
+      setRunning(false)
+      load()
+    }
+  }, [load])
 
   useEffect(() => { load() }, [load])
 
@@ -79,11 +105,42 @@ export default function HotlinkedPage() {
           The total should fall between visits. A creator whose newest is today is still producing them, which the
           sweep cannot fix: their site is refusing uploads right now.
         </p>
-        <button onClick={load} disabled={loading} className="btn-secondary text-xs inline-flex items-center gap-1.5 mt-4">
-          {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-          {loading ? 'Counting' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-2 mt-4">
+          <button onClick={load} disabled={loading || running} className="btn-secondary text-xs inline-flex items-center gap-1.5">
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            {loading ? 'Counting' : 'Refresh'}
+          </button>
+          {/* On demand, because a scheduled run that only reports into a log
+              cannot be checked: "nothing changed" reads the same whether it
+              failed or worked on a creator whose site you cannot see. */}
+          <button onClick={runNow} disabled={loading || running} className="btn-primary text-xs inline-flex items-center gap-1.5">
+            {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+            {running ? 'Running' : 'Run the sweep now'}
+          </button>
+        </div>
       </div>
+
+      {run && (
+        <div className="card p-5 mb-6" style={{ backgroundColor: run.ok === false ? '#ff3b3012' : '#f5f5f710' }}>
+          <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Last run</h3>
+          <p className="text-[13px] text-[#6e6e73] dark:text-[#ebebf0]">
+            {run.ok === false
+              ? `The sweep could not run, so nothing was attempted. ${run.error ?? ''}`
+              : run.summary ?? 'It returned without saying what it did.'}
+          </p>
+          {(run.results ?? []).length > 0 && (
+            <ul className="flex flex-col gap-1.5 mt-3">
+              {(run.results ?? []).map((r, i) => (
+                <li key={i} className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">
+                  <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">{String(r.site ?? r.ownerId ?? 'unknown')}</span>
+                  {': '}
+                  {String(r.skipped ?? r.summary ?? 'no result')}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {result && !result.ok && (
         <div className="card p-5 mb-6" style={{ backgroundColor: '#ff3b3012' }}>

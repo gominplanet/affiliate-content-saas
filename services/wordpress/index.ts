@@ -845,14 +845,25 @@ export class WordPressService {
         headType = head.headers.get('content-type')
         headBytes = Number(head.headers.get('content-length') || 0) || 0
       }
-    } catch { /* the GET below is the real check; a failed HEAD only costs us the proxy */ }
+    } catch { /* handled below: no answer means we fall back to the old behaviour */ }
 
     const headPlan = planUpload(filename, { contentType: headType, byteLength: headBytes })
 
-    // The proxy hands the site a URL and the site downloads it itself, so it
-    // cannot resize. Only use it when the image is fine as it stands.
-    if (headType && headPlan.action === 'as-is') {
-      const viaProxy = await this.tryProxyMediaUploadFromUrl(imageUrl, headPlan.filename)
+    if (headType) {
+      // The proxy hands the site a URL and the site downloads it itself, so it
+      // cannot resize. Use it only when the image is fine as it stands, and
+      // with the corrected name, since it sideloads by filename too.
+      if (headPlan.action === 'as-is') {
+        const viaProxy = await this.tryProxyMediaUploadFromUrl(imageUrl, headPlan.filename)
+        if (viaProxy) return viaProxy
+      }
+    } else {
+      // The HEAD told us nothing, so we cannot improve on the caller's guess.
+      // Behave exactly as this did before rather than skipping the proxy: it is
+      // what makes uploads work on hosts that strip the Authorization header,
+      // and losing it to be clever about a filename would break those sites to
+      // fix a different one.
+      const viaProxy = await this.tryProxyMediaUploadFromUrl(imageUrl, filename)
       if (viaProxy) return viaProxy
     }
 

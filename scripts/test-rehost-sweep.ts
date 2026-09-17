@@ -184,6 +184,7 @@ async function main() {
       .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n')
 
     const cron = strip(readFileSync('app/api/cron/rehost-hotlinked/route.ts', 'utf8'))
+      + '\n' + strip(readFileSync('lib/rehost-sweep.ts', 'utf8'))
     const button = strip(readFileSync('app/api/blog/rehost-images/route.ts', 'utf8'))
     const vercel = JSON.parse(readFileSync('vercel.json', 'utf8')) as { crons: Array<{ path: string; schedule: string }> }
 
@@ -255,6 +256,35 @@ async function main() {
     check('a failed count says it proved nothing',
       /says nothing about how many are left/i.test(page),
       'an empty table after a failed lookup reads exactly like success')
+
+    // ── you can ask it what it just did ─────────────────────────────────
+    //
+    // After the first scheduled run I checked the one affected site reachable
+    // from outside and found every post unchanged, and could not tell whether
+    // the run had failed or had worked on three creators whose sites I cannot
+    // see. Both of the clauses below exist because of that hour.
+    let runApi = ''
+    try { runApi = stripPage(readFileSync('app/api/admin/rehost-run/route.ts', 'utf8')) } catch { /* reported below */ }
+
+    check('the sweep can be run on demand', runApi.length > 0,
+      'a scheduled repair nobody can interrogate is one you have to take on faith')
+    check('and it is the SAME code path as the cron', /runHotlinkedSweep\(\)/.test(runApi),
+      'a Run now that took its own route would report on itself, not on the thing on the schedule')
+    check('and it is admin only', /tier !== 'admin'/.test(runApi))
+    check('the page can trigger it', /\/api\/admin\/rehost-run/.test(page))
+    check('and shows what came back', /Last run/.test(page) && /run\.summary/.test(page))
+    check('a sweep that could not start is not shown as a sweep that did nothing',
+      /could not run, so nothing was attempted/.test(page),
+      'those are different facts and they must not share a sentence')
+
+    // Determinism, so "nothing changed" becomes checkable instead of ambiguous.
+    const sweepSrc = stripPage(readFileSync('lib/rehost-sweep.ts', 'utf8'))
+    check('the run picks its creators deterministically',
+      /\.sort\(\(a, b\) => b\[1\] - a\[1\] \|\| a\[0\]\.localeCompare\(b\[0\]\)\)/.test(sweepSrc),
+      'taking whatever three the query returned makes a run impossible to verify from outside')
+    check('and takes the biggest backlog first',
+      /b\[1\] - a\[1\]/.test(sweepSrc),
+      'draining the smallest first leaves the worst case untouched the longest')
   }
 
   // ── house style ───────────────────────────────────────────────────────────

@@ -178,11 +178,15 @@ const MB = 1024 * 1024
   // The proxy hands the site a URL and the site fetches it, so it cannot
   // resize. Using it for an oversized image would quietly undo the whole fix.
   check('the proxy is only used when the image needs nothing done to it',
-    /if \(headType && headPlan\.action === 'as-is'\)/.test(wp),
+    /if \(headPlan\.action === 'as-is'\) \{[\s\S]{0,200}?tryProxyMediaUploadFromUrl\(imageUrl, headPlan\.filename\)/.test(wp),
     'the proxy cannot resize, so an oversized image must not take that path')
-  check('and even then it sends the corrected filename',
-    /tryProxyMediaUploadFromUrl\(imageUrl, headPlan\.filename\)/.test(wp),
-    'the proxy sideloads by name too, so a .jpg on PNG bytes fails there as well')
+
+  // The proxy is what makes uploads work on hosts that strip the Authorization
+  // header. A source that will not answer a HEAD must not cost those sites
+  // their upload path, so that case keeps the behaviour this replaced.
+  check('a source that refuses HEAD still gets the proxy, as it always did',
+    /\} else \{[\s\S]{0,400}?tryProxyMediaUploadFromUrl\(imageUrl, filename\)/.test(wp),
+    'skipping the proxy to be clever about a filename would break the sites it exists for')
 
   check('a failed resize still fixes the extension', /ext \? withExtension\(filename, ext\) : filename/.test(wp),
     'too big MAY be refused; the wrong extension ALWAYS is, so never give up both')
