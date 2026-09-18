@@ -26,6 +26,8 @@
  */
 
 import { APP_SEARCH_INDEX } from './app-search-index'
+import { TIERS, SELLABLE_TIERS, type Tier } from './tier'
+import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP } from './usage-cap'
 
 const FEATURE_GUIDE = `
 # MVP AFFILIATE — FEATURE GUIDE (for assistant grounding)
@@ -81,7 +83,7 @@ the user never pastes a password or types an Application Password manually.
 
 ### After setup
 The /setup page shows a Manager view for returning users:
-- Connected WordPress sites list (Pro: up to 5)
+- Connected WordPress sites list (Pro: up to ${TIERS.pro.sites})
 - Run doctor link (diagnoses security plugins / CDNs blocking posts)
 - Brand customizations shortcut → /brand
 
@@ -220,7 +222,7 @@ formats them for email.
 
 ### Tier caps for newsletter (current)
 - Trial: locked (FeatureLockedCard shown)
-- Pro: 10,000 subs / 8 sends per month
+- Pro: ${proNewsletter()}
 
 ### Legacy Creator grandfathering
 Creator users who were paying when the cap was lowered (2026-06-04)
@@ -618,47 +620,11 @@ This is separate from affiliate income; it's ad revenue on your traffic.
 
 URL: /billing · Sidebar: Settings → Plan & Billing
 
-### Free Trial
-- 5 posts LIFETIME (not monthly). Hard wall after the 5th. No card
-  required, no time limit — just an "aha" run.
-- Assistant: 20 messages/mo
-- Social fan-out: none
-- Newsletter: locked
+<<PLANS>>
 
-### Creator — $49/mo
-- 20 generations/month (blog + thumbnail + metadata share one bucket)
-- 5 collab emails / mo
-- Newsletter: 500 subs / 1 send per month
-- Video scripts: 10/mo
-- Photobooth: 10/mo
-- 1 face training slot
-- Socials: LinkedIn, Bluesky, Pinterest, Facebook*, Threads*
-
-### Studio — $99/mo
-- 60 generations/mo
-- 15 collabs / mo
-- Newsletter: 5,000 subs / 4 sends per month + Scheduling
-- Video scripts: 30/mo
-- Deals Hub unlocked (5/mo)
-- Topic Hubs + Refresh Images
-- IG AI thumbnails: 30/mo
-- 2 face training slots
-- Adds Instagram*, Telegram
-
-### Pro — $199/mo
-- 200 generations/mo
-- Newsletter: 10,000 subs / 8 sends + A/B + Segments
-- Multi-site WordPress (up to 5)
-- Creator Campaigns
-- Comparison Posts + Buying Guides + Rebuild from Video
-- Video scripts: 150/mo
-- Deals Hub: 30/mo
-- Adds Twitter/X, TikTok*
-- 3 Virtual Assistant seats
-- Priority queue + priority support
-
-(* = pending external app-review gate, separate from tier gate. These
-platforms unlock automatically once approved.)
+Some platforms above also sit behind an external app review that is separate
+from the plan gate. Those unlock automatically once approved, so if a user is
+on a plan that lists a platform but cannot connect it yet, that is why.
 
 ### Shared Generations counter (current)
 Blog posts, YouTube thumbnails, and YouTube metadata all draw from the
@@ -728,7 +694,7 @@ Then use them on /newsletter/compose → "Send to a segment only" → Tags.
 **"My Trial is over — what now?"** — Pick Creator, Studio, or Pro on
 /billing. Stripe checkout. Tier updates immediately on webhook.
 
-**"Can I connect more than one WordPress site?"** — Yes on Pro (up to 5).
+**"Can I connect more than one WordPress site?"** Yes on Pro (up to ${TIERS.pro.sites}).
 On Amazon: no site. Add via the manager view at /setup.
 
 **"How does affiliate link routing work?"** — On /brand → Affiliate Link
@@ -846,4 +812,127 @@ function renderSiteMap(): string {
   return out
 }
 
-export const MVP_FEATURES_DOC = FEATURE_GUIDE + renderSiteMap()
+
+/**
+ * The plan table, GENERATED FROM TIERS rather than typed out.
+ *
+ * WHY, and it is the same lesson the marketing pages learned. This section used
+ * to be hand-written and had drifted in eight places: Pro "200 generations"
+ * against a real 100, "video scripts 150/mo" against 120, "8 newsletter sends"
+ * against 4, "multi-site up to 5" against 10, Studio "60 generations" against
+ * 45 and "IG AI thumbnails 30" against 25, and Deals Hub described as capped on
+ * both when it is unlimited. It also documented Creator and Studio, which are
+ * no longer sold, and said nothing at all about the Amazon plan, which is.
+ *
+ * That is not a cosmetic problem, because this text IS the assistant's
+ * knowledge. Lisa asked the help desk what her Clip Factory limit was. The
+ * Shorts cap was not in this doc at all, so the model reached for the nearest
+ * number it could see, the 150 on the video-scripts line, and told her Clip
+ * Factory allowed 150 clips a month against a real, enforced 50. It then did
+ * arithmetic on the invented figure and told her how many she had left.
+ *
+ * A number that CAN be typed here will be, and it will be right on the day it
+ * is typed and wrong by the next release. So it is read.
+ */
+/** The newsletter line, read rather than typed.
+ *
+ *  A SECOND hand-written copy of the Pro newsletter cap lived here, apart from
+ *  the plan table, and claimed eight sends a month against a real four. Two
+ *  copies of a number is one copy that gets updated and one that does not, and
+ *  the one nobody remembers is the one still being quoted to customers.
+ *  Deliberately NOT explained inside the doc text itself: everything in that
+ *  string is fed to the model, so an apology about an old number is tokens
+ *  spent teaching it a figure we do not want it to have. */
+function proNewsletter(): string {
+  const subs = TIERS.pro.newsletterSubscribers
+  const sends = TIERS.pro.newsletterBroadcastsPerMonth
+  const subsLabel = subs === null ? 'unlimited subscribers' : `${subs.toLocaleString('en-US')} subs`
+  const sendsLabel = sends === null ? 'unlimited sends' : `${sends} sends per month`
+  return `${subsLabel} / ${sendsLabel}`
+}
+
+function plansBlock(): string {
+  const n = (v: number | null | undefined, unit: string): string =>
+    v === null || v === undefined ? `unlimited ${unit}` : `${v} ${unit}`
+  // A cap of 0 means the feature is not on the plan, which is a different
+  // sentence from a small allowance and must not render as "0 per month".
+  const line = (label: string, v: number | null | undefined, unit: string): string | null =>
+    v === 0 ? null : `- ${label}: ${n(v, unit)}`
+  // "1 slots" and "1 sends per month" read as a typo to the reader and as noise
+  // to the model quoting it.
+  const plural = (v: number | null | undefined, one: string, many: string): string =>
+    v === 1 ? one : many
+
+  const describe = (key: Tier): string => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const t = TIERS[key] as any
+    const rows = [
+      line('Generations per month (blog + thumbnail + metadata share one bucket)', t.postsPerMonth, 'per month'),
+      t.thumbnailsPerMonth ? `- Art Director thumbnails: ${n(t.thumbnailsPerMonth, 'per month')}` : null,
+      t.pinsPerMonth ? `- Social designs: ${t.pinsPerMonth} pins, ${t.igPostsPerMonth} Reels covers, ${t.facebookPostsPerMonth} Facebook per month` : null,
+      line('Video scripts', t.scriptsPerMonth, 'per month'),
+      line('Photobooth headshots', t.photoboothPerMonth, 'per month'),
+      line('Creator Connections outreach', t.collabsPerMonth, 'per month'),
+      line('Instagram AI thumbnails', t.instagramAiThumbnailsPerMonth, 'per month'),
+      line('Face training slots', t.maxFaces, plural(t.maxFaces, 'slot', 'slots')),
+      line('WordPress sites', t.sites, plural(t.sites, 'site', 'sites')),
+      t.newsletterSubscribers
+        ? `- Newsletter: ${t.newsletterSubscribers.toLocaleString('en-US')} subscribers, ${n(t.newsletterBroadcastsPerMonth, `${plural(t.newsletterBroadcastsPerMonth, 'send', 'sends')} per month`)}`
+        : '- Newsletter: not on this plan',
+      line('Help Desk messages', t.assistantMessagesPerMonth, 'per month'),
+      line('Virtual Assistant seats', t.vaSeats, plural(t.vaSeats, 'seat', 'seats')),
+      // Read, not typed. The old hand-written list carried an asterisk footnote
+      // about app-review gates that had drifted out of step with which
+      // platforms were actually gated.
+      Array.isArray(t.socials) && t.socials.length
+        ? `- Publishes to: ${t.socials.join(', ')}`
+        : null,
+    ].filter(Boolean)
+    const price = t.price === 0 ? 'free' : `$${t.price}/mo`
+    const annual = t.annualPrice ? `, or $${t.annualPrice}/year` : ''
+    return `### ${t.label} (${price}${annual})\n${rows.join('\n')}`
+  }
+
+  const sold = SELLABLE_TIERS.map(describe).join('\n\n')
+  const legacy = (['creator', 'studio'] as Tier[])
+    .filter((k) => !SELLABLE_TIERS.includes(k))
+    .map(describe).join('\n\n')
+
+  return `Every number below is read from the product's own plan configuration, so
+it is current. If a user's screen disagrees with a number here, the screen is
+right and something needs reporting. Say so rather than explaining the gap away.
+
+### Free Trial (free)
+- 5 posts LIFETIME (not monthly). Hard wall after the 5th. No card required.
+- Help Desk messages: ${TIERS.trial.assistantMessagesPerMonth} per month
+- Newsletter: not on this plan
+
+## PLANS ON SALE TODAY
+
+${sold}
+
+## LEGACY PLANS (existing subscribers only, not sold to new customers)
+
+${legacy}
+
+## CAPS THAT ARE NOT PER-TIER
+
+These two are fixed for every paid plan, and they are ENFORCED at these
+numbers. They are separate from the generations bucket.
+
+- Clip Factory: ${SHORTS_MONTHLY_CAP} finished Shorts per billing period. Planning and finding clips is free; only a finished render counts.
+- X / Twitter posts: ${X_MONTHLY_CAP} per billing period.
+
+## NEVER CALCULATE SOMEONE'S REMAINING ALLOWANCE
+
+You are not given anyone's usage. You do not know how many Shorts, posts or
+messages a user has left, and you do not know their reset date. Do not subtract
+a number they mention from a cap and present the result, and do not state a
+reset date. Give the cap, then send them to the page that shows the real figure:
+**[Plan & Billing](/billing)** for the overall picture, and the counter on the
+tool's own page for that tool. A confident wrong number about what somebody has
+left is worse than no number.`
+}
+
+export const MVP_FEATURES_DOC =
+  FEATURE_GUIDE.replace('<<PLANS>>', plansBlock()) + renderSiteMap()
