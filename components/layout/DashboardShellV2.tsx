@@ -487,7 +487,8 @@ export default function DashboardShellV2({
         { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push' },
         // Clip Factory — turn one long video into vertical Reels/TikToks/Shorts.
         // Graduated from Labs 2026-08; Pro-only (page + APIs already Pro-gated,
-        // capped at 50 finished Shorts/month, source videos capped at 10 min).
+        // capped per lib/usage-cap SHORTS_MONTHLY_CAP, source videos capped at
+        // 10 min). No number repeated here: this comment said 50 after the cap moved.
         { href: '/clip-factory', icon: <Rocket size={15} />, label: 'Clip Factory', gate: isPro },
         // Deal Radar moved to the RESEARCH section (2026-07-30) — it's a
         // product-discovery tool, so it lives with the other research finders.

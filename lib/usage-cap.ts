@@ -48,8 +48,31 @@ export const PRIMARY_FEATURE = {
   dub: ['global_sync_dub_cloned'] as string[],
 }
 
-/** Finished Shorts a Pro user can render per billing period (admin = unlimited). */
-export const SHORTS_MONTHLY_CAP = 50
+/**
+ * Finished Shorts a Pro user can render per billing period (admin = unlimited).
+ *
+ * RAISED FROM 50 (2026-09-18) because a Pro creator was running out mid-period,
+ * and because the number was sized against the wrong cost in the first place.
+ *
+ * Only the RENDER counts here, and the render is the cheap step: the primary
+ * engine is self-hosted ffmpeg, booked at $0.01, with a Cloudinary fallback at
+ * $0.02. The expensive part of Clip Factory is the SOURCE video (ingest ~$0.06
+ * plus transcription ~$0.10), and that is charged once per source no matter how
+ * many clips get cut from it.
+ *
+ * Neither the ingest route nor the plan route checks a cap at all, so source
+ * cost has never been bounded by this number. It is bounded by the tier's
+ * monthlyAiSpendCeilingUsd, which is the backstop that actually protects us.
+ * That is what makes this raise cheap rather than brave: tripling the cap adds
+ * at most 100 x $0.02 = $2.00 a month for a creator who maxes it, and moves
+ * nothing about the half that costs real money.
+ *
+ * 150 is five a day for somebody shipping daily, which is the shape of creator
+ * this plan is sold to. If it needs to move again, move it here: every surface
+ * that states the number reads this constant, and
+ * scripts/test-assistant-facts + scripts/test-shorts-cap hold them to it.
+ */
+export const SHORTS_MONTHLY_CAP = 150
 
 /** X posts a Pro user can publish per billing period (admin = unlimited). X is
  *  Pro-only, and each post costs us $0.20, so this bounds our exposure at ~$20

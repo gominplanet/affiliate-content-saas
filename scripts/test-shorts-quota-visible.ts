@@ -51,13 +51,49 @@ const RENDER_SURFACES = [
 const USAGE_ROUTE = read('app/api/youtube/shorts/usage/route.ts')
 const RENDER_ROUTE = live(read('app/api/youtube/shorts/render/route.ts'))
 
-// ── the cap itself is unchanged ─────────────────────────────────────────────
+// ── the cap is a billing decision, made in one place ────────────────────────
 //
-// Pinned so a future edit to the display cannot quietly become an edit to the
-// allowance. Fifty is a billing decision, not a UI one.
+// This used to pin the literal 50, on the reasoning that an edit to the display
+// must not quietly become an edit to the allowance. Right instinct, wrong
+// mechanism: it froze the VALUE, so it failed the moment the cap was
+// deliberately raised, and a guard that fails on the intended change is a guard
+// somebody edits without reading.
+//
+// What actually protects the allowance is that there is ONE number and every
+// surface reads it. So: a sane band (a typo'd 1500 or a 0 still fails), and
+// nothing anywhere types the figure next to a read of it.
 {
-  check('the Pro cap is still 50 finished Shorts per period',
-    SHORTS_MONTHLY_CAP === 50, String(SHORTS_MONTHLY_CAP))
+  check('the Pro cap is a deliberate number, not a typo',
+    Number.isInteger(SHORTS_MONTHLY_CAP) && SHORTS_MONTHLY_CAP >= 25 && SHORTS_MONTHLY_CAP <= 500,
+    `${SHORTS_MONTHLY_CAP}: outside the band a Clip Factory allowance should ever be. Widen this deliberately or fix the constant`)
+  {
+    // Every user-facing surface must READ it. A literal beside the read is the
+    // drift that put "50 finished shorts a month" in the tool guide and in the
+    // assistant's prompt while the constant said something else.
+    const TYPED: string[] = []
+    for (const rel of [
+      'components/guide/tool-guides.tsx',
+      'components/vertical/ShortsQuotaBadge.tsx',
+      'app/api/youtube/shorts/render/route.ts',
+      'app/api/youtube/shorts/usage/route.ts',
+      'app/api/usage/summary/route.ts',
+    ]) {
+      const src = live(read(rel))
+      if (new RegExp(`\\b${SHORTS_MONTHLY_CAP}\\b`).test(src)) TYPED.push(rel)
+    }
+    check('no surface types the cap beside reading it', TYPED.length === 0, TYPED.join(', '))
+
+    // The typed check above only catches a literal equal to the CURRENT cap. A
+    // stale literal (the guide saying 50 while the constant says 150) is the
+    // more likely drift and slips straight past it, so the surfaces that state
+    // the number to a creator must be shown to READ it.
+    for (const rel of ['components/guide/tool-guides.tsx']) {
+      const src = live(read(rel))
+      check(`${rel} reads the cap rather than stating one`,
+        /\{SHORTS_MONTHLY_CAP\}/.test(src) && /from '@\/lib\/usage-cap'/.test(src),
+        'this line is what a creator is shown when they ask what their limit is')
+    }
+  }
   check('and the render route still enforces it atomically',
     /claim_shorts_render/.test(RENDER_ROUTE),
     'the RPC locks per user so concurrent renders cannot both take the last slot')

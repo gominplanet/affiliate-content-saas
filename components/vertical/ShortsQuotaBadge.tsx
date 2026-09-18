@@ -9,9 +9,11 @@
  *   "Hi Seb I am on the pro plan is there a limit to how many renders I can do
  *    now in clip factory? It says I hit my limit of 50."
  *
- * The cap is real and it was working. 50 finished Shorts per billing period,
- * Pro, claimed atomically so concurrent renders cannot slip past it. Her red
- * message was correct.
+ * The cap is real and it was working: a Pro allowance of finished Shorts per
+ * billing period, claimed atomically so concurrent renders cannot slip past it.
+ * Her red message was correct. (The figure she hit was the cap at the time; the
+ * number is not repeated here, because a comment restating it is one more copy
+ * to forget. lib/usage-cap SHORTS_MONTHLY_CAP is the answer.)
  *
  * What she never got was a number that moved. The count existed in exactly one
  * place: a small pill beside the Clip Factory page title, loaded once on mount
