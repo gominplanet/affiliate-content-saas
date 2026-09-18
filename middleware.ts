@@ -99,6 +99,11 @@ const publicPaths = [
   // spends the budget on a bounce that looks like bad targeting rather than a
   // routing rule. Caught by scripts/test-public-routes before it ever ran.
   '/own-your-blog',
+  // The second paid-ads landing page, for the Amazon tier. Same reasoning as
+  // the line above, and it has to be added by hand every time a page like this
+  // is born: a landing page is the one route where being logged out is the
+  // normal case, so the default (gate it) is exactly backwards.
+  '/run-your-storefront',
   '/join',
   // Reached ONLY from a link in an email, by definition from a logged-out
   // browser. A confirmation that lands on a login page is a subscriber who

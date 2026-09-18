@@ -4,10 +4,26 @@
 // (Amazon storefront creators vs full-suite blog/YouTube marketers), so the page
 // opens by handing the visitor a real choice: two full, side-by-side panels,
 // each a complete pitch with its own identity, feature list, price and CTA. Not
-// a toggle — a deliberate "which one are you?" moment. Amazon panel deep-links
-// to its sales page; suite panel scrolls into the rest of the homepage.
+// a toggle, a deliberate "which one are you?" moment.
 //
 // Static (just links), so it renders as a Server Component — no client JS.
+//
+// EACH PANEL NOW DEEP-LINKS TO THAT TIER'S OWN SALES PAGE, and those are the
+// same two pages the ad campaigns are bought against:
+//
+//   Amazon  →  /run-your-storefront
+//   Pro     →  /own-your-blog
+//
+// so a visitor who arrives on the homepage and a visitor who arrives from an ad
+// end up reading the same argument, and each campaign has one destination whose
+// numbers mean something on their own.
+//
+// IT WAS DEAD CODE UNTIL NOW, defined and never rendered, and it had rotted in
+// the dark in exactly the way an unrendered file does: the Pro panel advertised
+// "From $49/mo" against a real Pro price of $199, and its CTA pointed at
+// #free-research, an anchor that no longer exists anywhere on the landing page.
+// Both are why the prices below are READ from TIERS and why the hrefs are real
+// routes that scripts/test-public-routes already sweeps.
 
 import { TIERS } from '@/lib/tier'
 import NextImage from 'next/image'
@@ -49,8 +65,8 @@ const PANELS: Panel[] = [
     price: `$${TIERS.amazon.price}`,
     regular: `$${TIERS.amazon.regularPrice}`,
     cta: 'See the Amazon plan',
-    href: '/amazon-influencer',
-    secondary: null,
+    href: '/run-your-storefront',
+    secondary: { label: 'Compare all plans', href: '/pricing' },
     bullets: [
       { icon: <Wand2 size={16} />, text: 'Incredible Amazon video-review thumbnails, one click' },
       { icon: <Share2 size={16} />, text: 'Pins, Reels & Facebook designs, posted to all three' },
@@ -68,10 +84,13 @@ const PANELS: Panel[] = [
     logo: '/png/mvp-affiliate-pro.png',
     headline: 'The whole content pipeline,\nin your voice.',
     blurb: 'One tool to run everything, from a single video to a blog post, thumbnails, a newsletter and a week of social, all written in your own voice.',
-    price: '$49',
-    regular: '$99',
-    cta: 'Explore the full suite',
-    href: '#free-research',
+    // Read, like the Amazon panel above. These were typed as $49 / $99 against a
+    // real Pro price of $199 / $399, which is the kind of wrong that only
+    // survives in a component nobody renders.
+    price: `$${TIERS.pro.price}`,
+    regular: `$${TIERS.pro.regularPrice}`,
+    cta: 'See the full suite',
+    href: '/own-your-blog',
     secondary: { label: 'Compare all plans', href: '/pricing' },
     bullets: [
       { icon: <FileText size={16} />, text: 'Full product-review blog on your WordPress, in your voice' },

@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import NextImage from 'next/image'
 import { FAQSection, StickyBottomBar } from '@/components/landing/islands'
+import AudienceSplit from '@/components/landing/AudienceSplit'
 
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
 // page. Any section wrapped in <DarkBand> flips its text/surface tokens so
@@ -121,9 +122,22 @@ export default function LandingPreview() {
           defined below (reusable / not deleted), just no longer rendered. The
           Amazon-only buyer is routed by AmazonRouter instead of the old pre-hero
           two-panel splitter. */}
+      {/* THE FORK IS BACK, AND IT IS THE FIRST THING UNDER THE HERO (2026-09).
+          We now run ads against two different promises, each with its own
+          landing page, so the homepage has to offer the same two doors: a
+          visitor who arrives here cold gets the choice the ad would have made
+          for them. AudienceSplit deep-links to /run-your-storefront (Amazon)
+          and /own-your-blog (Pro).
+
+          It replaces AmazonRouter's slim strip, which said "not building a
+          blog? see the Amazon plan" in one line. A one-line aside directly
+          above a full two-panel "which one are you?" is the same question asked
+          twice, and the quiet version wins the click it should have lost.
+          AmazonRouter stays defined below, unrendered, like the other retired
+          sections in this file. */}
       <Nav />
       <Hero />
-      <AmazonRouter variant="strip" />
+      <AudienceSplit />
       <PlatformBar />
       <OldWayNewWay />
       {/* PROOF MOVES ITSELF. With a real wall of quotes, proof belongs high:

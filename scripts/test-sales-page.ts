@@ -24,6 +24,7 @@
 // is not a bug report, it is a refund and a chargeback.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { TIERS } from '../lib/tier'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -42,6 +43,8 @@ const PAGE_LIVE = live(PAGE)
 const FEATURES = read('app/features/page.tsx')
 const AD = read('app/own-your-blog/page.tsx')
 const AD_LIVE = live(AD)
+const AD2 = read('app/run-your-storefront/page.tsx')
+const AD2_LIVE = live(AD2)
 const TESTIMONIALS_SRC = read('lib/testimonials.ts')
 
 // ── the offer says one thing everywhere ─────────────────────────────────────
@@ -151,9 +154,11 @@ const TESTIMONIALS_SRC = read('lib/testimonials.ts')
   check('and no hardcoded end-date copy replaced it',
     !/prices end|offer ends|ends (?:soon|tonight|today|in \d)/i.test(PAGE_LIVE),
     'urgency on this page has to be traceable to a real date')
-  check('the ad page carries no invented countdown either',
-    !/prices end|offer ends|ends (?:soon|tonight|today)|only \d+ (?:spots|seats|left)/i.test(AD_LIVE),
-    'the page we spend ad money on is the worst place to put a deadline we do not mean')
+  for (const [label, src] of [['/own-your-blog', AD_LIVE], ['/run-your-storefront', AD2_LIVE]] as const) {
+    check(`${label} carries no invented countdown either`,
+      !/prices end|offer ends|ends (?:soon|tonight|today)|only \d+ (?:spots|seats|left)/i.test(src),
+      'the page we spend ad money on is the worst place to put a deadline we do not mean')
+  }
 }
 
 // ── one list of proof, shared ───────────────────────────────────────────────
@@ -165,6 +170,8 @@ const TESTIMONIALS_SRC = read('lib/testimonials.ts')
     'two lists is two to remember, and the forgotten one is the one nobody is looking at')
   check('the ad page reads the same list',
     /from '@\/lib\/testimonials'/.test(AD_LIVE))
+  check('and so does the second ad page',
+    /from '@\/lib\/testimonials'/.test(AD2_LIVE))
   check('the never-fabricate rule travelled with it',
     /never fabricated/i.test(TESTIMONIALS_SRC))
   const drafting = /(Jane Doe|John Doe|Lorem|Acme|Example Creator|Creator Name|Your Name|TODO|FIXME|placeholder)/i
@@ -177,42 +184,147 @@ const TESTIMONIALS_SRC = read('lib/testimonials.ts')
   }
 }
 
-// ── the ad page behaves like an ad page ─────────────────────────────────────
+// ── both ad pages behave like ad pages ──────────────────────────────────────
 //
 // Every rule here is a way of not paying for a click and then handing it an
 // exit. They are cheap to violate by accident, which is why they are pinned.
-{
-  check('there is exactly one call to action, spelled once',
-    /const CTA_HREF =/.test(AD_LIVE) && /const CTA_LABEL =/.test(AD_LIVE),
+//
+// There are two of these pages now, one per tier, so the ads can be bought
+// against one promise each. The shared rules run over both in a loop rather
+// than being copied: a second copy of a checklist is a checklist that only gets
+// half-updated, and the half that rots is the one on the newer page.
+const AD_PAGES = [
+  { label: '/own-your-blog', src: AD_LIVE, raw: AD },
+  { label: '/run-your-storefront', src: AD2_LIVE, raw: AD2 },
+] as const
+
+for (const { label, src } of AD_PAGES) {
+  check(`${label} has exactly one call to action, spelled once`,
+    /const CTA_HREF =/.test(src) && /const CTA_LABEL =/.test(src),
     'four hand-written CTAs drift into four different offers')
-  check('and it is used more than once down the page',
-    (AD_LIVE.match(/<Cta/g) || []).length >= 4,
+  // `<Cta[\s/>]`, not `<Cta`. The loose version also counted every
+  // <CtaSubtext>, the small grey line UNDER each button, which roughly doubled
+  // the tally: deleting two of the four real buttons still left seven matches
+  // and the clause went on passing. Break-tested by removing them.
+  check(`${label} uses it more than once down the page`,
+    (src.match(/<Cta[\s/>]/g) || []).length >= 4,
     'a visitor who scrolls past the hero needs the button where they stopped')
-  check('no navigation links away from the page',
-    !/<nav|<Nav\b/.test(AD_LIVE),
+  check(`${label} has no navigation links away from the page`,
+    !/<nav|<Nav\b/.test(src),
     'every link that is not the CTA is an exit from a page we paid for')
-  check('the logo is not a link home',
-    !/href="\/"/.test(AD_LIVE),
+  check(`${label} does not make the logo a link home`,
+    !/href="\/"/.test(src),
     'the logo is the most-clicked escape route on a landing page')
-  check('it is kept out of search results',
-    /robots: \{ index: false/.test(AD_LIVE),
+  check(`${label} is kept out of search results`,
+    /robots: \{ index: false/.test(src),
     'a thin ad page competing with the homepage dilutes the one meant to rank')
-  check('the hero repeats the promise the ad makes',
-    /storefront is rented/i.test(AD_LIVE) && /Build the one you own/.test(AD_LIVE),
-    'a landing page that does not echo its ad is a bounce we paid for')
-  check('the guarantee matches the rest of the site',
-    /30-day money-back/.test(AD_LIVE),
-    'two different guarantees across two pages is the drift that already happened once')
   // Against the LIVE source, not the raw file. The first version tested the raw
-  // file and passed on the phrase appearing in this page's own header comment,
-  // which describes the objection rather than answering it for a reader.
-  check('objections are answered, including the AI one',
-    /AI slop/i.test(AD_LIVE),
+  // file and passed on a phrase appearing in that page's own header comment,
+  // which describes an objection rather than answering it for a reader.
+  check(`${label} states the guarantee in the copy, not only in a comment`,
+    /30-day money-back/.test(src),
+    'two different guarantees across two pages is the drift that already happened once')
+  check(`${label} carries the Amazon disclaimer`,
+    /not affiliated with, endorsed by, or sponsored by Amazon/.test(src))
+  check(`${label} answers the AI objection out loud`,
+    /AI slop/i.test(src) || /look like AI made them/i.test(src),
     'it is the first thing this buyer thinks and the page has to say it out loud')
-  check('and the Amazon disclaimer is present',
-    /not affiliated with, endorsed by, or sponsored by Amazon/.test(AD_LIVE))
-  check('the guarantee is stated in the copy, not only in a comment',
-    /30-day money-back/.test(AD_LIVE))
+}
+
+// ── each ad page makes its OWN promise ──────────────────────────────────────
+//
+// The point of two pages is two ads. The failure that would waste the money is
+// not a broken page, it is two pages saying the same thing, at which point the
+// second one is a duplicate with a different URL and the targeting behind it is
+// pointless. So each is pinned to the promise its own ad is bought against, and
+// to NOT carrying the other one's.
+//
+// Scoped to the H1, not to the whole page. The first version scanned the whole
+// file for the storefront promise and passed after the headline was replaced
+// outright, because "help you decide" also appears in an FAQ answer forty lines
+// down. A phrase that exists somewhere on the page is not a phrase the visitor
+// reads first, and the first screen is the only one a bounce sees.
+{
+  const h1 = (src: string) => src.slice(src.indexOf('<h1'), src.indexOf('</h1>'))
+  check('the blog page echoes the blog ad in its headline',
+    /storefront is rented/i.test(h1(AD_LIVE)) && /Build the one you own/.test(h1(AD_LIVE)),
+    'a landing page that does not echo its ad is a bounce we paid for')
+  check('the storefront page echoes the storefront ad in its headline',
+    /help you decide/i.test(h1(AD2_LIVE)) && /does the work/i.test(h1(AD2_LIVE)),
+    'the Amazon-tier ad sells a different category, not a cheaper version of the blog pitch')
+  check('the storefront page does not reuse the blog promise',
+    !/Build the one you own/.test(AD2_LIVE),
+    'two pages with one promise is one page with two URLs')
+  check('the storefront page sends signups to the Amazon tier',
+    /const CTA_HREF = '\/signup\?tier=amazon'/.test(AD2_LIVE),
+    'the whole point is that the ad and the plan it lands on agree')
+  check('the blog page sends signups to Pro',
+    /const CTA_HREF = '\/signup\?tier=pro'/.test(AD_LIVE))
+  check('the storefront page says no blog is needed',
+    /No blog needed|no WordPress|without a blog/i.test(AD2_LIVE),
+    'the Amazon buyer is not looking to start a website and will assume this is one')
+
+  // OUR OWN prices and caps are READ from TIERS, never typed. The marketing
+  // site has been wrong about its own numbers in nine places at once, every one
+  // of them understating the plan, and a typed figure on a page we are paying
+  // to put in front of strangers is a refund waiting.
+  //
+  // A competitor's price IS allowed to be a literal: "others are $29" is a fact
+  // about somebody else's pricing page and there is no constant to read it
+  // from. So this does not ban dollar literals, it bans OUR numbers appearing
+  // as literals, which is the thing that actually goes stale.
+  const ours = [TIERS.amazon.price, TIERS.amazon.regularPrice, TIERS.amazon.thumbnailsPerMonth]
+  for (const n of ours) {
+    check(`the storefront page does not type ${n} as a literal`,
+      !new RegExp(`(?<!\\}|\\w)${n}\\b`).test(AD2_LIVE.replace(/\$\{[^}]*\}/g, ' ')),
+      'it is correct today and wrong on the day the tier moves; read it from TIERS')
+  }
+  check('the storefront page reads its caps from the tier',
+    /TIERS\.amazon\.thumbnailsPerMonth/.test(AD2_LIVE) && /TIERS\.amazon\.price/.test(AD2_LIVE))
+}
+
+// ── the homepage offers the same two doors ──────────────────────────────────
+//
+// The whole point of two landing pages is two ads. A visitor who arrives on the
+// homepage instead should get the same choice rather than one generic pitch, so
+// the fork is rendered, not merely defined. It sat in the tree DEFINED AND
+// UNRENDERED for months and rotted there: it advertised Pro at $49 against a
+// real $199, and its CTA pointed at an anchor that no longer existed. Nobody
+// saw either, because nothing rendered it.
+{
+  const SPLIT = live(read('components/landing/AudienceSplit.tsx'))
+  check('the audience fork is actually rendered on the homepage',
+    /<AudienceSplit \/>/.test(PAGE_LIVE) && /import AudienceSplit from/.test(PAGE_LIVE),
+    'an unrendered component is a component whose copy nobody is checking')
+  check('and it is above the feature grid',
+    PAGE_LIVE.indexOf('<AudienceSplit />') < PAGE_LIVE.indexOf('<FeaturesGridCondensed />'),
+    'the choice has to come before the pitch it chooses between')
+  check('each door goes to that tier own landing page',
+    /href: '\/run-your-storefront'/.test(SPLIT) && /href: '\/own-your-blog'/.test(SPLIT),
+    'otherwise the homepage and the ads argue for the same plan in two different ways')
+  check('both panel prices are read, not typed',
+    /\$\{TIERS\.amazon\.price\}/.test(SPLIT) && /\$\{TIERS\.pro\.price\}/.test(SPLIT),
+    'the Pro panel said $49 against a real $199 for exactly as long as nothing rendered it')
+  check('no dead in-page anchor survives in the fork',
+    !/href: '#/.test(SPLIT),
+    '#free-research was a link to nowhere; a fork with a broken door is worse than no fork')
+  check('the slim Amazon strip is not rendered beside it',
+    !/<AmazonRouter variant="strip" \/>/.test(PAGE_LIVE),
+    'the same question asked twice, and the quiet version wins the click')
+}
+
+// ── house style on the pages we buy clicks for ──────────────────────────────
+//
+// The homepage copy is checked above. These two are the pages a stranger judges
+// us by after we paid for them to arrive, so the same rules apply and it is
+// worth the separate pass.
+for (const { label, src } of AD_PAGES) {
+  const copy = [...src.matchAll(/(?:old|mvp|q|a|title|body|t|b):\s*'([^']{16,})'/g)].map(m => m[1])
+  check(`${label} has copy to check`, copy.length >= 6, String(copy.length))
+  for (const line of copy) {
+    check(`${label}: no dash punctuation in "${line.slice(0, 44)}"`, !/[—–]|\s-\s/.test(line))
+    check(`${label}: no year stamped into "${line.slice(0, 44)}"`, !/\b20\d{2}\b/.test(line))
+  }
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

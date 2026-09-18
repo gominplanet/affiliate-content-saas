@@ -88,7 +88,8 @@ for (const r of found) {
 //
 // Called out by name rather than left to the sweep above. These are the ones
 // where being private costs a campaign rather than a visit.
-for (const r of ['/amazon-influencer', '/join/amazon', '/pricing', '/features']) {
+for (const r of ['/amazon-influencer', '/join/amazon', '/pricing', '/features',
+                 '/own-your-blog', '/run-your-storefront']) {
   check(`the ad and pricing route ${r} is public`, isPublic(r),
     'a logged-out click on this is somebody the ads were paid for')
 }
