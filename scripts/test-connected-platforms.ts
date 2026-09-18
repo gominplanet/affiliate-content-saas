@@ -98,6 +98,79 @@ const PREDICATE = live(read('lib/connected-platforms.ts'))
   }
 }
 
+// ── the route reads the row the way the publisher reads it ──────────────────
+//
+// SHIPPED BROKEN, CAUGHT BY SEB ON THE LIVE SITE. The route named its fifteen
+// columns in the select, and one of them, telegram_bot_token, is a column no
+// migration ever created and nothing has ever written (a leftover from an
+// abandoned bring-your-own-bot design). PostgREST rejects the ENTIRE query when
+// a named column does not exist, so the row came back null and all five
+// platforms decided from a column reported "not connected", while the three
+// resolved through social_accounts reported fine. Five of his live channels
+// greyed out, and the screen gave no hint that a query had failed.
+//
+// The publisher survives the same phantom column because select('*') makes it
+// undefined instead of fatal. So the route reads the row the same way, and a
+// column list nobody has to keep in step with the schema stops existing.
+{
+  const ROUTE = live(read('app/api/social/connected/route.ts'))
+  check('the route selects the whole row',
+    /\.select\('\*'\)/.test(ROUTE),
+    'a hand-maintained column list fails silently and totally the day it drifts from the schema')
+  check('and does not enumerate integration columns',
+    !/\.select\(\[/.test(ROUTE) && !/\.select\('[a-z_]+,[a-z_]+/.test(ROUTE),
+    'naming one column that does not exist kills the whole query')
+
+  // The clause whose ABSENCE is what made the broken query look like a fact
+  // about the creator's accounts rather than a failure.
+  check('a failed read reports known:false',
+    /if \(readErr\)[\s\S]{0,260}known: false/.test(ROUTE),
+    'a lookup that failed is not a creator with nothing connected; known:false ticks everything')
+  check('a failed account resolve reports known:false too',
+    /catch[\s\S]{0,200}resolve failed[\s\S]{0,200}known: false/.test(ROUTE),
+    'same lie by a different route')
+  check('no resolver error is swallowed into "not connected"',
+    !/resolveSocialAccount\([\s\S]{0,400}\}\)\.catch\(\(\) => null\)/.test(ROUTE),
+    'catch(() => null) turns "could not check" into "not connected", which is the bug')
+  check('the read error is actually inspected',
+    /error: readErr/.test(ROUTE),
+    'destructuring only `data` is how the first version never saw the failure')
+}
+
+// ── no predicate reads a column that does not exist ─────────────────────────
+//
+// The generalisation of the bug above. A phantom column is survivable behind
+// select('*') and fatal anywhere it gets named, so the safe move is to know
+// which ones are phantom rather than to find out in production.
+{
+  const TYPES = read('lib/types/database.ts')
+  // Columns read by the predicate. Pulled off the interface, not typed here.
+  const iface = PREDICATE.slice(PREDICATE.indexOf('interface ConnectionRow'), PREDICATE.indexOf('export interface ResolvedElsewhere'))
+  const cols = [...iface.matchAll(/^\s{2}([a-z][a-z0-9_]+)\?:/gm)].map((m) => m[1])
+  check('the ConnectionRow columns were found', cols.length >= 8, cols.join(','))
+
+  // telegram_bot_token is deliberately here and deliberately absent from the
+  // schema: the publisher prefers a per-user bot if one ever exists and falls
+  // back to the shared TELEGRAM_BOT_TOKEN, so the predicate mirrors it. It is
+  // safe ONLY because nothing names it in a select. Listing it here is the
+  // record of that, so a future column list cannot quietly include it.
+  const KNOWN_ABSENT = new Set(['telegram_bot_token'])
+  for (const c of cols) {
+    if (KNOWN_ABSENT.has(c)) {
+      check(`${c} is still absent from the schema`, !new RegExp(`\\b${c}\\b`).test(TYPES),
+        'if it exists now, take it off the known-absent list')
+      continue
+    }
+    check(`${c} is a real integrations column`, new RegExp(`\\b${c}\\b`).test(TYPES),
+      'a column that does not exist reads as "not connected" forever, and kills any query that names it')
+  }
+  for (const c of KNOWN_ABSENT) {
+    check(`nothing names the phantom column ${c} in a select`,
+      !new RegExp(`select\\([^)]*${c}`).test(read('app/api/social/connected/route.ts')),
+      'PostgREST rejects the whole query, and every platform reads as disconnected')
+  }
+}
+
 // ── the three states stay three ─────────────────────────────────────────────
 //
 // A failed lookup and an empty result must not produce the same screen. That is

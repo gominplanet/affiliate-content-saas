@@ -36,20 +36,37 @@ export async function GET() {
   if (auth.error) return auth.error
   const { ownerId } = auth
 
-  const { data: raw } = await supabase
+  // select('*'), exactly like lib/deal-social-publish. NOT a shortcut.
+  //
+  // The first version named its fifteen columns, one of which was
+  // telegram_bot_token — a column no migration ever created and nothing has
+  // ever written, left over from an abandoned bring-your-own-bot design. The
+  // publisher survives reading it because select('*') makes an absent column
+  // simply undefined. Naming it made PostgREST reject the WHOLE query, so the
+  // row came back null and every platform decided from a column reported as
+  // disconnected, while the three resolved through social_accounts reported
+  // fine. Seb saw five of his working channels greyed out.
+  //
+  // So this reads the row the same way the publisher reads it. A column list
+  // maintained here is a second list to keep in step with the schema, and the
+  // failure when it drifts is silent and total rather than loud and local.
+  const { data: raw, error: readErr } = await supabase
     .from('integrations')
-    .select([
-      'twitter_access_token',
-      'linkedin_access_token', 'linkedin_person_id',
-      'telegram_bot_token', 'telegram_channel_id',
-      'bluesky_handle', 'bluesky_app_password',
-      'pinterest_access_token',
-      'instagram_user_id', 'instagram_access_token',
-      'facebook_page_id', 'facebook_page_access_token', 'facebook_page_name',
-      'threads_user_id', 'threads_access_token',
-    ].join(','))
+    .select('*')
     .eq('user_id', ownerId)
     .maybeSingle()
+
+  // A LOOKUP THAT FAILED IS NOT A CREATOR WITH NOTHING CONNECTED.
+  //
+  // This is the clause whose absence turned a broken query into "your accounts
+  // are disconnected". known:false tells the modal to tick everything, which is
+  // the pre-change behaviour and the only honest answer when we did not manage
+  // to find out. Saying known:true here unticks live channels and puts nothing
+  // on screen to explain it, which is the same defect the feature was fixing.
+  if (readErr) {
+    console.error('[social/connected] integrations read failed:', readErr.message)
+    return NextResponse.json({ ok: true, known: false, connected: [] })
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ig = (decryptIntegrationRow(raw as any) || {}) as Record<string, string | null>
@@ -57,33 +74,43 @@ export async function GET() {
   // Same two resolutions the publisher performs, in the same order, so a
   // creator connected through the modern social_accounts flow does not read as
   // "not connected" here while posting fine there.
-  const [fb, th] = await Promise.all([
-    resolveSocialAccount(supabase, ownerId, 'facebook', {
-      socialAccountId: null, allowSelection: false,
-      legacy: {
-        externalId: ig.facebook_page_id || undefined,
-        accessToken: ig.facebook_page_access_token || undefined,
-        displayName: ig.facebook_page_name ?? null,
-      },
-    }).catch(() => null),
-    resolveSocialAccount(supabase, ownerId, 'threads', {
-      socialAccountId: null, allowSelection: false,
-      legacy: {
-        externalId: ig.threads_user_id || undefined,
-        accessToken: ig.threads_access_token || undefined,
-        displayName: null,
-      },
-    }).catch(() => null),
-  ])
-
-  const instagramAcct = await resolveSocialAccount(supabase, ownerId, 'instagram', {
-    socialAccountId: null, allowSelection: false,
-    legacy: {
-      externalId: ig.instagram_user_id || undefined,
-      accessToken: ig.instagram_access_token || undefined,
-      displayName: null,
-    },
-  }).catch(() => null)
+  //
+  // No per-call .catch(() => null) here, and that is the point. Swallowing a
+  // resolver error turns "we could not check" into "not connected", which is
+  // the same lie the failed column read told. One try/catch around the lot, and
+  // a throw anywhere in it means known:false.
+  let fb = null, th = null, instagramAcct = null
+  try {
+    ;[fb, th, instagramAcct] = await Promise.all([
+      resolveSocialAccount(supabase, ownerId, 'facebook', {
+        socialAccountId: null, allowSelection: false,
+        legacy: {
+          externalId: ig.facebook_page_id || undefined,
+          accessToken: ig.facebook_page_access_token || undefined,
+          displayName: ig.facebook_page_name ?? null,
+        },
+      }),
+      resolveSocialAccount(supabase, ownerId, 'threads', {
+        socialAccountId: null, allowSelection: false,
+        legacy: {
+          externalId: ig.threads_user_id || undefined,
+          accessToken: ig.threads_access_token || undefined,
+          displayName: null,
+        },
+      }),
+      resolveSocialAccount(supabase, ownerId, 'instagram', {
+        socialAccountId: null, allowSelection: false,
+        legacy: {
+          externalId: ig.instagram_user_id || undefined,
+          accessToken: ig.instagram_access_token || undefined,
+          displayName: null,
+        },
+      }),
+    ])
+  } catch (e) {
+    console.error('[social/connected] account resolve failed:', e instanceof Error ? e.message : String(e))
+    return NextResponse.json({ ok: true, known: false, connected: [] })
+  }
 
   const row = ig as unknown as ConnectionRow
   const connected = connectedQuickPostPlatforms(row, {
