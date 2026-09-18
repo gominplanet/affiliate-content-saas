@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import { X, Scissors, Loader2, Sparkles, Download, ExternalLink, AlertCircle, Film, Youtube, Instagram, Music2, Check, Pencil } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
+import { ShortsQuotaBadge, notifyShortsUsageChanged } from '@/components/vertical/ShortsQuotaBadge'
 import { errText } from '@/lib/err-text'
 import { ensureDisclaimer } from '@/lib/social-disclaimer'
 import { buildYouTubeShortTitle } from '@/lib/youtube-title'
@@ -218,6 +219,10 @@ export function ShortsStudioModal({
         throw new Error(data.error || 'Render failed')
       }
       if (data.short) setClips(prev => prev.map(c => (c.id === clip.id ? data.short : c)))
+      // A render is the only thing that spends a slot, so it is the only thing
+      // that moves the counter. Refreshing on mount alone is how a creator
+      // rendered her way to fifty while the number above her sat still.
+      notifyShortsUsageChanged()
       toast.success('Short rendered')
     } catch (e) {
       toast.error(errText(e))
@@ -396,6 +401,15 @@ export function ShortsStudioModal({
 
           {error && (
             <p className="text-[12px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={13} /> {error}</p>
+          )}
+
+          {/* This modal renders through the same capped route as Clip Factory
+              and had no counter at all, so a creator working from here could
+              only discover the cap by being refused by it. */}
+          {clips.length > 0 && (
+            <div className="flex items-center">
+              <ShortsQuotaBadge />
+            </div>
           )}
 
           {loading ? (

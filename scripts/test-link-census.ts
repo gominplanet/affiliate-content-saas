@@ -24,7 +24,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildLinkCensus, describeCensus, retailerHrefs } from '../lib/link-census'
-import { convertibleLinks } from '../lib/post-affiliate-links'
+import { convertibleLinks, occurrenceCount } from '../lib/post-affiliate-links'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -115,18 +115,21 @@ const ROB_BODY = `
   `
   const c = buildLinkCensus([{ id: 'p1', title: 'Mixed', content: MIXED }], 'geniuslink')
   check('a Walmart link is not counted as a failed Geniuslink',
-    c.offStyle === 0, `off=${c.offStyle}`)
+    c.unstyleable >= 2, `unstyleable=${c.unstyleable}`)
   check('the one real Geniuslink is on-style',
-    c.total === 1 && c.onStyle === 1, `total=${c.total} on=${c.onStyle}`)
-  check('search, Walmart and Target links are still counted somewhere',
-    c.other === 3, `other=${c.other}`)
+    c.onStyle === 1, `on=${c.onStyle}`)
+  // The TAGGED Amazon search link counts as off-style, because the repair tool
+  // converts it and somebody earns on the click. Filing it under "no link
+  // style" is what made this panel contradict itself on Rob's card.
+  check('a tagged Amazon search link is work, not scenery',
+    c.total === 2 && c.offStyle === 1, `total=${c.total} off=${c.offStyle}`)
+  check('Walmart and Target are the ones left alone',
+    c.unstyleable === 2, `unstyleable=${c.unstyleable}`)
   check('a plain internal link is not a retailer link at all',
     retailerHrefs(MIXED).length === 4, `${retailerHrefs(MIXED).length}`)
-  check('the all-good sentence still discloses the links it set aside',
-    /further retailer links are search, storefront or non-Amazon/.test(String(describeCensus(c, 'Geniuslink'))),
+  check('the sentence discloses the links it will leave alone',
+    /further retailer links are on another store or carry no Amazon tag, so they are left alone/.test(String(describeCensus(c, 'Geniuslink'))),
     String(describeCensus(c, 'Geniuslink')))
-  check('a post with no off-style links is not named as an offender',
-    c.postsAffected === 0 && c.worst.length === 0)
 }
 
 // ── a genuinely clean site still reads clean ────────────────────────────────
@@ -175,6 +178,54 @@ const ROB_BODY = `
   check('the census reads the stored body of each row, not the candidate list',
     /rows\.map\(\(r\) => \(\{ id: r\.id, title: r\.title, content: r\.content \}\)\)/.test(ROUTE_LIVE),
     'building it from candidates would reproduce the original undercount exactly')
+}
+
+// ── the two numbers on the card must be the same number ─────────────────────
+//
+// 18 Sep, from Rob's card after the extras branch shipped. Two lines, one panel:
+//
+//   "7 of 18 affiliate links are NOT Geniuslink, across 3 posts"
+//   "4 of 4 posts can be re-pointed by this tool"
+//
+// Three posts affected, four posts offered. The fourth post's only fault was a
+// tagged Amazon SEARCH link, and the two halves of the panel were classifying it
+// with different functions: the census used styleOfUrl, which answers null for a
+// search url because it cannot read a product out of one, while the repair tool
+// used currentStyleOf, which calls a tagged search link 'direct' because
+// somebody earns on that click. Both were right about their own question and the
+// panel contradicted itself, which is the exact fault this file was written to
+// stop, reintroduced inside the fix for it.
+//
+// Pinned as an invariant rather than as a wording check, because wording drifts
+// and the invariant is the thing that matters: EVERY link the census calls
+// off-style is a link the tool will convert, and vice versa.
+{
+  const CASES: Array<[string, string]> = [
+    ['Rob, all raw', ROB_BODY],
+    ['a tagged search link among Geniuslinks', `
+      <a href="https://geni.us/buy">Buy</a>
+      <a href="https://www.amazon.com/s?k=kids+headphones&tag=laststop-20">Browse</a>
+    `],
+    ['an untagged Amazon link nobody earns on', `
+      <a href="https://geni.us/buy">Buy</a>
+      <a href="https://www.amazon.com/dp/B0CX23K9QL">Product page</a>
+    `],
+    ['other retailers', `
+      <a href="https://geni.us/buy">Buy</a>
+      <a href="https://www.walmart.com/ip/1">Walmart</a>
+      <a href="https://www.target.com/p/x/-/A-1">Target</a>
+    `],
+    ['the same link four times', `
+      ${'<a href="https://www.amazon.com/dp/B0DHL4MN12?tag=x-20">Buy</a>'.repeat(4)}
+    `],
+  ]
+  for (const [label, body] of CASES) {
+    const census = buildLinkCensus([{ id: 'x', title: label, content: body }], 'geniuslink')
+    const willConvert = occurrenceCount(convertibleLinks(body, 'geniuslink'))
+    check(`census and repair tool agree on "${label}"`,
+      census.offStyle === willConvert,
+      `census says ${census.offStyle} off-style, the tool will convert ${willConvert}`)
+  }
 }
 
 // ── the post the tool could never offer to fix ──────────────────────────────

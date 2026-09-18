@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { ShortsCreatePanel } from '@/components/vertical/ShortsCreatePanel'
+import { ShortsQuotaBadge } from '@/components/vertical/ShortsQuotaBadge'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
@@ -159,15 +160,9 @@ export default function ClipFactoryPage() {
 
   const [stage, setStage] = useState<Stage>('create')
   const [clip, setClip] = useState<WorkingClip | null>(null)
-  // Monthly Shorts usage (X / 50). null limit = unlimited (admin).
-  const [usage, setUsage] = useState<{ used: number; limit: number | null; resetLabel: string } | null>(null)
-  const loadUsage = useCallback(async () => {
-    try {
-      const res = await fetch('/api/youtube/shorts/usage')
-      if (res.ok) setUsage(await res.json())
-    } catch { /* non-fatal */ }
-  }, [])
-  useEffect(() => { void loadUsage() }, [loadUsage])
+  // Shorts usage lives in ShortsQuotaBadge now: it fetches, and it re-fetches
+  // on every render anywhere in the app. The copy that lived here refreshed on
+  // mount and on "Use this clip", which is not when a slot is spent.
 
   // ---- Create: long-video on-ramp (opens Shorts Studio) ----
   const [videos, setVideos] = useState<VideoLite[]>([])
@@ -677,17 +672,12 @@ export default function ClipFactoryPage() {
         <Rocket size={20} style={{ color: PURPLE }} />
         <h1 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Clip Factory</h1>
         <ClipFactoryGuide />
-        {usage && usage.limit !== null && (
-          <span
-            className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-0.5 border"
-            style={usage.used >= usage.limit
-              ? { borderColor: '#ff3b30', color: '#ff3b30' }
-              : { borderColor: `${PURPLE}66`, color: PURPLE }}
-            title={usage.resetLabel ? `Resets ${usage.resetLabel}` : undefined}
-          >
-            {usage.used} / {usage.limit} Shorts this month
-          </span>
-        )}
+        {/* One implementation, shared with the Shorts panels below and with the
+            Shorts Studio modal. This pill used to be the only counter in the
+            product, it loaded once on mount and refreshed only when somebody
+            clicked "Use this clip", so it could read 12 / 50 while the creator
+            rendered her fiftieth. It now refreshes on every render. */}
+        <ShortsQuotaBadge />
       </div>
       <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] max-w-2xl mb-5">
         Make a vertical short from a long video, add a shoppable CTA and product link, then publish to Instagram,
@@ -750,7 +740,6 @@ export default function ClipFactoryPage() {
                 onUseClip={(c) => {
                   setClipSource('created')
                   setClip({ url: c.url, title: c.title, hashtags: c.hashtags, caption: c.caption })
-                  void loadUsage()
                   // Seed the caption from the plan (retained on the clip too, so
                   // it survives an empty burn / Skip Enhance via fallbackCaption).
                   setComposedCaption([c.caption, (c.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim())

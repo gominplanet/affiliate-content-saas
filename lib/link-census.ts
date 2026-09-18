@@ -29,11 +29,32 @@
 // creator can check the number against their own page by reading it, which is
 // the property the old number lacked.
 
-import { styleOfUrl, type LinkStyle } from '@/lib/link-style'
+// WHICH CLASSIFIER, AND WHY IT IS THIS ONE.
+//
+// There are two in the codebase and they disagree on purpose. styleOfUrl (in
+// lib/link-style) answers "can I read a product out of this", so an Amazon
+// SEARCH url is null to it: navigation, not a buy link. currentStyleOf (here,
+// from lib/post-affiliate-links) answers "does somebody earn on this click", so
+// a TAGGED search url is a direct affiliate link, because it is one.
+//
+// The first version of this file used styleOfUrl, and it put the census out of
+// step with the tool beside it. Rob's card read "7 of 18 links are not
+// Geniuslink, across 3 posts" directly above "4 of 4 posts can be re-pointed",
+// because the fourth post's only fault was a tagged search link the census had
+// filed under "carries no link style" while the repair tool was about to
+// convert it. A panel that contradicts itself is the fault this whole file was
+// written to stop, reintroduced inside the fix.
+//
+// So the census now classifies with the SAME predicate the repair tool acts on.
+// off-style means "the tool will convert this", on-style means "already right",
+// and `unstyleable` means "MVP will not touch it": a Walmart or Target link, or
+// an Amazon url carrying no tag, which nobody earns on.
+import { currentStyleOf } from '@/lib/post-affiliate-links'
+import type { LinkStyle } from '@/lib/link-style'
 
 /** Retailer or shortener hrefs worth looking at at all. Deliberately wider than
- *  the set styleOfUrl can name, so links with no readable style are COUNTED AND
- *  SHOWN rather than dropped — see `other` below. */
+ *  the set currentStyleOf can name, so links it will not touch are COUNTED AND
+ *  SHOWN rather than dropped — see `unstyleable` below. */
 const RETAILER_HREF = /\b(?:amazon\.[a-z.]+|amzn\.to|a\.co|geni\.us|gnz\.|mvpl\.ink|bit\.ly|walmart\.com|target\.com|bestbuy\.com)\b/i
 
 export interface LinkCensus {
@@ -44,15 +65,16 @@ export interface LinkCensus {
   /** Links in some other style. These are the work. */
   offStyle: number
   /**
-   * Retailer links with no style to read: an Amazon search or storefront URL, a
-   * Walmart or Target link, anything Geniuslink and Passport do not wrap.
+   * Retailer links MVP will not touch: a Walmart or Target link, or an Amazon
+   * url carrying no Associates tag, which nobody earns on and which cloaking
+   * would burn a Geniuslink for nothing.
    *
    * Counted separately rather than dropped, and never folded into offStyle.
    * Calling them off-style would invent work on a Walmart post; dropping them
-   * would let a page covered in Amazon search links report "all 2 links are
+   * would let a page visibly covered in retailer links report "all 2 links are
    * Geniuslink", which is the same kind of lie this file exists to end.
    */
-  other: number
+  unstyleable: number
   /** Posts carrying at least one off-style link. */
   postsAffected: number
   /** Posts scanned. */
@@ -95,7 +117,7 @@ export function retailerHrefs(html: string | null | undefined): string[] {
 export function buildLinkCensus(posts: CensusPost[], chosenStyle: LinkStyle): LinkCensus {
   let total = 0
   let onStyle = 0
-  let other = 0
+  let unstyleable = 0
   let postsAffected = 0
   const worst: LinkCensus['worst'] = []
 
@@ -105,8 +127,8 @@ export function buildLinkCensus(posts: CensusPost[], chosenStyle: LinkStyle): Li
     let off = 0
     let styled = 0
     for (const h of hrefs) {
-      const style = styleOfUrl(h)
-      if (style === null) { other++; continue }
+      const style = currentStyleOf(h)
+      if (style === null) { unstyleable++; continue }
       total++
       styled++
       if (style === chosenStyle) onStyle++
@@ -129,7 +151,7 @@ export function buildLinkCensus(posts: CensusPost[], chosenStyle: LinkStyle): Li
     total,
     onStyle,
     offStyle: total - onStyle,
-    other,
+    unstyleable,
     postsAffected,
     posts: posts.length,
     worst: worst.slice(0, 25),
@@ -144,9 +166,12 @@ export function buildLinkCensus(posts: CensusPost[], chosenStyle: LinkStyle): Li
  * genuinely nothing to say, so a caller can write `if (note) show(note)`.
  */
 export function describeCensus(c: LinkCensus, styleLabel: string): string | null {
-  if (c.total === 0 && c.other === 0) return null
-  const tail = c.other > 0
-    ? ` ${c.other.toLocaleString()} further retailer ${c.other === 1 ? 'link is' : 'links are'} search, storefront or non-Amazon ${c.other === 1 ? 'and carries' : 'and carry'} no link style.`
+  if (c.total === 0 && c.unstyleable === 0) return null
+  // Says what happens to them, not what they are. "Carries no link style" was
+  // true and told a reader nothing about whether the button was going to change
+  // them. These are the ones it will leave alone, so that is the sentence.
+  const tail = c.unstyleable > 0
+    ? ` ${c.unstyleable.toLocaleString()} further retailer ${c.unstyleable === 1 ? 'link is' : 'links are'} on another store or carry no Amazon tag, so ${c.unstyleable === 1 ? 'it is' : 'they are'} left alone.`
     : ''
   const posts = `${c.posts.toLocaleString()} ${c.posts === 1 ? 'post' : 'posts'}`
   if (c.total === 0) {

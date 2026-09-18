@@ -16,6 +16,7 @@ import { Loader2, Sparkles, AlertCircle, Film, Scissors, ExternalLink, ArrowRigh
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { InfoTip } from '@/components/ui/InfoTip'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
+import { ShortsQuotaBadge, notifyShortsUsageChanged } from '@/components/vertical/ShortsQuotaBadge'
 import { errText } from '@/lib/err-text'
 import { requestVideoTranscriptCues } from '@/lib/extension-frame'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
@@ -149,6 +150,10 @@ export function ShortsCreatePanel({
         throw new Error(data.error || 'Render failed')
       }
       if (data.short) setClips(prev => prev.map(c => (c.id === clip.id ? data.short : c)))
+      // A render is the only thing that spends a slot, so it is the only thing
+      // that moves the counter. Refreshing on mount alone is how a creator
+      // rendered her way to fifty while the number above her sat still.
+      notifyShortsUsageChanged()
       toast.success('Short rendered')
     } catch (e) {
       toast.error(errText(e))
@@ -223,6 +228,16 @@ export function ShortsCreatePanel({
       )}
 
       {error && <p className="text-[12px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={13} /> {error}</p>}
+
+      {/* How many renders are left, beside the buttons that spend them. The
+          only counter used to sit in the Clip Factory page header, scrolled far
+          above this list and refreshed once on mount, so the first news of a cap
+          was being refused by it. */}
+      {clips.length > 0 && (
+        <div className="flex items-center">
+          <ShortsQuotaBadge />
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-10 text-[#86868b]"><Loader2 size={20} className="animate-spin" /></div>
