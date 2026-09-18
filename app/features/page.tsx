@@ -247,7 +247,7 @@ export default function FeaturesPage() {
           <a href="/signup" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold text-white transition-transform hover:-translate-y-0.5" style={{ background: GRAD, boxShadow: '0 10px 30px -8px rgba(192,38,211,0.6)' }}>Start free trial <ArrowRight size={17} /></a>
           <a href="/tour" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-semibold" style={{ color: 'var(--text)', border: '1px solid var(--border)' }}>Take the tour</a>
         </div>
-        <p className="mt-6 text-[13.5px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}><Zap size={13} /> 14-day money-back guarantee</p>
+        <p className="mt-6 text-[13.5px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}><Zap size={13} /> 30-day money-back guarantee</p>
       </section>
 
       <footer className="border-t py-8 text-center text-[13.5px]" style={{ borderColor: 'var(--border)', color: 'var(--text-faint)' }}>

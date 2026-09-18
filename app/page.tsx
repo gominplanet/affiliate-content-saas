@@ -55,7 +55,7 @@ const DARK_SECTION_VARS: React.CSSProperties = {
 //
 // GUARANTEE: the risk-reversal line near the CTAs and pricing. Set to your real
 //   terms, or leave null to show none. (Awaiting the exact terms.)
-const GUARANTEE: string | null = '14-day money-back guarantee'
+const GUARANTEE: string | null = '30-day money-back guarantee'
 //
 // FOUNDING_DEADLINE: ISO date the founding prices end (e.g. '2026-09-30'). When
 //   set AND in the future, a real countdown shows. null = no urgency. Never fake
@@ -64,7 +64,23 @@ const FOUNDING_DEADLINE: string | null = '2026-12-31'
 //
 // TESTIMONIALS: real customer quotes only — never fabricated. The section is
 //   hidden until this has entries. Add { quote, name, handle? }.
-const TESTIMONIALS: { quote: string; name: string; handle?: string }[] = [
+//   A photo, a real name and a SPECIFIC result are what make a quote work on
+//   cold ad traffic. `photo` is a path under /public (add the file, reference it
+//   here); `result` is the one-line outcome shown above the quote, and it should
+//   be a number the creator themselves stated. Everything except `quote` and
+//   `name` is optional, and the card renders correctly without any of it, so
+//   quotes can go up the moment they arrive and gain their photo later.
+const TESTIMONIALS: {
+  quote: string
+  name: string
+  handle?: string
+  /** e.g. 'Amazon Influencer' — what they do, so a reader recognises themselves. */
+  title?: string
+  /** Path under /public, e.g. '/png/testimonial-rob.webp'. Square crop. */
+  photo?: string
+  /** The headline outcome, in their words. e.g. 'Made the subscription back in 2 weeks'. */
+  result?: string
+}[] = [
   {
     quote: 'I was skeptical at first but I needed to try something new to push my Amazon offsite revenue. Within the first 2 weeks of testing MVP, I made the subscription back and then some. So grateful for this tool and what it generates for my business.',
     name: 'Verified MVP creator',
@@ -129,6 +145,14 @@ export default function LandingPreview() {
       <Hero />
       <AmazonRouter variant="strip" />
       <PlatformBar />
+      <OldWayNewWay />
+      {/* PROOF MOVES ITSELF. With a real wall of quotes, proof belongs high:
+          cold traffic off an ad trusts nobody, and other creators are the
+          shortest path to trusting us. With only one or two it belongs lower,
+          where a thin wall reads as early rather than as all we have. So the
+          slot is chosen by how many real quotes exist, and adding the fifth one
+          promotes the section without anybody remembering to. */}
+      {TESTIMONIALS.length >= 3 && <TestimonialsSection />}
       <HowItWorks />
       <FeaturesGridCondensed />
       {/* Flagship new work, shown with real product images. */}
@@ -138,7 +162,7 @@ export default function LandingPreview() {
       <ThumbnailShowcase />
       <ComparisonSection />
       <ProofSection />
-      <TestimonialsSection />
+      {TESTIMONIALS.length < 3 && <TestimonialsSection />}
       <CommunitySection />
       <FounderSection />
       <PricingSection />
@@ -734,6 +758,90 @@ function FounderSection() {
   )
 }
 
+/** OLD WAY / NEW WAY — the transformation, not the checklist.
+ *
+ *  The page already has ComparisonSection, and it does a different job: a
+ *  feature grid against named competitors, which converts somebody who has
+ *  already decided they want a tool and is picking one. Cold traffic off an ad
+ *  has not decided anything. It needs to recognise its own Tuesday in the left
+ *  column before a feature list means anything, which is the move both
+ *  reference pages make and this page was missing.
+ *
+ *  Every right-hand line is a thing the product actually does today. The left
+ *  column is deliberately not a strawman: it is the real Amazon Influencer
+ *  workflow, and most of it is work the creator is genuinely doing by hand.
+ */
+function OldWayNewWay() {
+  const ROWS: { old: string; mvp: string }[] = [
+    {
+      old: 'Your whole business lives on a storefront Amazon owns and can change.',
+      mvp: 'Everything also lands on a blog on your own domain, which is yours whatever Amazon does next.',
+    },
+    {
+      old: 'A video gets filmed, uploaded, and that is the end of its life.',
+      mvp: 'One video becomes an article, a description, tags, a thumbnail, social posts and vertical clips.',
+    },
+    {
+      old: 'Writing the review is the evening you did not want to spend.',
+      mvp: 'It is written from your own transcript, in your voice, from what you actually said on camera.',
+    },
+    {
+      old: 'Posting to Pinterest, Instagram and Facebook is another hour you skip.',
+      mvp: 'The post goes out to every channel you connect, on a schedule, with the images made for you.',
+    },
+    {
+      old: 'International clicks land on the wrong Amazon and earn you nothing.',
+      mvp: 'Passport routes every shopper to their own country\u2019s Amazon. Unlimited, no cost per click.',
+    },
+    {
+      old: 'A dead product link sits there for weeks before you notice.',
+      mvp: 'Broken and off-style links are found, counted link by link, and repaired in one pass.',
+    },
+  ]
+  return (
+    <section id="old-new" className="px-6 lg:px-8 pt-16 sm:pt-20 pb-8 relative">
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center max-w-2xl mx-auto">
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>The difference</span>
+          <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
+            Same videos. Completely different business.
+          </h2>
+          <p className="mt-4 text-[15.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            You are not short of effort. You are short of everything that effort should have turned into.
+          </p>
+        </div>
+
+        <div className="mt-10 grid md:grid-cols-2 gap-4">
+          {/* Old way */}
+          <div className="rounded-2xl border p-5 sm:p-6" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] mb-4" style={{ color: 'var(--text-faint)' }}>Without MVP</p>
+            <ul className="flex flex-col gap-3.5">
+              {ROWS.map((r, i) => (
+                <li key={i} className="flex gap-2.5 text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+                  <XIcon size={15} className="mt-0.5 flex-shrink-0" style={{ color: '#ff3b30' }} />
+                  <span>{r.old}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {/* New way */}
+          <div className="rounded-2xl border p-5 sm:p-6" style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(192,38,211,0.04))', borderColor: 'rgba(124,58,237,0.25)' }}>
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] mb-4" style={{ color: '#7C3AED' }}>With MVP</p>
+            <ul className="flex flex-col gap-3.5">
+              {ROWS.map((r, i) => (
+                <li key={i} className="flex gap-2.5 text-[14px] leading-relaxed" style={{ color: 'var(--text)' }}>
+                  <Check size={15} className="mt-0.5 flex-shrink-0" style={{ color: '#34c759' }} />
+                  <span>{r.mvp}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 /** Testimonials wall — real customer quotes only (never fabricated). Hidden
  *  until TESTIMONIALS has entries. */
 function TestimonialsSection() {
@@ -746,15 +854,51 @@ function TestimonialsSection() {
           <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
             What creators say
           </h2>
+          {/* The count, and only once it is worth stating. Three is the point at
+              which "creators" stops being a stretch; below that the wall speaks
+              for itself and a number would be padding. */}
+          {TESTIMONIALS.length >= 3 && (
+            <p className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>
+              <span style={{ color: '#F5A623' }}>★★★★★</span> from {TESTIMONIALS.length} Amazon Influencers running MVP on their own blogs.
+            </p>
+          )}
         </div>
         <div className={`mt-10 gap-4 ${TESTIMONIALS.length === 1 ? 'max-w-xl mx-auto' : TESTIMONIALS.length === 2 ? 'grid sm:grid-cols-2 max-w-3xl mx-auto' : 'grid sm:grid-cols-2 lg:grid-cols-3'}`}>
           {TESTIMONIALS.map((t, i) => (
             <figure key={i} className="rounded-2xl border p-5 flex flex-col" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
               <div className="text-[13px] mb-2" style={{ color: '#F5A623' }}>★★★★★</div>
-              <blockquote className="text-[14px] leading-relaxed flex-1" style={{ color: 'var(--text)' }}>“{t.quote}”</blockquote>
-              <figcaption className="mt-4 text-[12.5px]">
-                <span className="font-semibold" style={{ color: 'var(--text)' }}>{t.name}</span>
-                {t.handle && <span style={{ color: 'var(--text-faint)' }}> · {t.handle}</span>}
+              {/* The RESULT above the quote, when the creator stated one. A
+                  reader skimming three cards reads three bold outcomes and stops
+                  at the one that sounds like their own month. Absent on a quote
+                  that has no number, rather than invented for it. */}
+              {t.result && (
+                <p className="text-[15px] font-bold leading-snug mb-2.5" style={{ color: 'var(--text)' }}>{t.result}</p>
+              )}
+              <blockquote className="text-[14px] leading-relaxed flex-1" style={{ color: t.result ? 'var(--text-soft)' : 'var(--text)' }}>“{t.quote}”</blockquote>
+              {/* Face, name, and what they do. A quote with a face outperforms the
+                  same quote without one, which is the whole reason the reference
+                  pages carry twenty-three headshots. The card lays out correctly
+                  with no photo, so a quote goes up the day it arrives. */}
+              <figcaption className="mt-4 flex items-center gap-3">
+                {t.photo && (
+                  <NextImage
+                    src={t.photo}
+                    alt={t.name}
+                    width={80}
+                    height={80}
+                    loading="lazy"
+                    className="w-10 h-10 rounded-full object-cover border flex-shrink-0"
+                    style={{ borderColor: 'var(--border)' }}
+                  />
+                )}
+                <span className="text-[12.5px] leading-tight">
+                  <span className="font-semibold block" style={{ color: 'var(--text)' }}>{t.name}</span>
+                  {(t.title || t.handle) && (
+                    <span style={{ color: 'var(--text-faint)' }}>
+                      {t.title}{t.title && t.handle ? ' · ' : ''}{t.handle}
+                    </span>
+                  )}
+                </span>
               </figcaption>
             </figure>
           ))}
@@ -1177,7 +1321,7 @@ function Hero() {
             }}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
-            For affiliate creators
+            For Amazon Influencers
           </div>
 
           {/* Trust strip — lifted to live above the headline. Establishes
@@ -1189,20 +1333,27 @@ function Hero() {
 
           {/* Main + Secondary headlines — fat, tight, high-contrast (logie5-style).
               Leads with the positioning: one tool, every feature, no compromise. */}
+          {/* THE HEADLINE NAMES THE READER AND THE THING THEY DO NOT OWN.
+              The previous one, "Everything an Amazon affiliate needs. Zero
+              compromise.", is a claim about the product. It reads as a boast to
+              somebody who has never heard of us, and cold traffic from an ad has
+              heard of nobody. This names the buyer, the asset, and the fear they
+              already have, and it is the one promise the storefront tools cannot
+              make: their whole product optimises a shopfront Amazon owns. */}
           <h1
             className="text-[40px] sm:text-[58px] lg:text-[70px] font-extrabold tracking-[-0.035em] leading-[0.98]"
             style={{ color: 'var(--text)' }}
           >
-            Everything an Amazon<br />affiliate needs.{' '}
+            Your Amazon storefront<br />is rented.{' '}
             <span style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-              Zero compromise.
+              Build the one you own.
             </span>
           </h1>
           <p
             className="mt-5 text-[20px] sm:text-[22px] font-semibold tracking-tight"
             style={{ color: 'var(--text-muted)' }}
           >
-            It runs the whole business side while you create, and writes every word in your real voice.
+            MVP turns the reviews you are already filming into a blog that is yours forever, and writes every word in your real voice.
           </p>
 
           {/* Sub */}
@@ -1210,7 +1361,7 @@ function Hero() {
             className="mt-6 text-[16px] leading-relaxed max-w-xl"
             style={{ color: 'var(--text-soft)' }}
           >
-            Connect your channel and MVP turns each video into a published, SEO and AI optimized review, then finishes the upload for you: description, tags, affiliate links and a tested thumbnail. <span style={{ color: 'var(--text)' }}>No video? Drop any product link</span> and it writes the review, buying guides and comparisons itself. Everything lands on a blog that&apos;s yours to keep, forever.
+            You already do the hard part: you buy the product, you film the review, you know what is worth recommending. Connect your channel and MVP turns each of those videos into a published, SEO optimised article on <span style={{ color: 'var(--text)' }}>your own domain</span>, then finishes the upload too: description, tags, affiliate links and a tested thumbnail. It posts the article out to Pinterest, Instagram, Facebook and the rest, and cuts your long videos into shoppable vertical clips. <span style={{ color: 'var(--text)' }}>No video? Drop any product link</span> and it writes the review itself.
           </p>
 
           {/* CTAs — primary button + its supporting reassurance live as
