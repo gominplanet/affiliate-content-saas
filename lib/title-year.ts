@@ -95,6 +95,68 @@ export function stripTitleYear(input: string | null | undefined, now: Date = new
   //     Edition", so the whole phrase goes.
   s = s.replace(new RegExp(`[\\s|·•]*[-–—:|]?\\s*\\b(?:${years})\\s+(?:Edition|Update|Roundup)\\b`, 'gi'), ' ')
 
+  // ── DECORATION THAT SITS MID-TITLE ────────────────────────────────────
+  //
+  // The rules above only reach a year that is leading, trailing, or alone in
+  // brackets. An audit of 37 live titles found 23 of them caught and 12 missed,
+  // and every miss was the same shape: decoration in the MIDDLE, in front of a
+  // subtitle.
+  //
+  //   Best Robotic Pool Vacuums in 2026: Beatbot vs ECOVACS
+  //   Best All-In-One Pool Cleaners 2026 Guide
+  //   Tracki Pro GPS Tracker Review: Worth It in 2025?
+  //   Tidify Car Front Seat Organizer [2025 UPDATED]: ...
+  //
+  // The header above calls leaving the middle alone a deliberate trade, and it
+  // was the right one while the rule was "a bare year mid-title". These rules
+  // do not change that: a BARE year in the middle is still untouchable, which
+  // is what keeps "Snailax 2026 Upgraded Neck and Back Massager" intact. They
+  // only fire when the year is ATTACHED to something that makes it decoration:
+  // a preposition, a season, a word like Guide, or a subtitle colon on a title
+  // that opens with "Best". No product name carries a year in those positions.
+
+  // A. Brackets holding a year plus a decoration word, in either order.
+  //    "[2025 UPDATED]" is not matched by rule 1, which wants the year alone.
+  const DECOR = 'Updated?|Edition|Guide|Review|Refresh|New|Latest'
+  s = s.replace(new RegExp(`[([{]\\s*(?:${years})\\s+(?:${DECOR})\\s*[)\\]}]`, 'gi'), ' ')
+  s = s.replace(new RegExp(`[([{]\\s*(?:${DECOR})\\s+(?:${years})\\s*[)\\]}]`, 'gi'), ' ')
+
+  // B. A preposition carrying the year, ANYWHERE, not only at the end. The
+  //    preposition goes with it: "Best Vacuums in 2026: 5 Models" should read
+  //    "Best Vacuums: 5 Models", not "Best Vacuums in: 5 Models".
+  s = s.replace(new RegExp(`\\b(?:in|for|of)\\s+(?:${years})\\b`, 'gi'), ' ')
+
+  // C. A season keeps its name and loses the year. "for Summer 2026" is about
+  //    the season; only the stamp is decoration.
+  s = s.replace(
+    new RegExp(`\\b(early|late|mid|spring|summer|autumn|fall|winter|holiday|christmas|black friday)\\s+(?:${years})\\b`, 'gi'),
+    '$1')
+
+  // D. A year in front of a decoration noun, with an optional adjective
+  //    between them ("2026 Premium Showdown"). The noun stays; only the year
+  //    goes, so the title still says what it is.
+  //
+  //    TWICE AS NARROW AS THE FIRST ATTEMPT, because the guard caught it. That
+  //    version allowed "Review" and "Compared" in the noun list, and with the
+  //    optional adjective in between it reached straight across a product name:
+  //
+  //      "The Ninja 2026 Creami Review"        -> "The Ninja Creami Review"
+  //      "Kismile 2026 Ice Maker vs the 2025 Model Compare"  -> lost both
+  //
+  //    Review is the most common last word on this whole site, so pairing it
+  //    with a wildcard adjective made a model year reachable from half the
+  //    titles in the database. Two defences now: the noun list holds only words
+  //    that are our own roundup furniture, and the whole rule is limited to
+  //    titles that open with "Best", which is our phrasing and never a product.
+  s = s.replace(
+    new RegExp(`^(Best\\b[^:]*?)\\s+(?:${years})\\s+(?=(?:[A-Z][a-z-]+\\s+)?(?:Guide|Showdown|Roundup|Picks|Rankings)\\b)`, ''),
+    '$1 ')
+
+  // E. A bare year immediately before a subtitle colon, ONLY on a title that
+  //    opens with "Best". That prefix is the tell: it is our own roundup
+  //    phrasing, never a product name, so the year cannot be a model year.
+  s = s.replace(new RegExp(`^(Best\\b[^:]*?)\\s+(?:${years})(?=\\s*:)`, ''), '$1')
+
   // 2. A trailing "in / for / of <year>" phrase.
   s = s.replace(new RegExp(`\\b(?:in|for|of)\\s+(?:${years})\\s*$`, 'i'), ' ')
 

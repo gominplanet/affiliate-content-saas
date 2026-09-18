@@ -170,6 +170,61 @@ const strip = (s: string) => stripTitleYear(s, NOW)
     'a year in a sentence is legitimate; this layer must not touch prose')
 }
 
+// ── decoration that sits MID-title ─────────────────────────────────────────
+//
+// The rules originally reached only a leading, trailing, or bracket-only year,
+// and an audit of 37 live titles found 12 missed. Every miss was decoration in
+// the middle, in front of a subtitle. These pin the widening; the KEEP cases
+// below pin the thing the widening must never cost.
+{
+  const cases: [string, string][] = [
+    ['Best Robotic Pool Vacuums in 2026: Beatbot vs ECOVACS', 'Best Robotic Pool Vacuums: Beatbot vs ECOVACS'],
+    ['Best Vacuums in 2026: 5 Models Tested', 'Best Vacuums: 5 Models Tested'],
+    ['Tracki Pro GPS Tracker Review: Worth It in 2025?', 'Tracki Pro GPS Tracker Review: Worth It?'],
+    ['Best All-In-One Pool Cleaners 2026 Guide', 'Best All-In-One Pool Cleaners Guide'],
+    ['Best Pool Vacuum for Inground Pools 2026 Premium Showdown', 'Best Pool Vacuum for Inground Pools Premium Showdown'],
+    ['Best Pool Vacuum for Inground Pools 2026: Mid-Range Showdown', 'Best Pool Vacuum for Inground Pools: Mid-Range Showdown'],
+    ['Tidify Car Front Seat Organizer [2025 UPDATED]: Is It Best?', 'Tidify Car Front Seat Organizer: Is It Best?'],
+    ['Best Pool Toys for Summer 2026 (Ranked)', 'Best Pool Toys for Summer (Ranked)'],
+  ]
+  for (const [input, want] of cases) {
+    check(`mid-title: "${input.slice(0, 44)}"`, strip(input) === want, `got "${strip(input)}"`)
+  }
+}
+
+// ── and the widening costs nothing it should not ───────────────────────────
+//
+// THE FIRST VERSION OF THE DECORATION-NOUN RULE FAILED HERE, which is the whole
+// reason these are written down. It allowed "Review" and "Compared" in its noun
+// list with a wildcard adjective in between, so it reached across a product
+// name to a trailing Review:
+//
+//   "The Ninja 2026 Creami Review"  ->  "The Ninja Creami Review"
+//
+// Review is the most common last word on this site, so that one allowance made
+// a model year reachable from half the titles in the database. The rule is now
+// limited to our own roundup furniture and to titles opening with "Best".
+{
+  const keep = [
+    'Snailax 2026 Upgraded Neck and Back Massager',
+    'The Ninja 2026 Creami Review',
+    'Youtube video: 2026 Christmas Decor Trends to Watch',
+    'Sony 2026 Model Camera Review',
+    // Starts with "Best", so the Best-prefix guard does NOT protect it. This
+    // is the case that pins the noun list itself: break-testing showed that
+    // putting Review back in the list leaked past every other keep-case here,
+    // because they all begin with something other than Best.
+    'Best Ninja 2026 Creami Review',
+  ]
+  for (const k of keep) {
+    check(`untouched: "${k.slice(0, 44)}"`, strip(k) === k, `got "${strip(k)}"`)
+  }
+  // A year that IS the subject rather than a stamp: after a colon, in front of
+  // the noun it describes. The one mid-title position nothing above may touch.
+  check('a year that is the topic survives',
+    strip('Youtube video: 2026 Christmas Decor Trends to Watch').includes('2026'))
+}
+
 if (failures.length) {
   console.error(`\n❌ title-year: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
