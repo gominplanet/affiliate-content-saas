@@ -207,8 +207,13 @@ const RESOLVE = read('lib/affiliate-resolve.ts')
   check('the old all-clear wording is no longer shown to anyone',
     !liveLines.some((l) => l.includes('No broken affiliate links found')),
     'that sentence was true and read as a clean bill of health while every link was the wrong style')
+  // Pinned on the STYLE being named, not on the grammar around it. The exact
+  // phrase this used to match ("already uses ${style}") changed when the
+  // all-clear stopped asserting a state and started quoting a counted number,
+  // and a guard that fails on a sentence being made more truthful teaches
+  // whoever hits it to edit the guard rather than read it.
   check('the empty scan names the style that was checked for',
-    /emptyScanMessage/.test(CONTENT) && /already uses \$\{style\}/.test(CONTENT))
+    /emptyScanMessage/.test(CONTENT) && /already uses? \$\{style\}/.test(CONTENT))
   check('and names the posts it could not convert',
     /offStyleStuck/.test(CONTENT))
   check('applying zero fixes is reported as nothing written, not as nothing needed',

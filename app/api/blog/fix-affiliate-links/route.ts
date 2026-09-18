@@ -41,8 +41,9 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { styleOfUrl, type LinkStyle } from '@/lib/link-style'
 import { convertibleLinks } from '@/lib/post-affiliate-links'
+import { buildLinkCensus, describeCensus } from '@/lib/link-census'
 import { swapUrlEverywhere, sameUrl } from '@/lib/html-url-swap'
-import { resolveCloakedLinkDetailed } from '@/lib/link-cloak'
+import { resolveCloakedLinkDetailed, cloakFallbackNote, type CloakResult } from '@/lib/link-cloak'
 
 /**
  * How many DISTINCT destinations one post may mint links for.
@@ -378,6 +379,18 @@ export async function POST(request: Request) {
       // forever: retrying is not a fix and counting them as generic failures
       // hides the one thing the creator can act on.
       const missingOnWp: string[] = []
+      // ── Why a link was left plain ────────────────────────────────────────
+      //
+      // Every extra link below goes through resolveCloakedLinkDetailed, which
+      // exists precisely so a caller can say why a cloak did not happen. This
+      // loop was throwing that away on a bare `continue`. A creator whose
+      // Geniuslink keys had stopped working could therefore run the fix, watch
+      // it report posts fixed, and get a page still covered in plain Amazon
+      // links, with the one system that knew the reason discarding it silently.
+      // That is the exact failure resolveCloakedLinkDetailed was written for,
+      // reintroduced by the caller.
+      const mintFailures: Record<string, number> = {}
+      let firstMintFailure: CloakResult | null = null
       for (const f of selectedFixes) {
         // Declared OUTSIDE the try so the catch can name the post. `row` is
         // scoped to the try, and a list of uuids is not something a creator can
@@ -474,7 +487,24 @@ export async function POST(request: Request) {
               // Only swap a link that actually came back in the chosen style.
               // A fallback here returns the destination unchanged, and writing
               // that back would count a conversion that did not happen.
-              if (!cloaked.cloaked || styleOfUrl(cloaked.url) !== chosenStyle) continue
+              //
+              // Skipping it is still right. Skipping it SILENTLY is what made a
+              // whole site of plain links look like a successful run, so the
+              // reason is kept and reported.
+              if (!cloaked.cloaked || styleOfUrl(cloaked.url) !== chosenStyle) {
+                // A plain string, not a CloakReason, because the second branch
+                // is not one: the link WAS cloaked, into a style the creator
+                // did not pick (a showcase destination falling to Passport for
+                // a Geniuslink creator). Widening CloakReason to hold it would
+                // put a case in cloakFallbackNote's switch that no cloak result
+                // can ever produce.
+                const why: string = !cloaked.cloaked
+                  ? cloaked.reason
+                  : `wrong-style-${styleOfUrl(cloaked.url) ?? 'unknown'}`
+                mintFailures[why] = (mintFailures[why] || 0) + 1
+                if (!firstMintFailure && !cloaked.cloaked) firstMintFailure = cloaked
+                continue
+              }
               const before = updated
               updated = swapUrlEverywhere(updated, extra.url, cloaked.url)
               if (updated !== before) extraConverted += extra.count
@@ -544,6 +574,12 @@ export async function POST(request: Request) {
         // other links converted" are different facts, and the second is the one
         // a creator who reported half his links staying plain is waiting for.
         extraLinksConverted,
+        // Links this run deliberately left plain, and why. A run that converted
+        // nothing because the creator's Geniuslink keys are dead must not read
+        // the same as a run that had nothing to convert.
+        mintFailures,
+        mintFailureCount: Object.values(mintFailures).reduce((a, b) => a + b, 0),
+        mintFailureNote: firstMintFailure ? cloakFallbackNote(firstMintFailure) : null,
         missingOnWp: missingOnWp.length,
         missingOnWpTitles: missingOnWp.slice(0, 8),
         chosenStyleLabel: STYLE_LABEL[chosenStyle],
@@ -731,12 +767,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No fixes selected.' }, { status: 400 })
     }
     void errors
+    // ── What is actually on the pages ────────────────────────────────────────
+    //
+    // Everything above this line counts POSTS, and each post is judged on ONE
+    // link. That is the right unit for "which posts can I offer to re-point",
+    // and it was being read as "how much of my site is in the style I chose".
+    // A creator was shown "1 of 4 would be re-pointed · 3 already correct" about
+    // a site whose visible pages carried raw Amazon links and no Geniuslinks at
+    // all, because on three of those posts the one link examined happened to be
+    // fine, or had no readable style, or the post had no video row and was never
+    // examined.
+    //
+    // The census reads every href in every scanned body. It cannot offer a fix
+    // and does not try; it says what is published. When its number disagrees
+    // with toFix, the disagreement is the useful part, so both are returned.
+    const census = buildLinkCensus(
+      rows.map((r) => ({ id: r.id, title: r.title, content: r.content })),
+      chosenStyle,
+    )
     return NextResponse.json({
       dryRun: true,
       mode,
       total: rows.length,
       toFix: candidates.length,
       unresolved: unresolved.length,
+      linkCensus: census,
+      censusNote: describeCensus(census, STYLE_LABEL[chosenStyle]),
       // What the scan actually established, so an empty preview can say which
       // kind of empty it is. "No broken links found" was true for a creator
       // whose every link was the wrong style, and it read as all-clear.

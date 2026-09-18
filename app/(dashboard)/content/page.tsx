@@ -2479,6 +2479,12 @@ export default function ContentPage() {
    *  links"), so the modal states what the links are being moved TO rather than
    *  leaving them to read it off two URLs. */
   const [affStyleLabel, setAffStyleLabel] = useState<string | null>(null)
+  // What is actually published, counted link by link. Separate state from the
+  // preview rows because the two answer different questions and the preview
+  // rows were being read as if they answered this one: a creator was told
+  // "3 already correct" about a site whose pages carried raw Amazon links,
+  // because on those three posts the single link examined happened to pass.
+  const [affCensusNote, setAffCensusNote] = useState<string | null>(null)
   /** How far the batched apply has got. Hundreds of posts take minutes, and a
    *  button that just sits there is how someone concludes it has hung. */
   const [affProgress, setAffProgress] = useState<{ done: number; total: number } | null>(null)
@@ -3724,6 +3730,7 @@ export default function ContentPage() {
         body: JSON.stringify({ dryRun: true, mode }),
       })
       const data = await res.json()
+      setAffCensusNote(typeof data.censusNote === 'string' ? data.censusNote : null)
       if (data.error) {
         setFixCatResult(`Error: ${data.error}`)
       } else if (!Array.isArray(data.preview) || data.preview.length === 0) {
@@ -3753,10 +3760,26 @@ export default function ContentPage() {
     const total = data.total ?? 0
     const style = (data.chosenStyleLabel as string) || 'your chosen link style'
     const stuck = (data.offStyleStuckCount as number) || 0
+    const census = (data.linkCensus || null) as { offStyle?: number; total?: number; postsAffected?: number } | null
+    const censusOff = typeof census?.offStyle === 'number' ? census.offStyle : 0
     const parts: string[] = []
     if (total === 0) return 'No published posts to scan yet.'
     parts.push(`Checked ${total} post${total !== 1 ? 's' : ''}.`)
-    if (stuck > 0) {
+    // AN ALL-CLEAR HAS TO SURVIVE THE CENSUS.
+    //
+    // Everything else in this function reasons about posts the scan OFFERED to
+    // fix, and a post it never examined (no source video) or examined at its one
+    // best link cannot contribute. On 17 Sep a creator was shown "1 of 4 would
+    // be re-pointed, 3 already correct" about a site whose live page carried six
+    // raw Amazon links and no Geniuslinks. The census counts every href in every
+    // body, so when it disagrees with the offer list, it wins and it goes first.
+    if (censusOff > 0 && stuck === 0) {
+      const affected = census?.postsAffected || 0
+      parts.push(
+        `${censusOff} link${censusOff === 1 ? '' : 's'} in your posts ${censusOff === 1 ? 'is' : 'are'} not ${style}, across ${affected} post${affected === 1 ? '' : 's'}, and this tool could not offer to change ${censusOff === 1 ? 'it' : 'them'} automatically.`,
+        'That usually means the post has no source video to re-resolve the product from, or the link could not be minted. Check your link credentials in Brand Profile, then run this again.',
+      )
+    } else if (stuck > 0) {
       // The important case. Nothing was fixed AND something is wrong.
       const names = (data.offStyleStuck as string[] | undefined)?.slice(0, 3).join(', ')
       parts.push(
@@ -3764,7 +3787,14 @@ export default function ContentPage() {
         'That usually means the link could not be minted. Check your link credentials in Brand Profile, then run this again.',
       )
     } else {
-      parts.push(`Every buy link works and already uses ${style}.`)
+      // Quote the measured number rather than asserting the state. "Every buy
+      // link works" was an assertion with nothing behind it; a count a creator
+      // can check against their own page is the same sentence with evidence.
+      parts.push(
+        census && typeof census.total === 'number' && census.total > 0
+          ? `All ${census.total} buy link${census.total === 1 ? '' : 's'} in your posts already use ${style}.`
+          : `No buy links found to change.`,
+      )
     }
     if (data.unresolved) parts.push(`${data.unresolved} could not be auto-resolved, so ${data.unresolved === 1 ? 'it was' : 'they were'} left alone.`)
     return parts.join(' ')
@@ -3798,6 +3828,11 @@ export default function ContentPage() {
     const missingTitles: string[] = []
     let pluginVersion: string | null = null
     let pluginLatest: string | null = null
+    // Links the run deliberately left plain because the cloak failed. The server
+    // used to discard this: a creator whose Geniuslink keys had stopped working
+    // saw "Done, 4 posts fixed" over a page still covered in raw Amazon links.
+    let mintFailed = 0
+    let mintNote: string | null = null
     try {
       for (let i = 0; i < fixes.length; i += BATCH) {
         const slice = fixes.slice(i, i + BATCH)
@@ -3819,6 +3854,8 @@ export default function ContentPage() {
         if (Array.isArray(data.missingOnWpTitles)) missingTitles.push(...data.missingOnWpTitles.map(String))
         if (typeof data.pluginVersion === 'string') pluginVersion = data.pluginVersion
         if (typeof data.pluginLatest === 'string') pluginLatest = data.pluginLatest
+        mintFailed += Number(data.mintFailureCount) || 0
+        if (!mintNote && typeof data.mintFailureNote === 'string' && data.mintFailureNote) mintNote = data.mintFailureNote
       }
       setAffProgress({ done: fixes.length, total: fixes.length })
 
@@ -3831,9 +3868,16 @@ export default function ContentPage() {
       const goneNote = missingOnWp
         ? ` ${missingOnWp} of them no longer exist on your WordPress site, so they were skipped: ${missingTitles.slice(0, 4).join('; ')}${missingTitles.length > 4 ? `; and ${missingTitles.length - 4} more` : ''}. Re-generate those from their video if you want them back.`
         : ''
+      // Links that were found, were the wrong style, and went back unchanged
+      // because the cloak could not be made. This is the difference between
+      // "there was nothing else to convert" and "everything else failed", and
+      // both used to print the same line.
+      const mintNoteText = mintFailed
+        ? ` ${mintFailed} other link${mintFailed === 1 ? '' : 's'} in those posts could NOT be converted and ${mintFailed === 1 ? 'was' : 'were'} left as ${mintFailed === 1 ? 'it is' : 'they are'}.${mintNote ? ` ${mintNote}` : ''}`
+        : ''
       if (fixed === 0) {
         const why = errors.length ? ` First error: ${errors[0].slice(0, 160)}` : ''
-        setFixCatResult(`Nothing was written. ${attempted} post${attempted !== 1 ? 's were' : ' was'} attempted and the link in the post body did not change.${why}${goneNote}`)
+        setFixCatResult(`Nothing was written. ${attempted} post${attempted !== 1 ? 's were' : ' was'} attempted and the link in the post body did not change.${why}${mintNoteText}${goneNote}`)
       } else {
         // NAME THE FAILURE. This branch printed a bare count while only the
         // nothing-was-written branch showed a reason, so a run that fixed 25 and
@@ -3876,7 +3920,7 @@ export default function ContentPage() {
             : unknownVersion
               ? ' The floating bar at the bottom of each post is drawn by the WordPress plugin, not the post body, so check it is on the latest version if that button still points somewhere else.'
               : ''
-        setFixCatResult(`Done. Fixed the affiliate link on ${fixed} post${fixed !== 1 ? 's' : ''}${failed}${missed}.${goneNote}${partialNote}${extraNote}${barNote}`)
+        setFixCatResult(`Done. Fixed the affiliate link on ${fixed} post${fixed !== 1 ? 's' : ''}${failed}${missed}.${goneNote}${partialNote}${extraNote}${mintNoteText}${barNote}`)
       }
     } catch {
       setFixCatResult(`Something went wrong after ${fixed} post${fixed !== 1 ? 's' : ''}. Those are saved; run it again to continue.`)
@@ -3885,6 +3929,7 @@ export default function ContentPage() {
       setAffProgress(null)
       setAffPreview(null)
       setAffStyleLabel(null)
+      setAffCensusNote(null)
     }
   }
 
@@ -5100,6 +5145,13 @@ export default function ContentPage() {
                         return `${lead}. Uncheck any you don't want to change. Nothing's saved yet.`
                       })()}
                 </p>
+                {/* The list above counts POSTS, one link each. This counts every
+                    link on every page. When the two disagree, the gap is the
+                    part the button will not fix, and hiding it is how a creator
+                    ends up applying a fix and still seeing raw Amazon links. */}
+                {affCensusNote && (
+                  <p className="text-[11px] text-[#b45309] dark:text-[#fbbf24] mt-1.5">{affCensusNote}</p>
+                )}
               </div>
               <button
                 onClick={() => !affApplying && setAffPreview(null)}

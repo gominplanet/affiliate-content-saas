@@ -61,7 +61,16 @@ export default function AdminUsersPage() {
   // their site. It exists because diagnosing a customer's broken links used to
   // mean asking the customer to click a button and read the answer back.
   const [linkBusy, setLinkBusy] = useState(false)
-  const [linkResult, setLinkResult] = useState<string | null>(null)
+  // Two separate facts, deliberately not merged into one sentence. `headline`
+  // is what is published (counted link by link); `detail` is what the repair
+  // tool can offer to change (counted post by post, one link per post). They
+  // routinely disagree, and the old card printed only the second one while
+  // reading like the first.
+  const [linkResult, setLinkResult] = useState<{
+    headline: string | null
+    detail: string
+    worst: Array<{ id: string; title: string; offStyle: number; total: number }>
+  } | null>(null)
   const [linkError, setLinkError] = useState<string | null>(null)
   const [looking, setLooking] = useState(false)
   const [lookupError, setLookupError] = useState<string | null>(null)
@@ -233,20 +242,43 @@ export default function AdminUsersPage() {
       // Every post is accounted for, not just the fixable ones. An account where
       // 120 posts all fall out for different reasons should not read the same as
       // one with nothing wrong.
+      //
+      // "already correct" is gone from this list on purpose. It counted posts
+      // whose ONE examined link was on-style, and it was the sentence that told
+      // an operator a site was fine while its pages carried raw Amazon links.
+      // The census above answers that question properly; this list is now only
+      // about why a post is not on offer.
       const why: string[] = []
-      if (sk.alreadyRight) why.push(`${sk.alreadyRight} already correct`)
-      if (sk.noVideo) why.push(`${sk.noVideo} no source video`)
+      if (sk.alreadyRight) why.push(`${sk.alreadyRight} not offered (the link checked was on-style)`)
+      if (sk.noVideo) why.push(`${sk.noVideo} no source video, never checked`)
       if (sk.noLink) why.push(`${sk.noLink} no link found`)
+      if (sk.couldNotRebuild) why.push(`${sk.couldNotRebuild} could not rebuild`)
       if (sk.wouldDowngrade) why.push(`${sk.wouldDowngrade} refused (would strip cloaking)`)
       if (stuck) why.push(`${stuck} off-style but unresolvable`)
       if (unresolved) why.push(`${unresolved} unresolved`)
 
-      setLinkResult(
-        (d.message ? `${d.message} ` : '') +
-        `Style: ${d.chosenStyleLabel || d.chosenStyle || 'unknown'} · ` +
-        `${toFix} of ${total ?? '?'} would be re-pointed` +
-        (why.length ? ` · ${why.join(' · ')}` : ''),
-      )
+      const census = (d.linkCensus || null) as {
+        offStyle?: number; postsAffected?: number
+        worst?: Array<{ id: string; title: string; offStyle: number; total: number }>
+      } | null
+      const worst = Array.isArray(census?.worst) ? census!.worst.slice(0, 5) : []
+      // When the census finds off-style links on more posts than the tool can
+      // offer to re-point, say so here rather than leaving an operator to
+      // subtract two numbers on different screens. That gap is the support
+      // question: those posts need a fix the button does not perform.
+      const affected = typeof census?.postsAffected === 'number' ? census.postsAffected : null
+      const gap = affected !== null && affected > toFix ? affected - toFix : 0
+
+      setLinkResult({
+        headline: typeof d.censusNote === 'string' ? d.censusNote : null,
+        detail:
+          (d.message ? `${d.message} ` : '') +
+          `Style: ${d.chosenStyleLabel || d.chosenStyle || 'unknown'} · ` +
+          `${toFix} of ${total ?? '?'} posts can be re-pointed by this tool` +
+          (gap ? ` · ${gap} more carry off-style links it will not touch` : '') +
+          (why.length ? ` · ${why.join(' · ')}` : ''),
+        worst,
+      })
     } catch (e) {
       setLinkError(e instanceof Error ? e.message : 'Preview failed')
     } finally { setLinkBusy(false) }
@@ -382,9 +414,23 @@ export default function AdminUsersPage() {
               </button>
             </div>
             {linkResult && (
-              <p className="text-[12px] mt-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--text-2,#1d1d1f)' }}>
-                {linkResult}
-              </p>
+              <div className="mt-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--text-2,#1d1d1f)' }}>
+                {/* What is on the pages, first and in the heavier weight,
+                    because it is the thing the creator can check by looking. */}
+                {linkResult.headline && (
+                  <p className="text-[12px] font-semibold">{linkResult.headline}</p>
+                )}
+                <p className={`text-[12px] ${linkResult.headline ? 'mt-1 opacity-80' : ''}`}>{linkResult.detail}</p>
+                {linkResult.worst.length > 0 && (
+                  <ul className="text-[11px] mt-1.5 space-y-0.5 opacity-80">
+                    {linkResult.worst.map((w) => (
+                      <li key={w.id} className="truncate">
+                        {w.offStyle} of {w.total} off-style · {w.title}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
             {linkError && (
               <p className="text-[12px] mt-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(245,158,11,0.10)', color: '#b45309' }}>
