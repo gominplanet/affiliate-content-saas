@@ -14,12 +14,19 @@
 // now finishes the job, and this file pins the two things that make that safe
 // rather than reckless.
 //
-//   1. It publishes ONLY what WordPress still holds as scheduled ('future').
-//      A 'draft' can be a human decision: a creator who pulled their own post
-//      down, an editor holding it back. Publishing over that would be MVP
-//      overruling a person, which is worse than the bug being fixed.
+//   1. What it may publish depends on the MODE, and getting that wrong in
+//      either direction is a real failure. 'future' is always safe. A 'draft'
+//      is safe ONLY in draft-flip mode, where MVP created the draft itself for
+//      our cron to flip; in any other mode a draft can be a human decision and
+//      publishing over it would be MVP overruling a person.
 //   2. One creator's backlog cannot take the whole tick, and cannot land forty
 //      articles on a blog in one minute.
+//
+// The first version of rule 1 refused every draft. That looked like caution and
+// was wrong: the creator who reported this is almost entirely draft-flip, so
+// the careful rule would have walked past all ten of his stuck posts while
+// reporting itself as a fix. Ten URLs fetched, ten 404s, and the mode column
+// in his own rows is what showed it.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -48,7 +55,7 @@ const CRON = live(read('app/api/cron/process-scheduled/route.ts'))
 function candidate(id: string, user: string, when: string): HealCandidate {
   return {
     id, user_id: user, title: id, wordpress_post_id: 1, wordpress_site_id: null,
-    wordpress_url: null, scheduled_for: when,
+    wordpress_url: null, scheduled_for: when, schedule_mode: 'wp-native',
   }
 }
 
@@ -57,21 +64,33 @@ function candidate(id: string, user: string, when: string): HealCandidate {
 // The single most important rule in the file, so it is a pure function with its
 // own test rather than a condition buried in a loop.
 {
-  check('a post WordPress still holds as scheduled is published',
-    mayAutoPublish('future') === true,
+  check('a post WordPress still holds as scheduled is published, in either mode',
+    mayAutoPublish('future', 'wp-native') === true && mayAutoPublish('future', 'draft-flip') === true,
     'this is the missed schedule, and publishing it carries out the creator\'s own instruction')
-  check('a draft is NEVER published automatically',
-    mayAutoPublish('draft') === false,
-    'a creator who unpublished their own post must not have MVP put it back')
-  check('nor is a pending post',
-    mayAutoPublish('pending') === false,
+
+  // THE CORRECTION. The first version of this refused every draft, which read
+  // as caution and was simply wrong for draft-flip: there the draft is MVP's
+  // own staging state and the flip is the step WE failed to take. The creator
+  // who reported this is almost entirely draft-flip, so the careful version of
+  // this rule would have walked past all ten of his stuck posts. Verified by
+  // fetching all ten URLs: every one a 404.
+  check('a draft-flip draft IS published, because that draft is our own unfinished work',
+    mayAutoPublish('draft', 'draft-flip') === true,
+    'MVP created it as a draft on purpose so our cron could flip it')
+  check('a draft in any other mode is NEVER published automatically',
+    mayAutoPublish('draft', 'wp-native') === false && mayAutoPublish('draft', null) === false
+      && mayAutoPublish('draft', '') === false && mayAutoPublish('draft', 'something-new') === false,
+    'there a draft can only be a human decision, and a creator who unpublished their own post must not have MVP put it back')
+  check('nor is a pending post, in any mode',
+    mayAutoPublish('pending', 'draft-flip') === false && mayAutoPublish('pending', 'wp-native') === false,
     'pending means somebody is holding it back on purpose')
   check('nor private, trashed or anything else WordPress invents later',
-    !mayAutoPublish('private') && !mayAutoPublish('trash') && !mayAutoPublish('inherit')
-      && !mayAutoPublish('') && !mayAutoPublish(null) && !mayAutoPublish(undefined),
-    'an allow-list of one, so a status nobody anticipated defaults to leaving it alone')
+    !mayAutoPublish('private', 'draft-flip') && !mayAutoPublish('trash', 'draft-flip')
+      && !mayAutoPublish('inherit', 'draft-flip') && !mayAutoPublish('', 'draft-flip')
+      && !mayAutoPublish(null, 'draft-flip') && !mayAutoPublish(undefined, 'draft-flip'),
+    'a short allow-list, so a status nobody anticipated defaults to leaving it alone')
   check('and an already-published post is not re-published',
-    mayAutoPublish('publish') === false,
+    mayAutoPublish('publish', 'draft-flip') === false && mayAutoPublish('publish', 'wp-native') === false,
     'it is handled as confirmed, not as work')
 }
 
@@ -121,6 +140,14 @@ function candidate(id: string, user: string, when: string): HealCandidate {
 // The whole family of bugs this belongs to is MVP believing a request worked
 // because it returned 200. The heal must not join it.
 {
+  // Asserted against the SELECT itself, not against the file. `schedule_mode`
+  // also appears in the interface, so a looser match passed with the column
+  // dropped from the query, which would have left the rule reading undefined
+  // for every row and quietly refusing Eric's posts again.
+  check('the mode is carried through the query, or the rule above cannot apply',
+    /\.select\('[^']*schedule_mode[^']*'\)/.test(HEAL_LIVE)
+      && /mayAutoPublish\(status, c\.schedule_mode\)/.test(HEAL_LIVE),
+    'a rule that reads a field nothing selects is a rule that never fires')
   check('the sweep re-reads the status after publishing',
     /const after = await wp\.getPostStatuses\(\[c\.wordpress_post_id\]\)/.test(HEAL_LIVE)
       && /after\.get\(c\.wordpress_post_id\) !== 'publish'/.test(HEAL_LIVE),

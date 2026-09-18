@@ -20,17 +20,26 @@
 // button every day for something he already told us to do. A schedule that needs
 // a human to finish it is not a schedule. So the cron finishes it.
 //
+// AND THERE ARE TWO WAYS TO GET STUCK, not one. The paragraph above is the
+// wp-native story and it is only half of it. In DRAFT-FLIP mode the post is
+// created as a draft for OUR OWN cron to flip, so a stuck draft-flip post is
+// our bug, not WordPress's. The creator above turned out to be almost entirely
+// draft-flip: the fix written for WP-Cron would have walked past all ten of his
+// posts. See mayAutoPublish.
+//
 // ── WHAT IT WILL AND WILL NOT TOUCH ────────────────────────────────────────
 //
-// ONLY status 'future'. That means WordPress is still holding the post AS
-// SCHEDULED and simply has not run. Publishing it carries out the creator's own
-// instruction, late.
+// 'future', in any mode. WordPress is holding the post AS SCHEDULED and simply
+// has not run. Publishing it carries out the creator's own instruction, late.
 //
-// NEVER 'draft' or 'pending'. Those can be a human decision: a creator who
-// unpublished their own post, or an editor holding it back. Auto-publishing over
-// that would be MVP overruling a person, which is a worse failure than the one
-// being fixed. Those are reported in the schedule list with a button, and the
-// creator decides.
+// 'draft', ONLY in draft-flip mode, where the draft is MVP's own staging state
+// and the flip is the step we failed to take.
+//
+// NEVER a draft in any other mode, and never 'pending'. Those can be a human
+// decision: a creator who unpublished their own post, or an editor holding it
+// back. Auto-publishing over that would be MVP overruling a person, which is a
+// worse failure than the one being fixed. They are reported in the schedule
+// list with a button, and the creator decides.
 //
 // A GRACE PERIOD, so this never races WordPress's own cron and publishes a post
 // a second time or a minute early.
@@ -63,6 +72,9 @@ export interface HealCandidate {
   wordpress_site_id: string | null
   wordpress_url: string | null
   scheduled_for: string
+  /** 'draft-flip' means MVP created it as a draft for OUR cron to flip, so a
+   *  lingering draft is our unfinished work rather than the creator's choice. */
+  schedule_mode: string | null
 }
 
 export interface HealOutcome {
@@ -108,9 +120,36 @@ export function takeFairly(
  * Exported because it is the whole safety rule and deserves its own test. The
  * mistake it guards against is publishing a post somebody deliberately pulled
  * down, which would be MVP overruling a human rather than serving one.
+ *
+ * ── WHY THE MODE MATTERS, AND WHY THE FIRST VERSION WAS WRONG ─────────────
+ *
+ * 'future' is safe in any mode: WordPress is holding the post AS SCHEDULED and
+ * simply has not run its cron.
+ *
+ * 'draft' is where this gets interesting, and the first version of this
+ * function refused it outright. That was right for wp-native, where a draft can
+ * only be a human decision, and WRONG for draft-flip, where the draft is MVP's
+ * OWN STAGING STATE. In draft-flip mode we deliberately create the post as a
+ * draft so that our cron can flip it to publish. A draft-flip post sitting at
+ * 'draft' past its time is not somebody's decision; it is our own unfinished
+ * work.
+ *
+ * Found by checking rather than reasoning. The creator who reported this has
+ * schedule_mode 'draft-flip' on nearly every stuck post, so the WP-Cron story
+ * did not apply to him at all, and the heal written for it would have walked
+ * straight past all ten of his posts. Ten URLs, fetched: every one a 404.
+ * app/api/admin/missed-schedules had said so in advance, in one line nobody
+ * had connected to this: "a late draft-flip post is ours and is a bug on
+ * this side."
  */
-export function mayAutoPublish(wpStatus: string | null | undefined): boolean {
-  return wpStatus === 'future'
+export function mayAutoPublish(
+  wpStatus: string | null | undefined,
+  scheduleMode: string | null | undefined,
+): boolean {
+  if (wpStatus === 'future') return true
+  // MVP put it in this state on purpose and then failed to take it out again.
+  if (wpStatus === 'draft' && scheduleMode === 'draft-flip') return true
+  return false
 }
 
 /**
@@ -129,7 +168,7 @@ export async function healMissedSchedules(
 
     const { data, error } = await admin
       .from('blog_posts')
-      .select('id,user_id,title,wordpress_post_id,wordpress_site_id,wordpress_url,scheduled_for')
+      .select('id,user_id,title,wordpress_post_id,wordpress_site_id,wordpress_url,scheduled_for,schedule_mode')
       .not('scheduled_for', 'is', null)
       .not('wordpress_post_id', 'is', null)
       .lt('scheduled_for', dueBefore)
@@ -183,7 +222,7 @@ export async function healMissedSchedules(
             continue
           }
 
-          if (!mayAutoPublish(status)) {
+          if (!mayAutoPublish(status, c.schedule_mode)) {
             // A draft or a pending post may be somebody's decision. Left alone,
             // and the schedule left in place so the creator keeps seeing it
             // reported with its Publish it now button.
