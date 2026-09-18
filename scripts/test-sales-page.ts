@@ -231,6 +231,83 @@ for (const { label, src } of AD_PAGES) {
     'it is the first thing this buyer thinks and the page has to say it out loud')
 }
 
+// ── the headings are visible to a dark-theme visitor ───────────────────────
+//
+// BOTH AD PAGES LOST THEIR HEADINGS AND NOBODY BUILDING THEM COULD SEE IT.
+// app/globals.css has a base rule:
+//
+//   h1, h2, h3, h4, h5, h6 { color: var(--text); }
+//
+// The ad pages are deliberately light-only and hardcode `bg-[#FAFAF8]
+// text-[#1D1D1F]` on their wrapper. A Tailwind text class on an ancestor does
+// not beat a base-layer rule targeting the heading element, so every heading
+// took var(--text). For a visitor whose app theme is dark that is #FAFAFA:
+// near-white headings on a near-white page.
+//
+// /run-your-storefront lost the whole first line of its H1, "Other tools help
+// you decide.", leaving only the gradient half. The page still looked designed,
+// just missing its argument, on a page we buy clicks for. Anyone checking in
+// light mode saw nothing wrong.
+//
+// Two rules, because fixing only the first moves the bug rather than removing
+// it: the wrapper restates the light palette as VARIABLES, and every heading
+// states its own colour, since these pages mix light sections with dark bands
+// and a single inherited value cannot be right for both.
+for (const { label, src } of AD_PAGES) {
+  check(`${label} restates the light palette as variables`,
+    /style=\{AD_PAGE_LIGHT\}/.test(src),
+    'a Tailwind text class on the wrapper does not beat `h1..h6 { color: var(--text) }`')
+
+  const heads = [...src.matchAll(/<h[123](\s[^>]*)?>/g)].map((m) => m[0])
+  check(`${label} has headings to check`, heads.length >= 4, String(heads.length))
+  const bare = heads.filter((h) => !/color:/.test(h))
+  check(`${label}: every heading states its own colour`,
+    bare.length === 0,
+    `${bare.length} heading(s) inherit the theme variable: ${bare.map((h) => h.slice(0, 60)).join(' | ')}`)
+
+  // A gradient headline painted with background-clip vanishes completely if the
+  // clip does not take. A plain `color` underneath costs nothing and degrades
+  // to a readable word instead of a gap.
+  for (const m of src.matchAll(/style=\{\{([^}]*WebkitTextFillColor[^}]*)\}\}/g)) {
+    check(`${label}: gradient text has a colour fallback`,
+      /color:\s*'#/.test(m[1]),
+      'without it, a failed background-clip renders nothing at all')
+  }
+}
+
+// ── the visitor who is ready to buy has somewhere to go ────────────────────
+//
+// Both pages sold the free trial and never said what the plan costs. Somebody
+// convinced on the first visit had one button, "start free", and had to leave
+// to find a price. Most of them do not come back.
+for (const { label, src } of AD_PAGES) {
+  check(`${label} shows the plan and its price`,
+    /<AdPlanCard/.test(src),
+    'a landing page that cannot be bought from is a landing page that banks on a second visit')
+  check(`${label} offers a paid route as well as the free one`,
+    /ctaHref="\/signup\?tier=[a-z]+&plan=paid"/.test(src))
+  check(`${label} keeps the free path beside it`,
+    /freeHref=\{CTA_HREF\}/.test(src),
+    'the ad promised no card; removing that door would be a bait and switch')
+}
+
+// ── the plan card quotes the product ───────────────────────────────────────
+{
+  const CARD = live(read('components/landing/AdPlanCard.tsx'))
+  check('the plan card reads its price from the tier',
+    /\$\{t\.price\}/.test(CARD) && !/\$\d{2,4}\b/.test(CARD.replace(/\$\{[^}]*\}/g, ' ')),
+    'a typed price on a page we pay for is a refund waiting')
+  check('and COMPUTES the annual saving',
+    /t\.price \* 12 - annual/.test(CARD),
+    '"Save $50" sat next to a real saving of $80 because somebody typed it')
+  check('a cap of zero is dropped rather than printed',
+    /filter\(\(r\) => r\.value !== 0\)/.test(CARD),
+    '"0 a month" reads as a broken number, not as a feature the plan lacks')
+  check('null is rendered as unlimited',
+    /return `Unlimited/.test(CARD),
+    'null means no cap; printing "null a month" or nothing at all both mislead')
+}
+
 // ── each ad page makes its OWN promise ──────────────────────────────────────
 //
 // The point of two pages is two ads. The failure that would waste the money is

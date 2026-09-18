@@ -42,6 +42,8 @@ import {
 } from 'lucide-react'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { TIERS } from '@/lib/tier'
+import { AD_PAGE_LIGHT } from '@/lib/ad-page-theme'
+import AdPlanCard from '@/components/landing/AdPlanCard'
 import { SALES_PAUSED } from '@/lib/sales-paused'
 import MetaTrack from '@/components/analytics/MetaTrack'
 
@@ -152,7 +154,7 @@ const FAQ: { q: string; a: string }[] = [
 export default function OwnYourBlogPage() {
   const hasProof = TESTIMONIALS.length > 0
   return (
-    <div className="min-h-screen bg-[#FAFAF8] text-[#1D1D1F] font-[Inter,system-ui,sans-serif]">
+    <div className="min-h-screen bg-[#FAFAF8] text-[#1D1D1F] font-[Inter,system-ui,sans-serif]" style={AD_PAGE_LIGHT}>
       <MetaTrack event="ViewContent" />
 
       {/* ── Hero ───────────────────────────────────────────────────────────
@@ -170,9 +172,9 @@ export default function OwnYourBlogPage() {
             <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
             For Amazon Influencers
           </span>
-          <h1 className="mt-5 text-[38px] sm:text-[56px] font-extrabold tracking-[-0.035em] leading-[1.0]">
+          <h1 className="mt-5 text-[38px] sm:text-[56px] font-extrabold tracking-[-0.035em] leading-[1.0]" style={{ color: '#1D1D1F' }}>
             Your Amazon storefront is rented.{' '}
-            <span style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+            <span style={{ color: '#C026D3', background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
               Build the one you own.
             </span>
           </h1>
@@ -189,7 +191,7 @@ export default function OwnYourBlogPage() {
       {/* ── The problem, stated once and plainly ──────────────────────────── */}
       <section className="px-6 lg:px-8 py-14" style={{ background: '#16091E' }}>
         <div className="max-w-3xl mx-auto text-center text-white">
-          <h2 className="text-[28px] sm:text-[38px] font-extrabold tracking-[-0.03em] leading-[1.08]">
+          <h2 className="text-[28px] sm:text-[38px] font-extrabold tracking-[-0.03em] leading-[1.08]" style={{ color: '#FFFFFF' }}>
             Everything you have built sits on land you rent.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
@@ -205,7 +207,7 @@ export default function OwnYourBlogPage() {
       <section className="px-6 lg:px-8 py-16 sm:py-20">
         <div className="max-w-5xl mx-auto">
           <div className="text-center max-w-2xl mx-auto">
-            <h2 className="text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.05]">
+            <h2 className="text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.05]" style={{ color: '#1D1D1F' }}>
               One video in. A week of work out.
             </h2>
             <p className="mt-4 text-[15.5px] text-black/60">
@@ -221,7 +223,7 @@ export default function OwnYourBlogPage() {
                   </span>
                   <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-black/35">Step {i + 1}</span>
                 </div>
-                <h3 className="text-[17px] font-bold tracking-tight">{s.title}</h3>
+                <h3 className="text-[17px] font-bold tracking-tight" style={{ color: '#1D1D1F' }}>{s.title}</h3>
                 <p className="mt-2 text-[14.5px] leading-relaxed text-black/65">{s.body}</p>
               </div>
             ))}
@@ -232,36 +234,68 @@ export default function OwnYourBlogPage() {
         </div>
       </section>
 
-      {/* ── Old way / new way ─────────────────────────────────────────────── */}
-      <section className="px-6 lg:px-8 py-14 bg-white border-y border-black/5">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-[28px] sm:text-[38px] font-extrabold tracking-[-0.03em] leading-[1.05] text-center">
-            Same videos. Completely different business.
-          </h2>
-          <div className="mt-9 grid md:grid-cols-2 gap-4">
-            <div className="rounded-2xl border border-black/10 p-5 sm:p-6 bg-[#FAFAF8]">
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em] mb-4 text-black/35">Today</p>
-              <ul className="flex flex-col gap-3.5">
-                {OLD_NEW.map((r) => (
-                  <li key={r.old} className="flex gap-2.5 text-[14px] leading-relaxed text-black/60">
-                    <XIcon size={15} className="mt-0.5 flex-shrink-0 text-[#ff3b30]" />
-                    <span>{r.old}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="rounded-2xl border p-5 sm:p-6" style={{ borderColor: 'rgba(124,58,237,0.25)', background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(192,38,211,0.04))' }}>
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em] mb-4 text-[#7C3AED]">With MVP</p>
-              <ul className="flex flex-col gap-3.5">
-                {OLD_NEW.map((r) => (
-                  <li key={r.mvp} className="flex gap-2.5 text-[14px] leading-relaxed">
-                    <Check size={15} className="mt-0.5 flex-shrink-0 text-[#34c759]" />
-                    <span>{r.mvp}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+      {/* ── Old way / new way ─────────────────────────────────────────────
+          PAIRED ROWS, not two lists side by side. The first version put four
+          problems in one card and four answers in another, and nothing tied a
+          problem to its answer: the reader had to count down both columns to
+          work out which line addressed which. On a page we pay for, a reader
+          who has to work it out stops reading. Each row is now one problem and
+          its answer, on one line, with an arrow between them. */}
+      <section className="px-6 lg:px-8 py-16 sm:py-20 bg-white border-y border-black/5">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center max-w-2xl mx-auto">
+            <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>
+              The difference
+            </span>
+            <h2 className="mt-3 text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.04]" style={{ color: '#1D1D1F' }}>
+              Same videos. Completely different business.
+            </h2>
+            <p className="mt-4 text-[16px] leading-relaxed" style={{ color: 'rgba(0,0,0,0.62)' }}>
+              You are not changing what you film. You are changing what happens to it afterwards.
+            </p>
           </div>
+
+          <div className="mt-11 flex flex-col gap-3">
+            {OLD_NEW.map((r) => (
+              <div key={r.old} className="grid md:grid-cols-[1fr_auto_1fr] items-stretch gap-3 md:gap-0 rounded-2xl border overflow-hidden" style={{ borderColor: 'rgba(0,0,0,0.09)' }}>
+                <div className="p-5 sm:p-6 bg-[#FAFAF8] flex gap-3">
+                  <XIcon size={17} className="mt-0.5 flex-shrink-0" style={{ color: '#ff3b30' }} />
+                  <div>
+                    <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] mb-1.5" style={{ color: 'rgba(0,0,0,0.38)' }}>Today</p>
+                    <p className="text-[15px] leading-relaxed" style={{ color: 'rgba(0,0,0,0.70)' }}>{r.old}</p>
+                  </div>
+                </div>
+                <div className="hidden md:flex items-center justify-center px-2 bg-[#FAFAF8]">
+                  <ArrowRight size={18} style={{ color: 'rgba(124,58,237,0.5)' }} />
+                </div>
+                <div className="p-5 sm:p-6 flex gap-3" style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.07), rgba(192,38,211,0.04))' }}>
+                  <Check size={17} className="mt-0.5 flex-shrink-0" style={{ color: '#34c759' }} />
+                  <div>
+                    <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] mb-1.5" style={{ color: '#7C3AED' }}>With MVP</p>
+                    <p className="text-[15px] leading-relaxed font-medium" style={{ color: '#1D1D1F' }}>{r.mvp}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── The plan, and a way to buy it ─────────────────────────────────
+          The page used to end every section with "start free" and never say
+          what the thing costs. Somebody ready to pay on the first visit had to
+          leave and find the pricing page, and most of them do not. */}
+      <section className="px-6 lg:px-8 py-16 sm:py-20">
+        <div className="max-w-3xl mx-auto">
+          <div className="text-center max-w-2xl mx-auto mb-10">
+            <h2 className="text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.04]" style={{ color: '#1D1D1F' }}>
+              What it costs, and what you get
+            </h2>
+            <p className="mt-4 text-[16px] leading-relaxed" style={{ color: 'rgba(0,0,0,0.62)' }}>
+              Start free with no card if you want to see it work first. If you already know you want it, skip the trial.
+            </p>
+          </div>
+          <AdPlanCard tier="pro" ctaHref="/signup?tier=pro&plan=paid" freeHref={CTA_HREF} freeLabel={CTA_LABEL} />
         </div>
       </section>
 
@@ -269,7 +303,7 @@ export default function OwnYourBlogPage() {
       {hasProof && (
         <section className="px-6 lg:px-8 py-16">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-[28px] sm:text-[38px] font-extrabold tracking-[-0.03em] text-center leading-[1.05]">
+            <h2 className="text-[28px] sm:text-[38px] font-extrabold tracking-[-0.03em] text-center leading-[1.05]" style={{ color: '#1D1D1F' }}>
               From creators already doing it
             </h2>
             <div className={`mt-9 gap-4 ${TESTIMONIALS.length === 1 ? 'max-w-xl mx-auto' : 'grid sm:grid-cols-2 lg:grid-cols-3'}`}>
@@ -299,7 +333,7 @@ export default function OwnYourBlogPage() {
       {/* ── The offer ─────────────────────────────────────────────────────── */}
       <section className="px-6 lg:px-8 py-16" style={{ background: 'linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)' }}>
         <div className="max-w-2xl mx-auto text-center text-white">
-          <h2 className="text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.05]">
+          <h2 className="text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.05]" style={{ color: '#FFFFFF' }}>
             Try it on the videos you have already filmed.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
@@ -329,7 +363,7 @@ export default function OwnYourBlogPage() {
       {/* ── Objections ────────────────────────────────────────────────────── */}
       <section className="px-6 lg:px-8 py-16">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-[28px] sm:text-[36px] font-extrabold tracking-[-0.03em] text-center leading-[1.05]">
+          <h2 className="text-[28px] sm:text-[36px] font-extrabold tracking-[-0.03em] text-center leading-[1.05]" style={{ color: '#1D1D1F' }}>
             The things people ask first
           </h2>
           <div className="mt-8 flex flex-col gap-3">
