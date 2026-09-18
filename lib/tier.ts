@@ -74,6 +74,11 @@ export const TIERS = {
     label: 'Free',
     price: 0,
     regularPrice: 0,
+    /** Yearly price in USD, or null when this tier is not sold yearly. Read by
+     *  the pricing page; the Stripe price id it maps to lives in
+     *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to
+     *  appear, so a price shown here can never be one Stripe cannot charge. */
+    annualPrice: null as number | null,
     /** Hard monthly AI-spend ceiling (USD of real ai_usage cost). When an
      *  account crosses this in a calendar month, generation is paused with an
      *  upgrade nudge — a circuit breaker on top of the per-feature caps,
@@ -176,6 +181,11 @@ export const TIERS = {
     label: 'Creator',
     price: 49,
     regularPrice: 99,
+    /** Yearly price in USD, or null when this tier is not sold yearly. Read by
+     *  the pricing page; the Stripe price id it maps to lives in
+     *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to
+     *  appear, so a price shown here can never be one Stripe cannot charge. */
+    annualPrice: null as number | null,
     /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial.
      *  Sized ABOVE the cost of the full postsPerMonth allotment (image-heavy
      *  posts run ~$1.7 each → 20 posts ≈ $34) so postsPerMonth is the real
@@ -265,6 +275,11 @@ export const TIERS = {
     label: 'Amazon',
     price: 99,
     regularPrice: 179,
+    /** Yearly price in USD, or null when this tier is not sold yearly. Read by
+     *  the pricing page; the Stripe price id it maps to lives in
+     *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to
+     *  appear, so a price shown here can never be one Stripe cannot charge. */
+    annualPrice: 999 as number | null,
     /** Every render on this tier is gpt-image at MEDIUM quality (~$0.06), not
      *  $0.19: gfxQuality in generate-thumbnail is tier-gated and high is the Pro
      *  perk. Until 2026-09-14 the telemetry logged the model name rather than
@@ -376,6 +391,11 @@ export const TIERS = {
     label: 'Studio',
     price: 99,
     regularPrice: 199,
+    /** Yearly price in USD, or null when this tier is not sold yearly. Read by
+     *  the pricing page; the Stripe price id it maps to lives in
+     *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to
+     *  appear, so a price shown here can never be one Stripe cannot charge. */
+    annualPrice: null as number | null,
     /** Monthly AI-spend circuit breaker — sized above the full 45-post
      *  allotment cost (~$77) so postsPerMonth is the real limit and this only
      *  catches runaway spend. Raised 40→90 on 2026-07-13. */
@@ -455,6 +475,11 @@ export const TIERS = {
     label: 'Pro',
     price: 199,
     regularPrice: 399,
+    /** Yearly price in USD, or null when this tier is not sold yearly. Read by
+     *  the pricing page; the Stripe price id it maps to lives in
+     *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to
+     *  appear, so a price shown here can never be one Stripe cannot charge. */
+    annualPrice: 1999 as number | null,
     /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial.
      *  185 -> 130 on 2026-09-14, on measured costs rather than estimates.
      *
@@ -562,6 +587,11 @@ export const TIERS = {
     label: 'Admin',
     price: 0,
     regularPrice: 0,
+    /** Yearly price in USD, or null when this tier is not sold yearly. Read by
+     *  the pricing page; the Stripe price id it maps to lives in
+     *  STRIPE_PRICE_<TIER>_ANNUAL. Both must be present for a yearly option to
+     *  appear, so a price shown here can never be one Stripe cannot charge. */
+    annualPrice: null as number | null,
     /** Even internal/admin accounts get a ceiling — this is the lever that
      *  catches the uncapped-testing overnight-$60 case. Generous, not infinite. */
     monthlyAiSpendCeilingUsd: 500 as number | null,

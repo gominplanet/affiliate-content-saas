@@ -1,3 +1,4 @@
+import { TIERS } from '@/lib/tier'
 import Stripe from 'stripe'
 
 let _stripe: Stripe | null = null
@@ -131,4 +132,37 @@ export function creditsForPriceId(priceId: string | null | undefined): number {
 // Payment Link's metadata. Checkout now refuses to start on an invalid price.
 export function isValidPriceId(v: string | null | undefined): v is string {
   return typeof v === 'string' && /^price_[A-Za-z0-9]+$/.test(v.trim())
+}
+
+/**
+ * Can this tier be BOUGHT yearly right now, and at what price?
+ *
+ * Both halves have to line up: a yearly amount in lib/tier (what we show) and a
+ * Stripe price id in the env (what we can charge). Showing $999 while the env
+ * var is unset would put a price on the page that checkout cannot honour, and
+ * the customer would be charged $99 a month under a button that said otherwise.
+ * So this returns null unless both exist, and every surface asks it rather than
+ * reading either half alone.
+ */
+export function annualOfferFor(tier: string): { priceId: string; annualPrice: number; monthlyPrice: number; savingUsd: number; savingPct: number } | null {
+  const priceId = annualPriceIdFor(tier)
+  if (!priceId) return null
+  // Imported lazily through a local require-free lookup to avoid a cycle:
+  // lib/tier does not import lib/stripe, and it must stay that way.
+  const t = (TIERS as Record<string, { price?: number; annualPrice?: number | null }>)[tier]
+  const annualPrice = t?.annualPrice ?? null
+  const monthlyPrice = t?.price ?? 0
+  if (annualPrice == null || monthlyPrice <= 0) return null
+  // THE SAVING IN DOLLARS, not in months, and the difference matters.
+  //
+  // Both plans land just UNDER two months: $199 x 12 is $2388 against $1999, a
+  // saving of $389, which is 1.95 months. Rounding that to "2 months free"
+  // overstates it by three days' worth and is the kind of number a customer can
+  // check with a calculator. Rounding it DOWN to "1 month free" understates it
+  // by almost half and sells the offer short. The dollar figure is exact, it is
+  // the bigger number, and nobody has to trust our arithmetic.
+  const yearlyIfMonthly = monthlyPrice * 12
+  const savingUsd = yearlyIfMonthly - annualPrice
+  const savingPct = Math.round((savingUsd / yearlyIfMonthly) * 100)
+  return { priceId, annualPrice, monthlyPrice, savingUsd, savingPct }
 }

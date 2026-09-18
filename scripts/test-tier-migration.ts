@@ -35,7 +35,14 @@ const NUMERIC_CAPS = Object.keys(TIERS.pro as Caps).filter(k => {
 // price and the spend ceiling are not allowances — a higher plan costing more
 // is the point, and a ceiling is a backstop rather than something a customer
 // is promised.
-}).filter(k => k !== 'price' && k !== 'regularPrice' && k !== 'monthlyAiSpendCeilingUsd')
+//
+// annualPrice joins them, and for a sharper reason than "it is a price". Null
+// here means "not sold yearly", while null everywhere else in this comparison
+// means "unlimited". Left in, a tier with no yearly price reads as having an
+// unlimited one, and every tier that HAS a yearly price looks like a downgrade
+// from it. The convention is right for allowances and simply does not apply to
+// an optional price.
+}).filter(k => k !== 'price' && k !== 'regularPrice' && k !== 'annualPrice' && k !== 'monthlyAiSpendCeilingUsd')
 
 /** Everything `to` takes away from someone currently on `from`. null = unlimited. */
 function losses(from: Tier, to: Tier): string[] {

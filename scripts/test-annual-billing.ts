@@ -172,6 +172,44 @@ const days = (n: number) => n * 24 * 60 * 60 * 1000
     'charging monthly under a yearly button is a small lie somebody needs to know about')
 }
 
+
+// ── the pricing page cannot advertise what it cannot charge ─────────────────
+//
+// The failure this section guards is a yearly price on a card whose button
+// charges monthly, which is worse than having no yearly option at all: the
+// customer sees $999, presses buy, and is billed $99 a month.
+{
+  const PRICING = live(read('app/pricing/page.tsx'))
+  const BUTTON = live(read('app/pricing/CheckoutButton.tsx'))
+  const STRIPE_RAW = read('lib/stripe.ts')
+
+  check('the yearly offer is only shown when both halves exist',
+    /const priceId = annualPriceIdFor\(tier\)\n\s*if \(!priceId\) return null/.test(STRIPE_RAW)
+      && /if \(annualPrice == null \|\| monthlyPrice <= 0\) return null/.test(STRIPE_RAW),
+    'an amount in lib/tier without a Stripe id is a price we cannot charge')
+  check('and the page asks that one question rather than reading either half',
+    /annualOfferFor\(plan\.tier\)/.test(PRICING))
+
+  check('monthly is the default view',
+    /const annual = sp\.billing === 'annual'/.test(PRICING),
+    'anything but the exact string, including a mangled URL, must show monthly')
+  check('the toggle disappears entirely when nothing is sellable yearly',
+    /if \(sellable\.length === 0\) return null/.test(PRICING))
+  check('the chosen interval reaches the checkout button',
+    /interval=\{annual \? 'year' : 'month'\}/.test(PRICING))
+  check('and the button sends it, defaulting to month',
+    /interval: interval \?\? 'month'/.test(BUTTON))
+  check('a logged-out buyer keeps their choice through signup',
+    /billing=annual/.test(BUTTON),
+    'otherwise they pick yearly, sign up, and are quietly put on monthly')
+
+  check('the saving is stated in dollars, which is exact',
+    /Save up to \$\{best\}/.test(PRICING))
+  check('and never as "2 months free", which both plans fall just short of',
+    !/2 months free/i.test(PRICING) && !/two months free/i.test(PRICING),
+    '$199 x 12 less $1999 is $389, which is 1.95 months, and a customer can check that')
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)

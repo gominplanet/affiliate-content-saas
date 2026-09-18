@@ -17,6 +17,7 @@ import { CheckCircle, Zap, PackageSearch, Radar, ShoppingBag, Store, Wand2, Layo
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import NextImage from 'next/image'
 import { CheckoutButton } from './CheckoutButton'
+import { annualOfferFor } from '@/lib/stripe'
 import MetaTrack from '@/components/analytics/MetaTrack'
 import { TrackPicker, TrackCompare } from '@/components/pricing/TrackPicker'
 import { TIERS } from '@/lib/tier'
@@ -119,7 +120,24 @@ const plans: PlanExt[] = [
   },
 ]
 
-export default function PricingPage() {
+/** MONTHLY IS THE DEFAULT, AND THE CHOICE LIVES IN THE URL.
+ *
+ *  This page is a Server Component on purpose: the whole grid ships as HTML and
+ *  only the checkout button hydrates. A React toggle would have dragged the
+ *  grid back into the client bundle on the one route that drives conversions.
+ *
+ *  So the toggle is two links and the server renders the chosen view. It costs
+ *  no JavaScript, it works before hydration, and /pricing?billing=annual is a
+ *  real address an ad can point at. */
+export default async function PricingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ billing?: string }>
+}) {
+  const sp = (await searchParams) ?? {}
+  // Anything other than the exact string means monthly, so a mangled or
+  // truncated URL shows the safer of the two rather than a year up front.
+  const annual = sp.billing === 'annual'
   return (
     <div className="min-h-screen bg-[#FAFAFA] dark:bg-[#0A0A0B] flex flex-col items-center px-4 py-16">
       {/* Reaching pricing is the first real buying signal on the site, and it
@@ -210,6 +228,47 @@ export default function PricingPage() {
           words and the page looked broken on the one screen that has to sell.
           Driving it off plans.length means freezing or adding a plan lays itself
           out instead of needing this line remembered. */}
+      {/* ── MONTHLY / YEARLY ───────────────────────────────────────────────
+          Two links, not a React toggle, so the grid below stays server
+          rendered and this costs no JavaScript on the page that sells.
+
+          It renders only when a yearly price is genuinely sellable: an amount
+          in lib/tier AND a Stripe id in the env. A toggle that appears before
+          the env var is set would show $999 on a card whose button charges $99
+          a month, which is the worst of both. Nothing to hide, nothing to
+          explain: without the env var the page is exactly what it was. */}
+      {(() => {
+        const sellable = plans.filter((p) => annualOfferFor(p.tier))
+        if (sellable.length === 0) return null
+        // The biggest saving on offer, so the label promises what at least one
+        // plan actually delivers rather than an average nobody can buy.
+        const best = Math.max(...sellable.map((p) => annualOfferFor(p.tier)!.savingUsd))
+        const base = 'px-4 py-2 rounded-lg text-sm font-semibold transition-colors'
+        return (
+          <div className="flex justify-center mb-8">
+            <div className="inline-flex items-center gap-1 p-1 rounded-xl border bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10">
+              <a
+                href="/pricing#plans"
+                aria-current={!annual ? 'page' : undefined}
+                className={`${base} ${!annual ? 'bg-[#7C3AED] text-white' : 'text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-white'}`}
+              >
+                Monthly
+              </a>
+              <a
+                href="/pricing?billing=annual#plans"
+                aria-current={annual ? 'page' : undefined}
+                className={`${base} inline-flex items-center gap-2 ${annual ? 'bg-[#7C3AED] text-white' : 'text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-white'}`}
+              >
+                Yearly
+                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${annual ? 'bg-white/20 text-white' : 'bg-[#34c759]/12 text-[#248a3d]'}`}>
+                  Save up to ${best}
+                </span>
+              </a>
+            </div>
+          </div>
+        )
+      })()}
+
       <div id="plans" className={`grid gap-5 w-full mx-auto scroll-mt-8 items-start ${PLAN_GRID[plans.length] ?? PLAN_GRID[4]}`}>
         {plans.map((plan) => (
           <div
@@ -249,20 +308,44 @@ export default function PricingPage() {
               </div>
             )}
             <p className={`text-sm font-semibold mb-1 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>{plan.label}</p>
-            <div className="flex items-end gap-1.5 mb-1">
-              <span className="text-4xl font-bold tracking-tight">${plan.price}</span>
-              {plan.price > 0 && (
-                <span className={`text-sm mb-1.5 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>/month</span>
-              )}
-            </div>
-            {plan.regularPrice > plan.price && (
-              <p className={`text-xs mb-1 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>
-                <span className="line-through">${plan.regularPrice}/month</span>{' '}
-                <span className={plan.highlight ? 'text-yellow-300 font-semibold' : 'text-[#34c759] font-semibold'}>
-                  Save ${plan.regularPrice - plan.price}
-                </span>
-              </p>
-            )}
+            {(() => {
+              // The yearly offer for THIS plan, or null when it has no annual
+              // price or no Stripe id for one. Asked per card rather than once
+              // for the page, so a tier without a yearly price keeps showing its
+              // monthly one instead of a blank.
+              const offer = annual ? annualOfferFor(plan.tier) : null
+              return offer ? (
+                <>
+                  <div className="flex items-end gap-1.5 mb-1">
+                    <span className="text-4xl font-bold tracking-tight">${offer.annualPrice}</span>
+                    <span className={`text-sm mb-1.5 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>/year</span>
+                  </div>
+                  <p className={`text-xs mb-1 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>
+                    <span className="line-through">${offer.monthlyPrice * 12}/year</span>{' '}
+                    <span className={plan.highlight ? 'text-yellow-300 font-semibold' : 'text-[#34c759] font-semibold'}>
+                      Save ${offer.savingUsd}
+                    </span>
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-end gap-1.5 mb-1">
+                    <span className="text-4xl font-bold tracking-tight">${plan.price}</span>
+                    {plan.price > 0 && (
+                      <span className={`text-sm mb-1.5 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>/month</span>
+                    )}
+                  </div>
+                  {plan.regularPrice > plan.price && (
+                    <p className={`text-xs mb-1 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>
+                      <span className="line-through">${plan.regularPrice}/month</span>{' '}
+                      <span className={plan.highlight ? 'text-yellow-300 font-semibold' : 'text-[#34c759] font-semibold'}>
+                        Save ${plan.regularPrice - plan.price}
+                      </span>
+                    </p>
+                  )}
+                </>
+              )
+            })()}
             <p className={`text-sm mb-2 font-medium ${plan.highlight ? 'text-blue-100' : 'text-[#7C3AED]'}`}>{plan.limit}</p>
             <p className={`text-sm mb-6 ${plan.highlight ? 'text-blue-100' : 'text-[#6e6e73] dark:text-[#ebebf0]'}`}>{plan.description}</p>
 
@@ -280,6 +363,7 @@ export default function PricingPage() {
                 card around it stays server-rendered. */}
             <CheckoutButton
               tier={plan.tier}
+              interval={annual ? 'year' : 'month'}
               highlight={plan.highlight}
               salesPaused={SALES_PAUSED}
               ctaLabel={plan.ctaLabel}

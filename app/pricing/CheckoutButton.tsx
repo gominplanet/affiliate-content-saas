@@ -48,8 +48,12 @@ export function CheckoutButton({
   salesPaused,
   ctaLabel,
   intent,
+  interval,
 }: {
   tier: Tier
+  /** 'year' buys the annual price. Absent means monthly, which is the default
+   *  everywhere: the yearly view is only reached by an explicit choice. */
+  interval?: 'month' | 'year'
   /** Drives the colour scheme — Pro card uses a light-on-dark button, others
    *  use the standard primary-blue button. Same shape as the old inline code. */
   highlight: boolean
@@ -129,7 +133,7 @@ export function CheckoutButton({
         // Logged-out + a paid plan → the combined paid signup (email+password
         // then straight to Stripe, no email-confirmation interrupt). The signup
         // form reads ?tier and runs /api/auth/signup-paid.
-        router.push(`/signup?tier=${tier}`)
+        router.push(`/signup?tier=${tier}${interval === 'year' ? '&billing=annual' : ''}`)
         return
       }
       const res = await fetch('/api/stripe/checkout', {
@@ -140,6 +144,7 @@ export function CheckoutButton({
         // and we must not drop the affiliate referral/coupon.
         body: JSON.stringify({
           tier,
+          interval: interval ?? 'month',
           referral: referral ?? window.Rewardful?.referral ?? null,
           couponId: couponId ?? window.Rewardful?.coupon?.id ?? null,
         }),
