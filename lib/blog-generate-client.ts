@@ -1,4 +1,9 @@
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+
+/** How long the synchronous generate fallback may take. Matches the generation
+ *  worker's RUNNER_ABORT_MS and schedule-publish's GENERATE_BUDGET_MS: the same
+ *  route, the same work, so the same budget. */
+const SYNC_GENERATE_BUDGET_MS = 290_000
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // Client helper for blog generation (Phase 4 increment C). Lets the UI use the
@@ -64,6 +69,17 @@ export async function generateBlogRequest(body: Record<string, any>, signal?: Ab
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal,
+      // NAMED, because `signal` here is optional and every call site today
+      // omits it. An undefined signal is no signal, so fetchWithTimeout applies
+      // its 30 second default to a route that takes about four minutes, and
+      // this fallback would abort mid-generation while the route carried on
+      // server-side and published anyway. That is exactly how the auto-pilot
+      // worker broke on 10 Sep and /api/blog/schedule-publish on 17 Sep.
+      //
+      // Latent rather than live: this path only runs when the async queue is
+      // switched off. It was found by scripts/test-internal-call-budget on the
+      // day that guard was written, which is the whole point of the guard.
+      timeoutMs: SYNC_GENERATE_BUDGET_MS,
     })
     // Guard: if the server crashed BEFORE the route ran (Vercel 500/504, a
     // redirect to the HTML login page, etc.) the body is HTML, not JSON.
