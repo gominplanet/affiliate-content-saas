@@ -13,6 +13,8 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { Send, Check, AlertCircle, X as CloseIcon, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useConnectedPlatforms, useSelectedPlatforms } from '@/components/social/useConnectedPlatforms'
+import PlatformPicker from '@/components/social/PlatformPicker'
 
 export interface WalmartQuickPostItem { itemId: string; name: string; imageUrl: string | null; url: string }
 interface PostResult { platform: string; ok: boolean; url?: string; error?: string }
@@ -29,7 +31,12 @@ const QUICK_PLATFORMS: { key: string; label: string }[] = [
 export default function WalmartQuickPostModal({
   item, onClose, initialCaption = '',
 }: { item: WalmartQuickPostItem; onClose: () => void; initialCaption?: string }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set(QUICK_PLATFORMS.map((p) => p.key)))
+  // Only the creator's CONNECTED socials open ticked. This used to select all
+  // six, so anyone connected to one network unticked five before every post,
+  // and forgetting meant five red "failed" rows for five accounts that were
+  // never connected. See components/social/useConnectedPlatforms.
+  const conn = useConnectedPlatforms()
+  const [selected, setSelected] = useSelectedPlatforms(QUICK_PLATFORMS.map((p) => p.key), conn)
   const [caption, setCaption] = useState(initialCaption)
   const [posting, setPosting] = useState(false)
   const [results, setResults] = useState<PostResult[] | null>(null)
@@ -79,17 +86,10 @@ export default function WalmartQuickPostModal({
             <div className="text-sm font-medium line-clamp-3">{item.name}</div>
           </div>
 
-          <div>
-            <div className="text-xs font-semibold text-muted-foreground mb-1.5">Post to</div>
-            <div className="flex flex-wrap gap-2">
-              {QUICK_PLATFORMS.map((p) => (
-                <button key={p.key} onClick={() => toggle(p.key)}
-                  className={`text-sm rounded-lg border px-3 py-1.5 ${selected.has(p.key) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background'}`}>
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <PlatformPicker
+            options={QUICK_PLATFORMS} selected={selected} onToggle={toggle}
+            known={conn.known} connected={conn.connected}
+          />
 
           <div>
             <div className="text-xs font-semibold text-muted-foreground mb-1.5">Caption <span className="font-normal">(leave blank to auto-write)</span></div>

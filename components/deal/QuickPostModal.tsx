@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button'
 import { InfoTip } from '@/components/ui/InfoTip'
 import SavedProductImage, { useSavedProductImage } from '@/components/product/SavedProductImage'
 import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
+import { useConnectedPlatforms, useSelectedPlatforms } from '@/components/social/useConnectedPlatforms'
+import PlatformPicker from '@/components/social/PlatformPicker'
 
 // Sensible defaults: 2 hours out, on the minute. Split into date (YYYY-MM-DD)
 // and time (HH:mm) for the two separate pickers, both in the viewer's local time.
@@ -92,7 +94,18 @@ export default function QuickPostModal({
     ...(pinterestEnabled ? [{ key: 'pinterest', label: 'Pinterest' }] : []),
     ...(instagramEnabled ? [{ key: 'instagram', label: 'Instagram' }] : []),
   ]
-  const [selected, setSelected] = useState<Set<string>>(new Set(platformOptions.map((p) => p.key)))
+  // ── Only tick what is actually connected ─────────────────────────────────
+  // This used to open with every platform selected. A creator with one
+  // connected network unselected six buttons before every post, and forgetting
+  // meant the post went out to the one that works and came back with six red
+  // "failed" rows for six accounts that were never connected. The plan decides
+  // what APPEARS here (Pinterest and Instagram are tier-gated); the creator's
+  // connections decide what is TICKED. An unconnected platform stays clickable
+  // on purpose, so if the connection check is ever wrong it costs a click
+  // rather than a channel.
+  const conn = useConnectedPlatforms()
+  const offeredKeys = platformOptions.map((p) => p.key)
+  const [selected, setSelected] = useSelectedPlatforms(offeredKeys, conn)
   const [story, setStory] = useState(false)
   const [caption, setCaption] = useState(initialCaption)
   const [posting, setPosting] = useState(false)
@@ -253,15 +266,10 @@ export default function QuickPostModal({
           )}
 
           <div>
-            <div className="text-xs font-semibold text-muted-foreground mb-1.5">Post to</div>
-            <div className="flex flex-wrap gap-2">
-              {platformOptions.map((p) => (
-                <button key={p.key} onClick={() => toggle(p.key)}
-                  className={`text-sm rounded-lg border px-3 py-1.5 ${selected.has(p.key) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background'}`}>
-                  {p.label}
-                </button>
-              ))}
-            </div>
+            <PlatformPicker
+              options={platformOptions} selected={selected} onToggle={toggle}
+              known={conn.known} connected={conn.connected}
+            />
             {pinterestEnabled && selected.has('pinterest') && (
               <p className="text-[11px] text-muted-foreground mt-1.5">Pinterest gets its own designed pin. Pinterest does not accept affiliate redirect links, so the pin points at your Link in Bio shop page and the product is added there with your affiliate link on it.</p>
             )}
