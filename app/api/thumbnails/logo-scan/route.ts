@@ -30,6 +30,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { spendGate } from '@/lib/ai-spend'
 import { normalizeTier } from '@/lib/tier'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { LOGO_SCAN_PROMPT, readLogoReply, summariseLogoScan, type LogoFinding } from '@/lib/logo-scan'
@@ -76,6 +77,11 @@ export async function POST(request: Request) {
 
   const { data: intg } = await client.from('integrations').select('tier').eq('user_id', ownerId).maybeSingle()
   const tier = normalizeTier(intg?.tier)
+
+  // Monthly AI-spend circuit breaker. Up to MAX_LIMIT vision calls per run,
+  // and nothing capped how many runs an account could kick off.
+  const spendBlocked = await spendGate(ownerId, tier)
+  if (spendBlocked) return spendBlocked
 
   const { data: rows, error } = await client
     .from('blog_posts')

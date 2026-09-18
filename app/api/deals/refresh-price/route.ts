@@ -13,6 +13,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { spendGate } from '@/lib/ai-spend'
 import { fetchKeepaProductStats, buildPriceSnapshotHtml } from '@/services/keepa'
 import { replacePriceSnapshot } from '@/lib/price-snapshot-swap'
 import { scrubBanned } from '@/lib/scrub'
@@ -54,6 +55,16 @@ export async function POST(request: Request) {
     const pct = a.pctBelowAvg90
 
     const oldContent = post.content as string
+
+    // Monthly AI-spend circuit breaker. Cheap per call, but nothing stopped a
+    // loop over every deal post from running this unbounded.
+    const { data: tierRow } = await sb
+      .from('integrations')
+      .select('tier')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    const spendBlocked = await spendGate(user.id, tierRow?.tier)
+    if (spendBlocked) return spendBlocked
 
     // One cheap Haiku pass: correct ONLY the money figures, keep everything else
     // byte-identical (tags, shortcodes, links, images, structure).
