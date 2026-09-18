@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishPinForPost, PinPublishError } from '@/lib/pin-publish'
+import { isDesignedPin, describePinDowngrade, pinDesignTag } from '@/lib/pin-design-outcome'
 import { buildPinAssets } from '@/lib/pin-assets'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
@@ -88,6 +89,10 @@ export async function POST(request: NextRequest) {
   // the raw landscape thumbnail — the exact off-brand pin a creator reported.
   let effImageBase64 = imageBase64
   let effMediaType = mediaType
+  // Null when the caller supplied a pre-composed image: we did not make it, so
+  // we do not know how it was made and must not guess. Recording a confident
+  // 'art-director' there would rebuild the exact blind spot being closed.
+  let builtDesign: string | null = null
   if (!effImageBase64 && hasRow) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -96,6 +101,15 @@ export async function POST(request: NextRequest) {
       if (fullPost) {
         const a = await buildPinAssets(fullPost, { userId: user.id, tier: null }, { artDirector: true, headlineStyle: await getAccountHeadlineStyle(supabase, user.id) })
         if (a.imageBase64) { effImageBase64 = a.imageBase64; effMediaType = a.mediaType }
+        // Record what we actually built, same as the two crons. This route is
+        // the manual + bulk path and it had the identical blind spot: it asked
+        // for the designed pin, took whatever bytes came back, and wrote down
+        // nothing. A pin posted from here looked exactly like a designed one in
+        // the database.
+        builtDesign = pinDesignTag(a.outcome)
+        if (!isDesignedPin(a.outcome.design)) {
+          console.warn(`[pinterest-post] post ${postId}: shipping ${builtDesign}. ${describePinDowngrade(a.outcome, true) ?? ''}`)
+        }
       }
     } catch { /* compose failed — fall back to fallbackImageUrl (thumbnail) */ }
   }
@@ -122,7 +136,9 @@ export async function POST(request: NextRequest) {
     // blog_posts row (a synthetic WP-only post has no id to write to).
     if (hasRow) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', postId).eq('user_id', user.id)
+      await supabase.from('blog_posts')
+        .update(builtDesign ? { pinterest_pin_id: pinId, pin_design: builtDesign } : { pinterest_pin_id: pinId })
+        .eq('id', postId).eq('user_id', user.id)
       // Record the canonical pin URL so the brand-recap links straight to it.
       await recordSocialPermalink(supabase, postId, 'pinterest', socialPermalink.pinterest(pinId))
       await incrementSocialCount(supabase, postId, 'pinterest')

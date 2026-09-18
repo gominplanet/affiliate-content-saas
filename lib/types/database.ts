@@ -191,6 +191,10 @@ export type Database = {
           linkedin_post_id: string | null
           meta_description: string | null
           pinterest_pin_id: string | null
+          /** Migration 344. How the pin was produced, e.g. art-director or
+           *  composite-thumbnail:no-product-reference. Null means the pin
+           *  predates the column, NOT that it was designed. */
+          pin_design: string | null
           post_type: string
           published_at: string | null
           rewrite_count: number
@@ -236,6 +240,7 @@ export type Database = {
           linkedin_post_id?: string | null
           meta_description?: string | null
           pinterest_pin_id?: string | null
+          pin_design?: string | null
           post_type?: string
           published_at?: string | null
           rewrite_count?: number
@@ -281,6 +286,7 @@ export type Database = {
           linkedin_post_id?: string | null
           meta_description?: string | null
           pinterest_pin_id?: string | null
+          pin_design?: string | null
           post_type?: string
           published_at?: string | null
           rewrite_count?: number

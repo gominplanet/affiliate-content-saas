@@ -37,6 +37,9 @@ const live = (s: string) => s
 const ASSETS = live(read('lib/pin-assets.ts'))
 const PRERENDER = live(read('app/api/cron/prerender-pins/route.ts'))
 const PUBLISH = live(read('app/api/cron/process-scheduled/route.ts'))
+const MANUAL = live(read('app/api/blog/pinterest-post/route.ts'))
+const PREVIEW = live(read('app/api/blog/pinterest-preview/route.ts'))
+const MODAL = live(read('components/PinterestPreviewModal.tsx'))
 
 // ── the outcome is reported at all ──────────────────────────────────────────
 {
@@ -90,6 +93,52 @@ const PUBLISH = live(read('app/api/cron/process-scheduled/route.ts'))
   check('a failed write never blocks the pin',
     /try \{[^}]*pin_design[\s\S]{0,120}?\} catch/.test(PUBLISH),
     'reporting is not worth losing a post over, and the column may not be applied yet')
+}
+
+// ── the manual and bulk path records it too ─────────────────────────────────
+//
+// Added after the first version shipped. The two crons were instrumented and
+// this route was not, which left the path a creator triggers BY HAND with the
+// original blind spot: it asks for the designed pin, takes whatever bytes come
+// back, and writes down nothing.
+{
+  check('the manual pin route records what it built',
+    /builtDesign = pinDesignTag\(a\.outcome\)/.test(MANUAL))
+  check('and warns when it is a downgrade',
+    /shipping \$\{builtDesign\}/.test(MANUAL))
+  check('it writes pin_design alongside the pin id',
+    /pin_design: builtDesign/.test(MANUAL))
+
+  // The honest gap. When the CALLER supplies a pre-composed image, this route
+  // did not make it and cannot know how it was made. Guessing 'art-director'
+  // there would rebuild the blind spot with more confidence than before.
+  check('a caller-supplied image records nothing rather than guessing',
+    /let builtDesign: string \| null = null/.test(MANUAL)
+      && /builtDesign \?/.test(MANUAL),
+    'writing a design we did not produce is a worse lie than writing none')
+}
+
+// ── the creator sees it BEFORE they publish ─────────────────────────────────
+//
+// The database column answers "how often". The preview answers "this one, now,
+// while you can still do something about it". The pin that started all this was
+// only discoverable by noticing the live pin looked unlike the last three.
+{
+  check('the preview returns a human note',
+    /designNote: describePinDowngrade\(a\.outcome, true\)/.test(PREVIEW))
+  check('the modal accepts it', /designNote\?: string \| null/.test(MODAL))
+  // The INTERPOLATION, not the condition. `data.designNote && (` is also a
+  // substring of the line above it, `data.imageBase64 && !data.designNote &&`,
+  // so the first version passed on the clause that HIDES the caption while the
+  // note itself rendered nowhere. Break-testing caught it.
+  check('and renders it',
+    /(?<!!)data\.designNote && \(/.test(MODAL)
+      && /\{data\.designNote\}/.test(MODAL)
+      && /Not your designed pin/.test(MODAL),
+    'the text has to reach the screen, not merely be referenced in a condition')
+  check('the modal says nothing on a clean pin',
+    /data\.imageBase64 && !data\.designNote/.test(MODAL),
+    'a warning slot that also fires on success is one people stop reading')
 }
 
 // ── the classification itself ───────────────────────────────────────────────

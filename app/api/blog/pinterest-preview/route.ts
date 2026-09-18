@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { describePinDowngrade } from '@/lib/pin-design-outcome'
 import { buildPinAssets } from '@/lib/pin-assets'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
@@ -143,6 +144,14 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ...a,
+    // WHAT THE CREATOR NEEDS TO KNOW BEFORE THEY PRESS PIN.
+    //
+    // The preview is the one moment a person is looking at this pin with a
+    // choice still open. A downgrade that is only discoverable afterwards, by
+    // noticing the live pin looks different from the last three, is the thing
+    // that went wrong. Null when the designed pin rendered, so the modal says
+    // nothing on success.
+    designNote: describePinDowngrade(a.outcome, true),
     videoUrl,
     productUrl,
     // Category board (what publish will use) → the user's named fallback board

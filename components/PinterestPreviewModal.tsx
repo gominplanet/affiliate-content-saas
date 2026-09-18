@@ -25,6 +25,12 @@ export interface PinPreviewData {
    *  Amazon URL). When present, the modal offers a Blog/Product destination
    *  toggle. null → no product to link to, pin stays on the blog link. */
   productUrl?: string | null
+  /** Set when the designed pin did NOT render and this is a fallback. Null on
+   *  success. Shown under the image, because the preview is the one moment a
+   *  person is looking at this pin with a choice still open: an off-brand pin
+   *  that only becomes discoverable after it is live is the thing that went
+   *  wrong in the first place. */
+  designNote?: string | null
 }
 
 /** Editable Pinterest pin preview. Shared by Library & Social Push and
@@ -142,8 +148,14 @@ export function PinterestPreviewModal({
                 </div>
               )}
             </div>
-            {data.imageBase64 && (
+            {data.imageBase64 && !data.designNote && (
               <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] text-center mt-1.5">AI-generated image</p>
+            )}
+            {data.designNote && (
+              <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-500 mt-1.5">
+                <span className="font-semibold block">Not your designed pin</span>
+                {data.designNote}
+              </p>
             )}
           </div>
 
