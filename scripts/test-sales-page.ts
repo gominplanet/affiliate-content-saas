@@ -281,31 +281,64 @@ for (const { label, src } of AD_PAGES) {
 // convinced on the first visit had one button, "start free", and had to leave
 // to find a price. Most of them do not come back.
 for (const { label, src } of AD_PAGES) {
-  check(`${label} shows the plan and its price`,
-    /<AdPlanCard/.test(src),
-    'a landing page that cannot be bought from is a landing page that banks on a second visit')
-  check(`${label} offers a paid route as well as the free one`,
-    /ctaHref="\/signup\?tier=[a-z]+&plan=paid"/.test(src))
+  check(`${label} shows the plans and their prices`,
+    /<AdPricingTable/.test(src),
+    'a landing page that cannot be bought from is one that banks on a second visit')
+  check(`${label} highlights its own tier`,
+    /focus="(amazon|pro)"/.test(src))
   check(`${label} keeps the free path beside it`,
     /freeHref=\{CTA_HREF\}/.test(src),
     'the ad promised no card; removing that door would be a bait and switch')
 }
 
-// ── the plan card quotes the product ───────────────────────────────────────
+// ── the pricing table quotes the product ───────────────────────────────────
 {
-  const CARD = live(read('components/landing/AdPlanCard.tsx'))
-  check('the plan card reads its price from the tier',
+  const CARD = live(read('components/landing/AdPricingTable.tsx'))
+  check('the table reads its prices from the tier',
     /\$\{t\.price\}/.test(CARD) && !/\$\d{2,4}\b/.test(CARD.replace(/\$\{[^}]*\}/g, ' ')),
     'a typed price on a page we pay for is a refund waiting')
   check('and COMPUTES the annual saving',
     /t\.price \* 12 - annual/.test(CARD),
     '"Save $50" sat next to a real saving of $80 because somebody typed it')
+  check('and COMPUTES the headline percentage too',
+    /1 - a \/ \(priceOf\(k\) \* 12\)/.test(CARD),
+    'the toggle advertises a saving; a typed percentage is the same bug one step along')
   check('a cap of zero is dropped rather than printed',
-    /filter\(\(r\) => r\.value !== 0\)/.test(CARD),
+    /filter\(\(\[, v\]\) => v !== 0\)/.test(CARD),
     '"0 a month" reads as a broken number, not as a feature the plan lacks')
   check('null is rendered as unlimited',
-    /return `Unlimited/.test(CARD),
+    /'Unlimited' : v\.toLocaleString/.test(CARD),
     'null means no cap; printing "null a month" or nothing at all both mislead')
+
+  // MONTHLY FIRST. Yearly is the better deal, but a yearly figure shown first
+  // reads as the price, and the annual number next to a competitor's monthly
+  // one loses the reader before they find the comparable figure.
+  // THE BUTTONS, not the variable. The first version tested /Yearly/, which
+  // matches `setYearly` and passed with the whole toggle relabelled away.
+  // aria-pressed is the thing that only a real two-state control has.
+  const toggles = [...CARD.matchAll(/aria-pressed=\{!?yearly\}/g)].length
+  check('there is a real two-state toggle',
+    toggles === 2,
+    `found ${toggles} aria-pressed buttons; a toggle needs both states`)
+  check('and it starts on monthly',
+    /const \[yearly, setYearly\] = useState\(false\)/.test(CARD),
+    'monthly is the default the pricing page already settled on')
+  check('both options are labelled for a reader',
+    /onClick=\{\(\) => setYearly\(false\)\}[\s\S]{0,300}?Monthly/.test(CARD)
+      && /onClick=\{\(\) => setYearly\(true\)\}[\s\S]{0,300}?Yearly/.test(CARD),
+    'the label has to sit inside the button it switches to')
+  check('the billing choice reaches signup',
+    /billing=\$\{showYear \? 'annual' : 'monthly'\}/.test(CARD),
+    'a toggle that does not change where the button goes is decoration')
+  check('both paid plans are shown, not only the page\'s own',
+    /\['amazon', 'pro'\] as PaidTier\[\]\)\.map/.test(CARD),
+    'a reader who landed on the wrong page should find the right plan rather than bounce')
+  check('the free column is there too',
+    /name="Free"/.test(CARD),
+    'it is what the ad promised, and it is the lowest-risk way in')
+  check('the toggle hides itself when nothing is sold yearly',
+    /bestPct > 0 && \(/.test(CARD),
+    'a toggle that flips to an option that does not exist is worse than no toggle')
 }
 
 // ── each ad page makes its OWN promise ──────────────────────────────────────

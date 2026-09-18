@@ -38,7 +38,7 @@ import {
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { TIERS } from '@/lib/tier'
 import { AD_PAGE_LIGHT } from '@/lib/ad-page-theme'
-import AdPlanCard from '@/components/landing/AdPlanCard'
+import AdPricingTable from '@/components/landing/AdPricingTable'
 import { SALES_PAUSED } from '@/lib/sales-paused'
 import MetaTrack from '@/components/analytics/MetaTrack'
 
@@ -260,7 +260,7 @@ export default function RunYourStorefrontPage() {
 
       {/* ── The plan, and a way to buy it ───────────────────────────────── */}
       <section className="px-6 lg:px-8 py-16 sm:py-20">
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <div className="text-center max-w-2xl mx-auto mb-10">
             <h2 className="text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.04]" style={{ color: '#1D1D1F' }}>
               What it costs, and what you get
@@ -269,7 +269,7 @@ export default function RunYourStorefrontPage() {
               Start free with no card if you want to see it work first. If you already know you want it, skip the trial.
             </p>
           </div>
-          <AdPlanCard tier="amazon" ctaHref="/signup?tier=amazon&plan=paid" freeHref={CTA_HREF} freeLabel={CTA_LABEL} />
+          <AdPricingTable focus="amazon" freeHref={CTA_HREF} />
         </div>
       </section>
 
