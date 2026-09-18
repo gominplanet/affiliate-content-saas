@@ -32,6 +32,22 @@ export async function POST() {
     wordpress_api_token: null,
     onboarding_completed: false,
     onboarding_step: 1,
+    // ── LOWER THE LATCH ────────────────────────────────────────────────────
+    //
+    // setup_status is what /dashboard, /content and /setup all read to answer
+    // "is WordPress connected". Five routes raise it to 'site_ready' on a
+    // successful connect and, until now, NOTHING ever lowered it. It was a
+    // one-way flag being used as a live status.
+    //
+    // A creator on 48 published posts pressed Disconnect and start over on
+    // 17 Sep. This ran, her credentials went, her site rows went, and her
+    // setup_status stayed 'site_ready'. So the product kept telling her she was
+    // connected on three screens while every publish attempt failed, and she
+    // wrote in to apologise for having issues. Her row afterwards read
+    // onboarding_completed=false, setup_status='site_ready', every WordPress
+    // column NULL, zero rows in wordpress_sites: the exact fingerprint of this
+    // update as it stood.
+    setup_status: null,
   }).eq('user_id', user.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

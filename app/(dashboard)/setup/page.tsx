@@ -1169,7 +1169,19 @@ function SetupPageInner() {
           wordpress_username: null,
           wordpress_app_password: null,
           wordpress_api_token: null,
+          // The same latch /api/onboarding/restart lowers, and for the same
+          // reason: /dashboard, /content and /setup all answer "connected?"
+          // from setup_status, and leaving it at 'site_ready' with the
+          // credentials gone is how a creator ends up being told she is
+          // connected on three screens while nothing can publish.
+          setup_status: null,
         }).eq('user_id', user.id)
+        // And the multi-site rows, which resolve credentials in preference to
+        // the legacy columns above. Clearing one and not the other leaves a
+        // site that publishing still picks up, which is the opposite failure
+        // and just as invisible. restart already does this; this path did not.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        try { await (supabase as any).from('wordpress_sites').delete().eq('user_id', user.id) } catch { /* no rows */ }
       }
     } catch { /* ignore */ }
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }

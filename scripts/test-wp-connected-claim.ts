@@ -30,6 +30,7 @@
 // What changed is that it no longer doubles as evidence of a live connection.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { execSync } from 'node:child_process'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -102,6 +103,57 @@ const CHIP = live(read('components/layout/SiteSwitcherChip.tsx'))
   check('and the reconnect is a button she presses, never a redirect',
     !/if \(siteCount === 0\) setForceWizard\(true\)/.test(SETUP_LIVE),
     'forcing the wizard on a missing credential is how the first bug happened')
+}
+
+// ── the latch that nothing lowered ──────────────────────────────────────────
+//
+// The root cause, found by reading her row rather than by reasoning about the
+// screen. She pressed "Disconnect & start over" on 17 Sep. Afterwards:
+//
+//   onboarding_completed = false          ← restart set it
+//   every wordpress_* column = NULL       ← restart set them
+//   rows in wordpress_sites  = 0          ← restart deleted them
+//   setup_status = 'site_ready'           ← nothing has ever cleared it
+//
+// Five routes raise setup_status to 'site_ready' on a successful connect.
+// Until this commit, no code in the repository ever lowered it, and three
+// screens answer "is WordPress connected" from it: /dashboard's wpConnected,
+// /content's wpReady, and /setup's isOnboarded. A one-way flag was being read
+// as a live status, so disconnecting left the product insisting she was
+// connected while every publish failed.
+//
+// Enumerated rather than spot-checked: ANY update that nulls the WordPress
+// credentials has to lower the latch in the same statement. A new disconnect
+// path that forgets is the same outage under a different button.
+{
+  const DISCONNECTS = [
+    'app/api/onboarding/restart/route.ts',
+    'app/(dashboard)/setup/page.tsx',
+  ]
+  // Every file in the repo that nulls wordpress_url, so a third disconnect
+  // path added later is caught here instead of by the creator who used it.
+  const all = execSync(
+    `grep -rl "wordpress_url: null" app lib services components --include=*.ts --include=*.tsx`,
+    { cwd: root, encoding: 'utf8' },
+  ).trim().split('\n').filter(Boolean)
+  check('every file that disconnects WordPress is one this test knows about',
+    all.every((f) => DISCONNECTS.includes(f)),
+    `unlisted: ${all.filter((f) => !DISCONNECTS.includes(f)).join(', ')}`)
+
+  for (const rel of DISCONNECTS) {
+    const src = read(rel)
+    // The update object that nulls the credentials, from `wordpress_url: null`
+    // to the closing brace of that literal.
+    const block = src.slice(src.indexOf('wordpress_url: null'))
+    const stmt = block.slice(0, block.indexOf('})'))
+    check(`${rel} lowers setup_status in the same update that clears the credentials`,
+      /setup_status: null/.test(stmt),
+      'leaving it at site_ready is what told a creator with no credentials that she was connected')
+  }
+
+  check('nothing reads setup_status as connected without something able to clear it',
+    /setup_status === 'site_ready'/.test(read('app/(dashboard)/dashboard/page.tsx')),
+    'if this stops being the check, the guard above is aimed at the wrong column')
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
