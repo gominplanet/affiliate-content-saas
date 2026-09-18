@@ -41,6 +41,7 @@ import { getWordPressCredentials, isSitePaused } from '@/lib/wordpress-sites'
 import { normalizeTier } from '@/lib/tier'
 import { isPlainPermalink } from '@/lib/clean-permalink'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
+import { healMissedSchedules } from '@/lib/missed-schedule-heal'
 import { publishTikTokForTarget, type TikTokScheduleOptions } from '@/lib/tiktok-publish'
 import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
 import { publishPinForPost } from '@/lib/pin-publish'
@@ -210,7 +211,19 @@ export async function GET(request: Request) {
     kind: r.platform == null ? 'blog_publish' : 'social',
   }))
   if (rows.length === 0) {
-    return NextResponse.json({ ok: true, processed: 0 })
+    // NOTHING DUE IS THE COMMON CASE AND STILL NOT A REASON TO SKIP THE SWEEP.
+    // The posts this heals are wp-native: they never created a scheduled_posts
+    // row, so `rows` is empty precisely on the ticks where a missed schedule is
+    // sitting there unpublished.
+    const healed = await healMissedSchedules(admin)
+    if (healed.published.length || healed.errors.length) {
+      console.warn('[cron/process-scheduled] missed schedules', {
+        published: healed.published.length, confirmed: healed.confirmed.length,
+        skipped: healed.skipped.length, unreachable: healed.unreachable,
+        errors: healed.errors.slice(0, 3),
+      })
+    }
+    return NextResponse.json({ ok: true, processed: 0, missedSchedules: healed.published.length })
   }
 
   // 1.5 Dead-channel guard.
@@ -331,7 +344,21 @@ export async function GET(request: Request) {
   // Promise.allSettled never rejects, so we just unwrap the values.
   const flatResults = results.map(r => r.status === 'fulfilled' ? r.value : { id: 'unknown', ok: false, error: 'fulfilment failed' })
 
-  return NextResponse.json({ ok: true, processed: rows.length, results: flatResults })
+  // The same sweep on a busy tick. WordPress missing a schedule has nothing to
+  // do with how many social rows were due, so it cannot be conditional on them.
+  const healed = await healMissedSchedules(admin)
+  if (healed.published.length || healed.errors.length) {
+    console.warn('[cron/process-scheduled] missed schedules', {
+      published: healed.published.length, confirmed: healed.confirmed.length,
+      skipped: healed.skipped.length, unreachable: healed.unreachable,
+      errors: healed.errors.slice(0, 3),
+    })
+  }
+
+  return NextResponse.json({
+    ok: true, processed: rows.length, results: flatResults,
+    missedSchedules: healed.published.length,
+  })
 }
 
 /**
