@@ -365,42 +365,107 @@ Return ONLY valid JSON with these exact keys:
     if (rawImage) recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
   }
 
-  // Vision QC (Claude) on the SCENE (before the Satori text overlay, so the
-  // checks read the photo, not our own caption):
-  //   • right product — DOUBLE-VERIFIED (2-of-3 consensus), single-product
-  //     scenes with a real reference only;
-  //   • brand-leak scan — no Amazon/retailer logo or watermark (all scenes,
-  //     incl. collage).
-  // On a confident failure of either, regenerate ONCE and keep the retry.
-  if (!artDirected && opts?.aiScene && rawImage && !useCollage) {
-    const gen = { base64: rawImage.data, mediaType: rawImage.mediaType }
-    const idCtx = { userId: ctx.userId, tier: ctx.tier }
-    const [prod, leak] = await Promise.all([
-      referenceImageUrl
-        ? verifyProductMatchConsensus(referenceImageUrl, gen, fields.product_name, idCtx)
-        : Promise.resolve({ match: true, yes: 0, votes: 0 }),
-      verifyNoBrandLeak(gen, idCtx),
-    ])
-    if (!prod.match || !leak.clean) {
-      const retry = await generatePinImage(imagePrompt, referenceImageUrl)
-      if (retry) {
-        recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
-        rawImage = retry
-      }
-    }
-  } else if (!artDirected && opts?.aiScene && rawImage && useCollage) {
-    // Collage roundup: no single reference to match, but still scan for leaks.
-    const leak = await verifyNoBrandLeak({ base64: rawImage.data, mediaType: rawImage.mediaType }, { userId: ctx.userId, tier: ctx.tier })
-    if (!leak.clean) {
-      const retry = await generatePinImage(imagePrompt, null)
-      if (retry) {
-        recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
-        rawImage = retry
+  // ── HARD RULE: NO RETAILER LOGO IN A PUBLISHED IMAGE ──────────────────────
+  //
+  // Seb's rule, and it is not a preference: nothing MVP renders may carry the
+  // Amazon wordmark or smile arrow, or any other marketplace logo. A pin went
+  // live with an Amazon logo invented onto the product tin.
+  //
+  // THE CHECK ALREADY EXISTED AND COULD NEVER RUN. It was written as
+  //
+  //   if (!artDirected && opts?.aiScene && rawImage && !useCollage)
+  //
+  // and `aiScene` is passed by nobody. Not one caller in the codebase sets it;
+  // every path (preview, manual, bulk, both crons) passes `artDirector: true`.
+  // So the block was unreachable, and no pin this product has ever published
+  // was brand-leak checked. The rule lived in a prompt clause
+  // (NO_BRAND_IMAGE_CLAUSE) that asks the model nicely, and in a verifier that
+  // nothing could reach. Asking is not enforcing.
+  //
+  // `!artDirected` made it worse: even if a caller had set aiScene, the DESIGNED
+  // pin (the premium path, the one we push everywhere now) was excluded by
+  // construction. The one image most likely to ship was the one never checked.
+  //
+  // So the scan now runs on WHATEVER IMAGE IS ABOUT TO BE USED, whichever path
+  // produced it, and a leak that survives a retry is not published at all. One
+  // Haiku vision call, and it is the difference between a rule and a wish.
+  let brandLeak: string | null = null
+  // Set only when the REFUSED image is also the fallback, so the refusal
+  // cannot be walked around by the fallback path.
+  let suppressFallback = false
+  {
+    const candidate = artDirected ?? rawImage
+    if (candidate) {
+      const idCtx = { userId: ctx.userId, tier: ctx.tier }
+      const gen = { base64: candidate.data, mediaType: candidate.mediaType }
+      // Product match stays scoped to a generated scene with a real reference:
+      // it is a 3-call consensus, and the art-director pin is built FROM the
+      // product photo rather than guessing at it.
+      const wantsMatch = !artDirected && !!rawImage && !useCollage && !!referenceImageUrl
+      const [prod, leak] = await Promise.all([
+        wantsMatch
+          ? verifyProductMatchConsensus(referenceImageUrl!, gen, fields.product_name, idCtx)
+          : Promise.resolve({ match: true, yes: 0, votes: 0 }),
+        verifyNoBrandLeak(gen, idCtx),
+      ])
+      if (!prod.match || !leak.clean) {
+        // ONE retry, on the path that produced it.
+        if (artDirected) {
+          const retry = await generateArtDirectorPin({
+            presetId: await getBrandPresetId(ctx.userId),
+            productImageUrl: referenceImageUrl!,
+            productTitle: fields.product_name,
+            productContext: [fields.main_benefit, fields.trust_factor].filter(Boolean).join(' · '),
+            userId: ctx.userId,
+            tier: ctx.tier,
+            headlineStyle: opts?.headlineStyle,
+          })
+          const stillDirty = retry
+            ? !(await verifyNoBrandLeak({ base64: retry.data, mediaType: retry.mediaType }, idCtx)).clean
+            : true
+          if (retry && !stillDirty) {
+            artDirected = retry
+          } else {
+            // REFUSE IT. A designed pin with a retailer logo baked in is worse
+            // than no designed pin: the fallback is off-brand, this is a
+            // trademark on a published graphic we cannot edit afterwards.
+            artDirected = null
+            brandLeak = leak.reason
+          }
+        } else if (imagePrompt) {
+          // A GENERATED scene: rolling again is a real fix.
+          const retry = await generatePinImage(imagePrompt, useCollage ? null : referenceImageUrl)
+          if (retry) {
+            recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
+            const clean = (await verifyNoBrandLeak({ base64: retry.data, mediaType: retry.mediaType }, idCtx)).clean
+            if (clean) rawImage = retry
+            else { rawImage = null; brandLeak = leak.reason }
+          } else if (!leak.clean) {
+            rawImage = null
+            brandLeak = leak.reason
+          }
+        } else if (!leak.clean) {
+          // THE COMPOSITE CASE, and it needs its own answer. This image is the
+          // post's OWN hero, fetched not generated, so there is no prompt to
+          // roll again and a retry would hand back the identical bytes.
+          //
+          // Dropping rawImage alone would not help either: fallbackImageUrl is
+          // that same hero, so the caller would pin the leaking image anyway
+          // through the other door. The refusal has to close both.
+          //
+          // The result is a pin with no image, which fails loudly. That is the
+          // intended trade: the rule is that we never publish a graphic with a
+          // retailer logo baked into it, and a missing pin is recoverable in a
+          // way a trademark on a live pin is not. It is recorded and shown in
+          // the preview, so a false positive is diagnosable rather than silent.
+          rawImage = null
+          brandLeak = leak.reason
+          suppressFallback = true
+        }
       }
     }
   }
-  // Art Director pin already carries its own baked text → use it as-is (skip the
-  // Satori overlay). Otherwise compose the scene + overlay as before.
+
   const imageResult = artDirected
     ? artDirected
     : rawImage
@@ -413,8 +478,8 @@ Return ONLY valid JSON with these exact keys:
     : null
   // (usage already recorded per generation above, incl. the QC retry)
 
-  const fallbackImageUrl = p.featured_image_url || p.thumbnail_url
-    || (p.video_id ? `https://i.ytimg.com/vi/${p.video_id}/hqdefault.jpg` : null)
+  const fallbackImageUrl = suppressFallback ? null : (p.featured_image_url || p.thumbnail_url
+    || (p.video_id ? `https://i.ytimg.com/vi/${p.video_id}/hqdefault.jpg` : null))
 
   // Named from what actually produced the bytes, not from what was asked for.
   const design: PinDesign = artDirected
@@ -434,7 +499,11 @@ Return ONLY valid JSON with these exact keys:
     imageBase64: imageResult?.data ?? null,
     mediaType: imageResult?.mediaType ?? null,
     fallbackImageUrl,
-    outcome: { design, downgrade: artDirected ? null : downgrade },
+    // A refused brand leak OUTRANKS every other reason. It is the one that
+    // means "we threw a finished image away on purpose", and reporting it as
+    // "no product reference" would hide a hard-rule violation behind a
+    // routine-sounding cause.
+    outcome: { design, downgrade: brandLeak ? 'brand-leak' : artDirected ? null : downgrade },
   }
 }
 

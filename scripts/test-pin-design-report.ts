@@ -141,6 +141,75 @@ const MODAL = live(read('components/PinterestPreviewModal.tsx'))
     'a warning slot that also fires on success is one people stop reading')
 }
 
+// ── HARD RULE: no retailer logo in a published image ───────────────────────
+//
+// A pin went live with an Amazon logo rendered onto the product. The check
+// that was supposed to stop it existed and could never run:
+//
+//   if (!artDirected && opts?.aiScene && rawImage && !useCollage)
+//
+// `aiScene` is passed by NOBODY. Every caller (preview, manual, bulk, both
+// crons) passes artDirector: true. So the block was unreachable and no pin this
+// product has ever published was brand-leak checked. `!artDirected` compounded
+// it: even had a caller set the flag, the DESIGNED pin was excluded by
+// construction, so the image most likely to ship was the one never checked.
+//
+// The rule lived in a prompt clause that asks the model nicely, plus a verifier
+// nothing could reach. Asking is not enforcing, and that is what these clauses
+// are for.
+{
+  check('the scan runs on whatever image is about to be used',
+    /const candidate = artDirected \?\? rawImage/.test(ASSETS),
+    'scoping it to one production path is how the premium path went unchecked')
+  check('it is not gated on the dead aiScene flag',
+    !/opts\?\.aiScene && rawImage/.test(ASSETS),
+    'no caller sets aiScene, so that condition made the whole check unreachable')
+  check('and not gated on NOT being the designed pin',
+    !/!artDirected && opts\?\.aiScene/.test(ASSETS),
+    'the designed pin is the one that ships; excluding it excludes everything')
+  check('the verifier is actually called',
+    /verifyNoBrandLeak\(gen, idCtx\)/.test(ASSETS))
+
+  // The part that makes it a rule rather than a warning: a leak that survives
+  // the retry is not published.
+  check('a designed pin that still leaks is thrown away',
+    /artDirected = null[\s\S]{0,120}brandLeak = leak\.reason/.test(ASSETS),
+    'a trademark baked into a live pin cannot be edited out afterwards')
+  check('and the retry is itself re-verified',
+    /const stillDirty = retry[\s\S]{0,200}verifyNoBrandLeak/.test(ASSETS),
+    'accepting a retry unchecked just moves the leak one roll along')
+
+  // The door the refusal could be walked around through.
+  check('a leaking hero is not republished as the fallback',
+    /suppressFallback = true/.test(ASSETS)
+      && /const fallbackImageUrl = suppressFallback \? null :/.test(ASSETS),
+    'fallbackImageUrl IS the post hero, so refusing rawImage alone changes nothing')
+
+  check('a refused leak outranks the other downgrade reasons',
+    /brandLeak \? 'brand-leak'/.test(ASSETS),
+    'reporting it as "no product reference" hides a hard-rule violation behind a routine cause')
+
+  // And the rule is stated to the model as well. Belt and braces: the clause
+  // is what makes leaks rare, the verifier is what makes them not ship.
+  check('the negative prompt clause is still applied',
+    /NO_BRAND_IMAGE_CLAUSE/.test(live(read('lib/art-director-pin.ts'))),
+    'the check is the backstop, not a reason to stop asking')
+  check('and baked copy is still scrubbed of the brand',
+    /stripDesignBrands/.test(live(read('lib/art-director-pin.ts'))))
+}
+
+// ── a pin with no image says so ─────────────────────────────────────────────
+//
+// A roundup pin came back blank and the preview explained it with the roundup
+// message, which says a simpler collage was used instead. There was no collage
+// and no picture. Describing a fallback that did not happen is the same
+// reporting bug in miniature.
+{
+  const none = describePinDowngrade({ design: 'none', downgrade: 'roundup-needs-two-photos' }, true) || ''
+  check('an empty pin is described as empty', /No pin image could be produced/.test(none), none)
+  check('and not as a collage that never happened', !/collage/i.test(none), none)
+}
+
 // ── the classification itself ───────────────────────────────────────────────
 {
   const o = (design: PinDesignOutcome['design'], downgrade: PinDesignOutcome['downgrade']): PinDesignOutcome =>

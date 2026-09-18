@@ -49,6 +49,10 @@ export type PinDesign =
 
 /** Why the designed path did not run. Null when it did. */
 export type PinDowngrade =
+  /** A finished image was thrown away because it carried a retailer logo.
+   *  The HARD RULE, and the only downgrade that means we refused a render we
+   *  already paid for. Outranks every other reason when both apply. */
+  | 'brand-leak'
   | 'no-product-reference'
   | 'art-director-returned-null'
   | 'roundup-needs-two-photos'
@@ -89,7 +93,17 @@ export function pinWasDowngraded(o: PinDesignOutcome, requested: boolean): boole
  */
 export function describePinDowngrade(o: PinDesignOutcome, requested: boolean): string | null {
   if (!pinWasDowngraded(o, requested)) return null
+  // NO IMAGE AT ALL is its own answer, and it has to come first. A roundup pin
+  // came back blank and the modal explained it with the roundup message, which
+  // says a simpler collage was used instead. There was no collage and no
+  // picture; describing a fallback that did not happen is the reporting bug
+  // this whole file exists to stop.
+  if (o.design === 'none') {
+    return 'No pin image could be produced for this post. Nothing will be pinned until it has a usable image. Check that the post has a featured image and links to a product that still resolves.'
+  }
   switch (o.downgrade) {
+    case 'brand-leak':
+      return 'The designed pin came back with a retailer logo rendered into it, which we never publish, so it was thrown away and the post hero was used instead. Try again; if it keeps happening, tell support which product it is.'
     case 'no-product-reference':
       return 'No real product photo could be resolved for this post, so the pin used the post hero instead of the designed layout. Check that the post links to a product page that still resolves.'
     case 'art-director-returned-null':
@@ -120,7 +134,10 @@ export function describePinDowngrade(o: PinDesignOutcome, requested: boolean): s
  *   roundup-needs-two-photos     deterministic, same reasoning.
  */
 export function isTransientPinDowngrade(d: PinDowngrade): boolean {
-  return d === 'art-director-returned-null'
+  // brand-leak is transient in the same sense: the model rendered a logo this
+  // time and usually does not the next. It has already been retried once
+  // inside the build, so a later tick is a genuinely fresh roll.
+  return d === 'art-director-returned-null' || d === 'brand-leak'
 }
 
 /** Short token stored on the row, so a SQL query can count these. */
