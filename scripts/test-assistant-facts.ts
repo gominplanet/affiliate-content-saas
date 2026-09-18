@@ -56,11 +56,22 @@ const SRC = readFileSync('lib/assistant-features-doc.ts', 'utf8')
     /\$\{SHORTS_MONTHLY_CAP\}/.test(SRC) && /\$\{X_MONTHLY_CAP\}/.test(SRC),
     'a literal here is correct until the cap moves, and wrong silently afterwards')
 
-  // The exact wrong answer Lisa was given. A presence check on the right number
-  // would still pass if the wrong one were sitting three lines above it.
-  check('no 150-per-month Shorts claim survives anywhere',
-    !/150 (?:clips|Shorts)/i.test(DOC),
-    'this is the sentence the help desk told a paying customer')
+  // A presence check on the right number would still pass if a DIFFERENT number
+  // were sitting three lines above it, so the doc must not state any Shorts
+  // figure other than the enforced one.
+  //
+  // This started life as a ban on the literal "150 clips", the exact wrong
+  // answer Lisa was given. Then the cap was deliberately raised to 150 and that
+  // clause became a guard that fails on correct content: the sentence it
+  // forbade had become the truth. Banning a specific wrong value only works
+  // while that value stays wrong. Comparing every stated figure against the
+  // constant works whatever the constant is.
+  const stated = [...DOC.matchAll(/(\d+)\s+(?:finished\s+)?(?:clips|Shorts)\b/gi)]
+    .map((m) => Number(m[1]))
+    .filter((n) => n !== SHORTS_MONTHLY_CAP)
+  check('the doc states no Shorts figure other than the enforced cap',
+    stated.length === 0,
+    `found ${stated.join(', ')} against an enforced ${SHORTS_MONTHLY_CAP}`)
 }
 
 // ── every sellable plan's numbers match the product ─────────────────────────
