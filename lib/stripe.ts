@@ -40,15 +40,55 @@ export function priceIdsFor(raw: string | null | undefined): string[] {
     .filter(v => v.length > 0)
 }
 
-/** Every id, per tier. Order matters: the first is what new buyers are charged. */
+export type BillingInterval = 'month' | 'year'
+
+/**
+ * ANNUAL PRICE IDS, per tier. Empty until the env var is set, which is the
+ * signal every caller uses to decide whether annual can be offered at all.
+ *
+ * Kept separate from the monthly list rather than appended to it, because the
+ * two are read for different questions and conflating them breaks one of them.
+ * PRICE_IDS[tier] is "what does a new buyer pay", and it takes the FIRST id in
+ * the list; appending the annual price there would be harmless, but appending
+ * it in front would start charging every new buyer a year up front. Separate
+ * lists make that mistake impossible rather than merely unlikely.
+ */
+export const ANNUAL_PRICE_ID_LIST: Record<'creator' | 'studio' | 'pro' | 'amazon', string[]> = {
+  creator: priceIdsFor(process.env.STRIPE_PRICE_CREATOR_ANNUAL),
+  studio:  priceIdsFor(process.env.STRIPE_PRICE_STUDIO_ANNUAL),
+  pro:     priceIdsFor(process.env.STRIPE_PRICE_PRO_ANNUAL),
+  amazon:  priceIdsFor(process.env.STRIPE_PRICE_AMAZON_ANNUAL),
+}
+
+/** Every id a tier is allowed to be on, monthly AND annual.
+ *
+ *  THE WEBHOOK READS THIS. An annual price missing from here is a customer who
+ *  paid a year up front and was granted nothing, because the price-to-tier map
+ *  would not recognise what they bought. That is the worst failure available on
+ *  this file, so annual ids are folded in at the source rather than at each of
+ *  the three call sites that would each have to remember. */
 export const PRICE_ID_LIST: Record<'creator' | 'studio' | 'pro' | 'amazon', string[]> = {
-  creator: priceIdsFor(process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER),
-  studio:  priceIdsFor(process.env.STRIPE_PRICE_STUDIO),
-  pro:     priceIdsFor(process.env.STRIPE_PRICE_PRO),
+  creator: [...priceIdsFor(process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER), ...ANNUAL_PRICE_ID_LIST.creator],
+  studio:  [...priceIdsFor(process.env.STRIPE_PRICE_STUDIO), ...ANNUAL_PRICE_ID_LIST.studio],
+  pro:     [...priceIdsFor(process.env.STRIPE_PRICE_PRO), ...ANNUAL_PRICE_ID_LIST.pro],
   // Amazon Influencer — $99 as of 2026-09-14 (was $79). One of the two plans
   // now sold; creator and studio are frozen legacy tiers kept so existing
   // subscribers keep their allowances and their price.
-  amazon:  priceIdsFor(process.env.STRIPE_PRICE_AMAZON),
+  amazon:  [...priceIdsFor(process.env.STRIPE_PRICE_AMAZON), ...ANNUAL_PRICE_ID_LIST.amazon],
+}
+
+/** The annual price a NEW buyer is charged, or null when annual is not
+ *  configured for that tier. Null is the honest answer and every caller checks
+ *  it: offering a yearly button that cannot check out is worse than not
+ *  offering one. */
+export function annualPriceIdFor(tier: string): string | null {
+  const list = ANNUAL_PRICE_ID_LIST[tier as keyof typeof ANNUAL_PRICE_ID_LIST]
+  return list && list.length > 0 ? list[0]! : null
+}
+
+/** Is a yearly option sellable for this tier right now? */
+export function hasAnnual(tier: string): boolean {
+  return annualPriceIdFor(tier) !== null
 }
 
 /** The price a NEW buyer is charged. The first id in the list. */

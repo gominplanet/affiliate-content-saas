@@ -911,15 +911,73 @@ export function socialAccountCap(tier: Tier): number | null {
  * and the dashboard Plan & usage card all read this so they can't
  * disagree about the window or the displayed reset date.
  */
+/** Longer than this and a Stripe period is not a month, so it is sliced (see
+ *  billingWindow). Forty-five days clears a 31-day month and every quirk of a
+ *  proration or a trial extension, without reaching a two-month plan. */
+const LONG_PERIOD_MS = 45 * 24 * 60 * 60 * 1000
+/** Defensive bound on the slicing loop. A year is twelve. */
+const MAX_MONTHS_IN_PERIOD = 24
+
+/**
+ * Add whole months in UTC, clamping to the last valid day of the target month.
+ *
+ * The clamp is the reason this is not a one-liner. A subscription that starts
+ * on 31 January has no 31 February to renew on, and `setUTCMonth(+1)` silently
+ * rolls over into March, which would hand that customer a window starting three
+ * days after their actual anniversary every other month. Stripe clamps to the
+ * last day of the month; so does this.
+ */
+export function addMonthsUTC(d: Date, n: number): Date {
+  const day = d.getUTCDate()
+  const target = new Date(Date.UTC(
+    d.getUTCFullYear(), d.getUTCMonth() + n, 1,
+    d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds(),
+  ))
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
+  target.setUTCDate(Math.min(day, lastDay))
+  return target
+}
+
 export function billingWindow(opts: {
   periodStart?: string | null
   periodEnd?: string | null
+  /** Injectable for tests. Defaults to now. */
+  now?: Date
 }): { startISO: string; resetLabel: string } {
   const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   if (opts.periodStart) {
+    const start = new Date(opts.periodStart)
+    const end = opts.periodEnd ? new Date(opts.periodEnd) : null
+    const now = opts.now ?? new Date()
+    // ── AN ANNUAL PLAN IS TWELVE MONTHLY WINDOWS, NOT ONE ENORMOUS ONE ─────
+    //
+    // Every allowance in this file is monthly: posts, Shorts, thumbnails,
+    // pins, assistant messages. They are enforced by counting usage rows since
+    // this window's start, and until annual billing existed the window WAS the
+    // Stripe period, because a Stripe period was always a month.
+    //
+    // An annual subscription has a period a year long. Handing that straight
+    // back would make every monthly cap an annual one: a Pro annual customer
+    // would get fifty Shorts for the year rather than fifty a month, and one
+    // month of posts to last twelve. They would pay more, up front, and
+    // receive a twelfth of the product, with the usage card cheerfully
+    // reporting a reset date next summer.
+    //
+    // So a period longer than a month is sliced into monthly windows anchored
+    // on the subscription's own start date, which is what the customer expects
+    // and what they were sold. The bound on the loop is defensive: a stale
+    // period_start must not spin.
+    if (end && end.getTime() - start.getTime() > LONG_PERIOD_MS) {
+      let k = 0
+      while (k < MAX_MONTHS_IN_PERIOD && addMonthsUTC(start, k + 1).getTime() <= now.getTime()) k++
+      return {
+        startISO: addMonthsUTC(start, k).toISOString(),
+        resetLabel: fmt(addMonthsUTC(start, k + 1)),
+      }
+    }
     return {
-      startISO: new Date(opts.periodStart).toISOString(),
-      resetLabel: opts.periodEnd ? fmt(new Date(opts.periodEnd)) : 'your next billing date',
+      startISO: start.toISOString(),
+      resetLabel: end ? fmt(end) : 'your next billing date',
     }
   }
   const now = new Date()

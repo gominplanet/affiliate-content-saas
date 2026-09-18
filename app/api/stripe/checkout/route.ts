@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getStripe, PRICE_IDS, isValidPriceId } from '@/lib/stripe'
+import { getStripe, PRICE_IDS, isValidPriceId, annualPriceIdFor, type BillingInterval } from '@/lib/stripe'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { alertOps } from '@/lib/ops-alert'
 import { sendMetaEvent, purchaseEventId } from '@/lib/meta-capi'
@@ -17,10 +17,14 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { tier, referral, couponId, promoCode } = await request.json() as {
+  const { tier, referral, couponId, promoCode, interval } = await request.json() as {
     tier: Tier
     referral?: string | null
     couponId?: string | null
+    /** 'year' buys the annual price for this tier. Anything else, including
+     *  absent, means monthly, so every existing caller keeps its behaviour
+     *  without being touched. */
+    interval?: BillingInterval
     /** Customer-facing promotion code the user typed (e.g. "EARLY20"), NOT a
      *  Stripe promo_… object id. Only used by the in-place swap below — fresh
      *  Checkout sessions get Stripe's own "Add promotion code" field. */
@@ -42,7 +46,23 @@ export async function POST(request: NextRequest) {
     }, { status: 400 })
   }
 
-  const priceId = PRICE_IDS[tier as keyof typeof PRICE_IDS]
+  // ── MONTHLY UNLESS YEARLY WAS ASKED FOR AND IS ACTUALLY CONFIGURED ──────
+  //
+  // A yearly request for a tier with no annual price falls back to monthly
+  // rather than failing. The alternative is a customer who clicked "pay yearly"
+  // being shown an error they cannot act on, and the fallback is the thing they
+  // were going to get anyway. It is logged, because a yearly button that
+  // quietly charges monthly is its own small lie and somebody should know the
+  // env var is missing.
+  const wantsAnnual = interval === 'year'
+  const annualId = wantsAnnual ? annualPriceIdFor(tier) : null
+  if (wantsAnnual && !annualId) {
+    void alertOps(
+      'Yearly checkout requested with no annual price configured',
+      `Tier "${tier}" was bought with interval=year but STRIPE_PRICE_${String(tier).toUpperCase()}_ANNUAL is not set. The customer was charged MONTHLY. Set it in Vercel and redeploy.`,
+    )
+  }
+  const priceId = annualId ?? PRICE_IDS[tier as keyof typeof PRICE_IDS]
   if (!priceId) {
     // A plan we sell, with no price env set, is a configuration fault and not a
     // bad request — and it is the LIKELIER fault on a plan added recently.

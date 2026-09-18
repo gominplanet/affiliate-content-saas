@@ -123,7 +123,16 @@ const OLD = 'price_1QOLD79amazon'
   const STRIPE = readFileSync('lib/stripe.ts', 'utf8')
   check('PRICE_IDS charges the FIRST id', /creator: PRICE_ID_LIST\.creator\[0\]/.test(STRIPE),
     'charging anything else would bill new customers the retired price')
-  check('every tier has a list', /amazon:\s+priceIdsFor\(process\.env\.STRIPE_PRICE_AMAZON\)/.test(STRIPE))
+  // Pinned on the env var reaching the tier's list, not on the exact spelling
+  // of the line. Annual prices are now folded in alongside the monthly ones
+  // (`[...priceIdsFor(MONTHLY), ...ANNUAL_PRICE_ID_LIST.amazon]`), and the old
+  // literal match failed on that purely because the shape changed while the
+  // property it guards held throughout.
+  check('every tier has a list built from its own env var',
+    /amazon:[\s\S]{0,120}priceIdsFor\(process\.env\.STRIPE_PRICE_AMAZON\)/.test(STRIPE))
+  check('and the annual ids are folded into the same list',
+    /amazon:[\s\S]{0,120}ANNUAL_PRICE_ID_LIST\.amazon/.test(STRIPE),
+    'the webhook maps price to tier from this list; an annual price missing is a year paid and nothing granted')
 
   const HOOK = readFileSync('app/api/stripe/webhook/route.ts', 'utf8')
   check('the webhook maps from the full list', /PRICE_ID_LIST/.test(HOOK))
