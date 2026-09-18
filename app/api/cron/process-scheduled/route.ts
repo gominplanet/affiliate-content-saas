@@ -53,6 +53,7 @@ import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
+import { isDesignedPin, describePinDowngrade, pinDesignTag } from '@/lib/pin-design-outcome'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 
@@ -984,6 +985,22 @@ async function publishOne(
         if (!assets) console.warn(`[cron/pinterest] row ${row.id}: art-director build exceeded ${PIN_BUILD_BUDGET_MS}ms — using thumbnail pin so it ships this tick`)
       } catch (e) {
         console.warn('[cron/pinterest] buildPinAssets failed — falling back to thumbnail:', e instanceof Error ? e.message : String(e))
+      }
+      // WHAT SHIPPED, WRITTEN DOWN.
+      //
+      // A downgraded pin still goes out, because a missing pin is worse than an
+      // off-brand one. It stops being invisible though. Before this the only
+      // trace was a log line for ONE of the four ways a pin gets downgraded, so
+      // "my scheduled pin looks wrong" had no answer that did not involve
+      // reading Vercel logs and guessing.
+      if (assets) {
+        const tag = pinDesignTag(assets.outcome)
+        if (!isDesignedPin(assets.outcome.design)) {
+          console.warn(`[cron/pinterest] row ${row.id}: shipping ${tag}. ${describePinDowngrade(assets.outcome, true) ?? ''}`)
+        }
+        try {
+          await admin.from('blog_posts').update({ pin_design: tag }).eq('id', row.blog_post_id)
+        } catch { /* column not applied yet — the pin still ships */ }
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let fallbackImage: string | null = assets?.fallbackImageUrl ?? (post as any).youtube_videos?.thumbnail_url ?? null

@@ -93,6 +93,10 @@ export async function POST(request: NextRequest) {
       imageBase64: null,
       mediaType: null,
       fallbackImageUrl: (p.featured_image_url as string) || (p.thumbnail_url as string) || postImage || null,
+      // The build threw outright, so no design happened at all. Saying so is
+      // the point of the field: 'none' is a different fact from a designed pin
+      // and must not be able to masquerade as one.
+      outcome: { design: 'none' as const, downgrade: 'art-director-returned-null' as const },
     }
   }
 

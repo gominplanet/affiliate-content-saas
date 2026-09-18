@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
+import { isDesignedPin, describePinDowngrade, pinDesignTag, isTransientPinDowngrade } from '@/lib/pin-design-outcome'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 
 export const dynamic = 'force-dynamic'
@@ -93,6 +94,40 @@ export async function GET(request: Request) {
       const tier = await tierFor(row.user_id)
       const headlineStyle = await getAccountHeadlineStyle(admin, row.user_id)
       const assets = await buildPinAssets(post, { userId: row.user_id, tier }, { artDirector: true, headlineStyle })
+
+      // DO NOT BANK A FALLBACK AS THE FINISHED PIN.
+      //
+      // This used to store whatever imageBase64 came back. buildPinAssets
+      // returns one for the designed pin AND for the old photo-scene fallback,
+      // so a silent downgrade got written to the row as done, and the publish
+      // cron's fast path posted it without ever running the art-director code.
+      // That is how an off-brand pin went live with no error anywhere: the one
+      // path that would have retried was skipped by the row we had just filled.
+      //
+      // Releasing the claim instead costs nothing (a later tick retries, and
+      // fire-time still ships a pin regardless), and it turns a permanent
+      // downgrade into a transient one.
+      if (assets && !isDesignedPin(assets.outcome.design)) {
+        const why = describePinDowngrade(assets.outcome, true)
+        const tag = pinDesignTag(assets.outcome)
+        if (isTransientPinDowngrade(assets.outcome.downgrade)) {
+          // Worth another go. Release the claim; a later tick retries and
+          // fire-time still ships a pin if every attempt fails.
+          console.warn(`[prerender-pins] row ${row.id}: ${tag}, releasing for retry. ${why ?? ''}`)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (admin as any).from('scheduled_posts').update({ image_media_type: null }).eq('id', row.id)
+          return
+        }
+        // Deterministic: retrying re-runs image generation every minute and
+        // lands on the same fallback. Bank it so the pin ships on time, and
+        // record WHAT shipped so it is countable rather than invisible.
+        console.warn(`[prerender-pins] row ${row.id}: ${tag}, banking the fallback. ${why ?? ''}`)
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (admin as any).from('blog_posts').update({ pin_design: tag }).eq('id', row.blog_post_id)
+        } catch { /* column not applied yet — the pin still ships */ }
+      }
+
       if (assets?.imageBase64) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (admin as any).from('scheduled_posts').update({

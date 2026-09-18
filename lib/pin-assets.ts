@@ -23,6 +23,7 @@ import { asinFromAmazonUrl, allProductUrls } from '@/lib/product-link'
 import { generateArtDirectorPin, generateArtDirectorCollagePin } from '@/lib/art-director-pin'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import type { PinDesign, PinDowngrade, PinDesignOutcome } from '@/lib/pin-design-outcome'
 
 export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
 export const COMPLIANCE_TAGS = '#ad #affiliate'
@@ -39,6 +40,12 @@ export interface PinAssets {
   imageBase64: string | null
   mediaType: string | null
   fallbackImageUrl: string | null
+  /** HOW the image was made, and why it was not the designed one.
+   *
+   *  Added because an off-brand pin and a designed pin were the same shape
+   *  here, so every caller treated a silent fallback as a success. See
+   *  lib/pin-design-outcome. */
+  outcome: PinDesignOutcome
 }
 
 /** Compose the exact description that gets published (preview modal and
@@ -263,6 +270,12 @@ Return ONLY valid JSON with these exact keys:
   // never breaks the flow. The design already carries its own text, so it skips
   // the Satori overlay + scene QC entirely.
   let artDirected: { data: string; mediaType: string } | null = null
+  // Why the designed path did not run, decided BEFORE the attempt so the
+  // skipped-by-if case (no product photo) is recorded as loudly as a thrown
+  // one. That case was the invisible majority: no error, no log, no pin.
+  let downgrade: PinDowngrade = !(opts?.aiScene || opts?.artDirector)
+    ? 'not-requested'
+    : (!useCollage && !referenceImageUrl) ? 'no-product-reference' : null
   if ((opts?.aiScene || opts?.artDirector) && !useCollage && referenceImageUrl) {
     artDirected = await generateArtDirectorPin({
         presetId: await getBrandPresetId(ctx.userId),
@@ -273,6 +286,7 @@ Return ONLY valid JSON with these exact keys:
       tier: ctx.tier,
       headlineStyle: opts?.headlineStyle,
     })
+    if (!artDirected) downgrade = 'art-director-returned-null'
   }
 
   // ── MVP Art Director ROUNDUP pin (buying guides / comparisons) ────────────
@@ -310,6 +324,7 @@ Return ONLY valid JSON with these exact keys:
           return imageUrl ? { imageUrl, title: prod.title } : null
         } catch { return null }
       }))).filter(Boolean) as Array<{ imageUrl: string; title: string }>
+      if (resolved.length < 2) downgrade = 'roundup-needs-two-photos'
       if (resolved.length >= 2) {
         artDirected = await generateArtDirectorCollagePin({
         presetId: await getBrandPresetId(ctx.userId),
@@ -319,16 +334,24 @@ Return ONLY valid JSON with these exact keys:
           userId: ctx.userId,
           tier: ctx.tier,
         })
+        if (!artDirected) downgrade = 'art-director-returned-null'
       }
-    } catch { /* couldn't build the roundup — fall through to name collage */ }
+    } catch {
+      /* couldn't build the roundup; fall through to the name collage */
+      downgrade = 'roundup-needs-two-photos'
+    }
   }
 
   // Cheap DEFAULT: composite the post's EXISTING image (its real thumbnail /
   // hero) into the vertical pin — no fresh gen. Best-effort: some hosts (a WP
   // WAF) block a server-side image fetch, so this can come back empty.
+  let usedExistingImage = false
   if (!artDirected && !opts?.aiScene) {
     const srcUrl = (p.featured_image_url as string | null) || (p.thumbnail_url as string | null) || null
     if (srcUrl) rawImage = await fetchImageAsBase64(String(srcUrl))
+    // The pin that started this: the post's own AI hero, composited, with the
+    // Satori badge over it. Recorded so it is nameable rather than "a pin".
+    usedExistingImage = !!rawImage
   }
 
   // Generate a fresh scene when the premium path is requested OR the cheap fetch
@@ -393,6 +416,14 @@ Return ONLY valid JSON with these exact keys:
   const fallbackImageUrl = p.featured_image_url || p.thumbnail_url
     || (p.video_id ? `https://i.ytimg.com/vi/${p.video_id}/hqdefault.jpg` : null)
 
+  // Named from what actually produced the bytes, not from what was asked for.
+  const design: PinDesign = artDirected
+    ? (useCollage ? 'art-director-collage' : 'art-director')
+    : !imageResult ? 'none'
+    : useCollage ? 'collage-fallback'
+    : usedExistingImage ? 'composite-thumbnail'
+    : 'scene-overlay'
+
   return {
     title: capSocialText(pinTitle, 100),
     description: capSocialText(pinDescription, SOCIAL_LIMITS.pinterest),
@@ -403,6 +434,7 @@ Return ONLY valid JSON with these exact keys:
     imageBase64: imageResult?.data ?? null,
     mediaType: imageResult?.mediaType ?? null,
     fallbackImageUrl,
+    outcome: { design, downgrade: artDirected ? null : downgrade },
   }
 }
 
