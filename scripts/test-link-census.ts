@@ -24,6 +24,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildLinkCensus, describeCensus, retailerHrefs } from '../lib/link-census'
+import { convertibleLinks } from '../lib/post-affiliate-links'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -174,6 +175,73 @@ const ROB_BODY = `
   check('the census reads the stored body of each row, not the candidate list',
     /rows\.map\(\(r\) => \(\{ id: r\.id, title: r\.title, content: r\.content \}\)\)/.test(ROUTE_LIVE),
     'building it from candidates would reproduce the original undercount exactly')
+}
+
+// ── the post the tool could never offer to fix ──────────────────────────────
+//
+// 18 Sep, read straight off the census the day it shipped. The same creator's
+// card now said:
+//
+//   "1 of 4 posts can be re-pointed · 2 more carry off-style links it will not
+//    touch · 3 not offered (the link checked was on-style)"
+//   "1 of 5 off-style · Samsers Foldable Keyboard and Mouse Combo Review"
+//   "1 of 4 off-style · YOLEO Commercial Weight Bench Review"
+//
+// Those two posts could never be offered, on any run, in any mode. The scan
+// reads ONE link per post, theirs passed, and they left by the door marked
+// already-correct. The apply step has converted every link on a page since the
+// sticky-bar fix, so the capability existed the whole time and nothing could
+// reach it.
+//
+// The shape, exactly: a geni.us buy button (which ranks first and is what the
+// scan examines) plus one raw tagged Amazon link further down the page.
+{
+  const SAMSERS = `
+    <a class="gr-cta-btn" href="https://geni.us/samsers-kb">Check Price</a>
+    <a class="gr-price-strip-btn" href="https://geni.us/samsers-kb">See price</a>
+    <p>The <a href="https://www.amazon.com/dp/B0CX23K9QL?tag=laststop-20">folding stand</a> pairs with it.</p>
+    <a class="mvp-sc-btn" href="https://geni.us/samsers-kb">Shop everything</a>
+  `
+  const census = buildLinkCensus([{ id: 's', title: 'Samsers', content: SAMSERS }], 'geniuslink')
+  check('the census sees the one stray link the scan was blind to',
+    census.offStyle === 1 && census.total === 4, `off=${census.offStyle} total=${census.total}`)
+
+  // THE PREDICATE THAT NOW DRIVES SELECTION. convertibleLinks is the same
+  // function the apply step uses to convert those links, so a post is offered
+  // on exactly the condition that there is work the tool can actually do.
+  const work = convertibleLinks(SAMSERS, 'geniuslink')
+  check('convertibleLinks finds work on a post whose buy button is already right',
+    work.length === 1 && /B0CX23K9QL/.test(work[0].url), JSON.stringify(work))
+  check('and finds none on a post that is genuinely all Geniuslink',
+    convertibleLinks('<a href="https://geni.us/a">x</a><a href="https://geni.us/b">y</a>', 'geniuslink').length === 0)
+  check('an untagged Amazon link is not work: nobody earns on it',
+    convertibleLinks('<a href="https://www.amazon.com/dp/B0CX23K9QL">x</a>', 'geniuslink').length === 0,
+    'cloaking it would burn a Geniuslink on a page that pays nothing')
+
+  check('the scan offers a post on that predicate, not on its one best link',
+    /restyleMode && convertible\.length > 0/.test(ROUTE_LIVE) && /reason: 'extras'/.test(ROUTE_LIVE),
+    'this is the branch those two posts needed')
+  check('and the predicate is the same one the apply step converts with',
+    /const convertible = convertibleLinks\(content, chosenStyle\)/.test(ROUTE_LIVE),
+    'a second, looser predicate here would offer posts the apply step then leaves unchanged')
+
+  // AN EXTRAS ROW MUST NOT SPEND THE CREATOR'S QUOTA ON A LINK THAT IS RIGHT.
+  // Falling through to the normal path would mint a fresh geni.us to replace a
+  // working geni.us: a charge, a new shortcode, and no change a reader sees.
+  check('an extras row is detected from the post, not from the client',
+    /const primaryUrl = bodyLinkOf\(original\)/.test(ROUTE_LIVE) && /const extrasOnly = !!primaryUrl/.test(ROUTE_LIVE),
+    'a client that could declare "extras only" would be trusted with the Geniuslink account')
+  check('an extras row skips the mint',
+    /if \(!extrasOnly && !\/\^https\?:\\\/\\\/\/i\.test\(newUrl\)\)/.test(ROUTE_LIVE))
+  check('and skips the primary swap',
+    /let updated = original\n\s*if \(!extrasOnly\) \{/.test(ROUTE_LIVE))
+  check('and never blanks the stored product link on the video row',
+    /if \(row\.video_id && \/\^https\?:\\\/\\\/\/i\.test\(newUrl\)\)/.test(ROUTE_LIVE),
+    'an empty newUrl written here removes one of the four sources the next repair resolves from')
+
+  check('the preview names extras rows as their own kind',
+    /reason === 'extras'/.test(CONTENT_LIVE) && /Other links/.test(CONTENT_LIVE),
+    'ticking one agrees to something different: the main button does not change')
 }
 
 // ── the wiring: a failed mint is no longer a bare continue ──────────────────

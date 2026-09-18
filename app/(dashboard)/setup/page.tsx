@@ -7,6 +7,7 @@ import {
   Globe, Wrench, Sparkles, Link2, Rocket, Eye, EyeOff,
   Download, Upload, X, ArrowLeft, Building2, Wand2,
   Facebook, Pin, MessageCircle, Wifi, Check, LogOut, Save, Linkedin, Lock, Clock,
+  AlertTriangle,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -1009,6 +1010,24 @@ function SetupPageInner() {
   // wizard without nuking their existing default site.
   const [forceWizard, setForceWizard] = useState(false)
   const [completedUrl, setCompletedUrl] = useState('')
+  // ── CAN WE ACTUALLY PUBLISH, OR DID ONBOARDING JUST SAY SO ONCE? ──────────
+  //
+  // 17 Sep 2026. A creator on 48 published posts wrote in: generating a post
+  // said "WordPress not connected", the topbar said "No WordPress yet", and
+  // this page said "Your blog is live and connected" with a green check. She
+  // apologised for having issues.
+  //
+  // Three screens, two sources of truth. Everything that publishes resolves
+  // through wordpress_sites (via getWordPressCredentials / the sites route).
+  // This page alone decided off `integrations.onboarding_completed`, which is a
+  // record that she once finished the wizard and says nothing about whether the
+  // credentials still exist. Hers did not, so the one screen she opened to
+  // check was the one screen that could not see the problem.
+  //
+  // null = not asked yet. Loading is why the green card does not render until
+  // this answers: a card that flashes "connected" and then contradicts itself
+  // is the same lie with a shorter life.
+  const [siteCount, setSiteCount] = useState<number | null>(null)
   const supabase = createBrowserClient()
 
   useEffect(() => {
@@ -1044,6 +1063,29 @@ function SetupPageInner() {
           if (connectedUrl || isOnboarded) {
             setSetupComplete(true)
             if (connectedUrl) setCompletedUrl(connectedUrl)
+            // Ask the route that PUBLISHING asks. onboarding_completed decides
+            // whether to show the manager instead of the wizard, which is right
+            // and stays: an onboarded creator must never be dumped back into a
+            // blank wizard (Doug, 15 Jul). It is not evidence that credentials
+            // exist today, and using it as such is what told a creator with no
+            // site details that her blog was live and connected.
+            void (async () => {
+              try {
+                const r = await fetch('/api/wordpress/sites', { cache: 'no-store' })
+                const d = (await r.json()) as { sites?: unknown[] }
+                const n = Array.isArray(d?.sites) ? d.sites.length : 0
+                setSiteCount(n)
+                if (n > 0 && !connectedUrl) {
+                  const first = d.sites![0] as { url?: string }
+                  if (first?.url) setCompletedUrl(first.url)
+                }
+              } catch {
+                // A failed read is not a disconnected site. Leave it null so
+                // the card says it could not check rather than inventing
+                // either answer.
+                setSiteCount(-1)
+              }
+            })()
             setHydrated(true)
             return
           }
@@ -1131,6 +1173,7 @@ function SetupPageInner() {
       }
     } catch { /* ignore */ }
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+    setSiteCount(0)
     setSetupComplete(false); setCompletedUrl(''); setMode(null); setStep(1); setBrandData(defaultBrand)
     setSiteUrl(''); setUsername(''); setAccentColor('#f5a623'); setWordpressUrl('')
   }
@@ -1158,23 +1201,77 @@ function SetupPageInner() {
           </p>
         </div>
 
-        {/* Primary status — current default site at a glance */}
-        <div className="card p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-[#34c759]/10 flex items-center justify-center flex-shrink-0">
-              <CheckCircle size={18} className="text-[#34c759]" />
+        {/* ── Primary status ────────────────────────────────────────────────
+            Reports what the publisher can resolve RIGHT NOW, in three states
+            that look different from each other. The green one used to render
+            unconditionally, off a flag recording that onboarding finished
+            months ago, and a creator whose credentials had gone read it as an
+            all-clear while every other screen in the product told her the
+            truth. A status card that cannot say "no" is decoration. */}
+        {siteCount === null ? (
+          <div className="card p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-[#86868b]/10 flex items-center justify-center flex-shrink-0">
+                <Loader2 size={18} className="text-[#86868b] animate-spin" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Checking your connection…</p>
+                <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Reading the site details we publish with.</p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your blog is live and connected</p>
-              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] truncate mt-0.5">{completedUrl || 'Ready to publish.'}</p>
-            </div>
-            {completedUrl && (
-              <a href={completedUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs flex-shrink-0">
-                Visit blog <ExternalLink size={11} />
-              </a>
-            )}
           </div>
-        </div>
+        ) : siteCount === 0 ? (
+          <div className="card p-5 border border-[#ff9500]/40 bg-[#ff9500]/[0.06]">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full bg-[#ff9500]/15 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={18} className="text-[#b45309]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">We can&apos;t find your WordPress details</p>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-1 leading-relaxed">
+                  Your account is set up and your published posts are safe on your site, but the credentials MVP publishes with are missing, so new posts will fail. This is why the top bar says &quot;No WordPress yet&quot;. Reconnect below and everything resumes. Nothing on your site is touched.
+                </p>
+                <button
+                  onClick={() => { setForceWizard(true); setMode(null); setStep(1) }}
+                  className="btn-primary text-xs mt-3"
+                >
+                  Reconnect my site
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : siteCount < 0 ? (
+          <div className="card p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-[#86868b]/10 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={18} className="text-[#86868b]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">We couldn&apos;t check your connection</p>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
+                  That is a problem reading your settings, not a sign your blog is disconnected. Reload the page. If it keeps happening, run the connection doctor below.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="card p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-[#34c759]/10 flex items-center justify-center flex-shrink-0">
+                <CheckCircle size={18} className="text-[#34c759]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your blog is live and connected</p>
+                <p className="text-xs text-[#86868b] dark:text-[#8e8e93] truncate mt-0.5">{completedUrl || 'Ready to publish.'}</p>
+              </div>
+              {completedUrl && (
+                <a href={completedUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs flex-shrink-0">
+                  Visit blog <ExternalLink size={11} />
+                </a>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Multi-site manager — Pro feature. List of all connected sites with
             add/edit/delete/set-default controls. Was previously hidden inside

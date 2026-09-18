@@ -406,11 +406,27 @@ export async function POST(request: Request) {
           if (!row?.content) continue
           const original = row.content as string
 
+          // ── IS THERE A PRIMARY LINK TO REPLACE AT ALL? ──────────────────
+          //
+          // Re-derived from the post, never read off the row the client sent.
+          // An 'extras' row is one whose own buy link is ALREADY in the chosen
+          // style and whose other links are not, and minting a replacement for
+          // a link that is already right would spend the creator's quota to
+          // swap a working geni.us for a different working geni.us.
+          //
+          // Server-side because it decides whether to spend money. A client
+          // that said "extras only" would be trusted with the creator's
+          // Geniuslink account.
+          const primaryUrl = bodyLinkOf(original)
+          const extrasOnly = !!primaryUrl
+            && styleOfUrl(primaryUrl) === chosenStyle
+            && !badAmazonAsin(primaryUrl)
+
           // A restyle row arrives with no newUrl, because the preview refused to
           // mint one. Build it now, for this post only, now that the creator has
           // actually ticked it.
-          let newUrl = f.newUrl || ''
-          if (!/^https?:\/\//i.test(newUrl)) {
+          let newUrl = extrasOnly ? '' : (f.newUrl || '')
+          if (!extrasOnly && !/^https?:\/\//i.test(newUrl)) {
             const video = await resolveVideo(row.video_id as string | null)
             if (!video) { errs.push(`${f.postId}: no source video, cannot rebuild the link`); continue }
             const currentUrl = bodyLinkOf(original) || f.oldUrl
@@ -442,17 +458,21 @@ export async function POST(request: Request) {
           // href seen at preview time; re-read it here so a post edited since
           // then is still matched.
           const oldUrl = bodyLinkOf(original) || f.oldUrl
-          // Swap EVERY encoding of that URL, not just the byte sequence we
-          // happened to read it as. A creator's post held the same product link
-          // five times, four with WordPress's `&#038;` and one with a raw `&`,
-          // written by a different block. The split-on-one-string swap matched
-          // four and walked past the fifth, and he was shown a post the tool had
-          // just reported as fixed with a plain Amazon button still on it.
-          let updated = swapUrlEverywhere(original, oldUrl, newUrl)
-          updated = updated.replace(
-            new RegExp(`href="${amazonProductUrlRegex('i').source}"`, 'gi'),
-            (href) => (badAmazonAsin(href) ? `href="${newUrl}"` : href),
-          )
+          let updated = original
+          if (!extrasOnly) {
+            // Swap EVERY encoding of that URL, not just the byte sequence we
+            // happened to read it as. A creator's post held the same product
+            // link five times, four with WordPress's `&#038;` and one with a raw
+            // `&`, written by a different block. The split-on-one-string swap
+            // matched four and walked past the fifth, and he was shown a post the
+            // tool had just reported as fixed with a plain Amazon button still
+            // on it.
+            updated = swapUrlEverywhere(original, oldUrl, newUrl)
+            updated = updated.replace(
+              new RegExp(`href="${amazonProductUrlRegex('i').source}"`, 'gi'),
+              (href) => (badAmazonAsin(href) ? `href="${newUrl}"` : href),
+            )
+          }
           // ── Every OTHER link a reader can click ────────────────────────
           //
           // The swap above fixes the post's product link. A creator reported
@@ -539,7 +559,16 @@ export async function POST(request: Request) {
           // store the UUID in video_id; comparison posts store a youtube id and
           // simply won't match — harmless).
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          try { if (row.video_id) await db.from('youtube_videos').update({ product_url: newUrl }).eq('user_id', actingUserId).eq('id', row.video_id) } catch { /* non-fatal */ }
+          // Only when a product link was actually rebuilt. An extras-only run
+          // never mints one, and writing its empty string here would blank the
+          // video's stored product_url, which is one of the four sources the
+          // restyle resolver falls back to. That is a repair that quietly
+          // removes the material for the next repair.
+          try {
+            if (row.video_id && /^https?:\/\//i.test(newUrl)) {
+              await db.from('youtube_videos').update({ product_url: newUrl }).eq('user_id', actingUserId).eq('id', row.video_id)
+            }
+          } catch { /* non-fatal */ }
         } catch (err) {
           if (isStalePostError(err)) {
             // Keep the TITLE. A list of uuids is not something a creator can act
@@ -607,7 +636,17 @@ export async function POST(request: Request) {
 
 
     // ── Detect broken links (bounded concurrency on the network resolve) ─────
-    type Reason = 'broken' | 'regroup' | 'restyle'
+    /** 'extras': the post's OWN buy link is already in the chosen style, and
+     *  other links on the page are not.
+     *
+     *  Added 18 Sep, from the census this route now returns. A creator's card
+     *  read "3 not offered (the link checked was on-style)" over two posts the
+     *  census showed carrying an off-style link each, and those posts could
+     *  never be offered on any run: the scan reads ONE link per post, that one
+     *  passed, and the post left by the door marked already-correct. The apply
+     *  step has converted every link on a page since the sticky-bar fix, so the
+     *  capability was there; nothing could reach it. */
+    type Reason = 'broken' | 'regroup' | 'restyle' | 'extras'
     /** newUrl is null for a restyle row: the replacement is minted at apply time. */
     type Candidate = { post: PostRow; video: NonNullable<Awaited<ReturnType<typeof resolveVideo>>>; oldUrl: string; newUrl: string | null; reason: Reason }
     const candidates: Candidate[] = []
@@ -662,6 +701,13 @@ export async function POST(request: Request) {
           // 'all': all of the above except regrouping working geni.us links,
           //   which mints a new shortcode for every post and is a deliberate
           //   act, not something to fold into a general Fix button.
+          // Every OTHER link on the page that should carry the chosen style and
+          // does not: the inline text links, the price strip, the showcase
+          // button, the sticky mobile bar. convertibleLinks is the same
+          // predicate the apply step uses to convert them, so a post is offered
+          // on exactly the condition that there is work it can do.
+          const convertible = convertibleLinks(content, chosenStyle)
+
           let reason: Reason
           if (broken) {
             reason = 'broken'
@@ -669,6 +715,11 @@ export async function POST(request: Request) {
             reason = 'restyle'
           } else if (mode === 'regroup' && GENIUSLINK.test(oldUrl)) {
             reason = 'regroup'
+          } else if (restyleMode && convertible.length > 0) {
+            // The post's own buy link is fine. Something else on the page is
+            // not, and this is the only branch that can see it.
+            candidates.push({ post, video, oldUrl: convertible[0].url, newUrl: null, reason: 'extras' })
+            return
           } else {
             // Nothing to do for this post, and WHY matters: a link that is
             // already right reads very differently from one this mode does not

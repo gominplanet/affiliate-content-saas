@@ -5136,9 +5136,15 @@ export default function ContentPage() {
                         // which before ticking the box.
                         const broke = affPreview.filter(r => r.reason === 'broken').length
                         const styled = affPreview.filter(r => r.reason === 'restyle').length
+                        // Posts whose own buy link is fine and whose OTHER
+                        // links are not. Named separately because ticking one
+                        // agrees to something different: nothing about the
+                        // main button changes.
+                        const extra = affPreview.filter(r => r.reason === 'extras').length
                         const bits: string[] = []
                         if (broke) bits.push(`${broke} ${broke === 1 ? 'has a broken buy link' : 'have a broken buy link'}`)
                         if (styled) bits.push(`${styled} ${styled === 1 ? 'uses a link style' : 'use a link style'} you didn't choose${affStyleLabel ? ` and will move to ${affStyleLabel}` : ''}`)
+                        if (extra) bits.push(`${extra} ${extra === 1 ? 'has a correct buy link but other links on the page that are not' : 'have a correct buy link but other links on the page that are not'}`)
                         const lead = bits.length ? bits.join(', and ') : `${affPreview.length} need${affPreview.length === 1 ? 's' : ''} a new buy link`
                         // The scan covers every post now, so there is no
                         // "and some more you can't see" to disclose.
@@ -5193,6 +5199,13 @@ export default function ContentPage() {
                           )}
                           {row.reason === 'broken' && (
                             <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-[#ff3b30]/10 text-[#ff3b30] font-semibold">Broken</span>
+                          )}
+                          {/* The buy button is already right. What is wrong is
+                              the inline links, the price strip, the showcase
+                              button or the sticky mobile bar. Its own badge
+                              because it is a different thing to agree to. */}
+                          {row.reason === 'extras' && (
+                            <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-[#ff9500]/10 text-[#b45309] font-semibold">Other links</span>
                           )}
                         </div>
                         <p className="text-[11px] text-[#ff3b30] break-all font-mono">− {row.oldUrl}</p>
