@@ -66,6 +66,16 @@ const SUPPORTED_MODES: ScheduleMode[] = ['wp-native', 'draft-flip']
 // without Fluid Compute). See lib/generation-jobs.ts for the same reasoning.
 export const maxDuration = 600
 
+/** How long the internal generate call is allowed to take.
+ *
+ *  The same number the generation worker uses (lib/generation-job-runner's
+ *  RUNNER_ABORT_MS), and for the same reason: a post takes about four minutes
+ *  to write and publish, and Vercel clamps the invocation at 300s without Fluid
+ *  Compute, so 290s leaves room to record the outcome before the platform cuts
+ *  the request off. Named as a constant so the guard in
+ *  scripts/test-schedule-budget can assert it is passed. */
+const GENERATE_BUDGET_MS = 290_000
+
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
@@ -153,6 +163,33 @@ export async function POST(request: Request) {
     const generateUrl = `${url.protocol}//${url.host}/api/blog/generate`
     const cookieHeader = request.headers.get('cookie') ?? ''
     const genRes = await fetchWithTimeout(generateUrl, {
+      // ── NAME THE BUDGET, OR GET THIRTY SECONDS ────────────────────────────
+      //
+      // fetchWithTimeout applies DEFAULT_TIMEOUT_MS (30s) to any caller that
+      // names no deadline of its own. Generating and publishing a post takes
+      // 250 to 290 seconds, as the maxDuration comment at the top of this file
+      // says in as many words. So from the day the default landed, every single
+      // scheduled post aborted here at thirty seconds.
+      //
+      // What made it invisible is that aborting this fetch does not stop the
+      // work. The generate route is a SEPARATE invocation: it carried on,
+      // finished, created the WordPress draft, and wrote scheduled_for and
+      // schedule_mode onto blog_posts. Only the rows BELOW were lost, and they
+      // are the ones that publish the post and fire the social cascade. The
+      // creator got a schedule recorded in his dashboard, a draft on his site,
+      // and nothing that would ever join them up.
+      //
+      // Reported 17 Sep by a creator whose posts stopped going out. His last
+      // scheduled_posts row is dated 8 Sep; commit cc7b7a25, "Give outbound
+      // calls a deadline", is dated 8 Sep. Before it, two blog_publish rows and
+      // fourteen social rows every day like clockwork. After it, none.
+      //
+      // The same regression was found and fixed for the auto-pilot worker on
+      // 10 Sep, by teaching fetchWithTimeout to respect a caller-supplied
+      // signal. That fix could not help this call, because this call never
+      // named a budget at all. Both are passed here, matching the worker.
+      timeoutMs: GENERATE_BUDGET_MS,
+      signal: AbortSignal.timeout(GENERATE_BUDGET_MS),
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: cookieHeader },
       body: JSON.stringify({
