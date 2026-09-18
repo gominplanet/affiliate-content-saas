@@ -94,6 +94,11 @@ const publicPaths = [
   // this one entry.
   '/features',
   '/amazon-influencer',
+  // The paid-ads landing page. The same mistake as /amazon-influencer above
+  // would be more expensive here: every click is bought, and a 307 to /login
+  // spends the budget on a bounce that looks like bad targeting rather than a
+  // routing rule. Caught by scripts/test-public-routes before it ever ran.
+  '/own-your-blog',
   '/join',
   // Reached ONLY from a link in an email, by definition from a logged-out
   // browser. A confirmation that lands on a login page is a subscriber who

@@ -272,9 +272,18 @@ const split = strip(SPLIT)
   check('so "9 places" is true', /9 places|9 channels|9 outputs/.test(LANDING),
     'if the union changes, this check fails and the copy needs updating with it')
 
-  // The founding-price banner hides itself once the date passes, so it cannot
-  // go stale on its own. Worth keeping that property.
-  check('the founding deadline self-expires', /end\.getTime\(\) <= Date\.now\(\) \) return null|end\.getTime\(\) <= Date\.now\(\)\) return null/.test(LANDING),
+  // NO STALE COUNTDOWN. Two ways to satisfy that, and both are fine: have no
+  // countdown at all, or have one that hides itself once its date passes.
+  //
+  // This used to require the self-expiry code specifically, which failed the
+  // build the day the countdown was removed on request. A guard that fails
+  // because the thing it guards no longer exists is a guard that teaches people
+  // to delete it. The property it actually protects is that the page never
+  // shows a deadline that has already gone, and an absent countdown protects
+  // that perfectly.
+  const hasCountdown = /FOUNDING_DEADLINE/.test(LANDING)
+  check('the founding deadline self-expires',
+    !hasCountdown || /end\.getTime\(\) <= Date\.now\(\) \) return null|end\.getTime\(\) <= Date\.now\(\)\) return null/.test(LANDING),
     'a countdown that keeps counting after the date is the most obvious kind of stale')
 }
 

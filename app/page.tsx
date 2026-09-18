@@ -19,6 +19,7 @@
  */
 import { TIERS } from '@/lib/tier'
 import { FREE_TRIAL } from '@/lib/free-trial'
+import { TESTIMONIALS } from '@/lib/testimonials'
 import {
   FileText, Image as ImageIcon, Mail, Scale, Calendar,
   Play, Sparkles, ArrowRight, Bookmark,
@@ -57,35 +58,14 @@ const DARK_SECTION_VARS: React.CSSProperties = {
 //   terms, or leave null to show none. (Awaiting the exact terms.)
 const GUARANTEE: string | null = '30-day money-back guarantee'
 //
-// FOUNDING_DEADLINE: ISO date the founding prices end (e.g. '2026-09-30'). When
-//   set AND in the future, a real countdown shows. null = no urgency. Never fake
-//   this — only set a genuine deadline. (Awaiting a real date.)
-const FOUNDING_DEADLINE: string | null = '2026-12-31'
+// NO DEADLINE. There was one, set three months out, and it was removed on
+//   request. A date that far away does not create urgency; it reads as a
+//   deadline nobody means, on a page whose whole argument is that we tell
+//   creators the truth about their own numbers. If a genuine dated offer ever
+//   exists it goes back here and the countdown returns with it. An invented one
+//   does not: scripts/test-sales-page fails the build on any countdown that is
+//   not driven by a real date.
 //
-// TESTIMONIALS: real customer quotes only — never fabricated. The section is
-//   hidden until this has entries. Add { quote, name, handle? }.
-//   A photo, a real name and a SPECIFIC result are what make a quote work on
-//   cold ad traffic. `photo` is a path under /public (add the file, reference it
-//   here); `result` is the one-line outcome shown above the quote, and it should
-//   be a number the creator themselves stated. Everything except `quote` and
-//   `name` is optional, and the card renders correctly without any of it, so
-//   quotes can go up the moment they arrive and gain their photo later.
-const TESTIMONIALS: {
-  quote: string
-  name: string
-  handle?: string
-  /** e.g. 'Amazon Influencer' — what they do, so a reader recognises themselves. */
-  title?: string
-  /** Path under /public, e.g. '/png/testimonial-rob.webp'. Square crop. */
-  photo?: string
-  /** The headline outcome, in their words. e.g. 'Made the subscription back in 2 weeks'. */
-  result?: string
-}[] = [
-  {
-    quote: 'I was skeptical at first but I needed to try something new to push my Amazon offsite revenue. Within the first 2 weeks of testing MVP, I made the subscription back and then some. So grateful for this tool and what it generates for my business.',
-    name: 'Verified MVP creator',
-  },
-]
 
 /** Wrap a section to give it a bold dark (or gradient) background — used to
  *  break up the bright page and make key sections punch. Pass `accent` to also
@@ -381,17 +361,6 @@ function PricingSection() {
                 <ShieldCheck size={15} /> {GUARANTEE}
               </span>
             )}
-            {(() => {
-              if (!FOUNDING_DEADLINE) return null
-              const end = new Date(FOUNDING_DEADLINE + 'T23:59:59')
-              if (isNaN(end.getTime()) || end.getTime() <= Date.now()) return null
-              const when = end.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
-              return (
-                <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold px-3 py-1 rounded-full" style={{ background: 'rgba(234,88,12,0.1)', color: '#C2410C' }}>
-                  <Zap size={14} /> Founding prices end {when}
-                </span>
-              )
-            })()}
           </div>
         </div>
 
