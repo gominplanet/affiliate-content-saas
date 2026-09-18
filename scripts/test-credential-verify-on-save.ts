@@ -78,8 +78,18 @@ const BRAND = strip(readFileSync('app/(dashboard)/brand/page.tsx', 'utf8'))
 // ── and it reaches the screen, ahead of everything else ───────────────────
 {
   check('the brand page reads the verdict', /data\.geniuslinkVerified/.test(BRAND))
-  check('and shows the message', /setWpPushNote\(data\.geniuslinkMessage\)/.test(BRAND),
+  // Pinned on the MESSAGE reaching the screen, not on the function that puts it
+  // there. This used to require setWpPushNote(data.geniuslinkMessage) by name,
+  // and that single shared note is exactly what had to go: it was written by
+  // three unrelated steps under one hardcoded "the WordPress push failed"
+  // headline, so a creator's Geniuslink SUCCESS was shown to him as a WordPress
+  // failure (17 Sep). A guard that fails when a bug is fixed teaches whoever
+  // hits it to edit the guard rather than read it.
+  check('and shows the message', /data\.geniuslinkMessage\)/.test(BRAND),
     'a field nothing renders is the silence this replaces')
+  check('and the message is not filed under somebody else\'s headline',
+    !/setWpPushNote\(/.test(BRAND),
+    'one slot shared by three steps cannot carry a headline for any of them')
 
   const rejected = BRAND.indexOf('data.geniuslinkVerified === false')
   const accepted = BRAND.indexOf('data.geniuslinkVerified === true')

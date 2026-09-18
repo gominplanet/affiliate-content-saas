@@ -369,7 +369,27 @@ export default function BrandPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [wpPushNote, setWpPushNote] = useState<string | null>(null)
+  // ── ONE NOTICE PER THING THAT HAPPENED, EACH CARRYING ITS OWN HEADLINE ────
+  //
+  // This was a single `wpPushNote: string | null` written by three unrelated
+  // steps (the affiliate-key save, the showcase check, the WordPress push) and
+  // rendered under one hardcoded headline: "Saved here, but the WordPress push
+  // failed". A creator sent a screenshot on 17 Sep showing that headline above
+  // the words "Geniuslink accepted your key. 82 link groups found."
+  //
+  // Both halves were produced correctly. The Geniuslink step succeeded and wrote
+  // its success message into the variable; the WordPress step then succeeded too
+  // and, having nothing to report, left the note untouched. So a success was
+  // rendered as a failure, and the creator went looking for a WordPress fault
+  // that the screen had invented.
+  //
+  // A shared slot cannot carry a headline, because the headline belongs to the
+  // event and not to the slot. Each step now states its own tone and title, and
+  // a step that succeeds with nothing to say adds nothing.
+  const [notices, setNotices] = useState<Array<{ tone: 'ok' | 'warn' | 'error'; title: string; detail: string }>>([])
+  const addNotice = useCallback((tone: 'ok' | 'warn' | 'error', title: string, detail: string) => {
+    setNotices((prev) => [...prev, { tone, title, detail }])
+  }, [])
   const [logoUploading, setLogoUploading] = useState(false)
   const [bannerUploading, setBannerUploading] = useState(false)
   const [headshotUploading, setHeadshotUploading] = useState(false)
@@ -713,7 +733,7 @@ export default function BrandPage() {
   async function save() {
     setSaving(true)
     setSaveError(null)
-    setWpPushNote(null)
+    setNotices([])
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
 
@@ -795,23 +815,27 @@ export default function BrandPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) {
-        setWpPushNote(`Brand saved, but affiliate routing keys failed: ${data.error || res.statusText}`)
+        addNotice('error', 'Your affiliate routing keys did not save',
+          `${data.error || res.statusText}. Your brand details were saved; the keys were not.`)
       } else if (data.geniuslinkVerified === false && typeof data.geniuslinkMessage === 'string') {
         // FIRST, because it beats every other note here. The key was stored and
         // Geniuslink refused it, which means links keep publishing plain. A
         // creator told to re-enter a key needs to know in this moment whether
         // the re-entry worked, not on their next article.
-        setWpPushNote(data.geniuslinkMessage)
+        addNotice('error', 'Geniuslink rejected your key', data.geniuslinkMessage)
       } else if (data.geniuslinkVerified === true && typeof data.geniuslinkMessage === 'string') {
-        setWpPushNote(data.geniuslinkMessage)
+        // A SUCCESS, and it has to look like one. This exact message was the
+        // text shown under a WordPress-failure headline on 17 Sep.
+        addNotice('ok', 'Geniuslink connected', data.geniuslinkMessage)
       } else if (typeof data.showcaseWarning === 'string' && data.showcaseWarning) {
         // The save WORKED. This is what a viewer will actually experience when
         // they click the link, which is a different thing from whether it
         // stored, and the only moment the creator can still swap it.
-        setWpPushNote(data.showcaseWarning)
+        addNotice('warn', 'About your showcase link', data.showcaseWarning)
       }
     } catch (e) {
-      setWpPushNote(`Brand saved, but affiliate routing keys failed: ${e instanceof Error ? e.message : 'unknown error'}`)
+      addNotice('error', 'Your affiliate routing keys did not save',
+        `${e instanceof Error ? e.message : 'unknown error'}. Your brand details were saved; the keys were not.`)
     }
 
     // ── 2. Sync to WordPress (route through our server so the same Application
@@ -847,17 +871,20 @@ export default function BrandPage() {
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setWpPushNote(json.error || 'Saved here, but the push to WordPress failed.')
+        addNotice('error', 'Saved here, but the WordPress push failed',
+          json.error || 'WordPress did not accept the update. Run the connection doctor under Blog Set Up.')
       } else if (json.wordpress === 'not_connected') {
         // No WP connection — silent. The dashboard save still succeeded.
       } else if (json.wordpress === 'failed') {
-        setWpPushNote(json.wordpressError || 'Saved here, but the push to WordPress failed.')
+        addNotice('error', 'Saved here, but the WordPress push failed',
+          json.wordpressError || 'WordPress did not accept the update. Run the connection doctor under Blog Set Up.')
       } else if (json.wordpress === 'pushed') {
         // Auto-purge cache so the brand changes appear immediately on the live site.
         fetch('/api/wordpress/purge-cache', { method: 'POST' }).catch(() => {})
       }
     } catch (e) {
-      setWpPushNote(e instanceof Error ? e.message : 'WordPress push failed.')
+      addNotice('error', 'Saved here, but the WordPress push failed',
+        e instanceof Error ? e.message : 'The request to WordPress did not complete.')
     }
 
     setSaving(false)
@@ -980,12 +1007,27 @@ export default function BrandPage() {
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{saveError}</p>
         </div>
       )}
-      {wpPushNote && (
-        <div className="mb-4 rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 px-4 py-3">
-          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Saved here, but the WordPress push failed</p>
-          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{wpPushNote}</p>
-        </div>
-      )}
+      {/* Each notice states what happened and looks like what it is. A green
+          success and an amber failure sitting in the same stack is the point:
+          one save really can connect Geniuslink and fail to reach WordPress,
+          and the old single slot had to throw one of those away. */}
+      {notices.map((n, i) => {
+        const tone = n.tone === 'ok'
+          ? { border: 'rgba(52,199,89,0.3)', bg: 'rgba(52,199,89,0.06)', title: '#248a3d' }
+          : n.tone === 'warn'
+            ? { border: 'rgba(255,149,0,0.3)', bg: 'rgba(255,149,0,0.05)', title: '#b45309' }
+            : { border: 'rgba(255,59,48,0.3)', bg: 'rgba(255,59,48,0.05)', title: '#ff3b30' }
+        return (
+          <div
+            key={`${n.title}-${i}`}
+            className="mb-4 rounded-xl border px-4 py-3"
+            style={{ borderColor: tone.border, background: tone.bg }}
+          >
+            <p className="text-xs font-semibold mb-0.5" style={{ color: tone.title }}>{n.title}</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{n.detail}</p>
+          </div>
+        )
+      })}
 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

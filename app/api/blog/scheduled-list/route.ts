@@ -6,6 +6,8 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { createWordPressService } from '@/services/wordpress'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -75,6 +77,11 @@ export async function GET() {
     rows.filter((r) => r.kind === 'blog_publish' && r.blog_post_id).map((r) => r.blog_post_id as string),
   )
   const nowIso = new Date().toISOString()
+  // How far back to keep looking for posts WordPress was supposed to publish
+  // and did not. Bounded because each sweep costs one WP request per site, and
+  // because a schedule missed a month ago is history rather than news.
+  const OVERDUE_WINDOW_DAYS = 14
+  const overdueSinceIso = new Date(Date.now() - OVERDUE_WINDOW_DAYS * 24 * 60 * 60_000).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // Try selecting the ticked-platforms column (migration 231) too; if the DB
   // doesn't have it yet, fall back to the select without it so the list keeps
@@ -152,5 +159,101 @@ export async function GET() {
       : d,
   )
 
-  return NextResponse.json({ scheduled: [...withCascade, ...synthetic] })
+  // ── POSTS WORDPRESS WAS SUPPOSED TO PUBLISH AND DID NOT ───────────────────
+  //
+  // The synthetic rows above are gated on scheduled_for being in the FUTURE, so
+  // a scheduled post vanishes from this list the moment its time passes. That
+  // is correct only if the time passing means it published, and blog/generate
+  // says outright that this is what MVP assumes: "the 'is it live yet?'
+  // question is answered by scheduled_for being in the past".
+  //
+  // It is an assumption, and WP-Cron breaks it routinely. WordPress only runs
+  // its scheduler when somebody loads the site; a new blog on shared hosting
+  // with no traffic does not run it, the post sits at status 'future' past its
+  // date, and WordPress calls that a missed schedule. A creator reported this
+  // on 17 Sep: unpublished posts in WP Admin, nothing in MVP's schedule, and
+  // no explanation on either screen. He found it by logging into his host.
+  //
+  // So we ask WordPress. One request per site for up to 100 ids, only for posts
+  // due in the last fortnight, and only ever to REPORT: nothing is published
+  // from a list endpoint.
+  const overdue: Array<Record<string, unknown>> = []
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: pastDue } = await (supabase as any)
+      .from('blog_posts')
+      .select('id, title, wordpress_url, wordpress_post_id, wordpress_site_id, video_id, scheduled_for, created_at')
+      .eq('user_id', user.id)
+      .not('scheduled_for', 'is', null)
+      .not('wordpress_post_id', 'is', null)
+      .lt('scheduled_for', nowIso)
+      .gt('scheduled_for', overdueSinceIso)
+      .order('scheduled_for', { ascending: false })
+      .limit(100)
+
+    const candidates = (pastDue ?? []) as Array<{
+      id: string; title: string | null; wordpress_url: string | null
+      wordpress_post_id: number; wordpress_site_id: string | null
+      video_id: string | null; scheduled_for: string; created_at: string | null
+    }>
+
+    if (candidates.length) {
+      // Group by site: a multi-site creator's posts live on different
+      // WordPresses and each needs its own credentials and its own request.
+      const bySite = new Map<string, typeof candidates>()
+      for (const c of candidates) {
+        const key = c.wordpress_site_id ?? '__default__'
+        bySite.set(key, [...(bySite.get(key) ?? []), c])
+      }
+      for (const [siteKey, group] of bySite) {
+        const creds = await getWordPressCredentials(supabase, user.id, siteKey === '__default__' ? null : siteKey)
+        if (!creds) continue
+        const wp = createWordPressService(
+          creds.wordpress_url, creds.wordpress_username,
+          creds.wordpress_app_password, creds.wordpress_api_token || undefined,
+        )
+        const statuses = await wp.getPostStatuses(group.map((g) => g.wordpress_post_id))
+        // null = we could not ask. Reporting every post as unpublished on a
+        // network wobble would be the same failure pointing the other way, so
+        // this site is simply skipped this time round.
+        if (!statuses) continue
+        for (const c of group) {
+          const status = statuses.get(c.wordpress_post_id)
+          // Absent from the answer means deleted in WP admin, which is its own
+          // situation and not a missed schedule. Only a post WordPress still
+          // holds in a non-live state is overdue.
+          if (!status || status === 'publish') continue
+          overdue.push({
+            id: `overdue:${c.id}`,
+            blog_post_id: c.id,
+            video_id: c.video_id ?? null,
+            kind: 'blog_publish' as const,
+            parent_id: null,
+            platform: null,
+            scheduled_at: c.scheduled_for,
+            body_text: status === 'future'
+              ? 'WordPress accepted the schedule but has not run it. WordPress only publishes scheduled posts when someone visits your site, so a quiet blog can miss its own schedule. Publishing it now is safe.'
+              : `WordPress is holding this post as "${status}" instead of publishing it.`,
+            status: 'overdue' as const,
+            wpStatus: status,
+            attempts: 0,
+            error_message: null,
+            external_id: String(c.wordpress_post_id),
+            created_at: c.created_at ?? c.scheduled_for,
+            blog_posts: { title: c.title, wordpress_url: c.wordpress_url },
+            youtube_videos: null,
+            cascade: socialByBlog.get(c.id) ?? [],
+            cascadeBodies: socialBodiesByBlog.get(c.id) ?? {},
+            synthetic: true,
+          })
+        }
+      }
+    }
+  } catch (e) {
+    // A schedule list that loads without the overdue check beats one that does
+    // not load. The posts stay unpublished either way; only the warning is lost.
+    console.warn('[scheduled-list] overdue check failed (non-fatal)', e instanceof Error ? e.message : String(e))
+  }
+
+  return NextResponse.json({ scheduled: [...withCascade, ...synthetic, ...overdue] })
 }

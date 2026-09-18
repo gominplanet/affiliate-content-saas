@@ -145,7 +145,12 @@ interface ScheduledItem {
   platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram' | 'tiktok' | 'instagram' | null
   scheduled_at: string
   body_text: string
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
+  /** 'overdue' is not a scheduled_posts status. It means WordPress still holds
+   *  this post unpublished after its scheduled time, which MVP used to treat as
+   *  proof it had published. See the overdue block in /api/blog/scheduled-list. */
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'overdue'
+  /** The status WordPress reports for an overdue post, usually 'future'. */
+  wpStatus?: string | null
   attempts: number
   error_message: string | null
   external_id: string | null
@@ -2083,16 +2088,22 @@ const STATUS_PILL: Record<ScheduledItem['status'], { label: string; bg: string; 
   completed:  { label: 'Published',  bg: 'bg-[#34c759]/10', fg: 'text-[#1f8a3a]' },
   failed:     { label: 'Failed',     bg: 'bg-[#ff3b30]/10', fg: 'text-[#ff3b30]' },
   cancelled:  { label: 'Cancelled',  bg: 'bg-gray-100',     fg: 'text-[#86868b]' },
+  // Its own colour and its own word. "Pending" would be a lie (the time has
+  // passed) and "Failed" would be one too (nothing failed — WordPress simply
+  // never ran its own scheduler, and the post is intact and one click away).
+  overdue:    { label: 'Not published yet', bg: 'bg-[#ff3b30]/10', fg: 'text-[#ff3b30]' },
 }
 
 function ScheduledList({
-  items, loading, error, onRefresh, onCancel,
+  items, loading, error, onRefresh, onCancel, onPublishNow, publishingNow,
 }: {
   items: ScheduledItem[] | null
   loading: boolean
   error: string | null
   onRefresh: () => void
   onCancel: (id: string) => void
+  onPublishNow: (blogPostId: string) => Promise<void>
+  publishingNow: string | null
 }) {
   // History filter (2026-06-07 UX fix). The Scheduled tab kept showing
   // completed rows forever, which made users think a fired schedule was
@@ -2134,7 +2145,10 @@ function ScheduledList({
 
   // Apply the pending/all filter BEFORE grouping so a parent that's
   // already published doesn't show with hidden pending children.
-  const filteredItems = showHistory ? items : items.filter(i => i.status === 'pending' || i.status === 'processing')
+  // Overdue rows are never history: they are the live problem on this screen.
+  const filteredItems = showHistory
+    ? items
+    : items.filter(i => i.status === 'pending' || i.status === 'processing' || i.status === 'overdue')
 
   // ── Cascade grouping (P1.3 — per-row schedule cascade view) ──────────
   // Visually group child rows under their parent so the user can see the
@@ -2155,8 +2169,11 @@ function ScheduledList({
   }
   // Sort top-level: pending first (oldest-due at top), then by recent.
   const sortedTopLevel = topLevel.sort((a, b) => {
-    const aPending = a.status === 'pending' ? 0 : 1
-    const bPending = b.status === 'pending' ? 0 : 1
+    // Overdue first, then pending. A post that should already be live outranks
+    // one that is still waiting its turn.
+    const rank = (st: ScheduledItem['status']) => (st === 'overdue' ? 0 : st === 'pending' ? 1 : 2)
+    const aPending = rank(a.status)
+    const bPending = rank(b.status)
     if (aPending !== bPending) return aPending - bPending
     return new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime()
   })
@@ -2344,6 +2361,20 @@ function ScheduledList({
                   className="text-xs font-medium text-[#7C3AED] hover:underline"
                 >
                   Edit schedule
+                </button>
+              )}
+              {/* The post is sitting unpublished on their site right now. Naming
+                  the problem without offering the one-click fix would leave
+                  them doing what the creator who reported this did: opening
+                  WP Admin through their host to work out what MVP meant. */}
+              {item.status === 'overdue' && item.blog_post_id && (
+                <button
+                  onClick={() => void onPublishNow(item.blog_post_id)}
+                  disabled={publishingNow === item.blog_post_id}
+                  className="text-xs font-semibold text-white rounded-full px-3 py-1 disabled:opacity-60"
+                  style={{ backgroundColor: '#ff3b30' }}
+                >
+                  {publishingNow === item.blog_post_id ? 'Publishing…' : 'Publish it now'}
                 </button>
               )}
               {item.status === 'pending' && !item.synthetic && (
@@ -2538,6 +2569,7 @@ export default function ContentPage() {
   }, [activeTab])
   // Scheduled posts list (loaded on demand when the Scheduled tab opens)
   const [scheduledItems, setScheduledItems] = useState<ScheduledItem[] | null>(null)
+  const [publishingNow, setPublishingNow] = useState<string | null>(null)
   const [scheduledLoading, setScheduledLoading] = useState(false)
   const [scheduledError, setScheduledError] = useState<string | null>(null)
   const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null; rewriteCount?: number; mvpId?: string | null; posted?: string[]; pinnedPersisted?: boolean }[]>([])
@@ -3154,6 +3186,35 @@ export default function ContentPage() {
       setScheduledError(err instanceof Error ? err.message : 'Failed to load scheduled posts')
     } finally {
       setScheduledLoading(false)
+    }
+  }
+
+  /** Publish a post WordPress was supposed to publish and did not.
+   *
+   *  No confirm dialog. The creator already asked for this to be published,
+   *  at a time that has passed; this is the product finally doing what it was
+   *  told, not a new decision. */
+  async function publishNow(blogPostId: string) {
+    setPublishingNow(blogPostId)
+    try {
+      const res = await fetch('/api/blog/publish-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blogPostId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
+        toast.error(data.error || 'Could not publish it. Try again in a moment.')
+        return
+      }
+      // The route re-reads the status from WordPress before answering, so this
+      // says "it is live", not "we sent the request".
+      toast.success('Published. It is live on your blog now.')
+      await loadScheduled()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not publish it.')
+    } finally {
+      setPublishingNow(null)
     }
   }
 
@@ -4406,6 +4467,8 @@ export default function ContentPage() {
           error={scheduledError}
           onRefresh={loadScheduled}
           onCancel={cancelScheduled}
+          onPublishNow={publishNow}
+          publishingNow={publishingNow}
         />
       ) : activeTab === 'posts' ? (
         <div className="flex flex-col gap-2">

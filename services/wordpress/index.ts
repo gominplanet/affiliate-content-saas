@@ -1026,6 +1026,48 @@ export class WordPressService {
     }
   }
 
+  /**
+   * DID THESE POSTS ACTUALLY GO LIVE?
+   *
+   * MVP schedules most posts "wp-native": the post is created with
+   * status=future and a date, and WordPress's own cron publishes it. Nothing
+   * then checks. blog/generate says so in as many words — "the 'is it live
+   * yet?' question is answered by scheduled_for being in the past" — and that
+   * is an assumption, not an observation.
+   *
+   * WP-Cron only fires when somebody visits the site. On a new blog on shared
+   * hosting, nobody does, so a scheduled post sits at 'future' past its date:
+   * WordPress calls this a missed schedule and it can sit that way forever. A
+   * creator reported exactly this on 17 Sep: posts unpublished in WP Admin,
+   * gone from MVP's schedule, and nothing anywhere saying why.
+   *
+   * One request for up to 100 ids. The map omits any id WordPress did not
+   * return, and a failed request returns null rather than an empty map, because
+   * "I could not ask" and "none of them published" must never collapse into the
+   * same answer — that is the mistake that made this invisible in the first
+   * place.
+   */
+  async getPostStatuses(ids: number[]): Promise<Map<number, string> | null> {
+    const wanted = [...new Set(ids.filter((n) => Number.isFinite(n) && n > 0))].slice(0, 100)
+    if (!wanted.length) return new Map()
+    try {
+      // status=any is required: the REST default returns published posts only,
+      // which would report every missed schedule as simply absent.
+      const rows = await this.request<Array<{ id?: number; status?: string }>>(
+        `/posts?include=${wanted.join(',')}&per_page=${wanted.length}&status=any&_fields=id,status&context=edit`,
+        { method: 'GET' },
+      )
+      if (!Array.isArray(rows)) return null
+      const out = new Map<number, string>()
+      for (const r of rows) {
+        if (typeof r?.id === 'number' && typeof r?.status === 'string') out.set(r.id, r.status)
+      }
+      return out
+    } catch {
+      return null
+    }
+  }
+
   async updatePost(id: number, post: Partial<WPPost>): Promise<WPPostResponse> {
     post = this.healBlocks(post)
     return this.request<WPPostResponse>(`/posts/${id}`, {
