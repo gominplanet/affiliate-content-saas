@@ -33,6 +33,68 @@ function setIngestError(e: string | null) { _lastIngestError = e }
 export interface IngestResult {
   url: string
   durationSeconds: number | null
+  /**
+   * The audio language actually on the file, when one was requested.
+   *
+   * null means the request was not made OR was made and not satisfied, and the
+   * file therefore carries the ORIGINAL audio. Never set to the language that
+   * was asked for: this field exists so a caller can tell the difference
+   * between a French dub and an English video about to be published to
+   * amazon.fr, which look identical from the URL alone.
+   */
+  audioLanguage?: string | null
+  /** Why the requested language is absent, for a caller that wants to say so. */
+  audioLanguageNote?: string | null
+}
+
+/** What languages a video already carries, before anything is downloaded. */
+export interface AudioTrackInfo {
+  languages: string[]
+  originalLanguage: string | null
+  multiTrack: boolean
+}
+
+/**
+ * The audio tracks YouTube serves for a video: the creator's own multi-audio
+ * uploads and YouTube's auto-dubbing, if either exists.
+ *
+ * Metadata only, so this is cheap enough to ask before offering a market a free
+ * dub. Returns null when unconfigured or on failure, which the caller must read
+ * as "we do not know" rather than "there are none": the two lead to opposite
+ * decisions, one being "use YouTube's dub" and the other "spend a credit".
+ */
+export async function listYouTubeAudioTracks(youtubeVideoId: string): Promise<AudioTrackInfo | null> {
+  const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
+  if (!base || !youtubeVideoId) return null
+  try {
+    const res = await fetch(`${base}/audio-tracks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
+      },
+      body: JSON.stringify({ videoId: youtubeVideoId }),
+      signal: AbortSignal.timeout(60_000),
+    })
+    if (!res.ok) return null
+    const d = await res.json() as { ok?: boolean; languages?: unknown; originalLanguage?: unknown; multiTrack?: unknown }
+    if (!d?.ok || !Array.isArray(d.languages)) return null
+    const languages = d.languages.filter((l): l is string => typeof l === 'string')
+    return {
+      languages,
+      originalLanguage: typeof d.originalLanguage === 'string' ? d.originalLanguage : null,
+      multiTrack: !!d.multiTrack,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Does this video carry a track in `lang`? Prefix match, so 'fr' finds fr-FR. */
+export function hasAudioTrack(info: AudioTrackInfo | null, lang: string): boolean {
+  if (!info || !lang) return false
+  const want = lang.trim().toLowerCase()
+  return info.languages.some((l) => l.toLowerCase().startsWith(want))
 }
 
 /**
@@ -40,9 +102,20 @@ export interface IngestResult {
  * URL. Returns null when unconfigured or on any failure — the caller then falls
  * back to prompting the creator to upload the file.
  */
-export async function ingestYouTubeVideo(youtubeVideoId: string, userId?: string): Promise<IngestResult | null> {
+export async function ingestYouTubeVideo(
+  youtubeVideoId: string,
+  userId?: string,
+  /**
+   * Ask for a specific audio track, e.g. 'fr' for YouTube's French dub. The
+   * service downloads the original instead when the video has no such track,
+   * and says so in `audioLanguage` / `audioLanguageNote` on the result. It does
+   * NOT fail: the caller can still dub the paid way.
+   */
+  opts?: { audioLanguage?: string | null },
+): Promise<IngestResult | null> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
   if (!base || !youtubeVideoId) return null
+  const wantLang = (opts?.audioLanguage || '').trim().toLowerCase() || null
   try {
     const res = await fetch(`${base}/ingest`, {
       method: 'POST',
@@ -50,14 +123,31 @@ export async function ingestYouTubeVideo(youtubeVideoId: string, userId?: string
         'Content-Type': 'application/json',
         ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
       },
-      body: JSON.stringify({ videoId: youtubeVideoId, ...(userId ? { userId } : {}) }),
+      body: JSON.stringify({
+        videoId: youtubeVideoId,
+        ...(userId ? { userId } : {}),
+        ...(wantLang ? { audioLanguage: wantLang } : {}),
+      }),
       // Downloading + uploading a long video takes a while; give the service room.
       signal: AbortSignal.timeout(280_000),
     })
     if (!res.ok) return null
-    const data = await res.json() as { url?: string; durationSeconds?: number }
+    const data = await res.json() as {
+      url?: string; durationSeconds?: number; audioLanguage?: unknown; audioLanguageNote?: unknown
+    }
     if (!data?.url || !/^https:\/\//i.test(data.url)) return null
-    return { url: data.url, durationSeconds: Number.isFinite(Number(data.durationSeconds)) ? Number(data.durationSeconds) : null }
+    // Read the SERVICE's answer, never echo the request. An older service that
+    // does not know the field returns undefined, which becomes null here and
+    // correctly reads as "this is the original audio".
+    const got = typeof data.audioLanguage === 'string' ? data.audioLanguage : null
+    return {
+      url: data.url,
+      durationSeconds: Number.isFinite(Number(data.durationSeconds)) ? Number(data.durationSeconds) : null,
+      audioLanguage: got,
+      audioLanguageNote: typeof data.audioLanguageNote === 'string'
+        ? data.audioLanguageNote
+        : (wantLang && !got ? `no ${wantLang} audio track on this video` : null),
+    }
   } catch {
     return null
   }

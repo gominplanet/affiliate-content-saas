@@ -15,7 +15,7 @@ import { marketByDomain, translateScript } from '@/lib/global-sync'
 import { synthesizeSpeech, ttsConfigured, elevenConfigured } from '@/lib/tts'
 import { getClonedVoiceId } from '@/lib/voice-clone'
 import { dubCreditBalance, spendDubCredit } from '@/lib/dub-credits'
-import { ingestConfigured, ingestYouTubeVideo, renderDub } from '@/lib/youtube-ingest'
+import { ingestConfigured, ingestYouTubeVideo, renderDub, listYouTubeAudioTracks, hasAudioTrack } from '@/lib/youtube-ingest'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { cuesToText } from '@/lib/shorts-transcript'
 
@@ -64,6 +64,64 @@ export async function POST(req: Request) {
     .select('id,youtube_video_id,transcript,duration_seconds,source_video_url')
     .eq('id', job.video_id).eq('user_id', user.id).maybeSingle()
   if (!video) return NextResponse.json({ error: 'Master video not found.' }, { status: 404 })
+
+  // ── 0) YOUTUBE MAY HAVE ALREADY DUBBED THIS ──────────────────────────────
+  //
+  // YouTube auto-dubs a lot of videos now, and a creator can upload their own
+  // multi-audio tracks. When a track exists in this market's language it is
+  // already translated, already timed to the picture, and already paid for. So
+  // it is tried FIRST, before the transcript requirement below, because none of
+  // the work underneath is needed: no transcription, no translation, no
+  // synthesis, no cloned-voice credit.
+  //
+  // Only the language is checked, never assumed. `audioLanguage` on the result
+  // is what the downloader actually obtained, so a video with no French track
+  // falls through to the paid lane instead of publishing English audio to
+  // amazon.fr, which is the failure that would look exactly like success.
+  //
+  // Skipped for the cloned-voice lane on purpose: a creator paying for a dub
+  // that sounds like them is buying something YouTube's generic voice does not
+  // provide, and silently substituting it would be a downgrade they did not ask
+  // for. They can still choose it with voice: 'standard'.
+  //
+  // But the condition is "not getting a clone", NOT "asked for standard". Most
+  // callers send no voice at all and the lane is picked for them further down,
+  // so gating on the explicit flag alone would have meant this almost never
+  // ran: a creator with no cloned voice, or out of credits, would still have
+  // got our generic TTS when YouTube had a real dub sitting there for free.
+  // getClonedVoiceId is one cheap read and the paid lane re-reads it below.
+  const clonedForLane = await getClonedVoiceId(sb, user.id)
+  const cloneIsOnTheTable = !requestedStandard && !!clonedForLane && elevenConfigured()
+
+  const marketLang = (market.lang || '').split('-')[0].toLowerCase()
+  const ytIdForDub = (video.youtube_video_id as string | null) || ''
+  if (!cloneIsOnTheTable && marketLang && ytIdForDub && ingestConfigured()) {
+    const tracks = await listYouTubeAudioTracks(ytIdForDub)
+    if (hasAudioTrack(tracks, marketLang)) {
+      await sb.from('global_sync_targets').update({ state: 'dubbing', detail: null, updated_at: new Date().toISOString() }).eq('id', target.id)
+      const pulled = await ingestYouTubeVideo(ytIdForDub, user.id, { audioLanguage: marketLang })
+      if (pulled?.url && pulled.audioLanguage) {
+        await sb.from('global_sync_targets').update({
+          video_url: pulled.url,
+          state: 'localized',
+          detail: `Dubbed by YouTube (${market.langName})`,
+          updated_at: new Date().toISOString(),
+        }).eq('id', target.id)
+        return NextResponse.json({
+          ok: true,
+          videoUrl: pulled.url,
+          voice: 'youtube',
+          // Named so the screen can say where the audio came from. A dub the
+          // creator did not pay for should not be reported as one they did.
+          note: 'youtube_dub',
+          clonedDubsRemaining: null,
+          outOfCredits: false,
+        })
+      }
+      // The listing said the track was there and the download did not produce
+      // it. Fall through and dub it ourselves rather than ship the original.
+    }
+  }
 
   let transcript = (video.transcript as string | null) || ''
   // Lazy transcription for a file-first master: if we don't have a transcript

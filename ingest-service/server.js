@@ -410,13 +410,61 @@ app.post('/ingest', async (req, res) => {
     // one download is reused across every clip cut from the video, so the cost is
     // amortised. No ext filter — that's what caused "Requested format is not
     // available" on videos YouTube only serves in webm.
-    await ytDlp([
-      '-f', 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b',
-      '--merge-output-format', 'mp4',
-      '-o', tmp,
-      '--no-playlist', '--no-warnings',
-      url,
-    ])
+    // ── A DUBBED AUDIO TRACK, WHEN THE CALLER ASKED FOR ONE ──────────────────
+    //
+    // YouTube can carry several audio tracks on one video: a creator's own
+    // multi-audio uploads, and its auto-dubbing. When it does, the dub is
+    // already translated, already timed to the picture, and already paid for.
+    // Pulling it is free, where synthesizing our own costs a TTS call and, on
+    // the cloned-voice lane, one of the creator's dub credits.
+    //
+    // `ba` above carries NO language filter, so yt-dlp hands back the original
+    // track and always has. Asking for a language is a different selector.
+    //
+    // THE FALLBACK IS REPORTED, NOT SILENT. If the requested track does not
+    // exist, this downloads the original and says so. A French market page
+    // publishing a video that is silently still in English is the exact shape
+    // of bug that reads as success: the file is there, it plays, and nothing
+    // says the dub never happened.
+    const wantLang = String(req.body?.audioLanguage || '').trim().toLowerCase()
+    let audioLanguage = null
+    let audioLanguageNote = null
+
+    if (wantLang) {
+      // language^= is a prefix match, so 'fr' catches fr, fr-FR and fr-CA. No
+      // bare `ba` alternative in this selector: a fallback inside it would
+      // succeed with the original audio and we would never know.
+      const esc = wantLang.replace(/[^a-z-]/g, '')
+      try {
+        await ytDlp([
+          '-f', `bv*[height<=1080]+ba[language^=${esc}]/bv*+ba[language^=${esc}]`,
+          '--merge-output-format', 'mp4',
+          '-o', tmp,
+          '--no-playlist', '--no-warnings',
+          url,
+        ])
+        if (fs.existsSync(tmp)) audioLanguage = wantLang
+      } catch (e) {
+        // Almost always "Requested format is not available", which means this
+        // video has no track in that language. Not an error worth failing on:
+        // the caller can still dub it the paid way.
+        audioLanguageNote = `no ${wantLang} audio track on this video`
+        cleanupTmp(tmp)
+      }
+      if (!audioLanguage && !audioLanguageNote) {
+        audioLanguageNote = `no ${wantLang} audio track on this video`
+      }
+    }
+
+    if (!fs.existsSync(tmp)) {
+      await ytDlp([
+        '-f', 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b',
+        '--merge-output-format', 'mp4',
+        '-o', tmp,
+        '--no-playlist', '--no-warnings',
+        url,
+      ])
+    }
     if (!fs.existsSync(tmp)) throw new Error('download produced no file')
 
     // Path shape matches the bucket's RLS convention (first folder = user id)
@@ -425,12 +473,61 @@ app.post('/ingest', async (req, res) => {
     await uploadToSupabase(key, tmp)
 
     const durationSeconds = await ffprobeDuration(tmp)
-    return res.json({ url: publicUrl(key), durationSeconds })
+    // audioLanguage is the language actually obtained, never the one requested.
+    // Null with a note means the caller asked and did not get it, which is what
+    // lets the dub lane fall back to synthesis instead of shipping the original
+    // audio to a market that does not speak it.
+    return res.json({ url: publicUrl(key), durationSeconds, audioLanguage, audioLanguageNote })
   } catch (e) {
     console.error('[ingest] failed', videoId, e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   } finally {
     cleanupTmp(tmp)
+  }
+})
+
+// ── WHICH LANGUAGES THIS VIDEO ALREADY SPEAKS ────────────────────────────────
+//
+// Metadata only: no download, no bandwidth, no proxy cost beyond one player
+// request. It exists so a market can be offered YouTube's own dub BEFORE the
+// creator spends a TTS call or a cloned-voice credit on synthesizing one, and
+// so the answer comes from the video in front of us rather than from an
+// assumption about what YouTube exposes.
+//
+// Returns the language tag of every audio-only format, deduped. An empty list
+// means single-track, which is most videos.
+app.post('/audio-tracks', async (req, res) => {
+  if (!SECRET || req.get('x-ingest-secret') !== SECRET) {
+    return res.status(401).json({ error: 'unauthorized' })
+  }
+  const videoId = String(req.body?.videoId || '').trim()
+  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+    return res.status(400).json({ error: 'videoId must be an 11-character YouTube id' })
+  }
+  const url = `https://www.youtube.com/watch?v=${videoId}`
+  try {
+    const out = await ytDlp(['-J', '--no-playlist', '--no-warnings', url])
+    const info = JSON.parse(String(out))
+    const langs = []
+    for (const f of info.formats || []) {
+      // Audio-only rows are the ones carrying a language tag worth reading. A
+      // muxed format reports the original language and would make every video
+      // look multi-track.
+      if (f.vcodec && f.vcodec !== 'none') continue
+      if (!f.acodec || f.acodec === 'none') continue
+      const lang = f.language || null
+      if (lang && !langs.includes(lang)) langs.push(lang)
+    }
+    return res.json({
+      ok: true,
+      languages: langs,
+      originalLanguage: info.language || null,
+      // Said plainly, because "[]" and "we could not tell" are different
+      // answers and only one of them means the creator should pay to dub.
+      multiTrack: langs.length > 1,
+    })
+  } catch (e) {
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   }
 })
 
