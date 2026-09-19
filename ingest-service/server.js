@@ -103,6 +103,14 @@ let cookiesReady = false
 // When the cookies file was last written (boot load or a live SCOUT push), so
 // /health can show freshness and the app can auto-refresh before they go stale.
 let cookiesUpdatedAt = null
+// WHY the cookies are not loaded, which `cookies: false` alone cannot say.
+//
+// It reads the same whether no variable is set, the variable is misnamed, the
+// base64 is malformed, or a URL fetch failed, and those have different fixes.
+// The first real attempt to set them ended with false on /health and no way to
+// tell which of the four had happened, from a machine nobody can open a shell
+// on. These fields are what turn that into an answer.
+let cookieDiag = { source: null, vars: 0, lines: 0, error: null }
 
 // Decode a base64 (optionally gzip-compressed) blob to utf8 text. gzip is
 // auto-detected from its magic bytes (0x1f 0x8b), so a plain OR gzipped base64
@@ -123,6 +131,10 @@ function joinedCookieB64() {
   for (let i = 2; process.env[`YOUTUBE_COOKIES_B64_${i}`]; i++) {
     parts.push(process.env[`YOUTUBE_COOKIES_B64_${i}`].trim())
   }
+  // Counted for /health. The loop stops at the first GAP, so naming the second
+  // variable _3 by mistake silently drops it and everything after it, and the
+  // joined base64 then fails to decode with nothing saying why.
+  cookieDiag.vars = parts.length
   return parts.join('')
 }
 
@@ -142,20 +154,34 @@ async function loadCookies() {
       return
     } catch (e) {
       console.error('YOUTUBE_COOKIES_URL fetch failed:', e && e.message)
+      cookieDiag.error = `URL fetch failed: ${(e && e.message) || 'unknown'}`
     }
   }
   const b64 = joinedCookieB64()
   if (b64) {
     try {
       const text = decodeCookieBlob(b64)
+      // A DECODE THAT SUCCEEDS INTO RUBBISH IS STILL A FAILURE. Base64 of
+      // anything decodes to something; only a Netscape jar is usable. Writing
+      // the rubbish would set cookiesReady true and hand yt-dlp a file it
+      // ignores, which looks exactly like having cookies and behaves exactly
+      // like not having them.
+      const lines = text.split('\n').filter(Boolean).length
+      if (!text.includes('\t') || !/youtube\.com/i.test(text)) {
+        throw new Error(`decoded ${text.length} chars but it is not a Netscape cookies.txt (no tabs or no youtube.com rows)`)
+      }
       fs.writeFileSync(COOKIES_FILE, text)
       cookiesReady = true
       cookiesUpdatedAt = Date.now()
-      console.log(`yt-dlp cookies loaded (${text.split('\n').filter(Boolean).length} lines)`)
+      cookieDiag = { source: 'b64', vars: cookieDiag.vars, lines, error: null }
+      console.log(`yt-dlp cookies loaded (${lines} lines from ${cookieDiag.vars} var(s))`)
       return
     } catch (e) {
       console.error('YOUTUBE_COOKIES_B64 invalid:', e && e.message)
+      cookieDiag.error = `B64 from ${cookieDiag.vars} var(s), ${b64.length} chars: ${(e && e.message) || 'unknown'}`
     }
+  } else if (!cookieDiag.error) {
+    cookieDiag.error = 'no YOUTUBE_COOKIES_URL and no YOUTUBE_COOKIES_B64 set'
   }
   if (!cookiesReady) console.log('no yt-dlp cookies set — auth-gated videos may hit the bot wall')
 }
@@ -209,7 +235,7 @@ async function selfUpdateYtDlp() {
 const app = express()
 app.use(express.json({ limit: '6mb' })) // cookies.txt pushes can be a few hundred KB
 
-app.get('/health', (_req, res) => res.json({ ok: true, cookies: cookiesReady, cookiesUpdatedAt, proxy: !!PROXY, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD }))
+app.get('/health', (_req, res) => res.json({ ok: true, cookies: cookiesReady, cookiesUpdatedAt, cookieVars: cookieDiag.vars, cookieLines: cookieDiag.lines, cookieError: cookieDiag.error, proxy: !!PROXY, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD }))
 
 // Hot-swap the yt-dlp cookies at runtime — SCOUT reads the operator's fresh
 // youtube.com/google.com cookies in-browser and pushes them here (via the MVP
