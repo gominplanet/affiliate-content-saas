@@ -90,12 +90,32 @@ console.log('\npickLinkStyle — an unset mode reads the creator\'s credentials'
 console.log('\ngeniuslinkCreds — the decision and the keys come from one row')
 {
   const cfg = { geniuslinkKey: 'cfg-key', geniuslinkSecret: 'cfg-secret' }
-  check('a caller row with keys is used as given',
-    geniuslinkCreds(cfg, { geniuslink_api_key: 'row-key', geniuslink_api_secret: 'row-secret' })?.key === 'row-key')
+  // THIS PAIR USED TO ASSERT THE OPPOSITE, three lines under a heading that
+  // says the config is the authority. The code matched the assertions, not the
+  // heading: `row?.key || cfg?.key`, so a caller's row won.
+  //
+  // It is the config that has been through decryptIntegrationRow. A caller's
+  // own row has not, and geniuslink_api_key is encrypted at rest, so twelve
+  // generators that read the row with select('*') and passed it here were
+  // handing Geniuslink a base64 envelope as an API key. It answered 401, every
+  // one of them caught it and fell back to a plain tagged Amazon link, and the
+  // creator's settings screen went on saying Geniuslink. Two reported it.
+  check('the resolved style\'s keys win over a caller-supplied row',
+    geniuslinkCreds(cfg, { geniuslink_api_key: 'row-key', geniuslink_api_secret: 'row-secret' })?.key === 'cfg-key')
   check('an empty caller row falls back to the resolved style\'s keys',
     geniuslinkCreds(cfg, null)?.key === 'cfg-key')
-  check('a caller row missing only the secret still wraps',
-    geniuslinkCreds(cfg, { geniuslink_api_key: 'row-key' })?.secret === 'cfg-secret')
+  // The row is still a real fallback, for the callers that pass no config.
+  check('a row alone is used when there is no config',
+    geniuslinkCreds(null, { geniuslink_api_key: 'row-key', geniuslink_api_secret: 'row-secret' })?.key === 'row-key')
+  // Whole pairs only. This used to take row-key with cfg-secret, which is a
+  // credential belonging to no account: Geniuslink authenticates on the two
+  // together, so a splice fails as a 401 that reads exactly like a bad key.
+  check('a half-filled source is skipped rather than spliced with the other',
+    (() => {
+      const r = geniuslinkCreds({ geniuslinkKey: 'cfg-key', geniuslinkSecret: null },
+        { geniuslink_api_key: 'row-key', geniuslink_api_secret: 'row-secret' })
+      return r?.key === 'row-key' && r?.secret === 'row-secret'
+    })())
   check('whitespace is not a credential',
     geniuslinkCreds({ geniuslinkKey: '  ', geniuslinkSecret: '  ' }, null) === null)
   check('no keys anywhere → null, the one honest reason to skip Geniuslink',

@@ -25,6 +25,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { INTEGRATION_SECRET_COLUMNS } from '../lib/integration-secrets'
 import { encryptSecret, decryptSecret, isEncrypted } from '../lib/secrets'
+import { geniuslinkCreds } from '../lib/link-style'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -235,6 +236,103 @@ const NEWLY_ENCRYPTED = ['geniuslink_api_key', 'geniuslink_api_secret', 'hosting
       )
     }
   }
+}
+
+// ── the read that has no column name in it ──────────────────────────────────
+//
+// THE BLIND SPOT, AND WHY THE SCAN ABOVE CANNOT SEE IT.
+//
+// Everything above finds a secret by looking for its COLUMN NAME in the file
+// that reads it. That model breaks the moment a helper pulls the field out on
+// the caller's behalf, because then the name lives in the helper and the caller
+// mentions nothing.
+//
+// geniuslinkCreds(cfg, row) is exactly that helper, and twelve generators call
+// it with an integrations row they read with select('*') and never decrypted:
+// blog/generate, blog/comparison, blog/from-link, deals, campaigns, levanta,
+// walmart/generate, walmart/link, walmart/roundup, wayward/generate,
+// wayward/link, and lib/amazon-pin-publish. The row argument used to win over
+// the decrypted config, so all twelve sent Geniuslink a base64 envelope as an
+// API key. Geniuslink answered 401, every route caught it, and every route fell
+// back to a plain tagged Amazon link.
+//
+// What it looked like from outside: a creator's posts stopped using Geniuslink
+// on every surface at once, while the settings screen kept saying Geniuslink.
+// The scan above passed the whole time, on all twelve files.
+//
+// The fix put the decrypt inside geniuslinkCreds, which means the safety of all
+// twelve now rests on one function. So it is asserted by BEHAVIOUR rather than
+// by regex: encrypt a value, hand it over the way those callers do, and require
+// the plaintext back.
+{
+  process.env.SECRETS_KEY ||= Buffer.alloc(32, 7).toString('base64')
+
+  let enc = ''
+  try { enc = encryptSecret('gl_live_key_abc') } catch { /* no key in this env */ }
+  let encSecret = ''
+  try { encSecret = encryptSecret('gl_live_secret_xyz') } catch { /* same */ }
+
+  if (enc && encSecret) {
+    // The exact shape the twelve callers use: a raw integrations row, second arg.
+    const fromRow = geniuslinkCreds(null, {
+      geniuslink_api_key: enc, geniuslink_api_secret: encSecret,
+    })
+    check('an encrypted row handed to geniuslinkCreds comes back decrypted',
+      fromRow?.key === 'gl_live_key_abc' && fromRow?.secret === 'gl_live_secret_xyz',
+      `got ${JSON.stringify(fromRow)} — ciphertext here is a 401 at Geniuslink and a plain Amazon link on the post`)
+
+    // And it must not hand the envelope back under any circumstances.
+    check('no enc envelope escapes geniuslinkCreds',
+      !isEncrypted(fromRow?.key ?? '') && !isEncrypted(fromRow?.secret ?? ''),
+      'that is the exact value that was being sent as an API key')
+  }
+
+  // cfg is the authority. The doc comment always said so; the code said the
+  // opposite for as long as the bug existed, which is how a decrypted pair lost
+  // to an encrypted one sitting right beside it.
+  const both = geniuslinkCreds(
+    { geniuslinkKey: 'from-cfg', geniuslinkSecret: 'cfg-secret' },
+    { geniuslink_api_key: 'from-row', geniuslink_api_secret: 'row-secret' },
+  )
+  check('getLinkStyle config wins over a caller-supplied row',
+    both?.key === 'from-cfg' && both?.secret === 'cfg-secret',
+    `got ${JSON.stringify(both)} — the config is the half that has been through decryptIntegrationRow`)
+
+  // The row is still a real fallback, for callers that pass no config.
+  const rowOnly = geniuslinkCreds(null, { geniuslink_api_key: 'k', geniuslink_api_secret: 's' })
+  check('a row alone still works', rowOnly?.key === 'k' && rowOnly?.secret === 's',
+    'the fallback is load-bearing; removing it would break the callers that pass no config')
+
+  // Never a key from one source with a secret from the other: Geniuslink
+  // authenticates on the pair, so a mix fails as a 401 that reads like a bad key.
+  const halfCfg = geniuslinkCreds(
+    { geniuslinkKey: 'from-cfg', geniuslinkSecret: null },
+    { geniuslink_api_key: 'from-row', geniuslink_api_secret: 'row-secret' },
+  )
+  check('an incomplete config falls through to the row as a whole pair',
+    halfCfg?.key === 'from-row' && halfCfg?.secret === 'row-secret',
+    `got ${JSON.stringify(halfCfg)} — a spliced pair authenticates as neither`)
+
+  check('nothing usable returns null rather than a partial',
+    geniuslinkCreds(null, null) === null && geniuslinkCreds({ geniuslinkKey: 'k' }, null) === null,
+    'null is what makes a route skip Geniuslink honestly instead of calling it with half a credential')
+
+  // A corrupt envelope must not come back as itself. It is the one case where
+  // returning the input silently restores the original bug for that creator.
+  const corrupt = geniuslinkCreds(null, {
+    geniuslink_api_key: 'enc:v1:notrealciphertext', geniuslink_api_secret: 'enc:v1:alsonot',
+  })
+  check('a corrupt envelope yields null, not the envelope',
+    corrupt === null || (!isEncrypted(corrupt.key) && !isEncrypted(corrupt.secret)),
+    `got ${JSON.stringify(corrupt)}`)
+
+  // The decrypt lives in ONE function now, so losing it is a twelve-surface
+  // regression with no error anywhere. Pinned in source as well as behaviour:
+  // the behavioural checks above only run where SECRETS_KEY can be set.
+  const styleSrc = readFileSync(join(root, 'lib/link-style.ts'), 'utf8')
+  check('geniuslinkCreds still decrypts what it returns',
+    /maybeDecrypt\(/.test(styleSrc),
+    'twelve callers pass a raw integrations row and rely on this one call')
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

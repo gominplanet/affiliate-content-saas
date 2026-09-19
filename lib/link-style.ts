@@ -10,6 +10,7 @@
 // from where they sit, a broken product.
 
 import { asinPathRegex } from '@/lib/asin'
+import { maybeDecrypt } from '@/lib/secrets'
 
 export type LinkStyle = 'passport' | 'geniuslink' | 'bitly' | 'direct'
 
@@ -27,14 +28,54 @@ export type LinkStyle = 'passport' | 'geniuslink' | 'bitly' | 'direct'
  * from, so they are the authority; a caller's own row is only a preference.
  * Returns null when neither has a usable pair, which is the one honest reason to
  * skip Geniuslink.
+ *
+ * ── THE ROW IS CIPHERTEXT, AND IT USED TO WIN ───────────────────────────────
+ *
+ * The paragraph above has always said cfg is the authority. The code said the
+ * opposite: `row?.key || cfg?.key`, so a caller's row beat it. That is not a
+ * detail, because geniuslink_api_key and geniuslink_api_secret are encrypted at
+ * rest, getLinkStyle decrypts them, and a caller's own row has not been
+ * decrypted by anyone. Twelve generators read the integrations row with
+ * select('*') and passed it straight in here: blog/generate, blog/comparison,
+ * blog/from-link, deals, campaigns, levanta, both Walmart routes and the
+ * roundup, both Wayward routes, and the Amazon pin publisher. Every one of them
+ * handed Geniuslink a base64 envelope as an API key, got a 401, and fell back
+ * to a plain tagged Amazon link.
+ *
+ * So a creator on the Geniuslink style saw their posts stop using Geniuslink,
+ * on every surface at once, from the day their keys were first encrypted. Two
+ * reported it. Their settings screen kept saying Geniuslink, correctly: the
+ * setting was never the thing that broke.
+ *
+ * Two changes, and each is needed on its own. cfg now wins, matching what this
+ * comment always claimed. And whatever is returned goes through maybeDecrypt,
+ * because the fallback is a row from an arbitrary caller and this is the one
+ * place every caller passes through. maybeDecrypt returns plaintext untouched,
+ * so a value that was already decrypted is unaffected.
+ *
+ * scripts/test-integration-secrets now fails the build on a row reaching here
+ * undecrypted, which is the clause that was missing: its scan looks for the
+ * column NAME, and at these twelve call sites the name never appears.
  */
 export function geniuslinkCreds(
   cfg: { geniuslinkKey?: string | null; geniuslinkSecret?: string | null } | null | undefined,
   row?: { geniuslink_api_key?: string | null; geniuslink_api_secret?: string | null } | null,
 ): { key: string; secret: string } | null {
-  const key = (row?.geniuslink_api_key || cfg?.geniuslinkKey || '').trim()
-  const secret = (row?.geniuslink_api_secret || cfg?.geniuslinkSecret || '').trim()
-  return key && secret ? { key, secret } : null
+  // A corrupt envelope throws. Null is the right answer then: it means "no
+  // usable Geniuslink", which falls back to the tagged link. Returning the
+  // ciphertext instead is the bug this whole comment is about.
+  const plain = (v: string | null | undefined): string => {
+    try { return (maybeDecrypt(v) || '').trim() } catch { return '' }
+  }
+  // Whole PAIRS, never a key from one source with a secret from the other.
+  // Geniuslink authenticates on the two together, so a mix is guaranteed to
+  // fail, and it would fail as a 401 that reads exactly like a bad key.
+  const pair = (k: string | null | undefined, s: string | null | undefined) => {
+    const key = plain(k); const secret = plain(s)
+    return key && secret ? { key, secret } : null
+  }
+  return pair(cfg?.geniuslinkKey, cfg?.geniuslinkSecret)
+    ?? pair(row?.geniuslink_api_key, row?.geniuslink_api_secret)
 }
 
 /**

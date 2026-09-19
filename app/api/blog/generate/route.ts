@@ -28,7 +28,7 @@ import { passportLinkForUser, passportLinkForDestination, isSafePassportDestinat
 import { getLinkStyle, cloakFallbackNote } from '@/lib/link-cloak'
 import { showcaseOverrideFor } from '@/lib/post-destination'
 import { stripTitleYear } from '@/lib/title-year'
-import { geniuslinkCreds } from '@/lib/link-style'
+import { geniuslinkCreds, styleOfUrl } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
@@ -1973,6 +1973,25 @@ async function handleGenerate(request: Request) {
     // column does not exist, so an un-migrated database would lose the post
     // rather than lose the signature.
     structure_signature: (generated as { structureSignature?: string }).structureSignature ?? null,
+    // ── WHAT THE LINK ACTUALLY TURNED OUT TO BE ──────────────────────────────
+    //
+    // Read off the published URL, not off the setting. linkFallbackNote has
+    // existed for a while and went exactly one place: the HTTP response, where
+    // GenerateButton showed it as a 14-second toast. Scheduled and queued
+    // generation has no browser at all, and schedule-publish parses four keys
+    // out of that response and drops the rest, so for every post that was not
+    // made with somebody watching, a downgrade was recorded nowhere.
+    //
+    // That is what let a credential bug run: two creators on the Geniuslink
+    // style had every post since their keys were encrypted publish a plain
+    // tagged Amazon link, their settings screen kept saying Geniuslink, and
+    // nothing in the product disagreed. It was found by opening one of their
+    // posts and hovering the button.
+    //
+    // styleOfUrl answers "what did they get", which is the only question a post
+    // can answer honestly. Paired with the note, a downgrade is now a row.
+    link_style_used: styleOfUrl(affiliateUrlOverride) ?? null,
+    link_fallback_note: linkFallbackNote,
     // The blog_posts.status column is the MVP-side lifecycle, separate
     // from the WP-side status. We use 'published' even for scheduled
     // posts so the Library's status='published' filter still picks them
@@ -2040,7 +2059,8 @@ async function handleGenerate(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stripScheduleKeys = (p: any) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { scheduled_for, schedule_mode, thumbnail_blocked, structure_signature, ...rest } = p
+    const { scheduled_for, schedule_mode, thumbnail_blocked, structure_signature,
+      link_style_used, link_fallback_note, ...rest } = p
     return rest
   }
   // Also matches thumbnail_blocked (migration 177) — same drift safety net: if a
@@ -2048,7 +2068,7 @@ async function handleGenerate(request: Request) {
   // post still saves (the flag just won't persist until the migration runs).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isMissingColumn104 = (err: any) =>
-    err && typeof err.message === 'string' && /column .* (scheduled_for|schedule_mode|thumbnail_blocked|structure_signature).* does not exist/i.test(err.message)
+    err && typeof err.message === 'string' && /column .* (scheduled_for|schedule_mode|thumbnail_blocked|structure_signature|link_style_used|link_fallback_note).* does not exist/i.test(err.message)
   if (ep?.id) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let { data, error: upErr } = await (supabase as any)

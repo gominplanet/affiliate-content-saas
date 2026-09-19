@@ -237,13 +237,27 @@ const base: StructureInput = { seed: 'vid-001', sourceWords: 2000 }
   const ROUTE = strip(readFileSync(join(__dirname, '..', 'app/api/blog/generate/route.ts'), 'utf8'))
   check('the signature is read back for this creator',
     /\.select\('structure_signature'\)/.test(ROUTE))
+  // \b, because without it the clause passes on a RENAMED key: any prefix
+  // leaves `structure_signature: (generated as` intact as a substring, so
+  // `xstructure_signature:` satisfied it while writing to a column that does
+  // not exist. Found by break-testing the strip-list clause below.
   check('and persisted on the post row',
-    /structure_signature: \(generated as/.test(ROUTE))
+    /\bstructure_signature: \(generated as/.test(ROUTE))
   check('newest first, so the window is the recent past',
     /\.order\('created_at', \{ ascending: false \}\)/.test(ROUTE))
+  // The strip list is a LIST, and it grows: link_style_used and
+  // link_fallback_note joined it in migration 345. Pinning the literal text of
+  // the whole destructure made this clause fail on somebody else's column,
+  // which reads as a structure-signature regression and is not one. What has to
+  // stay true is narrower: this column is named in both halves of the net.
+  // [^{}] so the match cannot start at some `const {` hundreds of lines above
+  // and swallow the payload on its way down. It did exactly that on the first
+  // attempt: the span was 45KB, structure_signature appeared inside it as a
+  // payload key, and the clause passed with the strip list emptied.
+  const stripList = ROUTE.match(/const \{([^{}]*?)\.\.\.rest \} = p/)?.[1] ?? ''
   check('a missing column loses the signature, never the post',
     /structure_signature.* does not exist/.test(ROUTE)
-    && /schedule_mode, thumbnail_blocked, structure_signature, \.\.\.rest/.test(ROUTE),
+    && /\bstructure_signature\b/.test(stripList),
     'PostgREST rejects the whole statement when one named column is missing')
   check('a failed signature read never blocks generation',
     /catch \{ \/\* no signatures yet, so nothing to avoid \*\/ \}/.test(ROUTE))
