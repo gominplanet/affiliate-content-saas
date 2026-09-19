@@ -16,6 +16,7 @@
 // is that the language is REPORTED from what was obtained, never echoed from
 // what was asked for.
 import { readFileSync } from 'node:fs'
+import { extractYouTubeVideoId as ytId } from '../lib/youtube-url'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -138,6 +139,83 @@ const DUB = live(read('app/api/global-sync/dub/route.ts'))
     'a muxed format reports the original language and would make every video look multi-track')
   check('the listing endpoint is behind the shared secret',
     /app\.post\('\/audio-tracks'[\s\S]{0,200}x-ingest-secret/.test(SERVICE))
+}
+
+// ── the screen that answers the question has THREE answers ──────────────────
+//
+// Whether YouTube serves its dubs decides whether Storefront Sync keeps paying
+// to synthesize them, and the only way to ask used to be a yt-dlp command on
+// the ingest box. So it is a page.
+//
+// "This video has no dubs" and "we could not check" both look like zero
+// languages and mean opposite things: one says synthesize, the other says the
+// downloader's cookies expired and the question is still open. Collapsing them
+// is how a lookup failure becomes a false finding about the video.
+{
+  const API = live(read('app/api/admin/audio-tracks/route.ts'))
+  const PAGE = read('app/(dashboard)/admin/audio-tracks/page.tsx')
+
+  check('the checker is admin only',
+    /caller\?\.tier !== 'admin'/.test(API))
+  check('an unconfigured service is its own answer',
+    /reason: 'not_configured'/.test(API)
+    && /This is not a finding about the video/.test(API),
+    'reporting it as "no tracks" says something false about the video')
+  check('a failed lookup is its own answer too',
+    /reason: 'lookup_failed'/.test(API)
+    && /not a video without dubs/.test(API))
+  check('and the two are distinguishable from a real empty result',
+    /ok: true[\s\S]{0,600}multiTrack/.test(API),
+    'ok:true is what separates "we looked" from "we could not"')
+
+  check('the verdict is a sentence, not a list of language codes',
+    /verdict: info\.multiTrack/.test(API),
+    'the reader should not have to work out the conclusion from bcp-47 tags')
+  check('and it names the Amazon markets that become free',
+    /freeMarkets/.test(API) && /needsTranslation/.test(API),
+    'the markets are the point; the language codes are the evidence')
+
+  // The shared, unit-tested extractor, not a second copy. The first version of
+  // this route carried its own regex, which also broke the build: a Next.js
+  // route file may only export route handlers, so the helper could not live
+  // there anyway. The Studio form was the one shape the shared one lacked.
+  check('the checker uses the shared id extractor',
+    /extractYouTubeVideoId\(request\.nextUrl\.searchParams/.test(API),
+    'a second parser is a second thing to get wrong')
+
+  // BEHAVIOUR, not the regex source. The first version of this clause matched
+  // the literal pattern text and broke the moment the patterns were rewritten,
+  // which said nothing about whether they still worked.
+  check('the shared extractor understands a Studio URL',
+    ytId('https://studio.youtube.com/video/ah7ITX7BkM4/translations') === 'ah7ITX7BkM4',
+    'that is the URL in the address bar when somebody is looking at the dubs')
+  check('and still understands the ordinary shapes',
+    ytId('https://www.youtube.com/watch?v=ah7ITX7BkM4&t=30s') === 'ah7ITX7BkM4'
+    && ytId('https://youtu.be/ah7ITX7BkM4?si=x') === 'ah7ITX7BkM4'
+    && ytId('ah7ITX7BkM4') === 'ah7ITX7BkM4')
+  // An id is exactly 11 characters, so a longer run is a different string.
+  // Without a boundary these patterns returned the first 11 characters of any
+  // slug, and /video/ is a path plenty of non-YouTube sites use, so a wrong
+  // paste would have produced a confident wrong id instead of a refusal.
+  check('a longer slug is not mistaken for an id',
+    ytId('https://example.com/video/notelevenchars') === null
+    && ytId('https://example.com/shorts/notelevenchars') === null
+    && ytId('https://example.com/video/a-much-longer-slug-than-eleven') === null,
+    'the 11-character match must end on a boundary')
+  check('the route exports nothing but its handler',
+    !/^export (?:function|const) (?!async function GET)/m.test(API),
+    'Next.js rejects any other export from a route file, and the build says so')
+
+  check('the page says out loud when nothing was learned',
+    /This is not a result about the video/.test(PAGE),
+    'an amber box alone leaves the reader to guess whether the video has dubs')
+  check('and states that nothing is spent',
+    /Nothing is downloaded and nothing is spent/.test(PAGE))
+
+  const copy = PAGE.match(/subtitle="([^"]*)"/)?.[1] ?? ''
+  check('the subtitle was found', copy.length > 30, `${copy.length} chars`)
+  check('no dash punctuation on the page copy',
+    !/[—–]/.test(copy) && !/\S \- \S/.test(copy), copy.slice(0, 120))
 }
 
 if (failures.length) {
