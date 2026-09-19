@@ -444,6 +444,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
 
       // Start the dubs and DON'T wait. Two at a time so several non-English
       // markets don't queue behind each other either.
+      // Collected across both dub workers, read once the wave is done.
+      const dubFailures: Array<{ domain: string; reason: string }> = []
       const dubbingDone = (async () => {
         if (needDub.length === 0) return
         const queue = [...needDub]
@@ -452,12 +454,25 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
             const t = queue.shift()
             if (!t) return
             setDubbing(t.domain)
+            // THE RESPONSE IS READ. This was fire-and-forget, with a catch whose
+            // comment said "falls back to the master video for this market" and
+            // told nobody. A dub that 502s leaves video_url null, the queue
+            // serves the English master, and the market is delivered and marked
+            // done: a French storefront with a French title and English audio,
+            // reported as a success. Collected here and surfaced after the wave,
+            // because a toast per market during a ten-market run is noise.
             try {
-              await fetch('/api/global-sync/dub', {
+              const dr = await fetch('/api/global-sync/dub', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ jobId: jid, domain: t.domain, voice: useClone ? 'cloned' : 'standard' }),
               })
-            } catch { /* falls back to the master video for this market */ }
+              const dj = await dr.json().catch(() => ({}))
+              if (!dr.ok || !dj?.ok || !dj?.videoUrl) {
+                dubFailures.push({ domain: t.domain, reason: String(dj?.error || `HTTP ${dr.status}`).slice(0, 140) })
+              }
+            } catch (e) {
+              dubFailures.push({ domain: t.domain, reason: e instanceof Error ? e.message : 'the dub request did not complete' })
+            }
           }
         }
         await Promise.all([worker(), worker()])
@@ -473,8 +488,25 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         // Dubbing off means every market takes the master, so the same rule that
         // serves an explicit "skip dub" serves the whole surface.
-        return arr.map((i: any) => ((!allowDubbing || skipDub.has(i.domain)) && i.masterUrl) ? { ...i, videoUrl: i.masterUrl } : i)
+        const mapped = arr.map((i: any) => ((!allowDubbing || skipDub.has(i.domain)) && i.masterUrl) ? { ...i, videoUrl: i.masterUrl } : i)
           .filter((i: { domain: string }) => only.has(i.domain))
+
+        // A PARTIAL DROP IS THE ONE THAT GETS THROUGH. The empty-queue check
+        // below catches a wave where nothing came back. It cannot catch four
+        // markets coming back out of five: the run then ends on "Uploaded to 4
+        // of 4 storefronts", counted against what arrived rather than against
+        // what was asked for, which reads as complete. The queue now names what
+        // it could not serve and why, so the gap is a sentence instead of a
+        // number nobody can check.
+        const skippedHere = (Array.isArray(q?.skipped) ? q.skipped : [])
+          .filter((s: { domain: string }) => only.has(s.domain))
+        const missing = [...only].filter(d => !mapped.some((i: { domain: string }) => i.domain === d))
+        if (missing.length > 0) {
+          const why = new Map(skippedHere.map((s: { domain: string; reason: string }) => [s.domain, s.reason]))
+          const lines = missing.map(d => `${d} (${why.get(d) || 'it never reached the upload queue'})`).join('; ')
+          toast.error(`Not uploaded: ${lines}. The other stores in this wave still went out.`, { duration: 16000 })
+        }
+        return mapped
       }
 
       // The still-rendering-thumbnail question is asked at most once per run, and
@@ -551,8 +583,21 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
 
       // Wave 2: the dubbed markets, as soon as their audio exists.
       if (needDub.length > 0) setPhase('Finishing the dubs…')
-      await dubbingDone.catch(() => { /* a failed dub falls back to the master video */ })
+      await dubbingDone.catch(() => { /* per-market failures are collected in dubFailures */ })
       await refreshTargets(jid)
+
+      // SAID BEFORE THE UPLOAD, not after. These markets are about to receive
+      // the English master under a translated title, and once that is on the
+      // storefront the creator's only clue is watching their own video. Warned
+      // here so the sentence arrives while they can still stop the run.
+      if (dubFailures.length > 0) {
+        const names = dubFailures.map(d => d.domain).join(', ')
+        toast.error(
+          `The dub did not finish for ${names}. ${dubFailures.length === 1 ? 'That store' : 'Those stores'} will get your ENGLISH audio under a translated title unless you stop now. Reason: ${dubFailures[0].reason}`,
+          { duration: 20000 },
+        )
+      }
+
       if (needDub.length > 0) {
         results.push(...await deliverWave(dubDomains, 'Uploading the dubbed markets…'))
       }

@@ -33,30 +33,32 @@ export const maxDuration = 60
 // storefront-upload key (no www); `keepa` is the Keepa domainId (null = not on
 // Keepa → SCOUT browser check on the client); `host` is the store host.
 //
-// ENGLISH ONLY, for now. Video Launchpad is the one-click path and it ships the
-// four storefronts whose audio is already right: US, Canada, UK, Australia. The
-// master video goes to each of them as it is, so nothing waits on a translation
-// or a dub before the first upload starts.
+// ALL NINE. This was English-only for a while: the four storefronts whose audio
+// was already right, so that nothing waited on a dub before the first upload
+// started.
 //
-// The other five are commented out rather than deleted: they are still fully
-// supported on the standalone Storefront Sync page, and this is a product
-// decision that will be revisited, not a capability that went away. Deleting
-// them would lose the Keepa domain ids, which are the only fiddly part.
+// Two things retired that reasoning. The delivery runs in WAVES, so the English
+// markets upload while the dubs render and a dubbed market never holds up one
+// that needs nothing. And a video YouTube has already dubbed now costs nothing
+// to localize at all, because the track is pulled instead of synthesized.
 //
-//   { domain: 'amazon.de', host: 'www.amazon.de', code: 'DE', country: 'Germany', keepa: 3 },
-//   { domain: 'amazon.fr', host: 'www.amazon.fr', code: 'FR', country: 'France', keepa: 4 },
-//   { domain: 'amazon.es', host: 'www.amazon.es', code: 'ES', country: 'Spain', keepa: 9 },
-//   { domain: 'amazon.it', host: 'www.amazon.it', code: 'IT', country: 'Italy', keepa: 8 },
-//   { domain: 'amazon.co.jp', host: 'www.amazon.co.jp', code: 'JP', country: 'Japan', keepa: 5 },
+// It also stopped being honest. The page promised "a dub per non-English
+// market" on the paywall card and in the hero while reaching four English
+// storefronts, so a creator paid for Pro, read that, and got no dub anywhere.
 //
-// Narrowing this also stops five Keepa lookups per check that nothing could act
-// on, which is the kind of spend that survives for months precisely because
-// nobody sees it.
+// The other cost of narrowing was five fewer Keepa lookups per check. That is
+// real, and it is the price of answering the question the feature exists to
+// answer, which is where the product sells.
 const GEOS = [
   { domain: 'amazon.com', host: 'www.amazon.com', code: 'US', country: 'United States', keepa: 1 },
   { domain: 'amazon.ca', host: 'www.amazon.ca', code: 'CA', country: 'Canada', keepa: 6 },
   { domain: 'amazon.co.uk', host: 'www.amazon.co.uk', code: 'GB', country: 'United Kingdom', keepa: 2 },
   { domain: 'amazon.com.au', host: 'www.amazon.com.au', code: 'AU', country: 'Australia', keepa: null },
+  { domain: 'amazon.de', host: 'www.amazon.de', code: 'DE', country: 'Germany', keepa: 3 },
+  { domain: 'amazon.fr', host: 'www.amazon.fr', code: 'FR', country: 'France', keepa: 4 },
+  { domain: 'amazon.es', host: 'www.amazon.es', code: 'ES', country: 'Spain', keepa: 9 },
+  { domain: 'amazon.it', host: 'www.amazon.it', code: 'IT', country: 'Italy', keepa: 8 },
+  { domain: 'amazon.co.jp', host: 'www.amazon.co.jp', code: 'JP', country: 'Japan', keepa: 5 },
 ] as const
 
 function asinFrom(v: string): string | null {

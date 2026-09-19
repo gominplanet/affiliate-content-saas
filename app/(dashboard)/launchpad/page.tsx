@@ -2,13 +2,16 @@
 //
 // Launchpad — the origin pipeline for a video that is NOT on YouTube yet.
 // Upload the file, design + burn a CTA, optionally publish to YouTube (or skip),
-// then take the SAME uploaded video to the English Amazon storefronts (US, CA,
-// UK, AU): MVP uses the product ASIN to write each market's title and thumbnail.
+// then take the SAME uploaded video to every Amazon storefront the product is
+// listed in: MVP uses the ASIN to write each market's title and thumbnail, and
+// dubs the audio for the ones that do not speak English.
 //
-// English only, on purpose. This is the one-click path, and those four take the
-// master audio as it is, so nothing waits. The non-English markets and their
-// dubs still exist in full on the standalone Storefront Sync page, where
-// localizing is the job rather than a detour. See lib/markets.
+// This was English-only for a while, four storefronts that took the master
+// audio as it was, so that nothing waited on a dub. Delivery runs in waves now,
+// so the English stores upload while the dubs render, and a video YouTube has
+// already dubbed costs nothing to localize because the track is pulled rather
+// than synthesized. The page had also been promising dubs throughout that
+// period, which is the other reason it had to stop being true. See lib/markets.
 'use client'
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -22,7 +25,6 @@ import { requestStudioFinish, requestFindCampaign, requestAcceptCampaign, reques
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { normalizeAsinInput } from '@/lib/asin'
-import { isEnglishMarket } from '@/lib/markets'
 import ThumbnailBoostPanel, { useThumbnailBoost } from '@/components/thumbnails/ThumbnailBoostPanel'
 import { createBrowserClient } from '@/lib/supabase/client'
 
@@ -356,13 +358,12 @@ export default function LaunchpadPage() {
   // ONE thumbnail: the rich BAKED design (headline, callouts, banner) for YouTube
   // and the storefronts — textMode 'graphic', the same path the Co-Pilot uses.
   //
-  // This used to render a SECOND, text-free thumbnail alongside it for non-English
-  // storefronts. Launchpad cannot reach those: the storefront step filters its
-  // markets through isEnglishMarket, so US, CA, UK and AU are the only
-  // destinations it offers. Every run was paying for a full extra image render
-  // aimed at a market it would never deliver to. Storefront Sync, which does go
-  // non-English, still builds the wordless variant itself and does it lazily, only
-  // when a non-English market is actually chosen.
+  // The text-free variant for non-English storefronts is NOT rendered here, and
+  // that stays true now that Launchpad reaches those markets again. It is built
+  // lazily by /api/global-sync/start, which already knows whether the chosen
+  // markets include one that needs translation, and caches it on the video for
+  // every future sync. Rendering it here would pay for a full extra image on
+  // every run, including the runs that only ever deliver to English stores.
   async function genThumbnail(titleArg?: string) {
     const t = (titleArg || chosenTitle || workingTitle || 'My video').trim()
     setThumbBusy(true)
@@ -918,8 +919,10 @@ export default function LaunchpadPage() {
               </div>
             </div>
 
-            {/* One design, one thumbnail. It goes to YouTube and to every
-                storefront Launchpad can reach, all of which are English. */}
+            {/* One design here: the headline thumbnail for YouTube and the
+                English storefronts. Non-English markets get a text-free variant
+                of the same design, built on demand by the storefront step, so no
+                English hook sits on the image for a shopper who cannot read it. */}
             <div className="mt-3 max-w-md">
               <div>
                 <div className="rounded-lg border overflow-hidden aspect-video flex items-center justify-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
@@ -1147,14 +1150,16 @@ export default function LaunchpadPage() {
               <StorefrontStage
                 presetVideoId={masterId}
                 presetAsin={asinClean || ''}
-                // English storefronts only on this path. geo-check already
-                // returns just these four, and the intersection keeps that true
-                // even if it ever returns more, so the fast lane cannot acquire
-                // a market that needs a dub it no longer offers.
-                allowedDomains={geoCheck ? geoCheck.map(g => g.domain).filter(isEnglishMarket) : ['amazon.com']}
-                defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain).filter(isEnglishMarket) : ['amazon.com']}
-                // No dubbing here. The audio is already English for all four.
-                allowDubbing={false}
+                // EVERY market the product is listed in, English or not. This
+                // used to intersect with isEnglishMarket, which was the right
+                // call while the surface could not dub. It can: delivery runs
+                // in waves, so the English stores upload while the dubs render,
+                // and a video YouTube has already dubbed costs nothing to
+                // localize because the track is pulled rather than synthesized.
+                allowedDomains={geoCheck ? geoCheck.map(g => g.domain) : ['amazon.com']}
+                defaultChosen={geoCheck ? geoCheck.filter(g => g.status === 'found').map(g => g.domain) : ['amazon.com']}
+                // Dubbing on, which is what the page has always promised.
+                allowDubbing
                 geoBadges={geoCheck ? Object.fromEntries(geoCheck.map(g => [g.domain, g.status === 'found' ? 'Product found' : g.status === 'not-listed' ? 'Not listed here' : 'Not confirmed'])) : undefined}
                 marketAsins={marketAsins}
                 presetThumbnailUrl={thumbUrl}

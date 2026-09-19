@@ -27,7 +27,7 @@ export async function GET(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   let q = sb.from('global_sync_targets')
-    .select('id,job_id,domain,lang,title,description,video_url,asin,state,delivered_at')
+    .select('id,job_id,domain,lang,title,description,video_url,asin,state,delivered_at,dub')
     .eq('user_id', user.id)
     .in('state', ['localized'])
     .is('delivered_at', null)
@@ -96,8 +96,48 @@ export async function GET(req: Request) {
       // Per-market thumbnail (clean/text-free for non-English, branded for
       // English), computed above — NOT the raw text thumbnail.
       thumbnailUrl: thumb,
+      // ── WHAT THIS MARKET IS ABOUT TO RECEIVE ────────────────────────────
+      //
+      // `state: 'localized'` only means the TITLE was translated. It is set by
+      // the start route the moment the metadata comes back, before any dub
+      // exists, so it has never meant "ready to ship".
+      //
+      // The line above falls back to the English master when a market has no
+      // dub. That is correct and deliberate for an English market, and for a
+      // creator who chose "skip dub". It is also what happens when a dub FAILED,
+      // and those three are indistinguishable from here: same URL shape, same
+      // state, same delivered_at afterwards. A French storefront ends up with a
+      // French title over English audio and nothing anywhere disagrees.
+      //
+      // So the queue says which it is and lets the caller decide. It does not
+      // withhold the item: a market delivered with English audio on purpose is a
+      // real choice, and refusing to serve it would break the English geos and
+      // the skip-dub path both.
+      needsDub: !!r.dub,
+      dubbed: !!r.video_url,
+      // True exactly when this market wanted its own audio and is not getting
+      // it. The one field a caller has to look at to avoid shipping a silent
+      // language failure.
+      audioIsMasterFallback: !!r.dub && !r.video_url,
     }
-  }).filter(i => !!i.videoUrl && !!i.title)
+  })
 
-  return NextResponse.json({ ok: true, items })
+  // ── MARKETS THAT CANNOT BE DELIVERED ARE NAMED, NOT DROPPED ──────────────
+  //
+  // This used to end in .filter(i => i.videoUrl && i.title), which removed any
+  // market missing either. The caller toasts when the queue comes back EMPTY,
+  // so an all-dropped wave was caught. A partial drop was not: pick five
+  // markets, have one come back without a title, and the run finishes on
+  // "Uploaded to 4 of 4 storefronts", which reads as complete.
+  const deliverable = items.filter(i => !!i.videoUrl && !!i.title)
+  const skipped = items
+    .filter(i => !i.videoUrl || !i.title)
+    .map(i => ({
+      domain: i.domain,
+      reason: !i.title
+        ? 'no localized title, so the localize step did not finish for this market'
+        : 'no video to upload, and no master render to fall back on',
+    }))
+
+  return NextResponse.json({ ok: true, items: deliverable, skipped })
 }
