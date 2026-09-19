@@ -253,9 +253,35 @@ const DUB = live(read('app/api/global-sync/dub/route.ts'))
   // Swept over EVERY admin page rather than pinned to this one, because the
   // mistake is not specific to it: the next admin page will be added the same
   // way. The sweep is clean today, so it starts honest.
-  const { readdirSync } = require('node:fs') as typeof import('node:fs')
+  const { readdirSync, existsSync } = require('node:fs') as typeof import('node:fs')
   const NAV = read('components/layout/DashboardShellV2.tsx')
   const SEARCH = read('lib/app-search-index.ts')
+  // ── THE COOKIE ENCODER NEVER SENDS THE COOKIES ANYWHERE ───────────────────
+  //
+  // A YouTube cookies.txt is a logged-in session: whoever holds it holds the
+  // channel. The page exists because the obvious way to base64 a file without a
+  // terminal is to paste it into some website, which is handing the account
+  // over. Its whole value is that the work happens in the tab.
+  //
+  // So the absence of a server is the feature, and absences rot silently. An
+  // API route added later "just to log usage" would quietly turn a safe page
+  // into an exfiltration path, and nothing about the screen would change.
+  const COOKIES_PAGE = read('app/(dashboard)/admin/youtube-cookies/page.tsx')
+  check('the cookie encoder has no API route behind it',
+    !existsSync('app/api/admin/youtube-cookies'),
+    'the file is a live session for that YouTube account; it must not leave the browser')
+  check('and the page makes no outbound call',
+    !/\bfetch\s*\(|axios\.|XMLHttpRequest|navigator\.sendBeacon/.test(COOKIES_PAGE),
+    'reading the file is local; anything that posts it defeats the point of the page')
+  check('the page says the file is not uploaded',
+    /not uploaded,\s+not sent to MVP, and there is no server behind this screen/.test(COOKIES_PAGE),
+    'a reader has to be able to tell this apart from the websites they should not use')
+  check('and warns what the file actually is',
+    /logged-in session for that YouTube account/.test(COOKIES_PAGE))
+  check('it chunks under the variable cap',
+    /const CHUNK = 30000/.test(COOKIES_PAGE) && /YOUTUBE_COOKIES_B64_\$\{i \+ 1\}/.test(COOKIES_PAGE),
+    'Railway caps a variable at 32768 and the service joins _2, _3 in order')
+
   const orphans = readdirSync('app/(dashboard)/admin', { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
