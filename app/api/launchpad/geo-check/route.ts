@@ -15,8 +15,14 @@
 // still short-circuits AU when a prior SCOUT check was persisted; the client posts
 // its SCOUT result back here ({ cache: {...} }) to fill that cache.
 //
-//   body: { asin }             -> { ok, asin, brand, title, geos: [{ domain, code, country, status, asin, browser? }] }
+//   body: { asin, scope?, brand?, title? }
+//        -> { ok, asin, brand, title, scope, geos: [{ domain, code, country, status, asin, browser? }] }
 //   body: { cache: { asin, domain, status } } -> { ok } (persist a SCOUT result)
+//
+// scope is 'english' (default, the four English stores), 'international' (the
+// five that need a dub, on their own so opting in does not re-pay for the four)
+// or 'all'. Each non-US market is one Keepa lookup, so the default is the
+// cheapest answer and the rest is asked for.
 // brand/title come from Keepa US so the client can drive SCOUT's local-ASIN
 // search for any market where the source ASIN isn't listed.
 import { NextResponse } from 'next/server'
@@ -25,6 +31,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
 import { keepaConfigured, fetchKeepaBrandInfo } from '@/services/keepa'
 import { asinFromAmazonUrl } from '@/lib/asin'
+import { marketByDomain } from '@/lib/markets'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -46,9 +53,11 @@ export const maxDuration = 60
 // market" on the paywall card and in the hero while reaching four English
 // storefronts, so a creator paid for Pro, read that, and got no dub anywhere.
 //
-// The other cost of narrowing was five fewer Keepa lookups per check. That is
-// real, and it is the price of answering the question the feature exists to
-// answer, which is where the product sells.
+// The other cost of narrowing was five fewer Keepa lookups per check, and that
+// saving is KEPT rather than paid back: the list below is what this route CAN
+// research, not what it does on every call. `scope` decides, and it defaults to
+// the English four. The international five are looked up when a creator asks
+// for them and not before.
 const GEOS = [
   { domain: 'amazon.com', host: 'www.amazon.com', code: 'US', country: 'United States', keepa: 1 },
   { domain: 'amazon.ca', host: 'www.amazon.ca', code: 'CA', country: 'Canada', keepa: 6 },
@@ -100,6 +109,9 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({})) as {
     asin?: string
     cache?: { asin?: string; domain?: string; status?: string }
+    scope?: string
+    brand?: string
+    title?: string
   }
 
   // passport_asin_market is RLS-locked to the service role (migration 294), so
@@ -132,11 +144,37 @@ export async function POST(req: Request) {
 
   const canKeepa = keepaConfigured()
 
+  // ── ONLY RESEARCH THE MARKETS SOMEBODY ASKED ABOUT ───────────────────────
+  //
+  // Each non-US marketplace is one Keepa lookup, and most creators only ever
+  // ship to the English four. Researching all nine on every check spends five
+  // lookups per run on an answer nobody reads, which is exactly the kind of
+  // cost that survives for months because it appears on no screen.
+  //
+  // So the first check asks about the English stores, and the international
+  // ones are researched when a creator asks for them. 'international' is the
+  // five on their own rather than all nine, so opting in does not re-pay for the
+  // four already answered.
+  //
+  // Default is 'english' rather than 'all'. A caller that forgets the parameter
+  // should cost the least, not the most.
+  const scope = body.scope === 'all' ? 'all' : body.scope === 'international' ? 'international' : 'english'
+  const inScope = GEOS.filter((g) => {
+    const mkt = marketByDomain(g.domain)
+    const isEnglish = !mkt?.needsTranslation
+    return scope === 'all' ? true : scope === 'english' ? isEnglish : !isEnglish
+  })
+
   // Pull the product's US brand + title once. The client passes these to SCOUT to
   // search for a LOCAL ASIN in any market where the source ASIN isn't listed.
-  let brand: string | null = null
-  let title: string | null = null
-  if (canKeepa) {
+  //
+  // The caller can hand back what the first check already returned, so the
+  // international pass does not spend a second US lookup to learn the same two
+  // strings. They only steer a SCOUT search, so a caller-supplied value costs
+  // nothing worse than a worse search.
+  let brand: string | null = (body.brand || '').trim() || null
+  let title: string | null = (body.title || '').trim() || null
+  if (canKeepa && !brand && !title) {
     try {
       const us = await fetchKeepaBrandInfo([asin], 1)
       const info = us.get(asin)
@@ -145,7 +183,7 @@ export async function POST(req: Request) {
     } catch { /* best-effort — client falls back to manual paste */ }
   }
 
-  const geos = await Promise.all(GEOS.map(async (g) => {
+  const geos = await Promise.all(inScope.map(async (g) => {
     // US: the source ASIN lives here by definition.
     if (g.code === 'US') return { domain: g.domain, code: g.code, country: g.country, status: 'found' as GeoStatus, asin }
     // Keepa domains: a non-null title back from that domain means the ASIN is
@@ -166,5 +204,5 @@ export async function POST(req: Request) {
     return { domain: g.domain, code: g.code, country: g.country, status: cached, asin, browser: true, host: g.host }
   }))
 
-  return NextResponse.json({ ok: true, asin, brand, title, geos })
+  return NextResponse.json({ ok: true, asin, brand, title, geos, scope })
 }

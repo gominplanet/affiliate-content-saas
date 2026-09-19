@@ -66,6 +66,49 @@ const STAGE = live(read('components/launchpad/StorefrontStage.tsx'))
     `${translated.join(', ')} — these are the whole point of the dub lane`)
 }
 
+// ── reachable is not the same as researched on every run ────────────────────
+//
+// Each non-US marketplace is one Keepa lookup. Checking all nine every time
+// spends five on an answer most runs never read, which is the kind of cost that
+// survives for months because it appears on no screen. So the list above is
+// what geo-check CAN research; scope decides what it does.
+{
+  check('geo-check takes a scope',
+    /const scope = body\.scope === 'all'/.test(GEOCHECK))
+  check('and defaults to the cheapest answer',
+    /body\.scope === 'international' \? 'international' : 'english'/.test(GEOCHECK),
+    'a caller that forgets the parameter should cost the least, not the most')
+  check('the market list is filtered by it before any lookup',
+    GEOCHECK.indexOf('const inScope = GEOS.filter') < GEOCHECK.indexOf('fetchKeepaBrandInfo([asin], g.keepa)')
+    && /inScope\.map\(async \(g\)/.test(GEOCHECK),
+    'filtering the RESULTS would still have paid for every lookup')
+  check("'international' is the five alone, not all nine",
+    /scope === 'all' \? true : scope === 'english' \? isEnglish : !isEnglish/.test(GEOCHECK),
+    'opting in must not re-pay for the four already answered')
+  check('and the second pass can reuse the brand and title',
+    /if \(canKeepa && !brand && !title\)/.test(GEOCHECK),
+    'otherwise opting in costs six lookups to learn five things')
+
+  // The opt-in has to exist and has to say what it buys, or the markets are
+  // reachable in a sense nobody can act on.
+  check('the page offers the international check',
+    /checkInternationalGeos/.test(PAGE) && /scope: 'international'/.test(PAGE))
+  check('and names the markets and what they get',
+    /Germany, France, Spain, Italy and Japan are not checked by default/.test(PAGE_RAW),
+    '"international" alone does not tell a creator whether their store is in it')
+
+  // ONE SCOUT pass, used by both. A second copy is a second place for the
+  // local-ASIN search to quietly not happen, and shipping the US ASIN to
+  // amazon.de points at nothing.
+  check('both passes share one SCOUT routine',
+    /async function runScoutGeoPass/.test(PAGE)
+    && (PAGE.match(/runScoutGeoPass\(/g) ?? []).length >= 3,
+    'declared once and called by the English pass and the international one')
+  check('the international results are appended, not substituted',
+    /have\.has\(g\.domain\)/.test(PAGE),
+    'the English rows already carry SCOUT statuses this response knows nothing about')
+}
+
 // ── a dub that failed is never passed off as one that worked ────────────────
 {
   check('the dub response is read',

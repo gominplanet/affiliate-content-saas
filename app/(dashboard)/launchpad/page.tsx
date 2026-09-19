@@ -247,6 +247,14 @@ export default function LaunchpadPage() {
   // Per-market LOCAL ASIN resolved by SCOUT when the product is relisted abroad
   // under a different code (keyed by domain). Passed to the storefront step.
   const [marketAsins, setMarketAsins] = useState<Record<string, string>>({})
+  // Kept from the first geo check so the international pass can hand them back
+  // instead of spending a second Keepa lookup to learn the same two strings.
+  const [geoBrand, setGeoBrand] = useState<string | null>(null)
+  const [geoTitle, setGeoTitle] = useState<string | null>(null)
+  // 'idle' until the creator asks. The international markets are five Keepa
+  // lookups and most runs never leave the English stores, so they are not
+  // researched unless somebody wants them.
+  const [intlState, setIntlState] = useState<'idle' | 'checking' | 'done'>('idle')
   // Post-upload Creator Connections (US) step.
   const [ccFinding, setCcFinding] = useState(false)
   const [ccAccepting, setCcAccepting] = useState(false)
@@ -364,6 +372,87 @@ export default function LaunchpadPage() {
   // markets include one that needs translation, and caches it on the video for
   // every future sync. Rendering it here would pay for a full extra image on
   // every run, including the runs that only ever deliver to English stores.
+  /**
+   * The SCOUT pass over a set of geos, in the creator's own logged-in session.
+   *
+   *  1) Keepa-less markets (Australia) come back browser:true — read the real
+   *     /dp page for a definitive listed / not-listed.
+   *  2) For every market the product is NOT listed in under the source ASIN,
+   *     search that marketplace by brand + title for a confident LOCAL ASIN.
+   *     Products are often relisted abroad under a different code, and shipping
+   *     the US ASIN to amazon.de points at nothing.
+   *
+   * Extracted so the lazily-checked international markets get exactly the same
+   * treatment as the English ones. A second copy of this would be a second
+   * place for the local-ASIN search to quietly not happen.
+   */
+  async function runScoutGeoPass(
+    geos: Array<{ domain: string; status: string; browser?: boolean; host?: string }>,
+    brand: string | null,
+    title: string | null,
+    a: string,
+  ) {
+    let intlPrompted = false
+    const promptIntl = () => {
+      if (intlPrompted) return
+      intlPrompted = true
+      toast.message('Turn on \u201CInternational Amazon\u201D in the SCOUT popup to confirm and match listings outside the US.')
+    }
+    for (const g of geos.filter(x => x.browser && x.status !== 'found')) {
+      try {
+        const chk = await requestAmazonAsinCheck(a, g.host || g.domain)
+        if (chk.status === 'found' || chk.status === 'not-listed') {
+          g.status = chk.status
+          setGeoCheck(prev => prev ? prev.map(x => x.domain === g.domain ? { ...x, status: chk.status } : x) : prev)
+          fetch('/api/launchpad/geo-check', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cache: { asin: a, domain: g.domain, status: chk.status } }),
+          }).catch(() => {})
+        } else if (chk.error === 'intl-permission-needed') promptIntl()
+      } catch { /* leave "Not confirmed" */ }
+    }
+    if (title) {
+      for (const g of geos.filter(x => x.status === 'not-listed')) {
+        try {
+          const res = await requestResolveLocalAsin({ brand, title, sourceAsin: a, domain: g.host || g.domain })
+          if (res.asin) setMarketAsins(prev => ({ ...prev, [g.domain]: res.asin! }))
+          else if (res.error === 'intl-permission-needed') promptIntl()
+        } catch { /* creator can paste the local ASIN */ }
+      }
+    }
+  }
+
+  /** Research the five non-English markets, on request. See intlState. */
+  async function checkInternationalGeos() {
+    const a = (asinClean || '').trim()
+    if (!a || intlState !== 'idle') return
+    setIntlState('checking')
+    try {
+      const r = await fetch('/api/launchpad/geo-check', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        // brand/title from the first check, so this costs five lookups and not six.
+        body: JSON.stringify({ asin: a, scope: 'international', brand: geoBrand, title: geoTitle }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j?.ok || !Array.isArray(j.geos)) {
+        setIntlState('idle')
+        toast.error(j?.error || 'Could not check the international stores. Nothing changed, try again.')
+        return
+      }
+      // Appended, never replacing: the English results already carry SCOUT
+      // statuses this response knows nothing about.
+      setGeoCheck(prev => {
+        const have = new Set((prev ?? []).map(g => g.domain))
+        return [...(prev ?? []), ...j.geos.filter((g: { domain: string }) => !have.has(g.domain))]
+      })
+      setIntlState('done')
+      void runScoutGeoPass(j.geos, j.brand || geoBrand, j.title || geoTitle, a)
+    } catch {
+      setIntlState('idle')
+      toast.error('Could not reach the server. Nothing changed, try again.')
+    }
+  }
+
   async function genThumbnail(titleArg?: string) {
     const t = (titleArg || chosenTitle || workingTitle || 'My video').trim()
     setThumbBusy(true)
@@ -601,45 +690,9 @@ export default function LaunchpadPage() {
         if (gj?.ok && Array.isArray(gj.geos)) {
           setGeoCheck(gj.geos)
           setMarketAsins({})
-          const brand: string | null = gj.brand || null
-          const title: string | null = gj.title || null
-          // Background pass in the creator's own session:
-          //  1) Keepa-less markets (e.g. Australia) are flagged browser:true —
-          //     read the real /dp page to get a definitive listed/not-listed.
-          //  2) For every market the product ISN'T listed in under the US ASIN,
-          //     search that marketplace by brand+title for a confident LOCAL ASIN
-          //     (products are often relisted abroad under a different code).
-          void (async () => {
-            const a = asinClean as string
-            let intlPrompted = false
-            const promptIntl = () => { if (!intlPrompted) { intlPrompted = true; toast.message('Turn on “International Amazon” in the SCOUT popup to confirm and match listings outside the US.') } }
-            // 1) Browser existence checks. Mutate the local geo copy so step 2 sees
-            //    the resolved status.
-            for (const g of gj.geos.filter((x: { browser?: boolean; status: string }) => x.browser && x.status !== 'found')) {
-              try {
-                const chk = await requestAmazonAsinCheck(a, g.host || g.domain)
-                if (chk.status === 'found' || chk.status === 'not-listed') {
-                  g.status = chk.status
-                  setGeoCheck(prev => prev ? prev.map(x => x.domain === g.domain ? { ...x, status: chk.status } : x) : prev)
-                  fetch('/api/launchpad/geo-check', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cache: { asin: a, domain: g.domain, status: chk.status } }),
-                  }).catch(() => {})
-                } else if (chk.error === 'intl-permission-needed') promptIntl()
-              } catch { /* leave "Not confirmed" */ }
-            }
-            // 2) Local-ASIN resolution for not-listed markets (needs the product's
-            //    brand/title from Keepa; without them the creator pastes by hand).
-            if (title) {
-              for (const g of gj.geos.filter((x: { status: string }) => x.status === 'not-listed')) {
-                try {
-                  const res = await requestResolveLocalAsin({ brand, title, sourceAsin: a, domain: g.host || g.domain })
-                  if (res.asin) setMarketAsins(prev => ({ ...prev, [g.domain]: res.asin! }))
-                  else if (res.error === 'intl-permission-needed') promptIntl()
-                } catch { /* creator can paste the local ASIN */ }
-              }
-            }
-          })()
+          setGeoBrand(gj.brand || null)
+          setGeoTitle(gj.title || null)
+          void runScoutGeoPass(gj.geos, gj.brand || null, gj.title || null, asinClean as string)
         }
       } catch { /* non-fatal */ }
       setMasterId(j.videoId)
@@ -1147,6 +1200,36 @@ export default function LaunchpadPage() {
                 {creatingMaster ? <><Loader2 size={15} className="animate-spin" /> Checking markets…</> : <><Sparkles size={15} /> Continue to storefronts</>}
               </button>
             ) : (
+              <>
+              {/* ── INTERNATIONAL IS OPT-IN ──────────────────────────────────
+                  Each non-US market is one Keepa lookup, and most runs only
+                  ever ship to the English stores, so researching all nine every
+                  time spends five lookups on an answer nobody reads. Offered
+                  here instead, with what it does said plainly: these are the
+                  markets that get a dub. */}
+              {intlState !== 'done' && (
+                <div className="mb-4 rounded-xl border p-4" style={{ borderColor: 'var(--border)' }}>
+                  <p className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>
+                    Selling outside the English stores?
+                  </p>
+                  <p className="mt-1 text-[12.5px] leading-snug" style={muted}>
+                    Germany, France, Spain, Italy and Japan are not checked by default. Add them and MVP
+                    looks up whether your product is listed there, translates the title, and dubs the audio
+                    into each language.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void checkInternationalGeos()}
+                    disabled={intlState === 'checking'}
+                    className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-60"
+                    style={{ background: '#7C3AED' }}
+                  >
+                    {intlState === 'checking'
+                      ? <><Loader2 size={13} className="animate-spin" /> Checking five stores…</>
+                      : 'Check international stores'}
+                  </button>
+                </div>
+              )}
               <StorefrontStage
                 presetVideoId={masterId}
                 presetAsin={asinClean || ''}
@@ -1164,6 +1247,7 @@ export default function LaunchpadPage() {
                 marketAsins={marketAsins}
                 presetThumbnailUrl={thumbUrl}
               />
+              </>
             )}
           </>
         </StepRow>
