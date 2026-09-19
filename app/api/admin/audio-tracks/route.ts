@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { listYouTubeAudioTracks, ingestConfigured } from '@/lib/youtube-ingest'
+import { listYouTubeAudioTracksDetailed, ingestConfigured } from '@/lib/youtube-ingest'
 import { MARKETS } from '@/lib/markets'
 import { extractYouTubeVideoId } from '@/lib/youtube-url'
 
@@ -39,18 +39,30 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: false,
       videoId,
-      reason: 'not_configured',
+      reason: 'not-configured',
       message: 'The video service is not switched on in this environment, so nothing was checked. This is not a finding about the video.',
     })
   }
 
-  const info = await listYouTubeAudioTracks(videoId)
+  const { info, reason, detail } = await listYouTubeAudioTracksDetailed(videoId)
   if (!info) {
+    // A REMEDY PER CAUSE. The first version said "usually the cookies need
+    // refreshing" for every failure, and the very first real run was a 404 from
+    // a service that had not been redeployed, so it sent its operator to fix
+    // something that was not broken.
+    const MESSAGE: Record<string, string> = {
+      'not-configured': 'The video service is not switched on in this environment, so nothing was checked.',
+      'service-down': 'The video service did not answer at all. Check that it is running and that YOUTUBE_INGEST_URL points at it.',
+      'stale-service': 'The video service is running, but on a build that predates this check. It deploys separately from the app, so a Vercel deploy does not update it: redeploy ingest-service and try again.',
+      'unauthorized': 'The video service rejected the request. YOUTUBE_INGEST_SECRET here and INGEST_SECRET on the service do not match.',
+      'blocked': 'The video service answered but could not read this video. Usually YouTube asking it to sign in, which means its cookies need refreshing.',
+    }
     return NextResponse.json({
       ok: false,
       videoId,
-      reason: 'lookup_failed',
-      message: 'The lookup did not come back. That is a failure to check, not a video without dubs. Usually YouTube asking the downloader to sign in, which means its cookies need refreshing.',
+      reason: reason ?? 'blocked',
+      message: MESSAGE[reason ?? 'blocked'],
+      detail: detail || null,
     })
   }
 

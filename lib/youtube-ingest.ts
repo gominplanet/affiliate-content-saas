@@ -64,29 +64,84 @@ export interface AudioTrackInfo {
  * decisions, one being "use YouTube's dub" and the other "spend a credit".
  */
 export async function listYouTubeAudioTracks(youtubeVideoId: string): Promise<AudioTrackInfo | null> {
+  return (await listYouTubeAudioTracksDetailed(youtubeVideoId)).info
+}
+
+/**
+ * WHY a listing came back empty, because the remedies are different.
+ *
+ * The first version returned a bare null and the screen turned that into one
+ * sentence blaming the downloader's cookies. The real cause on the very first
+ * run was something else entirely: the ingest service is a SEPARATE Docker
+ * deployment, Vercel does not redeploy it, so /audio-tracks did not exist there
+ * yet and the service answered 404. The page told its operator to go and
+ * refresh cookies that were perfectly fine.
+ *
+ * That is the exact failure this page was built to prevent, one layer up. So
+ * the causes are separated:
+ *
+ *   'stale-service'  the endpoint 404s but /health answers, so the service is
+ *                    up and running a build older than this feature. Redeploy
+ *                    ingest-service.
+ *   'service-down'   nothing answers at all.
+ *   'unauthorized'   the shared secret does not match.
+ *   'blocked'        the service answered and could not read the video, which
+ *                    is the cookies / bot-wall case the old message assumed.
+ *   'not-configured' YOUTUBE_INGEST_URL is unset.
+ */
+export type AudioTrackFailure =
+  | 'not-configured' | 'service-down' | 'stale-service' | 'unauthorized' | 'blocked'
+
+export async function listYouTubeAudioTracksDetailed(
+  youtubeVideoId: string,
+): Promise<{ info: AudioTrackInfo | null; reason: AudioTrackFailure | null; detail?: string }> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
-  if (!base || !youtubeVideoId) return null
+  if (!base || !youtubeVideoId) return { info: null, reason: 'not-configured' }
+
+  const secret = process.env.YOUTUBE_INGEST_SECRET
+  let res: Response
   try {
-    const res = await fetch(`${base}/audio-tracks`, {
+    res = await fetch(`${base}/audio-tracks`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
-      },
+      headers: { 'Content-Type': 'application/json', ...(secret ? { 'x-ingest-secret': secret } : {}) },
       body: JSON.stringify({ videoId: youtubeVideoId }),
       signal: AbortSignal.timeout(60_000),
     })
-    if (!res.ok) return null
-    const d = await res.json() as { ok?: boolean; languages?: unknown; originalLanguage?: unknown; multiTrack?: unknown }
-    if (!d?.ok || !Array.isArray(d.languages)) return null
-    const languages = d.languages.filter((l): l is string => typeof l === 'string')
-    return {
+  } catch (e) {
+    return { info: null, reason: 'service-down', detail: e instanceof Error ? e.message : 'unreachable' }
+  }
+
+  if (res.status === 401 || res.status === 403) return { info: null, reason: 'unauthorized' }
+
+  // 404 is the interesting one: the service is THERE, it simply predates this
+  // endpoint. Confirmed against /health rather than assumed, so "old build" and
+  // "wrong URL" stay distinguishable.
+  if (res.status === 404) {
+    let healthy = false
+    try {
+      const h = await fetch(`${base}/health`, { signal: AbortSignal.timeout(15_000) })
+      healthy = h.ok
+    } catch { /* leave false */ }
+    return { info: null, reason: healthy ? 'stale-service' : 'service-down' }
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    return { info: null, reason: 'blocked', detail: body.slice(0, 200) }
+  }
+
+  const d = await res.json().catch(() => null) as
+    { ok?: boolean; languages?: unknown; originalLanguage?: unknown; multiTrack?: unknown } | null
+  if (!d?.ok || !Array.isArray(d.languages)) return { info: null, reason: 'blocked' }
+
+  const languages = d.languages.filter((l): l is string => typeof l === 'string')
+  return {
+    info: {
       languages,
       originalLanguage: typeof d.originalLanguage === 'string' ? d.originalLanguage : null,
       multiTrack: !!d.multiTrack,
-    }
-  } catch {
-    return null
+    },
+    reason: null,
   }
 }
 

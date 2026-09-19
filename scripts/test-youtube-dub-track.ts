@@ -118,13 +118,15 @@ const DUB = live(read('app/api/global-sync/dub/route.ts'))
   // Scoped to the listing FUNCTION. Read against the whole file, `if (!res.ok)
   // return null` is also satisfied by ingestYouTubeVideo's copy of the same
   // line, so the clause passed with the listing changed to return an empty list.
-  const listFn = CLIENT.slice(CLIENT.indexOf('export async function listYouTubeAudioTracks'))
-    .split('export async function')[1] ?? ''
+  const listFn = CLIENT.slice(CLIENT.indexOf('export async function listYouTubeAudioTracksDetailed'))
   check('the listing function was found', listFn.includes('/audio-tracks'), `${listFn.length} chars`)
-  check('a failed listing returns null, not an empty list',
-    /if \(!res\.ok\) return null/.test(listFn)
-    && /if \(!d\?\.ok \|\| !Array\.isArray\(d\.languages\)\) return null/.test(listFn),
+  check('a failed listing yields no info, never an empty list',
+    /if \(!d\?\.ok \|\| !Array\.isArray\(d\.languages\)\) return \{ info: null/.test(listFn)
+    && !/return \{ info: \{ languages: \[\]/.test(listFn),
     'an empty list would read as "no dub exists" and send the creator to the paid lane on a video that has one')
+  check('and the thin wrapper passes that null straight through',
+    /return \(await listYouTubeAudioTracksDetailed\(youtubeVideoId\)\)\.info/.test(CLIENT),
+    'the dub route only needs yes or no; the reasons are for the screen')
   check('hasAudioTrack treats null as false rather than throwing',
     /if \(!info \|\| !lang\) return false/.test(CLIENT))
   check('and matches on a prefix',
@@ -158,12 +160,37 @@ const DUB = live(read('app/api/global-sync/dub/route.ts'))
   check('the checker is admin only',
     /caller\?\.tier !== 'admin'/.test(API))
   check('an unconfigured service is its own answer',
-    /reason: 'not_configured'/.test(API)
+    /reason: 'not-configured'/.test(API)
     && /This is not a finding about the video/.test(API),
     'reporting it as "no tracks" says something false about the video')
-  check('a failed lookup is its own answer too',
-    /reason: 'lookup_failed'/.test(API)
-    && /not a video without dubs/.test(API))
+
+  // A REMEDY PER CAUSE, not one sentence for every failure.
+  //
+  // The first version said "usually the cookies need refreshing" whatever went
+  // wrong. The very first real run was a 404, because the ingest service
+  // deploys separately from the app and had not been rebuilt, so the page sent
+  // its operator to fix cookies that were fine. Collapsing distinct causes into
+  // the likeliest one is the same bug this page exists to prevent, one layer up.
+  const CAUSES = ['not-configured', 'service-down', 'stale-service', 'unauthorized', 'blocked'] as const
+  for (const c of CAUSES) {
+    check(`${c} is a named cause`, new RegExp(`'${c}':`).test(API) || new RegExp(`reason: '${c}'`).test(API))
+  }
+  check('a stale service is told to redeploy, not to fix cookies',
+    /redeploy ingest-service/.test(API)
+    && /deploys separately from the app/.test(API),
+    'a Vercel deploy does not rebuild it, which is not guessable from the failure')
+  check('and only the genuine block mentions cookies',
+    (API.match(/cookies/g) ?? []).length === 1,
+    'the cookie remedy belongs to one cause; on any other it is a wrong instruction')
+
+  const LIB = live(read('lib/youtube-ingest.ts'))
+  check('the 404 case is confirmed against health, not assumed',
+    /\$\{base\}\/health/.test(LIB),
+    '"old build" and "wrong URL" both 404, and they have different fixes')
+  check('the detailed lookup separates the causes',
+    /export type AudioTrackFailure/.test(LIB)
+    && /'stale-service' : 'service-down'/.test(LIB),
+    'one null for every cause is what produced the wrong remedy')
   check('and the two are distinguishable from a real empty result',
     /ok: true[\s\S]{0,600}multiTrack/.test(API),
     'ok:true is what separates "we looked" from "we could not"')
