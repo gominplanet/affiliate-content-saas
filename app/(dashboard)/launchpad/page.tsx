@@ -140,7 +140,6 @@ export default function LaunchpadPage() {
   const [publishError, setPublishError] = useState<string | null>(null)
   // The channel that owns the upload — needed for a Studio link that lands on the
   // right channel instead of erroring out.
-  const [publishedChannelId, setPublishedChannelId] = useState<string | null>(null)
   // What the Studio finish actually managed to set. null = wasn't asked for.
   // Drives the honest "finish these by hand" checklist below the publish button.
   const [studioDone, setStudioDone] = useState<{ details: boolean | null; monetize: boolean | null } | null>(null)
@@ -301,7 +300,6 @@ export default function LaunchpadPage() {
         if (s.facePick) { facePickRestored.current = true; setFacePick(s.facePick) }
         if (s.publishedUrl) setPublishedUrl(s.publishedUrl)
         if (s.publishedVideoId) setPublishedVideoId(s.publishedVideoId)
-        if (s.publishedChannelId) setPublishedChannelId(s.publishedChannelId)
         if (s.studioDone) setStudioDone(s.studioDone)
         // Restored alongside studioDone, or a resumed session would show a green
         // "Done." over the private draft the warnings were explaining.
@@ -324,13 +322,13 @@ export default function LaunchpadPage() {
       localStorage.setItem(LS_KEY, JSON.stringify({
         renderedUrl, cleanUrl, workingTitle, durationSec, asin, ytOpen, meta,
         chosenTitle, description, tags, thumbUrl, thumbSkipped, facePick,
-        publishedUrl, publishedVideoId, publishedChannelId, studioDone, publishResult,
+        publishedUrl, publishedVideoId, studioDone, publishResult,
         masterId, geoCheck, marketAsins, savedAt: Date.now(),
       }))
     } catch { /* private mode / quota — resume is a convenience, never a blocker */ }
   }, [restored, renderedUrl, cleanUrl, workingTitle, durationSec, asin, ytOpen, meta,
       chosenTitle, description, tags, thumbUrl, thumbSkipped, facePick,
-      publishedUrl, publishedVideoId, publishedChannelId, studioDone, publishResult,
+      publishedUrl, publishedVideoId, studioDone, publishResult,
       masterId, geoCheck, marketAsins])
 
   function startOver() {
@@ -524,18 +522,10 @@ export default function LaunchpadPage() {
         throw new Error(detail)
       }
       setPublishedUrl(j.url); setPublishedVideoId(String(j.videoId))
-      // SET IT EVERY TIME, including to null.
-      //
-      // This was guarded on the channelId being present, which looks harmless
-      // and is not: publishedChannelId is persisted with the rest of the run and
-      // restored on a resumed session. A publish that returns no channelId then
-      // left the PREVIOUS run's channel sitting beside the NEW run's video id,
-      // and the Studio link below pairs them. Studio answers a channel that does
-      // not own that video with a blank "Oops, something went wrong".
-      //
-      // Null is the honest value: the link falls back to the unscoped form,
-      // which lets YouTube work out the owner itself.
-      setPublishedChannelId(typeof j.channelId === 'string' && j.channelId ? j.channelId : null)
+      // The upload route still returns channelId; nothing here needs it. It
+      // existed only to scope the Studio link to the owning channel, and that
+      // scoping was what broke the link, so keeping it across a resumed run was
+      // a stale value waiting to be paired with a newer video.
 
       // 2) Apply the finishing pass — thumbnail + publish options — via the same
       //    route the Co-Pilot uses. Non-fatal: the video is already up, so any
@@ -1144,13 +1134,16 @@ export default function LaunchpadPage() {
                           style={{ color: publishResult && publishResult.visibility !== publishResult.wanted ? 'var(--text-2)' : '#10B981' }}>
                           <Check size={14} /> {publishResult ? (publishResult.visibility === 'public' ? 'Public on YouTube.' : 'On YouTube as a private draft.') : 'Done.'}
                           {publishedVideoId && (
-                            // Scope the link to the OWNING channel. A bare
-                            // /video/<id>/edit opens under whatever channel Studio is
-                            // currently on, and Studio throws a generic "something went
-                            // wrong" until it resolves the right one.
-                            <a href={publishedChannelId
-                              ? `https://studio.youtube.com/channel/${publishedChannelId}/video/${publishedVideoId}/edit`
-                              : `https://studio.youtube.com/video/${publishedVideoId}/edit`}
+                            // UNSCOPED, like every other Studio link in the app.
+                            //
+                            // This used to scope itself to the owning channel, on the
+                            // stated grounds that a bare /video/<id>/edit opens under
+                            // whatever channel Studio is currently on and throws a
+                            // generic "something went wrong". Tested against the live
+                            // account and that is backwards: the scoped form is what
+                            // threw, and the bare one opens the video correctly and
+                            // switches channel by itself.
+                            <a href={`https://studio.youtube.com/video/${publishedVideoId}/edit`}
                               target="_blank" rel="noreferrer" className="underline font-medium">Open in Studio to schedule or go live</a>
                           )}
                           <a href={publishedUrl} target="_blank" rel="noreferrer" className="underline" style={muted}>watch page</a>
@@ -1181,9 +1174,7 @@ export default function LaunchpadPage() {
                               <li>Under <strong>Monetization</strong>: turn it on and submit the <strong>ad-suitability rating</strong>.</li>
                             )}
                           </ul>
-                          <a href={publishedChannelId
-                            ? `https://studio.youtube.com/channel/${publishedChannelId}/video/${publishedVideoId}/edit`
-                            : `https://studio.youtube.com/video/${publishedVideoId}/edit`}
+                          <a href={`https://studio.youtube.com/video/${publishedVideoId}/edit`}
                             target="_blank" rel="noreferrer"
                             className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-lg text-white" style={{ background: '#d97706' }}>
                             <Youtube size={13} /> Open the video in Studio

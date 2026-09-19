@@ -201,6 +201,35 @@ const STAGE = live(read('components/launchpad/StorefrontStage.tsx'))
   check('the stage can still dub when asked', /async function dubOne/.test(STAGE))
 }
 
+// ── the Studio link is the unscoped one, everywhere ─────────────────────────
+//
+// Launchpad was the only surface building studio.youtube.com/channel/<cid>/
+// video/<vid>/edit. A comment justified it: a bare /video/<id>/edit supposedly
+// opens under whatever channel Studio is on and throws a generic error. Tested
+// against the live account, it is the other way round. The scoped URL is what
+// threw "Oops, something went wrong"; the bare one opens the video and switches
+// channel by itself.
+//
+// Swept across the app rather than pinned to Launchpad, because the plausible
+// story is what put it there and the same story will occur to the next reader.
+{
+  const { readdirSync, statSync } = require('node:fs') as typeof import('node:fs')
+  const offenders: string[] = []
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir)) {
+      if (e === 'node_modules' || e === '.next') continue
+      const full = `${dir}/${e}`
+      if (statSync(full).isDirectory()) { walk(full); continue }
+      if (!/\.tsx?$/.test(full)) continue
+      if (/studio\.youtube\.com\/channel\//.test(live(read(full)))) offenders.push(full)
+    }
+  }
+  walk('app'); walk('components'); walk('lib')
+  check('no Studio link is scoped to a channel id',
+    offenders.length === 0,
+    `${offenders.join(', ')} — a channel that does not own the video answers with a blank error page, and the bare form resolves the owner itself`)
+}
+
 // ── house style on the sentences a creator reads ────────────────────────────
 {
   const strings = [...PAGE_RAW.matchAll(/(?:description|subtitle)="([^"]{40,})"/g)].map((m) => m[1])
