@@ -1712,20 +1712,60 @@ export async function requestYtApplyDisclosures(
  * hook rewrites the outgoing request to carry paid-promotion / AI / monetization).
  * This carries YouTube's real BotGuard token, so the change actually sticks.
  */
+/**
+ * What Studio reports the video's settings to be AFTER the save.
+ *
+ * Every field is tri-state and null means "we could not read it", never "off".
+ * The Data API exposes none of these, so a read-back through Studio is the only
+ * confirmation that exists, and a failed read has to stay distinguishable from
+ * a setting that genuinely did not take.
+ */
+export interface YtDisclosureVerified {
+  paidPromotion: boolean | null
+  /** true = disclosed as altered, false = disclosed as NOT altered, null =
+   *  never answered. YouTube treats those as three states and so must we. */
+  alteredContent: boolean | null
+  monetize: boolean | null
+  selfCertified: boolean | null
+}
+
 export async function requestYtInjectDisclosures(
   videoId: string,
   opts: YtDisclosureOpts,
-): Promise<{ ok: boolean; uncertain?: boolean; detail?: string; error?: string; debug?: Record<string, unknown> }> {
+): Promise<{
+  ok: boolean
+  uncertain?: boolean
+  verifyFailed?: boolean
+  verified?: YtDisclosureVerified | null
+  detail?: string
+  error?: string
+  debug?: Record<string, unknown>
+}> {
   if (!videoId) return { ok: false, error: 'no-video-id' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; uncertain?: boolean; detail?: string; error?: string; debug?: Record<string, unknown> }>(
+  const resp = await sendToExtension<{
+    ok?: boolean; uncertain?: boolean; verifyFailed?: boolean
+    verified?: YtDisclosureVerified | null
+    detail?: string; error?: string; debug?: Record<string, unknown>
+  }>(
+    // Longer than the old 60s: the flow now saves, RELOADS the editor and reads
+    // the settings back, and a Studio page load is not fast.
     { type: 'MVP_YT_INJECT_DISCLOSURES', videoId, opts },
-    60000,
+    120000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
-  // `uncertain` = Studio saved but SCOUT couldn't confirm the fields rode along.
-  // Not a failure — the caller renders it as a soft "check Studio" note.
-  return { ok: !!resp.ok, uncertain: !!resp.uncertain, detail: resp.detail, error: resp.error, debug: resp.debug }
+  // `uncertain` = the save fired and SCOUT could not confirm the fields rode
+  // along. It survives for an older SCOUT that cannot read back; a current one
+  // resolves it to ok or verifyFailed and this stays false.
+  return {
+    ok: !!resp.ok,
+    uncertain: !!resp.uncertain,
+    verifyFailed: !!resp.verifyFailed,
+    verified: resp.verified ?? null,
+    detail: resp.detail,
+    error: resp.error,
+    debug: resp.debug,
+  }
 }
 
 export interface VideoDownloadResult {

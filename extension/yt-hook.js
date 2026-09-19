@@ -99,6 +99,56 @@
     } catch (e) { return bodyStr }
   }
 
+  // ── READ-BACK: what Studio says the video's settings ACTUALLY are ─────────
+  //
+  // Injection could only ever report whether the SAVE went out, never whether
+  // the fields stuck, so a run ended on "Studio saved but SCOUT couldn't
+  // confirm" and the creator was told to go and check four things by hand. That
+  // is the whole reason this path felt unreliable: it usually worked and could
+  // not say so.
+  //
+  // Studio's editor loads the video's current metadata, and that response
+  // carries the real values. Captured here, so after a save we can reload and
+  // read the truth instead of inferring it from our own request.
+  //
+  // Matched on the FIELD NAMES in the body rather than on an endpoint path.
+  // YouTube renames these endpoints (the comment on isMetaUpdate says as much),
+  // and a response that contains hasPaidProductPlacement is the response we
+  // want whatever it is called today.
+  const STATE_KEYS = {
+    hasPaidProductPlacement: 'paidPromotion',
+    creatorDisclosedHasAlteredContent: 'alteredContent',
+    monetizeWithAds: 'monetize',
+    questionnaireVersion: 'selfCertified',
+  }
+  const SNIFF = /hasPaidProductPlacement|creatorDisclosedHasAlteredContent|monetizeWithAds/
+
+  const harvestState = (text, videoId) => {
+    try {
+      if (!text || !SNIFF.test(text)) return
+      const json = JSON.parse(text)
+      const found = {}
+      const walk = (o, depth) => {
+        if (!o || typeof o !== 'object' || depth > 14) return
+        for (const k in o) {
+          const as = STATE_KEYS[k]
+          if (as !== undefined && found[as] === undefined) found[as] = o[k]
+          const v = o[k]
+          if (v && typeof v === 'object') walk(v, depth + 1)
+        }
+      }
+      walk(json, 0)
+      if (Object.keys(found).length === 0) return
+      // Stamped with the id when the payload names one, so a read for a
+      // DIFFERENT video can never be mistaken for confirmation of this one.
+      window.__mvpYtState = Object.assign({ ts: Date.now(), videoId: videoId || null }, found)
+    } catch (e) {}
+  }
+
+  const sniffIdFrom = (text) => {
+    try { const m = /"encryptedVideoId"\s*:\s*"([A-Za-z0-9_-]{6,20})"/.exec(text); return m ? m[1] : null } catch (e) { return null }
+  }
+
   const origFetch = window.fetch
   if (typeof origFetch === 'function') {
     window.fetch = function (input, init) {
@@ -110,14 +160,55 @@
           emit({ via: 'fetch', url, method, headers: headersToObj(init && init.headers), body: typeof body === 'string' ? body : null, ts: Date.now() })
         }
         // Injection: rewrite Studio's own metadata_update body in flight.
-        if (window.__mvpYtInject && isMetaUpdate(url) && /^post$/i.test(String(method)) && typeof body === 'string') {
-          const merged = injectDisclosures(body)
-          if (merged !== body) {
-            const newInit = Object.assign({}, init, { body: merged })
-            const p = origFetch.call(this, input, newInit)
-            p.then((resp) => { try { window.__mvpYtInjectResp = { status: resp.status, injected: true } } catch (e) {} }).catch(() => {})
-            return p
+        //
+        // THE BODY IS NOT ALWAYS ON `init`. fetch(new Request(url, {body})) puts
+        // it on the Request instead, and init is then undefined. The old check
+        // required `typeof body === 'string'`, so that shape skipped injection
+        // in silence: the save went out unmodified, the hook still counted it as
+        // seen, and the caller reported the ambiguous "Studio saved but we could
+        // not confirm". Whether Studio uses that shape varies by build, which is
+        // exactly the sort of thing that makes this work on one day and not the
+        // next. Both shapes are handled now.
+        const isReq = typeof Request !== 'undefined' && input instanceof Request
+        if (window.__mvpYtInject && isMetaUpdate(url) && /^post$/i.test(String(method))
+            && (typeof body === 'string' || isReq)) {
+          if (typeof body === 'string') {
+            const merged = injectDisclosures(body)
+            if (merged !== body) {
+              const newInit = Object.assign({}, init, { body: merged })
+              const p = origFetch.call(this, input, newInit)
+              p.then((resp) => { try { window.__mvpYtInjectResp = { status: resp.status, injected: true } } catch (e) {} }).catch(() => {})
+              return p
+            }
+          } else {
+            // Reading a Request body consumes it, so clone first and rebuild the
+            // Request from the merged text. Async, so this returns a promise
+            // that resolves to the real response, which fetch callers accept.
+            const self = this
+            const args = arguments
+            return (async () => {
+              let merged = null
+              let text = ''
+              try { text = await input.clone().text() } catch (e) { text = '' }
+              if (text) merged = injectDisclosures(text)
+              if (!merged || merged === text) return origFetch.apply(self, args)
+              const rebuilt = new Request(input, { body: merged })
+              const resp = await origFetch.call(self, rebuilt)
+              try { window.__mvpYtInjectResp = { status: resp.status, injected: true } } catch (e) {}
+              return resp
+            })()
           }
+        }
+        // Harvest the read-back from ANY youtubei response on this page. Cheap:
+        // the clone is only read when the body mentions one of the fields.
+        if (/\/youtubei\/v1\//.test(String(url))) {
+          const p = origFetch.apply(this, arguments)
+          p.then((resp) => {
+            try {
+              resp.clone().text().then((t) => { harvestState(t, sniffIdFrom(t)) }).catch(() => {})
+            } catch (e) {}
+          }).catch(() => {})
+          return p
         }
       } catch (e) {}
       return origFetch.apply(this, arguments)
@@ -135,6 +226,12 @@
         const m = this.__mvpYt
         if (m && looksLikeSave(m.url, m.method, body)) {
           emit({ via: 'xhr', url: m.url, method: m.method, headers: m.headers, body: typeof body === 'string' ? body : null, ts: Date.now() })
+        }
+        // Same read-back harvest on the XHR transport.
+        if (m && /\/youtubei\/v1\//.test(String(m.url || ''))) {
+          this.addEventListener('load', function () {
+            try { const t = typeof this.responseText === 'string' ? this.responseText : ''; harvestState(t, sniffIdFrom(t)) } catch (e) {}
+          })
         }
         // Injection: Studio sends metadata_update over XHR — rewrite the body.
         if (m && window.__mvpYtInject && isMetaUpdate(m.url) && typeof body === 'string') {

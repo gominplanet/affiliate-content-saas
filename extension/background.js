@@ -8155,7 +8155,71 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
     await waitForTabLoad(tabId, 30000)
     await new Promise((r) => setTimeout(r, 2500))
     const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioInjectSaveInPage, args: [videoId, opts || {}] })
-    return (r && r[0] && r[0].result) || { ok: false, error: 'no-result' }
+    const out = (r && r[0] && r[0].result) || { ok: false, error: 'no-result' }
+
+    // ── VERIFY BY READING IT BACK ─────────────────────────────────────────
+    //
+    // Everything above only knows whether OUR request went out. It cannot know
+    // whether YouTube kept the fields, which is why this used to end on "Studio
+    // saved but SCOUT couldn't confirm" and send the creator to check four
+    // settings by hand.
+    //
+    // So: reload the editor and read what Studio now reports. The hook harvests
+    // the disclosure values out of whatever metadata response the page fetches.
+    // This is the only confirmation available, since the Data API does not
+    // expose paid promotion, altered content or monetization at all.
+    //
+    // Best-effort throughout. A verify that cannot run leaves `verified` null,
+    // which the app renders as "could not check" rather than as a failure: the
+    // save has usually worked, and calling it broken would be its own lie.
+    try {
+      await chrome.tabs.update(tabId, { url: STUDIO_VIDEO(videoId, 'edit') })
+      await waitForTabLoad(tabId, 30000)
+      await new Promise((r2) => setTimeout(r2, 3500))
+      const v = await chrome.scripting.executeScript({
+        target: { tabId }, world: 'MAIN',
+        func: (wantId) => {
+          const st = window.__mvpYtState
+          if (!st) return null
+          // A state harvested for a DIFFERENT video proves nothing about this
+          // one. Null is the honest answer.
+          if (st.videoId && st.videoId !== wantId) return null
+          return st
+        },
+        args: [videoId],
+      })
+      const state = (v && v[0] && v[0].result) || null
+      if (state) {
+        const yes = (x) => x === true || x === 'MDE_HAS_ALTERED_CONTENT_YES'
+        const no = (x) => x === false || x === 'MDE_HAS_ALTERED_CONTENT_NO'
+        out.verified = {
+          paidPromotion: state.paidPromotion === undefined ? null : !!state.paidPromotion,
+          // Tri-state on purpose: YES, NO and "never answered" are three
+          // different things to YouTube and the creator needs the difference.
+          alteredContent: state.alteredContent === undefined ? null
+            : (yes(state.alteredContent) ? true : no(state.alteredContent) ? false : null),
+          monetize: state.monetize === undefined ? null : !!state.monetize,
+          selfCertified: state.selfCertified === undefined ? null : true,
+        }
+        // The save is confirmed when everything ASKED FOR reads back as set.
+        const want = opts || {}
+        const checks = []
+        if (want.paidPromotion) checks.push(out.verified.paidPromotion === true)
+        if (want.aiDisclosure) checks.push(out.verified.alteredContent === (want.hasAlteredContent ? true : false))
+        if (want.monetize) checks.push(out.verified.monetize === true)
+        if (checks.length > 0 && checks.every(Boolean)) {
+          out.ok = true
+          out.uncertain = false
+          out.detail = 'Confirmed in Studio ✓'
+        } else if (checks.some((c) => c === false)) {
+          out.uncertain = false
+          out.verifyFailed = true
+          out.detail = 'Studio saved but some settings did not stick — see the list'
+        }
+      }
+    } catch (e) { /* verify is best-effort; leave the inject result as it stands */ }
+
+    return out
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'inject-failed' }
   } finally {

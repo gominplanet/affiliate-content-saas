@@ -21,7 +21,7 @@ import { toast } from 'sonner'
 import UploadStage from '@/components/launchpad/UploadStage'
 import StorefrontStage from '@/components/launchpad/StorefrontStage'
 import { recordAccept } from '@/lib/accept-campaign'
-import { requestStudioFinish, requestFindCampaign, requestAcceptCampaign, requestAmazonAsinCheck, requestResolveLocalAsin } from '@/lib/extension-frame'
+import { requestYtInjectDisclosures, requestFindCampaign, requestAcceptCampaign, requestAmazonAsinCheck, requestResolveLocalAsin } from '@/lib/extension-frame'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { normalizeAsinInput } from '@/lib/asin'
@@ -580,24 +580,48 @@ export default function LaunchpadPage() {
       let detailsConfirmed = !finishDetails
       if (finishDetails || finishMonetize) {
         try {
-          const fin = await requestStudioFinish(j.videoId, {
-            details: finishDetails,
+          // ── THE SIGNED-SAVE PATH, NOT THE CLICKING ONE ────────────────────
+          //
+          // This used to call requestStudioFinish, which drives Studio by
+          // finding and clicking controls across its panels. The Co-Pilot has
+          // long used requestYtInjectDisclosures instead, which merges the
+          // fields into Studio's OWN outgoing save. That request carries
+          // YouTube's real BotGuard attestation, which is the difference
+          // between a change that sticks and a 200 that silently drops it, as
+          // the hook's own header explains. Launchpad was on the weaker of the
+          // two mechanisms, which is most of why this step felt unreliable.
+          //
+          // aiDisclosure: true means ANSWER the altered-content question.
+          // hasAlteredContent: false is the answer, "no altered content". The
+          // two are separate because "answered No" and "never answered" are
+          // different states to YouTube, and only the second leaves the video
+          // flagged as incomplete.
+          const fin = await requestYtInjectDisclosures(j.videoId, {
+            paidPromotion: finishDetails,
+            aiDisclosure: finishDetails,
+            hasAlteredContent: false,
             monetize: finishMonetize,
-            selfCert: finishMonetize,
-            endScreen: false,
-            notifySubscribers: false,
-            channelId: typeof j.channelId === 'string' ? j.channelId : null,
+            notify: false,
           })
-          const dOk = !finishDetails || !!fin.steps.find(s => s.step === 'details')?.ok
-          const mStep = fin.steps.find(s => s.step === 'monetization')
-          const mOk = !finishMonetize || !!mStep?.ok || !!mStep?.skipped
+          // Per field, from what Studio reported on the read-back. null means
+          // the read could not run, which is NOT the same as the setting being
+          // off and must not be rendered as a failure.
+          const v = fin.verified
+          const dOk = !finishDetails || (v ? v.paidPromotion === true : fin.ok)
+          const mOk = !finishMonetize || (v ? v.monetize === true : fin.ok)
           detailsConfirmed = dOk
-          // Record what ACTUALLY landed, so the step can show a finish-by-hand
-          // checklist instead of a toast that disappears and overstates it.
           setStudioDone({ details: finishDetails ? dOk : null, monetize: finishMonetize ? mOk : null })
-          if (dOk && mOk) toast.success('Studio set: paid promotion' + (finishMonetize ? ', monetization + ad rating' : '') + '.')
-          else if (fin.error === 'not-installed') toast.warning('SCOUT isn’t installed, so the Studio fields (paid promotion / monetization) were skipped. Install SCOUT and re-run, or set them by hand in Studio.', { duration: 10000 })
-          else toast.warning('Couldn’t set every Studio field automatically. Open the video in YouTube Studio to finish paid promotion / monetization.', { duration: 10000 })
+          if (dOk && mOk) {
+            toast.success(v
+              ? 'Studio confirmed: paid promotion' + (finishMonetize ? ', monetization + ad rating' : '') + '.'
+              : 'Studio set: paid promotion' + (finishMonetize ? ', monetization + ad rating' : '') + '.')
+          } else if (fin.error === 'not-installed') {
+            toast.warning('SCOUT isn’t installed, so the Studio fields (paid promotion / monetization) were skipped. Install SCOUT and re-run, or set them by hand in Studio.', { duration: 10000 })
+          } else if (fin.verifyFailed) {
+            toast.warning('Studio saved, but reading it back shows some settings did not stick. The checklist below says which.', { duration: 12000 })
+          } else {
+            toast.warning('Couldn’t set every Studio field automatically. Open the video in YouTube Studio to finish paid promotion / monetization.', { duration: 10000 })
+          }
         } catch {
           // The video is already published (privately) and stays that way.
           detailsConfirmed = !finishDetails

@@ -54,7 +54,15 @@ const code = PAGE.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\
 
 // ── the disclosure comes before the video does ─────────────────────────────
 {
-  const finishAt = code.indexOf('requestStudioFinish(')
+  // The CALL, whichever one it is. This keyed on requestStudioFinish and broke
+  // when Launchpad moved to requestYtInjectDisclosures, the signed-save path.
+  // The rule it protects is about ORDER, not about which function does the
+  // setting, so it should survive that swap and fail only if the disclosure
+  // stops happening before the video goes public.
+  const finishAt = Math.max(
+    code.indexOf('requestYtInjectDisclosures('),
+    code.indexOf('requestStudioFinish('),
+  )
   const publicAt = code.indexOf("privacyStatus: 'public'")
   check('both steps are still there', finishAt > -1 && publicAt > -1, `${finishAt} / ${publicAt}`)
   check('the Studio finish runs BEFORE the video goes public', finishAt < publicAt,
@@ -76,7 +84,7 @@ const code = PAGE.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\
     'a creator who unticked paid promotion asked for no check, and must still be able to publish')
   check('a SCOUT failure does not quietly unlock it',
     /catch \{[\s\S]{0,300}?detailsConfirmed = !finishDetails[\s\S]{0,200}?setStudioDone/.test(code),
-    'a thrown requestStudioFinish must leave the gate where an unconfirmed result leaves it')
+    'a thrown disclosure call must leave the gate where an unconfirmed result leaves it')
   check('and the creator is told why it stayed private', /Kept PRIVATE on purpose/.test(PAGE),
     'a video that silently did not publish is the same bug in the other direction')
 }
