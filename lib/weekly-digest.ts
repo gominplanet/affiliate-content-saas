@@ -11,7 +11,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { getLinkStyle, resolveShowcaseLink, type LinkStyleConfig } from '@/lib/link-cloak'
 import { shortenBitly } from '@/lib/bitly'
-import { scrubBanned } from '@/lib/scrub'
+import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { planProductDepth } from '@/lib/product-depth'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { rehostAll, composeWithNanoBananaPro, composeWithNanoBanana } from '@/lib/thumbnail-generators'
@@ -241,7 +241,7 @@ Rules:
   // Theme (for slug + WP category) and title come from the actual products.
   const themeClean = scrubBanned((model.theme || '').trim()).replace(/[^a-z0-9 &-]/gi, '').replace(/\s+/g, ' ').trim()
   const theme = (themeClean || nicheLabel || 'deals').slice(0, 40)
-  const modelTitle = scrubBanned((model.title || '').trim()).replace(/^["']|["']$/g, '')
+  const modelTitle = scrubTitle((model.title || '').trim()).replace(/^["']|["']$/g, '')
   // Roundup fallback — a clear "this week's deals" title, never a single product
   // and never a year/date stamp in the title itself.
   const themeWord = theme && theme.toLowerCase() !== 'deals' ? `${titleCase(theme)} ` : ''

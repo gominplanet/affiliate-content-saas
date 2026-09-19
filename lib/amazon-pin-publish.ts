@@ -21,7 +21,7 @@ import { tileImageFor } from '@/lib/tile-image'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { scrubBanned } from '@/lib/scrub'
+import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import type { Tier } from '@/lib/tier'
 
 export interface PinIntegration {
@@ -243,7 +243,7 @@ export async function writePinCopy(opts: {
     recordAnthropicUsage(msg, { userId: opts.userId, tier: opts.tier, feature: 'amazon_pin_caption', model: 'claude-haiku-4-5-20251001' })
     const raw = (msg.content[0] as { type: string; text?: string }).text || ''
     const j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as { title?: string; description?: string }
-    title = scrubBanned(String(j.title || '').trim()).slice(0, 100)
+    title = scrubTitle(String(j.title || '').trim()).slice(0, 100)
     description = scrubBanned(String(j.description || '').trim())
   } catch { /* fall back below */ }
   if (!title) title = (productTitle || 'Great find').slice(0, 100)

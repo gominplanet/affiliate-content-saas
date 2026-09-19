@@ -225,6 +225,96 @@ const strip = (s: string) => stripTitleYear(s, NOW)
     strip('Youtube video: 2026 Christmas Decor Trends to Watch').includes('2026'))
 }
 
+// ── EVERY generator strips, not just the one anybody looked at ─────────────
+//
+// This is the clause that actually keeps years out of future posts, and it is
+// the one that was missing while all the rules above passed.
+//
+// app/api/blog/generate had always done the right thing:
+//
+//   generated.title = stripTitleYear(scrubBanned(generated.title))
+//
+// Seven other generators did only the scrubBanned half, and nothing connected
+// them. So the path anybody inspected was correct and the rest quietly were
+// not. An audit of live titles found 37 carrying a year across 8 accounts, from
+// paths nobody had thought to check: LTK, Levanta, Walmart, Wayward, campaigns,
+// idea lists, buying guides and the weekly digest.
+//
+// scrubTitle pairs the two steps under one name so the next generator gets it
+// right by default. These clauses make handing a title to scrubBanned alone a
+// build failure rather than a thing discovered months later in the database.
+{
+  const { readdirSync, statSync } = require('node:fs') as typeof import('node:fs')
+  const offenders: string[] = []
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir)) {
+      const full = `${dir}/${e}`
+      if (statSync(full).isDirectory()) { if (e !== 'node_modules' && e !== '.next') walk(full); continue }
+      if (!/\.tsx?$/.test(full)) continue
+      // COMMENTS FIRST. This file's own explanation quotes the broken line it
+      // exists to describe, and lib/scrub's JSDoc quotes it too, so a raw scan
+      // reports the documentation as the bug.
+      const src = readFileSync(full, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n').filter((l) => !/^\s*(?:\/\/|\*)/.test(l)).join('\n')
+      // scrubBanned applied to something that is plainly a TITLE. Body copy is
+      // the legitimate use and is left alone: a year in a sentence is a fact,
+      // which is why a blurb built from `${d.title} is at a strong price` does
+      // not count even though the word appears in it.
+      for (const m of src.matchAll(/scrubBanned\(([^()]*(?:\([^()]*\))?[^()]*)\)/g)) {
+        const arg = m[1].trim()
+        // A bare title expression: `x.title`, `body.title || ''`, `args.title`.
+        // Anything longer is a sentence that merely mentions one.
+        if (!/^[\w.?\[\]'"` |]*\btitle\b[\w.?\[\]'"` |]*$/i.test(arg)) continue
+        // Already paired with the strip, which is the correct shape.
+        const at = m.index ?? 0
+        if (/stripTitleYear\($/.test(src.slice(Math.max(0, at - 16), at))) continue
+        offenders.push(`${full}: scrubBanned(${arg.slice(0, 48)})`)
+      }
+      // The other half of the shape, found by break-testing the clause above:
+      // it reads the ARGUMENT, so it cannot see a title whose argument is not
+      // spelled like one. Two real call sites slipped straight through it,
+      //
+      //   title: scrubBanned(titleResult.best)          youtube/generate-metadata
+      //   title = scrubBanned(String(j.title || '').trim())   amazon-pin-publish
+      //
+      // and both are obvious from the DESTINATION instead. Whatever the
+      // expression looks like, a value being stored as `title` is a title.
+      for (const m of src.matchAll(/(?:^|[\s,{(])title\s*[:=]\s*scrubBanned\(/gm)) {
+        offenders.push(`${full}: ${m[0].trim()}…)`)
+      }
+    }
+  }
+  walk('app'); walk('lib')
+  check('no title is scrubbed without the year strip',
+    offenders.length === 0,
+    `${offenders.join(' | ')} — use scrubTitle, which does both`)
+
+  check('scrubTitle exists and pairs the two steps',
+    /export function scrubTitle[\s\S]{0,200}stripTitleYear\(scrubBanned\(/.test(readFileSync('lib/scrub.ts', 'utf8')),
+    'if it stops calling stripTitleYear, every generator above silently regresses at once')
+
+  // Named, because these are the paths that produced the 37. A generator that
+  // stops calling it should fail here rather than be found in the database.
+  const GENERATORS = [
+    'app/api/blog/generate/route.ts',
+    'app/api/ltk/generate/route.ts',
+    'app/api/wayward/generate/route.ts',
+    'app/api/walmart/generate/route.ts',
+    'app/api/levanta/generate/route.ts',
+    'app/api/campaigns/generate/route.ts',
+    'app/api/idea-list/generate/route.ts',
+    'app/api/buying-guides/route.ts',
+    'lib/weekly-digest.ts',
+  ]
+  for (const g of GENERATORS) {
+    const src = readFileSync(g, 'utf8')
+    check(`${g.replace('app/api/', '')} strips the year from its title`,
+      /scrubTitle\(|stripTitleYear\(/.test(src),
+      'this path writes a generated title straight into blog_posts')
+  }
+}
+
 if (failures.length) {
   console.error(`\n❌ title-year: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

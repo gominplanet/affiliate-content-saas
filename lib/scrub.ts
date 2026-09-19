@@ -1,4 +1,5 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential. No copying, redistribution, reverse-engineering, or reuse. See LICENSE.
+import { stripTitleYear } from '@/lib/title-year'
 /**
  * Hard guarantee for the user's banned-word rule. LLM instructions alone
  * aren't reliable, so any AI-generated copy that reaches a user surface
@@ -141,4 +142,30 @@ export function scrubBanned(input: string | null | undefined): string {
 
   // Restore the untouched block comments verbatim.
   return s.replace(/\[\[MVPCMT:(\d+):\]\]/g, (_m, i) => comments[Number(i)] ?? '')
+}
+
+
+/**
+ * The scrub for a TITLE, as opposed to body copy.
+ *
+ * scrubBanned handles the banned-phrase list and is right for both, but a
+ * title has one extra rule that body copy does not: no year stamp. "prices
+ * rose through 2026" in a paragraph is a fact; "Best Mascaras in 2026" as a
+ * headline is decoration that dates the post the day the year turns.
+ *
+ * WHY THIS EXISTS AS ITS OWN FUNCTION. app/api/blog/generate already did the
+ * right thing:
+ *
+ *   generated.title = stripTitleYear(scrubBanned(generated.title))
+ *
+ * and seven other generators did only the scrubBanned half. Nothing connected
+ * them, so the one path anybody looked at was correct and the rest quietly were
+ * not: an audit of live titles found 37 carrying a year across 8 accounts.
+ *
+ * Pairing the two steps in one named call is what makes the next generator get
+ * it right by default, and scripts/test-title-year now fails the build if a
+ * title is handed to scrubBanned alone.
+ */
+export function scrubTitle(input: string | null | undefined): string {
+  return stripTitleYear(scrubBanned(input))
 }

@@ -32,6 +32,7 @@ import { scrubAiHtml } from '@/lib/html-scrub'
 import { toUserMessage } from '@/lib/friendly-error'
 import { writeContentSchema } from '@/lib/content-schema'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { scrubTitle } from '@/lib/scrub'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -176,7 +177,7 @@ HARD BAN — generic filler that could describe ANY product. Never write "punche
     const links = await pool(picks, 5, async (p) => ({ asin: p.asin, url: await resolveAffiliateUrl(p.asin, p.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null, user.id, linkCfg) }))
     const linkByAsin = new Map(links.map(l => [l.asin, l.url]))
 
-    const postTitle = (parsed.title || cleanListName(listTitle) || 'My Top Picks').slice(0, 120)
+    const postTitle = scrubTitle(parsed.title || cleanListName(listTitle) || 'My Top Picks').slice(0, 120)
     const cardsHtml = picks.map((p, i) => {
       const pr: { heading?: string; superlative?: string; blurb?: string } = proseByAsin.get(p.asin) || {}
       const url = linkByAsin.get(p.asin) || `https://www.amazon.com/dp/${p.asin}`

@@ -42,6 +42,7 @@ import { getLinkStyle, resolveCloakedLink } from '@/lib/link-cloak'
 import { postProductDestination, postProductAsin } from '@/lib/post-product-link'
 import { isAmazonProductUrl } from '@/lib/asin'
 import { injectPickBlocks, describePickCoverage, type GuidePick, type InjectionReport } from '@/lib/guide-pick-blocks'
+import { scrubTitle } from '@/lib/scrub'
 
 export const maxDuration = 300
 
@@ -824,7 +825,7 @@ VOICE / STYLE RULES:
   const titleCase = topic.replace(/\b\w/g, c => c.toUpperCase())
   // No year in the title (hard rule) — it ages the post. Year stays in the slug
   // for URL uniqueness only.
-  const wpTitle = `Best ${titleCase}: ${picks.length} Picks We Actually Tested`
+  const wpTitle = scrubTitle(`Best ${titleCase}: ${picks.length} Picks We Actually Tested`)
   const slug = `best-${topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${year}`
   const wpService = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
 

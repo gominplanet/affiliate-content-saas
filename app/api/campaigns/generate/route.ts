@@ -38,7 +38,7 @@ import { pickProductReferenceImage } from '@/lib/product-image'
 import { researchProduct } from '@/services/research'
 import { tierAllowsCampaigns, checkGenerationLimit, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
-import { scrubBanned } from '@/lib/scrub'
+import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { writeContentSchema } from '@/lib/content-schema'
@@ -461,7 +461,7 @@ export async function POST(request: Request) {
         return fail(`Content generation failed: ${err instanceof Error ? err.message : 'unknown'}`)
       }
       // Hard-enforce the banned-word rule before publish/persist.
-      generated.title = scrubBanned(generated.title)
+      generated.title = scrubTitle(generated.title)
       generated.excerpt = scrubBanned(generated.excerpt)
       generated.content = scrubBanned(generated.content)
       generated.imagePrompts = {

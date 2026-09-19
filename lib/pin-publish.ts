@@ -7,7 +7,7 @@
  */
 import { PinterestService } from '@/services/pinterest'
 import { createWordPressService } from '@/services/wordpress'
-import { scrubBanned } from '@/lib/scrub'
+import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { channelWrapLink } from '@/lib/channel-share-url'
 import { getLinkStyle } from '@/lib/link-cloak'
@@ -87,7 +87,7 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
   // Never fall back to a raw (unscrubbed) value — that would leak the
   // banned word in the edge case where the scrubbed string is empty.
   const safeDescription = scrubBanned(args.description)
-  const safeTitle = (scrubBanned(args.title) || scrubBanned(p.title) || '').slice(0, 100)
+  const safeTitle = (scrubTitle(args.title) || scrubTitle(p.title) || '').slice(0, 100)
 
   const pinterest = new PinterestService(ig.pinterest_access_token)
 

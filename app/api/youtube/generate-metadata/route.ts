@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { descriptionLines } from '@/lib/yt-description-lines'
 import { footerBlocks } from '@/lib/yt-description-footer'
 import { clickableTitleRulesForYouTube } from '@/lib/clickable-titles'
-import { scrubBanned } from '@/lib/scrub'
+import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { discoverProductForVideo } from '@/lib/product-detect'
@@ -1416,7 +1416,7 @@ export async function POST(request: Request) {
       // (title/description/tags/pinned comment) — the "never HONEST" rule etc.
       // applies to live metadata, not just blog content.
       generated: {
-        title: scrubBanned(titleResult.best),
+        title: scrubTitle(titleResult.best),
         description: scrubBanned(description),
         tags: (seoData.tags || []).map((t: string) => scrubBanned(t)),
         pinnedComment: scrubBanned(engagementResult.pinnedComment),

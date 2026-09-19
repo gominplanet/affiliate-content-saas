@@ -29,7 +29,7 @@ import { rebuildCtaCard } from '@/lib/cta-thumb'
 import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { pickProductReferenceImage } from '@/lib/product-image'
-import { scrubBanned } from '@/lib/scrub'
+import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
 import { type Tier } from '@/lib/tier'
 import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
       { userId: user.id, tier },
     )
 
-    const title = scrubBanned(generated.title)
+    const title = scrubTitle(generated.title)
     const excerpt = scrubBanned(generated.excerpt)
     let content = scrubBanned(generated.content)
     const slug = generated.slug || slugify(title)

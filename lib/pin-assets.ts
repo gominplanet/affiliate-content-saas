@@ -11,7 +11,7 @@ import { GoogleGenAI } from '@google/genai'
 import { getBrandPresetId } from '@/lib/brand-preset'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
-import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
+import { scrubBanned, BANNED_RULE, scrubTitle } from '@/lib/scrub'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { composePin, PIN_DESIGN_COUNT } from '@/lib/pin-compose'
 import { creatorVoiceBlock } from '@/lib/creator-voice'
@@ -147,9 +147,9 @@ Return ONLY valid JSON with these exact keys:
     .filter(Boolean).slice(0, 8)
   // Never fall back to a raw (unscrubbed) value — keep the banned word out
   // even when the scrubbed string is empty.
-  const pinTitle = scrubBanned(parsed.pin_title) || scrubBanned(p.title)
+  const pinTitle = scrubBanned(parsed.pin_title) || scrubTitle(p.title)
   const pinDescription = scrubBanned(parsed.pinterest_description)
-    || `${scrubBanned(p.title)}. See the full breakdown at the link.`
+    || `${scrubTitle(p.title)}. See the full breakdown at the link.`
 
   // Multi-product guide/comparison posts get a PRODUCT-COLLAGE pin (a distinct
   // design in the rotation); single-product reviews use the scene rotation.

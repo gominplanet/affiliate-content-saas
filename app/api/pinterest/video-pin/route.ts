@@ -15,7 +15,7 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { PinterestService } from '@/services/pinterest'
 import { remoteVideoPosterUrl } from '@/services/cloudinary'
-import { scrubBanned } from '@/lib/scrub'
+import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { recordUsage } from '@/lib/ai-usage'
 import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
 import { fetchWithTimeout, UPLOAD_TIMEOUT_MS } from '@/lib/fetch-timeout'
@@ -121,7 +121,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Couldn't read the video: ${e instanceof Error ? e.message : 'unknown'}` }, { status: 502 })
   }
 
-  const title = (scrubBanned(body.title || '') || 'New video').slice(0, 100)
+  const title = (scrubTitle(body.title || '') || 'New video').slice(0, 100)
   const description = scrubBanned(body.description || '').slice(0, 500)
 
   try {
