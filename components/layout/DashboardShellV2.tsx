@@ -696,6 +696,7 @@ export default function DashboardShellV2({
         { href: '/admin/designer-text', icon: <Wand2 size={15} />, label: 'Designer Text Playground' },
         { href: '/admin/announcement', icon: <Newspaper size={15} />, label: 'News banner (admin)' },
         { href: '/admin/broadcast', icon: <Megaphone size={15} />, label: 'Broadcast email (admin)' },
+        { href: '/admin/audio-tracks', icon: <Globe size={15} />, label: 'YouTube audio tracks' },
         { href: '/admin/encrypt-secrets', icon: <ShieldCheck size={15} />, label: 'Encrypt Secrets' },
         { href: '/admin/cc-import', icon: <Database size={15} />, label: 'CC Catalog Import' },
       ],

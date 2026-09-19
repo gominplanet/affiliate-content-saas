@@ -216,6 +216,26 @@ const DUB = live(read('app/api/global-sync/dub/route.ts'))
   check('the subtitle was found', copy.length > 30, `${copy.length} chars`)
   check('no dash punctuation on the page copy',
     !/[—–]/.test(copy) && !/\S \- \S/.test(copy), copy.slice(0, 120))
+
+  // ── AND IT HAS TO BE FINDABLE ─────────────────────────────────────────────
+  //
+  // This page shipped with no way in. It existed, it worked, and the only route
+  // to it was typing the URL, so the first thing that happened was "I cannot see
+  // audio tracks in admin". A tool nobody can reach is not a tool.
+  //
+  // Swept over EVERY admin page rather than pinned to this one, because the
+  // mistake is not specific to it: the next admin page will be added the same
+  // way. The sweep is clean today, so it starts honest.
+  const { readdirSync } = require('node:fs') as typeof import('node:fs')
+  const NAV = read('components/layout/DashboardShellV2.tsx')
+  const SEARCH = read('lib/app-search-index.ts')
+  const orphans = readdirSync('app/(dashboard)/admin', { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .filter((name) => !NAV.includes(`/admin/${name}'`) && !SEARCH.includes(`/admin/${name}'`))
+  check('every admin page is reachable from the sidebar or search',
+    orphans.length === 0,
+    `${orphans.map((o) => `/admin/${o}`).join(', ')} — built, working, and unreachable without typing the URL`)
 }
 
 if (failures.length) {
