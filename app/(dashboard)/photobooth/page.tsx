@@ -18,6 +18,7 @@ import PageHero from '@/components/layout/PageHero'
 import { FaceModelsGuide } from '@/components/guide/tool-guides'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { effectiveTier } from '@/lib/view-as'
+import { TIERS, normalizeTier } from '@/lib/tier'
 import {
   Camera, Loader2, Sparkles, Download, AlertCircle, UserCircle2, Trash2,
   Upload, X, CheckCircle,
@@ -145,7 +146,18 @@ export default function PhotoboothPage() {
   // of a feature they pay for (amazon: "your face on every design").
   const isPaid = tier !== 'trial'
   const isAdmin = tier === 'admin'
-  const MAX_FACES = 2
+  // READ FROM THE TIER, NOT TYPED.
+  //
+  // This was `const MAX_FACES = 2` for everybody. The API has always enforced
+  // the real per-tier cap (TIERS[tier].maxFaces), so a Pro creator, who pays
+  // for three, saw "2/2" and a disabled Add button while the server would have
+  // accepted a third. One of them wrote in asking how to delete a face to make
+  // room for her husband's, when she had a free slot the whole time.
+  //
+  // null means unlimited, which is what admin gets; Infinity keeps the
+  // comparisons below honest without a special case at every use.
+  const tierFaces = (TIERS[normalizeTier(tier)]?.maxFaces ?? null)
+  const MAX_FACES = tierFaces === null ? Infinity : tierFaces
   const atFaceCap = !isAdmin && faces.length >= MAX_FACES
   const noneLeft = !!usage && usage.remaining === 0
   const hasFace = faces.length > 0
@@ -201,7 +213,23 @@ export default function PhotoboothPage() {
   async function deleteModel(id: string) {
     const ok = await confirm({
       title: 'Delete this face?',
-      description: 'You\'ll need to re-upload the photos to use it again — and any thumbnails/posts that rely on it will lose your likeness.',
+      // WHAT DELETING ACTUALLY DOES, which is less than this used to claim.
+      //
+      // The old wording said "any thumbnails/posts that rely on it will lose
+      // your likeness", and a creator read that as her published work breaking.
+      // She asked whether she needed to go back through her blog and YouTube
+      // checking that images had not vanished.
+      //
+      // They had not, and they cannot. Nothing has a foreign key to
+      // face_models, nothing cascades from it, and no component reads it when
+      // rendering. A generated thumbnail is a finished image file; the face
+      // model is an input to MAKING one. The DELETE route removes the training
+      // selfies and the row, and touches no output.
+      //
+      // So the warning was scaring people out of a safe action, and the one
+      // real consequence (future generations lose that face) was buried behind
+      // a false one.
+      description: 'Your published thumbnails and posts are not affected: those images are already made and they stay exactly as they are. What you lose is the ability to put this face on anything NEW, and the uploaded photos, so you would have to upload them again to use it later.',
       confirmLabel: 'Delete',
       destructive: true,
     })
@@ -402,7 +430,7 @@ export default function PhotoboothPage() {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <UserCircle2 size={18} className="text-[#7C3AED]" />
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your faces{!isAdmin && <span className="font-normal text-[#86868b]"> ({faces.length}/{MAX_FACES})</span>}</p>
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your faces{!isAdmin && <span className="font-normal text-[#86868b]"> ({faces.length}/{Number.isFinite(MAX_FACES) ? MAX_FACES : '∞'})</span>}</p>
             </div>
             <button
               onClick={() => { if (atFaceCap) return; setNewFaceOpen(true); setFaceError(null); setFiles([]); setName('') }}
