@@ -171,6 +171,20 @@ const PREDICATE = live(read('lib/connected-platforms.ts'))
   }
 }
 
+// ── the hook propagates known, it does not assume it ────────────────────────
+//
+// The route can succeed HTTP-wise (200, ok:true) while still reporting a failed
+// lookup (known:false, connected:[]) — that is the whole point of the readErr
+// branch above. A hook that hardcodes known:true whenever the fetch resolves
+// forces every one of those failures back into "nothing connected", which is
+// the exact bug this file exists to catch, one hop downstream of the route.
+{
+  const HOOK = live(read('components/social/useConnectedPlatforms.ts'))
+  check('the hook reads d.known rather than assuming it',
+    /known:\s*!!d\.known/.test(HOOK) || /known:\s*d\.known\b/.test(HOOK),
+    'known: true here discards the route\'s known:false on a failed lookup and shows "nothing connected" instead of "could not check"')
+}
+
 // ── the three states stay three ─────────────────────────────────────────────
 //
 // A failed lookup and an empty result must not produce the same screen. That is

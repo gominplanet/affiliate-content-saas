@@ -34,7 +34,7 @@ export function useConnectedPlatforms(): ConnectedState {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!alive || !d?.ok || !Array.isArray(d.connected)) return
-        setState({ connected: new Set<string>(d.connected), known: true })
+        setState({ connected: new Set<string>(d.connected), known: !!d.known })
       })
       .catch(() => { /* leave known:false — every platform stays selectable */ })
     return () => { alive = false }
