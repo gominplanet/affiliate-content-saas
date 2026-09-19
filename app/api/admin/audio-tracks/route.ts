@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       'service-down': 'The video service did not answer at all. Check that it is running and that YOUTUBE_INGEST_URL points at it.',
       'stale-service': 'The video service is running, but on a build that predates this check. It deploys separately from the app, so a Vercel deploy does not update it: redeploy ingest-service and try again.',
       'unauthorized': 'The video service rejected the request. YOUTUBE_INGEST_SECRET here and INGEST_SECRET on the service do not match.',
-      'blocked': 'The video service answered but could not read this video. Usually YouTube asking it to sign in, which means its cookies need refreshing.',
+      'blocked': 'The video service answered but could not read this video. Its own error is below, which is the thing to go on: a sign-in demand means the cookies need refreshing, anything else does not.',
     }
     return NextResponse.json({
       ok: false,

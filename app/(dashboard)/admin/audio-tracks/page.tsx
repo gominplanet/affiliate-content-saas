@@ -32,6 +32,7 @@ interface Result {
   verdict?: string
   reason?: string
   message?: string
+  detail?: string | null
   error?: string
 }
 
@@ -121,6 +122,21 @@ export default function AudioTracksPage() {
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {/* THE EVIDENCE, NOT JUST THE GUESS.
+                  The route has always carried the downloader's own error back
+                  in `detail` and this page threw it away, so a failure showed
+                  the likeliest cause in prose and hid the actual one. That is
+                  how the cookie message stayed on screen after the cookies were
+                  loaded and working. */}
+              {unknown && result.detail && (
+                <div className="mt-3">
+                  <p className="text-[11.5px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--muted)' }}>
+                    What the downloader actually said
+                  </p>
+                  <pre className="mt-1.5 whitespace-pre-wrap break-all rounded-lg p-2.5 text-[11.5px] font-mono" style={{ background: 'rgba(127,127,127,0.10)', color: 'var(--text)' }}>{result.detail}</pre>
                 </div>
               )}
 

@@ -126,8 +126,16 @@ export async function listYouTubeAudioTracksDetailed(
   }
 
   if (!res.ok) {
+    // The service already digs yt-dlp's last ERROR: line out of the verbose
+    // stderr and returns it as { error }. Unwrapped here so the screen shows
+    // that sentence rather than a JSON envelope around it.
     const body = await res.text().catch(() => '')
-    return { info: null, reason: 'blocked', detail: body.slice(0, 200) }
+    let msg = body
+    try {
+      const j = JSON.parse(body) as { error?: unknown }
+      if (typeof j?.error === 'string' && j.error) msg = j.error
+    } catch { /* not JSON, show it raw */ }
+    return { info: null, reason: 'blocked', detail: `HTTP ${res.status}: ${msg}`.slice(0, 400) }
   }
 
   const d = await res.json().catch(() => null) as
