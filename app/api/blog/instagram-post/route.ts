@@ -29,6 +29,7 @@ import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveSocialAccount } from '@/lib/social-accounts'
+import { siteIdForPost } from '@/lib/site-social-defaults'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { spendGate } from '@/lib/ai-spend'
 
@@ -91,6 +92,10 @@ export async function POST(request: NextRequest) {
     const igAccount = await resolveSocialAccount(supabase, user.id, 'instagram', {
       socialAccountId: body.socialAccountId,
       allowSelection: true,
+      // Which blog this post belongs to, so a creator with several sends each
+      // site's posts to that site's own account (migration 346). Null for a
+      // single-site creator, which skips the step entirely.
+      siteId: await siteIdForPost(supabase, user.id, postId),
       legacy: {
         externalId: intRow?.instagram_user_id,
         accessToken: maybeDecrypt(intRow?.instagram_access_token),

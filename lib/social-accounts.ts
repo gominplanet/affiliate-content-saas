@@ -8,9 +8,17 @@
  * which destination a post goes to, in priority order:
  *   1. an explicit `social_accounts.id` passed per-post  (PRO only — picking
  *      among several accounts is the Pro upgrade), else
- *   2. the user's `is_default` row for that platform, else
- *   3. the legacy single columns on `integrations`  (zero-migration fallback,
+ *   2. this SITE's default for the platform (`site_social_defaults`,
+ *      migration 346), when the caller passes the post's `siteId`, else
+ *   3. the user's `is_default` row for that platform, else
+ *   4. the legacy single columns on `integrations`  (zero-migration fallback,
  *      so nothing breaks for users whose social_accounts wasn't populated).
+ *
+ * Step 2 exists because the table is keyed on (user, platform) and a creator
+ * with several blogs has one Facebook page per blog. Without it every site
+ * resolved to the same account, so one blog's posts reached another blog's
+ * audience. A creator who sets no per-site routing skips step 2 entirely and
+ * resolves exactly as they did before it existed.
  *
  * SECURITY: access_token must NEVER reach the browser. `listForClient`
  * strips it; only the server-side resolve path reads it.
@@ -94,7 +102,24 @@ export async function resolveSocialAccount(
   supabase: any,
   userId: string,
   platform: SocialPlatform,
-  opts: { socialAccountId?: string | null; allowSelection: boolean; legacy?: LegacyCreds },
+  opts: {
+    socialAccountId?: string | null
+    allowSelection: boolean
+    legacy?: LegacyCreds
+    /**
+     * The wordpress_sites row this post belongs to, when the caller knows it.
+     *
+     * A creator with several blogs has one Facebook page per blog, and until
+     * this existed every site resolved to the same user-wide default, so posts
+     * from one site landed on another's audience. blog_posts.wordpress_site_id
+     * has always been there; the resolver just never received it.
+     *
+     * Omit it, pass null, or pass the 'legacy' sentinel and resolution is
+     * bit-for-bit what it was before: a creator who sets no per-site routing is
+     * unaffected, which is most of them.
+     */
+    siteId?: string | null
+  },
 ): Promise<ResolvedAccount | null> {
   const { socialAccountId, allowSelection, legacy } = opts
 
@@ -116,7 +141,45 @@ export async function resolveSocialAccount(
     // Fall through if the id was bogus / not theirs rather than failing the post.
   }
 
-  // 2. The user's default row for this platform.
+  // 2. This SITE's default for the platform (migration 346).
+  //
+  // Sits above the user-wide default and below the explicit per-post choice: a
+  // creator who picked an account for this post still gets it, and a creator
+  // who has set no routing for this site falls straight through to step 3.
+  //
+  // 'legacy' is skipped rather than queried. It is the sentinel for a creator
+  // still on integrations.wordpress_* with no wordpress_sites row, so it is not
+  // a uuid and Postgres would reject the comparison outright.
+  const siteId = opts.siteId
+  if (siteId && siteId !== 'legacy') {
+    const { data: siteDefault } = await supabase
+      .from('site_social_defaults')
+      .select('social_accounts(id,external_id,access_token,display_name)')
+      .eq('user_id', userId)
+      .eq('site_id', siteId)
+      .eq('platform', platform)
+      .maybeSingle()
+    // The embedded row comes back as an object or (older PostgREST) a
+    // one-element array, so both shapes are handled rather than assumed.
+    const raw = (siteDefault as { social_accounts?: unknown } | null)?.social_accounts
+    const acct = (Array.isArray(raw) ? raw[0] : raw) as {
+      id?: string; external_id?: string; access_token?: string; display_name?: string | null
+    } | null | undefined
+    if (acct?.external_id && acct?.access_token) {
+      return {
+        id: acct.id ?? null,
+        externalId: acct.external_id,
+        accessToken: maybeDecrypt(acct.access_token) || '',
+        displayName: acct.display_name ?? null,
+      }
+    }
+    // A mapping that resolves to nothing usable falls through to the user
+    // default rather than failing the post. The account was deleted, or its
+    // token was cleared, and a post going to the creator's main page is a much
+    // better outcome than a post that does not go out.
+  }
+
+  // 3. The user's default row for this platform.
   const { data: def } = await supabase
     .from('social_accounts')
     .select('id,external_id,access_token,display_name')
@@ -128,7 +191,7 @@ export async function resolveSocialAccount(
     return { id: def.id, externalId: def.external_id, accessToken: maybeDecrypt(def.access_token) || '', displayName: def.display_name }
   }
 
-  // 3. Legacy integrations columns (zero-migration safety net).
+  // 4. Legacy integrations columns (zero-migration safety net).
   // These come from the caller already decrypted via decryptIntegrationRow,
   // so no double-decrypt here.
   if (legacy?.externalId && legacy?.accessToken) {
@@ -159,6 +222,8 @@ export async function resolveSocialAccounts(
     allowSelection: boolean
     limit?: number | null
     legacy?: LegacyCreds
+    /** Forwarded to the single resolver's per-site step. See resolveSocialAccount. */
+    siteId?: string | null
   },
 ): Promise<ResolvedAccount[]> {
   const { allowSelection, limit, legacy } = opts
@@ -201,6 +266,10 @@ export async function resolveSocialAccounts(
     socialAccountId: null,
     allowSelection: false,
     legacy,
+    // Forwarded, so a fan-out that falls back to "the default" falls back to
+    // THIS SITE's default. Dropping it here would make the plural path the one
+    // place per-site routing silently does not apply.
+    siteId: opts.siteId ?? null,
   })
   return single ? [single] : []
 }

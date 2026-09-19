@@ -8,6 +8,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { normalizeTier, socialAccountCap } from '@/lib/tier'
 import { resolveSocialAccounts } from '@/lib/social-accounts'
+import { routableSiteId } from '@/lib/site-social-defaults'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
@@ -120,6 +121,11 @@ export async function POST(request: NextRequest) {
       socialAccountIds: chosenAccountIds,
       allowSelection: isPro,
       limit: socialAccountCap(tier),
+      // This post's own blog, so a creator with several sites reaches that
+      // site's page rather than whichever one happens to be their user-wide
+      // default (migration 346). Only consulted when no explicit choice was
+      // made above, and skipped entirely for a single-site creator.
+      siteId: routableSiteId(post.wordpress_site_id),
       legacy: {
         externalId: integration?.facebook_page_id,
         accessToken: integration?.facebook_page_access_token,

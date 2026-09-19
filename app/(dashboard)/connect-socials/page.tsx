@@ -20,6 +20,7 @@
 
 import { Suspense } from 'react'
 import { IntegrationsPanel } from '@/app/(dashboard)/setup/_components'
+import SiteSocialRouting from '@/components/social/SiteSocialRouting'
 
 function ConnectSocialsInner() {
   return (
@@ -40,6 +41,10 @@ function ConnectSocialsInner() {
           on /setup and /brand respectively, not on a Connect Socials
           page. */}
       <IntegrationsPanel onLoad={() => {}} mode="socials" />
+      {/* Renders nothing unless the creator has more than one blog AND more
+          than one account on a platform, which is the only case where there is
+          a routing question to answer. See the component's own header. */}
+      <SiteSocialRouting />
     </div>
   )
 }
