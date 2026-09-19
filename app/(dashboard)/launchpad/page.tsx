@@ -524,7 +524,18 @@ export default function LaunchpadPage() {
         throw new Error(detail)
       }
       setPublishedUrl(j.url); setPublishedVideoId(String(j.videoId))
-      if (typeof j.channelId === 'string' && j.channelId) setPublishedChannelId(j.channelId)
+      // SET IT EVERY TIME, including to null.
+      //
+      // This was guarded on the channelId being present, which looks harmless
+      // and is not: publishedChannelId is persisted with the rest of the run and
+      // restored on a resumed session. A publish that returns no channelId then
+      // left the PREVIOUS run's channel sitting beside the NEW run's video id,
+      // and the Studio link below pairs them. Studio answers a channel that does
+      // not own that video with a blank "Oops, something went wrong".
+      //
+      // Null is the honest value: the link falls back to the unscoped form,
+      // which lets YouTube work out the owner itself.
+      setPublishedChannelId(typeof j.channelId === 'string' && j.channelId ? j.channelId : null)
 
       // 2) Apply the finishing pass — thumbnail + publish options — via the same
       //    route the Co-Pilot uses. Non-fatal: the video is already up, so any
