@@ -23,7 +23,7 @@ import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { detectWearable, wearDirective } from '@/lib/wear-product'
 import { normalizeExpression, expressionDirective, expressionDescription, EXPRESSION_LABEL, politeSmileIsWrong } from '@/lib/face-expression'
 import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt, type GarmentVerdict } from '@/lib/garment-match'
-import { resolvePreset, presetToBriefRules } from '@/lib/visual-presets'
+import { resolvePreset, presetToBriefRules, parsePresetIds, pickPresetId } from '@/lib/visual-presets'
 import { buildGraphicThumbnailPrompt } from '@/lib/thumbnail-prompt'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
 import { FACE_BOX_PROMPT, parseFaceBox, headCropRect, headCropNote } from '@/lib/head-crop'
@@ -919,7 +919,19 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: bp } = await (supabase as any)
         .from('brand_profiles').select('thumbnail_brand_style,visual_preset').eq('user_id', user.id).maybeSingle()
-      visualPreset = (bp as Record<string, unknown> | null)?.visual_preset as string ?? null
+      // ROLLED, not read raw. The column now holds a comma-separated pool
+      // ("bold,neon,comic") because a creator can pick several looks and have
+      // each image draw one. Passing that string straight to resolvePreset
+      // matches no id at all and silently returns the default, so a creator who
+      // ticked three looks would have got Bold on every YouTube thumbnail and
+      // nothing on screen would have said why.
+      //
+      // This route reads brand_profiles directly rather than going through
+      // getBrandPresetId, which is the single lookup every other generator
+      // uses. That is the shortcut that made this possible; the roll is applied
+      // here so the behaviour matches, and a guard now forbids any other file
+      // reading the column raw.
+      visualPreset = pickPresetId(parsePresetIds((bp as Record<string, unknown> | null)?.visual_preset as string | null))
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const bs = (bp as any)?.thumbnail_brand_style || {}
       noCheckDecoration = !!bs.noCheck

@@ -26,7 +26,7 @@
 // the first creator whose output did not match it would have been mis-sold. A
 // drawn tile promises the ingredients, which is what a preset actually fixes.
 
-import { VISUAL_PRESETS, DEFAULT_PRESET_ID, type VisualPreset } from '@/lib/visual-presets'
+import { VISUAL_PRESETS, DEFAULT_PRESET_ID, parsePresetIds, serialisePresetIds, type VisualPreset } from '@/lib/visual-presets'
 import { Check } from 'lucide-react'
 
 /** Display order. Loud first because it holds the default every account is
@@ -103,22 +103,56 @@ function Preview({ preset }: { preset: VisualPreset }) {
 }
 
 export default function VisualPresetPicker({ value, onChange, disabled }: {
+  /** Comma-separated ids. A single id is the old shape and still works. */
   value: string | null | undefined
-  onChange: (id: string) => void
+  onChange: (ids: string) => void
   disabled?: boolean
 }) {
-  const current = String(value ?? '').trim() || DEFAULT_PRESET_ID
+  // SEVERAL LOOKS, NOT ONE. A creator can tick as many as they like and each
+  // image rolls one of them. An empty stored value means the default, which is
+  // what every account had before any of this existed.
+  const chosen = parsePresetIds(value)
+  const current = chosen.length ? chosen : [DEFAULT_PRESET_ID]
+  const many = current.length > 1
+
+  // Ticking the last remaining look off would leave nothing, and "no look" is
+  // not a state the generators have. Unticking the last one is refused rather
+  // than silently reinterpreted, so the screen never shows zero selected while
+  // the images come out in a look nobody picked.
+  function toggle(id: string) {
+    const has = current.includes(id)
+    if (has && current.length === 1) return
+    const next = has ? current.filter(x => x !== id) : [...current, id]
+    onChange(serialisePresetIds(next))
+  }
 
   return (
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>
         Look for your images
       </label>
+      {/* THE COPY CHANGES WITH THE CHOICE. The old sentence promised that every
+          image matches, which is true of one look and false the moment a second
+          is ticked. Leaving it up would have been the same class of mistake as
+          a badge that calls every link an Amazon link: text describing the
+          configuration somebody used to have. */}
       <p className="text-[11.5px] mb-2.5 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-        This sets the style of every image MVP makes for you: blog headers, YouTube thumbnails and
-        Pinterest pins. It applies to all of them so your posts look like each other, and it is what
-        stops your thumbnails looking like everybody else&apos;s. Your brand colours are used on top of
-        whichever you pick.
+        {many ? (
+          <>
+            This sets the style of every image MVP makes for you: blog headers, YouTube thumbnails and
+            Pinterest pins. You have picked <strong>{current.length} looks</strong>, so each image is
+            made in one of them, chosen at random. That means images within the same post will not
+            always match. Tick just one if you would rather everything looked the same. Your brand
+            colours are used on top of whichever is picked.
+          </>
+        ) : (
+          <>
+            This sets the style of every image MVP makes for you: blog headers, YouTube thumbnails and
+            Pinterest pins. It applies to all of them so your posts look like each other, and it is what
+            stops your thumbnails looking like everybody else&apos;s. Tick more than one and MVP will pick
+            at random between them. Your brand colours are used on top of whichever you pick.
+          </>
+        )}
       </p>
       {/* Grouped, because twenty tiles in one wall is a shop rather than a
           choice. The families are how somebody narrows down before they look. */}
@@ -132,13 +166,17 @@ export default function VisualPresetPicker({ value, onChange, disabled }: {
             </p>
             <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
               {inFamily.map(p => {
-                const selected = p.id === current
+                const selected = current.includes(p.id)
+                const isLastOne = selected && current.length === 1
                 return (
                   <button
                     key={p.id}
                     type="button"
+                    role="checkbox"
+                    aria-checked={selected}
                     disabled={disabled}
-                    onClick={() => onChange(p.id)}
+                    title={isLastOne ? 'Keep at least one look selected.' : undefined}
+                    onClick={() => toggle(p.id)}
                     className="text-left rounded-xl p-2 transition disabled:opacity-50"
                     style={{
                       border: `1.5px solid ${selected ? 'var(--accent, #7C3AED)' : 'var(--border)'}`,

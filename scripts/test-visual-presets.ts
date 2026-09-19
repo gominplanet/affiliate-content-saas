@@ -23,9 +23,11 @@
 // energy with a serif.
 import {
   VISUAL_PRESETS, DEFAULT_PRESET_ID, resolvePreset, presetToPrompt, presetToBriefRules,
+  parsePresetIds, serialisePresetIds, pickPresetId,
 } from '../lib/visual-presets'
 import { creativeHead } from '../lib/thumbnail-prompt'
 import { readFileSync } from 'fs'
+import * as readFsSync from 'node:fs'
 import { join } from 'path'
 
 const failures: string[] = []
@@ -426,6 +428,103 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
       .every(s => presetToPrompt(p, { surface: s }).includes(p.direction)))
 
   for (const b of breaks) failures.push(`BREAK TEST MISSED ${b}`)
+}
+
+// ── several looks, rolled per image ────────────────────────────────────────
+//
+// A creator can tick more than one look and have each image draw one at random.
+// Stored comma-separated in the same visual_preset text column, which is why
+// there is no migration: a single stored id is the old shape and still parses.
+{
+  check('a single stored id still parses to itself',
+    parsePresetIds('bold').join(',') === 'bold',
+    'every existing row holds one id; none of them may move')
+  check('a pool parses in order', parsePresetIds('bold,neon,comic').length === 3)
+  check('unknown ids are dropped rather than thrown',
+    parsePresetIds('bold,notareallook,neon').join(',') === 'bold,neon',
+    'a renamed preset or a hand-edited row must not break every image')
+  check('duplicates are removed',
+    parsePresetIds('bold,bold,neon').join(',') === 'bold,neon',
+    'a repeated id would weight the dice without anybody asking for that')
+  check('empty means empty, and the caller applies the default',
+    parsePresetIds('').length === 0 && parsePresetIds(null).length === 0)
+  check('serialise round-trips', serialisePresetIds(['neon', 'bold']) === 'neon,bold')
+
+  // The roll itself. Injectable so the distribution is asserted, not hoped for.
+  check('one look always returns that look',
+    pickPresetId(['neon'], () => 0.99) === 'neon')
+  check('nothing selected falls back to the default',
+    pickPresetId([], () => 0.5) === DEFAULT_PRESET_ID,
+    'there is no "no look" state in the generators')
+  check('the pool is indexed across its whole range',
+    pickPresetId(['a-bold', 'neon', 'comic'].slice(1), () => 0) === 'neon'
+      && pickPresetId(['neon', 'comic'], () => 0.99) === 'comic',
+    'an off-by-one here silently makes the last look unreachable')
+  check('a pick of exactly 1 does not index off the end',
+    ['neon', 'comic'].includes(pickPresetId(['neon', 'comic'], () => 1)),
+    'Math.random never returns 1 but an injected or future source might')
+  {
+    // Every look in the pool must actually come up.
+    const pool = ['bold', 'neon', 'comic']
+    const seen = new Set<string>()
+    for (let i = 0; i < 300; i++) seen.add(pickPresetId(pool))
+    check('every look in the pool gets drawn', seen.size === pool.length,
+      `${[...seen].join(',')} of ${pool.join(',')}`)
+  }
+}
+
+// ── nothing reads the column raw ───────────────────────────────────────────
+//
+// THE BUG THIS ALMOST SHIPPED WITH. brand-preset.ts exists so there is exactly
+// one lookup and every generator uses it, and its header says so. The YouTube
+// thumbnail route read brand_profiles.visual_preset directly instead. That was
+// harmless while the column held one id; the moment it holds "bold,neon" it
+// matches no preset and resolvePreset silently returns the default, so a
+// creator who ticked three looks would have got Bold on every thumbnail with
+// nothing on screen explaining it.
+//
+// The route now rolls the pool like everywhere else. This clause stops the next
+// file from taking the same shortcut.
+{
+  const { readdirSync, statSync } = readFsSync
+  const offenders: string[] = []
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir)) {
+      const full = `${dir}/${e}`
+      if (statSync(full).isDirectory()) { if (e !== 'node_modules' && e !== '.next') walk(full); continue }
+      if (!/\.tsx?$/.test(full)) continue
+      if (full.includes('lib/brand-preset') || full.includes('lib/visual-presets')) continue
+      const src = readFileSync(full, 'utf8')
+      if (!/visual_preset/.test(src)) continue
+      // Reading it is fine as long as the value is parsed or rolled before it
+      // is used as an id. VisualPresetPicker counts: it is the UI-side owner of
+      // the pool and parses the string itself, so a page that reads the column
+      // purely to hand it over is not the shortcut this clause is looking for.
+      if (/parsePresetIds|pickPresetId|getBrandPresetId|VisualPresetPicker/.test(src)) continue
+      offenders.push(full)
+    }
+  }
+  walk('lib'); walk('app')
+  check('every reader of visual_preset rolls the pool',
+    offenders.length === 0,
+    `${offenders.join(', ')} reads the column raw; a comma-separated pool resolves to the default there`)
+
+  // THE SWEEP ABOVE IS NOT ENOUGH ON ITS OWN, and break-testing proved it: it
+  // passes on any file that merely MENTIONS one of those names, so reverting
+  // the thumbnail route to a raw read while leaving the import in place slipped
+  // straight through. These two pin the assignments themselves.
+  const THUMB = readFileSync('app/api/youtube/generate-thumbnail/route.ts', 'utf8')
+  check('the thumbnail route rolls the pool at the assignment',
+    /visualPreset = pickPresetId\(parsePresetIds\(/.test(THUMB),
+    'it reads brand_profiles directly, so it has to do the roll the shared lookup would have done')
+
+  const BRAND = readFileSync('lib/brand-preset.ts', 'utf8')
+  check('the shared lookup rolls rather than taking the first',
+    /return pickPresetId\(ids\)/.test(BRAND),
+    'every generator calls this once per image; taking ids[0] would pin everybody to one look')
+  check('and it still returns null when nothing is stored',
+    /if \(ids\.length === 0\) return null/.test(BRAND),
+    'resolvePreset owns the default; two places deciding what unset means is how they disagree')
 }
 
 if (failures.length) {

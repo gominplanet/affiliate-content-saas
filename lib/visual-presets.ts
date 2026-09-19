@@ -388,6 +388,57 @@ export function resolvePreset(id: string | null | undefined): VisualPreset {
 }
 
 /**
+ * A creator can now pick SEVERAL looks and have each image roll one of them.
+ *
+ * Stored comma-separated in the same `visual_preset` text column, which is why
+ * there is no migration: "bold" still parses to ["bold"] and reads exactly as
+ * it did, so nobody's existing choice moves. A column full of ids nobody
+ * recognises (a preset that was renamed, a hand-edited row) filters down to
+ * whatever is left rather than throwing, and an empty result means the default.
+ */
+export function parsePresetIds(stored: string | null | undefined): string[] {
+  const known = new Set(VISUAL_PRESETS.map(p => p.id))
+  const out: string[] = []
+  for (const raw of String(stored ?? '').split(',')) {
+    const id = raw.trim()
+    // Deduped, because a stored "bold,bold,neon" would otherwise weight the
+    // dice toward bold without anybody having asked for that.
+    if (id && known.has(id) && !out.includes(id)) out.push(id)
+  }
+  return out
+}
+
+/** Serialise a chosen set back into the column. */
+export function serialisePresetIds(ids: string[]): string {
+  return parsePresetIds(ids.join(',')).join(',')
+}
+
+/**
+ * Roll one look out of the chosen pool.
+ *
+ * PER IMAGE, which is a deliberate product decision rather than the easiest
+ * implementation. Every generator already calls getBrandPresetId once per
+ * image, so rolling inside that lookup gives each thumbnail, header and pin its
+ * own draw with no call site changing. The consequence is real and the picker
+ * copy now says it out loud: with more than one look selected, the images
+ * within a single post will not necessarily match each other. With one
+ * selected, behaviour is exactly as before.
+ *
+ * `pick` is injectable so a test can assert the distribution instead of hoping.
+ */
+export function pickPresetId(
+  ids: string[],
+  pick: () => number = Math.random,
+): string {
+  const pool = parsePresetIds(ids.join(','))
+  if (pool.length === 0) return DEFAULT_PRESET_ID
+  if (pool.length === 1) return pool[0]
+  const i = Math.floor(pick() * pool.length)
+  // A pick() returning exactly 1 would index off the end.
+  return pool[Math.min(i, pool.length - 1)]
+}
+
+/**
  * The constraints the art director writes its briefs under.
  *
  * Steering the renderer alone was not enough, and the code said so plainly:
