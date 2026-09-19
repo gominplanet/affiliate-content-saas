@@ -1056,7 +1056,18 @@ app.post('/dub', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'cta-stickers-2026-08-30'
+// The commit this container is actually running, from Railway's own injected
+// variable, falling back to the other hosts' equivalents.
+//
+// This was a hand-typed string, 'cta-stickers-2026-08-30', last edited in
+// August and reported by /health as `build` ever since. That is worse than no
+// field: it looks like deployment information and is not. It sent a reader
+// looking for a stale deployment on a service that had auto-deployed from
+// GitHub minutes earlier, while the real fault (no cookies loaded) was sitting
+// in the next field along.
+const BUILD =
+  (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RENDER_GIT_COMMIT || process.env.FLY_MACHINE_VERSION || '')
+    .slice(0, 7) || 'unknown'
 // Bind the port FIRST so health checks pass immediately, THEN load cookies and
 // self-update yt-dlp in the background (they only populate cookiesReady /
 // ytDlpVersion, both reported by /health). Previously we awaited a ~120s pip
