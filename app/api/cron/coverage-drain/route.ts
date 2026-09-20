@@ -17,16 +17,16 @@
 //   3. STOCK   is the product actually sold in that country at all, and is
 //              anything buyable. FIRST, before a single second of audio is
 //              rendered.
-//   4. CHECK   does the video already carry that language (YouTube's track
-//              list), which decides whose voice ships.
-//   5. PREPARE hand it to the existing storefront pipeline, which translates,
-//              dubs and builds the thumbnail. The cell becomes 'ready'.
+//   4. CHECK   is there audio to work from at all, and which voice ships.
+//   5. PREPARE hand it to the existing storefront pipeline, which translates
+//              and builds the thumbnail, then DUB it here. The cell becomes
+//              'ready' only once its audio exists.
 //
 // STOCK COMES BEFORE THE DUB, and that ordering is the expensive half of this
 // file. The steps used to run product → track → pipeline, so a product Amazon
 // Japan has never sold still got translated, dubbed and given a thumbnail, and
 // the creator learned it could not go at the upload. Now a cell cannot reach
-// the track check until the existence question has an answer.
+// the dub until the existence question has an answer.
 //
 // RECENCY AND STOCK decide the order, which is what the creator asked for and
 // also the only pair that costs nothing to know. Both change on their own, so
@@ -42,8 +42,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { marketByDomain } from '@/lib/markets'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
-import { ingestConfigured } from '@/lib/youtube-ingest'
-import { audioLanguagesFor, carriesLanguage, AUDIO_COLUMNS } from '@/lib/audio-tracks'
 import { coveragePriority, stockBlocks, type StockAnswer } from '@/lib/storefront-coverage'
 import { fetchKeepaBasics, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
 import { dubTarget } from '@/lib/dub-target'
@@ -58,9 +56,9 @@ export const maxDuration = 300
 const ENROL = 400
 /** Product links followed. Each is up to five redirect hops. */
 const PRODUCTS = 8
-/** Track-list lookups. Each is one yt-dlp call through the residential proxy,
- *  and YouTube's bot wall does not tolerate these arriving in bulk. */
-const CHECKS = 10
+/** Videos whose source is confirmed per firing. Cheap now that this asks the
+ *  database rather than yt-dlp, but still capped so one firing stays bounded. */
+const CHECKS = 40
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -376,9 +374,20 @@ async function writeStock(
   return { answered: withAnswer.length, blocked }
 }
 
-/** Does this video already carry the market's language. */
+/**
+ * Is there anything to dub FROM, and which voice will ship.
+ *
+ * THIS USED TO ASK YOUTUBE which languages the video already carried, so a
+ * market whose language was already there could pull that track instead of
+ * being dubbed. That shortcut is gone: pulling a track is a full video download
+ * per market, and our own lane downloads the master once and reuses it. So
+ * there is no longer a question to ask YouTube, and this step no longer touches
+ * the ingest service at all.
+ *
+ * What is left is the one thing that genuinely blocks a dub: a video with no
+ * audio we can reach, which is neither hosted here nor on YouTube.
+ */
 async function checks(sb: Sb): Promise<{ ready: number; needsDub: number; unknown: number }> {
-  if (!ingestConfigured()) return { ready: 0, needsDub: 0, unknown: 0 }
 
   // STOCK FIRST, ENFORCED HERE. Everything past this point costs render minutes,
   // and `.not('stock', 'is', null)` is what stops them being spent on a product
@@ -389,8 +398,8 @@ async function checks(sb: Sb): Promise<{ ready: number; needsDub: number; unknow
     .not('asin', 'is', null).not('stock', 'is', null)
     .order('priority', { ascending: false }).limit(CHECKS * 9)
 
-  // Grouped by video: ONE track-list lookup answers every market at once, so
-  // checking per cell pays for the same call up to nine times.
+  // Grouped by video: the source is a fact about the video, so asking per cell
+  // would repeat the same read up to nine times.
   const groups = new Map<string, Array<{ id: string; domain: string; stock: string | null }>>()
   for (const c of (cells ?? [])) {
     if (!groups.has(c.video_id) && groups.size >= CHECKS) continue
@@ -399,7 +408,7 @@ async function checks(sb: Sb): Promise<{ ready: number; needsDub: number; unknow
   if (groups.size === 0) return { ready: 0, needsDub: 0, unknown: 0 }
 
   const { data: vids } = await sb.from('youtube_videos')
-    .select(`${AUDIO_COLUMNS},published_at`).in('id', [...groups.keys()])
+    .select('id,youtube_video_id,source_video_url,published_at').in('id', [...groups.keys()])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const vById = new Map<string, any>()
   for (const v of (vids ?? [])) vById.set(v.id, v)
@@ -409,34 +418,23 @@ async function checks(sb: Sb): Promise<{ ready: number; needsDub: number; unknow
 
   for (const [videoId, cellList] of groups) {
     const v = vById.get(videoId)
-    if (!v?.youtube_video_id) {
+    // NEITHER HOSTED NOR ON YOUTUBE means there is no audio to work from at
+    // all. Everything else the dub needs it can produce.
+    if (!v?.youtube_video_id && !v?.source_video_url) {
       await sb.from('storefront_coverage').update({
-        state: 'blocked', reason: 'not on YouTube, so there is no audio to pull',
+        state: 'blocked', reason: 'this video is not on YouTube and has no hosted copy, so there is no audio to dub',
         checked_at: now, updated_at: now,
       }).in('id', cellList.map((c) => c.id))
       continue
     }
 
-    // ONE LOOKUP, REMEMBERED. This is the call the dub lane used to repeat once
-    // per market, so answering it here and storing it on the video means the
-    // grid pays for it and Launchpad gets it free for a week.
-    const langs = await audioLanguagesFor(sb, v)
-    if (!langs) {
-      // NOBODY LOOKED. Left unknown so the next firing retries, never recorded
-      // as a finding about the video.
-      unknown++
-      continue
-    }
-
     for (const cell of cellList) {
       const market = marketByDomain(cell.domain)
-      const lang = (market?.lang || '').split('-')[0].toLowerCase()
-      const dubbed = !!market && !!lang && carriesLanguage(langs, lang)
       await sb.from('storefront_coverage').update({
         state: 'preparing',
-        // Which voice it will ship with, decided here so the screen never has
-        // to guess: YouTube's own track when it exists, ours when it does not.
-        voice: dubbed ? 'youtube' : 'standard',
+        // Which voice it will ship with. One lane now, so every non-English
+        // market gets ours, and an English one ships the master as it is.
+        voice: market?.needsTranslation ? 'standard' : 'none',
         reason: null,
         checked_at: now, updated_at: now,
         // THE REAL STOCK ANSWER, from the pass that actually asked. This used to
@@ -447,10 +445,9 @@ async function checks(sb: Sb): Promise<{ ready: number; needsDub: number; unknow
         priority: coveragePriority({
           publishedAt: v.published_at,
           inStock: cell.stock === 'in_stock',
-          alreadyDubbed: dubbed,
         }),
       }).eq('id', cell.id)
-      if (dubbed) ready++; else needsDub++
+      if (market?.needsTranslation) needsDub++; else ready++
     }
   }
   return { ready, needsDub, unknown }

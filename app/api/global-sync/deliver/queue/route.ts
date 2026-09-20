@@ -75,7 +75,15 @@ export async function GET(req: Request) {
     // sits on the image; English markets keep the branded (with-text) one. Fall
     // back to the text thumbnail if the clean one isn't ready yet.
     const textThumb = thumbByVideo.get(vidId) || null
-    const thumb = mkt?.needsTranslation ? (cleanThumbByVideo.get(vidId) || textThumb) : textThumb
+    const cleanThumb = cleanThumbByVideo.get(vidId) || null
+    const thumb = mkt?.needsTranslation ? (cleanThumb || textThumb) : textThumb
+    // SAID, not silent. A non-English store falling back to the branded image
+    // gets ENGLISH HOOK TEXT sitting on the thumbnail of a German listing.
+    // That is the same shape of failure as the English audio: the upload
+    // succeeds, the state says delivered, and the only way anyone finds out is
+    // looking at the storefront. The queue still serves it, because a listing
+    // with an English-text image beats no listing, but it says which it is.
+    const thumbnailIsTextFallback = !!mkt?.needsTranslation && !cleanThumb && !!textThumb
     return {
       targetId: r.id as string,
       jobId: r.job_id as string,
@@ -96,6 +104,9 @@ export async function GET(req: Request) {
       // Per-market thumbnail (clean/text-free for non-English, branded for
       // English), computed above — NOT the raw text thumbnail.
       thumbnailUrl: thumb,
+      /** True exactly when this non-English store is getting the image with
+       *  English text on it because the text-free one was not built. */
+      thumbnailIsTextFallback,
       // ── WHAT THIS MARKET IS ABOUT TO RECEIVE ────────────────────────────
       //
       // `state: 'localized'` only means the TITLE was translated. It is set by

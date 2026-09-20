@@ -92,22 +92,18 @@ export const DELIVERED_STATES: CoverageState[] = ['uploaded', 'live']
  * buyable outranks a fresh one that might not be. That ordering is the point:
  * this should always be working on the most valuable thing not yet done.
  *
- * `alreadyDubbed` is a separate, smaller term and NOT a second way to spell
- * stock. The drain used to pass "YouTube already has this language" as
- * `inStock`, which put a cheap-to-deliver video and a definitely-buyable
- * product in the same slot in the ordering while the screen and the column
- * comment both said the number meant stock. They are different facts: one is
- * what the delivery costs us, the other is whether the listing can earn.
+ * There was a third term, `alreadyDubbed`, worth less than stock, for a video
+ * YouTube had already dubbed and which therefore cost nothing to deliver. That
+ * shortcut is gone: pulling YouTube's track meant a full video download per
+ * market, so every market is dubbed the same way now and there is no cheap
+ * case left to reward. It was also the term that had been standing in for
+ * stock, which is the mistake this comment originally existed to record.
  */
 export function coveragePriority(opts: {
   publishedAt?: string | Date | null
   inStock?: boolean | null
-  /** YouTube already carries this market's language, so the dub is free and
-   *  near-instant. Worth less than stock: cheap to deliver is not the same as
-   *  worth delivering. */
-  alreadyDubbed?: boolean | null
 }): number {
-  const { publishedAt, inStock, alreadyDubbed } = opts
+  const { publishedAt, inStock } = opts
   let score = 0
 
   if (publishedAt) {
@@ -121,8 +117,6 @@ export function coveragePriority(opts: {
   // Confirmed buyable in this marketplace. Worth half a brand new video, so it
   // lifts an older but sellable product above a newer unverified one.
   if (inStock) score += 500
-  // Free to deliver, because the track is pulled rather than synthesized.
-  if (alreadyDubbed) score += 200
   return score
 }
 

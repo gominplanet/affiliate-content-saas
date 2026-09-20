@@ -34,6 +34,7 @@ const PAGE = live(PAGE_RAW)
 const GEOCHECK = live(read('app/api/launchpad/geo-check/route.ts'))
 const QUEUE = live(read('app/api/global-sync/deliver/queue/route.ts'))
 const STAGE = live(read('components/launchpad/StorefrontStage.tsx'))
+const START = live(read('app/api/global-sync/start/route.ts'))
 
 // ── the promise and the capability are the same thing ───────────────────────
 {
@@ -185,6 +186,40 @@ const STAGE = live(read('components/launchpad/StorefrontStage.tsx'))
     '"the dub failed" does not tell a creator that the video still went out')
 }
 
+// ── the title is approved BEFORE it is translated five times ────────────────
+//
+// The master title was read off the video server side with no way to influence
+// it, so the first time a creator saw the wording that would carry their
+// listing in five countries was after it had been translated into all five,
+// when changing a word meant redoing the lot.
+{
+  check('the English title is shown and editable before the run',
+    /const \[masterTitle, setMasterTitle\] = useState\(''\)/.test(STAGE)
+    && /Title for the English stores/.test(read('components/launchpad/StorefrontStage.tsx')),
+    'a field the server fills and never shows is a decision made for the creator')
+  check('and it is what gets sent',
+    /masterTitle: masterTitle\.trim\(\) \|\| undefined/.test(STAGE),
+    'showing an editable box whose value nothing reads is worse than not showing one')
+  check('the server prefers the sent title over the video’s',
+    /const sentTitle = \(body\.masterTitle \|\| ''\)\.trim\(\)/.test(START)
+    && /const masterTitle = sentTitle \|\|/.test(START),
+    'the edit has to win, or the box is decoration')
+  // PERSISTED. The localize runs after the response goes out and the recovery
+  // cron may be the one that finishes it, reading the video row rather than
+  // this request. Without the write, a job the cron finishes translates the OLD
+  // wording and nothing says so.
+  check('and writes it back so a cron-finished job uses it too',
+    /update\(\{ generated_title: sentTitle \}\)/.test(START),
+    'the recovery cron reads the video, not the request that started the job')
+  check('an empty title stops the run',
+    /Write the English title first/.test(read('components/launchpad/StorefrontStage.tsx')),
+    'an empty master means untitled listings in every country')
+  // NEVER OVER AN EDIT IN PROGRESS.
+  check('reloading the video does not overwrite what they typed',
+    /if \(!titleTouched\.current\) setMasterTitle\(t\)/.test(STAGE),
+    'a field that resets itself mid-sentence is unusable')
+}
+
 // ── two upload buttons, and they do not mean the same thing ─────────────────
 //
 // The copy panel belongs to the sync JOB, whose id is restored from
@@ -312,14 +347,29 @@ const STAGE = live(read('components/launchpad/StorefrontStage.tsx'))
     /const \[outcome, setOutcome\] = useState<Record<string, string>>/.test(STAGE),
     'a toast is gone in sixteen seconds and the market it named goes back to looking untouched')
   check('a skipped market is recorded',
-    /for \(const d of missing\) next\[d\] = String\(why\.get\(d\)/.test(STAGE))
+    /for \(const d of missing\) next\[d\] = `Not uploaded\. \$\{String\(why\.get\(d\)/.test(STAGE))
   check('and so is a dub that never came back',
     (STAGE.match(/setOutcome\(prev => \(\{ \.\.\.prev, \[t\.domain\]: `The dub did not finish/g) ?? []).length >= 2,
     'the aborted-fetch case is the one the server never gets to record, so the card is the only place it can be said')
-  check('the card shows it',
-    /outcome\[t\.domain\] && t\.state !== 'delivered'/.test(STAGE)
-    && /Not uploaded\. \{outcome\[t\.domain\]\}/.test(read('components/launchpad/StorefrontStage.tsx')),
+  // RENDERED WHATEVER THE STATE. The thumbnail note is about a market that DID
+  // upload, and hiding notes on success is how English text lands on a German
+  // listing with nothing on screen to say so.
+  check('the card shows it, delivered or not',
+    /\{outcome\[t\.domain\] && \(/.test(STAGE)
+    && /\{outcome\[t\.domain\]\}/.test(read('components/launchpad/StorefrontStage.tsx')),
     'held in state and never rendered is the same as not held at all')
+
+  // THE THUMBNAIL HAS THE SAME FAILURE SHAPE AS THE AUDIO. A non-English store
+  // falling back to the branded image ships English hook text on a German
+  // listing, the upload succeeds, and nothing disagrees.
+  check('the queue says when a store is getting the English-text image',
+    /thumbnailIsTextFallback/.test(QUEUE)
+    && /!!mkt\?\.needsTranslation && !cleanThumb && !!textThumb/.test(QUEUE),
+    'the silent fallback is the same class of bug as the English audio under a translated title')
+  check('and the creator is told before it goes up',
+    /const textFallbacks = items\.filter/.test(STAGE)
+    && /ENGLISH text on it/.test(read('components/launchpad/StorefrontStage.tsx')),
+    'after the upload it is a post-mortem, not a choice')
   check('and a new run clears the last one’s notes',
     /setOutcome\(\{\}\)/.test(STAGE),
     'a stale failure sitting on a market that just succeeded is its own lie')

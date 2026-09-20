@@ -12,19 +12,42 @@
 // one door that guard does not watch.
 //
 // The fix is one path used by both, not a second implementation for the cron.
-// A second implementation is where the YouTube-track-first ordering silently
-// stops happening, and nothing on any screen would show it.
+// A second implementation is where a rule quietly stops applying in one of
+// them, and nothing on any screen would show it.
 //
-// THE ORDER MATTERS AND IT IS NOT AN OPTIMIZATION.
+// WE DUB IT OURSELVES. ALWAYS.
 //
-//   1. YouTube's own track, when the video already carries this language. It is
-//      already translated, already timed to the picture, and costs nothing.
-//   2. Our dub: transcribe if needed, translate the script, synthesize, mux.
-//      Free and unlimited on the standard voice.
+// There used to be a shortcut in front of this: ask whether YouTube already
+// carries that language and pull its track if so, on the grounds that it was
+// already translated, already in sync and free. Measured, that was wrong on
+// every count that matters.
 //
-// The cloned voice is the only paid lane and only when a creator asks for it,
-// which is why the background caller never gets one: nobody is present to
-// authorize spending a credit.
+// Pulling a track is a FULL VIDEO DOWNLOAD, PER MARKET. The ingest call fetches
+// the whole video at up to 1080p through the residential proxy and re-uploads
+// it, with a 280 second timeout inside a 300 second function, and the result is
+// stored on that one market's target. Five European storefronts meant five full
+// downloads of the same video, each one able to run the function out of time,
+// each one going through the bot wall that is the flakiest thing we depend on.
+//
+// Our own lane downloads the master ONCE, caches it on the video, and after
+// that every market is a translation, a TTS call and a mux, on a file we
+// already host. Seconds, and nothing touches YouTube.
+//
+// It is also better copy. The script is translated by Claude against the
+// creator's brand profile; YouTube's auto-dub is a generic voice over a literal
+// translation. And one lane means one voice across every storefront, rather
+// than YouTube's in France and ours in Italy because of which languages
+// YouTube happened to have auto-dubbed.
+//
+// The one thing this gives up is a creator who uploaded their OWN recorded
+// track in that language. Nothing in the listing distinguishes that from
+// YouTube's auto-dub, and a creator who wants to sound like themselves has the
+// cloned voice, which is explicitly theirs.
+//
+// So: transcribe if needed, translate the script, synthesize, mux. Free and
+// unlimited on the standard voice. The cloned voice is the only paid lane and
+// only when a creator asks for it, which is why the background caller never
+// gets one: nobody is present to authorize spending a credit.
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { recordUsage } from '@/lib/ai-usage'
@@ -32,8 +55,7 @@ import { marketByDomain, translateScript } from '@/lib/global-sync'
 import { synthesizeSpeech, elevenConfigured } from '@/lib/tts'
 import { getClonedVoiceId } from '@/lib/voice-clone'
 import { dubCreditBalance, spendDubCredit } from '@/lib/dub-credits'
-import { ingestConfigured, ingestYouTubeVideo, renderDub } from '@/lib/youtube-ingest'
-import { audioLanguagesFor, carriesLanguage, AUDIO_COLUMNS } from '@/lib/audio-tracks'
+import { ingestYouTubeVideo, renderDub } from '@/lib/youtube-ingest'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { cuesToText } from '@/lib/shorts-transcript'
 
@@ -48,12 +70,9 @@ export interface DubTargetOpts {
   domain: string
   /** The creator chose the free generic voice over their own clone.
    *
-   *  THE BACKGROUND LANE ALWAYS PASSES TRUE, and that is deliberate twice over.
-   *  It spends no credit, because nobody is there to agree to it. And it makes
-   *  YouTube's existing track eligible, because the track is only skipped when
-   *  a cloned voice is genuinely on the table: substituting a generic voice for
-   *  one a creator paid to sound like them is a downgrade they did not ask for,
-   *  but that reasoning does not apply when no clone is being used. */
+   *  THE BACKGROUND LANE ALWAYS PASSES TRUE. It spends no credit, because
+   *  nobody is present to agree to it, and the standard voice is free and
+   *  unlimited. */
   requestedStandard?: boolean
   /** Subscription period start, for the cloned-voice credit window. */
   periodStart?: string | null
@@ -64,11 +83,10 @@ export type DubTargetResult =
       ok: true
       videoUrl: string | null
       audioUrl?: string
-      voice: 'youtube' | 'cloned' | 'standard'
-      /** 'youtube_dub' when YouTube's own track was used, 'voiceover_only' when
-       *  there was no source video to mux onto. Named so a screen can say where
-       *  the audio came from: a dub the creator did not pay for should never be
-       *  reported as one they did. */
+      voice: 'cloned' | 'standard'
+      /** 'voiceover_only' when there was no source video to mux onto, so the
+       *  market gets the audio track and nothing else. Named so a screen can
+       *  say what actually shipped rather than reporting a full dub. */
       note?: string
       clonedDubsRemaining: number | null
       outOfCredits: boolean
@@ -91,69 +109,9 @@ export async function dubTarget(opts: DubTargetOpts): Promise<DubTargetResult> {
 
   const { data: video } = await sb
     .from('youtube_videos')
-    // AUDIO_COLUMNS or the track cache never hits and every market pays yt-dlp
-    // again for the same video.
-    .select(`${AUDIO_COLUMNS},transcript,duration_seconds,source_video_url`)
+    .select('id,youtube_video_id,transcript,duration_seconds,source_video_url')
     .eq('id', job.video_id).eq('user_id', userId).maybeSingle()
   if (!video) return { ok: false, error: 'Master video not found.', status: 404 }
-
-  // ── 0) YOUTUBE MAY HAVE ALREADY DUBBED THIS ──────────────────────────────
-  //
-  // YouTube auto-dubs a lot of videos now, and a creator can upload their own
-  // multi-audio tracks. When a track exists in this market's language it is
-  // already translated, already timed to the picture, and already paid for. So
-  // it is tried FIRST, before the transcript requirement below, because none of
-  // the work underneath is needed: no transcription, no translation, no
-  // synthesis, no cloned-voice credit.
-  //
-  // Only the language is checked, never assumed. `audioLanguage` on the result
-  // is what the downloader actually obtained, so a video with no French track
-  // falls through to the paid lane instead of publishing English audio to
-  // amazon.fr, which is the failure that would look exactly like success.
-  //
-  // Skipped for the cloned-voice lane on purpose: a creator paying for a dub
-  // that sounds like them is buying something YouTube's generic voice does not
-  // provide, and silently substituting it would be a downgrade they did not ask
-  // for. They can still choose it with voice: 'standard'.
-  //
-  // But the condition is "not getting a clone", NOT "asked for standard". Most
-  // callers send no voice at all and the lane is picked for them further down,
-  // so gating on the explicit flag alone would have meant this almost never
-  // ran: a creator with no cloned voice, or out of credits, would still have
-  // got our generic TTS when YouTube had a real dub sitting there for free.
-  // getClonedVoiceId is one cheap read and the paid lane re-reads it below.
-  const clonedForLane = await getClonedVoiceId(sb, userId)
-  const cloneIsOnTheTable = !requestedStandard && !!clonedForLane && elevenConfigured()
-
-  const marketLang = (market.lang || '').split('-')[0].toLowerCase()
-  const ytIdForDub = (video.youtube_video_id as string | null) || ''
-  if (!cloneIsOnTheTable && marketLang && ytIdForDub && ingestConfigured()) {
-    // ASKED ONCE PER VIDEO, not once per market. This was a yt-dlp call with a
-    // sixty second ceiling made separately for every storefront, so one video
-    // going to five European stores asked the same question five times, and a
-    // channel that has never used YouTube's auto-dub paid all five to be told
-    // nothing. The answer is now remembered on the video for a week, and the
-    // catalogue drain fills it for this path for free.
-    const langs = await audioLanguagesFor(sb, video)
-    if (carriesLanguage(langs, marketLang)) {
-      await sb.from('global_sync_targets').update({ state: 'dubbing', detail: null, updated_at: new Date().toISOString() }).eq('id', target.id)
-      const pulled = await ingestYouTubeVideo(ytIdForDub, userId, { audioLanguage: marketLang })
-      if (pulled?.url && pulled.audioLanguage) {
-        await sb.from('global_sync_targets').update({
-          video_url: pulled.url,
-          state: 'localized',
-          detail: `Dubbed by YouTube (${market.langName})`,
-          updated_at: new Date().toISOString(),
-        }).eq('id', target.id)
-        return {
-          ok: true, videoUrl: pulled.url, voice: 'youtube', note: 'youtube_dub',
-          clonedDubsRemaining: null, outOfCredits: false,
-        }
-      }
-      // The listing said the track was there and the download did not produce
-      // it. Fall through and dub it ourselves rather than ship the original.
-    }
-  }
 
   let transcript = (video.transcript as string | null) || ''
   // Lazy transcription for a file-first master: if we don't have a transcript

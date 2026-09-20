@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, requestStorefrontDebug, requestStorefrontProgress, getScoutStatus, type StorefrontMarketStatus, type StorefrontProgress } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
 import { normalizeAsinInput } from '@/lib/asin'
+import { decodeHtmlEntities } from '@/lib/decode-entities'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -90,6 +91,13 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   const [picked, setPicked] = useState<string | null>(presetVideoId || null)
   const [chosen, setChosen] = useState<Set<string>>(new Set())
   const [asin, setAsin] = useState(presetAsin || '')
+  /** The English title every store starts from. Shown and editable BEFORE the
+   *  run, because it is translated into every other market: a creator who only
+   *  sees it after the localize has to redo five translations to fix a word. */
+  const [masterTitle, setMasterTitle] = useState('')
+  const [titleLoading, setTitleLoading] = useState(false)
+  /** Once they have typed, a reload of the video must not overwrite them. */
+  const titleTouched = useRef(false)
   // ASINs the creator pasted by hand for a market where the source ASIN isn't
   // listed and SCOUT found no confident local match. Merged over `marketAsins`.
   const [manualAsins, setManualAsins] = useState<Record<string, string>>({})
@@ -304,6 +312,36 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   const jobMatchesTicks = targets.length === chosen.size
     && targets.every((t) => chosen.has(t.domain))
 
+  // The video's own title, which is what the server would otherwise use. Read
+  // here so the creator sees it before anything is translated.
+  useEffect(() => {
+    const id = picked
+    if (!id) { setMasterTitle(''); titleTouched.current = false; return }
+    let cancelled = false
+    setTitleLoading(true)
+    ;(async () => {
+      try {
+        const sb = createBrowserClient()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data } = await (sb as any)
+          .from('youtube_videos').select('title,generated_title').eq('id', id).maybeSingle()
+        if (cancelled) return
+        // generated_title first: it is the one the server prefers, so showing
+        // `title` would present a line that is not the one about to be used.
+        const t = decodeHtmlEntities(String(data?.generated_title || data?.title || '')).trim()
+        // NEVER over an edit in progress.
+        if (!titleTouched.current) setMasterTitle(t)
+      } catch { /* the field stays empty and says so */ }
+      finally { if (!cancelled) setTitleLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [picked])
+
+  /** The markets on screen that will receive a translation of that title. */
+  const dubbingMarketNames = markets
+    .filter(m => chosen.has(m.domain) && m.needsTranslation)
+    .map(m => m.country)
+
   const toggleMarket = (domain: string) => setChosen(prev => {
     const next = new Set(prev); next.has(domain) ? next.delete(domain) : next.add(domain); return next
   })
@@ -324,6 +362,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     if (!picked) { toast.error('Pick a master video first'); return null }
     if (chosen.size === 0) { toast.error('Pick at least one marketplace'); return null }
     if (!baseAsin) { toast.error('Enter a valid product ASIN, or paste the Amazon product link. MVP needs it to build each market’s title and thumbnail.'); return null }
+    if (!masterTitle.trim()) { toast.error('Write the English title first. Every other store gets a translation of it, so an empty one means untitled listings everywhere.'); return null }
     setRunning(true); setTargets([]); setJobId(null)
     try {
       // Per-market ASIN overrides for the chosen markets that differ from the base.
@@ -334,7 +373,10 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       }
       const r = await fetch('/api/global-sync/start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId: picked, markets: Array.from(chosen), asin: baseAsin, marketAsins: Object.keys(overrides).length ? overrides : undefined }),
+        // THE EDITED TITLE, not the one on the video. Every other market is a
+        // translation OF THIS, so sending the old one would translate wording
+        // the creator has just replaced.
+        body: JSON.stringify({ videoId: picked, markets: Array.from(chosen), asin: baseAsin, masterTitle: masterTitle.trim() || undefined, marketAsins: Object.keys(overrides).length ? overrides : undefined }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.jobId) throw new Error(j.error || 'Could not start the sync')
@@ -637,7 +679,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
           // market it named goes back to looking untouched.
           setOutcome(prev => {
             const next = { ...prev }
-            for (const d of missing) next[d] = String(why.get(d) || 'it never reached the upload queue')
+            for (const d of missing) next[d] = `Not uploaded. ${String(why.get(d) || 'it never reached the upload queue')}`
             return next
           })
         }
@@ -680,6 +722,26 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
             thumbDecision = go ? 'go' : 'stop'
             if (!go) { toast('Held off. Try again once the thumbnail has finished rendering.'); return [] }
           }
+        }
+
+        // ── THE IMAGE, BEFORE IT GOES UP ────────────────────────────────────
+        // A non-English store falling back to the branded thumbnail gets
+        // ENGLISH HOOK TEXT on a German listing. Same shape as the English
+        // audio: the upload succeeds, the state says delivered, and the only
+        // way anyone finds out is looking at the storefront. Said here, while
+        // the creator can still stop it.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const textFallbacks = items.filter((i: any) => i?.thumbnailIsTextFallback)
+        if (textFallbacks.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const names = textFallbacks.map((i: any) => i.country || i.domain).join(', ')
+          toast(`${names} will use the thumbnail with your ENGLISH text on it, because the text-free version has not finished rendering.`, { duration: 14000 })
+          setOutcome(prev => {
+            const next = { ...prev }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            for (const i of textFallbacks) next[i.domain] = 'Uploaded with the English-text thumbnail, because the text-free version was not ready.'
+            return next
+          })
         }
 
         setPhase(phaseLabel)
@@ -1043,6 +1105,38 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         )}
       </div>
 
+      {/* ── THE TITLE EVERY STORE STARTS FROM ────────────────────────────────
+          The English stores get this exact line, and every other store gets a
+          translation OF IT. It was read off the video server side and never
+          shown, so the first time a creator saw the wording that would carry
+          their listing in five countries was after it had been translated into
+          all five, when changing it meant redoing the lot. */}
+      {picked && (
+        <div className="card p-4 mb-5">
+          <label className="text-[12px] font-medium" style={label}>
+            Title for the English stores
+          </label>
+          <textarea
+            value={masterTitle}
+            onChange={e => { titleTouched.current = true; setMasterTitle(e.target.value) }}
+            rows={2}
+            placeholder={titleLoading ? 'Reading this video’s title…' : 'The title your listing will carry'}
+            className="w-full mt-1.5 px-3 py-2 rounded-lg border text-sm bg-transparent resize-y"
+            style={{ borderColor: masterTitle.trim() ? 'var(--border)' : '#d9770655', color: 'var(--text)' }}
+          />
+          <div className="mt-1 flex items-baseline justify-between gap-3 flex-wrap">
+            <p className="text-[11px]" style={masterTitle.trim() ? muted : { color: '#d97706' }}>
+              {!masterTitle.trim()
+                ? 'Empty, so your listings would go up untitled. Write the title first.'
+                : dubbingMarketNames.length > 0
+                  ? `Edit it here and ${dubbingMarketNames.join(', ')} ${dubbingMarketNames.length === 1 ? 'gets a translation' : 'get translations'} of this wording, not of the old one.`
+                  : 'The English stores use this exactly as written.'}
+            </p>
+            <span className="text-[11px] tabular-nums" style={muted}>{masterTitle.trim().length}</span>
+          </div>
+        </div>
+      )}
+
       {/* ONE click: localize → sign-in check → dub → upload. "Preview first" is the
           optional review path (localize only, then Upload from the copy card). */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -1232,9 +1326,14 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                     used to live only in a toast, so a market the run could not
                     upload went back to looking exactly like one nobody had
                     picked: a tick, no note, and a Generate dub button. */}
-                {outcome[t.domain] && t.state !== 'delivered' && (
+                {/* SHOWN EVEN WHEN DELIVERED. The thumbnail fallback is a note
+                    about a market that DID upload, and hiding it on success is
+                    exactly how English text ends up on a German listing with
+                    nothing on screen to say so. Each message states its own
+                    outcome, so there is no prefix to get wrong. */}
+                {outcome[t.domain] && (
                   <p className="text-[11.5px] mt-1.5 px-2 py-1.5 rounded-lg" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
-                    Not uploaded. {outcome[t.domain]}
+                    {outcome[t.domain]}
                   </p>
                 )}
                 {/* Skip dub: deliver the English master to this market on purpose. */}

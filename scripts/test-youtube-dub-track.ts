@@ -1,20 +1,20 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// WHEN YOUTUBE HAS ALREADY DUBBED THE VIDEO, USE THAT, AND SAY SO.
+// A FILE NEVER CLAIMS A LANGUAGE IT DOES NOT CARRY.
 //
-// YouTube auto-dubs a lot of videos, and a creator can upload their own
-// multi-audio tracks. A track that exists is already translated, already timed
-// to the picture, and already paid for. Global Storefront Sync was transcribing,
-// translating, synthesizing and muxing its own instead, because the downloader
-// asked for `ba` with no language filter and so always got the original.
+// The ingest service can fetch one specific audio track from a YouTube video,
+// and the admin page uses it to answer whether YouTube serves dubs at all. The
+// DUB LANE no longer reaches for it: pulling a track turned out to be a full
+// video download per market, so every market is dubbed by MVP now. The block
+// halfway down pins that reversal and says why, because it is the sort of
+// shortcut that looks free and gets re-added.
 //
-// THE DANGER IS NOT THE FEATURE, IT IS THE FALLBACK. If a French track does not
-// exist and the download quietly returns the original, the market page gets a
-// file that is present, plays fine, and is still in English. That reads as
-// success everywhere: the URL looks the same, the state says localized, and
-// nobody finds out until a French shopper does. So what is pinned hardest here
-// is that the language is REPORTED from what was obtained, never echoed from
-// what was asked for.
+// What survives unchanged is the honesty rule, and it is the reason this file
+// exists. If a French track does not exist and the download quietly returns the
+// original, the file is present, plays fine, and is still in English. That
+// reads as success from every angle: same URL, same state, same delivered_at,
+// and nobody finds out until a French shopper presses play. So the language is
+// REPORTED from what was obtained, never echoed from what was asked for.
 import { readFileSync } from 'node:fs'
 import { extractYouTubeVideoId as ytId } from '../lib/youtube-url'
 
@@ -32,9 +32,7 @@ const CLIENT = live(read('lib/youtube-ingest.ts'))
 // THE LANE, not the route. This all lived inside /api/global-sync/dub until the
 // background catalogue drain needed to dub without a session. It moved to a
 // library both callers share rather than being copied into the cron, because a
-// second copy is exactly where the track-first ordering stops happening with
-// nothing on screen to show it. The claims below are unchanged; they follow the
-// code.
+// second copy is exactly where a rule quietly stops applying in one of them.
 const DUB = live(read('lib/dub-target.ts'))
 const DUB_ROUTE = live(read('app/api/global-sync/dub/route.ts'))
 
@@ -91,60 +89,55 @@ const DUB_ROUTE = live(read('app/api/global-sync/dub/route.ts'))
     /const got = typeof data\.audioLanguage/.test(CLIENT))
 }
 
-// ── the dub route prefers the free track, on the right lane ─────────────────
+// ── THE DUB LANE DOES NOT PULL FROM YOUTUBE, AND THAT IS DELIBERATE ────────
+//
+// The clauses that used to live here pinned the opposite decision: check for a
+// YouTube track first and use it, because it was already translated, already in
+// sync and free. Two of those three were true. The third was not.
+//
+// Pulling a track is a FULL VIDEO DOWNLOAD, PER MARKET. ingestYouTubeVideo with
+// an audioLanguage fetches the whole video at up to 1080p through the
+// residential proxy and re-uploads it, with a 280 second ceiling inside a 300
+// second function, and the result is stored on one market's target. Five
+// European storefronts meant five downloads of the same video, each able to run
+// the function out of time, each through the bot wall that is the least
+// reliable thing this product depends on. Our own lane downloads the master
+// ONCE, caches it on the video, and every market after that is a Claude
+// translation, a TTS call and a mux on a file we already host.
+//
+// It also produced two voices on one creator's storefronts, ours in the markets
+// YouTube had not auto-dubbed and YouTube's generic one in the markets it had.
+//
+// THE CAPABILITY IS NOT DELETED. The ingest service can still fetch a specific
+// language and the admin page still answers whether YouTube serves dubs for a
+// video, and the clauses above and below still hold them honest. What is gone
+// is the dub lane reaching for it automatically, and these clauses exist so
+// that putting it back is a decision somebody makes on purpose after reading
+// why it was taken out.
 {
-  // audioLanguagesFor, not listYouTubeAudioTracks: the lookup is the same
-  // question, asked once per video and remembered, because it was being made
-  // once per MARKET and it is a yt-dlp call with a sixty second ceiling. The
-  // claim is unchanged, so the clause follows the code.
-  check('the dub route checks for a track before spending anything',
-    DUB.indexOf('audioLanguagesFor(') > -1
-    && DUB.indexOf('audioLanguagesFor(') < DUB.indexOf('translateScript('),
-    'after the translate it has already paid for the thing it was trying to avoid')
-  check('and before the transcript requirement',
-    DUB.indexOf('audioLanguagesFor(') < DUB.indexOf('No transcript to dub yet'),
-    "a YouTube dub needs no transcript, so a video without one should still localize")
+  check('the dub lane never asks for a specific audio language',
+    !/audioLanguage/.test(DUB),
+    'that parameter is what turns one dub into a full video download for that market')
+  check('and it dubs every non-English market the same way',
+    DUB.indexOf('await translateScript(') > -1
+    && DUB.indexOf('synthesizeSpeech(') > DUB.indexOf('await translateScript('),
+    'two lanes meant YouTube’s voice in France and ours in Italy on the same storefronts')
+  check('the master is pulled at most once and cached on the video',
+    /source_video_url: sourceUrl/.test(DUB),
+    'without the cache every market re-downloads the same master and the saving is gone')
 
-  // THE CACHE MUST NOT INVENT A VERDICT. An empty list means the video was read
-  // and carries only its original audio. Null means nobody looked. Those are
-  // opposite facts, and collapsing them turns an ingest outage into "this video
-  // has no French track", which is a finding about the video rather than about
-  // us, and it would be written to the database and believed for a week.
-  const TRACKS = live(read('lib/audio-tracks.ts'))
-  check('a lookup that failed is not remembered',
-    /if \(!info\) return null/.test(TRACKS)
-    && !/audio_languages: \[\][\s\S]{0,80}audio_languages_at/.test(TRACKS),
-    'writing an empty list on a failed lookup makes the outage permanent for a week')
-  // THE SELECT, not the import. Dropping AUDIO_COLUMNS from the query leaves
-  // the name sitting in the import line, so a check for the identifier passed
-  // over a cache that could never hit: every read came back without the
-  // columns, looked stale, and went to yt-dlp again.
-  check('and the columns it needs are actually selected',
-    /export const AUDIO_COLUMNS/.test(TRACKS)
-    && /\.select\(`\$\{AUDIO_COLUMNS\}/.test(DUB)
-    && /\.select\(`\$\{AUDIO_COLUMNS\}/.test(live(read('app/api/cron/coverage-drain/route.ts'))),
-    'a cache whose columns are not read never hits, and every market pays yt-dlp again')
-  check('the catalogue drain fills the same cache',
-    /audioLanguagesFor\(sb, v\)/.test(live(read('app/api/cron/coverage-drain/route.ts'))),
-    'the grid asks this once per video already, so Launchpad should get it free')
-
-  check('it only accepts the pull when a language actually came back',
-    /if \(pulled\?\.url && pulled\.audioLanguage\)/.test(DUB),
-    'url alone is satisfied by the original-audio fallback')
-
-  // The cloned voice is a paid product that sounds like the creator. Swapping
-  // in YouTube's generic voice would be a downgrade nobody asked for.
-  check('the cloned-voice lane is not silently replaced',
-    /!cloneIsOnTheTable/.test(DUB))
-  check('but the gate is "not getting a clone", not "asked for standard"',
-    /const cloneIsOnTheTable = !requestedStandard && !!clonedForLane && elevenConfigured\(\)/.test(DUB),
-    'gating on the explicit flag alone means the lane almost never runs, since most callers send no voice')
-
-  check('the response says the dub came from YouTube',
-    /note: 'youtube_dub'/.test(DUB) && /voice: 'youtube'/.test(DUB),
-    'a dub the creator did not pay for must not be reported as one they did')
-  check('and no cloned-voice credit is spent on it',
-    /note: 'youtube_dub'[\s\S]{0,120}clonedDubsRemaining: null/.test(DUB))
+  // The cloned voice is a paid product that sounds like the creator, and it
+  // stays the only thing a credit is ever spent on.
+  check('the cloned voice is still the only paid lane',
+    /const wantClone = !requestedStandard && !!clonedVoiceId && elevenConfigured\(\)/.test(DUB)
+    && /if \(usedClone\)/.test(DUB),
+    'a credit spent on anything else is a charge the creator did not agree to')
+  check('and a credit is spent only when that voice actually ran',
+    /const usedClone = speech\.engine === 'elevenlabs' && !!useVoiceId/.test(DUB),
+    'spending on intent rather than outcome bills for a dub that fell back to the free voice')
+  check('the response never claims a YouTube dub any more',
+    !/'youtube_dub'/.test(DUB) && !/voice: 'youtube'/.test(DUB),
+    'a lane that cannot run must not have a result shape that says it did')
 }
 
 // ── "no tracks" and "we could not tell" are different answers ───────────────
@@ -330,4 +323,4 @@ if (failures.length) {
   for (const f of failures) console.error(`   • ${f}`)
   process.exit(1)
 }
-console.log("✅ youtube-dub-track: a free dub is used when it exists, and the file never claims a language it does not carry")
+console.log("✅ youtube-dub-track: MVP dubs every market itself, and no file ever claims a language it does not carry")

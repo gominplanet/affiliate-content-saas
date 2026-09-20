@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   const gate = await spendGate(user.id, tier)
   if (gate) return gate
 
-  const body = await req.json().catch(() => ({})) as { videoId?: string; markets?: string[]; asin?: string; marketAsins?: Record<string, string> }
+  const body = await req.json().catch(() => ({})) as { videoId?: string; markets?: string[]; asin?: string; masterTitle?: string; marketAsins?: Record<string, string> }
   const videoId = (body.videoId || '').trim()
   // Optional per-market ASIN overrides (Video Launchpad's local-ASIN resolution):
   // a product relisted abroad under a different code is delivered against THAT
@@ -64,7 +64,24 @@ export async function POST(req: Request) {
   if (!video) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
 
   const asin = asinFrom(body.asin) || asinFrom(video.product_url as string | null)
-  const masterTitle = ((video.generated_title as string) || (video.title as string) || '').trim()
+
+  // ── THE TITLE THE CREATOR APPROVED ───────────────────────────────────────
+  //
+  // The caller sends the line it showed them, and it wins. This used to read
+  // the video's own title with no way to influence it, so the first time a
+  // creator saw the wording that would carry their listing in five countries
+  // was after it had been translated into all five.
+  //
+  // Persisted as well as used, because the localize runs after the response
+  // goes out and the recovery cron may be the one that finishes it, reading the
+  // video row rather than this request. Without the write, a job finished by
+  // the cron would silently translate the OLD wording.
+  const sentTitle = (body.masterTitle || '').trim().slice(0, 300)
+  const masterTitle = sentTitle || ((video.generated_title as string) || (video.title as string) || '').trim()
+  if (sentTitle && sentTitle !== ((video.generated_title as string) || '').trim()) {
+    try { await sb.from('youtube_videos').update({ generated_title: sentTitle }).eq('id', videoId).eq('user_id', user.id) }
+    catch { /* best-effort: the run below still uses the sent title */ }
+  }
   const masterDesc = ((video.generated_description as string) || (video.description as string) || '').trim()
 
   const { data: brand } = await sb

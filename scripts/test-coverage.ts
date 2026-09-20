@@ -193,11 +193,13 @@ const SEARCH = read('lib/app-search-index.ts')
     /inStock: cell\.stock === 'in_stock'/.test(DRAIN)
     && !/inStock: dubbed/.test(DRAIN),
     'passing "already dubbed" as stock made the ordering mean something other than what it says')
-  check('cheap to deliver is its own, smaller term',
-    /alreadyDubbed\?: boolean \| null/.test(LIB)
-    && /if \(alreadyDubbed\) score \+= \d+/.test(LIB)
-    && /alreadyDubbed: dubbed/.test(DRAIN),
-    'a free dub is worth something, just not the same thing as a product somebody can buy')
+  // AND NOTHING ELSE. There was a third term for a video YouTube had already
+  // dubbed, which cost nothing to deliver. That shortcut is gone, so every
+  // market now costs the same and there is no cheap case left to reward. A term
+  // that survives its reason is a number nobody can explain.
+  check('and nothing stands in for stock any more',
+    !/alreadyDubbed/.test(LIB) && !/alreadyDubbed/.test(DRAIN),
+    'the dubbed term was what had been standing in for stock in the first place')
   check('and the drain claims by it',
     (DRAIN.match(/order\('priority', \{ ascending: false \}\)/g) ?? []).length >= 3,
     'a queue that is not ordered by value spends three thousand lookups in upload order')
@@ -254,18 +256,19 @@ const SEARCH = read('lib/app-search-index.ts')
   check('and the cron does not re-implement it',
     !/synthesizeSpeech|renderDub|translateScript/.test(DRAIN),
     'the moment the cron synthesizes its own audio there are two lanes')
-  // THE ORDERING, not the import. Deleting the track branch leaves both names
-  // sitting in the import line, so the identifiers alone proved nothing and
-  // this clause passed over a lane that had stopped checking. The position is
-  // what the claim is actually about: free audio must be looked for before any
-  // of the paid work starts. scripts/test-youtube-dub-track pins the same rule
-  // in more detail; it is repeated here because this is the file somebody reads
-  // when they touch the background lane.
-  const trackAt = DUBLIB.indexOf('carriesLanguage(langs, marketLang)')
-  const translateAt = DUBLIB.indexOf('await translateScript(')
-  check('the lane still tries YouTube’s own track first',
-    trackAt > -1 && translateAt > -1 && trackAt < translateAt,
-    'it is already translated, already timed to the picture and already paid for')
+  // ONE LANE. There used to be a shortcut in front of this that pulled
+  // YouTube's own track when the video already carried the language. Measured,
+  // that was a FULL VIDEO DOWNLOAD PER MARKET: five European storefronts meant
+  // five downloads of the same video, each with a 280 second ceiling inside a
+  // 300 second function, each through the bot wall. Our lane downloads the
+  // master once, caches it on the video, and every market after that is a
+  // translation, a TTS call and a mux on a file we already host.
+  check('the lane does not re-download the video from YouTube per market',
+    !/audioLanguage/.test(DUBLIB),
+    'pulling a track is a full download per market, which is slower and far more fragile than dubbing it ourselves')
+  check('and it dubs every non-English market the same way',
+    /await translateScript\(/.test(DUBLIB) && /synthesizeSpeech\(/.test(DUBLIB),
+    'two lanes meant YouTube’s voice in France and ours in Italy on the same creator’s storefronts')
 
   // NO CREDIT WITHOUT A PERSON. The cloned voice is the only paid lane.
   check('the background never spends a cloned-voice credit',
