@@ -185,6 +185,34 @@ const STAGE = live(read('components/launchpad/StorefrontStage.tsx'))
     '"the dub failed" does not tell a creator that the video still went out')
 }
 
+// ── two upload buttons, and they do not mean the same thing ─────────────────
+//
+// The copy panel belongs to the sync JOB, whose id is restored from
+// localStorage on mount, so it routinely describes an earlier run. Its button
+// said "Upload to all storefronts" while the checkboxes above said something
+// else, and both sat on screen at once with nothing to tell them apart.
+// Pressed with a restored job, "all storefronts" uploaded to one country from
+// a previous session.
+{
+  // UNDER THE HEADING, which is the part a creator reads before pressing
+  // anything. The first version of this clause looked for the identifier
+  // anywhere in the file, and `jobCountries.join` also appears in the mismatch
+  // warning below, so deleting the subtitle left the clause satisfied by a
+  // sentence that only shows up when something is already wrong.
+  check('the copy panel names the markets it is about',
+    /const jobCountries = targets\.map/.test(STAGE)
+    && /Localized copy<\/h2>[\s\S]{0,160}?\{jobCountries\.join/.test(STAGE),
+    'unnamed, it reads as being about whatever is ticked above')
+  check('and its button no longer claims "all storefronts"',
+    !/Upload to all storefronts/.test(STAGE),
+    '"all" is a promise about the ticks, which this button has nothing to do with')
+  check('a job that no longer matches the ticks says so',
+    /const jobMatchesTicks = targets\.length === chosen\.size/.test(STAGE)
+    && /\{!jobMatchesTicks && \(/.test(STAGE)
+    && /This copy is from an earlier run/.test(read('components/launchpad/StorefrontStage.tsx')),
+    'a silent mismatch between two upload buttons is how a creator uploads to the wrong country')
+}
+
 // ── the queue says what each market is about to receive ─────────────────────
 {
   check('the queue reports whether a market needed a dub',

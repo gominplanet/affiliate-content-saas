@@ -279,6 +279,17 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allMarkets, allowedKey, defaultKey])
 
+  // ── WHOSE MARKETS THE COPY PANEL IS ABOUT ─────────────────────────────────
+  //
+  // `targets` belongs to the sync JOB, and the job id is restored from
+  // localStorage on mount, so the panel routinely describes an earlier run. The
+  // button on it said "Upload to all storefronts" while the checkboxes above
+  // said something else entirely, and pressing it uploaded to last week's
+  // country. Both of those are now named rather than implied.
+  const jobCountries = targets.map((t) => t.country || t.domain)
+  const jobMatchesTicks = targets.length === chosen.size
+    && targets.every((t) => chosen.has(t.domain))
+
   const toggleMarket = (domain: string) => setChosen(prev => {
     const next = new Set(prev); next.has(domain) ? next.delete(domain) : next.add(domain); return next
   })
@@ -997,13 +1008,39 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       {targets.length > 0 && (
         <div className="card p-5">
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-            <h2 className="text-sm font-semibold" style={label}>Localized copy</h2>
+            <div>
+              <h2 className="text-sm font-semibold" style={label}>Localized copy</h2>
+              {/* WHICH MARKETS THIS IS FOR. The panel is the job's, and the job
+                  is restored from localStorage, so it routinely belongs to an
+                  earlier run. Unnamed, it reads as being about whatever is
+                  ticked above. */}
+              <p className="text-[11.5px] mt-0.5" style={muted}>
+                {jobCountries.join(', ')}
+              </p>
+            </div>
             <button onClick={() => void deliverAll()} disabled={delivering}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
               style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
-              {delivering ? <><Loader2 size={15} className="animate-spin" /> {phase || 'Working…'}</> : <><Upload size={15} /> Upload to all storefronts</>}
+              {/* NAMED, not "all storefronts". This button delivers THIS job's
+                  markets, and "all" is a promise about the ticks above, which
+                  it has nothing to do with. Pressed while an old job was
+                  restored, "Upload to all storefronts" uploaded to one country
+                  from last week. */}
+              {delivering
+                ? <><Loader2 size={15} className="animate-spin" /> {phase || 'Working…'}</>
+                : <><Upload size={15} /> Upload to {targets.length === 1 ? jobCountries[0] : `these ${targets.length} stores`}</>}
             </button>
           </div>
+          {/* THE MISMATCH, SAID OUT LOUD. Two upload buttons sat on screen at
+              once, one for the ticks and one for a job that no longer matched
+              them, and nothing distinguished them. */}
+          {!jobMatchesTicks && (
+            <p className="text-[12px] mb-3 px-3 py-2 rounded-lg" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
+              This copy is from an earlier run, for {jobCountries.join(', ')}. The countries ticked above
+              are different, so this button will not upload to them. Use the Upload button further up to
+              start a run for what you have ticked.
+            </p>
+          )}
           <p className="text-[12px] mb-2" style={muted}>One click uploads through SCOUT into your logged-in Amazon Creator account. It checks your sign-in, dubs any non-English market that needs it, then uploads, so no storefront ships with English audio. You must be signed in to each marketplace and enrolled in its Creator program. Keep this tab open while it runs.</p>
           {scout && (
             scout.installed
