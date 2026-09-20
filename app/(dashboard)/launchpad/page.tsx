@@ -338,6 +338,81 @@ export default function LaunchpadPage() {
       publishedUrl, publishedVideoId, studioDone, publishResult,
       masterId, geoCheck, marketAsins])
 
+  /**
+   * Adopt a freshly rendered video and drop everything that belonged to the
+   * last one.
+   *
+   * WHAT THIS FIXES. The page mirrors its whole state to one localStorage key
+   * and restores it on mount, which is right for resuming an interrupted run.
+   * It was also right in the middle of a second run: upload another video and
+   * the ASIN, thumbnail, master, geo results and per-market ASINs all stayed,
+   * so the new video showed the old thumbnail and the geo check researched the
+   * old product. The only escape was Start over, which a creator has no reason
+   * to press after a successful upload.
+   *
+   * The same video re-rendered (same URL) keeps its work: that is a re-render,
+   * not a new video, and throwing away a thumbnail for it would be its own bug.
+   */
+  function startFreshRunFor(url: string, title: string, sourceUrl: string | null, dur?: number) {
+    const isSameVideo = renderedUrl === url
+    setRenderedUrl(url)
+    setCleanUrl(sourceUrl)
+    setWorkingTitle(title)
+    setDurationSec(dur || 0)
+    if (isSameVideo) { if (!chosenTitle) setChosenTitle(title); return }
+
+    // ── everything below here described the previous video ──────────────────
+    // The product.
+    setAsin('')
+    // The images.
+    setThumbUrl(null)
+    setThumbSkipped(false)
+    // The YouTube half.
+    setYtOpen('choose')
+    setMeta(null)
+    setChosenTitle(title)
+    setDescription('')
+    setTags('')
+    setPublishedUrl(null)
+    setPublishedVideoId(null)
+    setStudioDone(null)
+    setPublishResult(null)
+    // The Amazon half, including the storefront job this page had open.
+    setMasterId(null)
+    setGeoCheck(null)
+    setGeoBrand(null)
+    setGeoTitle(null)
+    setMarketAsins({})
+    setIntlState('idle')
+    try { localStorage.removeItem('mvp_storefront_job_v1') } catch { /* ignore */ }
+    toast('New video picked up. The product, thumbnail and storefronts from the last one have been cleared.')
+  }
+
+  /**
+   * A different product invalidates everything researched about the old one.
+   *
+   * The geo results, the per-market ASINs and the brand and title that steer
+   * SCOUT's local-ASIN search are all ANSWERS ABOUT ONE PRODUCT. They were kept
+   * when the ASIN was edited, so a creator who corrected the product watched
+   * the storefront step go on reporting where the PREVIOUS one was listed, with
+   * "Product found" ticks that were about something else entirely.
+   *
+   * Only when the normalized ASIN really changes: every keystroke in a field
+   * that accepts a full Amazon URL would otherwise clear the results while
+   * somebody is halfway through pasting one.
+   */
+  function onAsinChanged(next: string) {
+    const was = normalizeAsin(asin)
+    const now = normalizeAsin(next)
+    if (!was || !now || was === now) return
+    setGeoCheck(null)
+    setGeoBrand(null)
+    setGeoTitle(null)
+    setMarketAsins({})
+    setIntlState('idle')
+    toast('Different product, so the storefront check has been cleared. Continue to storefronts to run it again.')
+  }
+
   function startOver() {
     if (typeof window !== 'undefined' && !window.confirm('Start a new run? This clears the video, thumbnail and storefront progress on this page. Anything already published to YouTube or Amazon stays up.')) return
     try { localStorage.removeItem(LS_KEY); localStorage.removeItem('mvp_storefront_job_v1') } catch { /* ignore */ }
@@ -893,7 +968,21 @@ export default function LaunchpadPage() {
               <Check size={13} /> Your video from the last session is still loaded. Upload another only if you want to replace it.
             </p>
           )}
-          <UploadStage hidePublish onRendered={(url, title, sourceUrl, dur) => { setRenderedUrl(url); setCleanUrl(sourceUrl); setWorkingTitle(title); setDurationSec(dur || 0); if (!chosenTitle) setChosenTitle(title) }} />
+          <UploadStage hidePublish onRendered={(url, title, sourceUrl, dur) => {
+            // ── A NEW VIDEO IS A NEW RUN ────────────────────────────────────
+            //
+            // The whole page is mirrored to one localStorage key and restored
+            // on mount, and NOTHING used to reset when a second video was
+            // uploaded. So the run kept the previous video's ASIN, its
+            // thumbnail, its master, its geo results and its per-market ASINs:
+            // a new video showed the old thumbnail and researched the old
+            // product's storefronts, and the only way out was a Start over
+            // button the creator had no reason to look for.
+            //
+            // Everything downstream of the upload is about the OLD video, so
+            // everything downstream of the upload goes.
+            startFreshRunFor(url, title, sourceUrl, dur)
+          }} />
         </StepRow>
 
         {/* 2. Product ASIN — required for titles + thumbnail */}
@@ -901,7 +990,7 @@ export default function LaunchpadPage() {
           icon={<Package size={15} style={{ color: '#7C3AED' }} />}
           title="Product ASIN"
           hint="Unlocks once your video is uploaded.">
-          <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX or a product link"
+          <input value={asin} onChange={e => { setAsin(e.target.value); onAsinChanged(e.target.value) }} placeholder="B0XXXXXXXX or a product link"
             className="w-full px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: asinOk ? 'var(--border)' : '#e0554b55', color: 'var(--text)' }} />
           <p className="text-[12px] mt-1.5" style={asin.trim() && !asinOk ? { color: '#e0554b' } : asinOk ? { color: '#10B981' } : muted}>
             {asin.trim() && !asinOk

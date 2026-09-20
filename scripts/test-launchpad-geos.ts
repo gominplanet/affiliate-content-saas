@@ -261,6 +261,57 @@ const START = live(read('app/api/global-sync/start/route.ts'))
     'a field that resets itself mid-sentence is unusable')
 }
 
+// ── one run belongs to one video and one product ───────────────────────────
+//
+// The page mirrors its whole state to one localStorage key and restores it on
+// mount, which is right for resuming. It was also in force in the middle of a
+// SECOND run: upload another video and the ASIN, thumbnail, master, geo results
+// and per-market ASINs all stayed, so the new video showed the old thumbnail
+// and the geo check researched the old product. The only escape was a Start
+// over button nobody has reason to press after a successful upload.
+{
+  check('a newly uploaded video clears the last one’s work',
+    /function startFreshRunFor/.test(PAGE)
+    && /startFreshRunFor\(url, title, sourceUrl, dur\)/.test(PAGE),
+    'the upload handler set four fields and left the other fifteen describing the previous video')
+  const freshBody = PAGE.slice(PAGE.indexOf('function startFreshRunFor'), PAGE.indexOf('function onAsinChanged'))
+  check('the fresh-run body was found', freshBody.length > 200 && freshBody.length < 4000, `${freshBody.length} chars`)
+  for (const [what, re] of [
+    ['the product', /setAsin\(''\)/],
+    ['the thumbnail', /setThumbUrl\(null\)/],
+    ['the master', /setMasterId\(null\)/],
+    ['the geo results', /setGeoCheck\(null\)/],
+    ['the per-market ASINs', /setMarketAsins\(\{\}\)/],
+    ['the storefront job', /removeItem\('mvp_storefront_job_v1'\)/],
+  ] as const) {
+    // SCOPED TO THIS FUNCTION'S BODY. The first version sliced as far as
+    // startOver, which now has onAsinChanged in between setting the same
+    // fields, so deleting the whole block from startFreshRunFor still passed.
+    check(`and clears ${what}`, re.test(freshBody),
+      'left behind, it describes the previous video while sitting under the new one')
+  }
+  // A RE-RENDER IS NOT A NEW VIDEO. Same URL back means the creator redid the
+  // CTA burn, and throwing away their thumbnail for that is its own bug.
+  check('re-rendering the same video keeps its work',
+    /const isSameVideo = renderedUrl === url/.test(PAGE)
+    && /if \(isSameVideo\)/.test(PAGE),
+    'clearing on every render would punish anyone who redid their CTA')
+
+  // THE PRODUCT, separately. Geo results are answers about ONE ASIN.
+  check('changing the product clears what was researched about the old one',
+    /function onAsinChanged/.test(PAGE) && /onAsinChanged\(e\.target\.value\)/.test(PAGE),
+    '"Product found" ticks that are about a different product are worse than none')
+  check('but not on every keystroke of a pasted link',
+    /if \(!was \|\| !now \|\| was === now\) return/.test(PAGE),
+    'the field takes a full Amazon URL, so mid-paste it is briefly not an ASIN at all')
+
+  // AND THE STAGE HAS TO FOLLOW IT. useState(presetAsin) is an initial value.
+  check('the storefront stage follows a corrected ASIN',
+    /\}, \[presetAsin\]\)/.test(STAGE)
+    && /if \(!next \|\| asinTouched\.current\) return/.test(STAGE),
+    'it tagged the previous product and printed the old code under "set in the step above"')
+}
+
 // ── two upload buttons, and they do not mean the same thing ─────────────────
 //
 // The copy panel belongs to the sync JOB, whose id is restored from

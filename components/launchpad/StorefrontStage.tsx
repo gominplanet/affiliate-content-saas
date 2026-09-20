@@ -349,6 +349,16 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     .filter(m => chosen.has(m.domain) && m.needsTranslation)
     .map(m => m.country)
 
+  // THE CALLER'S ASIN CAN CHANGE AFTER THIS MOUNTS. `useState(presetAsin)` is
+  // an initial value, so correcting the product on the page above left this
+  // stage tagging the previous one, and the card went on printing the old code
+  // under "set in the step above". Never over a code typed in here by hand.
+  useEffect(() => {
+    const next = (presetAsin || '').trim()
+    if (!next || asinTouched.current) return
+    setAsin(prev => (prev.trim() === next ? prev : next))
+  }, [presetAsin])
+
   const toggleMarket = (domain: string) => setChosen(prev => {
     const next = new Set(prev); next.has(domain) ? next.delete(domain) : next.add(domain); return next
   })
