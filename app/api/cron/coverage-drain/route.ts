@@ -47,6 +47,7 @@ import { coveragePriority, stockBlocks, type StockAnswer } from '@/lib/storefron
 import { fetchKeepaBasics, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
 import { dubTarget } from '@/lib/dub-target'
 import { normalizeTier } from '@/lib/tier'
+import { STALL_AFTER_MS } from '@/lib/global-sync-recovery'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -531,6 +532,21 @@ async function prepare(sb: Sb): Promise<{ sent: number; failed: number }> {
       failed++
       continue
     }
+
+    // ── HAND IT OVER NOW, NOT IN FIVE MINUTES ────────────────────────────
+    //
+    // drain-global-sync only claims a job nothing has touched for five minutes,
+    // and that window exists for one reason: never race the request that is
+    // still doing the work. There is no request here. Nobody is driving this
+    // job, and nobody ever will be, so the whole window is dead time a creator
+    // pays on every batch of six videos, forever.
+    //
+    // Backdating `updated_at` past the window hands it over on the next tick.
+    // AFTER the targets are inserted, never before: a job with no targets yet
+    // reads as "nothing left to localize" and the recovery cron would close it
+    // out as done, taking every market on it with it.
+    const handOver = new Date(Date.now() - STALL_AFTER_MS - 60_000).toISOString()
+    await sb.from('global_sync_jobs').update({ updated_at: handOver }).eq('id', job.id)
 
     // READY ONLY WHERE READY IS TRUE. An English storefront takes the master
     // as it is, so it is ready the moment the copy is queued. A market that

@@ -42,10 +42,13 @@ interface Coverage {
   domain: string; country: string; langName: string | null
   signin: string; signinLabel: string; deliverable: boolean
   live: number; uploaded: number; ready: number; preparing: number; blocked: number
-  /** Waiting on the product check, which runs before anything is translated or
-   *  dubbed. Shown apart from `preparing` so a check that has stopped running
-   *  cannot sit here reading as steady progress. */
+  /** The two waits before the render pipeline, shown apart from `preparing`
+   *  and from each other. `checking` is the product existence check and needs
+   *  Keepa; `tracking` is the language check and needs the ingest service. They
+   *  break for different reasons, so a single number covering both could only
+   *  ever say "something is happening". */
   checking: number
+  tracking: number
   blockedReasons: Reason[]
 }
 interface ReadyItem { id: string; videoId: string; domain: string; country: string; title: string; thumbnail: string | null }
@@ -292,6 +295,7 @@ export default function CoverageBoard() {
                       product in this country at all, which is what stops a dub
                       being rendered for a listing that cannot exist. */}
                   {m.checking > 0 && <span>{m.checking} checking the product</span>}
+                  {m.tracking > 0 && <span>{m.tracking} checking the audio</span>}
                   {m.preparing > 0 && <span>{m.preparing} being prepared</span>}
                   {m.blocked > 0 && <span>{m.blocked} cannot go</span>}
                 </div>

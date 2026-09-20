@@ -46,20 +46,26 @@ export async function GET() {
   }
 
   type Bucket = { domain: string; state: string; reason: string | null; n: number }
-  type Checking = { domain: string; n: number }
+  type Stage = { domain: string; n: number }
   const summary = (raw ?? {}) as {
-    videos?: number; videosAbroad?: number; buckets?: Bucket[]; checking?: Checking[]
+    videos?: number; videosAbroad?: number; buckets?: Bucket[]
+    checking?: Stage[]; tracking?: Stage[]
   }
   const buckets: Bucket[] = Array.isArray(summary.buckets) ? summary.buckets : []
   const sum = (f: (b: Bucket) => boolean) =>
     buckets.filter(f).reduce((n, b) => n + Number(b.n || 0), 0)
-  // Cells still waiting on the product existence check, which runs before any
-  // translation or dub. Kept apart from `preparing` so a check that has stopped
-  // running cannot sit on screen reading as steady progress.
-  const checking = new Map<string, number>()
-  for (const c of (Array.isArray(summary.checking) ? summary.checking : [])) {
-    checking.set(c.domain, Number(c.n || 0))
+  // THE THREE WAITS ARE THREE NUMBERS. `checking` needs Keepa, `tracking`
+  // needs the ingest service, and what is left is genuinely in the render
+  // pipeline. Each names a different thing that can be broken, and one number
+  // covering all three can only say "something is happening", which is a
+  // sentence that stays true whether or not anything is.
+  const stage = (rows: Stage[] | undefined) => {
+    const m = new Map<string, number>()
+    for (const r of (Array.isArray(rows) ? rows : [])) m.set(r.domain, Number(r.n || 0))
+    return m
   }
+  const checking = stage(summary.checking)
+  const tracking = stage(summary.tracking)
 
   const markets = enabled.map((m) => {
     const mine = (s: string) => sum((b) => b.domain === m.domain && b.state === s)
@@ -74,11 +80,13 @@ export async function GET() {
       live: mine('live'),
       uploaded: mine('uploaded'),
       ready: mine('ready'),
-      // `unknown` minus the ones still queued for the product check: those are
-      // reported as `checking` instead, because they have not reached the
-      // translating stage that "being prepared" describes.
-      preparing: Math.max(0, mine('preparing') + mine('unknown') - (checking.get(m.domain) ?? 0)),
+      // Every `unknown` cell is in one of the two earlier waits, so what is
+      // left here is only the cells genuinely in the pipeline. Subtracting
+      // rather than re-querying keeps all of this one round trip.
+      preparing: Math.max(0, mine('preparing') + mine('unknown')
+        - (checking.get(m.domain) ?? 0) - (tracking.get(m.domain) ?? 0)),
       checking: checking.get(m.domain) ?? 0,
+      tracking: tracking.get(m.domain) ?? 0,
       blocked: mine('blocked'),
       // Grouped, because "not sold in this country" and "no product attached"
       // send the creator to do completely different things, and one of them is

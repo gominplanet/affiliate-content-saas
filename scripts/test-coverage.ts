@@ -32,6 +32,7 @@ const M351 = read('supabase/migrations/351_storefront_coverage.sql')
 const M352 = read('supabase/migrations/352_coverage_summary.sql')
 const M353 = read('supabase/migrations/353_coverage_stock.sql')
 const M354 = read('supabase/migrations/354_coverage_dub.sql')
+const M355 = read('supabase/migrations/355_coverage_stages.sql')
 const DUBLIB = live(read('lib/dub-target.ts'))
 const DUBROUTE = live(read('app/api/global-sync/dub/route.ts'))
 const VERCEL = read('vercel.json')
@@ -121,10 +122,6 @@ const SEARCH = read('lib/app-search-index.ts')
   // looked for `answer === 'not_listed'`, which stays right there when a second
   // answer is added beside it with an ||, so out of stock could start blocking
   // and the guard would still pass. The body is read whole instead.
-  // ONLY, and the word has to be tested. The first version of this clause
-  // looked for `answer === 'not_listed'`, which stays right there when a second
-  // answer is added beside it with an ||, so out of stock could start blocking
-  // and the guard would still pass. The body is read whole instead.
   const blocksBody = (LIB.replace(/\s+/g, ' ').match(/function stockBlocks\([^)]*\)[^{]*\{(.*?)\}/) ?? [])[1] ?? ''
   check('and only "not sold there" blocks',
     /not_listed/.test(blocksBody) && !/in_stock|out_of_stock|no_answer/.test(blocksBody),
@@ -158,12 +155,25 @@ const SEARCH = read('lib/app-search-index.ts')
 
   // THE SCREEN. A check that has stopped running must not read as progress.
   check('waiting on the product check is counted apart from being prepared',
-    /and stock is null/.test(M353) && /'checking'/.test(M353)
+    /and stock is null/.test(M355) && /'checking'/.test(M355)
     && /checking: checking\.get\(m\.domain\) \?\? 0/.test(MAP),
     'a Keepa key that expired would otherwise show as steady progress forever')
-  check('and the board says so in words',
-    /checking the product/.test(BOARD_RAW),
+  // THE SECOND WAIT TOO. The track check needs the ingest service and working
+  // cookies, and when either is down it returns nothing and touches no rows.
+  // Folded into 'preparing' that is indistinguishable from work in progress,
+  // which is the same bug one step further along.
+  check('and so is waiting on the language check',
+    /and stock is not null/.test(M355) && /'tracking'/.test(M355)
+    && /tracking: tracking\.get\(m\.domain\) \?\? 0/.test(MAP),
+    'it breaks for completely different reasons than the product check, so one number for both can only say "something is happening"')
+  check('and the board says both in words',
+    /checking the product/.test(BOARD_RAW) && /checking the audio/.test(BOARD_RAW),
     'a number with no label is the silence this codebase keeps producing')
+  // Subtracting BOTH. Leaving one in would double-count it: once under its own
+  // heading and again inside "being prepared".
+  check('and neither is also counted as being prepared',
+    /- \(checking\.get\(m\.domain\) \?\? 0\) - \(tracking\.get\(m\.domain\) \?\? 0\)/.test(MAP),
+    'a cell shown under two headings at once makes the row add up to more than the market has')
 }
 
 // ── recency and stock decide the order ──────────────────────────────────────
@@ -316,6 +326,23 @@ const SEARCH = read('lib/app-search-index.ts')
   check('one job per video carries all its markets',
     /targets = g\.rows\.map/.test(DRAIN),
     'a job per country re-renders the same video once per country')
+
+  // THE FIVE MINUTE WINDOW. drain-global-sync only claims a job nothing has
+  // touched for five minutes, and that exists so it never races the request
+  // driving it. There is no request here and there never will be, so the window
+  // was dead time paid on every batch of six videos.
+  check('the job is handed over immediately, not in five minutes',
+    /STALL_AFTER_MS/.test(DRAIN) && /updated_at: handOver/.test(DRAIN),
+    'nobody is driving these jobs, so the anti-race window is pure waiting')
+
+  // AFTER THE TARGETS EXIST. A backdated job with no targets yet reads as
+  // "nothing left to localize", and the recovery cron closes it out as done,
+  // taking every market on it with it.
+  const targetsAt = DRAIN.indexOf("from('global_sync_targets').insert(targets)")
+  const handOverAt = DRAIN.indexOf('updated_at: handOver')
+  check('and only once its markets are written',
+    targetsAt > -1 && handOverAt > -1 && targetsAt < handOverAt,
+    'a job handed over empty is closed as done and every market on it is lost')
 }
 
 // ── it actually runs ────────────────────────────────────────────────────────
@@ -378,7 +405,7 @@ const SEARCH = read('lib/app-search-index.ts')
 
 // ── the migrations ──────────────────────────────────────────────────────────
 {
-  for (const [name, sql] of [['351', M351], ['352', M352], ['353', M353], ['354', M354]] as const) {
+  for (const [name, sql] of [['351', M351], ['352', M352], ['353', M353], ['354', M354], ['355', M355]] as const) {
     const unguarded = (kind: string) =>
       (sql.match(new RegExp(`create ${kind}\\s+(?!if not exists)`, 'gi')) ?? []).length
     check(`migration ${name} is safe to run twice`,
@@ -396,10 +423,14 @@ const SEARCH = read('lib/app-search-index.ts')
   check('and it does not take the geo work down over another feature’s cache',
     /raise notice/i.test(M353) && /keepa_product_cache/.test(M353),
     'that column belongs to the EPC enrichment and nothing in coverage reads it')
-  check('the summary is replaced in 353, not left split across two files',
-    /create or replace function public\.storefront_coverage_summary/.test(M353)
+  // ONE LIVE DEFINITION, and it is the newest. Re-running an older copy would
+  // silently drop a count the board reads, and the board would then show zero
+  // rather than an error.
+  check('the summary\u2019s live definition is the newest migration',
+    /create or replace function public\.storefront_coverage_summary/.test(M355)
+    && /Supersedes the copies in 352 and 353/.test(M355)
     && /SUPERSEDED BY 353/.test(M352),
-    '352 runs before the stock column exists, so it could not reference it and must not be re-run after')
+    'an earlier copy re-run after this one takes a count away and the screen shows zero instead of saying so')
   check('351 has RLS on both tables',
     (M351.match(/enable row level security/gi) ?? []).length === 2
     && (M351.match(/auth\.uid\(\) = user_id/g) ?? []).length >= 2)
