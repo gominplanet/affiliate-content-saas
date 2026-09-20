@@ -7,7 +7,7 @@
 // (with its own picker).
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Loader2, Check, Circle, Mic, Play, Upload, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
@@ -145,6 +145,42 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   useEffect(() => { if (voice?.hasVoice) setUseMyVoice(true) }, [voice?.hasVoice])
 
   useEffect(() => { if (presetVideoId) setPicked(presetVideoId) }, [presetVideoId])
+
+  // ── THE ASIN IS IN THE VIDEO'S OWN DESCRIPTION ───────────────────────────
+  //
+  // This field used to be typed by hand on every video, while the answer sat in
+  // the description all along: "Check Today's Price and Availability on AMAZON
+  // here: https://www.mvpl.ink/2eniqan". MVP can open that link. Asking someone
+  // to read it themselves, once per video, is the work this product exists to
+  // remove.
+  //
+  // It PREFILLS, it does not lock: the creator can still overtype it, and where
+  // it came from is shown rather than the field silently filling itself.
+  const [asinAuto, setAsinAuto] = useState<{ state: 'idle' | 'looking' | 'found' | 'none'; from?: string; note?: string }>({ state: 'idle' })
+  const asinTouched = useRef(false)
+  useEffect(() => {
+    if (!picked || presetAsin) return
+    // Never overwrite something the creator typed.
+    if (asinTouched.current) return
+    let alive = true
+    setAsinAuto({ state: 'looking' })
+    void (async () => {
+      try {
+        const r = await fetch(`/api/video-asin?videoId=${encodeURIComponent(picked)}`)
+        const j = await r.json()
+        if (!alive) return
+        if (j?.asin) {
+          setAsin(j.asin)
+          setAsinAuto({ state: 'found', from: j.from || 'the description' })
+        } else {
+          setAsinAuto({ state: 'none', note: j?.note })
+        }
+      } catch {
+        if (alive) setAsinAuto({ state: 'none', note: 'could not check the description just now' })
+      }
+    })()
+    return () => { alive = false }
+  }, [picked, presetAsin])
 
   // Resume the localized copy after a reload. The job itself lives on the server,
   // so only its id has to survive; the targets are re-fetched. Tied to the video
@@ -871,8 +907,29 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         ) : (
           <div className="mt-3">
             <label className="text-[12px] font-medium" style={label}>Featured ASIN <span style={{ color: '#e0554b' }}>*</span></label>
-            <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX or a product link" required
+            <input
+              value={asin}
+              onChange={e => { asinTouched.current = true; setAsin(e.target.value) }}
+              placeholder={asinAuto.state === 'looking' ? 'Reading the description…' : 'B0XXXXXXXX or a product link'}
+              required
               className="w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent" style={{ borderColor: baseAsin ? 'var(--border)' : '#e0554b55', color: 'var(--text)' }} />
+            {/* WHERE IT CAME FROM. A required field that fills itself and says
+                nothing leaves the creator wondering what it is about to tag. */}
+            {asinAuto.state === 'looking' && (
+              <p className="text-[11px] mt-1 inline-flex items-center gap-1" style={{ color: '#0EA5A4' }}>
+                <Loader2 size={11} className="animate-spin" /> Looking for the product link in this video’s description…
+              </p>
+            )}
+            {asinAuto.state === 'found' && !asinTouched.current && (
+              <p className="text-[11px] mt-1" style={{ color: '#10B981' }}>
+                Found in {asinAuto.from}. Change it if that is the wrong product.
+              </p>
+            )}
+            {asinAuto.state === 'none' && (
+              <p className="text-[11px] mt-1" style={{ color: '#d97706' }}>
+                {asinAuto.note || 'No Amazon product link in this video’s description'}, so type the ASIN here.
+              </p>
+            )}
             <p className="text-[11px] mt-1" style={asin.trim() && !baseAsin ? { color: '#e0554b' } : muted}>
               {asin.trim() && !baseAsin
                 ? 'That doesn’t look right. Paste the 10-character ASIN or the Amazon product link.'

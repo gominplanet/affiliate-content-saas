@@ -220,9 +220,16 @@ const M350 = read('supabase/migrations/350_catalogue_summary_resolving.sql')
     'the same pipeline dubs it; calling that skipped hides a listing the creator would have paid for')
   check('and the reason says MVP would dub it',
     /so MVP would dub it/.test(SCAN))
+  // AND IT SAYS A DUB SHIPS EITHER WAY. "free" against "uses a dub" read as
+  // "no dub" against "a dub", which is backwards: both ship dubbed audio and
+  // the only difference is who made it. A creator asked why a French listing
+  // would not need a dub, which is precisely the wrong thing to have taught.
   check('the pill names the cost rather than only colouring it',
-    /free`/.test(STAGE_RAW) && /uses a dub`/.test(STAGE_RAW),
+    /dub ready · free`/.test(STAGE_RAW) && /MVP dubs it into \$\{langName\} · 1 credit`/.test(STAGE_RAW),
     'a colour is not a statement, and the creator is about to spend on it')
+  check('and neither label can be read as shipping no dub',
+    !/`\$\{langName\} · free`/.test(STAGE_RAW) && /already dubbed by YouTube/.test(STAGE_RAW),
+    'both states ship dubbed audio; wording that implies otherwise teaches the opposite of the truth')
   check('a pending market reads as unchecked, not as no track',
     /checking`/.test(STAGE_RAW),
     'a lookup that has not landed and a video with no track look identical from a null')
@@ -230,7 +237,7 @@ const M350 = read('supabase/migrations/350_catalogue_summary_resolving.sql')
     /const states = \(itemIds\.length > 0 \|\| body\.includePaid\)/.test(QUEUE),
     'spending a creator dub credits on a press they read as "send the free ones" is the worst outcome here')
   check('the hand-picked send is priced before it is pressed',
-    /chosenCost/.test(STAGE_RAW) && /using a dub<\/strong>/.test(STAGE_RAW),
+    /chosenCost/.test(STAGE_RAW) && /costing a dub credit<\/strong>/.test(STAGE_RAW),
     'the cost belongs next to the button, not on the credits screen afterwards')
 }
 

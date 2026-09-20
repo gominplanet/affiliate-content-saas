@@ -74,8 +74,11 @@ const muted = { color: 'var(--muted)' }
  *  colour alone is not a statement and the creator is about to spend on it. */
 function pillFace(state: MarketState, langName: string | null) {
   switch (state) {
-    case 'eligible':  return { label: `${langName} · free`, fg: '#16a34a', bg: 'rgba(22,163,74,0.10)', border: '#16a34a', can: true }
-    case 'paid':      return { label: `${langName} · uses a dub`, fg: '#7C3AED', bg: 'rgba(124,58,237,0.10)', border: '#7C3AED', can: true }
+    // "free" and "needs a dub" read as "no dub" and "a dub", which is exactly
+    // backwards: BOTH ship dubbed audio. The only difference is who made it.
+    // YouTube's is pulled at no cost; ours costs a credit.
+    case 'eligible':  return { label: `${langName} dub ready · free`, fg: '#16a34a', bg: 'rgba(22,163,74,0.10)', border: '#16a34a', can: true }
+    case 'paid':      return { label: `MVP dubs it into ${langName} · 1 credit`, fg: '#7C3AED', bg: 'rgba(124,58,237,0.10)', border: '#7C3AED', can: true }
     case 'queued':    return { label: `${langName} · queued`, fg: '#0EA5A4', bg: 'rgba(14,165,164,0.10)', border: '#0EA5A4', can: false }
     case 'delivered': return { label: `${langName} · sent`, fg: '#0EA5A4', bg: 'rgba(14,165,164,0.16)', border: '#0EA5A4', can: false }
     case 'failed':    return { label: `${langName} · failed`, fg: '#dc2626', bg: 'rgba(220,38,38,0.10)', border: '#dc2626', can: false }
@@ -266,9 +269,9 @@ export default function BackCatalogueStage() {
   return (
     <div>
       <p className="text-[12.5px] mb-3" style={muted}>
-        YouTube has already dubbed part of your channel. This finds those videos and sends them straight
-        to the Amazon storefronts that speak those languages, with the product attached.
-        You never download anything.
+        YouTube has already dubbed part of your channel. This finds those videos and sends them to the
+        Amazon storefronts that speak those languages, with that dubbed audio and the product attached.
+        Where YouTube has not dubbed one, MVP can, for a credit. You never download anything.
       </p>
 
       {/* ── pick the stores ─────────────────────────────────────────────────
@@ -378,8 +381,8 @@ export default function BackCatalogueStage() {
               {(v.resolving ?? 0) > 0 && (
                 <span><strong style={{ color: '#7C3AED' }}>{v.resolving}</strong> still finding the product</span>
               )}
-              <span><strong style={{ color: '#16a34a' }}>{totals?.free ?? 0}</strong> listings free</span>
-              <span><strong style={{ color: '#7C3AED' }}>{totals?.paid ?? 0}</strong> need a dub</span>
+              <span><strong style={{ color: '#16a34a' }}>{totals?.free ?? 0}</strong> already dubbed by YouTube, free</span>
+              <span><strong style={{ color: '#7C3AED' }}>{totals?.paid ?? 0}</strong> MVP would dub, 1 credit each</span>
               {(totals?.queued ?? 0) > 0 && <span>{totals!.queued} queued</span>}
               {(totals?.delivered ?? 0) > 0 && <span>{totals!.delivered} sent</span>}
               {(totals?.failed ?? 0) > 0 && <span style={{ color: '#dc2626' }}>{totals!.failed} failed</span>}
@@ -407,7 +410,7 @@ export default function BackCatalogueStage() {
                 style={{ background: '#16a34a' }}
               >
                 {queueing ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                Send the {totals!.free} free ones
+                Send the {totals!.free} YouTube already dubbed
               </button>
             )}
           </div>
@@ -471,8 +474,8 @@ export default function BackCatalogueStage() {
               <p className="text-[13px]" style={{ color: 'var(--text)' }}>
                 {chosenCost.total} selected
                 {chosenCost.paid > 0
-                  ? <> · {chosenCost.free} free and <strong>{chosenCost.paid} using a dub</strong></>
-                  : <> · all free</>}
+                  ? <> · {chosenCost.free} already dubbed and <strong>{chosenCost.paid} costing a dub credit</strong></>
+                  : <> · all already dubbed by YouTube, no credits</>}
               </p>
               <div className="flex items-center gap-3">
                 <button type="button" onClick={() => setChosen(new Set())} className="text-[12px] underline" style={muted}>Clear</button>
