@@ -27,6 +27,13 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { normalizeAsinInput } from '@/lib/asin'
 import ThumbnailBoostPanel, { useThumbnailBoost } from '@/components/thumbnails/ThumbnailBoostPanel'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { MARKETS, marketByDomain } from '@/lib/markets'
+
+/** The five stores behind the opt-in check, derived rather than typed. A list
+ *  written out here would disagree with lib/markets the first time a market is
+ *  added, and the disagreement would show up as a store silently missing from
+ *  the result line. */
+const INTL_DOMAINS = new Set(MARKETS.filter(m => m.needsTranslation).map(m => m.domain))
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -1256,6 +1263,33 @@ export default function LaunchpadPage() {
                   </button>
                 </div>
               )}
+              {/* ── WHAT THE CHECK FOUND ────────────────────────────────────
+                  The card above used to just disappear on success, so a check
+                  that came back "not sold in any of the five" looked exactly
+                  like one that never ran: the button was gone and the market
+                  list was unchanged. Both outcomes are now said out loud, and
+                  the zero case is the one that needed saying most. */}
+              {intlState === 'done' && (() => {
+                const intl = (geoCheck ?? []).filter(g => INTL_DOMAINS.has(g.domain))
+                const found = intl.filter(g => g.status === 'found')
+                const unsure = intl.filter(g => g.status === 'unknown')
+                return (
+                  <div className="mb-4 rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
+                    <p className="text-[12.5px]" style={muted}>
+                      {found.length > 0
+                        ? <>Checked Germany, France, Spain, Italy and Japan. Your product is listed in{' '}
+                            <strong style={{ color: 'var(--text)' }}>
+                              {found.map(g => marketByDomain(g.domain)?.country ?? g.domain).join(', ')}
+                            </strong>
+                            , now ticked below with a dub in each language.</>
+                        : <>Checked Germany, France, Spain, Italy and Japan. Amazon does not sell this
+                            product in any of them, so there is nothing to upload there. Nothing is
+                            wrong with your video.</>}
+                      {unsure.length > 0 && <> {unsure.length} could not be confirmed and {unsure.length === 1 ? 'is' : 'are'} left unticked.</>}
+                    </p>
+                  </div>
+                )
+              })()}
               <StorefrontStage
                 presetVideoId={masterId}
                 presetAsin={asinClean || ''}

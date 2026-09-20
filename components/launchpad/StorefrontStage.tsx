@@ -79,6 +79,12 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   presetThumbnailUrl?: string | null
 }) {
   const [videos, setVideos] = useState<Vid[]>([])
+  /** Every storefront MVP supports, fetched once. `markets` below is this list
+   *  narrowed to what the caller currently allows, and the two are separate
+   *  because the allowed list CHANGES AFTER MOUNT. Launchpad researches the
+   *  four English stores first and the other five only when the creator asks
+   *  for them, so the narrowing has to be re-derived, not captured. */
+  const [allMarkets, setAllMarkets] = useState<Market[]>([])
   const [markets, setMarkets] = useState<Market[]>([])
   const [loading, setLoading] = useState(!presetVideoId)
   const [picked, setPicked] = useState<string | null>(presetVideoId || null)
@@ -210,19 +216,10 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         fetch('/api/global-sync/markets').then(r => r.json()).catch(() => ({})),
         fetch('/api/voice-clone/status').then(r => r.json()).catch(() => ({})),
       ])
-      if (Array.isArray(mr?.markets)) {
-        // Video Launchpad restricts to a subset (the English geos in Phase 1).
-        const mkts = Array.isArray(allowedDomains) && allowedDomains.length
-          ? mr.markets.filter((m: Market) => allowedDomains.includes(m.domain))
-          : mr.markets
-        setMarkets(mkts)
-        // Default selection: the caller's list (Phase 1: the geos the product was
-        // found in), else every shown storefront. The creator can toggle any.
-        const initial = Array.isArray(defaultChosen)
-          ? mkts.filter((m: Market) => defaultChosen.includes(m.domain)).map((m: Market) => m.domain)
-          : mkts.map((m: Market) => m.domain)
-        setChosen(new Set(initial))
-      }
+      // STORED WHOLE. The narrowing is the effect below, which re-runs when the
+      // caller's allowed list changes; doing it here froze the list at whatever
+      // was known when this component mounted.
+      if (Array.isArray(mr?.markets)) setAllMarkets(mr.markets)
       if (vr?.ok) setVoice({ enabled: !!vr.enabled, hasVoice: !!vr.hasVoice, name: vr.name || null, credits: typeof vr.credits === 'number' ? vr.credits : null })
       if (!presetVideoId) {
         const sb = createBrowserClient()
@@ -236,11 +233,51 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         }
       }
     } catch { /* ignore */ } finally { setLoading(false) }
-    // allowedDomains/defaultChosen are computed once (from the geo-check) before
-    // this stage mounts, so they're read at load time without re-running the fetch.
+    // No dependency on allowedDomains on purpose: the market list is static and
+    // the caller narrowing it must not cost a second fetch. The narrowing lives
+    // in the effect below instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetVideoId])
   useEffect(() => { load() }, [load])
+
+  // ── THE ALLOWED LIST CHANGES AFTER MOUNT ──────────────────────────────────
+  //
+  // This narrowing used to happen inside load(), whose only dependency is
+  // presetVideoId, under a comment saying allowedDomains was "computed once
+  // before this stage mounts". That was true while Launchpad only ever offered
+  // the English stores. It stopped being true the day the international check
+  // became an opt-in button, and nothing noticed: the creator pressed "Check
+  // international stores", the card hid itself because the check had succeeded,
+  // the parent's list grew to nine, and this component went on showing four.
+  // The check appeared to do nothing at all, which is the worst shape a bug can
+  // take, because there is nothing on screen to report.
+  //
+  // Joined into a string for the dependency: the parent rebuilds these arrays
+  // on every render, so comparing them by identity would re-run this forever.
+  const allowedKey = (allowedDomains ?? []).join(',')
+  const defaultKey = (defaultChosen ?? []).join(',')
+  /** Domains this stage has already offered. A market is ticked by default
+   *  exactly once, the first time it appears. */
+  const offered = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (allMarkets.length === 0) return
+    const allow = allowedKey ? allowedKey.split(',') : []
+    const shown = allow.length ? allMarkets.filter((m) => allow.includes(m.domain)) : allMarkets
+    setMarkets(shown)
+
+    // Tick the newly offered ones the caller wants, and ONLY those. Re-deriving
+    // the whole selection from defaultChosen would undo every box the creator
+    // has touched: untick Canada, ask for the international stores, and Canada
+    // comes back ticked with no explanation.
+    const want = defaultChosen ? new Set(defaultChosen) : null
+    const fresh = shown.filter((m) => !offered.current.has(m.domain))
+    if (fresh.length === 0) return
+    for (const m of fresh) offered.current.add(m.domain)
+    const add = fresh.filter((m) => (want ? want.has(m.domain) : true)).map((m) => m.domain)
+    if (add.length > 0) setChosen((prev) => new Set([...prev, ...add]))
+    // allMarkets is read, not watched by identity; the keys carry the change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allMarkets, allowedKey, defaultKey])
 
   const toggleMarket = (domain: string) => setChosen(prev => {
     const next = new Set(prev); next.has(domain) ? next.delete(domain) : next.add(domain); return next

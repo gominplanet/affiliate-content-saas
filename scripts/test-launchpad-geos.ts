@@ -124,6 +124,42 @@ const STAGE = live(read('components/launchpad/StorefrontStage.tsx'))
   check('the international results are appended, not substituted',
     /have\.has\(g\.domain\)/.test(PAGE),
     'the English rows already carry SCOUT statuses this response knows nothing about')
+
+  // ── AND THE STAGE HAS TO NOTICE ───────────────────────────────────────────
+  //
+  // Appending to the parent's list achieved nothing for months. The stage
+  // narrowed the market list inside load(), whose only dependency is
+  // presetVideoId, under a comment asserting that allowedDomains was "computed
+  // once before this stage mounts". True while Launchpad only offered the
+  // English stores; false from the moment the check became a button. So the
+  // creator pressed it, the card hid itself because the request had succeeded,
+  // the parent's list grew to nine, and the stage went on showing four. The
+  // feature appeared to do nothing at all.
+  check('the stage keeps the full market list and narrows it separately',
+    /const \[allMarkets, setAllMarkets\]/.test(STAGE)
+    && /if \(Array\.isArray\(mr\?\.markets\)\) setAllMarkets\(mr\.markets\)/.test(STAGE),
+    'narrowing inside the fetch freezes the list at whatever was known on mount')
+  check('and re-narrows when the caller allows more markets',
+    /\}, \[allMarkets, allowedKey, defaultKey\]\)/.test(STAGE),
+    'a prop that changes after mount and is read only at mount is a prop nobody can change')
+  check('the dependency is a value, not an array identity',
+    /const allowedKey = \(allowedDomains \?\? \[\]\)\.join\(','\)/.test(STAGE),
+    'the parent rebuilds these arrays every render, so comparing by identity re-runs forever')
+  check('a market is ticked by default only the first time it appears',
+    /const offered = useRef<Set<string>>/.test(STAGE)
+    && /!offered\.current\.has\(m\.domain\)/.test(STAGE),
+    're-deriving the whole selection would untick nothing and re-tick everything the creator had turned off')
+
+  // THE RESULT, not just the request. The card disappeared on success, so a
+  // check that came back "not sold in any of the five" was indistinguishable
+  // from one that never ran.
+  check('the check says what it found, including nothing',
+    /intlState === 'done' && \(\(\) =>/.test(PAGE)
+    && /Amazon does not sell this[\s\S]{0,80}product in any of them/.test(PAGE_RAW),
+    'the button vanishing is not a result, and zero is the answer that most needs saying')
+  check('and the five are derived from lib/markets',
+    /const INTL_DOMAINS = new Set\(MARKETS\.filter\(m => m\.needsTranslation\)/.test(PAGE),
+    'a typed list here disagrees with lib/markets the first time a market is added')
 }
 
 // ── a dub that failed is never passed off as one that worked ────────────────
