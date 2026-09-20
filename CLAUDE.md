@@ -1,5 +1,28 @@
 # Working agreements for this repo
 
+## Shipping: fast-forward main every time, without asking
+
+Vercel deploys production from `main`. A commit that stops on a feature branch
+is a commit Seb cannot test, and he tests on the live site.
+
+So after pushing the feature branch, ALSO fast-forward `main` to it:
+
+```
+git push origin origin/<branch>:main
+```
+
+Check it is a clean fast-forward first (`git merge-base --is-ancestor
+origin/main origin/<branch>`), and never force.
+
+Do not stop to ask. Anything risky lives behind the Labs section, which only
+Seb can see, so the cost of shipping early is near zero and the cost of not
+shipping is real: ten commits once sat unreleased for a whole evening while he
+tested a four hour old build and reported bugs that had already been fixed in
+code he could not run. Half a session of confusion came from that alone.
+
+If a change genuinely should not be live yet, put it behind Labs rather than
+leaving it off `main`.
+
 ## Migrations: ALWAYS paste the SQL, never point at a file
 
 Seb runs SQL by pasting it into the Supabase SQL editor. He does not open files
