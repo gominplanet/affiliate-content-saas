@@ -148,10 +148,33 @@ export default function CoverageBoard() {
     try {
       const q = await fetch('/api/global-sync/deliver/queue')
       const j = await q.json()
-      const items = Array.isArray(j?.items) ? j.items : []
+      const all = Array.isArray(j?.items) ? j.items : []
+
+      // A MARKET THAT WANTED A DUB AND HAS NOT GOT ONE IS NOT UPLOADED.
+      //
+      // The queue serves the master render when a target has no dubbed file,
+      // which is right for the English stores and right for a creator who
+      // deliberately chose to skip the dub on one video. It is wrong here:
+      // nothing in the catalogue grid ever skips a dub on purpose, so a master
+      // fallback in this list is a dub that has not finished. Uploading it
+      // would put English audio on amazon.fr under a French title, which is
+      // invisible from every angle except a French shopper pressing play.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const items = all.filter((i: any) => !i?.audioIsMasterFallback)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const waiting = all.filter((i: any) => i?.audioIsMasterFallback)
+
       if (items.length === 0) {
-        toast.error('Nothing is prepared yet. The background worker fills this as it goes.', { duration: 8000 })
+        toast.error(waiting.length > 0
+          // SAID, not silently dropped. "Nothing is prepared" would be a lie
+          // about work that is genuinely under way.
+          ? `${waiting.length} ${waiting.length === 1 ? 'listing is' : 'listings are'} still waiting on their translated audio. They go up as soon as the voiceover is done.`
+          : 'Nothing is prepared yet. The background worker fills this as it goes.',
+          { duration: 8000 })
         return
+      }
+      if (waiting.length > 0) {
+        toast(`${waiting.length} held back until their translated audio is ready.`, { duration: 7000 })
       }
       const res = await requestStorefrontDelivery(items)
       if (!res?.ok) {

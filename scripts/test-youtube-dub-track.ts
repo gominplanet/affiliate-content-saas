@@ -29,7 +29,14 @@ const live = (s: string) => s
 
 const SERVICE = live(read('ingest-service/server.js'))
 const CLIENT = live(read('lib/youtube-ingest.ts'))
-const DUB = live(read('app/api/global-sync/dub/route.ts'))
+// THE LANE, not the route. This all lived inside /api/global-sync/dub until the
+// background catalogue drain needed to dub without a session. It moved to a
+// library both callers share rather than being copied into the cron, because a
+// second copy is exactly where the track-first ordering stops happening with
+// nothing on screen to show it. The claims below are unchanged; they follow the
+// code.
+const DUB = live(read('lib/dub-target.ts'))
+const DUB_ROUTE = live(read('app/api/global-sync/dub/route.ts'))
 
 // ── the downloader can ask for a language, and the ask is real ──────────────
 {

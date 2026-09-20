@@ -45,6 +45,8 @@ import { resolveAsinFromLinks } from '@/lib/product-link'
 import { listYouTubeAudioTracksDetailed, hasAudioTrack, ingestConfigured } from '@/lib/youtube-ingest'
 import { coveragePriority, stockBlocks, type StockAnswer } from '@/lib/storefront-coverage'
 import { fetchKeepaBasics, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
+import { dubTarget } from '@/lib/dub-target'
+import { normalizeTier } from '@/lib/tier'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -463,15 +465,25 @@ const PREPARE = 6
  *
  * So this writes exactly the rows start/ writes and lets the recovery cron do
  * the work. No second pipeline, no internal endpoint to keep in step, and the
- * localizing, the dub and the thumbnail are the same ones a single video gets.
+ * localizing and the thumbnail are the same ones a single video gets.
+ *
+ * THE DUB IS NOT ONE OF THEM, and believing it was is what made this whole lane
+ * dishonest. The recovery cron translates the title and description; nothing in
+ * it dubs, because the dub needed a signed-in creator. So a cell went straight
+ * to 'ready' and the delivery queue served the market the MASTER ENGLISH AUDIO
+ * under a French title. dubs() below is what actually produces the audio, and a
+ * market that needs one does NOT become ready here.
  *
  * One job per video carrying every market it is prepared for, because that
  * pipeline fans out internally and splitting it would re-render the same video
  * once per country.
  */
 async function prepare(sb: Sb): Promise<{ sent: number; failed: number }> {
+  // `sync_job_id is null` is what stops this re-claiming a cell that is waiting
+  // on its dub. Those stay 'preparing' with a job attached, and a second job per
+  // video would re-render everything a second time.
   const { data: cells } = await sb.from('storefront_coverage')
-    .select('id,user_id,video_id,domain,asin').eq('state', 'preparing')
+    .select('id,user_id,video_id,domain,asin').eq('state', 'preparing').is('sync_job_id', null)
     .order('priority', { ascending: false }).limit(PREPARE * 9)
 
   const groups = new Map<string, { userId: string; asin: string | null; rows: Array<{ id: string; domain: string }> }>()
@@ -520,11 +532,160 @@ async function prepare(sb: Sb): Promise<{ sent: number; failed: number }> {
       continue
     }
 
-    await sb.from('storefront_coverage')
-      .update({ state: 'ready', sync_job_id: job.id, reason: null, updated_at: now }).in('id', ids)
+    // READY ONLY WHERE READY IS TRUE. An English storefront takes the master
+    // as it is, so it is ready the moment the copy is queued. A market that
+    // needs a dub is not ready until the audio exists, and dubs() promotes it.
+    // Marking both here is what let English audio reach amazon.fr under a
+    // French title while the board reported it as ready to upload.
+    const englishIds = g.rows.filter((r) => !marketByDomain(r.domain)?.needsTranslation).map((r) => r.id)
+    const dubIds = g.rows.filter((r) => marketByDomain(r.domain)?.needsTranslation).map((r) => r.id)
+    if (englishIds.length > 0) {
+      await sb.from('storefront_coverage')
+        .update({ state: 'ready', sync_job_id: job.id, reason: null, updated_at: now }).in('id', englishIds)
+    }
+    if (dubIds.length > 0) {
+      await sb.from('storefront_coverage')
+        .update({ sync_job_id: job.id, reason: null, updated_at: now }).in('id', dubIds)
+    }
     sent++
   }
   return { sent, failed }
+}
+
+// ── the dub ─────────────────────────────────────────────────────────────────
+/** Markets dubbed per firing. One dub is a transcription, a translation, a
+ *  synthesis and a mux, so this is deliberately one at a time: a second in the
+ *  same tick would run the 300 second budget out mid-render. */
+const DUBS = 1
+/** Tries before a cell stops asking. A render service hiccup deserves another
+ *  go; a video whose audio simply cannot be produced should say so rather than
+ *  retry every minute forever. */
+const DUB_TRIES = 3
+
+/**
+ * Produce the audio a non-English market actually needs.
+ *
+ * THIS IS WHAT WAS MISSING. The dub lived behind /api/global-sync/dub, which
+ * requires a signed-in creator, and the only caller was the browser. So the
+ * background grid created the job, the recovery cron translated the title and
+ * description, and the cell went to 'ready' with no dub at all. The delivery
+ * queue falls back to the master when a target has no video_url, so amazon.fr
+ * would have received a French title, a French description and English audio,
+ * reported as ready the whole way.
+ *
+ * ONE LANE, SHARED. dubTarget is the same function the browser calls, so the
+ * ordering that matters (YouTube's own track first, ours second) cannot drift
+ * between the two callers. Copying it here is what would have made it drift,
+ * and nothing on any screen would have shown it.
+ *
+ * ALWAYS THE FREE VOICE. requestedStandard spends no cloned-voice credit, and
+ * nobody is present to agree to spending one. It also makes YouTube's existing
+ * track eligible, which is the cheapest outcome of all.
+ */
+async function dubs(sb: Sb): Promise<{ dubbed: number; blocked: number; failed: number }> {
+  const { data: cells } = await sb.from('storefront_coverage')
+    .select('id,user_id,domain,sync_job_id,dub_attempts,video_id')
+    .eq('state', 'preparing').not('sync_job_id', 'is', null)
+    .order('priority', { ascending: false }).limit(DUBS * 4)
+  const rows = cells ?? []
+  if (rows.length === 0) return { dubbed: 0, blocked: 0, failed: 0 }
+
+  let dubbed = 0, blocked = 0, failed = 0
+  const now = new Date().toISOString()
+  let budget = DUBS
+
+  for (const c of rows) {
+    if (budget <= 0) break
+    const mkt = marketByDomain(c.domain)
+    if (!mkt) continue
+
+    // An English market should never be sitting here, but if one is, it is
+    // ready and not waiting on anything.
+    if (!mkt.needsTranslation) {
+      await sb.from('storefront_coverage')
+        .update({ state: 'ready', reason: null, updated_at: now }).eq('id', c.id)
+      dubbed++
+      continue
+    }
+
+    const { data: target } = await sb.from('global_sync_targets')
+      .select('id,state,video_url,detail').eq('job_id', c.sync_job_id).eq('domain', c.domain).maybeSingle()
+
+    // The copy has not been translated yet. The recovery cron gets to it; this
+    // cell simply is not this step's turn, and touching it would be inventing
+    // news.
+    if (!target) continue
+    if (target.state === 'pending') continue
+
+    // Already has audio, from this lane or from the creator's own browser.
+    if (target.video_url) {
+      await sb.from('storefront_coverage')
+        .update({ state: 'ready', reason: null, updated_at: now }).eq('id', c.id)
+      dubbed++
+      continue
+    }
+
+    const tries = Number(c.dub_attempts ?? 0)
+    if (tries >= DUB_TRIES) {
+      // BLOCKED, in the pipeline's own words. A cell that has given up must say
+      // so: sitting in 'preparing' forever is the silence that looks exactly
+      // like work in progress.
+      await sb.from('storefront_coverage').update({
+        state: 'blocked',
+        reason: `could not produce the ${mkt.langName} audio after ${tries} tries (${target.detail || 'no reason recorded'})`.slice(0, 200),
+        checked_at: now, updated_at: now,
+      }).eq('id', c.id)
+      blocked++
+      continue
+    }
+
+    // Counted BEFORE the attempt. A dub that kills the function mid-render
+    // would otherwise never record the try, and the cell would retry forever.
+    await sb.from('storefront_coverage')
+      .update({ dub_attempts: tries + 1, updated_at: now }).eq('id', c.id)
+    budget--
+
+    const { data: integ } = await sb.from('integrations')
+      .select('tier,subscription_period_start').eq('user_id', c.user_id).maybeSingle()
+
+    const res = await dubTarget({
+      sb,
+      userId: c.user_id,
+      tier: normalizeTier(integ?.tier),
+      jobId: c.sync_job_id,
+      domain: c.domain,
+      // NEVER A CREDIT IN THE BACKGROUND. Nobody is here to agree to spending
+      // one, and the standard voice is free and unlimited.
+      requestedStandard: true,
+      periodStart: (integ?.subscription_period_start as string | null) ?? null,
+    })
+
+    if (res.ok) {
+      await sb.from('storefront_coverage').update({
+        state: 'ready',
+        // WHOSE VOICE, recorded from what actually ran rather than from what
+        // was asked for. A YouTube track and our own synthesis are the same
+        // URL from the outside.
+        voice: res.voice,
+        reason: null, checked_at: now, updated_at: now,
+      }).eq('id', c.id)
+      dubbed++
+    } else if (res.noTranscript) {
+      // Not going to fix itself. The creator has to add a transcript or a
+      // source video, so the cell says that instead of trying twice more.
+      await sb.from('storefront_coverage').update({
+        state: 'blocked',
+        reason: 'this video has no transcript yet, so there is nothing to translate into speech',
+        checked_at: now, updated_at: now,
+      }).eq('id', c.id)
+      blocked++
+    } else {
+      await sb.from('storefront_coverage')
+        .update({ reason: res.error.slice(0, 200), updated_at: now }).eq('id', c.id)
+      failed++
+    }
+  }
+  return { dubbed, blocked, failed }
 }
 
 /**
@@ -593,6 +754,10 @@ export async function GET(request: Request) {
   const stocked = await stock(sb)
   const checked = await checks(sb)
   const prepared = await prepare(sb)
+  // LAST, and the only step that can use the whole remaining budget. A dub is a
+  // transcription, a translation, a synthesis and a mux, so putting it ahead of
+  // the cheap steps would mean a single slow render starves the grid.
+  const audio = await dubs(sb)
 
-  return NextResponse.json({ ok: true, reconciled, enrolled, product, stock: stocked, checked, prepared })
+  return NextResponse.json({ ok: true, reconciled, enrolled, product, stock: stocked, checked, prepared, audio })
 }

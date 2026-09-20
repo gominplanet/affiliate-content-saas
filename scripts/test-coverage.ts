@@ -31,6 +31,9 @@ const LIB = live(read('lib/storefront-coverage.ts'))
 const M351 = read('supabase/migrations/351_storefront_coverage.sql')
 const M352 = read('supabase/migrations/352_coverage_summary.sql')
 const M353 = read('supabase/migrations/353_coverage_stock.sql')
+const M354 = read('supabase/migrations/354_coverage_dub.sql')
+const DUBLIB = live(read('lib/dub-target.ts'))
+const DUBROUTE = live(read('app/api/global-sync/dub/route.ts'))
 const VERCEL = read('vercel.json')
 const BOARD_RAW = read('components/storefront/CoverageBoard.tsx')
 const SYNC_PAGE = read('app/(dashboard)/global-sync/page.tsx')
@@ -218,6 +221,90 @@ const SEARCH = read('lib/app-search-index.ts')
     'a bare "failed" is a second screen that knows something broke and not what')
 }
 
+// ── the grid dubs its own videos, and ready means ready ─────────────────────
+//
+// THE WORST BUG THIS FEATURE HAS HAD. /api/global-sync/dub needs a signed-in
+// creator and the only caller was the browser, so the background grid created
+// the sync job, let the recovery cron translate the title and description, and
+// marked the cell ready. Nothing dubbed. The delivery queue serves the master
+// render when a target has no dubbed file, so amazon.fr would have received a
+// French title, a French description and ENGLISH AUDIO, reported as ready the
+// whole way. Invisible from every angle except a French shopper pressing play.
+{
+  check('the background lane dubs',
+    /async function dubs\(sb: Sb\)/.test(DRAIN) && /const audio = await dubs\(sb\)/.test(DRAIN),
+    'declared and actually called; a step nothing calls is a comment')
+
+  // ONE LANE. A second copy in the cron is where the YouTube-track-first
+  // ordering stops happening with nothing on screen to show it.
+  check('through the same function the browser uses',
+    /import \{ dubTarget \} from '@\/lib\/dub-target'/.test(DRAIN)
+    && /dubTarget\(\{/.test(DRAIN) && /dubTarget\(/.test(DUBROUTE),
+    'two implementations of the dub drift, and the drift only shows to a shopper')
+  check('and the cron does not re-implement it',
+    !/synthesizeSpeech|renderDub|translateScript/.test(DRAIN),
+    'the moment the cron synthesizes its own audio there are two lanes')
+  // THE ORDERING, not the import. Deleting the track branch leaves both names
+  // sitting in the import line, so the identifiers alone proved nothing and
+  // this clause passed over a lane that had stopped checking. The position is
+  // what the claim is actually about: free audio must be looked for before any
+  // of the paid work starts. scripts/test-youtube-dub-track pins the same rule
+  // in more detail; it is repeated here because this is the file somebody reads
+  // when they touch the background lane.
+  const trackAt = DUBLIB.indexOf('hasAudioTrack(tracks, marketLang)')
+  const translateAt = DUBLIB.indexOf('await translateScript(')
+  check('the lane still tries YouTube’s own track first',
+    trackAt > -1 && translateAt > -1 && trackAt < translateAt,
+    'it is already translated, already timed to the picture and already paid for')
+
+  // NO CREDIT WITHOUT A PERSON. The cloned voice is the only paid lane.
+  check('the background never spends a cloned-voice credit',
+    /requestedStandard: true/.test(DRAIN),
+    'nobody is present to agree to spending one, and the standard voice is free')
+
+  // READY MEANS READY. This is the actual fix.
+  check('a market that needs a dub is not called ready when its job opens',
+    /const dubIds = g\.rows\.filter\(\(r\) => marketByDomain\(r\.domain\)\?\.needsTranslation\)/.test(DRAIN)
+    && /\.update\(\{ sync_job_id: job\.id, reason: null, updated_at: now \}\)\.in\('id', dubIds\)/.test(DRAIN),
+    'marking every market ready at job creation is exactly what shipped English audio to amazon.fr')
+  check('and only reaches ready once the audio exists',
+    /if \(target\.video_url\)/.test(DRAIN) && /state: 'ready'/.test(DRAIN),
+    'ready has to mean ready or the whole board is a claim again')
+  check('the English stores are still ready straight away',
+    /const englishIds = g\.rows\.filter\(\(r\) => !marketByDomain\(r\.domain\)\?\.needsTranslation\)/.test(DRAIN),
+    'they take the master as it is, and holding them behind a dub they do not need would be a different lie')
+
+  // NO SECOND JOB. Leaving a cell in 'preparing' would have prepare() pick it
+  // up again and re-render the whole video.
+  check('a cell waiting on its dub is not re-prepared',
+    /\.eq\('state', 'preparing'\)\.is\('sync_job_id', null\)/.test(DRAIN),
+    'a second job per video re-renders everything a second time')
+
+  // A DUB THAT KEEPS FAILING SAYS SO.
+  check('a failing dub stops and names the reason',
+    /DUB_TRIES/.test(DRAIN) && /could not produce the \$\{mkt\.langName\} audio after/.test(DRAIN),
+    'sitting in preparing forever is the silence that looks exactly like work in progress')
+  check('the try is counted before the attempt',
+    DRAIN.indexOf('dub_attempts: tries + 1') < DRAIN.indexOf('const res = await dubTarget'),
+    'a render that kills the function would never record the try and the cell would retry forever')
+  check('a video with no transcript blocks instead of retrying',
+    /res\.noTranscript/.test(DRAIN) && /nothing to translate into speech/.test(DRAIN),
+    'that one does not fix itself, so two more tries buy nothing')
+  check('the voice is recorded from what ran',
+    /voice: res\.voice/.test(DRAIN),
+    'a YouTube track and our own synthesis are the same URL from the outside')
+
+  // THE UPLOAD. The queue's master fallback is correct for English and for a
+  // deliberate skip, and is always an unfinished dub here.
+  check('the board never uploads a market still missing its dub',
+    /audioIsMasterFallback/.test(BOARD_RAW) && /const items = all\.filter/.test(BOARD_RAW),
+    'the queue falls back to the master, which is English audio under a translated title')
+  check('and says so rather than dropping them quietly',
+    /still waiting on their translated audio/.test(BOARD_RAW)
+    && /held back until their translated audio is ready/.test(BOARD_RAW),
+    'a silent filter is how four of five reads as complete')
+}
+
 // ── one pipeline, not two ───────────────────────────────────────────────────
 {
   check('preparing writes the same rows a single video writes',
@@ -291,7 +378,7 @@ const SEARCH = read('lib/app-search-index.ts')
 
 // ── the migrations ──────────────────────────────────────────────────────────
 {
-  for (const [name, sql] of [['351', M351], ['352', M352], ['353', M353]] as const) {
+  for (const [name, sql] of [['351', M351], ['352', M352], ['353', M353], ['354', M354]] as const) {
     const unguarded = (kind: string) =>
       (sql.match(new RegExp(`create ${kind}\\s+(?!if not exists)`, 'gi')) ?? []).length
     check(`migration ${name} is safe to run twice`,
