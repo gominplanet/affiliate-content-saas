@@ -39,6 +39,8 @@ export default function AmazonThumbnailsPage() {
     expressionUsed?: string; wearApplied?: boolean; expressionViaPortrait?: boolean
     garmentMatch?: boolean | null; garmentNote?: string | null; garmentRetried?: boolean
     garmentChecked?: boolean
+    productMatch?: boolean | null; productMatchNote?: string | null
+    productChecked?: boolean; productRefFound?: boolean; productRefSource?: string | null
     expressionVerified?: boolean | null; expressionRetried?: boolean
     refsHeadOnly?: boolean; headCropNote?: string | null
     framingUsed?: 'bust' | 'full'; framingNote?: string | null
@@ -140,6 +142,11 @@ export default function AmazonThumbnailsPage() {
         garmentNote: (data.garmentNote as string | null) ?? null,
         garmentRetried: !!data.garmentRetried,
         garmentChecked: !!data.garmentChecked,
+        productMatch: (data.productMatch as boolean | null) ?? null,
+        productMatchNote: (data.productMatchNote as string | null) ?? null,
+        productChecked: !!data.productChecked,
+        productRefFound: !!data.productRefFound,
+        productRefSource: (data.productRefSource as string | null) ?? null,
         expressionVerified: (data.expressionVerified as boolean | null) ?? null,
         expressionRetried: !!data.expressionRetried,
         wearApplied: !!data.wearApplied,
@@ -243,7 +250,7 @@ export default function AmazonThumbnailsPage() {
                 {/* Wardrobe — pins the outfit so you always appear the same way.
                     Saved to this face and reused everywhere. */}
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>Outfit <span className="font-normal" style={{ color: 'var(--text-soft)' }}>— optional, keeps you in the same clothing</span></span>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>Outfit <span className="font-normal" style={{ color: 'var(--text-soft)' }}>(optional, keeps you in the same clothing)</span></span>
                   <input
                     value={outfit}
                     onChange={e => setOutfit(e.target.value)}
@@ -263,7 +270,7 @@ export default function AmazonThumbnailsPage() {
 
         {/* Optional headline */}
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>Headline <span className="font-normal" style={{ color: 'var(--text-soft)' }}>— optional, leave blank and the Art Director writes it</span></span>
+          <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>Headline <span className="font-normal" style={{ color: 'var(--text-soft)' }}>(optional, leave blank and the Art Director writes it)</span></span>
           <input
             value={headline}
             onChange={e => setHeadline(e.target.value)}
@@ -328,7 +335,7 @@ export default function AmazonThumbnailsPage() {
 
           {/* WHAT WENT IN. If the garment in the render is not the garment on
               this card, MVP was handed the wrong product photo and no amount of
-              prompt wording will fix it — check the ASIN, not the design.
+              prompt wording will fix it. Check the ASIN, not the design.
               Amazon lists each colour of a shirt as its own ASIN, so a variant
               is the single easiest thing to get wrong. */}
           {(result.sourceImage || result.sourceTitle) && (
@@ -347,10 +354,38 @@ export default function AmazonThumbnailsPage() {
                   <p className="text-[11px] text-[#86868b] mt-1">
                     Expression: {result.expressionUsed === 'auto' ? 'Auto' : result.expressionUsed}
                     {result.expressionViaPortrait ? ' (posed reference)' : result.expressionUsed !== 'auto' ? ' (prompt only)' : ''}
-                    {result.expressionVerified === true ? ' ✓' : result.expressionVerified === false ? ' — the face did not come out as asked' : ''}
+                    {result.expressionVerified === true ? ' ✓' : result.expressionVerified === false ? '. The face did not come out as asked' : ''}
                     {result.expressionRetried ? ' (took a second attempt)' : ''}
                     {result.wearApplied ? ' · worn on you' : ''}
                   </p>
+                  {/* ── IS IT THE RIGHT PRODUCT ────────────────────────────
+                      The thumbnail was the only generated-image surface with no
+                      such check, which made it the one place a wrong product
+                      could ship unremarked. Three states, never two, because a
+                      blank verdict reading like a pass is how that happens. */}
+                  {result.productRefFound === false ? (
+                    <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: '#b45309' }}>
+                      No product photo was found for this video, so the product in this image is
+                      invented from the title. Paste the product link and generate again.
+                    </p>
+                  ) : result.productMatch === false ? (
+                    <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: '#b45309' }}>
+                      This may not be your product
+                      {result.productMatchNote ? `: ${result.productMatchNote}` : '.'} Generate again,
+                      or use it if it is close enough.
+                    </p>
+                  ) : result.productMatch === true ? (
+                    <p className="text-[11px] text-[#1f7a4d] mt-0.5">
+                      Product checked against the real photo.
+                    </p>
+                  ) : result.productRefFound ? (
+                    /* Nobody looked. Said, because silence here reads as a pass
+                       and this is the check that catches the wrong product. */
+                    <p className="text-[11px] text-[#86868b] mt-0.5">
+                      {result.productMatchNote || 'The product could not be checked this time'}, so
+                      compare it against the photo yourself.
+                    </p>
+                  ) : null}
                   {/* The garment judge's verdict, when one ran. A creator should
                       not have to compare a render against a product page pixel by
                       pixel to find out MVP already knew. */}

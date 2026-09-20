@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
+import { verifyProductMatch } from '@/lib/product-image'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 import { rememberProductImageFromUrl } from '@/lib/product-image-memory'
 import { createOpenAIService, normalizeToPng } from '@/services/openai'
@@ -1508,10 +1509,22 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       traceTag: `[thumbnail:${(youtubeVideoId || 'novid').slice(0, 8)}]`,
       userId: user.id,
       tier: null,
-      // Speed: use Amazon's clean hero image directly, skip the ~3–8s vision pick.
-      fastImage: true,
+      // THE VISION PICK IS NOT OPTIONAL HERE, and it used to be skipped for
+      // speed. lib/product-image exists because Amazon's MAIN image is often a
+      // multi-panel marketing collage: the product staged in a kitchen with a
+      // cutting board and a charging cable. Handing that to an image model gets
+      // a render of the cutting board. Taking the hero image directly saved
+      // three to eight seconds and bought a thumbnail showing the wrong
+      // product, which costs a regenerate and the creator's trust in the whole
+      // feature. The picker also returns immediately when a listing has one
+      // image, so the cost is only paid where there is actually a choice.
+      fastImage: false,
     })
     productImageUrl = refForThumbnail.productImageUrl ?? productImageUrl
+    // WHERE THE REFERENCE CAME FROM, or that there was none. With no reference
+    // the model draws a plausible product from the title alone, and that is
+    // indistinguishable on screen from a render of the real one.
+    const productRefSource = refForThumbnail.source
     // The resolver already scraped the product's REAL title (following the pasted
     // link / ASIN). Use it so the Art Director knows WHAT the product is. Without
     // this, a pasted-URL product left productTitle empty and the briefs came out
@@ -2427,6 +2440,43 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         const gfxUrls = gfxRawUrls.filter((u): u is string => !!u)
         if (gfxUrls.length === 0) throw new Error('all graphic variants failed to rehost')
 
+        // ── IS THIS EVEN THE RIGHT PRODUCT ────────────────────────────────
+        //
+        // gpt-image REDRAWS the product rather than pasting the reference, so
+        // it can render a similar-but-different item: another model in the same
+        // category, the wrong colour, the wrong number of pieces. Every other
+        // surface that generates a product image checks this. The blog does,
+        // Pinterest does, the hero image does. The thumbnail was the only one
+        // that did not, so the one place a creator looks hardest was the one
+        // place a wrong product shipped unremarked.
+        //
+        // CHECKED, NOT RETRIED. A QC retry used to live here and was removed
+        // for a good reason: re-running gpt-image added sixty to ninety seconds
+        // and pushed the request past the client's timeout, so the fix for a
+        // wrong product was a request that failed entirely. This is one Haiku
+        // call against the finished image, and what it finds goes on the screen
+        // with a regenerate button next to it. The creator decides.
+        let productMatch: boolean | null = null
+        let productMatchNote: string | null = null
+        if (productImageUrl && gfxUrls[0]) {
+          try {
+            const pv = await verifyProductMatch(
+              productImageUrl, gfxUrls[0], productTitle || 'this product',
+              { userId: user.id, tier: null },
+            )
+            // 'verification-skipped' is the verifier failing, not a verdict.
+            // Recording it as a pass is how a blank check reads as a green one.
+            if (pv.reason === 'verification-skipped') {
+              productMatchNote = 'could not check the product this time'
+            } else {
+              productMatch = pv.match
+              productMatchNote = pv.match ? null : pv.reason
+            }
+          } catch {
+            productMatchNote = 'could not check the product this time'
+          }
+        }
+
         const gfxHook = flatCopy(gfxCopies[0])
         return NextResponse.json({
           ok: true,
@@ -2440,6 +2490,18 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           // opposite fixes. Now the answer is on screen.
           sourceProductTitle: productTitle || null,
           sourceProductImageUrl: productImageUrl || null,
+          // THE PRODUCT, checked the way the garment is. Three states, never
+          // two: matched, did not match, and could not be judged. A blank
+          // verdict rendering the same as a pass is exactly how a wrong polo
+          // shipped looking verified.
+          productMatch,
+          productMatchNote,
+          productChecked: productMatch !== null,
+          // NO REFERENCE AT ALL is its own answer. The model then draws a
+          // plausible product from the title, which looks identical on screen
+          // to a render of the real one.
+          productRefSource,
+          productRefFound: !!productImageUrl,
           expressionUsed: expressionKey,
           expressionViaPortrait: expressionInReference,
           expressionVerified,
