@@ -1,12 +1,18 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// GET /api/catalogue/[id] — a run's state, as one row per video with a verdict
-// per marketplace, plus the counts.
+// GET /api/catalogue/[id] — a run's state, as one card per video with a verdict
+// per marketplace, plus counts that came from a count.
 //
-// PER VIDEO, because the answer is per video. A creator looking at their back
-// catalogue wants to see "this one can go to Germany free and to France for a
-// dub", which is a row about a video, not a bucket it fell into. The aggregate
-// counts stay because a thousand cards need a summary above them.
+// NO NUMBER HERE IS A PAGE LENGTH. An earlier version fetched the run's items
+// and counted the array, and a real run then reported "472 of 583" for a
+// catalogue of over a thousand: PostgREST caps a response at 1000 rows, and a
+// 1000-video run across five markets is several thousand. The counts now come
+// from catalogue_run_summary (migration 349), which aggregates in Postgres, and
+// the only rows fetched are the bounded set needed to draw the cards.
+//
+// PER VIDEO, because the answer is per video. A creator wants to see "this one
+// can go to Germany free and to France for a dub", which is a row about a video
+// rather than a bucket it fell into.
 //
 // THREE VERDICTS PER MARKET, not two:
 //   eligible  YouTube already dubbed it, so the track is pulled and it is free
@@ -14,25 +20,20 @@
 //   skipped   it genuinely cannot go: the run's market is unusable
 // and one verdict about the VIDEO (no product attached, not on YouTube), stored
 // once on a row with no domain because it is true of every market.
-//
-// A percentage would say none of this. "197 of 525" is what a bulk scanner
-// reports and it leaves 328 videos unexplained, half of them for a reason the
-// creator could fix in a minute.
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { marketByDomain } from '@/lib/markets'
+import { decodeHtmlEntities } from '@/lib/decode-entities'
 
 export const runtime = 'nodejs'
 
-/** Cards sent to the browser. The counts above them are computed from every row,
- *  so a capped list never turns into a wrong total. */
-const CARD_LIMIT = 250
-
-type Item = {
-  id: string; state: string; reason: string | null
-  video_id: string; youtube_video_id: string | null; domain: string | null
+type Bucket = { domain: string; state: string; reason: string | null; n: number }
+type Summary = {
+  videos: number; videosPending: number
+  buckets: Bucket[]; cardVideoIds: string[]
 }
+type Row = { id: string; state: string; reason: string | null; video_id: string; domain: string | null }
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const supabase = await createServerClient()
@@ -48,106 +49,122 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!run) return NextResponse.json({ error: 'Run not found.' }, { status: 404 })
 
-  const { data: items } = await sb.from('catalogue_run_items')
-    .select('id,state,reason,video_id,youtube_video_id,domain')
-    .eq('run_id', id).eq('user_id', user.id)
+  const { data: raw, error: sumErr } = await sb.rpc('catalogue_run_summary', { p_run: id })
+  if (sumErr || !raw) {
+    // SAID, not swallowed. Without the summary every number on the screen would
+    // be a guess, and a screen that quietly shows zeros is worse than one that
+    // says the count could not be read.
+    return NextResponse.json({
+      error: 'Could not read this run\'s counts. Run migration 349, then reload.',
+      detail: sumErr?.message ?? null,
+    }, { status: 500 })
+  }
+  const summary = raw as Summary
+  const buckets: Bucket[] = Array.isArray(summary.buckets) ? summary.buckets : []
+  const cardIds: string[] = Array.isArray(summary.cardVideoIds) ? summary.cardVideoIds : []
 
-  const rows: Item[] = Array.isArray(items) ? items : []
   const domainList: string[] = Array.isArray(run.domains) && run.domains.length > 0
     ? run.domains
     : (run.domain ? [run.domain] : [])
 
-  const blockedRows = rows.filter((r) => !r.domain)
-  const marketRows = rows.filter((r) => !!r.domain)
+  const sum = (f: (b: Bucket) => boolean) => buckets.filter(f).reduce((n, b) => n + Number(b.n || 0), 0)
+  const reasonsFor = (f: (b: Bucket) => boolean) => buckets.filter(f)
+    .map((b) => ({ reason: b.reason || 'no reason recorded', count: Number(b.n || 0) }))
+    .sort((a, b) => b.count - a.count)
 
-  const group = (list: Item[]) => {
-    const m = new Map<string, number>()
-    for (const r of list) { const k = r.reason || 'no reason recorded'; m.set(k, (m.get(k) ?? 0) + 1) }
-    return [...m.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count)
-  }
+  // Market-independent verdicts, listed once. "no product attached" is the
+  // creator's to fix and "not on YouTube" is not, so they stay separate lines.
+  const blockedReasons = reasonsFor((b) => !b.domain)
 
-  // ── one row per video ─────────────────────────────────────────────────────
-  const byVideo = new Map<string, { blocked: string | null; markets: Map<string, Item> }>()
-  for (const r of rows) {
-    let v = byVideo.get(r.video_id)
-    if (!v) { v = { blocked: null, markets: new Map() }; byVideo.set(r.video_id, v) }
-    if (!r.domain) v.blocked = r.reason || 'not eligible'
-    else v.markets.set(r.domain, r)
-  }
-
-  // Cards are the videos that can actually go somewhere, newest first, and a
-  // blocked video is not one of them: its reason is in the summary above.
-  const actionable = [...byVideo.entries()]
-    .filter(([, v]) => !v.blocked && [...v.markets.values()].some((m) => m.state !== 'skipped'))
-  const shown = actionable.slice(0, CARD_LIMIT)
-
-  const titles = new Map<string, { title: string; thumb: string | null }>()
-  if (shown.length > 0) {
-    const { data: vids } = await sb.from('youtube_videos')
-      .select('id,title,thumbnail_url,youtube_video_id').eq('user_id', user.id)
-      .in('id', shown.map(([vid]) => vid))
-    for (const v of (vids ?? [])) titles.set(v.id, { title: v.title, thumb: v.thumbnail_url ?? null })
-  }
-
-  const videos = shown.map(([videoId, v]) => ({
-    videoId,
-    title: titles.get(videoId)?.title ?? '(untitled)',
-    thumbnail: titles.get(videoId)?.thumb ?? null,
-    markets: domainList.map((domain) => {
-      const item = v.markets.get(domain)
-      const m = marketByDomain(domain)
-      return {
-        domain,
-        country: m?.country ?? domain,
-        langName: m?.langName ?? null,
-        itemId: item?.id ?? null,
-        // 'pending' until the lookup lands, then 'eligible' (free), 'paid'
-        // (MVP dubs it), 'queued', 'delivered', 'failed' or 'skipped'.
-        state: item?.state ?? 'pending',
-        reason: item?.reason ?? null,
-      }
-    }),
-  }))
-
-  const perMarket = domainList.map((domain) => {
-    const mine = marketRows.filter((r) => r.domain === domain)
-    const n = (s: string) => mine.filter((r) => r.state === s).length
+  const markets = domainList.map((domain) => {
+    const mine = (s: string) => sum((b) => b.domain === domain && b.state === s)
     const m = marketByDomain(domain)
     return {
       domain,
       country: m?.country ?? domain,
       langName: m?.langName ?? null,
-      pending: n('pending'), free: n('eligible'), paid: n('paid'),
-      skipped: n('skipped'), queued: n('queued'), delivered: n('delivered'), failed: n('failed'),
-      failedReasons: group(mine.filter((r) => r.state === 'failed')),
+      pending: mine('pending'), free: mine('eligible'), paid: mine('paid'),
+      skipped: mine('skipped'), queued: mine('queued'),
+      delivered: mine('delivered'), failed: mine('failed'),
+      failedReasons: reasonsFor((b) => b.domain === domain && b.state === 'failed'),
     }
   })
 
-  const videosTotal = byVideo.size
-  const videosPending = new Set(marketRows.filter((r) => r.state === 'pending').map((r) => r.video_id)).size
+  // ── the cards ─────────────────────────────────────────────────────────────
+  // Bounded by the ids the summary already picked, so this fetch is at most
+  // 250 videos times the run's markets and can never hit the row cap.
+  let cards: Array<{
+    videoId: string; title: string; thumbnail: string | null
+    markets: Array<{ domain: string; country: string; langName: string | null; itemId: string | null; state: string; reason: string | null }>
+  }> = []
+
+  if (cardIds.length > 0) {
+    const [{ data: items }, { data: vids }] = await Promise.all([
+      sb.from('catalogue_run_items')
+        .select('id,state,reason,video_id,domain')
+        .eq('run_id', id).eq('user_id', user.id).in('video_id', cardIds),
+      sb.from('youtube_videos')
+        .select('id,title,thumbnail_url').eq('user_id', user.id).in('id', cardIds),
+    ])
+
+    const byVideo = new Map<string, Map<string, Row>>()
+    for (const r of ((items ?? []) as Row[])) {
+      if (!r.domain) continue
+      const m = byVideo.get(r.video_id) ?? new Map<string, Row>()
+      m.set(r.domain, r); byVideo.set(r.video_id, m)
+    }
+    const meta = new Map<string, { title: string; thumb: string | null }>()
+    for (const v of (vids ?? [])) {
+      // Titles are stored as they came off YouTube, which means "I&#39;ve".
+      // Rendering that raw puts the entity on the card.
+      meta.set(v.id, { title: decodeHtmlEntities(v.title || '') || '(untitled)', thumb: v.thumbnail_url ?? null })
+    }
+
+    cards = cardIds.filter((vid) => byVideo.has(vid)).map((vid) => ({
+      videoId: vid,
+      title: meta.get(vid)?.title ?? '(untitled)',
+      thumbnail: meta.get(vid)?.thumb ?? null,
+      markets: domainList.map((domain) => {
+        const item = byVideo.get(vid)?.get(domain)
+        const m = marketByDomain(domain)
+        return {
+          domain,
+          country: m?.country ?? domain,
+          langName: m?.langName ?? null,
+          itemId: item?.id ?? null,
+          // A market with no row yet has not been looked at. That reads as
+          // "checking", never as "no track".
+          state: item?.state ?? 'pending',
+          reason: item?.reason ?? null,
+        }
+      }),
+    }))
+  }
+
+  const actionable = sum((b) => !!b.domain && ['eligible', 'paid', 'queued', 'delivered', 'failed'].includes(b.state))
 
   return NextResponse.json({
     ok: true,
     run: { id: run.id, domains: domainList, state: run.state, createdAt: run.created_at },
     videos: {
-      total: videosTotal,
-      checked: videosTotal - videosPending,
-      pending: videosPending,
-      blocked: blockedRows.length,
-      actionable: actionable.length,
-      shown: shown.length,
+      total: Number(summary.videos || 0),
+      checked: Number(summary.videos || 0) - Number(summary.videosPending || 0),
+      pending: Number(summary.videosPending || 0),
+      blocked: sum((b) => !b.domain),
+      // Videos with at least one sendable store, and how many of them are drawn.
+      actionable: cardIds.length,
+      shown: cards.length,
+      moreThanShown: actionable > 0 && cardIds.length >= 250,
     },
-    // Market-independent, listed once. "no product attached" is the creator's to
-    // fix and "not on YouTube" is not, so they stay separate lines.
-    blockedReasons: group(blockedRows),
-    markets: perMarket,
-    cards: videos,
+    blockedReasons,
+    markets,
+    cards,
     totals: {
-      free: perMarket.reduce((n, m) => n + m.free, 0),
-      paid: perMarket.reduce((n, m) => n + m.paid, 0),
-      queued: perMarket.reduce((n, m) => n + m.queued, 0),
-      delivered: perMarket.reduce((n, m) => n + m.delivered, 0),
-      failed: perMarket.reduce((n, m) => n + m.failed, 0),
+      free: sum((b) => b.state === 'eligible'),
+      paid: sum((b) => b.state === 'paid'),
+      queued: sum((b) => b.state === 'queued'),
+      delivered: sum((b) => b.state === 'delivered'),
+      failed: sum((b) => b.state === 'failed'),
     },
   })
 }

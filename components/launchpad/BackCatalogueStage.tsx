@@ -50,12 +50,18 @@ interface PerMarket {
 interface RunState {
   ok: boolean
   run?: { id: string; domains: string[]; state: string }
-  videos?: { total: number; checked: number; pending: number; blocked: number; actionable: number; shown: number }
+  videos?: {
+    total: number; checked: number; pending: number; blocked: number
+    actionable: number; shown: number; moreThanShown: boolean
+  }
   blockedReasons?: Reason[]
   markets?: PerMarket[]
   cards?: Card[]
   totals?: { free: number; paid: number; queued: number; delivered: number; failed: number }
   error?: string
+  // The route sends the underlying cause with the message. Dropping it here is
+  // how a screen ends up printing a guess while the real error sits unread.
+  detail?: string | null
 }
 
 /** Only the markets that need a dub. The English stores need no translation, so
@@ -230,7 +236,11 @@ export default function BackCatalogueStage() {
         One check answers every language at once, so adding stores costs nothing extra.
       </p>
 
-      {state?.error && <p className="mt-4 text-[13px]" style={{ color: '#dc2626' }}>{state.error}</p>}
+      {state?.error && (
+        <p className="mt-4 text-[13px]" style={{ color: '#dc2626' }}>
+          {state.error}{state.detail ? ` (${state.detail})` : ''}
+        </p>
+      )}
 
       {v && (
         <div className="mt-5">
@@ -292,7 +302,9 @@ export default function BackCatalogueStage() {
             <>
               <div className="mt-6 flex items-baseline justify-between gap-3 flex-wrap">
                 <p className="text-[12px] font-semibold uppercase tracking-[0.08em]" style={muted}>
-                  Your videos {v.shown < v.actionable && `· the first ${v.shown} of ${v.actionable}`}
+                  Your videos {v.moreThanShown
+                    ? `· the first ${v.shown}, there are more`
+                    : v.shown < v.actionable ? `· the first ${v.shown} of ${v.actionable}` : ''}
                 </p>
                 <p className="text-[12px]" style={muted}>Tap a country to send that one.</p>
               </div>

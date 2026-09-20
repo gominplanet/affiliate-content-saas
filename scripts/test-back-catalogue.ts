@@ -47,6 +47,7 @@ const LAUNCHPAD_RAW = read('app/(dashboard)/launchpad/page.tsx')
 const LABS_RAW = read('app/(dashboard)/back-catalogue/page.tsx')
 const M347 = read('supabase/migrations/347_catalogue_runs.sql')
 const M348 = read('supabase/migrations/348_catalogue_multi_market.sql')
+const M349 = read('supabase/migrations/349_catalogue_run_summary.sql')
 
 // ── it delivers, it does not download ───────────────────────────────────────
 {
@@ -113,10 +114,25 @@ const M348 = read('supabase/migrations/348_catalogue_multi_market.sql')
     /WHOLE_VIDEO = ''/.test(START) && /domain: WHOLE_VIDEO/.test(START),
     'writing it per market makes a five-store run report "no product attached" five times')
   check('the status route separates the two kinds',
-    /blockedRows = rows\.filter\(\(r\) => !r\.domain\)/.test(STATUS))
-  check('and counts videos distinctly',
-    /byVideo\.set\(r\.video_id/.test(STATUS) && /videosTotal = byVideo\.size/.test(STATUS),
-    'counting rows would report a five-market run as five times the size of the channel')
+    /blockedReasons = reasonsFor\(\(b\) => !b\.domain\)/.test(STATUS))
+  // NO NUMBER ON THIS SCREEN IS A PAGE LENGTH. A real run reported "472 of 583"
+  // for a catalogue over a thousand, because the route counted the rows it had
+  // fetched and PostgREST caps a response at 1000.
+  check('and counts videos in Postgres, not in a fetched array',
+    /rpc\('catalogue_run_summary'/.test(STATUS)
+    // BOTH counts, the total and the pending one. Checking that the phrase
+    // appears once passed while the total had been switched to count(*).
+    && (M349.match(/count\(distinct video_id\)/g) ?? []).length >= 2,
+    'counting a fetched array turns the row cap into the number on screen')
+  check('the counts never come from the length of a row fetch',
+    !/\brows\.length\b/.test(STATUS) && !/items\.length/.test(STATUS),
+    'that is the cap-as-total bug, and it has now appeared three times in this feature')
+  check('a summary that cannot be read is said out loud',
+    /Could not read this run/.test(STATUS) && /status: 500/.test(STATUS),
+    'a screen quietly showing zeros is worse than one saying the count could not be read')
+  check('and the screen prints the cause it was sent',
+    /state\.detail/.test(STAGE_RAW),
+    'dropping the detail is how a screen prints a guess while the real error sits unread')
 }
 
 // ── a failed check is not a verdict about the video ─────────────────────────
@@ -208,15 +224,21 @@ const M348 = read('supabase/migrations/348_catalogue_multi_market.sql')
 // ── the cards ───────────────────────────────────────────────────────────────
 {
   check('the status route answers per video, not only per bucket',
-    /cards: videos/.test(STATUS) && /markets: domainList\.map/.test(STATUS),
+    /\bcards,/.test(STATUS) && /markets: domainList\.map/.test(STATUS),
     'a creator wants "this one can go to Germany free and France for a dub", which is a row about a video')
+  check('and decodes the title rather than printing the entity',
+    /decodeHtmlEntities\(v\.title/.test(STATUS),
+    'titles come off YouTube as "I&#39;ve", which renders on the card exactly like that')
   check('the screen draws a card per video with a pill per store',
     /cards!\.map/.test(STAGE_RAW) && /c\.markets\.map/.test(STAGE_RAW))
   check('a pill sends just that one',
     /send\(\{ itemIds: \[\.\.\.chosen\] \}\)/.test(STAGE_RAW))
-  check('the card list is capped and says so when it is',
-    /const CARD_LIMIT = \d+/.test(STATUS) && /\.slice\(0, CARD_LIMIT\)/.test(STATUS) && /the first \$\{v\.shown\} of \$\{v\.actionable\}/.test(STAGE_RAW),
-    'a thousand cards is a dead tab, and a silently truncated list is the cap-as-total bug again')
+  check('the card list is capped in the query, not after the fetch',
+    /limit 250/.test(M349) && /in\('video_id', cardIds\)/.test(STATUS),
+    'slicing after the fetch still pulls every row and still hits the cap')
+  check('and the screen says when there are more',
+    /there are more/.test(STAGE_RAW) && /moreThanShown/.test(STAGE_RAW),
+    'a silently truncated list is the cap-as-total bug again')
 }
 
 // ── it lives in Launchpad, and in one copy ──────────────────────────────────
@@ -240,7 +262,7 @@ const M348 = read('supabase/migrations/348_catalogue_multi_market.sql')
   // EVERY create, not just one. Seb pastes these into the Supabase editor and
   // may well paste them twice; a single guarded statement followed by an
   // unguarded one fails halfway through and leaves the schema part-built.
-  for (const [name, sql] of [['347', M347], ['348', M348]] as const) {
+  for (const [name, sql] of [['347', M347], ['348', M348], ['349', M349]] as const) {
     const unguarded = (kind: string) =>
       (sql.match(new RegExp(`create ${kind}\\s+(?!if not exists)`, 'gi')) ?? []).length
     const unguardedCol =
@@ -276,6 +298,10 @@ const M348 = read('supabase/migrations/348_catalogue_multi_market.sql')
     /update public\.catalogue_run_items[\s\S]{0,200}set domain = ''/.test(M348),
     'a null domain is neither a market answer nor a video answer, and reads as both')
 }
+
+  check('349 leaves RLS in charge',
+    /security invoker/.test(M349) && !/security definer/.test(M349),
+    'a definer function here hands any signed-in user the counts for anybody else\'s run')
 
 // ── house style ─────────────────────────────────────────────────────────────
 {
