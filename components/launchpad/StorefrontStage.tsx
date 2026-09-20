@@ -97,6 +97,13 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
   const [jobId, setJobId] = useState<string | null>(null)
   const [targets, setTargets] = useState<Target[]>([])
   const [dubbing, setDubbing] = useState<string | null>(null)
+  /** The markets in the upload wave running right now.
+   *
+   *  Without it every card said "Uploading…" the whole time anything was
+   *  delivering, including markets that were sitting in the dub queue and
+   *  markets that were not in the run at all. Two storefronts reported
+   *  "Uploading…" through a run that never sent them a single byte. */
+  const [wave, setWave] = useState<Set<string>>(new Set())
   // Non-English markets the creator chose to deliver WITHOUT a dub (English audio
   // on purpose). Domains in here are skipped by the auto-dub and delivered with
   // the master video.
@@ -477,23 +484,44 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
     if (!jid) return
     setDelivering(true)
     try {
+      // ── 0) THE JOB'S OWN MARKETS, READ NOW ────────────────────────────────
+      //
+      // NOT THE `targets` STATE. This function closes over whatever `targets`
+      // held in the render where the button was clicked, and uploadAll calls it
+      // after awaiting a localize that replaces them. So a creator with an
+      // earlier job restored from localStorage clicked "Upload to 2 stores",
+      // and the whole delivery ran against the OLD job's markets: the preflight
+      // checked them, nothing was queued for them under the new job id, and
+      // the run ended on "Uploaded to 0 of 1 storefronts" while the two markets
+      // on screen were never touched. Nothing was dubbed either, because the
+      // old market needed no dub.
+      //
+      // A job id is a fact and the state is a snapshot, so the job id wins.
+      setPhase('Checking sign-in…')
+      const jr = await fetch(`/api/global-sync/${jid}`).then(x => x.json()).catch(() => ({}))
+      const live: Target[] = Array.isArray(jr?.targets) ? jr.targets : []
+      if (live.length === 0) {
+        toast.error('This sync has no markets on it yet. Pick your storefronts and hit Upload again.')
+        return
+      }
+      setTargets(live)
+
       // ── 1) SIGN-IN CHECK FIRST ────────────────────────────────────────────
       // Confirm which marketplaces the creator is signed in + enrolled on before
       // anything else, so we never spend minutes dubbing a market we can't reach.
-      setPhase('Checking sign-in…')
-      const preMap = await runPreflight(targets.map(t => t.domain))
+      const preMap = await runPreflight(live.map(t => t.domain))
       if (preMap === null) return // SCOUT not installed — already told the creator; don't stack a second error
       const preKnown = Object.keys(preMap).length > 0
       const readyDomains = new Set(
-        preKnown ? targets.filter(t => preMap[t.domain] === 'ready').map(t => t.domain) : targets.map(t => t.domain),
+        preKnown ? live.filter(t => preMap[t.domain] === 'ready').map(t => t.domain) : live.map(t => t.domain),
       )
       // Blocked markets are flagged on their own cards by the sign-in badge that
       // runPreflight just set (not signed in / not enrolled / unconfirmed).
-      const blocked = preKnown ? targets.filter(t => preMap[t.domain] !== 'ready') : []
+      const blocked = preKnown ? live.filter(t => preMap[t.domain] !== 'ready') : []
       if (readyDomains.size === 0) {
         await refreshTargets(jid)
         // Open every store so the creator can sign in right away, not hunt for links.
-        await openSignInTabs(targets.map(t => t.domain))
+        await openSignInTabs(live.map(t => t.domain))
         toast.error('You’re not signed in to any of these marketplaces yet. Sign in on the tabs that just opened, then hit Upload again.')
         return
       }
@@ -517,7 +545,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       // market was uploaded, which is why one dubbed market slowed all of them.
       // Now the English geos upload while the dubs render, and dubbed markets
       // follow as soon as their audio is ready.
-      const readyTargets = targets.filter(t => readyDomains.has(t.domain))
+      const readyTargets = live.filter(t => readyDomains.has(t.domain))
       // With dubbing off, nothing waits: every market delivers the English
       // master in wave 1. A non-English target that somehow got here is treated
       // as skip-dub below rather than queued for a dub this surface won't run.
@@ -632,7 +660,12 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         }
 
         setPhase(phaseLabel)
+        // ONLY the markets actually going out in this wave, and only once the
+        // queue has really served them. Set before the call and cleared after,
+        // so a card says "Uploading…" exactly while its upload is happening.
+        setWave(new Set(items.map((i: { domain: string }) => i.domain)))
         const res = await requestStorefrontDelivery(items)
+        setWave(new Set())
         if (!res.ok && !res.results) { toast.error(res.error || 'Could not reach SCOUT.'); return [] }
         const rows = (res.results || []) as WaveResult[]
         // Report each outcome so the UI shows delivery state. A duplicate is not a
@@ -710,7 +743,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       else toast.error(line, { duration: 12000 })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Storefront upload failed')
-    } finally { setDelivering(false); setPhase(null); setDubbing(null) }
+    } finally { setDelivering(false); setPhase(null); setDubbing(null); setWave(new Set()) }
   }
 
   async function refreshTargets(jobIdArg?: string) {
@@ -1086,7 +1119,17 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
           )}
           <div className="space-y-3">
             {targets.map(t => {
-              const uploading = delivering && t.state !== 'delivered' && t.state !== 'failed'
+              // WHAT IS HAPPENING TO THIS MARKET, not what is happening to the
+              // run. `delivering && not finished` labelled every card
+              // "Uploading…" from the first click, so a market queued behind a
+              // dub, and a market not in the run at all, both claimed to be
+              // uploading. Two storefronts said it for a run that never sent
+              // them anything.
+              const finished = t.state === 'delivered' || t.state === 'failed'
+              const uploading = !finished && wave.has(t.domain)
+              const isDubbing = !finished && dubbing === t.domain
+              const queued = delivering && !finished && !uploading && !isDubbing
+              const busy = uploading || isDubbing
               return (
               <div key={t.domain} className="rounded-xl border-2 p-3 transition-colors" style={
                 t.state === 'delivered' ? { borderColor: '#10B981', background: 'rgba(16,185,129,0.14)' }
@@ -1096,13 +1139,18 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
               }>
                 <div className="flex items-center gap-2 mb-1">
                   {t.state === 'delivered' ? <Check size={15} style={{ color: '#10B981' }} />
-                    : uploading ? <Loader2 size={14} className="animate-spin" style={{ color: '#0EA5A4' }} />
+                    : busy ? <Loader2 size={14} className="animate-spin" style={{ color: '#0EA5A4' }} />
                     : t.state === 'localized' ? <Check size={14} style={{ color: '#10B981' }} />
                     : <Circle size={13} style={muted} />}
                   <span className="text-sm font-medium" style={label}>{t.country}</span>
                   <span className="text-[11px]" style={muted}>{t.lang}{t.dub ? ' · dub' : ''}</span>
                   {t.state === 'delivered' && <span className="text-[11px] font-bold inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ color: '#fff', background: '#10B981' }}><Check size={12} /> Uploaded</span>}
                   {uploading && <span className="text-[11px] font-medium" style={{ color: '#0EA5A4' }}>{progress[t.domain]?.step || 'Uploading…'}</span>}
+                  {isDubbing && <span className="text-[11px] font-medium" style={{ color: '#0EA5A4' }}>Dubbing into {t.lang.split('-')[0].toUpperCase()}…</span>}
+                  {/* NAMED, because "waiting" and "uploading" are different
+                      news. A market queued behind a dub that reads as uploading
+                      is a creator who thinks their storefront has the video. */}
+                  {queued && <span className="text-[11px] font-medium" style={muted}>{t.dub && !t.videoUrl ? 'Waiting for its dub' : 'Waiting its turn'}</span>}
                   {t.state === 'failed' && <span className="text-[11px] font-medium" style={{ color: '#e0554b' }}>upload failed</span>}
                   {/* Sign-in / enrollment status from the pre-flight. */}
                   {signin[t.domain] === 'ready' && <span className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: '#10B981' }}><Check size={12} /> signed in</span>}

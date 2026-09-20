@@ -206,6 +206,49 @@ const STAGE = live(read('components/launchpad/StorefrontStage.tsx'))
   check('and its button no longer claims "all storefronts"',
     !/Upload to all storefronts/.test(STAGE),
     '"all" is a promise about the ticks, which this button has nothing to do with')
+  // ── THE DELIVERY RUNS ON THE JOB, NOT ON A SNAPSHOT ──────────────────────
+  //
+  // deliverAll closed over the `targets` state from the render in which the
+  // button was clicked, and uploadAll calls it after awaiting a localize that
+  // replaces them. With an earlier job restored from localStorage, clicking
+  // "Upload to 2 stores" ran the whole delivery against the OLD job's markets:
+  // the preflight checked them, nothing was queued for them under the new job
+  // id, no dub ran because the old market needed none, and the run ended on
+  // "Uploaded to 0 of 1 storefronts" while the two markets on screen were never
+  // touched. Third stale-state bug in this component; the rule is that a job id
+  // is a fact and a state variable is a snapshot.
+  check('the delivery reads the job’s markets at the time it runs',
+    /const live: Target\[\] = Array\.isArray\(jr\?\.targets\) \? jr\.targets : \[\]/.test(STAGE)
+    && /runPreflight\(live\.map/.test(STAGE)
+    && /const readyTargets = live\.filter/.test(STAGE),
+    'the state is whatever was on screen when the button was pressed, which is not the job being delivered')
+  check('and never falls back to the snapshot mid-run',
+    !/^\s*(?:const|await|return).*[^a-zA-Z]targets\.(map|filter)\(/m.test(
+      STAGE.slice(STAGE.indexOf('async function deliverAll'), STAGE.indexOf('async function refreshTargets'))),
+    'one surviving read of the state is all it takes to deliver to last week’s country')
+
+  // ── A CARD SAYS WHAT IS HAPPENING TO IT, NOT TO THE RUN ──────────────────
+  //
+  // `delivering && not finished` labelled every card "Uploading…" from the
+  // first click, so a market sitting in the dub queue, and a market that was
+  // not in the run at all, both claimed to be uploading. Two storefronts said
+  // it through a run that never sent them a byte.
+  check('only the markets actually in the wave say uploading',
+    /const \[wave, setWave\]/.test(STAGE)
+    && /const uploading = !finished && wave\.has\(t\.domain\)/.test(STAGE)
+    && /setWave\(new Set\(items\.map/.test(STAGE),
+    'a card claiming to upload while nothing is being sent is the failure that looks exactly like success')
+  check('a market being dubbed says so',
+    /const isDubbing = !finished && dubbing === t\.domain/.test(STAGE)
+    && /Dubbing into \{t\.lang/.test(STAGE))
+  check('and one waiting its turn is not called uploading',
+    /const queued = delivering && !finished && !uploading && !isDubbing/.test(STAGE)
+    && /Waiting for its dub/.test(read('components/launchpad/StorefrontStage.tsx')),
+    'a creator reading "uploading" believes their storefront already has the video')
+  check('the wave is cleared when the run ends',
+    (STAGE.match(/setWave\(new Set\(\)\)/g) ?? []).length >= 2,
+    'a wave left set leaves cards spinning after the run finished')
+
   check('a job that no longer matches the ticks says so',
     /const jobMatchesTicks = targets\.length === chosen\.size/.test(STAGE)
     && /\{!jobMatchesTicks && \(/.test(STAGE)
