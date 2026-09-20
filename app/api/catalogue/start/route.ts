@@ -95,16 +95,28 @@ export async function POST(req: Request) {
         error: 'That does not look like a YouTube link. Paste the watch, youtu.be, Shorts or Studio URL.',
       }, { status: 400 })
     }
-    const { data: hit } = await sb.from('youtube_videos')
-      .select('id').eq('user_id', user.id).eq('youtube_video_id', ytId).maybeSingle()
-    if (!hit) {
+    // NOT maybeSingle(). It returns an ERROR, not a row, the moment two rows
+    // match, and a catalogue with the same video imported twice is common
+    // enough that a duplicate read as "MVP has no record of this video". The
+    // newest row wins, which is the one every other feature would pick.
+    const { data: hits, error: lookErr } = await sb.from('youtube_videos')
+      .select('id,created_at').eq('user_id', user.id).eq('youtube_video_id', ytId)
+      .order('created_at', { ascending: false }).limit(1)
+    if (lookErr) {
+      // The database's own words. Reporting this as "no record" would send the
+      // creator to re-sync a channel over a query that never ran.
+      return NextResponse.json({
+        error: 'Could not look that video up.', detail: lookErr.message,
+      }, { status: 500 })
+    }
+    if (!Array.isArray(hits) || hits.length === 0) {
       // NAMED, because these are different problems. A video that is on the
       // channel but not in MVP needs a YouTube sync, not a bug report.
       return NextResponse.json({
         error: `MVP has no record of ${ytId}. Sync your channel on the YouTube page first, then try again.`,
       }, { status: 404 })
     }
-    onlyVideoId = hit.id
+    onlyVideoId = hits[0].id
   }
 
   // The markets come back with it: the screen adopts them, so the ticks and the

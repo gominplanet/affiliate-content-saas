@@ -180,7 +180,14 @@ export default function BackCatalogueStage() {
         // The route's own words, kept long enough to read: "sync your channel
         // first" and "close the run you already have" are instructions, not
         // decoration, and a three second toast loses them.
-        toast.error(j?.error || 'Could not start the run.', { duration: 10000 })
+        // The detail as well as the message. A route that says "could not look
+        // that video up" and then hides the database's own reason is the same
+        // screen that printed a guess about cookies while the real error sat
+        // unread.
+        toast.error(
+          `${j?.error || 'Could not start the run.'}${j?.detail ? ` (${j.detail})` : ''}`,
+          { duration: 10000 },
+        )
         return
       }
       setRunId(j.runId)

@@ -236,6 +236,20 @@ const M350 = read('supabase/migrations/350_catalogue_summary_resolving.sql')
   check('a link MVP has never seen says what to do about it',
     /Sync your channel on the YouTube page first/.test(START),
     'a video on the channel but not in MVP needs a sync, not a bug report')
+  // A DUPLICATE IS NOT AN ABSENCE. maybeSingle() returns an error rather than a
+  // row the moment two match, and a catalogue with the same video imported
+  // twice then read as "MVP has no record of it", sending the creator off to
+  // re-sync a channel that was already fine.
+  check('a duplicated video is found, not reported missing',
+    !/eq\('youtube_video_id', ytId\)\.maybeSingle\(\)/.test(START)
+    && /order\('created_at', \{ ascending: false \}\)\.limit\(1\)/.test(START),
+    'the same video imported twice is common, and maybeSingle turns that into "not found"')
+  check('and a lookup that errored says so instead of blaming the channel',
+    /Could not look that video up/.test(START) && /detail: lookErr\.message/.test(START),
+    'reporting a failed query as "no record" sends the creator to fix something that is not broken')
+  check('the start toast prints the detail it was sent',
+    /j\?\.detail \? ` \(\$\{j\.detail\}\)`/.test(STAGE_RAW),
+    'hiding the cause is how a screen shows a guess while the real error sits unread')
   check('and an unparseable link is refused before any lookup',
     /does not look like a YouTube link/.test(START))
   check('a single-video test refuses to silently resume a big run',
