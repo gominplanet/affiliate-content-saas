@@ -191,9 +191,20 @@ const STAGE = live(read('components/launchpad/StorefrontStage.tsx'))
 
   check('all nine markets still exist', MARKETS.length === 9, `${MARKETS.length} markets`)
   const SYNC = read('app/(dashboard)/global-sync/page.tsx')
-  check('Storefront Sync still renders the stage with every default',
-    /<StorefrontStage \/>/.test(SYNC),
-    'no props means all nine markets and dubbing on')
+  // STOREFRONT SYNC IS THE COVERAGE BOARD NOW. It used to render the stage with
+  // no props, which was how it reached all nine markets with dubbing on. The
+  // board reaches them a different way: it offers every market the API returns,
+  // and that list is derived from lib/markets rather than typed anywhere. The
+  // claim being protected is unchanged, so the check follows the claim.
+  check('Storefront Sync reaches every market',
+    /<CoverageBoard \/>/.test(SYNC),
+    'the board lists whatever /api/coverage/markets returns, which is MARKETS itself')
+  check('and that list is never typed out by hand',
+    /MARKETS\.map\(/.test(read('app/api/coverage/markets/route.ts')),
+    'a typed list drifts from lib/markets the first time a market is added')
+  check('Launchpad still asks the stage to dub',
+    /allowDubbing/.test(read('app/(dashboard)/launchpad/page.tsx')),
+    'the stage is still the one-video path, and it must not quietly stop dubbing')
   check('the dub route still exists',
     (() => { try { return read('app/api/global-sync/dub/route.ts').length > 0 } catch { return false } })())
   check('voice cloning and credits still exist',

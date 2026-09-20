@@ -109,10 +109,6 @@
       "schedule": "* * * * *"
     },
     {
-      "path": "/api/cron/catalogue-scan",
-      "schedule": "* * * * *"
-    },
-    {
       "path": "/api/cron/rehost-hotlinked",
       "schedule": "20 */2 * * *"
     }

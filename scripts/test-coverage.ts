@@ -31,6 +31,11 @@ const LIB = live(read('lib/storefront-coverage.ts'))
 const M351 = read('supabase/migrations/351_storefront_coverage.sql')
 const M352 = read('supabase/migrations/352_coverage_summary.sql')
 const VERCEL = read('vercel.json')
+const BOARD_RAW = read('components/storefront/CoverageBoard.tsx')
+const SYNC_PAGE = read('app/(dashboard)/global-sync/page.tsx')
+const LAUNCHPAD = read('app/(dashboard)/launchpad/page.tsx')
+const NAV = read('components/layout/DashboardShellV2.tsx')
+const SEARCH = read('lib/app-search-index.ts')
 
 // ── it is a grid, and nobody starts it ──────────────────────────────────────
 {
@@ -142,6 +147,57 @@ const VERCEL = read('vercel.json')
     'a cron nobody calls is a feature that works only in the repository')
 }
 
+// ── one feature, one page ───────────────────────────────────────────────────
+//
+// There were three doors to this job: a Launchpad tab, a Labs page that scanned
+// the channel, and Storefront Sync asking for one master video at a time. All
+// three ended in the same sync jobs, so the split achieved nothing except
+// making a creator choose a door before they could ask their actual question.
+{
+  // THE JSX, not the import. Swapping the component back while leaving the
+  // import line satisfied a check for the name.
+  check('Storefront Sync is the whole feature',
+    /<CoverageBoard \/>/.test(SYNC_PAGE),
+    'the page that used to ask for one master video is where the catalogue lives now')
+  check('and the other doors are gone',
+    !/BackCatalogueStage/.test(LAUNCHPAD)
+    && !/'\/back-catalogue'/.test(NAV)
+    && !/'\/back-catalogue'/.test(SEARCH),
+    'a retired surface left in the nav is a door onto a model that no longer exists')
+  // The SENTENCE that redirects, not any mention of the page. Launchpad names
+  // Storefront Sync in several places for other reasons.
+  check('Launchpad describes only the job it still has',
+    /not on YouTube yet/.test(LAUNCHPAD)
+    && /already on your channel are handled on Storefront Sync/.test(LAUNCHPAD),
+    'a page promising something it no longer does sends the creator to the wrong place')
+  check('the board reads the same delivery queue a single video fills',
+    /\/api\/global-sync\/deliver\/queue/.test(BOARD_RAW),
+    'a second delivery path drifts from the one that gets used daily')
+}
+
+// ── the board is a window, not the worker ───────────────────────────────────
+{
+  check('ticking a market is all it takes to start',
+    /\/api\/coverage\/markets/.test(BOARD_RAW) && !/runId/.test(BOARD_RAW),
+    'anything a creator has to start is something they can forget, abandon or start twice')
+  // THE CALL. The import survives a board that assumes everyone is signed in.
+  check('SCOUT establishes sign-in and the board only reports it',
+    /await requestStorefrontPreflight\(ticked\)/.test(BOARD_RAW) && /signin:/.test(BOARD_RAW),
+    'a server has no session on amazon.de and would be guessing')
+  // THE BUTTON. "Sign in" appears in the toast that follows it too, so the
+  // bare phrase passed over a button relabelled to name the problem only.
+  check('and a store that is not signed in offers the way to fix it',
+    /await requestStorefrontLogin\(domain\)/.test(BOARD_RAW)
+    && /<LogIn size=\{12\} \/> Sign in/.test(BOARD_RAW),
+    'naming a problem without the button that solves it is the dead end this feature kept producing')
+  check('live and uploaded are shown apart on screen',
+    /> live<\/span>/.test(BOARD_RAW) && /> uploaded<\/span>/.test(BOARD_RAW),
+    'one is confirmed on the storefront and the other is only what SCOUT did')
+  check('and unreachable ready listings are said out loud',
+    /are prepared for countries you are not signed in to/.test(BOARD_RAW),
+    'a queue that looks busy while nothing can move is the worst kind of progress')
+}
+
 // ── the migrations ──────────────────────────────────────────────────────────
 {
   for (const [name, sql] of [['351', M351], ['352', M352]] as const) {
@@ -160,7 +216,11 @@ const VERCEL = read('vercel.json')
 
 // ── house style ─────────────────────────────────────────────────────────────
 {
-  const copy = [MAP, MKTS, DRAIN].join('\n').match(/'[^']{25,}'/g)?.join('\n') ?? ''
+  const copy = [
+    [MAP, MKTS, DRAIN].join('\n').match(/'[^']{25,}'/g)?.join('\n') ?? '',
+    BOARD_RAW.match(/>[^<>{}]{30,}</g)?.join('\n') ?? '',
+    SYNC_PAGE.match(/subtitle="([^"]*)"/)?.[1] ?? '',
+  ].join('\n')
   check('there is copy to check', copy.length > 200, `${copy.length} chars`)
   check('no dash punctuation in the user-facing copy',
     !/[—–]/.test(copy), (copy.match(/.{0,40}[—–].{0,40}/) ?? [''])[0])

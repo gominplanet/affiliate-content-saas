@@ -625,7 +625,6 @@ export default function DashboardShellV2({
         // trickle scan is proven against a real channel. Deliberately not a
         // bulk downloader: a run ends in listings, not in a folder of MP4s the
         // creator still has to upload by hand.
-        { href: '/back-catalogue', icon: <Globe size={15} />, label: 'Back Catalogue', gate: isPro, badge: 'New' },
         // AMZ Storefront — SCOUT-synced Amazon earnings + full-catalog analytics.
         // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
         // finished; graduates back to "Grow" (gate: isPaid) when it's ready.

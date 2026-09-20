@@ -98,7 +98,6 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'AI Cost (admin)', href: '/admin/costs', group: 'Admin', keywords: 'admin ai cost spend tokens', admin: true },
   { label: 'YouTube audio tracks (admin)', href: '/admin/audio-tracks', group: 'Admin', keywords: 'admin youtube audio tracks dub dubbed language localization storefront geo', admin: true },
   { label: 'YouTube cookies (admin)', href: '/admin/youtube-cookies', group: 'Admin', keywords: 'admin youtube cookies downloader ingest yt-dlp bot wall sign in railway', admin: true },
-  { label: 'Back Catalogue', href: '/back-catalogue', group: 'Labs', keywords: 'back catalogue bulk dubbed german french amazon storefront marketplace existing videos' },
   { label: 'Duplicate Subs (admin)', href: '/admin/subscriptions', group: 'Admin', keywords: 'admin duplicate subscriptions stripe billing', admin: true },
   { label: 'Blog Quality (admin)', href: '/admin/blog-quality', group: 'Admin', keywords: 'admin blog quality writer', admin: true },
   { label: 'Template Performance (admin)', href: '/admin/template-performance', group: 'Admin', keywords: 'admin template performance', admin: true },
