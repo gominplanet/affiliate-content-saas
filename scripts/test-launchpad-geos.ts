@@ -171,7 +171,48 @@ const START = live(read('app/api/global-sync/start/route.ts'))
     'it was fire-and-forget under a catch whose comment said it falls back to the master and told nobody')
 
   check('and a failure names the market',
-    /dubFailures\.map\(d => d\.domain\)/.test(STAGE))
+    /unresolved\.map\(d => d\.domain\)/.test(STAGE))
+
+  // ── A DROPPED CONNECTION IS NOT A FAILED DUB ─────────────────────────────
+  //
+  // The dub route runs up to 300 seconds and the browser holds that request
+  // open the whole time. When it drops, the server carries on, finishes, and
+  // writes the dubbed file to the target, while this client has already
+  // recorded a failure and moved on. Germany's run reported "1 never got as far
+  // as an upload" and the diagnostic taken minutes later read
+  // `amazon.de: localized · Dubbed`. The dub was there the whole time.
+  // ── ALREADY UPLOADED IS NOT A FAILURE ────────────────────────────────────
+  //
+  // The queue excludes anything already delivered, correctly. The client
+  // counted it among the markets it set out to upload, found nothing in the
+  // queue for it, and reported "Not uploaded: amazon.it (it never reached the
+  // upload queue)" about a listing that was already live. Re-running to finish
+  // one market told the creator the market that had worked was broken.
+  check('a market already on its storefront is not counted as one to upload',
+    /const already = live\.filter\(t => readyDomains\.has\(t\.domain\) && t\.state === 'delivered'\)/.test(STAGE)
+    && /const readyTargets = live\.filter\(t => readyDomains\.has\(t\.domain\) && t\.state !== 'delivered'\)/.test(STAGE),
+    'the queue is right to withhold it, so counting it as attempted turns success into a reported failure')
+  check('and a run with nothing left to do says so',
+    /Nothing left to upload/.test(read('components/launchpad/StorefrontStage.tsx')),
+    '"Uploaded to 0 of 0 storefronts" reads like a failure')
+  check('the summary counts them apart from the attempt',
+    /already uploaded before this run/.test(read('components/launchpad/StorefrontStage.tsx')),
+    'folding them into the attempt flatters the number; leaving them out entirely hides that they are there')
+
+  check('a dub whose request died is re-checked against the target',
+    /const DUB_RECHECKS/.test(STAGE)
+    && /let unresolved = \[\.\.\.dubFailures\]/.test(STAGE)
+    && /rows\.find\(t => t\.domain === f\.domain\)\?\.videoUrl/.test(STAGE),
+    'the server is the one that knows whether the dub landed, not this connection')
+  check('and only the ones that really failed are warned about',
+    /if \(unresolved\.length > 0\) \{[\s\S]{0,200}?The dub did not finish for/.test(STAGE),
+    'warning about a dub that succeeded sends the creator to stop a run that is fine')
+  check('a target the server marked failed stops the waiting',
+    /\?\.state !== 'failed'/.test(STAGE),
+    'a real failure must not sit through every re-check round before it is reported')
+  check('and a card stops claiming a failure that resolved',
+    /for \(const l of landed\) delete next\[l\.domain\]/.test(STAGE),
+    'a stale failure sitting on a market that just uploaded is its own lie')
 
   // BEFORE the upload. Afterwards the video is on the storefront and the
   // creator's only clue is watching it themselves.

@@ -39,6 +39,13 @@ interface Vid { id: string; title: string; thumbnail_url: string | null }
 interface Market { domain: string; code: string; country: string; langName: string; needsTranslation: boolean }
 interface Target { domain: string; market: string; country: string; lang: string; dub: boolean; title: string | null; description: string | null; state: string; detail: string | null; videoUrl: string | null; asin?: string | null }
 
+/** Rounds of re-checking a dub whose request died, fifteen seconds apart.
+ *  The dub route runs up to 300 seconds and this browser holds the request open
+ *  the whole time; when the connection drops the server carries on and finishes.
+ *  Long enough to cover that, short enough that a dub which really failed is
+ *  reported promptly. */
+const DUB_RECHECKS = 10
+
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
 
@@ -596,7 +603,23 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       // market was uploaded, which is why one dubbed market slowed all of them.
       // Now the English geos upload while the dubs render, and dubbed markets
       // follow as soon as their audio is ready.
-      const readyTargets = live.filter(t => readyDomains.has(t.domain))
+      // ── ALREADY ON THE STOREFRONT IS NOT A MARKET TO UPLOAD ───────────────
+      //
+      // The queue excludes anything with a delivered_at, correctly. The client
+      // then counted it among the markets it set out to upload, found no queue
+      // item for it, and reported "Not uploaded: amazon.it (it never reached
+      // the upload queue)" about a listing that was already live. A creator
+      // re-running to finish one market gets told the market that worked has
+      // failed.
+      const already = live.filter(t => readyDomains.has(t.domain) && t.state === 'delivered')
+      const readyTargets = live.filter(t => readyDomains.has(t.domain) && t.state !== 'delivered')
+      if (readyTargets.length === 0) {
+        await refreshTargets(jid)
+        toast.success(already.length > 0
+          ? `Already on ${already.length === 1 ? 'that storefront' : `all ${already.length} storefronts`}. Nothing left to upload.`
+          : 'Nothing left to upload for this video.')
+        return
+      }
       // With dubbing off, nothing waits: every market delivers the English
       // master in wave 1. A non-English target that somehow got here is treated
       // as skip-dub below rather than queued for a dub this surface won't run.
@@ -792,10 +815,49 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       // the English master under a translated title, and once that is on the
       // storefront the creator's only clue is watching their own video. Warned
       // here so the sentence arrives while they can still stop the run.
-      if (dubFailures.length > 0) {
-        const names = dubFailures.map(d => d.domain).join(', ')
+      // ── A DUB THAT OUTLIVED ITS REQUEST IS NOT A FAILED DUB ───────────────
+      //
+      // The dub route runs for up to 300 seconds and this browser holds that
+      // request open the whole time. The connection does not always survive it.
+      // The server carries on, finishes, and writes the dubbed file to the
+      // target; the client has already recorded a failure and moved on.
+      //
+      // That is exactly what happened to Germany. The run reported "1 never got
+      // as far as an upload" and the diagnostic, taken minutes later, showed
+      // `amazon.de: localized · Dubbed`. The dub was there. Nothing had gone
+      // wrong except this client believing its own dropped connection.
+      //
+      // So a dub that "failed" is checked against the TARGET before it is
+      // believed. The server is the one that knows.
+      let unresolved = [...dubFailures]
+      if (unresolved.length > 0) {
+        setPhase('Checking the dubs that lost their connection…')
+        for (let round = 0; round < DUB_RECHECKS && unresolved.length > 0; round++) {
+          const jr = await fetch(`/api/global-sync/${jid}`).then(x => x.json()).catch(() => ({}))
+          const rows: Target[] = Array.isArray(jr?.targets) ? jr.targets : []
+          const landed = unresolved.filter(f => rows.find(t => t.domain === f.domain)?.videoUrl)
+          if (landed.length > 0) {
+            unresolved = unresolved.filter(f => !landed.some(l => l.domain === f.domain))
+            setTargets(rows)
+            // CLEARED, because the card is carrying a failure that is no longer
+            // true and would otherwise sit there through a successful upload.
+            setOutcome(prev => {
+              const next = { ...prev }
+              for (const l of landed) delete next[l.domain]
+              return next
+            })
+          }
+          // A target the server marked failed is a real answer; stop waiting.
+          unresolved = unresolved.filter(f => rows.find(t => t.domain === f.domain)?.state !== 'failed')
+          if (unresolved.length > 0 && round < DUB_RECHECKS - 1) await sleep(15000)
+        }
+      }
+
+      // SAID BEFORE THE UPLOAD, and only about the ones that really did fail.
+      if (unresolved.length > 0) {
+        const names = unresolved.map(d => d.domain).join(', ')
         toast.error(
-          `The dub did not finish for ${names}. ${dubFailures.length === 1 ? 'That store' : 'Those stores'} will get your ENGLISH audio under a translated title unless you stop now. Reason: ${dubFailures[0].reason}`,
+          `The dub did not finish for ${names}. ${unresolved.length === 1 ? 'That store' : 'Those stores'} will get your ENGLISH audio under a translated title unless you stop now. Reason: ${unresolved[0].reason}`,
           { duration: 20000 },
         )
       }
@@ -821,6 +883,9 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       const missing = Math.max(0, attempted - results.length)
       const tail = [
         dups > 0 ? `${dups} already there` : '',
+        // Counted apart from the attempt, because these were never attempted:
+        // they were on their storefront before this run started.
+        already.length > 0 ? `${already.length} already uploaded before this run` : '',
         missing > 0 ? `${missing} never got as far as an upload` : '',
       ].filter(Boolean).join(' · ')
       const line = `Uploaded to ${done} of ${attempted} storefronts${tail ? ` · ${tail}` : ''}`
