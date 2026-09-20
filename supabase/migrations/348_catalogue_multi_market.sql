@@ -65,11 +65,14 @@ begin
      where ns.nspname = 'public'
        and rel.relname = 'catalogue_run_items'
        and con.contype = 'u'
+       -- CAST TO text. pg_attribute.attname is the `name` type, and comparing a
+       -- name[] to a text[] literal is not an operator Postgres has: the block
+       -- fails with 42883 rather than matching nothing.
        and (
-         select array_agg(att.attname order by att.attname)
+         select array_agg(att.attname::text order by att.attname::text)
            from unnest(con.conkey) k
            join pg_attribute att on att.attrelid = con.conrelid and att.attnum = k
-       ) = array['run_id','video_id']
+       ) = array['run_id','video_id']::text[]
   loop
     execute format('alter table public.catalogue_run_items drop constraint %I', c.conname);
   end loop;
