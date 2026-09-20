@@ -21,6 +21,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { marketByDomain } from '@/lib/markets'
 import { asinFromAmazonUrl } from '@/lib/asin'
+import { extractYouTubeVideoId } from '@/lib/youtube-url'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -55,7 +56,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Back catalogue is a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
-  const body = await req.json().catch(() => ({})) as { domains?: string[]; domain?: string }
+  const body = await req.json().catch(() => ({})) as {
+    domains?: string[]; domain?: string; onlyVideo?: string
+  }
   const asked = Array.isArray(body.domains) ? body.domains : (body.domain ? [body.domain] : [])
   const domains = [...new Set(asked.map((d) => String(d || '').trim()).filter(Boolean))]
   if (domains.length === 0) return NextResponse.json({ error: 'Pick at least one marketplace.' }, { status: 400 })
@@ -78,26 +81,60 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
 
+  // ── ONE VIDEO, for trying the whole path end to end ──────────────────────
+  //
+  // The catalogue is the point of this feature, but a creator's first question
+  // is "does this actually work", and answering it should not mean starting a
+  // 3000 video run and waiting. A pasted link runs the identical code on one
+  // row: same enumeration, same scanner, same queue, same delivery.
+  let onlyVideoId: string | null = null
+  if (body.onlyVideo) {
+    const ytId = extractYouTubeVideoId(String(body.onlyVideo))
+    if (!ytId) {
+      return NextResponse.json({
+        error: 'That does not look like a YouTube link. Paste the watch, youtu.be, Shorts or Studio URL.',
+      }, { status: 400 })
+    }
+    const { data: hit } = await sb.from('youtube_videos')
+      .select('id').eq('user_id', user.id).eq('youtube_video_id', ytId).maybeSingle()
+    if (!hit) {
+      // NAMED, because these are different problems. A video that is on the
+      // channel but not in MVP needs a YouTube sync, not a bug report.
+      return NextResponse.json({
+        error: `MVP has no record of ${ytId}. Sync your channel on the YouTube page first, then try again.`,
+      }, { status: 404 })
+    }
+    onlyVideoId = hit.id
+  }
+
   const { data: open } = await sb.from('catalogue_runs')
     .select('id').eq('user_id', user.id).in('state', OPEN_STATES).limit(1)
   if (Array.isArray(open) && open.length > 0) {
+    // A one-video test is explicit about what it wants, so silently handing
+    // back somebody's 3000 video run instead would be the stale-ticks bug over
+    // again. It says what is in the way and what to press.
+    if (onlyVideoId) {
+      return NextResponse.json({
+        error: 'You already have a run open. Press Start a different run to close it, then try the single video.',
+      }, { status: 409 })
+    }
     return NextResponse.json({ ok: true, runId: open[0].id, resumed: true })
   }
 
   // The true size of the catalogue, read before the capped fetch, so the screen
   // can tell the creator when it is looking at a slice.
-  const { count: total } = await sb
+  const { count: total } = onlyVideoId ? { count: 1 } : await sb
     .from('youtube_videos').select('id', { count: 'exact', head: true }).eq('user_id', user.id)
 
   // MVP's OWN video table, not the channel listing, and deliberately so: this is
   // where the product link lives, and a video with no product cannot be
   // delivered to a storefront at all.
-  const { data: videos } = await sb
+  let q = sb
     .from('youtube_videos')
     .select('id,youtube_video_id,title,description,asin,product_url,created_at')
     .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(CAP)
+  if (onlyVideoId) q = q.eq('id', onlyVideoId)
+  const { data: videos } = await q.order('created_at', { ascending: false }).limit(CAP)
 
   const rows = Array.isArray(videos) ? videos : []
   if (rows.length === 0) {
@@ -105,7 +142,10 @@ export async function POST(req: Request) {
   }
 
   const { data: run } = await sb.from('catalogue_runs')
-    .insert({ user_id: user.id, domain: domains[0], domains, state: 'scanning' })
+    .insert({
+      user_id: user.id, domain: domains[0], domains, state: 'scanning',
+      detail: onlyVideoId ? 'one video' : null,
+    })
     .select('id').single()
   if (!run) return NextResponse.json({ error: 'Could not start the run.' }, { status: 500 })
 
@@ -173,6 +213,7 @@ export async function POST(req: Request) {
     videos: rows.length,
     total: total ?? rows.length,
     truncated: (total ?? 0) > rows.length,
+    onlyVideo: !!onlyVideoId,
     scannable,
     skipped: rows.length - scannable,
   })

@@ -222,6 +222,36 @@ const M350 = read('supabase/migrations/350_catalogue_summary_resolving.sql')
     'the cost belongs next to the button, not on the credits screen afterwards')
 }
 
+// ── one video, on the same path as the whole catalogue ──────────────────────
+{
+  check('a single video can be checked by pasting its link',
+    /onlyVideo/.test(START) && /extractYouTubeVideoId/.test(START),
+    '"does this work" should not cost a 3000 video run to answer')
+  check('and it runs the same code, not a shortcut',
+    // The narrowing is ONE eq on the enumeration query. A separate branch that
+    // skipped the scanner or the queue would make the test worth nothing.
+    /if \(onlyVideoId\) q = q\.eq\('id', onlyVideoId\)/.test(START)
+    && (START.match(/catalogue_run_items'\)\.insert/g) ?? []).length === 1,
+    'a test that exercises a path the real run does not take proves nothing')
+  check('a link MVP has never seen says what to do about it',
+    /Sync your channel on the YouTube page first/.test(START),
+    'a video on the channel but not in MVP needs a sync, not a bug report')
+  check('and an unparseable link is refused before any lookup',
+    /does not look like a YouTube link/.test(START))
+  check('a single-video test refuses to silently resume a big run',
+    /Press Start a different run to close it/.test(START) && /status: 409/.test(START),
+    'handing back a 3000 video run to someone who pasted one link is the stale-ticks bug again')
+  check('the start error is readable, not a three second toast',
+    /duration: 10000/.test(STAGE_RAW),
+    '"sync your channel first" is an instruction and has to survive long enough to read')
+  check('a one-video run does not claim to be a slice of the catalogue',
+    /!j\.onlyVideo\) setScope/.test(STAGE_RAW),
+    '"your newest 1 out of 3290" is true and useless, and reads like something went wrong')
+  check('the button says which of the two it will do',
+    /Check that one video/.test(STAGE_RAW) && /Check my catalogue/.test(STAGE_RAW),
+    'one button that does two very different things should say which one is armed')
+}
+
 // ── an unreadable product link is work, not a refusal ───────────────────────
 //
 // THE 884. Reading youtube_videos.asin found a product on almost none of one

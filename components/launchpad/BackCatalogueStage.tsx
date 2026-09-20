@@ -97,6 +97,9 @@ export default function BackCatalogueStage() {
   // Hand-picked pills, by item id. Empty means the creator has not chosen, and
   // the bulk buttons apply instead.
   const [chosen, setChosen] = useState<Set<string>>(new Set())
+  // A single pasted link. The whole catalogue is the point of the feature, but
+  // "does this actually work" should not cost a 3000 video run to answer.
+  const [onlyVideo, setOnlyVideo] = useState('')
   const poll = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(async (id: string) => {
@@ -128,6 +131,8 @@ export default function BackCatalogueStage() {
   }, [state?.run?.state, stillMoving])
 
   const reset = () => { setRunId(null); setState(null); setScope(null); setChosen(new Set()) }
+  // Not cleared by reset: after a one-video test the creator usually wants to
+  // run the same link again, or clear it deliberately to go full catalogue.
 
   const toggleMarket = (domain: string) => {
     reset()
@@ -171,13 +176,25 @@ export default function BackCatalogueStage() {
     try {
       const r = await fetch('/api/catalogue/start', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ domains: picked }),
+        body: JSON.stringify({ domains: picked, onlyVideo: onlyVideo.trim() || undefined }),
       })
       const j = await r.json()
-      if (!r.ok || !j?.ok) { toast.error(j?.error || 'Could not start the run.'); return }
+      if (!r.ok || !j?.ok) {
+        // The route's own words, kept long enough to read: "sync your channel
+        // first" and "close the run you already have" are instructions, not
+        // decoration, and a three second toast loses them.
+        toast.error(j?.error || 'Could not start the run.', { duration: 10000 })
+        return
+      }
       setRunId(j.runId)
-      if (typeof j.total === 'number') setScope({ total: j.total, considered: j.videos ?? 0 })
-      toast.success(j.resumed ? 'Picking up the run already in progress.' : `Checking ${j.scannable ?? j.videos} videos.`)
+      // A one-video run is not looking at a slice of anything, so the amber
+      // "your newest N out of M" line would be wrong on it.
+      if (typeof j.total === 'number' && !j.onlyVideo) setScope({ total: j.total, considered: j.videos ?? 0 })
+      toast.success(
+        j.resumed ? 'Picking up the run already in progress.'
+        : j.onlyVideo ? 'Checking that one video.'
+        : `Checking ${j.scannable ?? j.videos} videos.`,
+      )
     } catch {
       toast.error('Could not reach the server.')
     } finally { setStarting(false) }
@@ -253,6 +270,28 @@ export default function BackCatalogueStage() {
         })}
       </div>
 
+      {/* ── TRY ONE FIRST ────────────────────────────────────────────────────
+          Identical code path on one row: same enumeration, same scanner, same
+          queue, same delivery. The only difference is how many rows it makes,
+          so a test here is worth something rather than exercising a shortcut
+          the real run does not take. */}
+      {!runId && (
+        <div className="mt-4 rounded-xl border p-3.5" style={{ borderColor: 'var(--border)' }}>
+          <p className="text-[12.5px] font-medium" style={{ color: 'var(--text)' }}>Try one video first</p>
+          <p className="mt-0.5 text-[12px]" style={muted}>
+            Paste a YouTube link and MVP checks only that one. Same path as the full run, so what you
+            see here is what the catalogue will do.
+          </p>
+          <input
+            value={onlyVideo}
+            onChange={(e) => setOnlyVideo(e.target.value)}
+            placeholder="https://www.youtube.com/watch?v=..."
+            className="mt-2 w-full rounded-lg border px-3 py-2 text-[13px] bg-transparent"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+          />
+        </div>
+      )}
+
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <button
           type="button" onClick={start} disabled={starting || !!runId || picked.length === 0}
@@ -260,7 +299,7 @@ export default function BackCatalogueStage() {
           style={{ background: '#7C3AED' }}
         >
           {starting ? <Loader2 size={15} className="animate-spin" /> : <Globe size={15} />}
-          {runId ? 'Run in progress' : 'Check my catalogue'}
+          {runId ? 'Run in progress' : onlyVideo.trim() ? 'Check that one video' : 'Check my catalogue'}
         </button>
         {runId && (
           <button type="button" onClick={() => void abandon()} className="text-[12px] underline" style={muted}>
