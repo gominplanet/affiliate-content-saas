@@ -16,6 +16,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import BackCatalogueStage from '@/components/launchpad/BackCatalogueStage'
 import { Loader2, Check, Youtube, Sparkles, Globe, Rocket, Handshake, Lock, Upload, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import UploadStage from '@/components/launchpad/UploadStage'
@@ -115,6 +116,10 @@ export default function LaunchpadPage() {
   // Pro-only elsewhere — the Co-Pilot offers it to other tiers via a different
   // path — this gate is specifically the Launchpad flow.)
   const gateTier = useEffectiveTier()
+  // Which journey the creator is on. 'new' is the upload-and-finish stepper;
+  // 'catalogue' is the channel they already have, where the question is which
+  // stores each video can go to rather than how to get it onto YouTube.
+  const [source, setSource] = useState<'new' | 'catalogue'>('new')
   const [renderedUrl, setRenderedUrl] = useState<string | null>(null)
   // The CLEAN uploaded video (no CTA). YouTube gets the CTA-burned render;
   // Amazon storefronts get this instead — the CTA is a YouTube-only overlay.
@@ -863,10 +868,41 @@ export default function LaunchpadPage() {
     <>
       <PageHero
         title="Video Launchpad"
-        subtitle="Upload your edited video once. MVP finishes it with the Co-Pilot, publishes to YouTube (optional, CTA burned in), then takes the clean copy to your Amazon storefronts across every geo where the product sells, dubbed for non-English markets."
+        subtitle="Start from a new video or from the channel you already have. A new file gets finished with the Co-Pilot, a CTA burned in, published to YouTube, then taken clean to your Amazon storefronts in every geo where the product sells. A video already on YouTube skips all of that: if YouTube has dubbed it, MVP sends it straight to the stores that speak those languages."
       />
 
       <div className="max-w-3xl pb-28">
+        {/* ── WHERE THE VIDEO IS COMING FROM ──────────────────────────────
+            Two genuinely different journeys, and they used to be two pages.
+            The stepper below only makes sense for a file that is not on
+            YouTube yet: it starts at "upload", burns a CTA, publishes. A
+            video already on the channel has been through all of that, and
+            what it needs is the opposite question, which stores can it go to
+            now. Keeping them on one page is the point of the word Launchpad. */}
+        <div className="mb-6 inline-flex rounded-xl border p-1" style={{ borderColor: 'var(--border)' }}>
+          {([
+            ['new', 'A new video'],
+            ['catalogue', 'Already on YouTube'],
+          ] as const).map(([k, label]) => (
+            <button
+              key={k} type="button" onClick={() => setSource(k)}
+              className="rounded-lg px-4 py-2 text-[13px] font-semibold"
+              style={source === k
+                ? { background: '#7C3AED', color: '#fff' }
+                : { background: 'transparent', color: 'var(--muted)' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {source === 'catalogue' && (
+          <div className="rounded-2xl border p-5 mb-6" style={{ borderColor: 'var(--border)' }}>
+            <BackCatalogueStage />
+          </div>
+        )}
+
+        {source === 'new' && <>
         {/* Resumed runs need an obvious way out, or a half-finished session
             becomes a trap the creator can only escape by clearing site data. */}
         {renderedUrl && (
@@ -1327,6 +1363,7 @@ export default function LaunchpadPage() {
             </a>
           </>
         </StepRow>
+        </>}
       </div>
     </>
   )
