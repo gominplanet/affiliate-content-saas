@@ -233,9 +233,33 @@ const M350 = read('supabase/migrations/350_catalogue_summary_resolving.sql')
     /if \(onlyVideoId\) q = q\.eq\('id', onlyVideoId\)/.test(START)
     && (START.match(/catalogue_run_items'\)\.insert/g) ?? []).length === 1,
     'a test that exercises a path the real run does not take proves nothing')
-  check('a link MVP has never seen says what to do about it',
-    /Sync your channel on the YouTube page first/.test(START),
-    'a video on the channel but not in MVP needs a sync, not a bug report')
+  // PULLED IN, NOT REFUSED. The channel sync pages fifty at a time, so on a
+  // 3000 video channel a video can be real and simply not reached yet. Telling
+  // the creator to go and sync, for one video whose id we are holding, is
+  // asking them to do work MVP can do in one API call.
+  // NOTHING RETURNS BEFORE IT. Checking only that adoptVideo is mentioned
+  // passed while an early refusal had been put in front of it, leaving the
+  // adopt as dead code and the creator with the same dead end.
+  const branchAt = START.indexOf('hits.length === 0')
+  const adoptAt = START.indexOf('adoptVideo(sb, user.id, ytId)')
+  const between = branchAt >= 0 && adoptAt > branchAt ? START.slice(branchAt, adoptAt) : 'return'
+  check('a link the sync has not reached is pulled in',
+    adoptAt > 0 && /fetchYouTubeVideoSnippet/.test(START) && !/return\b/.test(between),
+    'refusing a real video because a paged sync has not got to it yet is a dead end')
+  check('and only from a channel the creator has connected',
+    /listYouTubeChannels/.test(START) && /!ids\.has\(snippet\.channelId\)/.test(START),
+    "without this, a pasted link puts somebody else's video on this creator's storefront")
+  check('with no connected channel it refuses rather than trusts',
+    /ids\.size === 0/.test(START) && /Connect your YouTube channel first/.test(START),
+    'the ownership check is the only thing standing between a pasted link and another account')
+  check('the adopted row matches what the sync writes',
+    /onConflict: 'user_id,youtube_video_id'/.test(START)
+    && /channel_id: snippet\.channelId/.test(START)
+    && /duration_seconds: snippet\.durationSeconds/.test(START),
+    'a half-filled row is either duplicated or half-overwritten by the next sync')
+  check('a video YouTube will not return is named as that',
+    /YouTube returned nothing for/.test(START),
+    'private, deleted and mistyped are the lookup failing, not the creator needing to sync')
   // A DUPLICATE IS NOT AN ABSENCE. maybeSingle() returns an error rather than a
   // row the moment two match, and a catalogue with the same video imported
   // twice then read as "MVP has no record of it", sending the creator off to

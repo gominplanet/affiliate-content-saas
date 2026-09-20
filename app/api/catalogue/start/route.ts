@@ -22,6 +22,8 @@ import { normalizeTier } from '@/lib/tier'
 import { marketByDomain } from '@/lib/markets'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { extractYouTubeVideoId } from '@/lib/youtube-url'
+import { fetchYouTubeVideoSnippet } from '@/services/youtube'
+import { listYouTubeChannels } from '@/lib/youtube-channels'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -43,6 +45,80 @@ const WHOLE_VIDEO = ''
 /** The short links that hide an ASIN behind a redirect. Matching one means the
  *  video HAS a product, so the answer is a lookup rather than a refusal. */
 const SHORTENED = /(?:geni\.us|\bgnz\.|amzn\.to|a\.co\/|bit\.ly|tinyurl\.com|rebrand\.ly)/i
+
+/**
+ * Add one video to youtube_videos from its YouTube id.
+ *
+ * ONLY THE CREATOR'S OWN CHANNELS. The id comes from a pasted link, so without
+ * this check anyone could pull any video on YouTube into their account and
+ * push it to their storefront. The snippet carries the channel it belongs to,
+ * and it has to be one of theirs.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function adoptVideo(sb: any, userId: string, ytId: string): Promise<
+  { id: string } | { error: Record<string, unknown>; status: number }
+> {
+  const key = process.env.YOUTUBE_API_KEY || ''
+  if (!key) {
+    return {
+      error: { error: `MVP has no record of ${ytId}, and cannot look it up because the YouTube API key is not set.` },
+      status: 503,
+    }
+  }
+
+  const snippet = await fetchYouTubeVideoSnippet(key, ytId)
+  if (!snippet) {
+    // Deleted, private, or simply not a real id. Named as the lookup failing
+    // rather than as the creator needing to sync something.
+    return {
+      error: { error: `YouTube returned nothing for ${ytId}. It may be private, deleted, or the link may be wrong.` },
+      status: 404,
+    }
+  }
+
+  const mine = await listYouTubeChannels(sb, userId)
+  const ids = new Set(mine.map((c) => c.channelId).filter(Boolean))
+  if (ids.size > 0 && !ids.has(snippet.channelId)) {
+    return {
+      error: {
+        error: `That video is on ${snippet.channelTitle || 'another channel'}, which is not connected to this account.`,
+        detail: 'Connect that channel on the YouTube page, then try again.',
+      },
+      status: 403,
+    }
+  }
+  if (ids.size === 0) {
+    // No connected channel at all. Refused rather than trusted, because the
+    // ownership check is the only thing standing between a pasted link and
+    // somebody else's video on this creator's storefront.
+    return {
+      error: {
+        error: 'Connect your YouTube channel first, so MVP can confirm the video is yours.',
+      },
+      status: 403,
+    }
+  }
+
+  // THE SAME SHAPE THE SYNC WRITES, and the same conflict target. An adopted
+  // row has to be indistinguishable from a synced one, or the next channel sync
+  // either duplicates it or overwrites half its columns. Upsert also settles the
+  // race where the sync reaches this video between the lookup and the insert.
+  const { data: made, error: insErr } = await sb.from('youtube_videos').upsert({
+    user_id: userId,
+    youtube_video_id: snippet.youtubeVideoId,
+    title: snippet.title,
+    description: snippet.description,
+    thumbnail_url: snippet.thumbnailUrl,
+    channel_id: snippet.channelId,
+    channel_title: snippet.channelTitle,
+    published_at: snippet.publishedAt,
+    duration_seconds: snippet.durationSeconds,
+  }, { onConflict: 'user_id,youtube_video_id' }).select('id').single()
+  if (insErr || !made) {
+    return { error: { error: 'Could not add that video.', detail: insErr?.message ?? null }, status: 500 }
+  }
+  return { id: made.id }
+}
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
@@ -110,13 +186,18 @@ export async function POST(req: Request) {
       }, { status: 500 })
     }
     if (!Array.isArray(hits) || hits.length === 0) {
-      // NAMED, because these are different problems. A video that is on the
-      // channel but not in MVP needs a YouTube sync, not a bug report.
-      return NextResponse.json({
-        error: `MVP has no record of ${ytId}. Sync your channel on the YouTube page first, then try again.`,
-      }, { status: 404 })
+      // PULL IT IN RATHER THAN REFUSING.
+      //
+      // The channel sync pages fifty videos at a time, so on a 3000 video
+      // channel a video can be perfectly real and simply not reached yet.
+      // Telling the creator to go and sync first, for one video whose id we are
+      // holding, is asking them to do work MVP can do in one API call.
+      const pulled = await adoptVideo(sb, user.id, ytId)
+      if ('error' in pulled) return NextResponse.json(pulled.error, { status: pulled.status })
+      onlyVideoId = pulled.id
+    } else {
+      onlyVideoId = hits[0].id
     }
-    onlyVideoId = hits[0].id
   }
 
   // The markets come back with it: the screen adopts them, so the ticks and the
