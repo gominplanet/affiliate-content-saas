@@ -620,6 +620,12 @@ export default function DashboardShellV2({
         // Those two still have their own routes (/cta-studio, /global-sync) for
         // granular use; they're just not promoted as separate nav entries.
         { href: '/launchpad', icon: <Rocket size={15} />, label: 'Video Launchpad', gate: isPro, badge: 'New' },
+        // Back catalogue — the videos YouTube has ALREADY dubbed, sent to one
+        // Amazon storefront through the normal sync pipeline. In LABS while the
+        // trickle scan is proven against a real channel. Deliberately not a
+        // bulk downloader: a run ends in listings, not in a folder of MP4s the
+        // creator still has to upload by hand.
+        { href: '/back-catalogue', icon: <Globe size={15} />, label: 'Back Catalogue', gate: isPro, badge: 'New' },
         // AMZ Storefront — SCOUT-synced Amazon earnings + full-catalog analytics.
         // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
         // finished; graduates back to "Grow" (gate: isPaid) when it's ready.
