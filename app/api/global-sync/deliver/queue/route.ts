@@ -139,5 +139,49 @@ export async function GET(req: Request) {
         : 'no video to upload, and no master render to fall back on',
     }))
 
+  // ── THE MARKETS THIS QUERY CANNOT EVEN SEE ───────────────────────────────
+  //
+  // Everything above starts from `state: 'localized'`, so a target that never
+  // got there is not skipped, it is ABSENT. The caller then has nothing to
+  // report but "it never reached the upload queue", which is a description of
+  // the queue rather than of what went wrong, and the market's card stays
+  // blank: identical to a market nobody asked for.
+  //
+  // A German dub that stopped part-way left its target in 'dubbing' and the
+  // whole run said "1 never got as far as an upload", with no name and no
+  // reason anywhere on screen.
+  //
+  // Only for a scoped read. Unscoped, this would sweep every unfinished target
+  // the creator has ever had, and the board that calls it that way reads
+  // `items` alone.
+  if (jobId) {
+    const { data: stalled } = await sb.from('global_sync_targets')
+      .select('domain,state,detail')
+      .eq('user_id', user.id).eq('job_id', jobId)
+      .is('delivered_at', null).not('state', 'in', '("localized","delivered")')
+    for (const r of (stalled ?? [])) {
+      skipped.push({ domain: r.domain as string, reason: stalledReason(r.state, r.detail) })
+    }
+  }
+
   return NextResponse.json({ ok: true, items: deliverable, skipped })
+}
+
+/** Why a target never reached the queue, in the pipeline's own words where it
+ *  left any. Every branch names something the creator can act on, because
+ *  "not localized" tells them only that it is not here. */
+function stalledReason(state: string, detail: string | null): string {
+  const said = (detail || '').trim()
+  switch (state) {
+    case 'pending':
+      return 'the title and description have not been translated yet, so nothing was ready to upload'
+    case 'dubbing':
+      return said
+        ? `the dub did not finish (${said})`
+        : 'the dub started and did not finish, so this market has no audio yet. Press Generate dub to try it again.'
+    case 'failed':
+      return said || 'this market failed earlier in the pipeline and recorded no reason'
+    default:
+      return `this market is sitting at "${state}", which is not a state the upload queue serves`
+  }
 }

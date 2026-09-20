@@ -282,6 +282,47 @@ const STAGE = live(read('components/launchpad/StorefrontStage.tsx'))
   check('and the caller surfaces the gap',
     /Not uploaded: \$\{lines\}/.test(STAGE),
     'the empty-queue toast only catches a wave where NOTHING came back; four of five reads as complete')
+
+  // ── A MARKET THE QUEUE CANNOT SEE AT ALL ──────────────────────────────────
+  //
+  // Everything above starts from state 'localized', so a target that never got
+  // there is not skipped, it is absent, and the only thing the caller could say
+  // was "it never reached the upload queue" — a fact about the queue, not about
+  // what went wrong. A German dub stopped part-way, its target sat in
+  // 'dubbing', the run reported "1 never got as far as an upload" and the card
+  // stayed blank: a tick, no note, and a Generate dub button, indistinguishable
+  // from a market nobody had picked.
+  check('a target that never reached localized is named too',
+    /function stalledReason/.test(QUEUE) && /not\('state', 'in', '\("localized","delivered"\)'\)/.test(QUEUE),
+    'absent from the query means absent from the report, and the market is then silent on screen')
+  check('and the reason names something to act on',
+    /the dub started and did not finish/.test(read('app/api/global-sync/deliver/queue/route.ts'))
+    && /have not been translated yet/.test(read('app/api/global-sync/deliver/queue/route.ts')),
+    '"not localized" tells a creator only that it is not here')
+  // SCOPED. Unscoped this would sweep every unfinished target the creator has
+  // ever had, and the coverage board calls it that way.
+  check('the extra read only happens for one job',
+    /if \(jobId\) \{[\s\S]{0,400}?stalledReason/.test(QUEUE),
+    'the board reads this queue unscoped and would drag in every old job')
+}
+
+// ── the reason lands on the card, not only in a toast ───────────────────────
+{
+  check('the run records what it did per market',
+    /const \[outcome, setOutcome\] = useState<Record<string, string>>/.test(STAGE),
+    'a toast is gone in sixteen seconds and the market it named goes back to looking untouched')
+  check('a skipped market is recorded',
+    /for \(const d of missing\) next\[d\] = String\(why\.get\(d\)/.test(STAGE))
+  check('and so is a dub that never came back',
+    (STAGE.match(/setOutcome\(prev => \(\{ \.\.\.prev, \[t\.domain\]: `The dub did not finish/g) ?? []).length >= 2,
+    'the aborted-fetch case is the one the server never gets to record, so the card is the only place it can be said')
+  check('the card shows it',
+    /outcome\[t\.domain\] && t\.state !== 'delivered'/.test(STAGE)
+    && /Not uploaded\. \{outcome\[t\.domain\]\}/.test(read('components/launchpad/StorefrontStage.tsx')),
+    'held in state and never rendered is the same as not held at all')
+  check('and a new run clears the last one’s notes',
+    /setOutcome\(\{\}\)/.test(STAGE),
+    'a stale failure sitting on a market that just succeeded is its own lie')
 }
 
 // ── the switch still works, and Storefront Sync still has everything ────────

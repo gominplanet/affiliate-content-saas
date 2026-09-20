@@ -104,6 +104,13 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
    *  markets that were not in the run at all. Two storefronts reported
    *  "Uploading…" through a run that never sent them a single byte. */
   const [wave, setWave] = useState<Set<string>>(new Set())
+  /** What this run did, or failed to do, per market.
+   *
+   *  A TOAST IS NOT A RECORD. Germany's dub stopped part-way, the run said
+   *  "1 never got as far as an upload", and Germany's card looked exactly like
+   *  a market nobody had asked for: green tick, no note, a Generate dub button.
+   *  Every reason the run learns is kept here and stays on the card. */
+  const [outcome, setOutcome] = useState<Record<string, string>>({})
   // Non-English markets the creator chose to deliver WITHOUT a dub (English audio
   // on purpose). Domains in here are skipped by the auto-dub and delivered with
   // the master video.
@@ -505,6 +512,8 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
         return
       }
       setTargets(live)
+      // Last run's notes are not this run's news.
+      setOutcome({})
 
       // ── 1) SIGN-IN CHECK FIRST ────────────────────────────────────────────
       // Confirm which marketplaces the creator is signed in + enrolled on before
@@ -580,10 +589,17 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
               })
               const dj = await dr.json().catch(() => ({}))
               if (!dr.ok || !dj?.ok || !dj?.videoUrl) {
-                dubFailures.push({ domain: t.domain, reason: String(dj?.error || `HTTP ${dr.status}`).slice(0, 140) })
+                const why = String(dj?.error || `HTTP ${dr.status}`).slice(0, 140)
+                dubFailures.push({ domain: t.domain, reason: why })
+                setOutcome(prev => ({ ...prev, [t.domain]: `The dub did not finish: ${why}` }))
               }
             } catch (e) {
-              dubFailures.push({ domain: t.domain, reason: e instanceof Error ? e.message : 'the dub request did not complete' })
+              // A dub that runs past the function's ceiling lands here with the
+              // fetch aborted, which is the one failure the server never gets to
+              // record, so the card is the only place it can be said.
+              const why = e instanceof Error ? e.message : 'the dub request did not complete'
+              dubFailures.push({ domain: t.domain, reason: why })
+              setOutcome(prev => ({ ...prev, [t.domain]: `The dub did not finish: ${why}` }))
             }
           }
         }
@@ -617,6 +633,13 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
           const why = new Map(skippedHere.map((s: { domain: string; reason: string }) => [s.domain, s.reason]))
           const lines = missing.map(d => `${d} (${why.get(d) || 'it never reached the upload queue'})`).join('; ')
           toast.error(`Not uploaded: ${lines}. The other stores in this wave still went out.`, { duration: 16000 })
+          // ON THE CARD TOO. The toast is gone in sixteen seconds and the
+          // market it named goes back to looking untouched.
+          setOutcome(prev => {
+            const next = { ...prev }
+            for (const d of missing) next[d] = String(why.get(d) || 'it never reached the upload queue')
+            return next
+          })
         }
         return mapped
       }
@@ -1205,6 +1228,15 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
                 {t.title && <p className="text-[13px] font-medium" style={label}>{t.title}</p>}
                 {t.description && <p className="text-[12px] mt-0.5 line-clamp-3" style={muted}>{t.description}</p>}
                 {t.detail && t.state !== 'delivered' && <p className="text-[11px] mt-1" style={muted}>{t.detail}</p>}
+                {/* WHAT THIS RUN DID TO THIS MARKET, and it stays. The reason
+                    used to live only in a toast, so a market the run could not
+                    upload went back to looking exactly like one nobody had
+                    picked: a tick, no note, and a Generate dub button. */}
+                {outcome[t.domain] && t.state !== 'delivered' && (
+                  <p className="text-[11.5px] mt-1.5 px-2 py-1.5 rounded-lg" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
+                    Not uploaded. {outcome[t.domain]}
+                  </p>
+                )}
                 {/* Skip dub: deliver the English master to this market on purpose. */}
                 {allowDubbing && t.dub && t.state !== 'delivered' && (
                   <label className="flex items-center gap-1.5 text-[11px] mt-1.5 cursor-pointer" style={muted}>
