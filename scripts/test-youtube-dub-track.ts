@@ -93,13 +93,40 @@ const DUB_ROUTE = live(read('app/api/global-sync/dub/route.ts'))
 
 // ── the dub route prefers the free track, on the right lane ─────────────────
 {
+  // audioLanguagesFor, not listYouTubeAudioTracks: the lookup is the same
+  // question, asked once per video and remembered, because it was being made
+  // once per MARKET and it is a yt-dlp call with a sixty second ceiling. The
+  // claim is unchanged, so the clause follows the code.
   check('the dub route checks for a track before spending anything',
-    DUB.indexOf('listYouTubeAudioTracks(') > -1
-    && DUB.indexOf('listYouTubeAudioTracks(') < DUB.indexOf('translateScript('),
+    DUB.indexOf('audioLanguagesFor(') > -1
+    && DUB.indexOf('audioLanguagesFor(') < DUB.indexOf('translateScript('),
     'after the translate it has already paid for the thing it was trying to avoid')
   check('and before the transcript requirement',
-    DUB.indexOf('listYouTubeAudioTracks(') < DUB.indexOf('No transcript to dub yet'),
+    DUB.indexOf('audioLanguagesFor(') < DUB.indexOf('No transcript to dub yet'),
     "a YouTube dub needs no transcript, so a video without one should still localize")
+
+  // THE CACHE MUST NOT INVENT A VERDICT. An empty list means the video was read
+  // and carries only its original audio. Null means nobody looked. Those are
+  // opposite facts, and collapsing them turns an ingest outage into "this video
+  // has no French track", which is a finding about the video rather than about
+  // us, and it would be written to the database and believed for a week.
+  const TRACKS = live(read('lib/audio-tracks.ts'))
+  check('a lookup that failed is not remembered',
+    /if \(!info\) return null/.test(TRACKS)
+    && !/audio_languages: \[\][\s\S]{0,80}audio_languages_at/.test(TRACKS),
+    'writing an empty list on a failed lookup makes the outage permanent for a week')
+  // THE SELECT, not the import. Dropping AUDIO_COLUMNS from the query leaves
+  // the name sitting in the import line, so a check for the identifier passed
+  // over a cache that could never hit: every read came back without the
+  // columns, looked stale, and went to yt-dlp again.
+  check('and the columns it needs are actually selected',
+    /export const AUDIO_COLUMNS/.test(TRACKS)
+    && /\.select\(`\$\{AUDIO_COLUMNS\}/.test(DUB)
+    && /\.select\(`\$\{AUDIO_COLUMNS\}/.test(live(read('app/api/cron/coverage-drain/route.ts'))),
+    'a cache whose columns are not read never hits, and every market pays yt-dlp again')
+  check('the catalogue drain fills the same cache',
+    /audioLanguagesFor\(sb, v\)/.test(live(read('app/api/cron/coverage-drain/route.ts'))),
+    'the grid asks this once per video already, so Launchpad should get it free')
 
   check('it only accepts the pull when a language actually came back',
     /if \(pulled\?\.url && pulled\.audioLanguage\)/.test(DUB),

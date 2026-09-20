@@ -42,7 +42,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { marketByDomain } from '@/lib/markets'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
-import { listYouTubeAudioTracksDetailed, hasAudioTrack, ingestConfigured } from '@/lib/youtube-ingest'
+import { ingestConfigured } from '@/lib/youtube-ingest'
+import { audioLanguagesFor, carriesLanguage, AUDIO_COLUMNS } from '@/lib/audio-tracks'
 import { coveragePriority, stockBlocks, type StockAnswer } from '@/lib/storefront-coverage'
 import { fetchKeepaBasics, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
 import { dubTarget } from '@/lib/dub-target'
@@ -398,7 +399,7 @@ async function checks(sb: Sb): Promise<{ ready: number; needsDub: number; unknow
   if (groups.size === 0) return { ready: 0, needsDub: 0, unknown: 0 }
 
   const { data: vids } = await sb.from('youtube_videos')
-    .select('id,youtube_video_id,published_at').in('id', [...groups.keys()])
+    .select(`${AUDIO_COLUMNS},published_at`).in('id', [...groups.keys()])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const vById = new Map<string, any>()
   for (const v of (vids ?? [])) vById.set(v.id, v)
@@ -416,8 +417,11 @@ async function checks(sb: Sb): Promise<{ ready: number; needsDub: number; unknow
       continue
     }
 
-    const { info } = await listYouTubeAudioTracksDetailed(v.youtube_video_id)
-    if (!info) {
+    // ONE LOOKUP, REMEMBERED. This is the call the dub lane used to repeat once
+    // per market, so answering it here and storing it on the video means the
+    // grid pays for it and Launchpad gets it free for a week.
+    const langs = await audioLanguagesFor(sb, v)
+    if (!langs) {
       // NOBODY LOOKED. Left unknown so the next firing retries, never recorded
       // as a finding about the video.
       unknown++
@@ -427,7 +431,7 @@ async function checks(sb: Sb): Promise<{ ready: number; needsDub: number; unknow
     for (const cell of cellList) {
       const market = marketByDomain(cell.domain)
       const lang = (market?.lang || '').split('-')[0].toLowerCase()
-      const dubbed = !!market && !!lang && hasAudioTrack(info, lang)
+      const dubbed = !!market && !!lang && carriesLanguage(langs, lang)
       await sb.from('storefront_coverage').update({
         state: 'preparing',
         // Which voice it will ship with, decided here so the screen never has

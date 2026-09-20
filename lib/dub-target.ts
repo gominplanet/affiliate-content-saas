@@ -32,7 +32,8 @@ import { marketByDomain, translateScript } from '@/lib/global-sync'
 import { synthesizeSpeech, elevenConfigured } from '@/lib/tts'
 import { getClonedVoiceId } from '@/lib/voice-clone'
 import { dubCreditBalance, spendDubCredit } from '@/lib/dub-credits'
-import { ingestConfigured, ingestYouTubeVideo, renderDub, listYouTubeAudioTracks, hasAudioTrack } from '@/lib/youtube-ingest'
+import { ingestConfigured, ingestYouTubeVideo, renderDub } from '@/lib/youtube-ingest'
+import { audioLanguagesFor, carriesLanguage, AUDIO_COLUMNS } from '@/lib/audio-tracks'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { cuesToText } from '@/lib/shorts-transcript'
 
@@ -90,7 +91,9 @@ export async function dubTarget(opts: DubTargetOpts): Promise<DubTargetResult> {
 
   const { data: video } = await sb
     .from('youtube_videos')
-    .select('id,youtube_video_id,transcript,duration_seconds,source_video_url')
+    // AUDIO_COLUMNS or the track cache never hits and every market pays yt-dlp
+    // again for the same video.
+    .select(`${AUDIO_COLUMNS},transcript,duration_seconds,source_video_url`)
     .eq('id', job.video_id).eq('user_id', userId).maybeSingle()
   if (!video) return { ok: false, error: 'Master video not found.', status: 404 }
 
@@ -125,8 +128,14 @@ export async function dubTarget(opts: DubTargetOpts): Promise<DubTargetResult> {
   const marketLang = (market.lang || '').split('-')[0].toLowerCase()
   const ytIdForDub = (video.youtube_video_id as string | null) || ''
   if (!cloneIsOnTheTable && marketLang && ytIdForDub && ingestConfigured()) {
-    const tracks = await listYouTubeAudioTracks(ytIdForDub)
-    if (hasAudioTrack(tracks, marketLang)) {
+    // ASKED ONCE PER VIDEO, not once per market. This was a yt-dlp call with a
+    // sixty second ceiling made separately for every storefront, so one video
+    // going to five European stores asked the same question five times, and a
+    // channel that has never used YouTube's auto-dub paid all five to be told
+    // nothing. The answer is now remembered on the video for a week, and the
+    // catalogue drain fills it for this path for free.
+    const langs = await audioLanguagesFor(sb, video)
+    if (carriesLanguage(langs, marketLang)) {
       await sb.from('global_sync_targets').update({ state: 'dubbing', detail: null, updated_at: new Date().toISOString() }).eq('id', target.id)
       const pulled = await ingestYouTubeVideo(ytIdForDub, userId, { audioLanguage: marketLang })
       if (pulled?.url && pulled.audioLanguage) {

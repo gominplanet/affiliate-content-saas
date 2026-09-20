@@ -261,7 +261,7 @@ const SEARCH = read('lib/app-search-index.ts')
   // of the paid work starts. scripts/test-youtube-dub-track pins the same rule
   // in more detail; it is repeated here because this is the file somebody reads
   // when they touch the background lane.
-  const trackAt = DUBLIB.indexOf('hasAudioTrack(tracks, marketLang)')
+  const trackAt = DUBLIB.indexOf('carriesLanguage(langs, marketLang)')
   const translateAt = DUBLIB.indexOf('await translateScript(')
   check('the lane still tries YouTube’s own track first',
     trackAt > -1 && translateAt > -1 && trackAt < translateAt,
