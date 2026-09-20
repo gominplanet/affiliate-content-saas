@@ -168,3 +168,35 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     },
   })
 }
+
+// DELETE /api/catalogue/[id] — abandon a run.
+//
+// The screen needs this because clearing its own state is not the same as
+// closing the run. A creator who changed their marketplace selection, pressed
+// Find and got "picking up the run already in progress" was handed back the
+// OLD run, with the old markets, while the ticks showed their new choice. The
+// only honest exits are to keep that run or to end it.
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await ctx.params
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+
+  // Marked abandoned rather than deleted: the items cascade, and a run that
+  // already queued work into the storefront pipeline is a record of what was
+  // sent. `abandoned` is simply not one of the states start/ will resume.
+  const { error } = await sb.from('catalogue_runs')
+    .update({ state: 'abandoned', updated_at: new Date().toISOString() })
+    .eq('id', id).eq('user_id', user.id)
+  if (error) return NextResponse.json({ error: 'Could not close that run.' }, { status: 500 })
+
+  // Its unscanned items are dropped so the cron stops spending lookups on a run
+  // nobody is watching. Anything already resolved or queued stays.
+  await sb.from('catalogue_run_items')
+    .delete().eq('run_id', id).eq('user_id', user.id).eq('state', 'pending')
+
+  return NextResponse.json({ ok: true })
+}

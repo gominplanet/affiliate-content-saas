@@ -221,6 +221,31 @@ const M349 = read('supabase/migrations/349_catalogue_run_summary.sql')
     'the cost belongs next to the button, not on the credits screen afterwards')
 }
 
+// ── the ticks describe the run, not a stale selection ───────────────────────
+//
+// SEEN ON A REAL RUN. France and Spain were ticked while the numbers underneath
+// came from a five-market run: changing a tick cleared the local run, and the
+// next Find resumed the one still open on the server with its original markets.
+// The ticks and the results were describing different things.
+{
+  check('the ticks follow the run once one exists',
+    /runDomains \? runDomains\.includes\(m\.domain\) : picked\.includes\(m\.domain\)/.test(STAGE_RAW),
+    'ticks that describe a selection the run does not have are worse than no ticks')
+  check('and a resumed run that differs says so',
+    /resumedElsewhere/.test(STAGE_RAW) && /which is not what is/.test(STAGE_RAW),
+    'silently handing back a different run is how the creator reads five markets as two')
+  check('a run can actually be abandoned, not just forgotten',
+    // The BUTTON has to call it. A declared-but-unwired abandon() still
+    // satisfies a check for the name, and the run stays open on the server.
+    /export async function DELETE/.test(STATUS)
+    && /onClick=\{\(\) => void abandon\(\)\}/.test(STAGE_RAW)
+    && /method: 'DELETE'/.test(STAGE_RAW),
+    'clearing local state leaves the run open, so the next Find resumes it again')
+  check('and start refuses to resume an abandoned one',
+    /OPEN_STATES = \['queued', 'scanning'\]/.test(START) && !/'abandoned'/.test(START),
+    'an abandoned run that is still resumable is the same trap with an extra click')
+}
+
 // ── the cards ───────────────────────────────────────────────────────────────
 {
   check('the status route answers per video, not only per bucket',

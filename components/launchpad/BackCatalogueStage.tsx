@@ -70,6 +70,9 @@ const DUBBED_MARKETS = MARKETS.filter((m) => m.needsTranslation)
 
 const muted = { color: 'var(--muted)' }
 
+const marketName = (domain: string) =>
+  DUBBED_MARKETS.find((m) => m.domain === domain)?.country ?? domain
+
 /** How a pill looks and what it says. The label carries the cost, because a
  *  colour alone is not a statement and the creator is about to spend on it. */
 function pillFace(state: MarketState, langName: string | null) {
@@ -144,6 +147,17 @@ export default function BackCatalogueStage() {
     return { free, paid, total: free + paid }
   }, [chosen, state?.cards])
 
+  // FORGETTING IS NOT ABANDONING. Clearing the local state left the run open on
+  // the server, so the next Find resumed it with its original markets and the
+  // creator's new selection was silently discarded.
+  async function abandon() {
+    if (!runId) { reset(); return }
+    try {
+      await fetch(`/api/catalogue/${runId}`, { method: 'DELETE' })
+    } catch { /* the reset below still frees the screen; the run is re-offered */ }
+    reset()
+  }
+
   async function start() {
     if (picked.length === 0) { toast.error('Pick at least one marketplace.'); return }
     setStarting(true)
@@ -189,6 +203,12 @@ export default function BackCatalogueStage() {
   const v = state?.videos
   const scanning = state?.run?.state === 'scanning' && (v?.pending ?? 0) > 0
   const totals = state?.totals
+  // The markets the run is ACTUALLY covering, which is not always what is
+  // ticked: a resumed run keeps the markets it was started with.
+  const runDomains = runId ? (state?.run?.domains ?? null) : null
+  const resumedElsewhere = !!runDomains && (
+    runDomains.length !== picked.length || runDomains.some((d) => !picked.includes(d))
+  )
 
   return (
     <div>
@@ -198,11 +218,18 @@ export default function BackCatalogueStage() {
         You never download anything.
       </p>
 
-      {/* ── pick the stores ─────────────────────────────────────────────── */}
-      <p className="text-[12px] font-medium mb-1.5" style={muted}>Marketplaces to check</p>
+      {/* ── pick the stores ─────────────────────────────────────────────────
+          ONCE A RUN EXISTS, THESE SHOW THE RUN. Changing a tick clears the
+          local run and pressing Find again resumes whatever run is still open
+          on the server, which may well cover different markets. The ticks then
+          described a selection that had nothing to do with the numbers below
+          it: five stores' worth of results under two ticked countries. */}
+      <p className="text-[12px] font-medium mb-1.5" style={muted}>
+        {runId ? 'Marketplaces in this run' : 'Marketplaces to check'}
+      </p>
       <div className="flex flex-wrap gap-2">
         {DUBBED_MARKETS.map((m) => {
-          const on = picked.includes(m.domain)
+          const on = runDomains ? runDomains.includes(m.domain) : picked.includes(m.domain)
           return (
             <button
               key={m.domain} type="button" onClick={() => toggleMarket(m.domain)} disabled={!!runId}
@@ -228,8 +255,19 @@ export default function BackCatalogueStage() {
           {starting ? <Loader2 size={15} className="animate-spin" /> : <Globe size={15} />}
           {runId ? 'Run in progress' : 'Check my catalogue'}
         </button>
-        {runId && <button type="button" onClick={reset} className="text-[12px] underline" style={muted}>Start a different run</button>}
+        {runId && (
+          <button type="button" onClick={() => void abandon()} className="text-[12px] underline" style={muted}>
+            Start a different run
+          </button>
+        )}
       </div>
+
+      {resumedElsewhere && (
+        <p className="mt-2 text-[12.5px]" style={{ color: '#d97706' }}>
+          This run was started for {runDomains!.map((d) => marketName(d)).join(', ')}, which is not what is
+          ticked above. Press Start a different run to drop it and pick again.
+        </p>
+      )}
 
       <p className="mt-2 text-[12px]" style={muted}>
         Checking a video reads its track list only. Nothing is downloaded and no dub is paid for.
