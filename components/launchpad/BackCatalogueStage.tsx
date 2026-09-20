@@ -116,9 +116,16 @@ export default function BackCatalogueStage() {
     return () => { if (poll.current) clearInterval(poll.current) }
   }, [runId, load])
 
+  // STOP ONLY WHEN THERE IS NOTHING LEFT TO LEARN. 'ready' means the lookups
+  // finished, but queued listings keep resolving to sent or failed afterwards,
+  // and a page that stopped polling at 'ready' would leave 150 pills reading
+  // "queued" for the rest of the session no matter what actually happened.
+  const stillMoving = (state?.totals?.queued ?? 0) > 0
   useEffect(() => {
-    if (state?.run?.state === 'ready' && poll.current) { clearInterval(poll.current); poll.current = null }
-  }, [state?.run?.state])
+    if (state?.run?.state === 'ready' && !stillMoving && poll.current) {
+      clearInterval(poll.current); poll.current = null
+    }
+  }, [state?.run?.state, stillMoving])
 
   const reset = () => { setRunId(null); setState(null); setScope(null); setChosen(new Set()) }
 

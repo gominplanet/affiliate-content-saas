@@ -221,6 +221,37 @@ const M349 = read('supabase/migrations/349_catalogue_run_summary.sql')
     'the cost belongs next to the button, not on the credits screen afterwards')
 }
 
+// ── a queued listing is followed to its end ─────────────────────────────────
+//
+// THE PILL THAT LIES BY STANDING STILL. Queueing 150 listings set 150 items to
+// 'queued' and nothing moved them again: one that uploaded and one whose dub
+// failed both read "queued" forever. Same failure this feature exists to stop,
+// one step further down the pipeline.
+{
+  check('queued items are reconciled against the storefront pipeline',
+    /reconcileQueued/.test(SCAN) && /from\('global_sync_targets'\)/.test(SCAN),
+    "nothing else writes back, so 'queued' would be the last thing the screen ever said")
+  // BOTH have to exist. indexOf returns -1 for a call that was deleted, and
+  // -1 is less than any real position, so the bare comparison passed for a
+  // reconcile that had been removed altogether.
+  const recAt = SCAN.indexOf('reconcileQueued(sb)')
+  const ingestAt = SCAN.indexOf('if (!ingestConfigured())')
+  check('and the reconcile runs even with the downloader off',
+    recAt >= 0 && ingestAt >= 0 && recAt < ingestAt,
+    'a delivered listing is not news that has to wait for the video service')
+  check('a failure carries the pipeline\'s own words',
+    /t\.detail \|\| 'the storefront sync failed/.test(SCAN),
+    'a bare "failed" is a second screen that knows something broke and not what')
+  check('a market with no target row is named, not guessed',
+    /the sync has no job for this store/.test(SCAN))
+  check('the reconcile reads the target rather than trusting the writer',
+    /t\.state === 'delivered'/.test(SCAN) && /t\.state === 'failed'/.test(SCAN),
+    "a target reaches 'failed' from three places; teaching each one about this feature is the twenty-copies mistake")
+  check('the screen keeps polling while anything is queued',
+    /stillMoving/.test(STAGE_RAW) && /!stillMoving && poll\.current/.test(STAGE_RAW),
+    "stopping at 'ready' freezes 150 pills on 'queued' whatever actually happens to them")
+}
+
 // ── the ticks describe the run, not a stale selection ───────────────────────
 //
 // SEEN ON A REAL RUN. France and Spain were ticked while the numbers underneath
