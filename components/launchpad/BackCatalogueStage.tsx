@@ -106,6 +106,26 @@ export default function BackCatalogueStage() {
     } catch { /* a dropped poll is not worth a toast; the next one lands */ }
   }, [])
 
+  // WHAT IS ALREADY HAPPENING, before anybody presses anything.
+  //
+  // Without this the page knew nothing until Find was pressed, so someone with
+  // a run already open would paste a single video, be told to press Start a
+  // different run, and find no such button: it only appears once the page is
+  // holding a run. The instruction was correct and impossible to follow.
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const r = await fetch('/api/catalogue/open')
+        const j = await r.json()
+        if (!alive || !j?.run?.id) return
+        setRunId(j.run.id)
+        if (Array.isArray(j.run.domains) && j.run.domains.length > 0) setPicked(j.run.domains)
+      } catch { /* the page still works; Find will find it */ }
+    })()
+    return () => { alive = false }
+  }, [])
+
   // Polled while the scan runs. Each video is one lookup on a trickle, so a big
   // catalogue resolves over minutes and the page keeps up on its own rather than
   // making the creator refresh.
@@ -176,6 +196,9 @@ export default function BackCatalogueStage() {
         body: JSON.stringify({ domains: picked, onlyVideo: onlyVideo.trim() || undefined }),
       })
       const j = await r.json()
+      // A 409 means a run is already open. Show it, so the button the message
+      // tells them to press is actually on the screen.
+      if (r.status === 409 && j?.runId) setRunId(j.runId)
       if (!r.ok || !j?.ok) {
         // The route's own words, kept long enough to read: "sync your channel
         // first" and "close the run you already have" are instructions, not

@@ -209,8 +209,11 @@ export async function POST(req: Request) {
     // back somebody's 3000 video run instead would be the stale-ticks bug over
     // again. It says what is in the way and what to press.
     if (onlyVideoId) {
+      // The id goes with it, so the screen can show the run that is in the way
+      // rather than naming a button the creator cannot see.
       return NextResponse.json({
-        error: 'You already have a run open. Press Start a different run to close it, then try the single video.',
+        error: 'You already have a run open, shown below. Press Start a different run to close it, then try the single video.',
+        runId: open[0].id,
       }, { status: 409 })
     }
     const its: string[] = Array.isArray(open[0].domains) && open[0].domains.length > 0

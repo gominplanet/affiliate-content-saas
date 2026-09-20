@@ -45,6 +45,7 @@ const STAGE_RAW = read('components/launchpad/BackCatalogueStage.tsx')
 const STAGE = live(STAGE_RAW)
 const LAUNCHPAD_RAW = read('app/(dashboard)/launchpad/page.tsx')
 const LABS_RAW = read('app/(dashboard)/back-catalogue/page.tsx')
+const OPENR = live(read('app/api/catalogue/open/route.ts'))
 const M347 = read('supabase/migrations/347_catalogue_runs.sql')
 const M348 = read('supabase/migrations/348_catalogue_multi_market.sql')
 const M349 = read('supabase/migrations/349_catalogue_run_summary.sql')
@@ -279,6 +280,25 @@ const M350 = read('supabase/migrations/350_catalogue_summary_resolving.sql')
   check('a single-video test refuses to silently resume a big run',
     /Press Start a different run to close it/.test(START) && /status: 409/.test(START),
     'handing back a 3000 video run to someone who pasted one link is the stale-ticks bug again')
+  // AND THE BUTTON IT NAMES HAS TO EXIST. The refusal said "press Start a
+  // different run" while that button only appears once the page is holding a
+  // run, so on a fresh load the instruction was correct and impossible to
+  // follow. The page finds the open run itself now, and the 409 carries its id.
+  check('the page finds an open run before anything is pressed',
+    /fetch\('\/api\/catalogue\/open'\)/.test(STAGE_RAW) && /run: null/.test(OPENR),
+    'a screen that knows nothing until Find is pressed names buttons that are not there')
+  // SCOPED TO THE 409. `runId: open[0].id` also appears on the resume path, so
+  // checking for the bare phrase passed while the refusal had lost it.
+  const four09 = START.indexOf('status: 409')
+  const refusal = four09 >= 0 ? START.slice(Math.max(0, four09 - 400), four09) : ''
+  check('and the refusal carries the run it is talking about',
+    /runId: open\[0\]\.id/.test(refusal)
+    && (STAGE_RAW.match(/r\.status === 409 && j\?\.runId\) setRunId/g) ?? []).length === 1,
+    'naming a button the creator cannot see is a dead end, however accurate the words are')
+  check('the open route agrees with start about what counts as open',
+    /OPEN_STATES = \['queued', 'scanning'\]/.test(OPENR)
+    && /OPEN_STATES = \['queued', 'scanning'\]/.test(START),
+    'a screen that disagrees with the route about open runs is the same trap wearing a hat')
   check('the start error is readable, not a three second toast',
     /duration: 10000/.test(STAGE_RAW),
     '"sync your channel first" is an instruction and has to survive long enough to read')
