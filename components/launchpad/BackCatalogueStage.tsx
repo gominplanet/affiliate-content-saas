@@ -52,7 +52,7 @@ interface RunState {
   run?: { id: string; domains: string[]; state: string }
   videos?: {
     total: number; checked: number; pending: number; blocked: number
-    actionable: number; shown: number; moreThanShown: boolean
+    actionable: number; shown: number; moreThanShown: boolean; resolving: number
   }
   blockedReasons?: Reason[]
   markets?: PerMarket[]
@@ -120,7 +120,7 @@ export default function BackCatalogueStage() {
   // finished, but queued listings keep resolving to sent or failed afterwards,
   // and a page that stopped polling at 'ready' would leave 150 pills reading
   // "queued" for the rest of the session no matter what actually happened.
-  const stillMoving = (state?.totals?.queued ?? 0) > 0
+  const stillMoving = (state?.totals?.queued ?? 0) > 0 || (state?.videos?.resolving ?? 0) > 0
   useEffect(() => {
     if (state?.run?.state === 'ready' && !stillMoving && poll.current) {
       clearInterval(poll.current); poll.current = null
@@ -308,6 +308,9 @@ export default function BackCatalogueStage() {
             )}
 
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[13px]" style={muted}>
+              {(v.resolving ?? 0) > 0 && (
+                <span><strong style={{ color: '#7C3AED' }}>{v.resolving}</strong> still finding the product</span>
+              )}
               <span><strong style={{ color: '#16a34a' }}>{totals?.free ?? 0}</strong> listings free</span>
               <span><strong style={{ color: '#7C3AED' }}>{totals?.paid ?? 0}</strong> need a dub</span>
               {(totals?.queued ?? 0) > 0 && <span>{totals!.queued} queued</span>}

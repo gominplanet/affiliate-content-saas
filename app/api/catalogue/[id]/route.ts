@@ -74,7 +74,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   // Market-independent verdicts, listed once. "no product attached" is the
   // creator's to fix and "not on YouTube" is not, so they stay separate lines.
-  const blockedReasons = reasonsFor((b) => !b.domain)
+  //
+  // ONLY THE FINAL ONES. A whole-video row is also how a short link waits to be
+  // followed ('resolving') and how it records that it was ('resolved'), and
+  // neither is a reason a video is not going. Listing them here would show
+  // "following the product link" under a heading that says Not going, and the
+  // resolved rows would show up as "no reason recorded".
+  const blockedReasons = reasonsFor((b) => !b.domain && b.state === 'skipped')
+  const resolving = sum((b) => !b.domain && b.state === 'resolving')
 
   const markets = domainList.map((domain) => {
     const mine = (s: string) => sum((b) => b.domain === domain && b.state === s)
@@ -150,7 +157,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       total: Number(summary.videos || 0),
       checked: Number(summary.videos || 0) - Number(summary.videosPending || 0),
       pending: Number(summary.videosPending || 0),
-      blocked: sum((b) => !b.domain),
+      blocked: sum((b) => !b.domain && b.state === 'skipped'),
+      // Videos whose product link is a short link the scanner is still
+      // following. Shown separately: this is work in progress, not a verdict.
+      resolving,
       // Videos with at least one sendable store, and how many of them are drawn.
       actionable: cardIds.length,
       shown: cards.length,

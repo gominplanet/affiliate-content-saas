@@ -21,6 +21,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { marketByDomain } from '@/lib/markets'
 import { listYouTubeAudioTracksDetailed, hasAudioTrack, ingestConfigured } from '@/lib/youtube-ingest'
+import { resolveProductLink } from '@/lib/product-link'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -100,6 +101,114 @@ async function reconcileQueued(sb: any): Promise<number> {
   return moved
 }
 
+/** Short links followed per invocation. Each is up to five redirect hops with a
+ *  five second budget each, so this is the slowest thing in the file. */
+const RESOLVE = 8
+
+/**
+ * Turn "there is a link here I cannot read" into an ASIN.
+ *
+ * WHY THIS IS NOT A REFUSAL. A creator with geni.us links in every description
+ * has a product on every video. Reading youtube_videos.asin found it on almost
+ * none of them, because that column is only written at blog-generation time,
+ * and reporting the rest as "no product attached" blamed the creator for a
+ * lookup MVP had simply never done. Migration 204's comment says exactly this
+ * is the fix: resolve the short link once and cache the ASIN on the video.
+ *
+ * Cached on youtube_videos.asin, so the second run of the back catalogue, the
+ * CC badge and every other ASIN-keyed feature get it for free.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function resolveProducts(sb: any): Promise<{ found: number; gaveUp: number }> {
+  const { data: waiting } = await sb
+    .from('catalogue_run_items')
+    .select('id,run_id,user_id,video_id,youtube_video_id')
+    .eq('state', 'resolving')
+    .order('created_at', { ascending: true })
+    .limit(RESOLVE)
+
+  const rows = Array.isArray(waiting) ? waiting : []
+  if (rows.length === 0) return { found: 0, gaveUp: 0 }
+
+  const { data: runs } = await sb.from('catalogue_runs')
+    .select('id,domains,domain').in('id', [...new Set(rows.map((r: { run_id: string }) => r.run_id))])
+  const domainsByRun = new Map<string, string[]>()
+  for (const r of (runs ?? [])) {
+    domainsByRun.set(r.id, Array.isArray(r.domains) && r.domains.length > 0 ? r.domains : [r.domain].filter(Boolean))
+  }
+
+  const { data: videos } = await sb.from('youtube_videos')
+    .select('id,title,description,product_url')
+    .in('id', rows.map((r: { video_id: string }) => r.video_id))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const videoById = new Map<string, any>()
+  for (const v of (videos ?? [])) videoById.set(v.id, v)
+
+  let found = 0
+  let gaveUp = 0
+  const now = new Date().toISOString()
+
+  for (const item of rows) {
+    const v = videoById.get(item.video_id)
+    if (!v) {
+      await sb.from('catalogue_run_items')
+        .update({ state: 'skipped', reason: 'this video is no longer on your account', updated_at: now })
+        .eq('id', item.id)
+      gaveUp++
+      continue
+    }
+
+    // The same resolver the blog generator uses: ASIN in the title, ASIN in the
+    // description, then the short link followed with an SSRF guard and a bot UA
+    // so it is not logged as a click on the creator's own Geniuslink stats.
+    let resolved: Awaited<ReturnType<typeof resolveProductLink>>
+    try {
+      resolved = await resolveProductLink(String(v.title ?? ''), `${v.product_url ?? ''}\n${v.description ?? ''}`)
+    } catch {
+      // A LOOKUP THAT FELL OVER IS NOT A VERDICT. Left resolving so the next
+      // pass retries, exactly like an unreadable track list.
+      await sb.from('catalogue_run_items')
+        .update({ reason: 'could not follow the product link yet, retrying', updated_at: now }).eq('id', item.id)
+      continue
+    }
+
+    if (resolved.kind !== 'amazon') {
+      await sb.from('catalogue_run_items').update({
+        state: 'skipped',
+        // NAMED, because these are different problems. A link that resolves to
+        // a brand's own shop cannot become an Amazon listing however long we
+        // wait; a video with no link at all is something the creator can fix.
+        reason: resolved.kind === 'store'
+          ? 'the product link goes somewhere other than Amazon, so there is no ASIN to list'
+          : 'no product attached, so there is nothing for the listing to point at',
+        updated_at: now,
+      }).eq('id', item.id)
+      gaveUp++
+      continue
+    }
+
+    // Cached on the video, which is the whole point of migration 204: the next
+    // run, the CC badge and every other ASIN-keyed feature read it for free.
+    await sb.from('youtube_videos').update({ asin: resolved.asin }).eq('id', item.video_id)
+
+    const domains = domainsByRun.get(item.run_id) ?? []
+    if (domains.length > 0) {
+      await sb.from('catalogue_run_items').insert(domains.map((domain) => ({
+        run_id: item.run_id, user_id: item.user_id, video_id: item.video_id,
+        youtube_video_id: item.youtube_video_id, domain, asin: resolved.asin,
+        state: 'pending', reason: null,
+      })))
+    }
+    // The whole-video row has done its job. 'resolved' is terminal and carries
+    // no reason, so it shows up in no list on the screen.
+    await sb.from('catalogue_run_items')
+      .update({ state: 'resolved', reason: null, updated_at: now }).eq('id', item.id)
+    found++
+  }
+
+  return { found, gaveUp }
+}
+
 export async function GET(request: Request) {
   const auth = request.headers.get('authorization') || ''
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -112,11 +221,14 @@ export async function GET(request: Request) {
   // downloader and a creator watching 150 queued listings deserves to see them
   // land even on a day the video service is off.
   const reconciled = await reconcileQueued(sb)
+  // Product resolution is redirect-following, not video work, so it also runs
+  // whatever the video service is doing.
+  const products = await resolveProducts(sb)
 
   if (!ingestConfigured()) {
     // Not an error and not a finding about anyone's videos. Saying so beats
     // marking a batch of items ineligible because the downloader is switched off.
-    return NextResponse.json({ ok: true, skipped: 'ingest not configured', checked: 0, reconciled })
+    return NextResponse.json({ ok: true, skipped: 'ingest not configured', checked: 0, reconciled, products })
   }
 
   // Over-fetch rows, then group: BATCH videos may be several times that many
@@ -147,7 +259,7 @@ export async function GET(request: Request) {
           .update({ state: 'ready', updated_at: new Date().toISOString() }).eq('id', r.id)
       }
     }
-    return NextResponse.json({ ok: true, checked: 0, closed: (openRuns ?? []).length, reconciled })
+    return NextResponse.json({ ok: true, checked: 0, closed: (openRuns ?? []).length, reconciled, products })
   }
 
   // Group by video. Every row for one video shares a single lookup.
@@ -215,5 +327,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, checked: byVideo.size, eligible, skipped, unknown, reconciled })
+  return NextResponse.json({ ok: true, checked: byVideo.size, eligible, skipped, unknown, reconciled, products })
 }

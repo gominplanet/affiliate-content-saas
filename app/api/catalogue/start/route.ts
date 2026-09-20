@@ -39,6 +39,10 @@ const CAP = 2000
  *  chosen market and a five-market run would report it five times. */
 const WHOLE_VIDEO = ''
 
+/** The short links that hide an ASIN behind a redirect. Matching one means the
+ *  video HAS a product, so the answer is a lookup rather than a refusal. */
+const SHORTENED = /(?:geni\.us|\bgnz\.|amzn\.to|a\.co\/|bit\.ly|tinyurl\.com|rebrand\.ly)/i
+
 export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -90,7 +94,7 @@ export async function POST(req: Request) {
   // delivered to a storefront at all.
   const { data: videos } = await sb
     .from('youtube_videos')
-    .select('id,youtube_video_id,title,asin,product_url,created_at')
+    .select('id,youtube_video_id,title,description,asin,product_url,created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(CAP)
@@ -111,15 +115,23 @@ export async function POST(req: Request) {
   for (const v of rows) {
     const base = { run_id: run.id, user_id: user.id, video_id: v.id, youtube_video_id: v.youtube_video_id || null }
 
-    // THE PRODUCT, RESOLVED THE WAY THE SYNC PIPELINE RESOLVES IT.
+    // THE PRODUCT, IN THREE PASSES, TWO OF THEM FREE.
     //
     // youtube_videos.asin is only written at blog-generation time and by the
     // CC-badge backfill, so on most of a catalogue it is empty. product_url
-    // (migration 052) is the column that is actually populated, and
-    // /api/global-sync/start reads the ASIN out of it with this same parser.
-    // Gating on the asin column alone told a creator that 885 of his 1000
-    // videos had no product attached when nearly all of them did.
-    const asin = (v.asin as string | null)?.trim() || asinFromAmazonUrl(String(v.product_url ?? ''))
+    // (migration 052) is where /api/global-sync/start reads it from. And the
+    // YouTube description, which MVP never wrote and so never emptied, very
+    // often carries the buy link the creator put there themselves.
+    //
+    // Gating on the asin column alone reported "no product attached" for 885 of
+    // one creator's 1000 videos. Adding product_url moved that by one. The
+    // description is the third place, and a short link is the fourth: those
+    // cannot be read without a network hop, so they are handed to the scanner
+    // rather than written off here.
+    const text = `${v.product_url ?? ''}\n${v.description ?? ''}`
+    const asin = (v.asin as string | null)?.trim()
+      || asinFromAmazonUrl(String(v.product_url ?? ''))
+      || asinFromAmazonUrl(String(v.description ?? ''))
 
     if (!v.youtube_video_id) {
       items.push({ ...base, domain: WHOLE_VIDEO, state: 'skipped',
@@ -127,6 +139,15 @@ export async function POST(req: Request) {
       continue
     }
     if (!asin) {
+      // A SHORT LINK IS A PRODUCT, JUST NOT A READABLE ONE. geni.us and amzn.to
+      // hide the ASIN behind a redirect, which is exactly why migration 204
+      // exists. Calling that "no product attached" blames the creator for a
+      // lookup MVP simply had not done yet.
+      if (SHORTENED.test(text)) {
+        items.push({ ...base, domain: WHOLE_VIDEO, state: 'resolving',
+          reason: 'following the product link to find the ASIN' })
+        continue
+      }
       items.push({ ...base, domain: WHOLE_VIDEO, state: 'skipped',
         reason: 'no product attached, so there is nothing for the listing to point at' })
       continue

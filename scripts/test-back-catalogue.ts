@@ -48,6 +48,7 @@ const LABS_RAW = read('app/(dashboard)/back-catalogue/page.tsx')
 const M347 = read('supabase/migrations/347_catalogue_runs.sql')
 const M348 = read('supabase/migrations/348_catalogue_multi_market.sql')
 const M349 = read('supabase/migrations/349_catalogue_run_summary.sql')
+const M350 = read('supabase/migrations/350_catalogue_summary_resolving.sql')
 
 // ── it delivers, it does not download ───────────────────────────────────────
 {
@@ -114,7 +115,7 @@ const M349 = read('supabase/migrations/349_catalogue_run_summary.sql')
     /WHOLE_VIDEO = ''/.test(START) && /domain: WHOLE_VIDEO/.test(START),
     'writing it per market makes a five-store run report "no product attached" five times')
   check('the status route separates the two kinds',
-    /blockedReasons = reasonsFor\(\(b\) => !b\.domain\)/.test(STATUS))
+    /blockedReasons = reasonsFor\(\(b\) => !b\.domain && b\.state === 'skipped'\)/.test(STATUS))
   // NO NUMBER ON THIS SCREEN IS A PAGE LENGTH. A real run reported "472 of 583"
   // for a catalogue over a thousand, because the route counted the rows it had
   // fetched and PostgREST caps a response at 1000.
@@ -221,6 +222,45 @@ const M349 = read('supabase/migrations/349_catalogue_run_summary.sql')
     'the cost belongs next to the button, not on the credits screen afterwards')
 }
 
+// ── an unreadable product link is work, not a refusal ───────────────────────
+//
+// THE 884. Reading youtube_videos.asin found a product on almost none of one
+// creator's catalogue, and adding product_url moved it by one. The link was in
+// the YouTube description all along, often as a geni.us short link that hides
+// the ASIN behind a redirect. Reporting all of that as "no product attached"
+// blamed the creator for a lookup MVP had never done.
+{
+  check('the description is searched for the product link',
+    /asinFromAmazonUrl\(String\(v\.description/.test(START)
+    && /select\([^)]*description/.test(START),
+    'MVP never wrote the description, so it is the one place the link survives')
+  check('a short link is queued for resolution, not written off',
+    /SHORTENED\.test\(text\)/.test(START) && /state: 'resolving'/.test(START),
+    'geni.us hides the ASIN behind a redirect; that is a lookup, not a missing product')
+  // THE CALL, not the declaration. An unwired resolveProducts still satisfies a
+  // check for the name while every short-link video sits in 'resolving' forever.
+  check('and the scanner actually follows it',
+    /await resolveProducts\(sb\)/.test(SCAN) && /resolveProductLink\(/.test(SCAN),
+    'a resolving state nothing resolves is just a nicer word for stuck')
+  check('the resolved ASIN is cached on the video',
+    /from\('youtube_videos'\)\.update\(\{ asin: resolved\.asin \}\)/.test(SCAN),
+    'migration 204 exists precisely so this redirect is followed once, not every run')
+  check('a link that resolves somewhere other than Amazon says so',
+    /goes somewhere other than Amazon/.test(SCAN),
+    "a brand's own shop cannot become an Amazon listing however long we wait, and that is different from having no link")
+  check('a resolution that fell over is retried, not recorded',
+    /could not follow the product link yet, retrying/.test(SCAN),
+    'the same rule as an unreadable track list: a failed lookup is not a verdict about the video')
+  check('resolving videos are not counted as finished',
+    /state in \('pending', 'resolving'\)/.test(M350),
+    '"checked 1000 of 1000" while the scanner is still working is a finished bar over an unfinished job')
+  check('and the screen shows them as work in progress',
+    /still finding the product/.test(STAGE_RAW) && /videos\?\.resolving/.test(STAGE_RAW))
+  check('a resolving row is kept out of the not-going list',
+    /!b\.domain && b\.state === 'skipped'/.test(STATUS),
+    'otherwise "following the product link" appears under a heading that says Not going')
+}
+
 // ── a queued listing is followed to its end ─────────────────────────────────
 //
 // THE PILL THAT LIES BY STANDING STILL. Queueing 150 listings set 150 items to
@@ -318,7 +358,7 @@ const M349 = read('supabase/migrations/349_catalogue_run_summary.sql')
   // EVERY create, not just one. Seb pastes these into the Supabase editor and
   // may well paste them twice; a single guarded statement followed by an
   // unguarded one fails halfway through and leaves the schema part-built.
-  for (const [name, sql] of [['347', M347], ['348', M348], ['349', M349]] as const) {
+  for (const [name, sql] of [['347', M347], ['348', M348], ['349', M349], ['350', M350]] as const) {
     const unguarded = (kind: string) =>
       (sql.match(new RegExp(`create ${kind}\\s+(?!if not exists)`, 'gi')) ?? []).length
     const unguardedCol =
