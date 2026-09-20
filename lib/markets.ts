@@ -23,21 +23,32 @@ export interface Market {
   lang: string     // de-DE (BCP-47)
   langName: string // German
   needsTranslation: boolean
+  /** The store's host, for a /dp probe or a SCOUT session check. */
+  host: string     // www.amazon.co.uk
+  /** Keepa's domainId, which answers "is this ASIN listed in this country"
+   *  definitively and without being bot-walled the way a server-side /dp fetch
+   *  is. NULL where Keepa has no domain: Australia, which Keepa dropped, and
+   *  which therefore has to be answered by SCOUT in the creator's own browser.
+   *
+   *  This lived in a second table inside the geo-check route, which is how a
+   *  third consumer nearly got a third copy. A market list is a fact about the
+   *  product and there is one of it. */
+  keepa: number | null
 }
 
 // The supported set. English markets first (no translation, no dub), then the
 // five non-English marketplaces we localize + dub for. This is the deliberate
 // service scope — extend only as we verify each new Creator Hub flow.
 export const MARKETS: Market[] = [
-  { domain: 'amazon.com',    code: 'US', country: 'United States',  lang: 'en-US', langName: 'English', needsTranslation: false },
-  { domain: 'amazon.ca',     code: 'CA', country: 'Canada',         lang: 'en-CA', langName: 'English', needsTranslation: false },
-  { domain: 'amazon.com.au', code: 'AU', country: 'Australia',      lang: 'en-AU', langName: 'English', needsTranslation: false },
-  { domain: 'amazon.co.uk',  code: 'UK', country: 'United Kingdom', lang: 'en-GB', langName: 'English', needsTranslation: false },
-  { domain: 'amazon.fr',     code: 'FR', country: 'France',         lang: 'fr-FR', langName: 'French',  needsTranslation: true },
-  { domain: 'amazon.de',     code: 'DE', country: 'Germany',        lang: 'de-DE', langName: 'German',  needsTranslation: true },
-  { domain: 'amazon.es',     code: 'ES', country: 'Spain',          lang: 'es-ES', langName: 'Spanish',  needsTranslation: true },
-  { domain: 'amazon.it',     code: 'IT', country: 'Italy',          lang: 'it-IT', langName: 'Italian',  needsTranslation: true },
-  { domain: 'amazon.co.jp',  code: 'JP', country: 'Japan',          lang: 'ja-JP', langName: 'Japanese', needsTranslation: true },
+  { domain: 'amazon.com',    code: 'US', country: 'United States',  lang: 'en-US', langName: 'English', needsTranslation: false, host: 'www.amazon.com',    keepa: 1 },
+  { domain: 'amazon.ca',     code: 'CA', country: 'Canada',         lang: 'en-CA', langName: 'English', needsTranslation: false, host: 'www.amazon.ca',     keepa: 6 },
+  { domain: 'amazon.com.au', code: 'AU', country: 'Australia',      lang: 'en-AU', langName: 'English', needsTranslation: false, host: 'www.amazon.com.au', keepa: null },
+  { domain: 'amazon.co.uk',  code: 'UK', country: 'United Kingdom', lang: 'en-GB', langName: 'English', needsTranslation: false, host: 'www.amazon.co.uk',  keepa: 2 },
+  { domain: 'amazon.fr',     code: 'FR', country: 'France',         lang: 'fr-FR', langName: 'French',  needsTranslation: true,  host: 'www.amazon.fr',     keepa: 4 },
+  { domain: 'amazon.de',     code: 'DE', country: 'Germany',        lang: 'de-DE', langName: 'German',  needsTranslation: true,  host: 'www.amazon.de',     keepa: 3 },
+  { domain: 'amazon.es',     code: 'ES', country: 'Spain',          lang: 'es-ES', langName: 'Spanish', needsTranslation: true,  host: 'www.amazon.es',     keepa: 9 },
+  { domain: 'amazon.it',     code: 'IT', country: 'Italy',          lang: 'it-IT', langName: 'Italian', needsTranslation: true,  host: 'www.amazon.it',     keepa: 8 },
+  { domain: 'amazon.co.jp',  code: 'JP', country: 'Japan',          lang: 'ja-JP', langName: 'Japanese', needsTranslation: true,  host: 'www.amazon.co.jp',  keepa: 5 },
 ]
 
 export function marketByDomain(domain: string): Market | undefined {

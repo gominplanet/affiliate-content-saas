@@ -1,5 +1,10 @@
 -- 352 — count storefront coverage in Postgres, never in a fetched array.
 --
+-- SUPERSEDED BY 353, which replaces this function to add the `checking` count.
+-- Kept as history. Running 352 after 353 would drop that count and make a
+-- stalled existence check look like work in progress again, so run them in
+-- order and stop at 353.
+--
 -- The run model's status route counted the rows it had fetched, and PostgREST
 -- caps a response at 1000, so a thousand video catalogue across five markets
 -- reported "Checking your videos… 472 of 583". 583 was not the size of

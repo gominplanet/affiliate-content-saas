@@ -31,7 +31,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
 import { keepaConfigured, fetchKeepaBrandInfo } from '@/services/keepa'
 import { asinFromAmazonUrl } from '@/lib/asin'
-import { marketByDomain } from '@/lib/markets'
+import { MARKETS, marketByDomain } from '@/lib/markets'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -58,17 +58,14 @@ export const maxDuration = 60
 // research, not what it does on every call. `scope` decides, and it defaults to
 // the English four. The international five are looked up when a creator asks
 // for them and not before.
-const GEOS = [
-  { domain: 'amazon.com', host: 'www.amazon.com', code: 'US', country: 'United States', keepa: 1 },
-  { domain: 'amazon.ca', host: 'www.amazon.ca', code: 'CA', country: 'Canada', keepa: 6 },
-  { domain: 'amazon.co.uk', host: 'www.amazon.co.uk', code: 'GB', country: 'United Kingdom', keepa: 2 },
-  { domain: 'amazon.com.au', host: 'www.amazon.com.au', code: 'AU', country: 'Australia', keepa: null },
-  { domain: 'amazon.de', host: 'www.amazon.de', code: 'DE', country: 'Germany', keepa: 3 },
-  { domain: 'amazon.fr', host: 'www.amazon.fr', code: 'FR', country: 'France', keepa: 4 },
-  { domain: 'amazon.es', host: 'www.amazon.es', code: 'ES', country: 'Spain', keepa: 9 },
-  { domain: 'amazon.it', host: 'www.amazon.it', code: 'IT', country: 'Italy', keepa: 8 },
-  { domain: 'amazon.co.jp', host: 'www.amazon.co.jp', code: 'JP', country: 'Japan', keepa: 5 },
-] as const
+// ONE LIST. This was a second copy of lib/markets carrying the Keepa domain
+// ids, and the coverage drain needing them was very nearly a third. A market
+// list is a fact about the product, so the ids moved to lib/markets and this
+// derives. The US stays first because the source ASIN lives there by
+// definition and the loop below treats it as given.
+const GEOS = MARKETS.map((m) => ({
+  domain: m.domain, host: m.host, code: m.code, country: m.country, keepa: m.keepa,
+}))
 
 function asinFrom(v: string): string | null {
   const s = (v || '').trim()

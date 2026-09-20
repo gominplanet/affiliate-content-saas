@@ -30,6 +30,7 @@ const MKTS = live(read('app/api/coverage/markets/route.ts'))
 const LIB = live(read('lib/storefront-coverage.ts'))
 const M351 = read('supabase/migrations/351_storefront_coverage.sql')
 const M352 = read('supabase/migrations/352_coverage_summary.sql')
+const M353 = read('supabase/migrations/353_coverage_stock.sql')
 const VERCEL = read('vercel.json')
 const BOARD_RAW = read('components/storefront/CoverageBoard.tsx')
 const SYNC_PAGE = read('app/(dashboard)/global-sync/page.tsx')
@@ -85,6 +86,83 @@ const SEARCH = read('lib/app-search-index.ts')
     're-ticking Japan next month should not re-follow every redirect and re-dub every video')
 }
 
+// ── the product check runs BEFORE anything is dubbed ────────────────────────
+//
+// The drain went product → track list → pipeline, so a product Amazon Japan has
+// never sold still got translated, dubbed and given a thumbnail, and the
+// creator found out at the upload. That is the most expensive possible moment
+// to learn it, and every minute before it was spent on a listing that could not
+// exist.
+{
+  check('there is an existence pass',
+    /async function stock\(sb: Sb\)/.test(DRAIN) && /const stocked = await stock\(sb\)/.test(DRAIN),
+    'declared and actually called, because a step nothing calls is a comment')
+
+  // THE ORDER, from the source positions. A reordering of these two lines is
+  // invisible on every screen, and it puts the whole cost back.
+  const stockAt = DRAIN.indexOf('const stocked = await stock(sb)')
+  const checkAt = DRAIN.indexOf('const checked = await checks(sb)')
+  check('and it runs before the track check that starts the dub',
+    stockAt > -1 && checkAt > -1 && stockAt < checkAt,
+    'checks() decides the voice and prepare() hands it to the render pipeline; both are downstream of this')
+
+  // THE CLAIM QUERY, which is what actually enforces it. The line order above
+  // only decides who goes first in one firing; this is what stops a cell with
+  // no answer yet being picked up at all.
+  check('a cell with no stock answer cannot reach the dub',
+    /\.eq\('state', 'unknown'\)\s*\n?\s*\.not\('asin', 'is', null\)\.not\('stock', 'is', null\)/.test(DRAIN)
+    || /not\('stock', 'is', null\)/.test(DRAIN.slice(DRAIN.indexOf('async function checks'))),
+    'without this clause the ordering is a convention, and conventions do not survive a refactor')
+
+  // ONLY, and the word has to be tested. The first version of this clause
+  // looked for `answer === 'not_listed'`, which stays right there when a second
+  // answer is added beside it with an ||, so out of stock could start blocking
+  // and the guard would still pass. The body is read whole instead.
+  // ONLY, and the word has to be tested. The first version of this clause
+  // looked for `answer === 'not_listed'`, which stays right there when a second
+  // answer is added beside it with an ||, so out of stock could start blocking
+  // and the guard would still pass. The body is read whole instead.
+  const blocksBody = (LIB.replace(/\s+/g, ' ').match(/function stockBlocks\([^)]*\)[^{]*\{(.*?)\}/) ?? [])[1] ?? ''
+  check('and only "not sold there" blocks',
+    /not_listed/.test(blocksBody) && !/in_stock|out_of_stock|no_answer/.test(blocksBody),
+    `${blocksBody.trim()} — out of stock is temporary and a video prepared today is ready when stock returns`)
+
+  // FOUR ANSWERS. A boolean forces "not sold there" and "nobody could look"
+  // into the same value, and Australia has no Keepa domain at all, so every
+  // Australian cell would have been recorded as not sold there.
+  for (const v of ['in_stock', 'out_of_stock', 'not_listed', 'no_answer']) {
+    check(`the stock answer can say ${v}`, new RegExp(`'${v}'`).test(LIB))
+  }
+  check('Australia is answered as unanswerable, not as absent',
+    /marketByDomain\(r\.domain\)\?\.keepa == null/.test(DRAIN) && /'no_answer'/.test(DRAIN),
+    'Keepa dropped amazon.com.au, and recording that as "not sold in Australia" is a lie the creator cannot check')
+  check('a missing lookup is never a verdict',
+    /if \(!p\) continue/.test(DRAIN) && /ABSENT FROM THE RESPONSE/.test(read('app/api/cron/coverage-drain/route.ts')),
+    'Keepa returns a product with a null title for an ASIN it has no listing for, so absent means the request failed')
+  check('the blocked reason names one country',
+    /Amazon does not sell this product in \$\{country\}/.test(DRAIN)
+    && /THE DOMAIN IS PART OF THE KEY/.test(read('app/api/cron/coverage-drain/route.ts')),
+    'grouping without the domain named every country in the group on a cell blocked in one of them')
+
+  // The pool is shared with Deal Radar and the Finder, and this fires every
+  // minute.
+  check('it yields the Keepa pool to interactive use',
+    /fetchKeepaTokenStatus/.test(DRAIN) && /MIN_KEEPA_TOKENS/.test(DRAIN),
+    'a background grid spending the pool every minute starves the screens somebody is waiting on')
+  check('and answers are shared across creators',
+    /from\('passport_asin_market'\)/.test(DRAIN),
+    'two creators promoting the same product should pay for one lookup between them')
+
+  // THE SCREEN. A check that has stopped running must not read as progress.
+  check('waiting on the product check is counted apart from being prepared',
+    /and stock is null/.test(M353) && /'checking'/.test(M353)
+    && /checking: checking\.get\(m\.domain\) \?\? 0/.test(MAP),
+    'a Keepa key that expired would otherwise show as steady progress forever')
+  check('and the board says so in words',
+    /checking the product/.test(BOARD_RAW),
+    'a number with no label is the silence this codebase keeps producing')
+}
+
 // ── recency and stock decide the order ──────────────────────────────────────
 {
   // THE TERM HAS TO BE APPLIED. `inStock` survives in the signature when the
@@ -94,6 +172,19 @@ const SEARCH = read('lib/app-search-index.ts')
     && /if \(inStock\) score \+= \d+/.test(LIB)
     && /score \+= Math\.max\(0, 1000 - days\)/.test(LIB),
     'two copies of a priority rule drift, and the drift is invisible until the wrong thing is done first')
+
+  // STOCK MEANS STOCK. The drain passed `dubbed` as `inStock`, so "YouTube
+  // already has French" and "the product is buyable in France" landed in the
+  // same slot while the column comment and the screen both said stock.
+  check('and the stock term is fed the stock answer',
+    /inStock: cell\.stock === 'in_stock'/.test(DRAIN)
+    && !/inStock: dubbed/.test(DRAIN),
+    'passing "already dubbed" as stock made the ordering mean something other than what it says')
+  check('cheap to deliver is its own, smaller term',
+    /alreadyDubbed\?: boolean \| null/.test(LIB)
+    && /if \(alreadyDubbed\) score \+= \d+/.test(LIB)
+    && /alreadyDubbed: dubbed/.test(DRAIN),
+    'a free dub is worth something, just not the same thing as a product somebody can buy')
   check('and the drain claims by it',
     (DRAIN.match(/order\('priority', \{ ascending: false \}\)/g) ?? []).length >= 3,
     'a queue that is not ordered by value spends three thousand lookups in upload order')
@@ -200,7 +291,7 @@ const SEARCH = read('lib/app-search-index.ts')
 
 // ── the migrations ──────────────────────────────────────────────────────────
 {
-  for (const [name, sql] of [['351', M351], ['352', M352]] as const) {
+  for (const [name, sql] of [['351', M351], ['352', M352], ['353', M353]] as const) {
     const unguarded = (kind: string) =>
       (sql.match(new RegExp(`create ${kind}\\s+(?!if not exists)`, 'gi')) ?? []).length
     check(`migration ${name} is safe to run twice`,
@@ -209,6 +300,19 @@ const SEARCH = read('lib/app-search-index.ts')
     check(`migration ${name} drops every policy before creating it`,
       (sql.match(/create policy/gi) ?? []).length === (sql.match(/drop policy if exists/gi) ?? []).length)
   }
+  // A column added to a table that is not there takes the whole file down on
+  // the line it happens to be on, and "relation does not exist" is not an
+  // instruction. The first draft of 353 died exactly this way.
+  check('353 names the migration to run when a prerequisite is missing',
+    /Run migration 351 first/.test(M353) && /Run migration 294 first/.test(M353),
+    'Seb pastes these into the SQL editor and the error is all he gets')
+  check('and it does not take the geo work down over another feature’s cache',
+    /raise notice/i.test(M353) && /keepa_product_cache/.test(M353),
+    'that column belongs to the EPC enrichment and nothing in coverage reads it')
+  check('the summary is replaced in 353, not left split across two files',
+    /create or replace function public\.storefront_coverage_summary/.test(M353)
+    && /SUPERSEDED BY 353/.test(M352),
+    '352 runs before the stock column exists, so it could not reference it and must not be re-run after')
   check('351 has RLS on both tables',
     (M351.match(/enable row level security/gi) ?? []).length === 2
     && (M351.match(/auth\.uid\(\) = user_id/g) ?? []).length >= 2)

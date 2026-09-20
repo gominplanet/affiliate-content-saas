@@ -26,6 +26,10 @@ const DEFAULT_MAX_AGE_DAYS = (() => {
 function rowToBasic(r: any): KeepaBasic {
   return {
     asin: String(r.asin).toUpperCase(),
+    // Round-tripped rather than defaulted to null: a null title is Keepa saying
+    // "not listed in this marketplace", so a cache that invented one would hand
+    // that verdict to every caller for free.
+    title: r.title ?? null,
     imageUrl: r.image_url ?? null,
     salesRank: r.sales_rank ?? null,
     salesRankAvg90: r.sales_rank_avg90 ?? null,
@@ -42,6 +46,7 @@ function rowToBasic(r: any): KeepaBasic {
 function basicToRow(b: KeepaBasic, at: string) {
   return {
     asin: b.asin.toUpperCase(),
+    title: b.title ?? null,
     image_url: b.imageUrl ?? null,
     sales_rank: b.salesRank ?? null,
     sales_rank_avg90: b.salesRankAvg90 ?? null,

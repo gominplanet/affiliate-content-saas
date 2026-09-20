@@ -46,12 +46,20 @@ export async function GET() {
   }
 
   type Bucket = { domain: string; state: string; reason: string | null; n: number }
+  type Checking = { domain: string; n: number }
   const summary = (raw ?? {}) as {
-    videos?: number; videosAbroad?: number; buckets?: Bucket[]
+    videos?: number; videosAbroad?: number; buckets?: Bucket[]; checking?: Checking[]
   }
   const buckets: Bucket[] = Array.isArray(summary.buckets) ? summary.buckets : []
   const sum = (f: (b: Bucket) => boolean) =>
     buckets.filter(f).reduce((n, b) => n + Number(b.n || 0), 0)
+  // Cells still waiting on the product existence check, which runs before any
+  // translation or dub. Kept apart from `preparing` so a check that has stopped
+  // running cannot sit on screen reading as steady progress.
+  const checking = new Map<string, number>()
+  for (const c of (Array.isArray(summary.checking) ? summary.checking : [])) {
+    checking.set(c.domain, Number(c.n || 0))
+  }
 
   const markets = enabled.map((m) => {
     const mine = (s: string) => sum((b) => b.domain === m.domain && b.state === s)
@@ -66,7 +74,11 @@ export async function GET() {
       live: mine('live'),
       uploaded: mine('uploaded'),
       ready: mine('ready'),
-      preparing: mine('preparing') + mine('unknown'),
+      // `unknown` minus the ones still queued for the product check: those are
+      // reported as `checking` instead, because they have not reached the
+      // translating stage that "being prepared" describes.
+      preparing: Math.max(0, mine('preparing') + mine('unknown') - (checking.get(m.domain) ?? 0)),
+      checking: checking.get(m.domain) ?? 0,
       blocked: mine('blocked'),
       // Grouped, because "not sold in this country" and "no product attached"
       // send the creator to do completely different things, and one of them is

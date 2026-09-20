@@ -42,6 +42,10 @@ interface Coverage {
   domain: string; country: string; langName: string | null
   signin: string; signinLabel: string; deliverable: boolean
   live: number; uploaded: number; ready: number; preparing: number; blocked: number
+  /** Waiting on the product check, which runs before anything is translated or
+   *  dubbed. Shown apart from `preparing` so a check that has stopped running
+   *  cannot sit here reading as steady progress. */
+  checking: number
   blockedReasons: Reason[]
 }
 interface ReadyItem { id: string; videoId: string; domain: string; country: string; title: string; thumbnail: string | null }
@@ -260,6 +264,11 @@ export default function CoverageBoard() {
                   {m.live > 0 && <span><strong style={{ color: '#10B981' }}>{m.live}</strong> live</span>}
                   {m.uploaded > 0 && <span><strong style={{ color: '#0EA5A4' }}>{m.uploaded}</strong> uploaded</span>}
                   {m.ready > 0 && <span><strong style={{ color: '#7C3AED' }}>{m.ready}</strong> ready to upload</span>}
+                  {/* Named as its own step. These have not been translated or
+                      dubbed yet: we are still checking whether Amazon sells the
+                      product in this country at all, which is what stops a dub
+                      being rendered for a listing that cannot exist. */}
+                  {m.checking > 0 && <span>{m.checking} checking the product</span>}
                   {m.preparing > 0 && <span>{m.preparing} being prepared</span>}
                   {m.blocked > 0 && <span>{m.blocked} cannot go</span>}
                 </div>

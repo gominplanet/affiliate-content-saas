@@ -439,6 +439,17 @@ export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMA
  *  100 ASINs. */
 export interface KeepaBasic {
   asin: string
+  /** The listing's title IN THE DOMAIN THAT WAS ASKED.
+   *
+   *  This is the existence answer, and it is carried here so one call settles
+   *  both questions a marketplace check has: is this ASIN sold in that country
+   *  at all, and is anything buyable right now. Keepa still returns a product
+   *  object for an ASIN it has no listing for in that domain, with every field
+   *  null, so a null title means "Keepa answered: not in this marketplace" while
+   *  NO MAP ENTRY AT ALL means nobody managed to look. Those two are opposite
+   *  facts and collapsing them is how a creator gets told their product is not
+   *  sold in Germany because a request timed out. */
+  title: string | null
   imageUrl: string | null
   salesRank: number | null
   /** 90-day average sales rank, for a demand-trend read (now vs usual). */
@@ -496,6 +507,7 @@ export async function fetchKeepaBasics(asins: string[], domainId = KEEPA_DOMAIN_
         const deal = product?.stats ? assessFromStats(product.stats) : null
         out.set(asin, {
           asin,
+          title: typeof product.title === 'string' && product.title.trim() ? product.title.trim().slice(0, 300) : null,
           imageUrl,
           salesRank: extras.salesRank,
           salesRankAvg90: extras.salesRankAvg90,

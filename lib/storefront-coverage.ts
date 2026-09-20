@@ -28,6 +28,49 @@ export type CoverageState =
 /** The states the drain still has work to do on. */
 export const OPEN_STATES: CoverageState[] = ['unknown', 'preparing']
 
+/**
+ * Whether the product is actually on sale in that country.
+ *
+ * THIS IS THE FIRST PASS, before anything is translated or dubbed. Dubbing a
+ * video into Japanese for a product Amazon Japan has never sold spends minutes
+ * of render on a listing that cannot exist, and the creator finds out at the
+ * upload, which is the most expensive possible moment.
+ *
+ * FOUR ANSWERS, not a boolean, because the two failure shapes are opposites and
+ * a boolean forces them into the same bucket:
+ *
+ *   in_stock      listed there and something is buyable right now.
+ *   out_of_stock  listed there, nothing buyable at this moment. NOT blocked:
+ *                 stock comes back, and a video prepared today is ready when it
+ *                 does.
+ *   not_listed    Keepa answered, and the ASIN is not sold in that country.
+ *                 This one blocks, and it is the whole saving.
+ *   no_answer     nobody could look from a server. Australia has no Keepa
+ *                 domain at all, and a request can also simply fail. The cell
+ *                 goes on: refusing to ever process Australia would be a worse
+ *                 lie than proceeding without the answer.
+ *
+ * A column left NULL means it has not been checked yet, which is different
+ * again from `no_answer`, and is why this is text and not two booleans.
+ */
+export type StockAnswer = 'in_stock' | 'out_of_stock' | 'not_listed' | 'no_answer'
+
+/** The one answer that stops a cell. Everything else keeps moving. */
+export function stockBlocks(answer: StockAnswer): boolean {
+  return answer === 'not_listed'
+}
+
+/** Plain words for a stock answer, so no screen invents its own. */
+export function stockLabel(answer: StockAnswer | null | undefined, country: string): string {
+  switch (answer) {
+    case 'in_stock':     return `On sale in ${country}`
+    case 'out_of_stock': return `Listed in ${country}, out of stock today`
+    case 'not_listed':   return `Not sold on ${country}’s Amazon store`
+    case 'no_answer':    return `Could not check ${country} from here, going ahead anyway`
+    default:             return 'Not checked yet'
+  }
+}
+
 /** The states that count as "this video is earning here, or about to be". */
 export const DELIVERED_STATES: CoverageState[] = ['uploaded', 'live']
 
@@ -48,12 +91,23 @@ export const DELIVERED_STATES: CoverageState[] = ['uploaded', 'live']
  * is half of a brand new video, so a two year old video that is definitely
  * buyable outranks a fresh one that might not be. That ordering is the point:
  * this should always be working on the most valuable thing not yet done.
+ *
+ * `alreadyDubbed` is a separate, smaller term and NOT a second way to spell
+ * stock. The drain used to pass "YouTube already has this language" as
+ * `inStock`, which put a cheap-to-deliver video and a definitely-buyable
+ * product in the same slot in the ordering while the screen and the column
+ * comment both said the number meant stock. They are different facts: one is
+ * what the delivery costs us, the other is whether the listing can earn.
  */
 export function coveragePriority(opts: {
   publishedAt?: string | Date | null
   inStock?: boolean | null
+  /** YouTube already carries this market's language, so the dub is free and
+   *  near-instant. Worth less than stock: cheap to deliver is not the same as
+   *  worth delivering. */
+  alreadyDubbed?: boolean | null
 }): number {
-  const { publishedAt, inStock } = opts
+  const { publishedAt, inStock, alreadyDubbed } = opts
   let score = 0
 
   if (publishedAt) {
@@ -67,6 +121,8 @@ export function coveragePriority(opts: {
   // Confirmed buyable in this marketplace. Worth half a brand new video, so it
   // lifts an older but sellable product above a newer unverified one.
   if (inStock) score += 500
+  // Free to deliver, because the track is pulled rather than synthesized.
+  if (alreadyDubbed) score += 200
   return score
 }
 

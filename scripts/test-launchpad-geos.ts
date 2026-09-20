@@ -52,18 +52,35 @@ const STAGE = live(read('components/launchpad/StorefrontStage.tsx'))
 
 // ── every market the product sells in is reachable ──────────────────────────
 {
-  // geo-check is Launchpad's market list and lib/markets is everything else's.
-  // Two lists that must not drift: a market missing here is one Launchpad can
-  // never offer, however well the rest of the pipeline supports it.
-  const geoDomains = [...GEOCHECK.matchAll(/domain: '([^']+)'/g)].map((m) => m[1])
+  // This used to read geo-check's own market table and compare it, domain by
+  // domain, against lib/markets. Two lists that must not drift, and the guard
+  // was the only thing stopping them.
+  //
+  // The second list is gone. geo-check derives from MARKETS, so the drift it
+  // guarded against can no longer be expressed, and the ids it used to carry
+  // (the Keepa domain ids) live in lib/markets where the coverage drain reads
+  // them too. The claim is unchanged, so the clauses follow the claim: what
+  // matters now is that nothing re-types the table.
+  check('geo-check derives its market list from lib/markets',
+    /const GEOS = MARKETS\.map\(/.test(GEOCHECK),
+    'a typed list is a second copy, and a market added to lib/markets would silently not be offered')
+  check('and takes the Keepa ids from there too',
+    /keepa: m\.keepa/.test(GEOCHECK) && /keepa: number \| null/.test(live(read('lib/markets.ts'))),
+    'the ids lived only in this route, which is how the coverage drain nearly made a third copy')
+  check('so it reaches every market, including the ones that need a dub',
+    !/\bdomain: 'amazon\./.test(GEOCHECK),
+    `${MARKETS.filter((m) => m.needsTranslation).map((m) => m.domain).join(', ')} — a hand-typed domain here means the table came back`)
+
+  // Derivation is only worth anything if lib/markets actually carries what
+  // geo-check needs off each row. A market added without a host or a keepa
+  // field would derive into a row this route cannot research.
   for (const m of MARKETS) {
-    check(`geo-check offers ${m.domain}`, geoDomains.includes(m.domain),
-      'lib/markets supports it, so Launchpad silently reaching fewer stores is a divergence, not a decision')
+    check(`lib/markets gives ${m.domain} a host`, !!m.host && m.host.includes('amazon'),
+      'the AU browser check and the cache key are both the host')
+    check(`and a Keepa id or an explicit null for ${m.domain}`,
+      m.keepa === null || (typeof m.keepa === 'number' && m.keepa > 0),
+      'undefined would read as "no Keepa domain" and quietly route a researchable market to the browser')
   }
-  const translated = MARKETS.filter((m) => m.needsTranslation).map((m) => m.domain)
-  check('including the ones that need a dub',
-    translated.every((d) => geoDomains.includes(d)),
-    `${translated.join(', ')} — these are the whole point of the dub lane`)
 }
 
 // ── reachable is not the same as researched on every run ────────────────────

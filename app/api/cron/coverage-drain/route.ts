@@ -14,10 +14,19 @@
 //              scan somebody has to remember to run.
 //   2. PRODUCT the ASIN, from the columns if it is there and by following the
 //              description's link if it is not. Cached on the video.
-//   3. CHECK   is the product actually sold in that country (Keepa), and does
-//              the video already carry that language (YouTube's track list).
-//   4. PREPARE hand it to the existing storefront pipeline, which translates,
+//   3. STOCK   is the product actually sold in that country at all, and is
+//              anything buyable. FIRST, before a single second of audio is
+//              rendered.
+//   4. CHECK   does the video already carry that language (YouTube's track
+//              list), which decides whose voice ships.
+//   5. PREPARE hand it to the existing storefront pipeline, which translates,
 //              dubs and builds the thumbnail. The cell becomes 'ready'.
+//
+// STOCK COMES BEFORE THE DUB, and that ordering is the expensive half of this
+// file. The steps used to run product → track → pipeline, so a product Amazon
+// Japan has never sold still got translated, dubbed and given a thumbnail, and
+// the creator learned it could not go at the upload. Now a cell cannot reach
+// the track check until the existence question has an answer.
 //
 // RECENCY AND STOCK decide the order, which is what the creator asked for and
 // also the only pair that costs nothing to know. Both change on their own, so
@@ -34,7 +43,8 @@ import { marketByDomain } from '@/lib/markets'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
 import { listYouTubeAudioTracksDetailed, hasAudioTrack, ingestConfigured } from '@/lib/youtube-ingest'
-import { coveragePriority } from '@/lib/storefront-coverage'
+import { coveragePriority, stockBlocks, type StockAnswer } from '@/lib/storefront-coverage'
+import { fetchKeepaBasics, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -158,20 +168,229 @@ async function products(sb: Sb): Promise<{ found: number; blocked: number }> {
   return { found, blocked }
 }
 
+// ── the existence pass ──────────────────────────────────────────────────────
+/** Cells looked at per firing. Most are answered from the shared cache, which
+ *  costs nothing, so this is far larger than the lookup budget below. */
+const STOCK_CELLS = 240
+/** Keepa lookups actually PAID FOR per firing. This cron fires every minute and
+ *  Keepa's tokens refill a handful a minute, so a generous number here would
+ *  drain the pool the whole product shares within an hour. */
+const STOCK_LOOKUPS = 20
+/** How long a cached answer stands. Whether a product is sold in a country at
+ *  all barely changes; whether it is buyable today changes weekly. Two weeks is
+ *  the compromise, and a wrong "out of stock" only costs ordering, never a
+ *  block. */
+const STOCK_CACHE_DAYS = 14
+/** Yield the shared pool to interactive use below this. Deal Radar and the
+ *  Finder are somebody waiting on a screen; this is a background grid. */
+const MIN_KEEPA_TOKENS = 200
+
+/**
+ * Is the product actually on sale in that country.
+ *
+ * THE FIRST PASS. Everything downstream costs real minutes: a translation, a
+ * dub, a rendered thumbnail, an upload slot in the creator's own browser. None
+ * of it can produce a listing for a product that country has never sold, so
+ * this runs before any of it and blocks the cells that cannot go.
+ *
+ * NOT LISTED IS THE ONLY BLOCKING ANSWER. Out of stock is temporary and a video
+ * prepared today is ready when stock returns. No answer at all keeps the cell
+ * moving: Australia has no Keepa domain, and refusing to ever deliver there
+ * would be a worse lie than delivering without the check.
+ *
+ * NO MAP ENTRY IS NOT A VERDICT. Keepa returns a product object with a null
+ * title for an ASIN it has no listing for in that domain, so a null title is
+ * the answer "not sold there". An ASIN missing from the response entirely means
+ * the request failed, and that cell is left exactly as it was to be retried.
+ *
+ * The answer is shared across creators in passport_asin_market, which has held
+ * this exact question since migration 294. Two creators promoting the same
+ * product pay for one lookup between them.
+ */
+async function stock(sb: Sb): Promise<{ answered: number; blocked: number; spent: number; skipped?: string }> {
+  const { data: cells } = await sb.from('storefront_coverage')
+    .select('id,video_id,domain,asin').eq('state', 'unknown')
+    .not('asin', 'is', null).is('stock', null)
+    .order('priority', { ascending: false }).limit(STOCK_CELLS)
+  const rows: Array<{ id: string; video_id: string; domain: string; asin: string }> = cells ?? []
+  if (rows.length === 0) return { answered: 0, blocked: 0, spent: 0 }
+
+  const now = new Date().toISOString()
+  let answered = 0, blocked = 0, spent = 0
+
+  // The answers, keyed by the pair they are about.
+  const key = (asin: string, domain: string) => `${asin.toUpperCase()}:${domain}`
+  const answers = new Map<string, StockAnswer>()
+
+  // 1. Markets no server can answer. Free, and settled once rather than retried
+  //    every minute forever.
+  const serverless = rows.filter((r) => marketByDomain(r.domain)?.keepa == null)
+  for (const r of serverless) answers.set(key(r.asin, r.domain), 'no_answer')
+
+  const askable = rows.filter((r) => marketByDomain(r.domain)?.keepa != null)
+
+  // 2. The shared cache, across every creator.
+  const fresh = new Date(Date.now() - STOCK_CACHE_DAYS * 86_400_000).toISOString()
+  const wantedAsins = [...new Set(askable.map((r) => r.asin.toUpperCase()))]
+  if (wantedAsins.length > 0) {
+    try {
+      const { data: cached } = await sb.from('passport_asin_market')
+        .select('asin,marketplace,available,in_stock')
+        .in('asin', wantedAsins).gte('checked_at', fresh)
+      for (const c of (cached ?? [])) {
+        const mkt = [...new Set(askable.map((r) => r.domain))]
+          .find((d) => marketByDomain(d)?.host.toLowerCase() === String(c.marketplace).toLowerCase())
+        if (!mkt) continue
+        // in_stock is NULL where the writer did not know the buy box (SCOUT's
+        // /dp probe answers existence only), and that is recorded as listed
+        // rather than invented as out of stock.
+        const a: StockAnswer = !c.available ? 'not_listed' : (c.in_stock === false ? 'out_of_stock' : 'in_stock')
+        answers.set(key(String(c.asin), mkt), a)
+      }
+    } catch { /* no cache → everything below is a miss, which is correct */ }
+  }
+
+  // 3. What is left is paid for, within budget, newest-first because the claim
+  //    query already ordered by priority.
+  const misses = askable.filter((r) => !answers.has(key(r.asin, r.domain)))
+  if (misses.length > 0) {
+    if (!keepaConfigured()) {
+      // NOBODY LOOKED, and nobody can. Recorded only for the markets already
+      // settled above; the rest stay NULL and retry when a key exists.
+      await writeStock(sb, rows, answers, now)
+      return { answered: answers.size, blocked: 0, spent: 0, skipped: 'keepa_unconfigured' }
+    }
+    const tok = await fetchKeepaTokenStatus()
+    if (tok.tokensLeft != null && tok.tokensLeft < MIN_KEEPA_TOKENS) {
+      await writeStock(sb, rows, answers, now)
+      return { answered: answers.size, blocked: 0, spent: 0, skipped: 'low_tokens' }
+    }
+
+    // One call per domain, up to 100 ASINs each, so a catalogue sharing five
+    // products across two hundred videos pays five lookups per country.
+    const byDomain = new Map<string, Set<string>>()
+    for (const r of misses) byDomain.set(r.domain, (byDomain.get(r.domain) ?? new Set()).add(r.asin.toUpperCase()))
+
+    let budget = STOCK_LOOKUPS
+    const writeBack: Array<Record<string, unknown>> = []
+    for (const [domain, asinSet] of byDomain) {
+      if (budget <= 0) break
+      const mkt = marketByDomain(domain)
+      if (!mkt || mkt.keepa == null) continue
+      const batch = [...asinSet].slice(0, budget)
+      let info: Awaited<ReturnType<typeof fetchKeepaBasics>>
+      try {
+        info = await fetchKeepaBasics(batch, mkt.keepa)
+      } catch {
+        // Left alone so the next firing retries it.
+        continue
+      }
+      budget -= batch.length
+      spent += batch.length
+      for (const asin of batch) {
+        const p = info.get(asin)
+        // ABSENT FROM THE RESPONSE = the lookup did not happen for this ASIN.
+        // Never a verdict, so the cell keeps its NULL and comes back around.
+        if (!p) continue
+        const listed = !!p.title
+        const a: StockAnswer = !listed ? 'not_listed' : (p.priceNowCents != null ? 'in_stock' : 'out_of_stock')
+        answers.set(key(asin, domain), a)
+        writeBack.push({
+          asin, marketplace: mkt.host.toLowerCase(), available: listed,
+          in_stock: listed ? p.priceNowCents != null : false,
+          price_cents: p.priceNowCents ?? null, checked_at: now,
+        })
+      }
+    }
+    if (writeBack.length > 0) {
+      try {
+        await sb.from('passport_asin_market').upsert(writeBack, { onConflict: 'asin,marketplace' })
+      } catch { /* the cache is best-effort; the answers below still land */ }
+    }
+  }
+
+  const written = await writeStock(sb, rows, answers, now)
+  answered = written.answered
+  blocked = written.blocked
+  return { answered, blocked, spent }
+}
+
+/** Put the answers on the cells. Separate so every early return above still
+ *  records what it did manage to settle, rather than throwing the free answers
+ *  away because the paid ones could not be had. */
+async function writeStock(
+  sb: Sb,
+  rows: Array<{ id: string; video_id: string; domain: string; asin: string }>,
+  answers: Map<string, StockAnswer>,
+  now: string,
+): Promise<{ answered: number; blocked: number }> {
+  const withAnswer = rows
+    .map((r) => ({ ...r, answer: answers.get(`${r.asin.toUpperCase()}:${r.domain}`) }))
+    .filter((r): r is typeof r & { answer: StockAnswer } => !!r.answer)
+  if (withAnswer.length === 0) return { answered: 0, blocked: 0 }
+
+  // Recency, which the priority also needs, and which one read covers.
+  const { data: vids } = await sb.from('youtube_videos')
+    .select('id,published_at,created_at').in('id', [...new Set(withAnswer.map((r) => r.video_id))])
+  const pubBy = new Map<string, string | null>()
+  for (const v of (vids ?? [])) pubBy.set(v.id, v.published_at ?? v.created_at ?? null)
+
+  let blocked = 0
+  // Grouped by the update they need, so a firing is a handful of statements
+  // rather than two hundred and forty.
+  //
+  // THE DOMAIN IS PART OF THE KEY. Without it a group spans countries, and the
+  // blocked reason then names every country in the group on a cell that is only
+  // blocked in one of them. A reason that lists France to somebody whose Italian
+  // cell is stuck is worse than no reason: it sends them to check the wrong
+  // store.
+  const groups = new Map<string, { answer: StockAnswer; domain: string; pri: number; ids: string[] }>()
+  for (const r of withAnswer) {
+    const pri = coveragePriority({ publishedAt: pubBy.get(r.video_id), inStock: r.answer === 'in_stock' })
+    const k = `${r.answer}|${r.domain}|${pri}`
+    const g = groups.get(k) ?? { answer: r.answer, domain: r.domain, pri, ids: [] }
+    g.ids.push(r.id)
+    groups.set(k, g)
+  }
+  for (const g of groups.values()) {
+    const blocking = stockBlocks(g.answer)
+    if (blocking) blocked += g.ids.length
+    const country = marketByDomain(g.domain)?.country ?? g.domain
+    for (let i = 0; i < g.ids.length; i += 200) {
+      await sb.from('storefront_coverage').update({
+        stock: g.answer, stock_at: now, priority: g.pri, updated_at: now,
+        // BLOCKED IN THE CREATOR'S WORDS, naming the one country it is about,
+        // because the next thing they will want to know is whether it is
+        // fixable. It is not fixable by them, which is exactly why it has to be
+        // said rather than left as a cell that never moves.
+        ...(blocking
+          ? { state: 'blocked', checked_at: now, reason: `Amazon does not sell this product in ${country}` }
+          : { reason: null }),
+      }).in('id', g.ids.slice(i, i + 200))
+    }
+  }
+  return { answered: withAnswer.length, blocked }
+}
+
 /** Does this video already carry the market's language. */
 async function checks(sb: Sb): Promise<{ ready: number; needsDub: number; unknown: number }> {
   if (!ingestConfigured()) return { ready: 0, needsDub: 0, unknown: 0 }
 
+  // STOCK FIRST, ENFORCED HERE. Everything past this point costs render minutes,
+  // and `.not('stock', 'is', null)` is what stops them being spent on a product
+  // the country has never sold. Dropping this clause puts the old ordering back
+  // without changing anything that is visible on a screen.
   const { data: cells } = await sb.from('storefront_coverage')
-    .select('id,video_id,domain,asin').eq('state', 'unknown').not('asin', 'is', null)
+    .select('id,video_id,domain,asin,stock').eq('state', 'unknown')
+    .not('asin', 'is', null).not('stock', 'is', null)
     .order('priority', { ascending: false }).limit(CHECKS * 9)
 
   // Grouped by video: ONE track-list lookup answers every market at once, so
   // checking per cell pays for the same call up to nine times.
-  const groups = new Map<string, Array<{ id: string; domain: string }>>()
+  const groups = new Map<string, Array<{ id: string; domain: string; stock: string | null }>>()
   for (const c of (cells ?? [])) {
     if (!groups.has(c.video_id) && groups.size >= CHECKS) continue
-    groups.set(c.video_id, [...(groups.get(c.video_id) ?? []), { id: c.id, domain: c.domain }])
+    groups.set(c.video_id, [...(groups.get(c.video_id) ?? []), { id: c.id, domain: c.domain, stock: c.stock ?? null }])
   }
   if (groups.size === 0) return { ready: 0, needsDub: 0, unknown: 0 }
 
@@ -213,9 +432,16 @@ async function checks(sb: Sb): Promise<{ ready: number; needsDub: number; unknow
         voice: dubbed ? 'youtube' : 'standard',
         reason: null,
         checked_at: now, updated_at: now,
-        // Stock is confirmed by the storefront step; this is the recency term
-        // plus a lift for a video that is already dubbed and so costs nothing.
-        priority: coveragePriority({ publishedAt: v.published_at, inStock: dubbed }),
+        // THE REAL STOCK ANSWER, from the pass that actually asked. This used to
+        // pass `dubbed` as `inStock`, so "YouTube already has French" and "the
+        // product is buyable in France" landed in the same slot in the ordering
+        // while the column comment and the screen both said the number meant
+        // stock. They are different facts, and they are now two terms.
+        priority: coveragePriority({
+          publishedAt: v.published_at,
+          inStock: cell.stock === 'in_stock',
+          alreadyDubbed: dubbed,
+        }),
       }).eq('id', cell.id)
       if (dubbed) ready++; else needsDub++
     }
@@ -359,8 +585,14 @@ export async function GET(request: Request) {
   const reconciled = await reconcile(sb)
   const enrolled = await enrol(sb)
   const product = await products(sb)
+  // EXISTENCE BEFORE THE DUB. checks() starts the localizing that prepare()
+  // hands to the render pipeline, and neither of them can produce a listing for
+  // a product the country has never sold. This is also enforced in the claim
+  // query rather than only by the order of these lines, because a reordering
+  // here would otherwise be invisible.
+  const stocked = await stock(sb)
   const checked = await checks(sb)
   const prepared = await prepare(sb)
 
-  return NextResponse.json({ ok: true, reconciled, enrolled, product, checked, prepared })
+  return NextResponse.json({ ok: true, reconciled, enrolled, product, stock: stocked, checked, prepared })
 }
