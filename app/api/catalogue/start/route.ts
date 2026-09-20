@@ -107,8 +107,10 @@ export async function POST(req: Request) {
     onlyVideoId = hit.id
   }
 
+  // The markets come back with it: the screen adopts them, so the ticks and the
+  // numbers underneath stop describing two different runs.
   const { data: open } = await sb.from('catalogue_runs')
-    .select('id').eq('user_id', user.id).in('state', OPEN_STATES).limit(1)
+    .select('id,domains,domain').eq('user_id', user.id).in('state', OPEN_STATES).limit(1)
   if (Array.isArray(open) && open.length > 0) {
     // A one-video test is explicit about what it wants, so silently handing
     // back somebody's 3000 video run instead would be the stale-ticks bug over
@@ -118,7 +120,10 @@ export async function POST(req: Request) {
         error: 'You already have a run open. Press Start a different run to close it, then try the single video.',
       }, { status: 409 })
     }
-    return NextResponse.json({ ok: true, runId: open[0].id, resumed: true })
+    const its: string[] = Array.isArray(open[0].domains) && open[0].domains.length > 0
+      ? open[0].domains
+      : [open[0].domain].filter(Boolean)
+    return NextResponse.json({ ok: true, runId: open[0].id, resumed: true, domains: its })
   }
 
   // The true size of the catalogue, read before the capped fetch, so the screen

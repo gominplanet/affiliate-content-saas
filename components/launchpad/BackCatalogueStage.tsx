@@ -70,9 +70,6 @@ const DUBBED_MARKETS = MARKETS.filter((m) => m.needsTranslation)
 
 const muted = { color: 'var(--muted)' }
 
-const marketName = (domain: string) =>
-  DUBBED_MARKETS.find((m) => m.domain === domain)?.country ?? domain
-
 /** How a pill looks and what it says. The label carries the cost, because a
  *  colour alone is not a statement and the creator is about to spend on it. */
 function pillFace(state: MarketState, langName: string | null) {
@@ -187,13 +184,18 @@ export default function BackCatalogueStage() {
         return
       }
       setRunId(j.runId)
+      // ADOPT THE RUN'S MARKETS. Resuming used to leave the local selection
+      // pointing at something else, so pressing Start a different run
+      // afterwards would silently go back to the stale pick.
+      if (Array.isArray(j.domains) && j.domains.length > 0) setPicked(j.domains)
       // A one-video run is not looking at a slice of anything, so the amber
       // "your newest N out of M" line would be wrong on it.
       if (typeof j.total === 'number' && !j.onlyVideo) setScope({ total: j.total, considered: j.videos ?? 0 })
       toast.success(
-        j.resumed ? 'Picking up the run already in progress.'
+        j.resumed ? 'Picking up the run already in progress. The markets above now show what it covers.'
         : j.onlyVideo ? 'Checking that one video.'
         : `Checking ${j.scannable ?? j.videos} videos.`,
+        { duration: j.resumed ? 8000 : 4000 },
       )
     } catch {
       toast.error('Could not reach the server.')
@@ -230,9 +232,6 @@ export default function BackCatalogueStage() {
   // The markets the run is ACTUALLY covering, which is not always what is
   // ticked: a resumed run keeps the markets it was started with.
   const runDomains = runId ? (state?.run?.domains ?? null) : null
-  const resumedElsewhere = !!runDomains && (
-    runDomains.length !== picked.length || runDomains.some((d) => !picked.includes(d))
-  )
 
   return (
     <div>
@@ -308,13 +307,12 @@ export default function BackCatalogueStage() {
         )}
       </div>
 
-      {resumedElsewhere && (
-        <p className="mt-2 text-[12.5px]" style={{ color: '#d97706' }}>
-          This run was started for {runDomains!.map((d) => marketName(d)).join(', ')}, which is not what is
-          ticked above. Press Start a different run to drop it and pick again.
-        </p>
-      )}
-
+      {/* NO STANDING WARNING HERE. An earlier version compared the run's markets
+          to the local selection and shouted whenever they differed, which was
+          every resumed run: the ticks above had already switched to showing the
+          RUN, so the line was contradicting a screen that was telling the truth.
+          The mismatch only matters at the moment of resuming, and the toast on
+          that response names the markets. */}
       <p className="mt-2 text-[12px]" style={muted}>
         Checking a video reads its track list only. Nothing is downloaded and no dub is paid for.
         One check answers every language at once, so adding stores costs nothing extra.

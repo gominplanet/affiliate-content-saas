@@ -332,8 +332,15 @@ const M350 = read('supabase/migrations/350_catalogue_summary_resolving.sql')
   check('the ticks follow the run once one exists',
     /runDomains \? runDomains\.includes\(m\.domain\) : picked\.includes\(m\.domain\)/.test(STAGE_RAW),
     'ticks that describe a selection the run does not have are worse than no ticks')
-  check('and a resumed run that differs says so',
-    /resumedElsewhere/.test(STAGE_RAW) && /which is not what is/.test(STAGE_RAW),
+  // NOT A STANDING WARNING. An earlier version compared the run's markets to the
+  // local selection and shouted on every resumed run, contradicting ticks that
+  // had already switched to showing the run. The honest fix is to adopt the
+  // run's markets and say so once, at the moment of resuming.
+  check('and a resumed run hands its markets back',
+    /resumed: true, domains: its/.test(START) && /if \(Array\.isArray\(j\.domains\)[\s\S]{0,80}setPicked\(j\.domains\)/.test(STAGE_RAW),
+    'leaving the selection stale means Start a different run silently goes back to it')
+  check('and the resume is announced rather than silent',
+    /Picking up the run already in progress\. The markets above now show/.test(STAGE_RAW),
     'silently handing back a different run is how the creator reads five markets as two')
   check('a run can actually be abandoned, not just forgotten',
     // The BUTTON has to call it. A declared-but-unwired abandon() still
