@@ -21,6 +21,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { marketByDomain } from '@/lib/markets'
 import { asinFromAmazonUrl } from '@/lib/asin'
+import { allProductUrls } from '@/lib/product-link'
 import { extractYouTubeVideoId } from '@/lib/youtube-url'
 import { fetchYouTubeVideoSnippet } from '@/services/youtube'
 import { listYouTubeChannels } from '@/lib/youtube-channels'
@@ -42,9 +43,33 @@ const CAP = 2000
  *  chosen market and a five-market run would report it five times. */
 const WHOLE_VIDEO = ''
 
-/** The short links that hide an ASIN behind a redirect. Matching one means the
- *  video HAS a product, so the answer is a lookup rather than a refusal. */
-const SHORTENED = /(?:geni\.us|\bgnz\.|amzn\.to|a\.co\/|bit\.ly|tinyurl\.com|rebrand\.ly)/i
+// NO LIST OF SHORTENERS. There was one, and it knew geni.us, amzn.to, bit.ly
+// and a few others, which meant a creator on a BRANDED Geniuslink domain
+// (https://www.mvpl.ink/2eniqan) had every video reported as having no product
+// attached. allProductUrls already decides what counts as a product link, with
+// socials, tip jars and the creator's own blog filtered out, so anything it
+// returns is worth following whatever the host is.
+
+/**
+ * Why this video has no product, in words the creator can act on.
+ *
+ * "no product attached" is true and useless on its own. It cannot be told apart
+ * from an empty description, a description full of links to the creator's own
+ * blog, or a shortener MVP has never heard of, and those need three different
+ * things doing about them. Naming the hosts turns the verdict into evidence.
+ */
+function whyNoProduct(text: string): string {
+  const hosts = [...new Set(
+    (text.match(/https?:\/\/[^\s<>"')\]]+/gi) ?? [])
+      .map((u) => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return '' } })
+      .filter(Boolean),
+  )]
+  if (hosts.length === 0) {
+    return 'no product attached, and the description has no links at all'
+  }
+  const shown = hosts.slice(0, 3).join(', ')
+  return `no product attached: the description links to ${shown}${hosts.length > 3 ? ' and others' : ''}, none of them an Amazon product page`
+}
 
 /**
  * Add one video to youtube_videos from its YouTube id.
@@ -284,13 +309,13 @@ export async function POST(req: Request) {
       // hide the ASIN behind a redirect, which is exactly why migration 204
       // exists. Calling that "no product attached" blames the creator for a
       // lookup MVP simply had not done yet.
-      if (SHORTENED.test(text)) {
+      if (allProductUrls(text, null, 3).length > 0) {
         items.push({ ...base, domain: WHOLE_VIDEO, state: 'resolving',
           reason: 'following the product link to find the ASIN' })
         continue
       }
       items.push({ ...base, domain: WHOLE_VIDEO, state: 'skipped',
-        reason: 'no product attached, so there is nothing for the listing to point at' })
+        reason: whyNoProduct(text).slice(0, 200) })
       continue
     }
     // One row per market. They share a single lookup: the scanner reads the

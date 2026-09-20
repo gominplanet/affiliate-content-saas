@@ -168,6 +168,38 @@ export type ResolvedProductLink =
  *   4. A direct store / brand product URL → store link.
  *   5. Nothing usable → 'none'.
  */
+/**
+ * The ASIN behind whatever links are in this text, following redirects.
+ *
+ * WHY THIS IS NOT resolveProductLink. That function answers "what should this
+ * post promote", so it stops at a Geniuslink and returns it as a store link:
+ * the link IS the answer there, and following it would be wasted work. This
+ * answers a different question, "which Amazon product is this", and for that
+ * the short link has to be opened.
+ *
+ * NO LIST OF SHORTENERS. A creator on a branded Geniuslink domain has links
+ * like https://www.mvpl.ink/2eniqan, and a hardcoded geni.us|amzn.to|bit.ly
+ * list called those "not a product" for their entire catalogue. Anything
+ * allProductUrls is willing to call a product link gets followed, whatever the
+ * host, and the ASIN is read from where it lands.
+ */
+export async function resolveAsinFromLinks(
+  text: string,
+  ownSite?: string | null,
+  max = 3,
+): Promise<{ asin: string; via: string } | null> {
+  for (const url of allProductUrls(text, ownSite, max)) {
+    const direct = asinFromAmazonUrl(url)
+    if (direct) return { asin: direct, via: url }
+    // resolveFinalUrl never throws and re-validates every hop against the SSRF
+    // guard, so a hostile redirect chain is refused rather than followed.
+    const finalUrl = await resolveFinalUrl(url)
+    const a = asinFromAmazonUrl(finalUrl)
+    if (a) return { asin: a, via: url }
+  }
+  return null
+}
+
 export async function resolveProductLink(title: string, description: string, ownSite?: string | null): Promise<ResolvedProductLink> {
   // Hardened: extractAsin rejects 10-letter words (e.g. "UNDERWATER") that the
   // old bare /[A-Z0-9]{10}/ matcher wrongly treated as ASINs.

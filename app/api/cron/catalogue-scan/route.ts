@@ -21,7 +21,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { marketByDomain } from '@/lib/markets'
 import { listYouTubeAudioTracksDetailed, hasAudioTrack, ingestConfigured } from '@/lib/youtube-ingest'
-import { resolveProductLink } from '@/lib/product-link'
+import { resolveAsinFromLinks } from '@/lib/product-link'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -158,12 +158,14 @@ async function resolveProducts(sb: any): Promise<{ found: number; gaveUp: number
       continue
     }
 
-    // The same resolver the blog generator uses: ASIN in the title, ASIN in the
-    // description, then the short link followed with an SSRF guard and a bot UA
-    // so it is not logged as a click on the creator's own Geniuslink stats.
-    let resolved: Awaited<ReturnType<typeof resolveProductLink>>
+    // FOLLOWS THE LINK, whatever the host. resolveProductLink stops at a
+    // Geniuslink and hands it back as a store link, which is right for "what
+    // should this post promote" and wrong here: this needs the ASIN behind it.
+    // Every hop is re-validated against the SSRF guard and the request carries
+    // a bot user agent, so it is not logged as a click on the creator's stats.
+    let resolved: Awaited<ReturnType<typeof resolveAsinFromLinks>>
     try {
-      resolved = await resolveProductLink(String(v.title ?? ''), `${v.product_url ?? ''}\n${v.description ?? ''}`)
+      resolved = await resolveAsinFromLinks(`${v.product_url ?? ''}\n${v.description ?? ''}`, null, 3)
     } catch {
       // A LOOKUP THAT FELL OVER IS NOT A VERDICT. Left resolving so the next
       // pass retries, exactly like an unreadable track list.
@@ -172,15 +174,13 @@ async function resolveProducts(sb: any): Promise<{ found: number; gaveUp: number
       continue
     }
 
-    if (resolved.kind !== 'amazon') {
+    if (!resolved) {
       await sb.from('catalogue_run_items').update({
         state: 'skipped',
-        // NAMED, because these are different problems. A link that resolves to
-        // a brand's own shop cannot become an Amazon listing however long we
-        // wait; a video with no link at all is something the creator can fix.
-        reason: resolved.kind === 'store'
-          ? 'the product link goes somewhere other than Amazon, so there is no ASIN to list'
-          : 'no product attached, so there is nothing for the listing to point at',
+        // NAMED, and it names the link. "no ASIN" tells the creator nothing
+        // they can act on; the host that was followed tells them whether the
+        // link is wrong, dead, or simply not an Amazon product.
+        reason: 'the product link does not end up on an Amazon product page, so there is no ASIN to list',
         updated_at: now,
       }).eq('id', item.id)
       gaveUp++

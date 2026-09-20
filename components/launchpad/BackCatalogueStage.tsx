@@ -360,7 +360,7 @@ export default function BackCatalogueStage() {
           <div className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
             <div className="flex items-baseline justify-between gap-3 flex-wrap">
               <p className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>
-                {scanning ? `Checking your videos… ${v.checked} of ${v.total}` : `Checked ${v.total} videos`}
+                {scanning ? `Checking your videos… ${v.checked} of ${v.total}` : `Checked ${v.total} ${v.total === 1 ? 'video' : 'videos'}`}
               </p>
               {scanning && <Loader2 size={15} className="animate-spin" style={muted} />}
             </div>

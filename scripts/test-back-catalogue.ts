@@ -101,6 +101,17 @@ const M350 = read('supabase/migrations/350_catalogue_summary_resolving.sql')
   check('the two up-front reasons are distinguished',
     /not on YouTube/.test(START) && /no product attached/.test(START),
     'one is unfixable and the other is a missing ASIN; a single "skipped" tells the creator nothing')
+  // "no product attached" is true and useless on its own: an empty
+  // description, a page full of links to the creator's own blog and an
+  // unrecognised shortener all read identically, and they need three different
+  // things doing about them.
+  check('and a missing product says what the description did contain',
+    // THE CALL SITE. A declared-but-unused whyNoProduct still satisfies a
+    // check for the name while the generic sentence goes back on the screen.
+    /reason: whyNoProduct\(text\)/.test(START)
+    && /the description has no links at all/.test(START)
+    && /the description links to \$\{shown\}/.test(START),
+    'without the hosts, the creator cannot tell an empty description from a link MVP failed to read')
   check('the missing-track reason names the language',
     /no \$\{market\.langName\} audio track/.test(SCAN))
   check('the status route groups the whole-video reasons',
@@ -322,19 +333,30 @@ const M350 = read('supabase/migrations/350_catalogue_summary_resolving.sql')
     /asinFromAmazonUrl\(String\(v\.description/.test(START)
     && /select\([^)]*description/.test(START),
     'MVP never wrote the description, so it is the one place the link survives')
-  check('a short link is queued for resolution, not written off',
-    /SHORTENED\.test\(text\)/.test(START) && /state: 'resolving'/.test(START),
-    'geni.us hides the ASIN behind a redirect; that is a lookup, not a missing product')
+  // NO HARDCODED LIST OF SHORTENERS. There was one, and it knew geni.us,
+  // amzn.to and bit.ly. A creator on a BRANDED Geniuslink domain
+  // (https://www.mvpl.ink/2eniqan) therefore had every single video reported as
+  // having no product attached, on a channel where every description has a buy
+  // link at the top.
+  check('any product link is queued for resolution, whatever the host',
+    /allProductUrls\(text, null, 3\)\.length > 0/.test(START) && /state: 'resolving'/.test(START),
+    'a branded short domain is still a product link, and a host list will always be missing somebody\'s')
+  check('and the file keeps no shortener list of its own',
+    !/geni\\?\.us\|/.test(START) && !/amzn\\?\.to/.test(START),
+    'the list is the bug; allProductUrls already decides what counts as a product link')
+  check('the resolver follows the link rather than stopping at it',
+    /resolveAsinFromLinks/.test(SCAN) && !/resolveProductLink/.test(SCAN),
+    'resolveProductLink hands a Geniuslink back as a store link, which is the wrong answer to "which product is this"')
   // THE CALL, not the declaration. An unwired resolveProducts still satisfies a
   // check for the name while every short-link video sits in 'resolving' forever.
   check('and the scanner actually follows it',
-    /await resolveProducts\(sb\)/.test(SCAN) && /resolveProductLink\(/.test(SCAN),
+    /await resolveProducts\(sb\)/.test(SCAN) && /resolveAsinFromLinks\(/.test(SCAN),
     'a resolving state nothing resolves is just a nicer word for stuck')
   check('the resolved ASIN is cached on the video',
     /from\('youtube_videos'\)\.update\(\{ asin: resolved\.asin \}\)/.test(SCAN),
     'migration 204 exists precisely so this redirect is followed once, not every run')
   check('a link that resolves somewhere other than Amazon says so',
-    /goes somewhere other than Amazon/.test(SCAN),
+    /does not end up on an Amazon product page/.test(SCAN),
     "a brand's own shop cannot become an Amazon listing however long we wait, and that is different from having no link")
   check('a resolution that fell over is retried, not recorded',
     /could not follow the product link yet, retrying/.test(SCAN),
