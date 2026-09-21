@@ -1053,6 +1053,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       accentWord,
       autoBadge,
       autoAccent,
+      visualPresetIds,
+      decoration: decorationChoice,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -1069,6 +1071,23 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
        *  the design with the headline typography baked in. 'baked' and 'clean'
        *  belonged to the removed engines and now return a 400; the union keeps
        *  them so a stale client gets that answer rather than a type error. */
+      /** The look, or looks, for THIS image, overriding the brand's own.
+       *
+       *  Launch Batch sends it. A batch is set up in one sitting and its
+       *  creator should not have to go to Brand Profile and back to change how
+       *  the thumbnails look, and more to the point a look chosen for one batch
+       *  is not a change to the brand: setting it there would silently restyle
+       *  the blog heroes and the pins too.
+       *
+       *  SEVERAL IS A REAL ANSWER. One id means that look every time. More than
+       *  one means roll per image, which is what "mix it up" is: ten videos
+       *  that do not all look like the same thumbnail twice. */
+      visualPresetIds?: string[] | null
+      /** The badge on the thumbnail, overriding the brand's stored setting for
+       *  this image only. 'auto' lets the design decide, 'none' means no badge.
+       *  Same reasoning as the looks: a batch should be set up without leaving
+       *  the page, and without restyling every other surface on the way. */
+      decoration?: 'auto' | 'check' | 'stars' | 'arrow' | 'none' | null
       textMode?: 'baked' | 'clean' | 'graphic'
       /** A single REAL frame grabbed by the extension (jpeg data: URL). Legacy
        *  single-frame path. Superseded by capturedFrames. */
@@ -1175,6 +1194,33 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       /** Zero-typing accent: when on and no accentWord was typed, render each
        *  brief's own emphasis word in red. */
       autoAccent?: boolean
+    }
+
+    // ── A LOOK CHOSEN FOR THIS IMAGE, not for the brand ──────────────────
+    //
+    // The lookup above rolled the creator's own brand looks. Launch Batch names
+    // its own instead, because a look chosen for one batch is not a change to
+    // the brand: storing it there would silently restyle the blog heroes and
+    // the pins as well, and it would mean leaving the page to change it.
+    //
+    // Re-rolled here rather than up there because the body is only parsed at
+    // this point. Unknown ids filter out, and an override that filters down to
+    // nothing falls through to the brand roll rather than to no look at all.
+    {
+      const asked = parsePresetIds((visualPresetIds ?? []).join(','))
+      // ROLLED PER IMAGE. One id means that look every time; several means each
+      // thumbnail draws its own, which is what "mix it up" is for a batch.
+      if (asked.length > 0) visualPreset = pickPresetId(asked)
+
+      // The badge, same idea and the same three states the brand setting has.
+      // Unrecognised falls through to whatever the brand said rather than
+      // quietly meaning "none".
+      if (decorationChoice === 'auto') {
+        forcedDecoration = null
+      } else if (decorationChoice && ['check', 'stars', 'arrow', 'none'].includes(decorationChoice)) {
+        forcedDecoration = decorationChoice as ThumbDecoration
+        noCheckDecoration = decorationChoice === 'none'
+      }
     }
 
     // Headline style: 'question' composes a curiosity question + matching face;

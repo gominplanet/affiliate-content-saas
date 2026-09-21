@@ -99,6 +99,10 @@ export default function LaunchBoard() {
   const [busy, setBusy] = useState<string | null>(null)
   const [uploading, setUploading] = useState(0)
   const [signin, setSignin] = useState<Record<string, string>>({})
+  // ROOM LEFT TODAY, per storefront, from the same counting the upload queue
+  // enforces. Reported while the creator is still choosing countries rather
+  // than only at the moment an upload is refused.
+  const [room, setRoom] = useState<Record<string, number>>({})
   const [launched, setLaunched] = useState<{ scheduled: number; firstAt: string | null; lastAt: string | null; note: string } | null>(null)
 
   // ── load ──────────────────────────────────────────────────────────────────
@@ -165,6 +169,24 @@ export default function LaunchBoard() {
       await load(j.id)
     } finally { setBusy(null) }
   }
+
+  // Refreshed whenever the board is, so a batch launched in another tab does
+  // not leave this number describing an hour ago.
+  useEffect(() => {
+    let cancelled = false
+    const pull = async () => {
+      try {
+        const d = await fetch('/api/global-sync/daily-room').then(r => r.json()).catch(() => ({}))
+        if (cancelled || !Array.isArray(d?.dailyRoom)) return
+        const next: Record<string, number> = {}
+        for (const r of d.dailyRoom as Array<{ domain: string; left: number }>) next[r.domain] = r.left
+        setRoom(next)
+      } catch { /* the countries still tick without it */ }
+    }
+    void pull()
+    const t = setInterval(pull, 60_000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [])
 
   async function patchBatch(body: Record<string, unknown>) {
     if (!batchId) return
@@ -445,8 +467,8 @@ export default function LaunchBoard() {
       >
         <div className="flex flex-col gap-3">
           <p className="text-[12.5px]" style={muted}>
-            Chosen once for the whole batch. A country that does not speak English gets its own title
-            and its own dubbed audio, made by MVP.
+            Chosen once for the whole batch. A country that does not speak English gets its own title,
+            its own dubbed audio and the thumbnail with no words on it, all made by MVP.
           </p>
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))' }}>
             {MARKETS.map((m) => {
@@ -474,8 +496,26 @@ export default function LaunchBoard() {
                   <span className="min-w-0">
                     <span className="block text-[12.5px] font-medium truncate" style={text}>{m.country}</span>
                     <span className="block text-[11px]" style={muted}>
-                      {m.needsTranslation ? `${m.langName}, dubbed` : 'English'}
+                      {/* WHAT THIS COUNTRY ACTUALLY RECEIVES, including which
+                          of the two thumbnails. The text-free copy is a
+                          deliberate choice, not a thumbnail that failed, and
+                          the only place it was ever said was the step above. */}
+                      {m.needsTranslation
+                        ? `${m.langName}, dubbed \u00b7 thumbnail with no words`
+                        : 'English \u00b7 thumbnail with the hook'}
                     </span>
+                    {/* ROOM LEFT TODAY, before the wall rather than at it.
+                        Amazon takes twenty a day on the US store and ten
+                        everywhere else, and a number that stops moving with no
+                        explanation reads as something broken. */}
+                    {on && room[m.domain] !== undefined && (
+                      <span className="block text-[11px]"
+                        style={{ color: room[m.domain] === 0 ? '#d97706' : 'var(--text-2)' }}>
+                        {room[m.domain] === 0
+                          ? 'full for today, the rest go tomorrow'
+                          : `${room[m.domain]} more today`}
+                      </span>
+                    )}
                   </span>
                   {/* THE FACT, not the tick. Being signed in is something SCOUT
                       reports; ticking is a decision. A screen that conflates

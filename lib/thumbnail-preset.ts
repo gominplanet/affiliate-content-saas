@@ -17,6 +17,7 @@
 // Every field is an enum, a clamped string, or a URL in our own storage.
 
 import { normalizeExpression, type ExpressionKey } from '@/lib/face-expression'
+import { VISUAL_PRESETS, parsePresetIds } from '@/lib/visual-presets'
 
 /** How the creator holds, wears or uses the product. Mirrors ThumbPose in the
  *  panel; 'auto' means the art director decides and is not stored. */
@@ -29,6 +30,11 @@ export type ThumbPoseChoice = (typeof THUMB_POSES)[number]
  *  'none' is product only, and an id is one specific saved face. Stored as a
  *  choice so the worker can tell "they picked nobody" from "they never said". */
 export type FacePick = { kind: 'auto' } | { kind: 'none' } | { kind: 'face'; faceId: string }
+
+/** The badge on the thumbnail. 'brand' keeps whatever the creator set on their
+ *  brand, so a batch that never touches this leaves it exactly as it was. */
+export const DECORATIONS = ['brand', 'auto', 'check', 'stars', 'arrow', 'none'] as const
+export type DecorationChoice = (typeof DECORATIONS)[number]
 
 export interface ThumbnailPreset {
   /** Question hook or plain statement, the panel's first chip. */
@@ -46,6 +52,26 @@ export interface ThumbnailPreset {
   styleReferenceUrl: string | null
   scenePrompt: string
   face: FacePick
+  /** The looks these thumbnails are designed in, from lib/visual-presets.
+   *
+   *  EMPTY MEANS THE BRAND'S OWN, which is the only honest default: a batch
+   *  that says nothing about looks must not quietly restyle a creator who has
+   *  already chosen one on their brand.
+   *
+   *  Chosen HERE rather than in Brand Profile on purpose. A look picked for one
+   *  batch is not a change to the brand, and storing it there would restyle the
+   *  blog heroes and the pins too. */
+  lookIds: string[]
+  /** Roll a different look for each video instead of using one for all ten.
+   *
+   *  THE TOGGLE IS SEPARATE FROM THE SELECTION so "mix it up" can mean two
+   *  different things and the creator can tell which they asked for: with looks
+   *  ticked it rolls among those, with none ticked it rolls among all of them,
+   *  which is the surprise-me case. Off, the first ticked look is used on every
+   *  video and the batch stays one consistent set. */
+  mixLooks: boolean
+  /** The badge, or the brand's own setting left alone. */
+  decoration: DecorationChoice
 }
 
 /** What a batch gets before anybody touches the controls: the house look, the
@@ -64,8 +90,17 @@ export function defaultThumbnailPreset(): ThumbnailPreset {
     styleReferenceUrl: null,
     scenePrompt: '',
     face: { kind: 'auto' },
+    lookIds: [],
+    mixLooks: false,
+    decoration: 'brand',
   }
 }
+
+/** Every look a creator can pick, for the picker. One list, the same twenty the
+ *  rest of the product uses, so a batch can never offer a look nothing renders. */
+export const LOOKS = VISUAL_PRESETS.map(p => ({
+  id: p.id, name: p.name, blurb: p.blurb, family: p.family,
+}))
 
 /**
  * Is this a look we are willing to feed an image model as a reference.
@@ -147,6 +182,14 @@ export function validateThumbnailPreset(
       styleReferenceUrl,
       scenePrompt: text(p.scenePrompt, 300),
       face,
+      // FILTERED AGAINST THE REAL LIST. An id nothing renders would be stored,
+      // replayed ten times, and silently produce the default look, which is
+      // indistinguishable from the creator's choice having worked.
+      lookIds: parsePresetIds(Array.isArray(p.lookIds) ? p.lookIds.join(',') : ''),
+      mixLooks: bool(p.mixLooks),
+      decoration: (DECORATIONS as readonly string[]).includes(String(p.decoration ?? ''))
+        ? (p.decoration as DecorationChoice)
+        : 'brand',
     },
     rejected,
   }
@@ -164,6 +207,7 @@ export function validateThumbnailPreset(
  */
 export function presetToRequestFields(preset: ThumbnailPreset): Record<string, unknown> {
   const accent = preset.accentWord.trim()
+  const looks = looksForRequest(preset)
   return {
     headlineStyle: preset.headlineStyle,
     energyEffects: preset.energyEffects || undefined,
@@ -177,6 +221,11 @@ export function presetToRequestFields(preset: ThumbnailPreset): Record<string, u
     ...((accent || preset.autoAccent) ? { accentColor: '#FF2D2D' } : {}),
     styleReferenceUrl: preset.styleReferenceUrl ?? undefined,
     scenePrompt: preset.scenePrompt || undefined,
+    // Left OUT rather than sent empty when the creator said nothing about
+    // looks. An empty array would read as "no look", and the route would fall
+    // back to the default instead of to the brand's own choice.
+    visualPresetIds: looks.length > 0 ? looks : undefined,
+    decoration: preset.decoration === 'brand' ? undefined : preset.decoration,
     // The creator's pick, in the two shapes the route understands.
     ...(preset.face.kind === 'none'
       ? { noHuman: true }
@@ -184,6 +233,23 @@ export function presetToRequestFields(preset: ThumbnailPreset): Record<string, u
         ? { faceModelId: preset.face.faceId }
         : {}),
   }
+}
+
+/**
+ * The look ids to send for one image.
+ *
+ * The route rolls per image when it is given more than one, so this decides
+ * what the pool is rather than doing any rolling itself:
+ *
+ *   mix off, looks picked   one look on all ten, the consistent case
+ *   mix off, none picked    nothing: the brand's own look, untouched
+ *   mix on,  looks picked   roll among the ones they picked
+ *   mix on,  none picked    roll among all of them, which is surprise me
+ */
+export function looksForRequest(preset: ThumbnailPreset): string[] {
+  if (!preset.mixLooks) return preset.lookIds.slice(0, 1)
+  if (preset.lookIds.length > 0) return preset.lookIds
+  return LOOKS.map(l => l.id)
 }
 
 /** One line describing the chosen look, for the step card. It says what was
@@ -195,6 +261,16 @@ export function presetSummary(preset: ThumbnailPreset): string {
   if (preset.face.kind === 'none') bits.push('product only')
   else if (preset.face.kind === 'face') bits.push('your chosen face')
   else bits.push('your face')
+  // THE LOOKS, NAMED. "Mixed" on its own does not tell somebody whether their
+  // three ticks took effect or whether it is rolling all twenty.
+  if (preset.mixLooks && preset.lookIds.length === 0) bits.push('a different look on each, from all of them')
+  else if (preset.mixLooks && preset.lookIds.length > 1) bits.push(`a different look on each, from ${preset.lookIds.length} you picked`)
+  else if (preset.lookIds.length > 0) {
+    const name = LOOKS.find(l => l.id === preset.lookIds[0])?.name
+    bits.push(name ? `the ${name} look on all of them` : 'one look on all of them')
+  } else bits.push('your brand\u2019s usual look')
+  if (preset.decoration === 'none') bits.push('no badge')
+  else if (preset.decoration !== 'brand') bits.push(`a ${preset.decoration} badge`)
   if (preset.styleReferenceUrl) bits.push('matching a look you saved')
   if (preset.pose) bits.push(`${preset.pose === 'thumbs' ? 'thumbs up' : preset.pose} the product`)
   if (preset.wearProduct) bits.push('worn, not held')

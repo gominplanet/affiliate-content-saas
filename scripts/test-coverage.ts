@@ -340,19 +340,40 @@ const SEARCH = read('lib/app-search-index.ts')
     check(`${m.country} allows ${want} a day`, m.dailyUploads === want, `${m.dailyUploads}`)
   }
 
+  // ONE COPY OF THE COUNTING, because the queue enforces the limit and the
+  // launch page reports the room left. Those two disagreeing is worse than
+  // either being wrong alone: the page promises room the queue then refuses.
+  const DAILY = live(read('lib/daily-uploads.ts'))
+  const ROOM = live(read('app/api/global-sync/daily-room/route.ts'))
+  check('the counting lives in one place',
+    /dailyRoomFor/.test(QUEUE) && /dailyRoomFor/.test(ROOM) && /export async function dailyRoomFor/.test(DAILY),
+    'a second copy of this disagrees with the first the day either one changes')
+  check('and neither caller counts for itself',
+    !/state', 'delivered'\)[\s\S]{0,80}?delivered_at/.test(QUEUE)
+    && !/state', 'delivered'\)[\s\S]{0,80}?delivered_at/.test(ROOM),
+    'a caller that does its own counting is the second copy this just removed')
+
   // A ROLLING WINDOW, not a calendar day. Midnight reset lets somebody put
   // twenty up at 23:50 and twenty more at 00:10, which is forty in twenty
   // minutes however the calendar describes it.
   check('it is counted over a rolling 24 hours',
-    /Date\.now\(\) - 24 \* 60 \* 60_000/.test(QUEUE),
+    /now - 24 \* 60 \* 60_000/.test(DAILY),
     'a day that resets at midnight is not a limit, it is a starting pistol')
   // COUNTED FROM WHAT WAS UPLOADED, not from what was handed out.
   check('and counted from deliveries Amazon actually took',
-    /\.eq\('state', 'delivered'\)\.gte\('delivered_at', since\)/.test(QUEUE),
+    /\.eq\('state', 'delivered'\)\.gte\('delivered_at', since\)/.test(DAILY),
     'counting the queue would stop a creator early for uploads that never happened')
   check('the count is a Postgres count',
-    /select\('id', \{ count: 'exact', head: true \}\)/.test(QUEUE),
+    /select\('id', \{ count: 'exact', head: true \}\)/.test(DAILY),
     'a fetched array capped at 1000 rows has reported a page length as a total three times here')
+  // IN THE CATCH, not the declaration. `let used = 0` at the top satisfied the
+  // first version of this, so changing what a failed count means left it green.
+  check('a count that could not be read does not become a full store',
+    /\} catch \{[\s\S]{0,400}?used = 0/.test(DAILY),
+    'blocking an upload over a failed count is inventing a limit Amazon never set')
+  check('and the queue asks the shared lib rather than counting itself',
+    /await dailyRoomFor\(/.test(QUEUE),
+    'an import survives the call being deleted, which has caught this repo three times')
 
   check('a market at its limit is named with the numbers',
     /is reached \(\$\{used\} of \$\{cap\}/.test(QUEUE),

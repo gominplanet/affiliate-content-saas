@@ -18,8 +18,11 @@
 
 import { useEffect, useState } from 'react'
 import ThumbnailBoostPanel, { useThumbnailBoost } from '@/components/thumbnails/ThumbnailBoostPanel'
-import { defaultThumbnailPreset, presetSummary, type ThumbnailPreset, type FacePick } from '@/lib/thumbnail-preset'
-import { Loader2 } from 'lucide-react'
+import {
+  defaultThumbnailPreset, presetSummary, LOOKS, DECORATIONS,
+  type ThumbnailPreset, type FacePick, type DecorationChoice,
+} from '@/lib/thumbnail-preset'
+import { Loader2, Shuffle } from 'lucide-react'
 
 const muted = { color: 'var(--text-2)' } as const
 
@@ -35,6 +38,11 @@ export default function ThumbnailPicker({ value, chosen, saving, onSave }: {
   const [faces, setFaces] = useState<FaceModel[]>([])
   const [facePick, setFacePick] = useState<FacePick>(value?.face ?? { kind: 'auto' })
   const [loadingFaces, setLoadingFaces] = useState(true)
+  // The looks, the mix toggle and the badge are batch state, not panel state:
+  // the panel is shared with Launchpad and these belong to this batch alone.
+  const [lookIds, setLookIds] = useState<string[]>(value?.lookIds ?? [])
+  const [mixLooks, setMixLooks] = useState(!!value?.mixLooks)
+  const [decoration, setDecoration] = useState<DecorationChoice>(value?.decoration ?? 'brand')
 
   useEffect(() => {
     let cancelled = false
@@ -69,6 +77,9 @@ export default function ThumbnailPicker({ value, chosen, saving, onSave }: {
       styleReferenceUrl: (f.styleReferenceUrl as string | undefined) ?? null,
       scenePrompt: String(f.scenePrompt ?? ''),
       face: facePick,
+      lookIds,
+      mixLooks,
+      decoration,
     }
     onSave(preset)
   }
@@ -115,9 +126,80 @@ export default function ThumbnailPicker({ value, chosen, saving, onSave }: {
         )}
       </div>
 
-      {/* ── the look ───────────────────────────────────────────────────────── */}
+      {/* ── the look, chosen here rather than in Brand Profile ─────────────── */}
       <div className="mt-4">
-        <label className="text-[12px] font-medium" style={muted}>Thumbnail style</label>
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <label className="text-[12px] font-medium" style={muted}>The look</label>
+          {/* SAYS WHAT IT WILL DO, not just that it is on. "Mix it up" with
+              nothing ticked and with three ticked are different promises, and
+              a toggle that reads the same in both is a toggle nobody trusts. */}
+          <button type="button" disabled={saving} onClick={() => setMixLooks(v => !v)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold disabled:opacity-60"
+            style={mixLooks ? { background: '#7C3AED', color: '#fff' } : off}>
+            <Shuffle size={11} />
+            {mixLooks
+              ? (lookIds.length > 0 ? `Mixing your ${lookIds.length}` : 'Mixing all of them')
+              : 'Mix it up'}
+          </button>
+        </div>
+        <p className="text-[11px] mt-1" style={muted}>
+          {mixLooks
+            ? (lookIds.length > 0
+                ? 'Each video draws one of the looks you ticked, so the ten are related without being identical.'
+                : 'Nothing ticked, so each video draws from all of them. Tick a few to narrow it down.')
+            : (lookIds.length > 0
+                ? 'One look on all ten. Tick another and turn on Mix it up to vary them.'
+                : 'Nothing ticked, so these use your brand\u2019s usual look. Changing it here does not change your brand.')}
+        </p>
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {LOOKS.map(l => {
+            const picked = lookIds.includes(l.id)
+            return (
+              <button key={l.id} type="button" disabled={saving} title={l.blurb}
+                onClick={() => setLookIds(prev => picked ? prev.filter(x => x !== l.id) : [...prev, l.id])}
+                className={chipBase} style={picked ? { background: '#7C3AED', color: '#fff' } : off}>
+                {l.name}
+              </button>
+            )
+          })}
+          {lookIds.length > 0 && (
+            <button type="button" disabled={saving} onClick={() => setLookIds([])}
+              className={chipBase} style={{ ...off, textDecoration: 'underline' }}>
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── the badge ──────────────────────────────────────────────────────── */}
+      <div className="mt-4">
+        <label className="text-[12px] font-medium" style={muted}>Badge on the thumbnail</label>
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {DECORATIONS.map(d => (
+            <button key={d} type="button" disabled={saving} onClick={() => setDecoration(d)}
+              className={chipBase} style={decoration === d ? { background: '#FF9500', color: '#fff' } : off}>
+              {d === 'brand' ? 'Leave my brand setting' : d === 'auto' ? 'Let the design decide' : d === 'none' ? 'No badge' : d}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── what actually gets built, per country ──────────────────────────── */}
+      {/* THE TWO IMAGES, SAID PLAINLY. Every video gets both, and which one a
+          storefront receives is decided by its language, not by anything the
+          creator sets here. Saying it once at the point of choosing stops the
+          text-free copy looking like a thumbnail that failed. */}
+      <p className="text-[11.5px] mt-4 px-2.5 py-2 rounded"
+        style={{ color: 'var(--text-2)', background: 'var(--surface-2)' }}>
+        Every video gets two of these. The English-speaking stores and YouTube
+        get the one with the hook written on it. Every other country gets the
+        same design with no words at all, because an English hook sitting on a
+        German listing is the same mistake as English audio under a translated
+        title.
+      </p>
+
+      <div className="mt-4">
+        <label className="text-[12px] font-medium" style={muted}>Face, pose and wording</label>
         <div className="mt-1.5">
           <ThumbnailBoostPanel boost={boost} face={pickedFace} disabled={saving} />
         </div>

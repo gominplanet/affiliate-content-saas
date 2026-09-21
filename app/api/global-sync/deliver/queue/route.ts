@@ -5,6 +5,7 @@
 // the creator's logged-in Creator Hub session. Returns the localized title and
 // the market's video (the dub when there is one, else the master render) plus
 // the ASIN, per market not yet delivered.
+import { dailyRoomFor } from '@/lib/daily-uploads'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
@@ -154,20 +155,12 @@ export async function GET(req: Request) {
   // A ROLLING TWENTY-FOUR HOURS, not a calendar day. A limit that resets at
   // midnight lets somebody put twenty up at 23:50 and twenty more at 00:10,
   // which is forty in twenty minutes however the calendar describes it.
-  const since = new Date(Date.now() - 24 * 60 * 60_000).toISOString()
-  const usedToday = new Map<string, number>()
-  for (const domain of new Set(rows.map(r => r.domain as string))) {
-    // COUNTED FROM WHAT AMAZON ACTUALLY TOOK, not from what we handed out.
-    // Counting the queue would stop a creator short for uploads that never
-    // happened, which is the same wall with none of the reason behind it.
-    const { count } = await sb.from('global_sync_targets')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id).eq('domain', domain)
-      .eq('state', 'delivered').gte('delivered_at', since)
-    // A Postgres count, not a fetched array: PostgREST caps a response at 1000
-    // rows, and a page length has been reported as a total three times here.
-    usedToday.set(domain, count ?? 0)
-  }
+  // ONE COPY OF THE COUNTING, shared with the screen that reports the room
+  // left. Those two disagreeing would be worse than either being wrong alone:
+  // the page would promise room this route then refuses, with no explanation
+  // anywhere on screen.
+  const roomRows = await dailyRoomFor(sb, user.id, rows.map(r => r.domain as string))
+  const usedToday = new Map<string, number>(roomRows.map(r => [r.domain, r.used]))
 
   const overCap: Array<{ domain: string; reason: string }> = []
   const withinCap: typeof items = []
@@ -235,15 +228,7 @@ export async function GET(req: Request) {
     ok: true, items: deliverable, skipped,
     // What is left today, per storefront, so a screen can say "9 more to France
     // today" rather than only speaking up once the wall is hit.
-    dailyRoom: [...new Set(rows.map(r => r.domain as string))].map(domain => {
-      const mkt = marketByDomain(domain)
-      const cap = mkt?.dailyUploads ?? 10
-      return {
-        domain, country: mkt?.country ?? domain, cap,
-        used: usedToday.get(domain) ?? 0,
-        left: Math.max(0, cap - (usedToday.get(domain) ?? 0)),
-      }
-    }),
+    dailyRoom: roomRows,
   })
 }
 

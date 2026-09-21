@@ -15,7 +15,8 @@
 //   purpose and this pins them apart.
 import { readFileSync } from 'node:fs'
 import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, type BatchRow, type ItemRow } from '../lib/launch-batch'
-import { validateThumbnailPreset, presetToRequestFields, defaultThumbnailPreset, styleReferenceAllowed } from '../lib/thumbnail-preset'
+import { validateThumbnailPreset, presetToRequestFields, defaultThumbnailPreset, styleReferenceAllowed, looksForRequest, LOOKS, presetSummary as presetSummaryOf } from '../lib/thumbnail-preset'
+import { VISUAL_PRESETS } from '../lib/visual-presets'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -440,8 +441,20 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       ...defaultThumbnailPreset(), autoBadge: true, pose: 'hold', wearProduct: true,
       accentWord: 'FREE', styleReferenceUrl: 'https://x/y.png', scenePrompt: 'kitchen',
     })
+    // Derived here, so they are not looked for in the panel.
+    const DERIVED = new Set(['accentColor', 'noHuman', 'faceModelId'])
+    // THE BATCH'S OWN, which the panel deliberately does not have: the look and
+    // the badge are chosen for this batch rather than for the brand, so they
+    // are checked against the ROUTE instead. Without that half, renaming one
+    // would pass this block by being absent from both sides.
+    const BATCH_ONLY = new Set(['visualPresetIds', 'decoration'])
     for (const k of Object.keys(f)) {
-      if (k === 'accentColor' || k === 'noHuman' || k === 'faceModelId') continue
+      if (DERIVED.has(k)) continue
+      if (BATCH_ONLY.has(k)) {
+        check(`the route still reads "${k}"`, GENROUTE.includes(k),
+          'a field the route does not read is an option that silently does nothing')
+        continue
+      }
       check(`the panel still sends "${k}"`, PANEL.includes(k),
         'the batch and the panel must name the same field or the option is dropped in silence')
     }
@@ -466,6 +479,115 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the picker exists and reuses the panel',
     /ThumbnailBoostPanel/.test(PICKER) && /useThumbnailBoost/.test(PICKER),
     'a second set of controls would drift from the one Launchpad has')
+
+  // ── the look is chosen HERE, not in Brand Profile ────────────────────────
+  //
+  // "have all of the options.. so users dont have to go to brand profile to
+  // change a look". And the deeper reason it cannot just write there: a look
+  // picked for one batch is not a change to the brand, and storing it on the
+  // brand would restyle the blog heroes and the pins along with it.
+  {
+    const P = defaultThumbnailPreset()
+    check('every look the product renders is offered',
+      LOOKS.length === VISUAL_PRESETS.length && LOOKS.length > 1,
+      `${LOOKS.length} offered of ${VISUAL_PRESETS.length}`)
+
+    // FOUR ANSWERS FROM TWO CONTROLS, and each one has to be distinguishable.
+    check('no looks and no mixing leaves the brand alone',
+      looksForRequest({ ...P }).length === 0
+      // LEFT OUT OF THE BODY ENTIRELY, not sent empty. The route treats both
+      // the same today, so this pins the intent rather than a live bug: a
+      // field that is present but empty is one refactor away from meaning
+      // "no look at all" instead of "the brand's own".
+      && presetToRequestFields(P).visualPresetIds === undefined,
+      'an empty list is one refactor away from meaning "no look" and dropping the brand’s own')
+    check('one look, no mixing, is that look every time',
+      JSON.stringify(looksForRequest({ ...P, lookIds: ['bold', 'neon'] })) === JSON.stringify(['bold']),
+      'mixing off must mean one consistent set, not a quietly random one')
+    check('mixing with looks ticked rolls among those',
+      looksForRequest({ ...P, mixLooks: true, lookIds: ['bold', 'neon'] }).length === 2)
+    check('mixing with none ticked rolls among all of them',
+      looksForRequest({ ...P, mixLooks: true }).length === LOOKS.length,
+      'surprise me has to reach every look or it is a narrower promise than it makes')
+
+    // A LOOK NOTHING RENDERS IS WORSE THAN NO LOOK, because it produces the
+    // default and that is indistinguishable from the choice having worked.
+    const v = validateThumbnailPreset({ lookIds: ['bold', 'not-a-look'] }, 'https://a.supabase.co')
+    check('an unknown look is filtered out before it is stored',
+      v.preset.lookIds.length === 1 && v.preset.lookIds[0] === 'bold')
+
+    check('the route rolls per image rather than per batch',
+      /pickPresetId\(asked\)/.test(GENROUTE),
+      'one roll for the whole batch would make "a different look on each" a lie')
+    check('and an override that filters to nothing falls back to the brand',
+      /asked\.length > 0/.test(GENROUTE),
+      'falling back to the default instead would silently drop a look the creator already set')
+
+    // THE STEP NAMES WHAT IT WILL DO. "Mixed" alone does not tell somebody
+    // whether their three ticks took effect or whether it is rolling twenty.
+    const summ = (over: Partial<typeof P>) => presetSummaryOf({ ...P, ...over })
+    check('the summary distinguishes mixing all from mixing a few',
+      summ({ mixLooks: true }) !== summ({ mixLooks: true, lookIds: ['bold', 'neon'] }))
+    check('and names the single look when there is one',
+      /bold/i.test(summ({ lookIds: ['bold'] })),
+      '"one look on all of them" does not tell them which one')
+  }
+
+  // ── the badge, also on this page ─────────────────────────────────────────
+  {
+    const P = defaultThumbnailPreset()
+    check('leaving the brand setting alone sends nothing',
+      presetToRequestFields(P).decoration === undefined,
+      'sending a value here would overwrite a brand setting the creator never touched')
+    check('and a chosen badge is sent',
+      presetToRequestFields({ ...P, decoration: 'none' }).decoration === 'none')
+    // BOTH BRANCHES. The first version checked only the 'auto' one, so
+    // deleting it left every named badge still working and the guard green
+    // while "let the design decide" silently did nothing.
+    check('the route honours it',
+      /decorationChoice === 'auto'/.test(GENROUTE)
+      && /forcedDecoration = null/.test(GENROUTE)
+      && /decorationChoice && \['check', 'stars', 'arrow', 'none'\]\.includes\(decorationChoice\)/.test(GENROUTE),
+      'a branch nothing reaches is an option that silently does nothing')
+    const v = validateThumbnailPreset({ decoration: 'fireworks' }, 'https://a.supabase.co')
+    check('an unknown badge falls back to the brand, not to none',
+      v.preset.decoration === 'brand',
+      'falling back to none would silently strip a badge the creator had set')
+  }
+
+  // ── English gets the words, everywhere else does not ─────────────────────
+  //
+  // Seb: "still english locations with titles and others without". It was the
+  // behaviour already; what was missing was any screen saying so, which made
+  // the text-free copy look like a thumbnail that had failed.
+  {
+    check('the picker says both images get made',
+      /no words/i.test(PICKER) && /hook/i.test(PICKER),
+      'the wordless copy is a deliberate choice and looked like a failure')
+    // ON THE COUNTRY ROW, next to the language. The first version grepped the
+    // whole file and was satisfied by the intro paragraph above the grid, so
+    // deleting the per-country label left it green.
+    check('and each country says which one it gets',
+      /m\.langName\}, dubbed[\s\S]{0,40}?thumbnail with no words/.test(BOARD)
+      && /English[\s\S]{0,20}?thumbnail with the hook/.test(BOARD),
+      'said once in an intro paragraph is said nowhere, for somebody scanning the grid')
+    check('the worker still builds the text-free copy',
+      /withText: false/.test(DRAIN),
+      'one image for every country is the failure this split exists to prevent')
+  }
+
+  // ── the room left, before the wall ───────────────────────────────────────
+  {
+    check('the page reports how many more Amazon takes today',
+      /daily-room/.test(BOARD) && /more today/.test(BOARD),
+      'a number that stops moving with no explanation reads as a break')
+    // THE CALL SITE, not the import line. An import survives the call being
+    // deleted, and this codebase has been caught by exactly that three times.
+    check('and it is the same counting the queue enforces',
+      /await dailyRoomFor\(/.test(live(read('app/api/global-sync/daily-room/route.ts')))
+      && /await dailyRoomFor\(/.test(live(read('app/api/global-sync/deliver/queue/route.ts'))),
+      'a page promising room the queue then refuses is worse than saying nothing')
+  }
 
   // ── the firing budget actually fits in the function ──────────────────────
   //
