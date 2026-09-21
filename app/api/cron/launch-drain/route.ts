@@ -93,7 +93,7 @@ type Sb = any
  */
 async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed: number }> {
   const { data: rows } = await sb.from('launch_items')
-    .select('id,batch_id,user_id,source_url,render_tries')
+    .select('id,batch_id,user_id,source_url,render_tries,reason')
     .eq('state', 'draft').not('source_url', 'is', null)
     .order('created_at', { ascending: true }).limit(RENDERS * 4)
   const items = rows ?? []
@@ -138,9 +138,16 @@ async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed:
 
     const tries = Number(it.render_tries ?? 0)
     if (tries >= TRIES) {
+      // THE LAST REAL ERROR SURVIVES, same as the publish step. Each attempt
+      // wrote what actually went wrong, and giving up used to overwrite it
+      // with a sentence that fits every cause equally badly.
+      const said = String(it.reason || '').trim()
+      const generic = /^The CTA could not be burned in/.test(said)
       await sb.from('launch_items').update({
         state: 'blocked',
-        reason: `The CTA could not be burned in after ${tries} tries. Remove this video and add it again, or launch the batch without it.`,
+        reason: said && !generic
+          ? `The CTA could not be burned in after ${tries} tries. The last thing that went wrong: ${said}`.slice(0, 300)
+          : `The CTA could not be burned in after ${tries} tries, and nothing said why. Remove this video and add it again, or launch the batch without a CTA.`,
         updated_at: now(),
       }).eq('id', it.id)
       failed++
@@ -421,7 +428,7 @@ async function styledThumbnail(
  */
 async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }> {
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,position,title,description,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries')
+    .select('id,user_id,batch_id,position,title,description,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason')
     .eq('state', 'prepared').not('planned_publish_at', 'is', null)
     .order('planned_publish_at', { ascending: true }).limit(PUBLISHES * 4)
   const items = rows ?? []
@@ -439,9 +446,21 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
 
     const tries = Number(it.publish_tries ?? 0)
     if (tries >= TRIES) {
+      // THE LAST REAL ERROR SURVIVES THE GIVING UP.
+      //
+      // Every attempt wrote YouTube's own words onto `reason`, and this line
+      // used to overwrite them with a sentence that fits every cause equally
+      // badly: a disconnected channel, a file YouTube rejected, a quota, a
+      // strike. Four different answers, and the one piece of information that
+      // told them apart was destroyed at the exact moment somebody went
+      // looking for it.
+      const said = String(it.reason || '').trim()
+      const generic = /^YouTube would not take this video/.test(said)
       await sb.from('launch_items').update({
         state: 'blocked',
-        reason: `YouTube would not take this video after ${tries} tries. The others in the batch still went out.`,
+        reason: said && !generic
+          ? `YouTube refused this ${tries} times. The last thing it said: ${said}`.slice(0, 300)
+          : `YouTube would not take this video after ${tries} tries, and gave no reason we could read. Check the channel is still connected under Settings.`,
         updated_at: stamp(),
       }).eq('id', it.id)
       failed++

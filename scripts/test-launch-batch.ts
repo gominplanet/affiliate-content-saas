@@ -883,6 +883,112 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'the one irreversible thing on the page should be read before it is pressed')
 }
 
+// ── YouTube waits, Amazon does not, and the screen says which is which ──────
+//
+// Seb, reading the launch result: "what does this mean.. youtube is schedule on
+// the 23rd and amazon too?" It was not, and never has been: the file reaches
+// YouTube within a minute of Launch and the Amazon hand-off happens right
+// after it, so only YouTube GOING PUBLIC waits for the time. One paragraph
+// covering both is what made them look like one thing.
+{
+  const DELIVERY = live(read('lib/storefront-delivery.ts'))
+  const RETRY = live(read('app/api/launch/items/[id]/retry/route.ts'))
+
+  // THE CALL IS UNCONDITIONAL, which is the actual invariant. The first
+  // version tested whether `planned_publish_at` appeared near the call, which
+  // it does for an unrelated reason: proximity is not a gate.
+  {
+    const at = DRAIN.indexOf('await handOverToAmazon(')
+    const before = at > -1 ? DRAIN.slice(Math.max(0, at - 400), at) : ''
+    check('nothing gates the Amazon side on the publish time',
+      at > -1 && !/if \([^)]*\b(Date\.now|planned_publish_at|goNow)\b[^)]*\)\s*\{?\s*$/.test(before.trim()),
+      'a listing waiting on a YouTube slot would be a day of storefront sales lost for nothing')
+    // AND THE QUEUE THAT FEEDS IT DOES NOT WAIT EITHER.
+    check('the publish step does not wait for the slot to arrive',
+      !/gte\('planned_publish_at'|lte\('planned_publish_at'/.test(DRAIN),
+      'claiming only videos whose time has come would hold the storefronts back too')
+  }
+  check('the result names the two sides apart',
+    /YouTube: on your schedule/.test(BOARD) && /Amazon: straight away/.test(BOARD),
+    'one paragraph covering both is what made them read as one date')
+  check('and states the daily allowance in the creator’s terms',
+    /20 a day on the US store and 10 a day on each other one/.test(BOARD),
+    'the rule exists and was enforced, but nowhere on this page said it')
+
+  // THE SENTENCE WAS FALSE. This page used SCOUT to check sign-in and never
+  // uploaded, so the tab it asked you to keep open did nothing for Amazon.
+  check('the page actually uploads to Amazon',
+    /deliverPreparedStorefronts/.test(BOARD) && /Upload to Amazon now/.test(BOARD),
+    'it asked for a tab to be kept open for work it never did')
+  // THE CALL SITE IN EACH, not the import. An import survives its own call
+  // being replaced by an inline fetch, which is precisely the second uploader
+  // this check exists to forbid.
+  check('and uses the same delivery as the storefront board',
+    /await deliverPreparedStorefronts\(\)/.test(live(read('components/storefront/CoverageBoard.tsx')))
+    && /await deliverPreparedStorefronts\(\)/.test(BOARD)
+    && /export async function deliverPreparedStorefronts/.test(DELIVERY),
+    'two uploaders agree only until one of them learns something')
+  check('and neither board queues for itself',
+    !/deliver\/queue/.test(live(read('components/storefront/CoverageBoard.tsx')))
+    && !/deliver\/queue/.test(BOARD),
+    'a board calling the queue directly is the second uploader wearing the shared one\u2019s import')
+  // BOTH HALVES. The identifier alone matched with one of the two uses gone,
+  // so this pins the exclusion AND the fact that the held-back ones are kept
+  // and counted rather than quietly dropped.
+  check('the shared delivery still holds back an unfinished dub',
+    /filter\(\(i: any\) => !i\?\.audioIsMasterFallback\)/.test(DELIVERY)
+    && /filter\(\(i: any\) => i\?\.audioIsMasterFallback\)/.test(DELIVERY)
+    && /waitingOnDub/.test(DELIVERY),
+    'English audio under a French title is invisible except to a French shopper pressing play')
+  check('and still reports the cap',
+    /daily limit/i.test(DELIVERY),
+    'a number that stops moving with no explanation reads as a break')
+}
+
+// ── giving up must not destroy the reason ───────────────────────────────────
+//
+// "YouTube would not take this video after 3 tries" fits a disconnected
+// channel, a rejected file, a quota and a strike equally badly. Every attempt
+// had already written YouTube's own words onto the row, and the give-up line
+// overwrote them at the exact moment somebody went looking.
+{
+  const RETRY = live(read('app/api/launch/items/[id]/retry/route.ts'))
+
+  for (const [step, marker] of [
+    ['the publish step', 'The last thing it said'],
+    ['the render step', 'The last thing that went wrong'],
+  ] as const) {
+    check(`${step} keeps the real error when it gives up`, DRAIN.includes(marker),
+      'the one fact that tells four causes apart, deleted on the last try')
+  }
+  check('and both fetch the column they read it from',
+    (DRAIN.match(/publish_tries,reason/g) ?? []).length === 1
+    && (DRAIN.match(/render_tries,reason/g) ?? []).length === 1,
+    'a reason the select does not fetch is undefined, and the fallback fires every time')
+  check('a give-up with nothing recorded says so rather than inventing',
+    /gave no reason we could read/.test(DRAIN) && /nothing said why/.test(DRAIN),
+    'a confident sentence over an unknown cause is worse than admitting it')
+
+  // A WAY BACK. Every cause named is something a creator can fix.
+  check('a blocked video can be tried again',
+    /items\/\$\{id\}\/retry/.test(BOARD) && /Try again/.test(BOARD)
+    && /export async function POST/.test(RETRY))
+  check('the retry keeps the work and resets only the tries',
+    // Matched either way it can be written, since these are assignments onto a
+    // patch object rather than literal properties.
+    /render_tries\s*[:=]\s*0/.test(RETRY)
+    && /thumb_tries\s*[:=]\s*0/.test(RETRY)
+    && /publish_tries\s*[:=]\s*0/.test(RETRY)
+    && !/rendered_url\s*[:=]\s*null|thumbnail_url\s*[:=]\s*null/.test(RETRY),
+    'starting from scratch throws away a finished render and two thumbnails')
+  check('it goes back to the step that failed, worked out from what exists',
+    /!item\.rendered_url/.test(RETRY) && /!item\.thumbnail_url/.test(RETRY),
+    'remembering which step failed is a second copy of the truth')
+  check('and a video already on YouTube cannot be retried',
+    /already on YouTube/.test(RETRY),
+    're-running the publish step would upload it twice')
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

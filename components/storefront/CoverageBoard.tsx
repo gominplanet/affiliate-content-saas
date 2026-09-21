@@ -28,8 +28,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Globe, Check, Upload, LogIn, RefreshCw } from 'lucide-react'
 import {
-  requestStorefrontPreflight, requestStorefrontLogin, requestStorefrontDelivery,
+  requestStorefrontPreflight, requestStorefrontLogin,
 } from '@/lib/extension-frame'
+import { deliverPreparedStorefronts, deliverySummary } from '@/lib/storefront-delivery'
 
 interface MarketRow {
   domain: string; code: string; country: string; langName: string | null
@@ -149,56 +150,18 @@ export default function CoverageBoard() {
   async function uploadReady() {
     setUploading(true)
     try {
-      const q = await fetch('/api/global-sync/deliver/queue')
-      const j = await q.json()
-      const all = Array.isArray(j?.items) ? j.items : []
-
-      // A MARKET THAT WANTED A DUB AND HAS NOT GOT ONE IS NOT UPLOADED.
-      //
-      // The queue serves the master render when a target has no dubbed file,
-      // which is right for the English stores and right for a creator who
-      // deliberately chose to skip the dub on one video. It is wrong here:
-      // nothing in the catalogue grid ever skips a dub on purpose, so a master
-      // fallback in this list is a dub that has not finished. Uploading it
-      // would put English audio on amazon.fr under a French title, which is
-      // invisible from every angle except a French shopper pressing play.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const items = all.filter((i: any) => !i?.audioIsMasterFallback)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const waiting = all.filter((i: any) => i?.audioIsMasterFallback)
-
-      if (items.length === 0) {
-        toast.error(waiting.length > 0
-          // SAID, not silently dropped. "Nothing is prepared" would be a lie
-          // about work that is genuinely under way.
-          ? `${waiting.length} ${waiting.length === 1 ? 'listing is' : 'listings are'} still waiting on their translated audio. They go up as soon as the voiceover is done.`
-          : 'Nothing is prepared yet. The background worker fills this as it goes.',
-          { duration: 8000 })
-        return
-      }
-      if (waiting.length > 0) {
-        toast(`${waiting.length} held back until their translated audio is ready.`, { duration: 7000 })
-      }
-
-      // ── AMAZON'S OWN DAILY LIMIT ────────────────────────────────────────
-      //
-      // Twenty a day on the US store, ten on every other. The queue counts
-      // against it and names the markets that are full, and this says so rather
-      // than letting a creator watch a number stop moving and assume something
-      // broke. The limit is Amazon's, and the only remedy is tomorrow.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const atCap = (Array.isArray(j?.skipped) ? j.skipped : []).filter((x: any) => /daily limit/i.test(String(x?.reason || '')))
-      if (atCap.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        toast(atCap.map((x: any) => x.reason).slice(0, 3).join(' '), { duration: 14000 })
-      }
-      const res = await requestStorefrontDelivery(items)
-      if (!res?.ok) {
-        toast.error(res?.error || 'SCOUT could not upload.', { duration: 12000 })
-        return
-      }
+      // ONE DELIVERY PATH, shared with the launch page. The dub check, the
+      // daily cap and the order of the calls live in lib/storefront-delivery,
+      // because two uploaders agree only until one of them learns something.
+      const out = await deliverPreparedStorefronts()
+      const lines = deliverySummary(out)
+      if (out.error) { toast.error(lines.join(' '), { duration: 12000 }); return }
+      if (out.nothingReady) { toast.error(lines.join(' '), { duration: 8000 }); return }
       await loadBoard()
-      toast.success('Uploaded. The board updates as each one is confirmed.')
+      toast.success(lines[0])
+      // THE HELD-BACK CASES SEPARATELY, so they are not read as part of the
+      // success sentence above.
+      for (const l of lines.slice(1)) toast(l, { duration: 12000 })
     } catch {
       toast.error('Could not reach SCOUT.', { duration: 8000 })
     } finally { setUploading(false) }

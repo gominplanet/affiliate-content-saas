@@ -21,6 +21,7 @@ import {
   Loader2, Plus, Trash2, Upload, Rocket, Clock, X, Check, AlertTriangle, LogIn, Wand2,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { deliverPreparedStorefronts, deliverySummary } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, planSchedule } from '@/lib/launch-schedule'
 import { itemStateLabel, itemStateTone, type CtaPreset, type StepStatus } from '@/lib/launch-batch'
@@ -194,6 +195,35 @@ export default function LaunchBoard() {
     const t = setInterval(pull, 60_000)
     return () => { cancelled = true; clearInterval(t) }
   }, [])
+
+  // THE SAME DELIVERY THE STOREFRONT BOARD USES, not a copy. The dub check and
+  // the daily cap live in lib/storefront-delivery, because two uploaders agree
+  // only until one of them learns something.
+  async function uploadToAmazon() {
+    setBusy('amazon')
+    try {
+      const out = await deliverPreparedStorefronts()
+      const lines = deliverySummary(out)
+      if (out.error) { toast.error(lines.join(' '), { duration: 12000 }); return }
+      if (out.nothingReady) { toast(lines.join(' '), { duration: 9000 }); return }
+      toast.success(lines[0])
+      for (const l of lines.slice(1)) toast(l, { duration: 12000 })
+      await load(batchId!)
+    } catch {
+      toast.error('Could not reach SCOUT. Is the extension installed?', { duration: 9000 })
+    } finally { setBusy(null) }
+  }
+
+  async function retryItem(id: string) {
+    setBusy('batch')
+    try {
+      const r = await fetch(`/api/launch/items/${id}/retry`, { method: 'POST' })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { toast.error(j?.error || 'Could not try that again.'); return }
+      toast.success(j.message || 'Trying again.')
+      await load(batchId!)
+    } finally { setBusy(null) }
+  }
 
   async function patchBatch(body: Record<string, unknown>) {
     if (!batchId) return
@@ -695,7 +725,46 @@ export default function LaunchBoard() {
               last on {new Intl.DateTimeFormat('en-GB', { timeZone: batch.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(launched.lastAt))}.
             </p>
           )}
-          <p className="text-[12.5px] mt-1.5" style={muted}>{launched.note}</p>
+
+          {/* ── THE TWO SIDES ARE NOT ON THE SAME CLOCK ──────────────────────
+              This box named the YouTube schedule and then said Amazon needed
+              this tab open, which read as "everything happens on the 23rd".
+              It does not: the file reaches YouTube within a minute of Launch
+              and Amazon starts from that moment. Only YouTube GOING PUBLIC
+              waits for the time. Two headings, because one paragraph covering
+              both is what made them look like one thing. */}
+          <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>
+            <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
+              <p className="text-[12px] font-semibold" style={text}>YouTube: on your schedule</p>
+              <p className="text-[11.5px] mt-1" style={muted}>
+                Each video is uploaded now and kept private, and YouTube makes it public at the time you picked.
+              </p>
+            </div>
+            <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
+              <p className="text-[12px] font-semibold" style={text}>Amazon: straight away</p>
+              <p className="text-[11.5px] mt-1" style={muted}>
+                Not on the schedule at all. Each storefront gets its listing as soon as its translation and dub are done. Amazon takes 20 a day on the US store and 10 a day on each other one, which is its rule, not ours.
+              </p>
+            </div>
+          </div>
+
+          {/* THE UPLOAD ITSELF, from here. This box used to say your Amazon
+              stores needed this tab open, and that was not true of this page:
+              it used SCOUT to check your sign-in and never uploaded anything.
+              Making the sentence true was the better of the two fixes. */}
+          <div className="mt-3 flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => void uploadToAmazon()}
+              disabled={busy === 'amazon'}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-60"
+              style={{ background: '#0EA5A4' }}>
+              {busy === 'amazon' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              Upload to Amazon now
+            </button>
+            <span className="text-[11.5px]" style={muted}>
+              Through SCOUT, in your own logged-in Creator account, so this one needs the tab open.
+            </span>
+          </div>
         </div>
       )}
 
@@ -746,6 +815,17 @@ export default function LaunchBoard() {
                     </span>
                   )}
                 </span>
+                {/* A WAY BACK. Every cause "Cannot go" names is something a
+                    creator can fix, and until now the only way to act on that
+                    was deleting the video and starting again, which throws
+                    away a finished render and two thumbnails. */}
+                {it.state === 'blocked' && (
+                  <button onClick={() => void retryItem(it.id)} disabled={busy === 'batch'}
+                    className="text-[11.5px] px-2.5 py-1 rounded-lg border shrink-0 disabled:opacity-50"
+                    style={{ borderColor: '#d97706', color: '#d97706' }}>
+                    Try again
+                  </button>
+                )}
                 {it.youtube_video_id && (
                   <a href={`https://studio.youtube.com/video/${it.youtube_video_id}/edit`}
                     target="_blank" rel="noopener noreferrer"

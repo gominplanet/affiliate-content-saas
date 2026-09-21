@@ -310,12 +310,19 @@ const SEARCH = read('lib/app-search-index.ts')
 
   // THE UPLOAD. The queue's master fallback is correct for English and for a
   // deliberate skip, and is always an unfinished dub here.
+  // IN THE SHARED DELIVERY, which is where this moved when the launch page
+  // needed the same upload. The rule did not change; checking only the board
+  // would now be checking a component that no longer makes the decision.
+  const DELIVER = live(read('lib/storefront-delivery.ts'))
   check('the board never uploads a market still missing its dub',
-    /audioIsMasterFallback/.test(BOARD_RAW) && /const items = all\.filter/.test(BOARD_RAW),
+    /filter\(\(i: any\) => !i\?\.audioIsMasterFallback\)/.test(DELIVER),
     'the queue falls back to the master, which is English audio under a translated title')
   check('and says so rather than dropping them quietly',
-    /still waiting on their translated audio/.test(BOARD_RAW)
-    && /held back until their translated audio is ready/.test(BOARD_RAW),
+    /still waiting on their translated audio/.test(DELIVER)
+    && /held back until their translated audio is ready/.test(DELIVER)
+    // AND THE BOARD ACTUALLY PRINTS WHAT IT IS HANDED. A summary nothing
+    // renders is the silent filter with extra steps.
+    && /deliverySummary/.test(BOARD_RAW),
     'a silent filter is how four of five reads as complete')
 }
 
@@ -386,10 +393,15 @@ const SEARCH = read('lib/app-search-index.ts')
   // COMMENTS DO NOT COUNT. The first version of this check passed on the
   // comment heading above the code, so deleting the toast left it green.
   const BOARD = live(BOARD_RAW)
+  const DELIVER_LIVE = live(read('lib/storefront-delivery.ts'))
+  // THE CAP MOVED INTO THE SHARED DELIVERY, and the board renders what it is
+  // handed. Both halves are checked: a lib that reports it into a summary no
+  // screen prints is the silent version of the same failure.
   check('and the board says so out loud',
-    /daily limit/i.test(BOARD)
-    && /skipped/.test(BOARD)
-    && /atCap[\s\S]{0,400}?toast\(/.test(BOARD),
+    /daily limit/i.test(DELIVER_LIVE)
+    && /skipped/.test(DELIVER_LIVE)
+    && /atCap/.test(DELIVER_LIVE)
+    && /deliverySummary/.test(BOARD) && /toast\(/.test(BOARD),
     'a number that stops moving with no explanation reads as a break')
 }
 
@@ -454,7 +466,8 @@ const SEARCH = read('lib/app-search-index.ts')
     && /already on your channel are handled on Storefront Sync/.test(LAUNCHPAD),
     'a page promising something it no longer does sends the creator to the wrong place')
   check('the board reads the same delivery queue a single video fills',
-    /\/api\/global-sync\/deliver\/queue/.test(BOARD_RAW),
+    /\/api\/global-sync\/deliver\/queue/.test(live(read('lib/storefront-delivery.ts')))
+    && /await deliverPreparedStorefronts\(\)/.test(BOARD_RAW),
     'a second delivery path drifts from the one that gets used daily')
 }
 
