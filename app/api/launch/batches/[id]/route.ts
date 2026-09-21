@@ -15,14 +15,10 @@ import { createServerClient } from '@/lib/supabase/server'
 import { marketByDomain } from '@/lib/markets'
 import { normalizeSlots } from '@/lib/launch-schedule'
 import { validateThumbnailPreset } from '@/lib/thumbnail-preset'
-import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, type BatchRow, type ItemRow } from '@/lib/launch-batch'
+import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
 
-const ITEM_COLUMNS =
-  'id,position,source_url,rendered_url,clean_url,asin,title,description,thumbnail_url,thumbnail_source,state,reason,publish_at,youtube_video_id,duration_seconds,render_tries,thumb_tries,updated_at'
-const BATCH_COLUMNS =
-  'id,name,state,cta,cta_chosen,thumbnail,thumbnail_chosen,markets,daily_slots,start_on,timezone,created_at'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

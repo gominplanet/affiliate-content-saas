@@ -131,6 +131,29 @@ export interface BatchRow {
   timezone: string
 }
 
+/**
+ * The columns a batch must be read with, wherever it is read.
+ *
+ * ONE LIST, AND THIS IS WHY. The page's route and the launch route each had
+ * their own hand-written select. `thumbnail_chosen` was added to one and not
+ * the other, so the launch route read it as undefined, decided the creator had
+ * never answered the thumbnail step, and refused a batch whose Launch button
+ * the page had just enabled. The comment in that route said "one function
+ * decides what ready means" and it was true: the function was fine, and the two
+ * callers were handing it different rows.
+ *
+ * A function cannot be the single source of truth about a row if its callers
+ * disagree about which row to fetch. test-launch-batch checks every field
+ * batchSteps and launchBlocker read appears here.
+ */
+export const BATCH_COLUMNS =
+  'id,name,state,cta,cta_chosen,thumbnail,thumbnail_chosen,markets,daily_slots,start_on,timezone,created_at'
+
+/** The columns an item must be read with, for the same reason. */
+export const ITEM_COLUMNS =
+  'id,position,source_url,rendered_url,clean_url,asin,title,description,thumbnail_url,thumbnail_source,'
+  + 'state,reason,publish_at,youtube_video_id,duration_seconds,render_tries,thumb_tries,updated_at'
+
 export interface ItemRow {
   id: string
   position: number

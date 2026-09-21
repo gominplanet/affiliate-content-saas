@@ -14,7 +14,7 @@
 //   publish time, not that we worked one out. They are separate columns on
 //   purpose and this pins them apart.
 import { readFileSync } from 'node:fs'
-import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, type BatchRow, type ItemRow } from '../lib/launch-batch'
+import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, BATCH_COLUMNS, ITEM_COLUMNS, type BatchRow, type ItemRow } from '../lib/launch-batch'
 import { validateThumbnailPreset, presetToRequestFields, defaultThumbnailPreset, styleReferenceAllowed, looksForRequest, LOOKS, presetSummary as presetSummaryOf } from '../lib/thumbnail-preset'
 import { VISUAL_PRESETS } from '../lib/visual-presets'
 
@@ -660,8 +660,11 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     && /add column if not exists thumbnail_chosen/.test(M359)
     && /add column if not exists thumbnail_source/.test(M359),
     'a migration that only runs once is one Seb cannot safely re-paste')
-  check('and the route reads them back',
-    /thumbnail,thumbnail_chosen/.test(BATCH) && /thumbnail_source/.test(BATCH),
+  // ON THE SHARED LISTS, which is where the columns live now. Checking the
+  // route source was right when each route wrote its own select and became a
+  // check of nothing the moment they stopped.
+  check('and the shared column lists carry them',
+    /thumbnail,thumbnail_chosen/.test(BATCH_COLUMNS) && /thumbnail_source/.test(ITEM_COLUMNS),
     'a column nothing selects is a column the page never sees')
 }
 
@@ -729,7 +732,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /nothing for \$\{mins\} minutes/.test(BOARD),
     'a slow image model and a worker that is not running look identical without this')
   check('the tries and the timestamp actually reach the page',
-    /render_tries,thumb_tries,updated_at/.test(BATCH),
+    /render_tries,thumb_tries,updated_at/.test(ITEM_COLUMNS),
     'a column the route does not select is a fact the screen cannot report')
   check('and it is only said while something is running',
     /it\.state === 'rendering' \|\| it\.state === 'preparing'/.test(BOARD),
@@ -759,6 +762,54 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('a video already on YouTube keeps its title',
     /already on YouTube/.test(TITLEROUTE),
     'two titles disagreeing with nothing saying which is live')
+}
+
+// ── every route must fetch the columns the rules read ───────────────────────
+//
+// THE BUG THIS EXISTS FOR. lib/launch-batch decides what "ready" means and both
+// routes call it, and the launch route even carried a comment saying so. It was
+// still wrong: each route had its own hand-written select, `thumbnail_chosen`
+// was added to one and not the other, and the launch route read it as undefined
+// and refused a batch whose Launch button the page had just enabled.
+//
+// A function cannot be the single source of truth about a row when its callers
+// disagree about which row to fetch. So the column lists move into the same
+// module as the rules, and this checks that nothing reads a field the lists do
+// not carry.
+{
+  const batchCols = new Set(BATCH_COLUMNS.split(','))
+  const itemCols = new Set(ITEM_COLUMNS.split(','))
+
+  // READ OFF THE RULES THEMSELVES. Every `batch.x` and `i.x` in the source of
+  // batchSteps and launchBlocker is a column those functions need.
+  const rules = LIB.slice(LIB.indexOf('export function batchSteps'))
+  const wantBatch = new Set([...rules.matchAll(/\bbatch\.([a-z_]+)/g)].map(m => m[1]))
+  const wantItem = new Set([
+    ...rules.matchAll(/\bi\.([a-z_]+)/g),
+    ...rules.matchAll(/\bitems\.filter\(\(i\) => [^)]*?i\.([a-z_]+)/g),
+  ].map(m => m[1]))
+
+  check('the rules read something at all', wantBatch.size > 2 && wantItem.size > 0,
+    `${wantBatch.size} batch fields, ${wantItem.size} item fields`)
+  for (const f of wantBatch) {
+    check(`every route fetches batch.${f}`, batchCols.has(f),
+      'a field the rules read and no route fetches is undefined, which reads as "not answered"')
+  }
+  for (const f of wantItem) {
+    check(`every route fetches item.${f}`, itemCols.has(f),
+      'a field the rules read and no route fetches is undefined, which reads as "not answered"')
+  }
+
+  // AND NO ROUTE MAY WRITE ITS OWN LIST. That is the shape of the original bug:
+  // two lists that agreed until one of them changed.
+  for (const [name, src] of [['the batch route', BATCH], ['the launch route', LAUNCH]] as const) {
+    check(`${name} uses the shared column lists`,
+      /\.select\(BATCH_COLUMNS\)/.test(src) && /\.select\(ITEM_COLUMNS\)/.test(src),
+      'a hand-written select is a second list that drifts the day a column is added')
+    check(`${name} hand-writes no batch select`,
+      !/\.select\('id,name,state/.test(src),
+      'the second list is exactly what refused a batch the page had called ready')
+  }
 }
 
 if (failures.length) {

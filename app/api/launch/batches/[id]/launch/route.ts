@@ -21,7 +21,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { planSchedule, slotsAlreadyPast, cadenceLabel } from '@/lib/launch-schedule'
-import { launchBlocker, type BatchRow, type ItemRow } from '@/lib/launch-batch'
+import { launchBlocker, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -40,7 +40,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   const { data: batch } = await sb.from('launch_batches')
-    .select('id,name,state,cta,cta_chosen,markets,daily_slots,start_on,timezone')
+    .select(BATCH_COLUMNS)
     .eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
   if (batch.state === 'launching' || batch.state === 'launched') {
@@ -50,7 +50,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   const { data: rows } = await sb.from('launch_items')
-    .select('id,position,state,asin,title,rendered_url')
+    .select(ITEM_COLUMNS)
     .eq('batch_id', id).order('position', { ascending: true })
   const items: ItemRow[] = rows ?? []
 
