@@ -589,6 +589,30 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       'a page promising room the queue then refuses is worse than saying nothing')
   }
 
+  // ── a fallback that cannot say why is a fallback nobody can fix ──────────
+  //
+  // The first real batch came back with "Your chosen look could not be
+  // applied", which is equally true of a timeout, a missing saved face, a
+  // spend cap and an ASIN we could not fetch. None of those has the same
+  // answer, and the sentence pointed at none of them.
+  {
+    check('the styled call carries its reason back',
+      /Promise<\{ url: string \| null; why: string \}>/.test(DRAIN),
+      'returning null throws away the one fact that makes the failure fixable')
+    // READ OFF THE RESPONSE, not just referenced. The first version matched
+    // `body.error` two lines below, so gutting the line that actually reads the
+    // response left the check green and the reason empty.
+    check('the route’s own refusal is repeated',
+      /if \(!res\.ok\) \{[\s\S]{0,300}?await res\.json\(\)[\s\S]{0,200}?body\.error/.test(DRAIN),
+      'the route refuses for reasons a creator can act on, and they were discarded')
+    check('a timeout names itself',
+      /timed out|timedOut/.test(DRAIN) && /took longer than/.test(DRAIN),
+      'a timeout is the one cause whose fix is a number in this file, not anything the creator can do')
+    check('and the row carries it',
+      /\$\{plainWhy\}/.test(DRAIN),
+      'a reason kept in a variable and never written is a reason nobody reads')
+  }
+
   // ── the firing budget actually fits in the function ──────────────────────
   //
   // Each video needs TWO images: the styled one over a network call, and the
@@ -601,19 +625,33 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       const m = DRAIN.match(new RegExp(`const ${name} = ([0-9_]+)`))
       return m ? Number(m[1].replace(/_/g, '')) : NaN
     }
-    const thumbs = num('THUMBS')
+    const images = num('IMAGES')
     const callMs = num('THUMB_CALL_MS')
     const capMs = num('maxDuration') * 1000
     check('the drain declares a cap, a per-call budget and a batch size',
-      Number.isFinite(thumbs) && Number.isFinite(callMs) && Number.isFinite(capMs),
-      `THUMBS=${thumbs} THUMB_CALL_MS=${callMs} cap=${capMs}`)
-    // The clean build follows the styled one in the SAME firing and is an image
-    // model too, so it gets counted at the same budget rather than assumed free.
-    // A MARGIN, not a dead heat. The writes after the images still have to
+      Number.isFinite(images) && Number.isFinite(callMs) && Number.isFinite(capMs),
+      `IMAGES=${images} THUMB_CALL_MS=${callMs} cap=${capMs}`)
+    // A MARGIN, not a dead heat. The writes after the image still have to
     // happen, and a firing that ends exactly on the cap loses them.
     check('and a firing cannot outlive the function',
-      thumbs * callMs * 2 <= capMs - 30_000,
-      `${thumbs} video(s) x 2 images x ${callMs / 1000}s leaves no room in ${capMs / 1000}s`)
+      images * callMs <= capMs - 30_000,
+      `${images} image(s) x ${callMs / 1000}s leaves no room in ${capMs / 1000}s`)
+    // THE BUDGET IS PER IMAGE. Counting videos put both of a video's images in
+    // one function, which left the styled call about two minutes, and the
+    // designed path does not reliably finish in two minutes: the first real
+    // batch fell back to the plain builder with the look never applied.
+    check('the budget is spent per image, not per video',
+      /if \(!it\.thumbnail_url && budget > 0\)/.test(DRAIN)
+      && /if \(!it\.thumbnail_clean_url && budget > 0\)/.test(DRAIN),
+      'one budget for both images is what starved the styled call')
+    // TWO IMAGES NEED TWO ALLOWANCES. Sharing one budget of three would leave
+    // a video that spent two firings succeeding with a single retry left.
+    const thumbTries = num('THUMB_TRIES')
+    const tries = num('TRIES')
+    check('the thumbnail step has its own try budget, sized for two images',
+      Number.isFinite(thumbTries) && thumbTries >= tries * 2
+      && /tries >= THUMB_TRIES/.test(DRAIN),
+      `THUMB_TRIES=${thumbTries} against TRIES=${tries}`)
   }
 
   // ── the migration ────────────────────────────────────────────────────────

@@ -41,29 +41,35 @@ export const maxDuration = 300
 /** CTA renders per firing. One: it is the heaviest call in the file and the
  *  render service is shared with everything else. */
 const RENDERS = 1
-/** Thumbnails per firing.
+/** IMAGES per firing, not videos.
  *
- *  ONE, and it used to be two. Each video needs TWO images: the styled one from
- *  the designed route (an art director pass and an image model, over a network
- *  call) and the text-free copy built in process. Two videos a firing meant four
- *  image generations inside a 300 second function, so the last one was killed
- *  mid-flight by the platform. The try had already been counted, so three
- *  firings of that spent a video's whole retry budget on a timeout that was
- *  never the video's fault, and it ended up marked "no thumbnail could be
- *  built".
+ *  Each video needs two: the styled one from the designed route (an art
+ *  director pass and an image model, over a network call) and the text-free
+ *  copy the non-English stores get, built in process.
  *
- *  This route fires every minute, so one a firing still clears ten videos in
- *  about ten minutes, which is nothing next to walking away from the computer. */
-const THUMBS = 1
+ *  Counting VIDEOS meant both of a video's images had to fit in one 300 second
+ *  function, which left the styled call about two minutes. The designed path
+ *  does not reliably finish in two minutes, so it was abandoned and the plain
+ *  builder ran instead: a creator picked a look, waited, and got a thumbnail
+ *  that did not use it, with the row saying only that it "could not be
+ *  applied". The first real batch did exactly that.
+ *
+ *  Counting IMAGES gives whichever one runs the whole function. This route
+ *  fires every minute, so ten videos take about twenty firings, which is
+ *  twenty minutes and still nothing against walking away from the computer. */
+const IMAGES = 1
 /** Tries before a video stops asking and says why. */
 const TRIES = 3
-/** How long the internal thumbnail call gets.
+/** Tries for the thumbnail step, which is TWO images and so needs its own
+ *  budget. Three each: sharing one budget of three across both would leave a
+ *  video that spent two firings succeeding with a single retry left. */
+const THUMB_TRIES = 6
+/** How long the styled thumbnail call gets.
  *
- *  SIZED SO BOTH IMAGES FIT. The styled call gets this, and the text-free build
- *  that follows it needs room in the same firing, inside the 300 second cap
- *  below. Together: THUMBS * (this + the clean build) has to stay under
- *  maxDuration, which is what test-launch-batch pins. */
-const THUMB_CALL_MS = 130_000
+ *  ONE IMAGE OWNS THE FIRING, so this is nearly the whole function, with room
+ *  left for the write afterwards. test-launch-batch does the arithmetic against
+ *  maxDuration so raising either number fails the build rather than the batch. */
+const THUMB_CALL_MS = 240_000
 /** Videos pushed to YouTube per firing. ONE: this downloads a whole file and
  *  uploads it again, which is the longest single operation in the product. */
 const PUBLISHES = 1
@@ -206,12 +212,12 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
   const { data: rows } = await sb.from('launch_items')
     .select('id,user_id,batch_id,asin,title,thumbnail_url,thumbnail_clean_url,thumb_tries')
     .eq('state', 'preparing')
-    .order('created_at', { ascending: true }).limit(THUMBS * 4)
+    .order('created_at', { ascending: true }).limit(8)
   const items = rows ?? []
   if (items.length === 0) return { done: 0, blocked: 0, plain: 0, failed: 0 }
 
   let done = 0, blocked = 0, plain = 0, failed = 0
-  let budget = THUMBS
+  let budget = IMAGES
   const now = () => new Date().toISOString()
 
   // The batch's chosen look, read once per batch rather than once per video.
@@ -245,7 +251,7 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
     }
 
     const tries = Number(it.thumb_tries ?? 0)
-    if (tries >= TRIES) {
+    if (tries >= THUMB_TRIES) {
       // PREPARED ANYWAY, because a missing thumbnail does not stop a listing:
       // YouTube takes a frame from the video. Said on the row so the creator
       // knows what their listing will look like rather than finding out later.
@@ -260,22 +266,27 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
 
     await sb.from('launch_items')
       .update({ thumb_tries: tries + 1, updated_at: now() }).eq('id', it.id)
-    budget--
 
     const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', it.user_id).maybeSingle()
     const tier = normalizeTier(integ?.tier)
     const patch: Record<string, unknown> = { updated_at: now() }
     const preset = await loadPreset(it.batch_id)
     let usedPlain = false
+    // WHY it fell back, kept so the row can say it. "Could not be applied" is
+    // true of a timeout, a missing face and a spend cap alike, and none of
+    // those has the same answer.
+    let plainWhy = ''
     try {
-      if (!it.thumbnail_url) {
+      if (!it.thumbnail_url && budget > 0) {
+        budget--
         // THE SAME GENERATOR VIDEO LAUNCHPAD USES, with the batch's chosen
         // look. This route is what gives a thumbnail a hook style, a face, a
         // pose, a badge and a look to match, and calling anything else here is
         // what left a batch thumbnail with no options at all.
         const branded = await styledThumbnail(it.user_id, title, asin, preset)
-        if (branded) patch.thumbnail_url = branded
+        if (branded.url) patch.thumbnail_url = branded.url
         else {
+          plainWhy = branded.why
           // THE FALLBACK IS RECORDED, NOT HIDDEN. A plain thumbnail is better
           // than none, but it is NOT the look they picked, and until this was
           // written down the two outcomes were the same row on screen.
@@ -283,7 +294,8 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
           if (basic) { patch.thumbnail_url = basic; usedPlain = true }
         }
       }
-      if (!it.thumbnail_clean_url) {
+      if (!it.thumbnail_clean_url && budget > 0) {
+        budget--
         // The wordless copy for non-English storefronts. The styled route bakes
         // a headline in by design, so the clean variant stays with the builder
         // that can be told to write nothing at all.
@@ -308,7 +320,7 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
       // 'prepared' would erase the one place the creator could read that this
       // thumbnail is not the look they chose.
       patch.reason = usedPlain
-        ? 'Your chosen look could not be applied, so this one is the plain product thumbnail.'
+        ? `Your chosen look could not be applied, so this is the plain product thumbnail. ${plainWhy}`.trim()
         : null
       done++
     }
@@ -345,7 +357,9 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
  */
 async function styledThumbnail(
   userId: string, title: string, asin: string, preset: ThumbnailPreset,
-): Promise<string | null> {
+): Promise<{ url: string | null; why: string }> {
+  const started = Date.now()
+  const secs = () => Math.round((Date.now() - started) / 1000)
   try {
     const res = await postToSelf({
       path: '/api/youtube/generate-thumbnail',
@@ -361,12 +375,31 @@ async function styledThumbnail(
         ...presetToRequestFields(preset),
       },
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      // THE ROUTE'S OWN WORDS. It refuses for real reasons a creator can act
+      // on (no saved face, a spend cap, an ASIN it cannot fetch), and throwing
+      // all of them away left one sentence that fitted every cause equally
+      // badly and pointed at none of them.
+      const body = await res.json().catch(() => ({})) as { error?: string }
+      const said = String(body.error || '').trim().slice(0, 160)
+      return { url: null, why: said || `the thumbnail service answered ${res.status} after ${secs()}s` }
+    }
     const j = await res.json().catch(() => ({})) as { thumbnailUrl?: string; thumbnailUrls?: string[] }
     const url = j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null)
-    return typeof url === 'string' && url ? url : null
-  } catch {
-    return null
+    if (typeof url === 'string' && url) return { url, why: '' }
+    return { url: null, why: `the thumbnail service returned no image after ${secs()}s` }
+  } catch (e) {
+    // A TIMEOUT NAMES ITSELF, because it is the one cause whose fix is a
+    // number in this file rather than anything the creator can do, and it is
+    // indistinguishable from every other failure without being said.
+    const msg = e instanceof Error ? e.message : String(e)
+    const timedOut = /abort|timeout|timed out/i.test(msg)
+    return {
+      url: null,
+      why: timedOut
+        ? `the thumbnail took longer than ${Math.round(THUMB_CALL_MS / 1000)}s, so it was given up on at ${secs()}s`
+        : `${msg.slice(0, 140)} (after ${secs()}s)`,
+    }
   }
 }
 
