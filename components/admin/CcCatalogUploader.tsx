@@ -8,6 +8,7 @@
 // travels as one giant request. Auto-maps columns from the header (with manual
 // override), then the admin clicks Merge (separate button) to go live.
 
+import { mergeLabel } from '@/lib/cc-import-steps'
 import { useCallback, useRef, useState } from 'react'
 import Papa from 'papaparse'
 import { UploadCloud, FileSpreadsheet, Loader2, CheckCircle2, X } from 'lucide-react'
@@ -48,7 +49,15 @@ const GUESS: Record<FieldKey, RegExp> = {
 const BATCH = 1000
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
-export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
+export default function CcCatalogUploader({ onDone, addOnly = true }: {
+  onDone?: () => void
+  /** The add-only tick, PASSED IN rather than guessed. The button this
+   *  component points at is labelled by that tick, and this component used to
+   *  name the button from memory: it said "Merge into live catalog" while the
+   *  button said "Add to live catalog", which is the one instruction between
+   *  somebody and the thing they wanted pointing at empty space. */
+  addOnly?: boolean
+}) {
   const [files, setFiles] = useState<File[]>([])
   const [headers, setHeaders] = useState<string[]>([])
   const [mapping, setMapping] = useState<Partial<Record<FieldKey, string>>>({})
@@ -321,7 +330,7 @@ export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
         )}
         {phase === 'done' && (
           <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: '#1f8a3a' }}>
-            <CheckCircle2 size={15} /> Uploaded {inserted.toLocaleString()} rows. Now click &ldquo;Merge into live catalog&rdquo; below.
+            <CheckCircle2 size={15} /> Uploaded {inserted.toLocaleString()} rows. Now press &ldquo;{mergeLabel(addOnly)}&rdquo; below.
           </span>
         )}
         {(phase === 'uploading' || phase === 'done') && (

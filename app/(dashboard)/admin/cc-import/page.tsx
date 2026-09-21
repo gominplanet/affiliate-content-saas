@@ -13,6 +13,7 @@ import PageHero from '@/components/layout/PageHero'
 import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle, Tag, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import CcCatalogUploader from '@/components/admin/CcCatalogUploader'
+import { nextStep, mergeLabel, backgroundLabel } from '@/lib/cc-import-steps'
 import { requestCcCatalogScan } from '@/lib/extension-frame'
 
 interface KeepaStatus { tokensLeft: number | null; refillRate: number | null; refillIn: number | null }
@@ -83,7 +84,7 @@ export default function AdminCcImportPage() {
         return
       }
       const staged = res.staged ?? 0
-      toast.success(`Loaded ${staged.toLocaleString()} campaigns from Amazon.${res.armed ? ' Merging into the live catalogue automatically.' : ' Now click “Merge into live catalog”.'}`)
+      toast.success(`Loaded ${staged.toLocaleString()} campaigns from Amazon.${res.armed ? ' Merging into the live catalogue automatically.' : ` Now press “${mergeLabel(addOnly)}”.`}`)
       await loadCounts()
     } catch {
       toast.dismiss(t)
@@ -346,7 +347,7 @@ export default function AdminCcImportPage() {
 
       {/* Uploader — unzips the CC ZIPs + parses the CSVs in the browser and
           streams them to staging. */}
-      <CcCatalogUploader onDone={loadCounts} />
+      <CcCatalogUploader onDone={loadCounts} addOnly={addOnly} />
 
       {/* Counts */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
@@ -390,6 +391,31 @@ export default function AdminCcImportPage() {
 
       {/* Add-only. On by default, and the copy says what each setting costs so
           the choice is made on the evidence rather than on a habit. */}
+      {/* ── DO THIS NEXT ────────────────────────────────────────────────────
+          The page has two merge buttons, an upload button and a refresh, and
+          nothing said which one was the next move. The answer was "whichever
+          you remember", which is not a design. One step at a time, named with
+          the button's own label so the sentence can never point at a button
+          that is not there. */}
+      {(() => {
+        const step = nextStep({
+          filesPicked: 0, uploaded: !!result, stagingEmpty: counts?.hasStaged === false ? true : counts?.hasStaged === true ? false : null,
+          merging, draining: !!drain?.active, merged: !!result, addOnly,
+        })
+        return (
+          <div className="card p-4 mb-3" style={{ borderColor: step.waiting ? 'var(--border)' : 'rgba(124,58,237,0.45)' }}>
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-[11px] font-semibold uppercase tracking-wide"
+                style={{ color: step.waiting ? 'var(--text-faint)' : '#7C3AED' }}>
+                {step.waiting ? 'Nothing to press' : 'Do this next'}
+              </span>
+              <span className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>{step.title}</span>
+            </div>
+            <p className="text-[12.5px] mt-1" style={{ color: 'var(--text-soft)' }}>{step.detail}</p>
+          </div>
+        )
+      })()}
+
       <div className="card p-4 mb-3" style={{ borderColor: addOnly ? 'rgba(52,199,89,0.4)' : 'rgba(245,158,11,0.45)' }}>
         <label className="flex items-start gap-2.5 cursor-pointer">
           <input type="checkbox" checked={addOnly} onChange={e => setAddOnly(e.target.checked)}
@@ -413,7 +439,7 @@ export default function AdminCcImportPage() {
           style={{ background: '#7C3AED' }}>
           {merging
             ? <><Loader2 size={16} className="animate-spin" /> Merging{remaining != null ? `, ${remaining.toLocaleString()} left` : '…'}</>
-            : <>{addOnly ? 'Add to live catalog' : 'Merge into live catalog'} <ArrowRight size={16} /></>}
+            : <>{mergeLabel(addOnly)} <ArrowRight size={16} /></>}
         </button>
         {/* Background drain: kick it off and close the tab — a cron finishes it
             server-side (no throttled-tab crawl). */}
@@ -423,7 +449,7 @@ export default function AdminCcImportPage() {
           title="Kick off the merge on the server and close the tab — a cron drains it to completion, no need to keep this open."
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold border disabled:opacity-50"
           style={{ borderColor: '#7C3AED', color: '#7C3AED' }}>
-          {bgStarting ? <><Loader2 size={16} className="animate-spin" /> Starting…</> : <>{addOnly ? 'Add in background' : 'Merge in background'}</>}
+          {bgStarting ? <><Loader2 size={16} className="animate-spin" /> Starting…</> : <>{backgroundLabel(addOnly)}</>}
         </button>
         <button onClick={loadCounts} disabled={loading || merging}
           className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[13px] font-medium border disabled:opacity-50"
