@@ -467,6 +467,33 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /ThumbnailBoostPanel/.test(PICKER) && /useThumbnailBoost/.test(PICKER),
     'a second set of controls would drift from the one Launchpad has')
 
+  // ── the firing budget actually fits in the function ──────────────────────
+  //
+  // Each video needs TWO images: the styled one over a network call, and the
+  // text-free copy built in process. Two videos a firing meant four image
+  // generations inside a 300 second function, so the last was killed by the
+  // platform with its try already counted, and three firings spent a video's
+  // whole retry budget on a timeout that was never its fault.
+  {
+    const num = (name: string) => {
+      const m = DRAIN.match(new RegExp(`const ${name} = ([0-9_]+)`))
+      return m ? Number(m[1].replace(/_/g, '')) : NaN
+    }
+    const thumbs = num('THUMBS')
+    const callMs = num('THUMB_CALL_MS')
+    const capMs = num('maxDuration') * 1000
+    check('the drain declares a cap, a per-call budget and a batch size',
+      Number.isFinite(thumbs) && Number.isFinite(callMs) && Number.isFinite(capMs),
+      `THUMBS=${thumbs} THUMB_CALL_MS=${callMs} cap=${capMs}`)
+    // The clean build follows the styled one in the SAME firing and is an image
+    // model too, so it gets counted at the same budget rather than assumed free.
+    // A MARGIN, not a dead heat. The writes after the images still have to
+    // happen, and a firing that ends exactly on the cap loses them.
+    check('and a firing cannot outlive the function',
+      thumbs * callMs * 2 <= capMs - 30_000,
+      `${thumbs} video(s) x 2 images x ${callMs / 1000}s leaves no room in ${capMs / 1000}s`)
+  }
+
   // ── the migration ────────────────────────────────────────────────────────
   check('the columns exist and can be added twice',
     /add column if not exists thumbnail jsonb/.test(M359)

@@ -41,14 +41,29 @@ export const maxDuration = 300
 /** CTA renders per firing. One: it is the heaviest call in the file and the
  *  render service is shared with everything else. */
 const RENDERS = 1
-/** Thumbnails per firing. Cheaper than a render, still an image model. */
-const THUMBS = 2
+/** Thumbnails per firing.
+ *
+ *  ONE, and it used to be two. Each video needs TWO images: the styled one from
+ *  the designed route (an art director pass and an image model, over a network
+ *  call) and the text-free copy built in process. Two videos a firing meant four
+ *  image generations inside a 300 second function, so the last one was killed
+ *  mid-flight by the platform. The try had already been counted, so three
+ *  firings of that spent a video's whole retry budget on a timeout that was
+ *  never the video's fault, and it ended up marked "no thumbnail could be
+ *  built".
+ *
+ *  This route fires every minute, so one a firing still clears ten videos in
+ *  about ten minutes, which is nothing next to walking away from the computer. */
+const THUMBS = 1
 /** Tries before a video stops asking and says why. */
 const TRIES = 3
-/** How long the internal thumbnail call gets. The designed path runs an art
- *  director pass and an image model, so it is minutes, not seconds, and it sits
- *  under this route's own 300s budget with room for the write afterwards. */
-const THUMB_CALL_MS = 240_000
+/** How long the internal thumbnail call gets.
+ *
+ *  SIZED SO BOTH IMAGES FIT. The styled call gets this, and the text-free build
+ *  that follows it needs room in the same firing, inside the 300 second cap
+ *  below. Together: THUMBS * (this + the clean build) has to stay under
+ *  maxDuration, which is what test-launch-batch pins. */
+const THUMB_CALL_MS = 130_000
 /** Videos pushed to YouTube per firing. ONE: this downloads a whole file and
  *  uploads it again, which is the longest single operation in the product. */
 const PUBLISHES = 1
