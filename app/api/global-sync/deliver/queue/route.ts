@@ -67,7 +67,7 @@ export async function GET(req: Request) {
     } catch { /* column not present yet */ }
   }
 
-  const items = rows.map(r => {
+  let items = rows.map(r => {
     const mkt = marketByDomain(r.domain)
     const vidId = videoIdByJob.get(r.job_id) || ''
     const masterSrc = srcByVideo.get(vidId) || null
@@ -140,6 +140,58 @@ export async function GET(req: Request) {
   // so an all-dropped wave was caught. A partial drop was not: pick five
   // markets, have one come back without a title, and the run finishes on
   // "Uploaded to 4 of 4 storefronts", which reads as complete.
+  // ── AMAZON'S OWN DAILY LIMIT, PER STOREFRONT ─────────────────────────────
+  //
+  // Twenty a day on the US store, ten on every other one. That is Amazon's
+  // rule, not a throttle we invented, and going past it is the kind of thing
+  // that gets a Creator account flagged. A batch makes it easy to hit without
+  // noticing: ten videos across five countries is fifty uploads in an evening,
+  // and until now nothing counted them.
+  //
+  // PER STOREFRONT, so five countries are five separate allowances and a full
+  // France never holds up an empty Japan.
+  //
+  // A ROLLING TWENTY-FOUR HOURS, not a calendar day. A limit that resets at
+  // midnight lets somebody put twenty up at 23:50 and twenty more at 00:10,
+  // which is forty in twenty minutes however the calendar describes it.
+  const since = new Date(Date.now() - 24 * 60 * 60_000).toISOString()
+  const usedToday = new Map<string, number>()
+  for (const domain of new Set(rows.map(r => r.domain as string))) {
+    // COUNTED FROM WHAT AMAZON ACTUALLY TOOK, not from what we handed out.
+    // Counting the queue would stop a creator short for uploads that never
+    // happened, which is the same wall with none of the reason behind it.
+    const { count } = await sb.from('global_sync_targets')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id).eq('domain', domain)
+      .eq('state', 'delivered').gte('delivered_at', since)
+    // A Postgres count, not a fetched array: PostgREST caps a response at 1000
+    // rows, and a page length has been reported as a total three times here.
+    usedToday.set(domain, count ?? 0)
+  }
+
+  const overCap: Array<{ domain: string; reason: string }> = []
+  const withinCap: typeof items = []
+  const takenNow = new Map<string, number>()
+  for (const i of items) {
+    const mkt = marketByDomain(i.domain)
+    const cap = mkt?.dailyUploads ?? 10
+    const used = (usedToday.get(i.domain) ?? 0) + (takenNow.get(i.domain) ?? 0)
+    const country = mkt?.country ?? i.domain
+    if (used >= cap) {
+      // NAMED WITH THE NUMBERS. "Try later" tells a creator nothing they can
+      // plan around, and a queue that quietly returns fewer items than asked
+      // reads on screen as something broken.
+      overCap.push({
+        domain: i.domain,
+        reason: `Amazon's daily limit for ${country} is reached (${used} of ${cap} in the last 24 hours), so this one waits for tomorrow.`,
+      })
+      continue
+    }
+    takenNow.set(i.domain, (takenNow.get(i.domain) ?? 0) + 1)
+    withinCap.push(i)
+  }
+  items = withinCap
+
   const deliverable = items.filter(i => !!i.videoUrl && !!i.title)
   const skipped = items
     .filter(i => !i.videoUrl || !i.title)
@@ -175,7 +227,24 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, items: deliverable, skipped })
+  // The cap cases ride in `skipped`, so a caller that already surfaces skipped
+  // markets reports them with no extra work and none of them vanish silently.
+  skipped.push(...overCap)
+
+  return NextResponse.json({
+    ok: true, items: deliverable, skipped,
+    // What is left today, per storefront, so a screen can say "9 more to France
+    // today" rather than only speaking up once the wall is hit.
+    dailyRoom: [...new Set(rows.map(r => r.domain as string))].map(domain => {
+      const mkt = marketByDomain(domain)
+      const cap = mkt?.dailyUploads ?? 10
+      return {
+        domain, country: mkt?.country ?? domain, cap,
+        used: usedToday.get(domain) ?? 0,
+        left: Math.max(0, cap - (usedToday.get(domain) ?? 0)),
+      }
+    }),
+  })
 }
 
 /** Why a target never reached the queue, in the pipeline's own words where it

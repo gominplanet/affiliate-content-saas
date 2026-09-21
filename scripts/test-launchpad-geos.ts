@@ -402,7 +402,11 @@ const START = live(read('app/api/global-sync/start/route.ts'))
 // ── a market that cannot be delivered is named, not dropped ─────────────────
 {
   check('the queue returns what it skipped',
-    /const skipped = items/.test(QUEUE) && /skipped \}\)/.test(QUEUE),
+    /const skipped = items/.test(QUEUE)
+    // In the response body, by name. Matched without the closing brace that
+    // used to follow it, because adding a field after it broke this check
+    // while the behaviour was untouched.
+    && /NextResponse\.json\(\{[\s\S]{0,300}?\bskipped\b/.test(QUEUE),
     'it used to .filter() them away, so a partial drop left no trace')
   check('with a reason per market',
     /reason: !i\.title/.test(QUEUE))

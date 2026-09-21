@@ -25,6 +25,17 @@ export interface Market {
   needsTranslation: boolean
   /** The store's host, for a /dp probe or a SCOUT session check. */
   host: string     // www.amazon.co.uk
+  /** How many videos Amazon accepts on this storefront in a day.
+   *
+   *  A REAL AMAZON LIMIT, not a throttle we invented. Twenty on the US store,
+   *  ten on every other. Going over is the kind of thing that gets a Creator
+   *  account flagged, so the delivery queue counts against it rather than
+   *  handing SCOUT whatever is ready and hoping.
+   *
+   *  Per STOREFRONT, so a batch across five countries is five separate
+   *  allowances and one busy market never holds up another. */
+  dailyUploads: number
+
   /** Keepa's domainId, which answers "is this ASIN listed in this country"
    *  definitively and without being bot-walled the way a server-side /dp fetch
    *  is. NULL where Keepa has no domain: Australia, which Keepa dropped, and
@@ -40,15 +51,15 @@ export interface Market {
 // five non-English marketplaces we localize + dub for. This is the deliberate
 // service scope — extend only as we verify each new Creator Hub flow.
 export const MARKETS: Market[] = [
-  { domain: 'amazon.com',    code: 'US', country: 'United States',  lang: 'en-US', langName: 'English', needsTranslation: false, host: 'www.amazon.com',    keepa: 1 },
-  { domain: 'amazon.ca',     code: 'CA', country: 'Canada',         lang: 'en-CA', langName: 'English', needsTranslation: false, host: 'www.amazon.ca',     keepa: 6 },
-  { domain: 'amazon.com.au', code: 'AU', country: 'Australia',      lang: 'en-AU', langName: 'English', needsTranslation: false, host: 'www.amazon.com.au', keepa: null },
-  { domain: 'amazon.co.uk',  code: 'UK', country: 'United Kingdom', lang: 'en-GB', langName: 'English', needsTranslation: false, host: 'www.amazon.co.uk',  keepa: 2 },
-  { domain: 'amazon.fr',     code: 'FR', country: 'France',         lang: 'fr-FR', langName: 'French',  needsTranslation: true,  host: 'www.amazon.fr',     keepa: 4 },
-  { domain: 'amazon.de',     code: 'DE', country: 'Germany',        lang: 'de-DE', langName: 'German',  needsTranslation: true,  host: 'www.amazon.de',     keepa: 3 },
-  { domain: 'amazon.es',     code: 'ES', country: 'Spain',          lang: 'es-ES', langName: 'Spanish', needsTranslation: true,  host: 'www.amazon.es',     keepa: 9 },
-  { domain: 'amazon.it',     code: 'IT', country: 'Italy',          lang: 'it-IT', langName: 'Italian', needsTranslation: true,  host: 'www.amazon.it',     keepa: 8 },
-  { domain: 'amazon.co.jp',  code: 'JP', country: 'Japan',          lang: 'ja-JP', langName: 'Japanese', needsTranslation: true,  host: 'www.amazon.co.jp',  keepa: 5 },
+  { domain: 'amazon.com',    code: 'US', country: 'United States',  lang: 'en-US', langName: 'English', needsTranslation: false, dailyUploads: 20, host: 'www.amazon.com',    keepa: 1 },
+  { domain: 'amazon.ca',     code: 'CA', country: 'Canada',         lang: 'en-CA', langName: 'English', needsTranslation: false, dailyUploads: 10, host: 'www.amazon.ca',     keepa: 6 },
+  { domain: 'amazon.com.au', code: 'AU', country: 'Australia',      lang: 'en-AU', langName: 'English', needsTranslation: false, dailyUploads: 10, host: 'www.amazon.com.au', keepa: null },
+  { domain: 'amazon.co.uk',  code: 'UK', country: 'United Kingdom', lang: 'en-GB', langName: 'English', needsTranslation: false, dailyUploads: 10, host: 'www.amazon.co.uk',  keepa: 2 },
+  { domain: 'amazon.fr',     code: 'FR', country: 'France',         lang: 'fr-FR', langName: 'French',  needsTranslation: true,  dailyUploads: 10, host: 'www.amazon.fr',     keepa: 4 },
+  { domain: 'amazon.de',     code: 'DE', country: 'Germany',        lang: 'de-DE', langName: 'German',  needsTranslation: true,  dailyUploads: 10, host: 'www.amazon.de',     keepa: 3 },
+  { domain: 'amazon.es',     code: 'ES', country: 'Spain',          lang: 'es-ES', langName: 'Spanish', needsTranslation: true,  dailyUploads: 10, host: 'www.amazon.es',     keepa: 9 },
+  { domain: 'amazon.it',     code: 'IT', country: 'Italy',          lang: 'it-IT', langName: 'Italian', needsTranslation: true,  dailyUploads: 10, host: 'www.amazon.it',     keepa: 8 },
+  { domain: 'amazon.co.jp',  code: 'JP', country: 'Japan',          lang: 'ja-JP', langName: 'Japanese', needsTranslation: true,  dailyUploads: 10, host: 'www.amazon.co.jp',  keepa: 5 },
 ]
 
 export function marketByDomain(domain: string): Market | undefined {

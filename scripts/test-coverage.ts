@@ -14,6 +14,7 @@
 // every one of those N times M cells has exactly one answer on every day of the
 // year. The grid does not start or finish. It drains.
 import { readFileSync } from 'node:fs'
+import { MARKETS } from '../lib/markets'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -316,6 +317,59 @@ const SEARCH = read('lib/app-search-index.ts')
     /still waiting on their translated audio/.test(BOARD_RAW)
     && /held back until their translated audio is ready/.test(BOARD_RAW),
     'a silent filter is how four of five reads as complete')
+}
+
+// ── Amazon's own daily limit, per storefront ────────────────────────────────
+//
+// Twenty a day on the US store, ten on every other. That is Amazon's rule, not
+// a throttle we invented, and going over is the kind of thing that gets a
+// Creator account flagged. A batch makes it easy to hit: ten videos across five
+// countries is fifty uploads, and nothing counted them before this.
+{
+  const QUEUE = live(read('app/api/global-sync/deliver/queue/route.ts'))
+  check('the cap lives on the market, not typed into a route',
+    /dailyUploads: number/.test(live(read('lib/markets.ts')))
+    && /mkt\?\.dailyUploads/.test(QUEUE)
+    // EVERY read of it, not just one. A route that derives the cap from the
+    // market in one place and types a number in another is two limits, and the
+    // typed one is the one that will still say ten after the rule changes.
+    && !/\bcap\s*=\s*\d/.test(QUEUE),
+    'a limit typed in a route is a second copy that disagrees the first time it changes')
+  for (const m of MARKETS) {
+    const want = m.domain === 'amazon.com' ? 20 : 10
+    check(`${m.country} allows ${want} a day`, m.dailyUploads === want, `${m.dailyUploads}`)
+  }
+
+  // A ROLLING WINDOW, not a calendar day. Midnight reset lets somebody put
+  // twenty up at 23:50 and twenty more at 00:10, which is forty in twenty
+  // minutes however the calendar describes it.
+  check('it is counted over a rolling 24 hours',
+    /Date\.now\(\) - 24 \* 60 \* 60_000/.test(QUEUE),
+    'a day that resets at midnight is not a limit, it is a starting pistol')
+  // COUNTED FROM WHAT WAS UPLOADED, not from what was handed out.
+  check('and counted from deliveries Amazon actually took',
+    /\.eq\('state', 'delivered'\)\.gte\('delivered_at', since\)/.test(QUEUE),
+    'counting the queue would stop a creator early for uploads that never happened')
+  check('the count is a Postgres count',
+    /select\('id', \{ count: 'exact', head: true \}\)/.test(QUEUE),
+    'a fetched array capped at 1000 rows has reported a page length as a total three times here')
+
+  check('a market at its limit is named with the numbers',
+    /is reached \(\$\{used\} of \$\{cap\}/.test(QUEUE),
+    '"try later" tells a creator nothing they can plan around')
+  check('and it rides in skipped so no caller drops it silently',
+    /skipped\.push\(\.\.\.overCap\)/.test(QUEUE))
+  check('the room left is reported before the wall is hit',
+    /dailyRoom/.test(QUEUE),
+    'a screen that only speaks at the limit cannot say "nine more to France today"')
+  // COMMENTS DO NOT COUNT. The first version of this check passed on the
+  // comment heading above the code, so deleting the toast left it green.
+  const BOARD = live(BOARD_RAW)
+  check('and the board says so out loud',
+    /daily limit/i.test(BOARD)
+    && /skipped/.test(BOARD)
+    && /atCap[\s\S]{0,400}?toast\(/.test(BOARD),
+    'a number that stops moving with no explanation reads as a break')
 }
 
 // ── one pipeline, not two ───────────────────────────────────────────────────

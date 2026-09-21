@@ -179,6 +179,19 @@ export default function CoverageBoard() {
       if (waiting.length > 0) {
         toast(`${waiting.length} held back until their translated audio is ready.`, { duration: 7000 })
       }
+
+      // ── AMAZON'S OWN DAILY LIMIT ────────────────────────────────────────
+      //
+      // Twenty a day on the US store, ten on every other. The queue counts
+      // against it and names the markets that are full, and this says so rather
+      // than letting a creator watch a number stop moving and assume something
+      // broke. The limit is Amazon's, and the only remedy is tomorrow.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const atCap = (Array.isArray(j?.skipped) ? j.skipped : []).filter((x: any) => /daily limit/i.test(String(x?.reason || '')))
+      if (atCap.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        toast(atCap.map((x: any) => x.reason).slice(0, 3).join(' '), { duration: 14000 })
+      }
       const res = await requestStorefrontDelivery(items)
       if (!res?.ok) {
         toast.error(res?.error || 'SCOUT could not upload.', { duration: 12000 })
