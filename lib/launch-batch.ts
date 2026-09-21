@@ -214,13 +214,17 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
     },
     {
       id: 'schedule',
-      title: 'Set the cadence and launch',
+      // NAMED FOR YOUTUBE, because that is the only thing this schedules.
+      // "Set the cadence" said nothing about which platform, and the first
+      // person to read it asked where YouTube had gone. Amazon is not on a
+      // cadence at all: each listing goes up as soon as its dub is ready.
+      title: 'Schedule your YouTube posts',
       done: slots.length > 0 && !!batch.start_on,
       detail: slots.length === 0
-        ? 'How many a day, and at what times.'
+        ? 'How many YouTube posts a day, and at what times.'
         : !batch.start_on
-          ? `${cadenceLabel(slots)}. Pick the first day.`
-          : `${cadenceLabel(slots)}, from ${batch.start_on}.`,
+          ? `${cadenceLabel(slots)} on YouTube. Pick the first day.`
+          : `${cadenceLabel(slots)} on YouTube, from ${batch.start_on}.`,
     },
   ]
 

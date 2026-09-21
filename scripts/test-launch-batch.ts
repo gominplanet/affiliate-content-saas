@@ -233,18 +233,42 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('exactly one step is open, and it is the one the server named',
     /const current = \(j\.steps \?\? \[\]\)\.find\(\(s: StepStatus\) => s\.current\)/.test(BOARD),
     'five equal boxes is a form, and a form makes the creator work out the order')
-  check('a step the creator opened by hand is not folded away by the poll',
-    /pinned\.current = true/.test(BOARD) && /if \(!pinned\.current\)/.test(BOARD),
-    'a page that re-folds mid-typing is unusable')
+  // ── SAVING IS NOT NAVIGATING ─────────────────────────────────────────────
+  //
+  // The auto-open used to re-run after every save, which is fine in theory and
+  // awful in practice: the countries step is a multi-select, so ticking France
+  // completed it, the reload decided the current step was now the products one,
+  // and the box the creator was working in folded shut under their hand.
+  check('the page opens the right step once, then leaves it alone',
+    /const autoOpened = useRef\(false\)/.test(BOARD)
+    && /if \(!autoOpened\.current\) \{/.test(BOARD)
+    && /autoOpened\.current = true \}/.test(BOARD),
+    'auto-opening on every load turns every save into a navigation')
+  check('and a save never re-opens a different step',
+    !/pinned\.current = false/.test(BOARD)
+    && !/autoOpened\.current = false[\s\S]{0,200}?await load\(batchId\)/.test(BOARD),
+    'this is what folded the countries step shut on the first country ticked')
   check('typing is not overwritten by the poll either',
     /if \(dirty\.current\) return/.test(BOARD),
     'a twelve-second refresh landing mid-sentence wipes what they were writing')
-
   // GREEN MEANS DONE. A step is never ticked because it was visited.
   check('the tick is driven by done, not by having been opened',
     /\{done \? <Check size=\{14\} \/> : n\}/.test(STEPCARD))
   check('and "Do this next" points at the current step',
     /Do this next/.test(STEPCARD))
+
+  // ── THE STEP SAYS WHICH PLATFORM IT IS ───────────────────────────────────
+  //
+  // It was called "Set the cadence and launch" and said nothing about YouTube,
+  // so the first person to read it asked where YouTube had gone. The two halves
+  // behave completely differently: YouTube is on the creator's schedule, Amazon
+  // goes as each dub finishes.
+  check('the schedule step is named for YouTube',
+    /title: 'Schedule your YouTube posts'/.test(LIB),
+    '"cadence" alone does not say which platform is being scheduled')
+  check('and the page says Amazon is not on that schedule',
+    /goes up as soon as its translation and dub are done/.test(BOARD),
+    'a creator who assumes Amazon follows the same times is waiting for something that already happened')
 
   // THE HONEST SENTENCE ABOUT WHAT IS NOT AUTOMATIC.
   check('the page says which part needs their browser',

@@ -122,9 +122,14 @@ export default function CtaPicker({
             <p className="text-[12px] font-medium mb-2" style={text}>Where it sits</p>
             {/* A 9:16 frame with the badge shown at its real relative size, so
                 the choice is previewed rather than described. */}
+            {/* 16:9, BECAUSE THAT IS WHAT THIS PATH TAKES. The uploader refuses
+                vertical video and points at Clip Factory, exactly as Video
+                Launchpad does, so a phone-shaped preview would be showing the
+                creator a frame their video will never have and placing the
+                badge against proportions that do not exist. */}
             <div
               className="relative rounded-lg border overflow-hidden mx-auto"
-              style={{ borderColor: 'var(--border)', background: 'var(--surface-hover)', width: 150, aspectRatio: '9 / 16' }}
+              style={{ borderColor: 'var(--border)', background: 'var(--surface-hover)', width: 230, aspectRatio: '16 / 9' }}
             >
               {sticker && (
                 <Image
@@ -139,7 +144,7 @@ export default function CtaPicker({
                 />
               )}
             </div>
-            <div className="grid grid-cols-3 gap-1 mt-2 mx-auto" style={{ width: 150 }}>
+            <div className="grid grid-cols-3 gap-1 mt-2 mx-auto" style={{ width: 230 }}>
               {SPOTS.map((s) => (
                 <button
                   key={s.key} type="button" onClick={() => setSpot(s.key)} title={s.label}

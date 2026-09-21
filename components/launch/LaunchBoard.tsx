@@ -77,9 +77,20 @@ export default function LaunchBoard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
-  /** Set once the creator opens a step by hand, so the poll stops moving the
-   *  page under them. Nothing is worse than a form that re-folds mid-typing. */
-  const pinned = useRef(false)
+  /**
+   * THE PAGE OPENS THE RIGHT STEP ONCE, AND THEN LEAVES IT ALONE.
+   *
+   * It used to re-open whatever the server called current after every save,
+   * which is fine in theory and awful in practice: the countries step is a
+   * multi-select, so ticking France completed it, the reload decided the
+   * current step was now the products one, and the box the creator was working
+   * in folded shut under their hand. Every save became a navigation.
+   *
+   * So the auto-open happens on the first load and never again. After that the
+   * open step is the creator's choice alone, and the one they should do next is
+   * still marked "Do this next" for them to click when they are ready.
+   */
+  const autoOpened = useRef(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [uploading, setUploading] = useState(0)
   const [signin, setSignin] = useState<Record<string, string>>({})
@@ -97,10 +108,10 @@ export default function LaunchBoard() {
       setSteps(j.steps ?? [])
       setBlocker(j.launchBlocker ?? null)
       setMaxItems(j.maxItems ?? 10)
-      // Open the step the server says is next, until the creator picks one.
-      if (!pinned.current) {
+      // ONCE. See autoOpened: after this the creator drives.
+      if (!autoOpened.current) {
         const current = (j.steps ?? []).find((s: StepStatus) => s.current)
-        setOpen(current?.id ?? null)
+        if (current) { setOpen(current.id); autoOpened.current = true }
       }
     } catch {
       setError('Could not reach the server.')
@@ -144,7 +155,8 @@ export default function LaunchBoard() {
       const j = await r.json()
       if (!r.ok || !j?.ok) { toast.error(j?.error || 'Could not start a batch.'); return }
       setBatchId(j.id)
-      pinned.current = false
+      // A NEW BATCH IS A NEW PAGE, so it may point at step one.
+      autoOpened.current = false
       await load(j.id)
     } finally { setBusy(null) }
   }
@@ -159,7 +171,8 @@ export default function LaunchBoard() {
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) { toast.error(j?.error || 'Could not save that.'); return }
-      pinned.current = false
+      // NOT autoOpened = false. Saving is not navigating: resetting it here is
+      // what folded the countries step shut on the first country ticked.
       await load(batchId)
     } finally { setBusy(null) }
   }
@@ -190,7 +203,16 @@ export default function LaunchBoard() {
           toast.error(`${file.name} is ${(file.size / 1024 / 1024).toFixed(0)}MB. Keep them under 500MB.`)
           continue
         }
-        const durationSec = await probeDuration(file)
+        const probed = await probeVideo(file)
+        // THE SAME RULE AS VIDEO LAUNCHPAD. That path refuses vertical and
+        // points at Clip Factory; a batch that quietly accepted it would burn a
+        // CTA positioned against a 16:9 preview onto a 9:16 frame, and the
+        // creator would find out ten renders later.
+        if (probed.width > 0 && probed.height > 0 && probed.height > probed.width) {
+          toast.error(`${file.name} looks vertical. This path is for horizontal videos, so use Clip Factory for Shorts.`)
+          continue
+        }
+        const durationSec = probed.duration
         const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
         const path = `${user.id}/batch-${crypto.randomUUID()}.${ext}`
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -310,7 +332,7 @@ export default function LaunchBoard() {
   }
 
   const step = (id: string) => steps.find((s) => s.id === id)
-  const toggle = (id: string) => { pinned.current = true; setOpen(open === id ? null : id) }
+  const toggle = (id: string) => { autoOpened.current = true; setOpen(open === id ? null : id) }
   const slots = batch.daily_slots ?? []
   const preview = planSchedule(items.length, {
     timezone: batch.timezone, slots, startOn: batch.start_on ?? '',
@@ -478,13 +500,26 @@ export default function LaunchBoard() {
 
       {/* ── 5. cadence and launch ──────────────────────────────────────────── */}
       <StepCard
-        n={5} title={step('schedule')?.title ?? 'Set the cadence and launch'}
+        n={5} title={step('schedule')?.title ?? 'Schedule your YouTube posts'}
         detail={step('schedule')?.detail ?? ''} done={!!step('schedule')?.done}
         current={!!step('schedule')?.current} open={open === 'schedule'} onToggle={() => toggle('schedule')}
       >
         <div className="flex flex-col gap-4">
+          {/* WHICH PLATFORM THIS IS, up front. The step used to say "cadence"
+              and nothing else, and the first person to read it asked where
+              YouTube was. The two halves behave completely differently and the
+              screen has to say so rather than let a creator assume. */}
+          <p className="text-[12.5px] px-3 py-2 rounded-lg" style={{ ...muted, background: 'var(--surface-hover)' }}>
+            This is the <strong style={text}>YouTube</strong> schedule. Each video goes up private and
+            YouTube makes it public at the time you pick.
+            {batch.markets.length > 0 && (
+              <> Your <strong style={text}>Amazon</strong> storefronts are not on a schedule: each listing
+                goes up as soon as its translation and dub are done.</>
+            )}
+          </p>
+
           <div>
-            <p className="text-[12.5px] font-medium mb-1" style={text}>How many a day, and when</p>
+            <p className="text-[12.5px] font-medium mb-1" style={text}>How many YouTube posts a day, and when</p>
             <p className="text-[12px] mb-2" style={muted}>
               One time per video per day. Three times means three a day. Times are yours: {batch.timezone}.
             </p>
@@ -718,20 +753,29 @@ function SlotEditor({
   )
 }
 
-/** A video's length, read in the browser so the server never downloads it just
- *  to measure it. */
-function probeDuration(file: File): Promise<number> {
+/** A video's length and shape, read in the browser so the server never
+ *  downloads it just to measure it.
+ *
+ *  Zeroes mean the browser could not read the metadata, and the caller treats
+ *  that as "cannot tell" rather than as "not vertical": refusing a video
+ *  because a probe failed would be blaming the creator for our own blind spot. */
+function probeVideo(file: File): Promise<{ duration: number; width: number; height: number }> {
   return new Promise((resolve) => {
     try {
       const v = document.createElement('video')
       v.preload = 'metadata'
       v.onloadedmetadata = () => {
         const d = Number(v.duration)
+        const out = {
+          duration: Number.isFinite(d) ? Math.round(d) : 0,
+          width: Number(v.videoWidth) || 0,
+          height: Number(v.videoHeight) || 0,
+        }
         URL.revokeObjectURL(v.src)
-        resolve(Number.isFinite(d) ? Math.round(d) : 0)
+        resolve(out)
       }
-      v.onerror = () => resolve(0)
+      v.onerror = () => resolve({ duration: 0, width: 0, height: 0 })
       v.src = URL.createObjectURL(file)
-    } catch { resolve(0) }
+    } catch { resolve({ duration: 0, width: 0, height: 0 }) }
   })
 }
