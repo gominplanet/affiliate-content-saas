@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { toast } from 'sonner'
 import {
-  Loader2, Plus, Trash2, Upload, Rocket, Clock, X, Check, AlertTriangle, LogIn,
+  Loader2, Plus, Trash2, Upload, Rocket, Clock, X, Check, AlertTriangle, LogIn, Wand2,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { MARKETS } from '@/lib/markets'
@@ -44,6 +44,10 @@ interface Item {
   thumbnail_url: string | null
   /** 'styled' (the batch look applied) or 'plain' (it did not). */
   thumbnail_source: string | null
+  /** Attempts so far, so a screen can tell working from stuck. */
+  render_tries: number | null
+  thumb_tries: number | null
+  updated_at: string | null
   state: string
   reason: string | null
   publish_at: string | null
@@ -697,6 +701,15 @@ export default function LaunchBoard() {
                     {it.thumbnail_source === 'plain' && (
                       <> · <span style={{ color: '#d97706' }}>plain look</span></>
                     )}
+                    {/* WORKING AND STUCK MUST NOT READ THE SAME.
+                        "Building the thumbnail" said the same thing one second
+                        in and forty minutes in, which is the failure this
+                        codebase keeps producing in new shapes. The attempt
+                        count and the time since anything last happened are the
+                        two facts that separate them. */}
+                    {(it.state === 'rendering' || it.state === 'preparing') && (
+                      <> · {progressNote(it)}</>
+                    )}
                     {it.publish_at && (
                       <> · goes live {new Intl.DateTimeFormat('en-GB', {
                         timeZone: batch.timezone, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
@@ -729,6 +742,27 @@ export default function LaunchBoard() {
 }
 
 /** One video's own product and title. */
+/**
+ * How a video that is still working is doing, in facts rather than reassurance.
+ *
+ * TRIES AND MINUTES. A step that is running says which attempt it is on, so a
+ * creator can see it moving. A step that has not touched its row in a while
+ * says how long, because that is the only difference on screen between a slow
+ * image model and a worker that is not running at all, and the second one
+ * needs somebody to look at it.
+ */
+function progressNote(it: Item): string {
+  const tries = Number((it.state === 'rendering' ? it.render_tries : it.thumb_tries) ?? 0)
+  const mins = it.updated_at
+    ? Math.floor((Date.now() - new Date(it.updated_at).getTime()) / 60_000)
+    : 0
+  const attempt = tries > 1 ? `try ${tries} of 3` : 'first try'
+  // Ten minutes is comfortably past a slow image model, and the drain runs
+  // every minute, so nothing moving for that long is worth saying out loud.
+  if (mins >= 10) return `${attempt}, nothing for ${mins} minutes`
+  return attempt
+}
+
 function ItemRowEditor({
   item, busy, onSave,
 }: {
@@ -738,6 +772,26 @@ function ItemRowEditor({
 }) {
   const [title, setTitle] = useState(item.title ?? '')
   const [product, setProduct] = useState(item.asin ?? '')
+  const [options, setOptions] = useState<string[]>([])
+  const [writing, setWriting] = useState(false)
+
+  // THE TITLE MVP WROTE IS OFFERED, NOT APPLIED. This is the line that goes on
+  // YouTube and gets translated into every other country, so it is the last
+  // thing that should be changed without being read.
+  async function writeTitle() {
+    setWriting(true)
+    try {
+      const r = await fetch(`/api/launch/items/${item.id}/title`, { method: 'POST' })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !Array.isArray(j?.titles)) { toast.error(j?.error || 'Could not write a title.'); return }
+      setOptions(j.titles as string[])
+    } finally { setWriting(false) }
+  }
+
+  // AN ASIN IS NOT A TITLE, and nothing used to stop one becoming the YouTube
+  // title of ten videos and the source text for every translation.
+  const titleIsAsin = !!title.trim() && !!product.trim()
+    && title.trim().toUpperCase() === product.trim().toUpperCase()
   // Only adopt server values the creator has not overwritten, or a poll landing
   // mid-sentence would wipe what they are typing.
   const dirty = useRef(false)
@@ -778,6 +832,35 @@ function ItemRowEditor({
           {busy ? <Loader2 size={12} className="animate-spin" /> : 'Save'}
         </button>
       </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="w-5" />
+        <button type="button" onClick={() => void writeTitle()} disabled={writing || !product.trim()}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11.5px] disabled:opacity-40"
+          style={{ borderColor: 'var(--border)', ...text }}>
+          {writing ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+          Write it for me
+        </button>
+        {titleIsAsin && (
+          <span className="text-[11.5px]" style={{ color: '#d97706' }}>
+            That is the ASIN, not a title. It would go on YouTube exactly as it reads and be translated into every country.
+          </span>
+        )}
+      </div>
+
+      {options.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px]" style={muted}>Pick one, then Save. You can edit it after.</span>
+          {options.map((o) => (
+            <button key={o} type="button"
+              onClick={() => { dirty.current = true; setTitle(o); setOptions([]) }}
+              className="text-left text-[12px] px-2.5 py-1.5 rounded-lg border"
+              style={{ borderColor: 'var(--border)', ...text }}>
+              {o}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

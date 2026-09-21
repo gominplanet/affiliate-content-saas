@@ -202,15 +202,15 @@ async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed:
  * because English wording sitting on a German listing is the same class of
  * failure as English audio under a translated title.
  */
-async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: number }> {
+async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: number; failed: number }> {
   const { data: rows } = await sb.from('launch_items')
     .select('id,user_id,batch_id,asin,title,thumbnail_url,thumbnail_clean_url,thumb_tries')
     .eq('state', 'preparing')
     .order('created_at', { ascending: true }).limit(THUMBS * 4)
   const items = rows ?? []
-  if (items.length === 0) return { done: 0, blocked: 0, plain: 0 }
+  if (items.length === 0) return { done: 0, blocked: 0, plain: 0, failed: 0 }
 
-  let done = 0, blocked = 0, plain = 0
+  let done = 0, blocked = 0, plain = 0, failed = 0
   let budget = THUMBS
   const now = () => new Date().toISOString()
 
@@ -251,7 +251,7 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
       // knows what their listing will look like rather than finding out later.
       await sb.from('launch_items').update({
         state: 'prepared',
-        reason: 'No thumbnail could be built, so YouTube will use a frame from the video.',
+        reason: `No thumbnail could be built after ${tries} tries, so YouTube will use a frame from the video.`,
         updated_at: now(),
       }).eq('id', it.id)
       blocked++
@@ -312,9 +312,28 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
         : null
       done++
     }
-    await sb.from('launch_items').update(patch).eq('id', it.id)
+    // ── THE WRITE IS CHECKED ─────────────────────────────────────────────
+    //
+    // This used to be fire and forget, and that is how a video sat on
+    // "Building the thumbnail" for forty minutes with nothing anywhere saying
+    // why. A column this patch names that the database does not have (a
+    // migration half applied, a deploy ahead of the schema) fails the whole
+    // update, so the state never moves, the try count climbs, and the screen
+    // reports the same sentence it reported at the start.
+    //
+    // Now the failure lands on the row in words, through a SECOND write that
+    // touches only columns the table has had since it was created, so the
+    // report itself cannot fail for the same reason the first one did.
+    const { error: wrote } = await sb.from('launch_items').update(patch).eq('id', it.id)
+    if (wrote) {
+      failed++
+      await sb.from('launch_items').update({
+        reason: `The thumbnail was built but could not be saved: ${String(wrote.message || wrote).slice(0, 140)}`,
+        updated_at: now(),
+      }).eq('id', it.id)
+    }
   }
-  return { done, blocked, plain }
+  return { done, blocked, plain, failed }
 }
 
 /**

@@ -649,6 +649,80 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'that fallback would put the CTA on Amazon silently, which is the exact thing clean_url exists to prevent')
 }
 
+// ── a video that is working and one that is stuck must not read the same ────
+//
+// Seb, looking at a batch: "what is happening". The row said "Building the
+// thumbnail", which is what it said one second in and what it would have said
+// forty minutes in. Three separate things made that unanswerable, and all
+// three are the same mistake in different places.
+{
+  const TITLEROUTE = live(read('app/api/launch/items/[id]/title/route.ts'))
+
+  // 1. THE WRITE WAS NEVER CHECKED. A column the patch names that the table
+  //    does not have fails the whole update, so the state never moves and the
+  //    try count climbs behind a sentence that never changes.
+  check('a thumbnail write that fails is noticed',
+    /const \{ error: wrote \} = await sb\.from\('launch_items'\)\.update\(patch\)/.test(DRAIN),
+    'fire and forget is how a row sat on one sentence for forty minutes')
+  check('and the failure lands on the row in words',
+    /could not be saved/.test(DRAIN),
+    'a failure only in the logs is a failure the creator cannot see')
+  // THE SECOND WRITE TOUCHES ONLY OLD COLUMNS, or the report fails for the
+  // same reason the thing it is reporting failed.
+  {
+    // SLICED FROM THE TOP OF THE BLOCK, not from the message inside it. The
+    // first version started at the sentence, so a column added ABOVE that line
+    // was outside the slice and the check passed over the exact bug it is for.
+    const at = DRAIN.indexOf('if (wrote) {')
+    const after = at > -1 ? DRAIN.slice(at) : ''
+    const reportPatch = after.slice(0, after.indexOf('.eq(\'id\', it.id)'))
+    check('the report cannot fail the same way',
+      at > -1 && /could not be saved/.test(reportPatch)
+      && !/thumbnail_source|thumbnail_url|state:/.test(reportPatch),
+      'reporting a bad column through another new column reports nothing')
+  }
+
+  // 2. THE SCREEN HAD NO FACTS. Attempts and time since anything happened are
+  //    the only two things that separate slow from stopped.
+  check('the row says which attempt it is on',
+    /function progressNote/.test(BOARD) && /try \$\{tries\} of 3/.test(BOARD),
+    '"Building the thumbnail" is the same sentence on try one and try three')
+  check('and says when nothing has moved for a while',
+    /nothing for \$\{mins\} minutes/.test(BOARD),
+    'a slow image model and a worker that is not running look identical without this')
+  check('the tries and the timestamp actually reach the page',
+    /render_tries,thumb_tries,updated_at/.test(BATCH),
+    'a column the route does not select is a fact the screen cannot report')
+  check('and it is only said while something is running',
+    /it\.state === 'rendering' \|\| it\.state === 'preparing'/.test(BOARD),
+    'a try count beside a finished video is noise')
+
+  // 3. AN ASIN WAS ACCEPTED AS A TITLE. It would have gone to YouTube exactly
+  //    as typed and been the source text for every translation.
+  check('an ASIN in the title box is called out',
+    /titleIsAsin/.test(BOARD) && /That is the ASIN, not a title/.test(BOARD),
+    'nothing stopped B0H3P7H9T2 becoming a YouTube title and ten translations')
+  check('and MVP will write the title instead',
+    /Write it for me/.test(BOARD) && /items\/\$\{item\.id\}\/title/.test(BOARD),
+    'typing ten titles by hand is the opposite of walking away from the computer')
+  check('the title writer is the one the studio uses',
+    /generateProductTitleOptions/.test(TITLEROUTE),
+    'a second title writer drifts from the first')
+  check('it needs the product first, and says so',
+    /Set the product first/.test(TITLEROUTE),
+    'a title written from nothing is a title about nothing')
+  check('an ASIN already in the box is not fed back as a hint',
+    /hint\.toUpperCase\(\) !== asin\.toUpperCase\(\)/.test(TITLEROUTE),
+    'passing the ASIN in as the video title asks the writer to work from noise')
+  check('and it offers rather than saves',
+    /NOT SAVED/.test(read('app/api/launch/items/[id]/title/route.ts'))
+    && !/update\(\{ title/.test(TITLEROUTE),
+    'a title written into the row without being read is the plan reported as the result')
+  check('a video already on YouTube keeps its title',
+    /already on YouTube/.test(TITLEROUTE),
+    'two titles disagreeing with nothing saying which is live')
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
