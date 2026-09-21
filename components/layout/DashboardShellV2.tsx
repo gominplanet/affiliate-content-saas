@@ -41,8 +41,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench, ImageOff,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe,
-} from 'lucide-react'
+  Inbox, PackageSearch, Rocket, Database, History, Globe, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
 // Deal Days, Black Friday and so on) and is deliberately off between them. The
@@ -620,6 +619,12 @@ export default function DashboardShellV2({
         // Those two still have their own routes (/cta-studio, /global-sync) for
         // granular use; they're just not promoted as separate nav entries.
         { href: '/launchpad', icon: <Rocket size={15} />, label: 'Video Launchpad', gate: isPro, badge: 'New' },
+        // Launch Batch — Video Launchpad for TEN videos at once. Launchpad is one
+        // video with somebody watching it; this is the same pipeline with the
+        // waiting taken out, because the CTA burn, the thumbnails, the
+        // translations and the dubs all run on our servers with the tab shut.
+        // In LABS until a full ten-video run has been through it end to end.
+        { href: '/launch', icon: <Layers size={15} />, label: 'Launch Batch', gate: isPro, badge: 'New' },
         // Back catalogue — the videos YouTube has ALREADY dubbed, sent to one
         // Amazon storefront through the normal sync pipeline. In LABS while the
         // trickle scan is proven against a real channel. Deliberately not a

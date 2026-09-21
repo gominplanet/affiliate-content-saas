@@ -1,0 +1,737 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// Ten videos, set up together, launched once.
+//
+// THE PAGE LEADS. Five numbered steps, exactly one of them open, and the open
+// one is whichever the server says is first incomplete. A creator should never
+// have to work out what to do next: the step that is their turn is the one that
+// is expanded, tinted and labelled "Do this next".
+//
+// EVERY STATE COMES FROM THE SERVER. `steps`, `launchBlocker` and every item
+// state are computed in lib/launch-batch and read here. This screen does not
+// decide whether anything is done, because a screen that decides for itself can
+// tick a step the worker will refuse, which is the failure this whole codebase
+// keeps producing in different costumes.
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
+import { toast } from 'sonner'
+import {
+  Loader2, Plus, Trash2, Upload, Rocket, Clock, X, Check, AlertTriangle, LogIn,
+} from 'lucide-react'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { MARKETS } from '@/lib/markets'
+import { cadenceLabel, planSchedule } from '@/lib/launch-schedule'
+import { itemStateLabel, itemStateTone, type CtaPreset, type StepStatus } from '@/lib/launch-batch'
+import { requestStorefrontPreflight } from '@/lib/extension-frame'
+import StepCard from './StepCard'
+import CtaPicker from './CtaPicker'
+
+const text = { color: 'var(--text)' } as const
+const muted = { color: 'var(--text-2)' } as const
+
+interface Item {
+  id: string
+  position: number
+  source_url: string | null
+  rendered_url: string | null
+  asin: string | null
+  title: string | null
+  description: string | null
+  thumbnail_url: string | null
+  state: string
+  reason: string | null
+  publish_at: string | null
+  youtube_video_id: string | null
+}
+interface Market { domain: string; country: string; langName: string | null; needsDub: boolean }
+interface Batch {
+  id: string; name: string; state: string
+  cta: CtaPreset | null; cta_chosen: boolean | null
+  markets: Market[]
+  daily_slots: string[]; start_on: string | null; timezone: string
+}
+
+const TONE: Record<string, string> = {
+  good: '#10B981', busy: '#0EA5A4', warn: '#d97706', idle: 'var(--text-2)',
+}
+
+/** Tomorrow in the creator's own zone, which is the earliest sensible first day:
+ *  a batch still has to upload before it can publish. */
+function tomorrowLocal(timezone: string): string {
+  const now = new Date(Date.now() + 86_400_000)
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now)
+  return p
+}
+
+export default function LaunchBoard() {
+  const [batchId, setBatchId] = useState<string | null>(null)
+  const [batch, setBatch] = useState<Batch | null>(null)
+  const [items, setItems] = useState<Item[]>([])
+  const [steps, setSteps] = useState<StepStatus[]>([])
+  const [blocker, setBlocker] = useState<string | null>(null)
+  const [maxItems, setMaxItems] = useState(10)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
+  /** Set once the creator opens a step by hand, so the poll stops moving the
+   *  page under them. Nothing is worse than a form that re-folds mid-typing. */
+  const pinned = useRef(false)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(0)
+  const [signin, setSignin] = useState<Record<string, string>>({})
+  const [launched, setLaunched] = useState<{ scheduled: number; firstAt: string | null; lastAt: string | null; note: string } | null>(null)
+
+  // ── load ──────────────────────────────────────────────────────────────────
+  const load = useCallback(async (id: string) => {
+    try {
+      const r = await fetch(`/api/launch/batches/${id}`)
+      const j = await r.json()
+      if (!r.ok || !j?.ok) { setError(j?.error || 'Could not load this batch.'); return }
+      setError(null)
+      setBatch(j.batch)
+      setItems(j.items ?? [])
+      setSteps(j.steps ?? [])
+      setBlocker(j.launchBlocker ?? null)
+      setMaxItems(j.maxItems ?? 10)
+      // Open the step the server says is next, until the creator picks one.
+      if (!pinned.current) {
+        const current = (j.steps ?? []).find((s: StepStatus) => s.current)
+        setOpen(current?.id ?? null)
+      }
+    } catch {
+      setError('Could not reach the server.')
+    } finally { setLoading(false) }
+  }, [])
+
+  // Find or start a batch on first paint, so the page is never an empty screen
+  // with a button on it.
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch('/api/launch/batches')
+        const j = await r.json()
+        if (!r.ok) { setError(j?.error || 'Could not read your batches.'); setLoading(false); return }
+        const openBatch = (j.batches ?? []).find((b: { state: string }) => b.state !== 'launched')
+        if (openBatch) { setBatchId(openBatch.id); void load(openBatch.id); return }
+        setLoading(false)
+      } catch { setError('Could not reach the server.'); setLoading(false) }
+    })()
+  }, [load])
+
+  // THE WORK HAPPENS ELSEWHERE, so the page watches rather than drives. Slow
+  // enough not to hammer the API, fast enough that a finished render shows up
+  // while the creator is still looking at the screen.
+  useEffect(() => {
+    if (!batchId) return
+    const t = setInterval(() => void load(batchId), 12_000)
+    return () => clearInterval(t)
+  }, [batchId, load])
+
+  async function startBatch() {
+    setBusy('new')
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      const r = await fetch('/api/launch/batches', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        // THEIR OWN ZONE, from their own browser. Everything about when a video
+        // goes public depends on it.
+        body: JSON.stringify({ timezone: tz }),
+      })
+      const j = await r.json()
+      if (!r.ok || !j?.ok) { toast.error(j?.error || 'Could not start a batch.'); return }
+      setBatchId(j.id)
+      pinned.current = false
+      await load(j.id)
+    } finally { setBusy(null) }
+  }
+
+  async function patchBatch(body: Record<string, unknown>) {
+    if (!batchId) return
+    setBusy('batch')
+    try {
+      const r = await fetch(`/api/launch/batches/${batchId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { toast.error(j?.error || 'Could not save that.'); return }
+      pinned.current = false
+      await load(batchId)
+    } finally { setBusy(null) }
+  }
+
+  // ── videos ────────────────────────────────────────────────────────────────
+  async function addFiles(files: FileList | null) {
+    if (!files || !batchId) return
+    const room = maxItems - items.length
+    const picked = Array.from(files).slice(0, Math.max(0, room))
+    if (picked.length === 0) {
+      toast.error(`A batch holds ${maxItems} videos. Launch this one, or start another.`)
+      return
+    }
+    if (files.length > picked.length) {
+      // SAID, not silently trimmed. Dropping twelve files and getting ten with
+      // no explanation is how somebody launches without two of their videos.
+      toast(`Taking the first ${picked.length}. A batch holds ${maxItems}.`, { duration: 7000 })
+    }
+    const supabase = createBrowserClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { toast.error('Not signed in.'); return }
+
+    setUploading(picked.length)
+    for (const file of picked) {
+      try {
+        if (!file.type.startsWith('video/')) { toast.error(`${file.name} is not a video.`); continue }
+        if (file.size > 500 * 1024 * 1024) {
+          toast.error(`${file.name} is ${(file.size / 1024 / 1024).toFixed(0)}MB. Keep them under 500MB.`)
+          continue
+        }
+        const durationSec = await probeDuration(file)
+        const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
+        const path = `${user.id}/batch-${crypto.randomUUID()}.${ext}`
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: upErr } = await (supabase.storage as any)
+          .from('instagram-videos')
+          .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || 'video/mp4' })
+        if (upErr) throw new Error(upErr.message || 'Upload failed')
+        const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
+        const r = await fetch(`/api/launch/batches/${batchId}/items`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sourceUrl: urlData.publicUrl,
+            title: file.name.replace(/\.[^.]+$/, ''),
+            durationSeconds: durationSec,
+          }),
+        })
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(j?.error || 'Could not add that video.')
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : `Could not add ${file.name}.`)
+      } finally {
+        setUploading((n) => Math.max(0, n - 1))
+      }
+    }
+    await load(batchId)
+  }
+
+  async function removeItem(id: string) {
+    setBusy(id)
+    try {
+      const r = await fetch(`/api/launch/items/${id}`, { method: 'DELETE' })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { toast.error(j?.error || 'Could not remove that.'); return }
+      if (batchId) await load(batchId)
+    } finally { setBusy(null) }
+  }
+
+  async function patchItem(id: string, body: Record<string, unknown>) {
+    setBusy(id)
+    try {
+      const r = await fetch(`/api/launch/items/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { toast.error(j?.error || 'Could not save that.'); return }
+      if (j?.resolvedFromLink) toast.success(`Found ${j.resolvedFromLink} behind that link.`)
+      if (batchId) await load(batchId)
+    } finally { setBusy(null) }
+  }
+
+  // ── countries ─────────────────────────────────────────────────────────────
+  async function checkSignin(domains: string[]) {
+    if (domains.length === 0) return
+    setBusy('signin')
+    try {
+      const res = await requestStorefrontPreflight(domains)
+      if (!res?.ok || !Array.isArray(res.results)) {
+        toast.error(res?.error || 'SCOUT could not check your stores. Is the extension installed?')
+        return
+      }
+      const next: Record<string, string> = {}
+      for (const r of res.results) next[r.domain] = String(r.status)
+      setSignin(next)
+      const ready = res.results.filter((r) => r.status === 'ready').length
+      toast.success(`Signed in on ${ready} of ${res.results.length}.`)
+    } catch {
+      toast.error('Could not reach SCOUT.')
+    } finally { setBusy(null) }
+  }
+
+  // ── launch ────────────────────────────────────────────────────────────────
+  async function launch() {
+    if (!batchId) return
+    setBusy('launch')
+    try {
+      const r = await fetch(`/api/launch/batches/${batchId}/launch`, { method: 'POST' })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { toast.error(j?.error || 'Could not launch.', { duration: 14000 }); return }
+      setLaunched({ scheduled: j.scheduled, firstAt: j.firstAt, lastAt: j.lastAt, note: j.note })
+      if (Array.isArray(j.leftBehind) && j.leftBehind.length > 0) {
+        // NAMED. Launching nine of ten and saying nothing is the silence this
+        // codebase keeps producing.
+        toast.error(
+          `${j.leftBehind.length} ${j.leftBehind.length === 1 ? 'video was' : 'videos were'} left behind: `
+          + j.leftBehind.map((x: { title: string; reason: string }) => `${x.title || 'untitled'} (${x.reason || 'not ready'})`).join('; '),
+          { duration: 18000 },
+        )
+      }
+      await load(batchId)
+    } finally { setBusy(null) }
+  }
+
+  // ── render ────────────────────────────────────────────────────────────────
+  if (loading) {
+    return <p className="text-[13px] inline-flex items-center gap-2" style={muted}><Loader2 size={14} className="animate-spin" /> Loading…</p>
+  }
+  if (error) {
+    return <p className="text-[13px]" style={{ color: '#dc2626' }}>{error}</p>
+  }
+  if (!batchId || !batch) {
+    return (
+      <div className="max-w-xl">
+        <p className="text-[13.5px] mb-4" style={muted}>
+          Set up to ten videos in one sitting. You choose the CTA and the countries once, give each
+          video its own product, then press Launch and leave it.
+        </p>
+        <button
+          onClick={() => void startBatch()} disabled={busy === 'new'}
+          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+          style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}
+        >
+          {busy === 'new' ? <><Loader2 size={15} className="animate-spin" /> Starting…</> : <><Plus size={15} /> Start a batch</>}
+        </button>
+      </div>
+    )
+  }
+
+  const step = (id: string) => steps.find((s) => s.id === id)
+  const toggle = (id: string) => { pinned.current = true; setOpen(open === id ? null : id) }
+  const slots = batch.daily_slots ?? []
+  const preview = planSchedule(items.length, {
+    timezone: batch.timezone, slots, startOn: batch.start_on ?? '',
+  })
+
+  return (
+    <div className="max-w-3xl flex flex-col gap-3">
+      {/* ── what happens, in one sentence, before any of the steps ─────────── */}
+      <div className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <p className="text-[13px]" style={text}>
+          <strong>{items.length}</strong> of {maxItems} videos in <strong>{batch.name}</strong>.
+        </p>
+        <p className="text-[12.5px] mt-1" style={muted}>
+          MVP burns your CTA into each one, builds the thumbnails, writes each country&apos;s title and
+          dubs the audio. All of that runs on our servers with this tab shut. The one part that needs
+          your browser is the Amazon upload, because it goes through your own logged-in Creator account.
+        </p>
+      </div>
+
+      {/* ── 1. videos ──────────────────────────────────────────────────────── */}
+      <StepCard
+        n={1} title={step('videos')?.title ?? 'Add your videos'}
+        detail={step('videos')?.detail ?? ''} done={!!step('videos')?.done}
+        current={!!step('videos')?.current} open={open === 'videos'} onToggle={() => toggle('videos')}
+      >
+        <div className="flex flex-col gap-3">
+          <label
+            className="rounded-xl border border-dashed px-4 py-6 text-center cursor-pointer"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <input
+              type="file" accept="video/*" multiple className="hidden"
+              onChange={(e) => { void addFiles(e.target.files); e.currentTarget.value = '' }}
+            />
+            <Upload size={18} style={{ color: '#0EA5A4', margin: '0 auto 6px' }} />
+            <span className="block text-[13px] font-medium" style={text}>
+              {uploading > 0 ? `Uploading ${uploading}…` : 'Choose videos'}
+            </span>
+            <span className="block text-[11.5px] mt-0.5" style={muted}>
+              Pick several at once. Up to {maxItems} per batch, under 500MB each.
+            </span>
+          </label>
+
+          {items.length > 0 && (
+            <ul className="flex flex-col gap-1.5">
+              {items.map((it) => (
+                <li key={it.id} className="flex items-center gap-2 rounded-lg border px-3 py-2"
+                  style={{ borderColor: 'var(--border)' }}>
+                  <span className="text-[11px] tabular-nums w-5" style={muted}>{it.position + 1}</span>
+                  <span className="flex-1 min-w-0 truncate text-[12.5px]" style={text}>
+                    {it.title || 'Untitled'}
+                  </span>
+                  <span className="text-[11px]" style={{ color: TONE[itemStateTone(it.state as never)] }}>
+                    {itemStateLabel(it.state as never)}
+                  </span>
+                  <button onClick={() => void removeItem(it.id)} disabled={busy === it.id}
+                    className="p-1 rounded disabled:opacity-50" title="Remove">
+                    <Trash2 size={13} style={muted} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </StepCard>
+
+      {/* ── 2. the CTA ─────────────────────────────────────────────────────── */}
+      <StepCard
+        n={2} title={step('cta')?.title ?? 'Choose your CTA'}
+        detail={step('cta')?.detail ?? ''} done={!!step('cta')?.done}
+        current={!!step('cta')?.current} open={open === 'cta'} onToggle={() => toggle('cta')}
+      >
+        <CtaPicker
+          value={batch.cta}
+          saving={busy === 'batch'}
+          onSave={(preset) => void patchBatch({ cta: preset, ctaChosen: true })}
+        />
+      </StepCard>
+
+      {/* ── 3. countries ───────────────────────────────────────────────────── */}
+      <StepCard
+        n={3} title={step('countries')?.title ?? 'Pick your Amazon countries'}
+        detail={step('countries')?.detail ?? ''} done={!!step('countries')?.done}
+        current={!!step('countries')?.current} open={open === 'countries'} onToggle={() => toggle('countries')}
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-[12.5px]" style={muted}>
+            Chosen once for the whole batch. A country that does not speak English gets its own title
+            and its own dubbed audio, made by MVP.
+          </p>
+          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))' }}>
+            {MARKETS.map((m) => {
+              const on = batch.markets.some((x) => x.domain === m.domain)
+              const state = signin[m.domain]
+              return (
+                <button
+                  key={m.domain} type="button" disabled={busy === 'batch'}
+                  onClick={() => {
+                    const next = on
+                      ? batch.markets.filter((x) => x.domain !== m.domain).map((x) => x.domain)
+                      : [...batch.markets.map((x) => x.domain), m.domain]
+                    void patchBatch({ markets: next })
+                  }}
+                  className="flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left disabled:opacity-60"
+                  style={{
+                    borderColor: on ? '#0EA5A4' : 'var(--border)',
+                    background: on ? 'rgba(14,165,164,0.07)' : 'transparent',
+                  }}
+                >
+                  <span className="shrink-0 rounded flex items-center justify-center"
+                    style={{ width: 16, height: 16, border: `1.5px solid ${on ? '#0EA5A4' : 'var(--border)'}`, background: on ? '#0EA5A4' : 'transparent' }}>
+                    {on && <Check size={11} color="#fff" />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[12.5px] font-medium truncate" style={text}>{m.country}</span>
+                    <span className="block text-[11px]" style={muted}>
+                      {m.needsTranslation ? `${m.langName}, dubbed` : 'English'}
+                    </span>
+                  </span>
+                  {/* THE FACT, not the tick. Being signed in is something SCOUT
+                      reports; ticking is a decision. A screen that conflates
+                      them promises listings in a country nobody can reach. */}
+                  {state === 'ready' && <Check size={13} style={{ color: '#10B981' }} />}
+                  {state && state !== 'ready' && <AlertTriangle size={13} style={{ color: '#d97706' }} />}
+                </button>
+              )
+            })}
+          </div>
+          {batch.markets.length > 0 && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={() => void checkSignin(batch.markets.map((m) => m.domain))}
+                disabled={busy === 'signin'}
+                className="inline-flex items-center gap-1.5 text-[12.5px] px-3 py-1.5 rounded-lg border disabled:opacity-50"
+                style={{ borderColor: 'var(--border)', ...text }}
+              >
+                {busy === 'signin' ? <Loader2 size={12} className="animate-spin" /> : <LogIn size={12} />}
+                Check I am signed in
+              </button>
+              <span className="text-[11.5px]" style={muted}>
+                MVP uploads through your own Amazon Creator account, so you need to be signed in to each.
+              </span>
+            </div>
+          )}
+        </div>
+      </StepCard>
+
+      {/* ── 4. products, the only per-video step ───────────────────────────── */}
+      <StepCard
+        n={4} title={step('products')?.title ?? 'Set each product'}
+        detail={step('products')?.detail ?? ''} done={!!step('products')?.done}
+        current={!!step('products')?.current} open={open === 'products'} onToggle={() => toggle('products')}
+      >
+        <div className="flex flex-col gap-2">
+          <p className="text-[12.5px]" style={muted}>
+            The one thing that cannot be shared: every video sells its own product. Paste the ASIN or
+            the Amazon link, and MVP will follow a shortened one to the end.
+          </p>
+          {items.length === 0 && <p className="text-[12.5px]" style={muted}>Add some videos first.</p>}
+          {items.map((it) => (
+            <ItemRowEditor key={it.id} item={it} busy={busy === it.id} onSave={patchItem} />
+          ))}
+        </div>
+      </StepCard>
+
+      {/* ── 5. cadence and launch ──────────────────────────────────────────── */}
+      <StepCard
+        n={5} title={step('schedule')?.title ?? 'Set the cadence and launch'}
+        detail={step('schedule')?.detail ?? ''} done={!!step('schedule')?.done}
+        current={!!step('schedule')?.current} open={open === 'schedule'} onToggle={() => toggle('schedule')}
+      >
+        <div className="flex flex-col gap-4">
+          <div>
+            <p className="text-[12.5px] font-medium mb-1" style={text}>How many a day, and when</p>
+            <p className="text-[12px] mb-2" style={muted}>
+              One time per video per day. Three times means three a day. Times are yours: {batch.timezone}.
+            </p>
+            <SlotEditor
+              slots={slots}
+              disabled={busy === 'batch'}
+              onChange={(next) => void patchBatch({ dailySlots: next })}
+            />
+          </div>
+
+          <label className="text-[12.5px] font-medium" style={text}>
+            First day
+            <input
+              type="date"
+              value={batch.start_on ?? ''}
+              min={tomorrowLocal(batch.timezone)}
+              onChange={(e) => void patchBatch({ startOn: e.target.value })}
+              className="block mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent"
+              style={{ borderColor: 'var(--border)', ...text }}
+            />
+          </label>
+
+          {/* WHEN EACH ONE ACTUALLY GOES OUT, worked out with the same function
+              the server uses. A cadence described in words is a promise; this
+              is the list. */}
+          {preview.length > 0 && (
+            <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
+              <p className="text-[12px] font-medium mb-1.5" style={text}>
+                <Clock size={12} style={{ display: 'inline', marginRight: 4 }} />
+                {cadenceLabel(slots)}
+              </p>
+              <ul className="flex flex-col gap-0.5">
+                {preview.map((p) => (
+                  <li key={p.position} className="text-[11.5px] flex gap-2" style={muted}>
+                    <span className="tabular-nums w-5">{p.position + 1}</span>
+                    <span className="flex-1 truncate" style={text}>
+                      {items[p.position]?.title || 'Untitled'}
+                    </span>
+                    <span className="tabular-nums">
+                      {new Intl.DateTimeFormat('en-GB', {
+                        timeZone: batch.timezone, weekday: 'short', day: '2-digit', month: 'short',
+                        hour: '2-digit', minute: '2-digit', hour12: false,
+                      }).format(p.at)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* THE REASON, always. A disabled button with nothing beside it is the
+              dead end this codebase keeps producing. */}
+          {blocker && (
+            <p className="text-[12.5px] px-3 py-2 rounded-lg" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
+              {blocker}
+            </p>
+          )}
+
+          <button
+            onClick={() => void launch()}
+            disabled={!!blocker || busy === 'launch' || batch.state === 'launching' || batch.state === 'launched'}
+            className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}
+          >
+            {busy === 'launch'
+              ? <><Loader2 size={16} className="animate-spin" /> Launching…</>
+              : batch.state === 'launched' || batch.state === 'launching'
+                ? <><Check size={16} /> Launched</>
+                : <><Rocket size={16} /> Launch {items.length} {items.length === 1 ? 'video' : 'videos'}</>}
+          </button>
+        </div>
+      </StepCard>
+
+      {/* ── after the launch ───────────────────────────────────────────────── */}
+      {launched && (
+        <div className="rounded-2xl border p-4" style={{ borderColor: '#10B981', background: 'rgba(16,185,129,0.07)' }}>
+          <p className="text-[13.5px] font-semibold" style={text}>
+            {launched.scheduled} {launched.scheduled === 1 ? 'video' : 'videos'} scheduled.
+          </p>
+          {launched.firstAt && launched.lastAt && (
+            <p className="text-[12.5px] mt-1" style={muted}>
+              First on {new Intl.DateTimeFormat('en-GB', { timeZone: batch.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(launched.firstAt))},
+              last on {new Intl.DateTimeFormat('en-GB', { timeZone: batch.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(launched.lastAt))}.
+            </p>
+          )}
+          <p className="text-[12.5px] mt-1.5" style={muted}>{launched.note}</p>
+        </div>
+      )}
+
+      {/* ── the board: what is actually happening to each video ────────────── */}
+      {items.length > 0 && (
+        <section className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+          <h2 className="text-[13px] font-semibold mb-2.5" style={text}>Where each video is</h2>
+          <ul className="flex flex-col gap-1.5">
+            {items.map((it) => (
+              <li key={it.id} className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5"
+                style={{ borderColor: 'var(--border)' }}>
+                {it.thumbnail_url
+                  ? <Image src={it.thumbnail_url} alt="" width={64} height={36} unoptimized
+                      style={{ width: 64, height: 36, objectFit: 'cover', borderRadius: 4 }} />
+                  : <span className="shrink-0 rounded" style={{ width: 64, height: 36, background: 'var(--surface-hover)' }} />}
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[12.5px] truncate" style={text}>{it.title || 'Untitled'}</span>
+                  <span className="block text-[11.5px]" style={{ color: TONE[itemStateTone(it.state as never)] }}>
+                    {itemStateLabel(it.state as never)}
+                    {it.publish_at && (
+                      <> · goes live {new Intl.DateTimeFormat('en-GB', {
+                        timeZone: batch.timezone, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
+                      }).format(new Date(it.publish_at))}</>
+                    )}
+                  </span>
+                  {/* THE REASON STAYS. A video that could not go looks exactly
+                      like one nobody picked unless the row says otherwise. */}
+                  {it.reason && (
+                    <span className="block text-[11.5px] mt-1 px-2 py-1 rounded"
+                      style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
+                      {it.reason}
+                    </span>
+                  )}
+                </span>
+                {it.youtube_video_id && (
+                  <a href={`https://studio.youtube.com/video/${it.youtube_video_id}/edit`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="text-[11.5px] underline shrink-0" style={{ color: '#0EA5A4' }}>
+                    Open
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  )
+}
+
+/** One video's own product and title. */
+function ItemRowEditor({
+  item, busy, onSave,
+}: {
+  item: Item
+  busy: boolean
+  onSave: (id: string, body: Record<string, unknown>) => Promise<void>
+}) {
+  const [title, setTitle] = useState(item.title ?? '')
+  const [product, setProduct] = useState(item.asin ?? '')
+  // Only adopt server values the creator has not overwritten, or a poll landing
+  // mid-sentence would wipe what they are typing.
+  const dirty = useRef(false)
+  useEffect(() => {
+    if (dirty.current) return
+    setTitle(item.title ?? '')
+    setProduct(item.asin ?? '')
+  }, [item.title, item.asin])
+
+  const changed = title !== (item.title ?? '') || product !== (item.asin ?? '')
+  return (
+    <div className="rounded-lg border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border)' }}>
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] tabular-nums w-5" style={muted}>{item.position + 1}</span>
+        <input
+          value={title}
+          onChange={(e) => { dirty.current = true; setTitle(e.target.value) }}
+          placeholder="Title for the English stores and YouTube"
+          className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border text-[12.5px] bg-transparent"
+          style={{ borderColor: 'var(--border)', ...text }}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="w-5" />
+        <input
+          value={product}
+          onChange={(e) => { dirty.current = true; setProduct(e.target.value) }}
+          placeholder="ASIN or Amazon link"
+          className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border text-[12.5px] font-mono bg-transparent"
+          style={{ borderColor: 'var(--border)', ...text }}
+        />
+        <button
+          onClick={() => { dirty.current = false; void onSave(item.id, { title, product }) }}
+          disabled={busy || !changed}
+          className="px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-40 shrink-0"
+          style={{ background: '#0EA5A4' }}
+        >
+          {busy ? <Loader2 size={12} className="animate-spin" /> : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** The publishing times. The number of them IS the videos-per-day. */
+function SlotEditor({
+  slots, disabled, onChange,
+}: {
+  slots: string[]
+  disabled: boolean
+  onChange: (next: string[]) => void
+}) {
+  const [draft, setDraft] = useState('09:00')
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-1.5">
+        {slots.map((s) => (
+          <span key={s} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px]"
+            style={{ background: 'rgba(14,165,164,0.12)', color: '#0EA5A4' }}>
+            {s}
+            <button type="button" disabled={disabled}
+              onClick={() => onChange(slots.filter((x) => x !== s))} title="Remove">
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+        {slots.length === 0 && <span className="text-[12px]" style={muted}>No times yet.</span>}
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="time" value={draft} onChange={(e) => setDraft(e.target.value)}
+          className="px-2.5 py-1.5 rounded-lg border text-[12.5px] bg-transparent"
+          style={{ borderColor: 'var(--border)', ...text }}
+        />
+        <button
+          type="button" disabled={disabled || !draft}
+          onClick={() => onChange([...slots, draft])}
+          className="px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-40"
+          style={{ border: '1px solid var(--border)', ...text }}
+        >
+          Add a time
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** A video's length, read in the browser so the server never downloads it just
+ *  to measure it. */
+function probeDuration(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    try {
+      const v = document.createElement('video')
+      v.preload = 'metadata'
+      v.onloadedmetadata = () => {
+        const d = Number(v.duration)
+        URL.revokeObjectURL(v.src)
+        resolve(Number.isFinite(d) ? Math.round(d) : 0)
+      }
+      v.onerror = () => resolve(0)
+      v.src = URL.createObjectURL(file)
+    } catch { resolve(0) }
+  })
+}

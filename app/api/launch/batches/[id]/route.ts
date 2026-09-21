@@ -1,0 +1,158 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// GET    /api/launch/batches/[id] — the batch, its videos, and which step the
+//                                   creator should do next.
+// PATCH  /api/launch/batches/[id] — the shared decisions: CTA, countries,
+//                                   cadence, name.
+// DELETE /api/launch/batches/[id] — bin a batch that has not launched.
+//
+// THE STEPS COME FROM lib/launch-batch, not from this route and not from the
+// page. One place decides what "done" means, so a screen cannot say ready
+// about a batch the worker will refuse.
+
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase/server'
+import { marketByDomain } from '@/lib/markets'
+import { normalizeSlots } from '@/lib/launch-schedule'
+import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, type BatchRow, type ItemRow } from '@/lib/launch-batch'
+
+export const runtime = 'nodejs'
+
+const ITEM_COLUMNS =
+  'id,position,source_url,rendered_url,clean_url,asin,title,description,thumbnail_url,state,reason,publish_at,youtube_video_id,duration_seconds'
+const BATCH_COLUMNS =
+  'id,name,state,cta,cta_chosen,markets,daily_slots,start_on,timezone,created_at'
+
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  const { data: batch, error } = await sb.from('launch_batches')
+    .select(BATCH_COLUMNS).eq('id', id).eq('user_id', user.id).maybeSingle()
+  if (error) {
+    return NextResponse.json({
+      error: 'Could not read this batch. Run migrations 357 and 358, then reload.',
+      detail: error.message,
+    }, { status: 500 })
+  }
+  if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
+
+  const { data: rows } = await sb.from('launch_items')
+    .select(ITEM_COLUMNS).eq('batch_id', id).order('position', { ascending: true })
+  const items: ItemRow[] = rows ?? []
+
+  const b = batch as BatchRow
+  return NextResponse.json({
+    ok: true,
+    batch: {
+      ...b,
+      markets: (b.markets ?? []).map((d) => ({
+        domain: d,
+        country: marketByDomain(d)?.country ?? d,
+        langName: marketByDomain(d)?.langName ?? null,
+        needsDub: !!marketByDomain(d)?.needsTranslation,
+      })),
+    },
+    items,
+    steps: batchSteps(b, items),
+    // THE REASON, not just a boolean. A disabled Launch button with nothing
+    // beside it is the dead end this codebase keeps producing.
+    launchBlocker: launchBlocker(b, items),
+    maxItems: MAX_ITEMS,
+  })
+}
+
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await req.json().catch(() => ({})) as {
+    name?: string
+    // `null` is a real answer: no CTA on any of them.
+    cta?: Record<string, unknown> | null
+    ctaChosen?: boolean
+    markets?: string[]
+    dailySlots?: string[]
+    startOn?: string | null
+    timezone?: string
+  }
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (typeof body.name === 'string') patch.name = body.name.trim().slice(0, 120) || 'Untitled batch'
+
+  // THE DECISION IS SEPARATE FROM THE VALUE. "No CTA" and "not asked yet" are
+  // both an empty cta column, and a batch would otherwise sit waiting for an
+  // answer the creator had already given.
+  if (body.ctaChosen !== undefined || body.cta !== undefined) {
+    if (body.cta) {
+      // VALIDATED BEFORE IT IS STORED. This preset is replayed by a background
+      // worker onto ten videos with nobody watching, so an arbitrary image URL
+      // here would be a standing instruction to composite whatever it points
+      // at. Only our own gallery or a badge we generated.
+      const v = validateCtaPreset(body.cta, process.env.NEXT_PUBLIC_SUPABASE_URL)
+      if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
+      patch.cta = v.preset
+    } else {
+      patch.cta = null
+    }
+    patch.cta_chosen = body.ctaChosen ?? true
+  }
+
+  if (Array.isArray(body.markets)) {
+    // Only storefronts MVP actually supports, so a typo cannot create a column
+    // the pipeline has no idea what to do with.
+    patch.markets = [...new Set(body.markets.filter((d) => !!marketByDomain(d)))]
+  }
+  if (Array.isArray(body.dailySlots)) {
+    // Cleaned and sorted here as well as on screen, because the cadence is what
+    // the schedule is built from and the order of the slots IS the order of the
+    // day.
+    patch.daily_slots = normalizeSlots(body.dailySlots)
+  }
+  if (body.startOn !== undefined) {
+    const s = (body.startOn || '').trim()
+    patch.start_on = /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null
+  }
+  if (typeof body.timezone === 'string' && body.timezone.trim()) {
+    const tz = body.timezone.trim()
+    try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); patch.timezone = tz }
+    catch { /* an unknown zone is ignored rather than stored, so the old one stands */ }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  const { error } = await sb.from('launch_batches')
+    .update(patch).eq('id', id).eq('user_id', user.id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true })
+}
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  const { data: batch } = await sb.from('launch_batches')
+    .select('state').eq('id', id).eq('user_id', user.id).maybeSingle()
+  if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
+  // A launched batch has videos scheduled on YouTube that deleting a row here
+  // would not unschedule, so the record stays and says what happened.
+  if (batch.state === 'launched' || batch.state === 'launching') {
+    return NextResponse.json({
+      error: 'This batch has already been launched, so its videos are on YouTube. Deleting it here would not take them down.',
+    }, { status: 409 })
+  }
+
+  const { error } = await sb.from('launch_batches').delete().eq('id', id).eq('user_id', user.id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true })
+}
