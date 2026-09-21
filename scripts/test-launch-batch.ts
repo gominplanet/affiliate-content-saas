@@ -169,29 +169,51 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and does not call anything scheduled',
     !/state: 'scheduled'/.test(LAUNCH),
     'this route has not spoken to YouTube, so it cannot report what YouTube did')
+  // STILL TRUE, in a conditional now: a row may not call itself scheduled
+  // before updateVideoStatus has run. The literal moved when publishing
+  // immediately was added, which is why this reads the ternary.
   check('the worker sets publish_at only after YouTube confirms',
-    DRAIN.indexOf('updateVideoStatus') < DRAIN.indexOf("state: 'scheduled'"),
+    DRAIN.indexOf('updateVideoStatus') > -1
+    && DRAIN.indexOf('updateVideoStatus') < DRAIN.indexOf("goNow ? 'published' : 'scheduled'"),
     'writing it first would promise a publication that never happened')
   check('and the two columns are kept apart in the schema',
     /planned_publish_at/.test(M358) && /publish_at\s+timestamptz/.test(M357),
     'one column for both is how a screen reports the plan as the result')
 
-  // A PUBLISH TIME IN THE PAST IS REFUSED, NOT SHIFTED. YouTube rejects it, and
-  // quietly moving it would publish somebody's video at an hour they never chose.
-  check('past slots stop the launch and are named',
-    /slotsAlreadyPast\(planned\)/.test(LAUNCH) && /pastSlots/.test(LAUNCH))
+  // A PUBLISH TIME IN THE PAST IS NEVER SHIFTED. That part has not changed and
+  // is the reason this check exists: quietly moving a slot forward would
+  // publish somebody's video at an hour they never chose.
+  //
+  // What changed is what a past slot MEANS. It used to stop the launch, which
+  // made tomorrow the earliest anything could go out. It now means now, and the
+  // list is still worked out because the screen has to say which videos those
+  // are before the button is pressed.
+  check('past slots are still identified, for the screen to name',
+    /slotsAlreadyPast\(planned\)/.test(LAUNCH) && /goingOutNow/.test(LAUNCH),
+    'going public cannot be undone, so it cannot be a surprise')
+  check('and they are not quietly moved to another hour',
+    !/at\.setHours|addDays\(plan\.startOn, 1\)/.test(LAUNCH),
+    'shifting a slot forward publishes at an hour nobody chose')
   check('and a partial schedule is refused outright',
     /planned\.length !== ready\.length/.test(LAUNCH),
     'publishing half a batch at hours nobody chose is worse than publishing none')
 }
 
-// ── the video goes private, then gets its time ──────────────────────────────
+// ── a scheduled video goes private, then gets its time ─────────────────────
+//
+// Unchanged for anything with a future time. A video going out NOW is the one
+// exception and it has to be: YouTube refuses a publishAt in the past, so "now"
+// cannot be said that way at all, and uploading public is the same thing in the
+// form the API accepts.
 {
-  check('it is uploaded private',
-    /privacyStatus: 'private'/.test(DRAIN),
+  check('anything with a time to wait for goes up private',
+    /privacyStatus: goNow \? 'public' : 'private'/.test(DRAIN),
     'uploading public and scheduling afterwards puts it on the channel in between')
   check('and the schedule is a separate confirmed call',
     /updateVideoStatus\(videoId, \{/.test(DRAIN) && /publishAt: String\(it\.planned_publish_at\)/.test(DRAIN))
+  check('which is skipped only for the ones going out now',
+    /if \(!goNow\) \{[\s\S]{0,120}?updateVideoStatus/.test(DRAIN),
+    'calling it with a past time fails every single time')
   check('one video per firing',
     /const PUBLISHES = 1/.test(DRAIN),
     'this downloads a whole file and uploads it again; two at once runs the function out of time')
@@ -810,6 +832,55 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       !/\.select\('id,name,state/.test(src),
       'the second list is exactly what refused a batch the page had called ready')
   }
+}
+
+// ── launching right away ────────────────────────────────────────────────────
+//
+// The earliest first day was tomorrow and a slot already gone was an error, so
+// a batch finished in the morning could not put anything out until the next
+// day. Picking today and pressing Launch is somebody asking for it to go now.
+{
+  // WHAT IT COMPUTES, not what it is called. The first version checked the
+  // function's NAME, and a rename is not what this regression looks like:
+  // adding a day back inside a function still called earliestDay is.
+  {
+    const at = BOARD.indexOf('function earliestDay')
+    const body = at > -1 ? BOARD.slice(at, BOARD.indexOf('\n}', at)) : ''
+    check('today is an allowed first day',
+      at > -1 && /format\(new Date\(\)\)/.test(body) && !/86_?400_?000|\+ 1\b|addDays/.test(body),
+      'a minimum of tomorrow is what made the feature wait a day for no reason')
+    check('and the date input uses it',
+      /min=\{earliestDay\(batch\.timezone\)\}/.test(BOARD),
+      'a helper nothing passes to min is a helper that changes nothing')
+  }
+  // THE CALL SITE, not the import. An import survives the `if` being gutted,
+  // which is how this repo has been caught four times now.
+  check('a slot already gone is no longer refused',
+    !/YouTube refuses a publish time in the past/.test(LAUNCH)
+    && /if \(startsBeforeToday\(plan\.startOn, plan\.timezone\)\)/.test(LAUNCH),
+    'refusing it is what forced tomorrow; the line is the date, not the time')
+  check('a first day before today still is refused',
+    /already been and gone/.test(LAUNCH),
+    'ten videos going public at once cannot be undone')
+
+  // YOUTUBE CANNOT BE TOLD "NOW". It refuses a publishAt in the past, so the
+  // only way to say it is to upload public instead of private-then-schedule.
+  // PUBLISHED AND SCHEDULED ARE DIFFERENT FACTS, and this row has kept them
+  // apart from the start.
+  check('a video that went now is published, not scheduled',
+    /state: goNow \? 'published' : 'scheduled'/.test(DRAIN),
+    'a board promising a future publication for a video already on the channel')
+  check('and it records when it actually went',
+    /publish_at: goNow \? stamp\(\) : it\.planned_publish_at/.test(DRAIN),
+    'writing this morning’s slot at two in the afternoon is the plan reported as the result')
+
+  // THE SCREEN SAYS SO BEFORE THE BUTTON. Going public cannot be undone.
+  check('the preview says which go out immediately',
+    /as soon as it is uploaded/.test(BOARD),
+    'printing this morning’s time beside a video about to go out says the opposite of what happens')
+  check('and it is said above the Launch button',
+    /go public as soon as they are uploaded/.test(BOARD),
+    'the one irreversible thing on the page should be read before it is pressed')
 }
 
 if (failures.length) {

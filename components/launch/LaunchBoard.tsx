@@ -68,12 +68,15 @@ const TONE: Record<string, string> = {
 
 /** Tomorrow in the creator's own zone, which is the earliest sensible first day:
  *  a batch still has to upload before it can publish. */
-function tomorrowLocal(timezone: string): string {
-  const now = new Date(Date.now() + 86_400_000)
-  const p = new Intl.DateTimeFormat('en-CA', {
+/** Today in the creator's own zone, which is the earliest first day.
+ *
+ *  IT USED TO BE TOMORROW, and that made the feature wait a day for no reason:
+ *  finish a batch at nine in the morning and the earliest anything could go out
+ *  was the next one. A time that has already gone today means now. */
+function earliestDay(timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(now)
-  return p
+  }).format(new Date())
 }
 
 export default function LaunchBoard() {
@@ -604,7 +607,7 @@ export default function LaunchBoard() {
             <input
               type="date"
               value={batch.start_on ?? ''}
-              min={tomorrowLocal(batch.timezone)}
+              min={earliestDay(batch.timezone)}
               onChange={(e) => void patchBatch({ startOn: e.target.value })}
               className="block mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent"
               style={{ borderColor: 'var(--border)', ...text }}
@@ -627,16 +630,34 @@ export default function LaunchBoard() {
                     <span className="flex-1 truncate" style={text}>
                       {items[p.position]?.title || 'Untitled'}
                     </span>
-                    <span className="tabular-nums">
-                      {new Intl.DateTimeFormat('en-GB', {
-                        timeZone: batch.timezone, weekday: 'short', day: '2-digit', month: 'short',
-                        hour: '2-digit', minute: '2-digit', hour12: false,
-                      }).format(p.at)}
-                    </span>
+                    {/* NOW IS NOT A TIME, and printing this morning's slot
+                        beside a video that is about to go out would be the
+                        plan reported as the result. */}
+                    {p.at.getTime() <= Date.now() ? (
+                      <span style={{ color: '#10B981' }}>as soon as it is uploaded</span>
+                    ) : (
+                      <span className="tabular-nums">
+                        {new Intl.DateTimeFormat('en-GB', {
+                          timeZone: batch.timezone, weekday: 'short', day: '2-digit', month: 'short',
+                          hour: '2-digit', minute: '2-digit', hour12: false,
+                        }).format(p.at)}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>
             </div>
+          )}
+
+          {/* SAID BEFORE THE BUTTON, not after. Going public is the one thing
+              on this page that cannot be undone, so a creator about to do it
+              immediately should read that first. */}
+          {preview.some((p) => p.at.getTime() <= Date.now()) && (
+            <p className="text-[12.5px] px-3 py-2 rounded-lg" style={{ color: '#10B981', background: 'rgba(16,185,129,0.08)' }}>
+              {preview.filter((p) => p.at.getTime() <= Date.now()).length === preview.length
+                ? 'Those times have gone today, so these go public as soon as they are uploaded.'
+                : `${preview.filter((p) => p.at.getTime() <= Date.now()).length} of these go public as soon as they are uploaded, because those times have gone today. The rest wait for theirs.`}
+            </p>
           )}
 
           {/* THE REASON, always. A disabled button with nothing beside it is the

@@ -466,26 +466,46 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
       if (bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
 
       const yt = new YouTubeOAuthService(token)
-      // PRIVATE, because a scheduled video must be private until its moment.
-      // Uploading it public and scheduling afterwards would put it on the
-      // channel for however long the second call takes.
+
+      // ── NOW, OR AT ITS MOMENT ────────────────────────────────────────────
+      //
+      // A planned time that has already gone means the creator asked for this
+      // one to go out now: they picked today and pressed Launch. YouTube
+      // refuses a publishAt in the past, so "now" cannot be said that way at
+      // all. It is said by uploading public instead, which is the same thing
+      // in the form the API accepts.
+      //
+      // Everything else uploads PRIVATE first. Uploading public and scheduling
+      // afterwards would put the video on the channel for however long the
+      // second call takes.
+      const goNow = new Date(String(it.planned_publish_at)).getTime() <= Date.now()
+
       const { id: videoId, channelId } = await yt.uploadShort(bytes, {
         title: title.slice(0, 100),
         description: (it.description || '').slice(0, 4900),
-        privacyStatus: 'private',
+        privacyStatus: goNow ? 'public' : 'private',
       })
 
-      // THE SCHEDULE ITSELF, and its result is what decides whether this row
-      // may call itself scheduled.
-      await yt.updateVideoStatus(videoId, {
-        publishAt: String(it.planned_publish_at),
-        notifySubscribers: true,
-      })
+      if (!goNow) {
+        // THE SCHEDULE ITSELF, and its result is what decides whether this row
+        // may call itself scheduled.
+        await yt.updateVideoStatus(videoId, {
+          publishAt: String(it.planned_publish_at),
+          notifySubscribers: true,
+        })
+      }
 
       await sb.from('launch_items').update({
-        state: 'scheduled',
+        // PUBLISHED, NOT SCHEDULED, when it went out now. They are different
+        // facts and the row has always kept them apart; collapsing them here
+        // would have the board promising a future publication for a video that
+        // is already on the channel.
+        state: goNow ? 'published' : 'scheduled',
         youtube_video_id: videoId,
-        publish_at: it.planned_publish_at,
+        // THE MOMENT IT ACTUALLY WENT, not the slot that had gone by. A row
+        // saying it published at nine this morning, written at two in the
+        // afternoon, is the plan reported as the result.
+        publish_at: goNow ? stamp() : it.planned_publish_at,
         reason: null,
         updated_at: stamp(),
       }).eq('id', it.id)

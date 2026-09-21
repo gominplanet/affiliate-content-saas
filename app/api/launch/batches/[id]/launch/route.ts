@@ -20,7 +20,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
-import { planSchedule, slotsAlreadyPast, cadenceLabel } from '@/lib/launch-schedule'
+import { planSchedule, slotsAlreadyPast, cadenceLabel, startsBeforeToday } from '@/lib/launch-schedule'
 import { launchBlocker, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
@@ -80,15 +80,23 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }, { status: 400 })
   }
 
-  const past = slotsAlreadyPast(planned)
-  if (past.length > 0) {
+  // ── A TIME THAT HAS GONE TODAY MEANS NOW ─────────────────────────────────
+  //
+  // This used to refuse, which made tomorrow the earliest a batch could put
+  // anything out: finish at nine in the morning and wait a day. Picking today
+  // and pressing Launch is a creator asking for it to go now, and the times
+  // already say so.
+  //
+  // A FIRST DAY BEFORE TODAY IS STILL REFUSED, and that is the whole line: a
+  // slot that went by this morning is one video going out now, a batch whose
+  // first day was last Tuesday is ten going public at once, and a published
+  // video cannot be unpublished.
+  if (startsBeforeToday(plan.startOn, plan.timezone)) {
     return NextResponse.json({
-      error: past.length === planned.length
-        ? `That start date has already passed, so YouTube would refuse every one. Pick a later first day.`
-        : `The first ${past.length} ${past.length === 1 ? 'slot has' : 'slots have'} already gone today, and YouTube refuses a publish time in the past. Move the first day forward, or use later times.`,
-      pastSlots: past.map((p) => ({ position: p.position, slot: p.slot, at: p.at.toISOString() })),
+      error: 'That first day has already been and gone. Pick today to send them out now, or a day ahead to schedule them.',
     }, { status: 409 })
   }
+  const immediate = slotsAlreadyPast(planned)
 
   // ── write the plan onto the rows ─────────────────────────────────────────
   const now = new Date().toISOString()
@@ -111,6 +119,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     scheduled: ready.length,
     leftBehind: leftBehind.map((i) => ({ position: i.position, title: i.title, reason: i.reason })),
     cadence: cadenceLabel(batch.daily_slots),
+    // SAID BACK, not assumed. A creator who picked today should be told which
+    // of their videos is going out this minute rather than discovering it.
+    goingOutNow: immediate.length,
     firstAt: planned[0]?.at.toISOString() ?? null,
     lastAt: planned[planned.length - 1]?.at.toISOString() ?? null,
     // SAID PLAINLY, because it is the one thing that is not automatic and the

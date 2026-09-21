@@ -158,15 +158,58 @@ export function planSchedule(count: number, plan: SchedulePlan): ScheduledSlot[]
 }
 
 /**
- * YouTube refuses a publishAt in the past, and a batch prepared yesterday is
- * launched today.
+ * The slots whose moment has already gone.
  *
- * So the plan is checked against the clock rather than trusted, and the answer
- * names the videos that would be rejected instead of letting the API reject
- * them one at a time with nothing on screen to connect the failures.
+ * WHAT THIS MEANS CHANGED, and it is worth saying why. It used to mean "these
+ * would be refused by YouTube, so stop", which made the earliest possible first
+ * day tomorrow: a creator who finished a batch at nine in the morning could not
+ * put anything out until the next one.
+ *
+ * A time that has already gone today means NOW. That is what the times
+ * literally say, and it is what somebody who picks today and presses Launch is
+ * asking for. YouTube still refuses a publishAt in the past, so these are
+ * uploaded public rather than private-with-a-time, which is the same thing said
+ * in the way the API accepts.
+ *
+ * The caller still needs the list, because the screen has to say which videos
+ * are going out immediately rather than springing it on them.
  */
 export function slotsAlreadyPast(planned: ScheduledSlot[], now: Date = new Date()): ScheduledSlot[] {
   return planned.filter((p) => p.at.getTime() <= now.getTime())
+}
+
+/** Today, as a yyyy-mm-dd date, in somebody else's timezone.
+ *
+ *  NOT the server's date. A creator in Auckland is a day ahead of a server in
+ *  Virginia, and "before today" decided in the wrong zone refuses a start date
+ *  that is perfectly good where they are standing. */
+export function todayIn(timezone: string, now: Date = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(now)
+  } catch {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(now)
+  }
+}
+
+/**
+ * Is this first day actually in the past, as opposed to earlier today.
+ *
+ * THE LINE BETWEEN "NOW" AND A MISTAKE. A slot that went by this morning means
+ * publish now, which is a thing somebody asks for. A batch whose first day was
+ * last Tuesday means ten videos going public at once, which nobody asks for and
+ * cannot be undone. So the first is allowed and the second is refused, and the
+ * difference is the DATE rather than the time.
+ */
+export function startsBeforeToday(
+  startOn: string, timezone: string, now: Date = new Date(),
+): boolean {
+  const d = (startOn || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false
+  return d < todayIn(timezone, now)
 }
 
 /** Plain words for a cadence, so no screen invents its own. */

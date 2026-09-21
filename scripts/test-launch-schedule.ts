@@ -12,8 +12,7 @@
 // daylight-saving change, rather than pinning the source text.
 import {
   parseSlot, normalizeSlots, zonedTimeToInstant, planSchedule,
-  slotsAlreadyPast, cadenceLabel,
-} from '../lib/launch-schedule'
+  slotsAlreadyPast, cadenceLabel, startsBeforeToday, todayIn } from '../lib/launch-schedule'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -205,6 +204,52 @@ const wallClock = (at: Date, timeZone: string) =>
     cadenceLabel([]) === 'No publishing times set yet')
   check('no dash punctuation in the words a creator reads',
     !/[—–]/.test([cadenceLabel(['09:00']), cadenceLabel(['09:00', '13:00']), cadenceLabel([])].join(' ')))
+}
+
+// ── a time that has gone today means NOW, a day that has gone is a mistake ──
+//
+// Seb: "we should be able to launch and upload right away.. not only starting
+// the next day". The earliest first day was tomorrow, so finishing a batch at
+// nine in the morning meant waiting a day to put anything out.
+//
+// The line is the DATE, not the time. A slot that went by this morning is one
+// video going out now, which is a thing somebody asks for. A first day of last
+// Tuesday is ten videos going public at once, which nobody asks for and cannot
+// be undone.
+{
+  const at = (iso: string) => new Date(iso)
+
+  check('earlier today is not "before today"',
+    !startsBeforeToday('2026-09-21', 'America/Toronto', at('2026-09-21T23:00:00Z')),
+    'refusing today is what made tomorrow the earliest anything could go out')
+  check('yesterday is',
+    startsBeforeToday('2026-09-20', 'America/Toronto', at('2026-09-21T23:00:00Z')),
+    'a week-old first day would put every video public at once')
+  check('and tomorrow is not',
+    !startsBeforeToday('2026-09-22', 'America/Toronto', at('2026-09-21T23:00:00Z')))
+
+  // DECIDED IN THE CREATOR'S ZONE, not the server's. At 23:00 in Toronto it is
+  // already tomorrow in UTC, and a server comparing UTC dates would refuse a
+  // start date that is perfectly good where they are standing.
+  check('the day is read in the creator’s own timezone',
+    todayIn('America/Toronto', at('2026-09-22T02:00:00Z')) === '2026-09-21'
+    && todayIn('UTC', at('2026-09-22T02:00:00Z')) === '2026-09-22',
+    'a creator in Auckland is a day ahead of a server in Virginia')
+  check('and a zone nobody recognises does not throw',
+    /^\d{4}-\d{2}-\d{2}$/.test(todayIn('Not/AZone')),
+    'a bad zone must not take the launch route down with it')
+
+  // THE SLOTS THEMSELVES still have to be listed, because the screen says which
+  // videos are going out immediately rather than springing it on anybody.
+  {
+    const planned = planSchedule(2, {
+      slots: ['09:00', '21:00'], startOn: '2026-09-21', timezone: 'America/Toronto',
+    })
+    const past = slotsAlreadyPast(planned, at('2026-09-21T18:00:00Z')) // 14:00 Toronto
+    check('a slot gone today is listed, and a later one is not',
+      past.length === 1 && past[0].slot === '09:00',
+      `${past.length} past: ${past.map(p => p.slot).join(',')}`)
+  }
 }
 
 if (failures.length) {
