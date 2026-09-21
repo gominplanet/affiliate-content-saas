@@ -15,6 +15,7 @@
 //   purpose and this pins them apart.
 import { readFileSync } from 'node:fs'
 import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, type BatchRow, type ItemRow } from '../lib/launch-batch'
+import { validateThumbnailPreset, presetToRequestFields, defaultThumbnailPreset, styleReferenceAllowed } from '../lib/thumbnail-preset'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -37,6 +38,10 @@ const STEPCARD = read('components/launch/StepCard.tsx')
 const PAGE = read('app/(dashboard)/launch/page.tsx')
 const M357 = read('supabase/migrations/357_launch_batches.sql')
 const M358 = read('supabase/migrations/358_launch_batch_worker.sql')
+const M359 = read('supabase/migrations/359_launch_batch_thumbnail.sql')
+const PICKER = read('components/launch/ThumbnailPicker.tsx')
+const PANEL = read('components/thumbnails/ThumbnailBoostPanel.tsx')
+const GENROUTE = live(read('app/api/youtube/generate-thumbnail/route.ts'))
 const VERCEL = read('vercel.json')
 const NAV = read('components/layout/DashboardShellV2.tsx')
 
@@ -46,6 +51,7 @@ function full(over: Partial<BatchRow> = {}): BatchRow {
   return {
     id: 'b', name: 'Batch', state: 'draft',
     cta: null, cta_chosen: true,
+    thumbnail: null, thumbnail_chosen: true,
     markets: ['amazon.com'], daily_slots: ['09:00'], start_on: '2026-12-01',
     timezone: 'America/Toronto', ...over,
   }
@@ -351,6 +357,147 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('no dash punctuation in anything a creator reads',
     !/[—–]/.test(copy), (copy.match(/.{0,50}[—–].{0,50}/) ?? [''])[0])
   check('no year stamped into the copy', !/\b20\d\d\b/.test(copy))
+}
+
+// ── the thumbnail look: chosen once, and the SAME generator Launchpad uses ──
+//
+// "the thumbnail gets made.. but with zero options" was the whole bug report.
+// The batch called a simple builder of its own while Launchpad called the
+// designed route, so one product could produce two different thumbnails and
+// only one of them could be styled at all.
+{
+  const SUPA = 'https://abc.supabase.co'
+
+  check('the batch has a thumbnail step of its own',
+    batchSteps(full({ thumbnail_chosen: false }), [item()]).some(s => s.id === 'thumbnail'),
+    'without a step there is nowhere to make the choice')
+
+  // NOT ASKED IS NOT THE SAME AS KEPT THE DEFAULT, exactly as with the CTA.
+  check('an unanswered look blocks the batch',
+    !!launchBlocker(full({ thumbnail_chosen: false }), [item({ state: 'prepared' })]),
+    'a batch would launch with a look the creator never saw')
+  check('and keeping the house look is a real answer',
+    !launchBlocker(full({ thumbnail_chosen: true, thumbnail: null }), [item({ state: 'prepared' })]),
+    'null must mean "they chose the house look", not "they never said"')
+
+  // THE STEP SAYS WHAT WAS CHOSEN, never what will happen.
+  {
+    const chosen = { ...defaultThumbnailPreset(), face: { kind: 'none' as const } }
+    const d = batchSteps(full({ thumbnail_chosen: true, thumbnail: chosen }), [item()])
+      .find(s => s.id === 'thumbnail')!.detail
+    check('the step reports the choice', /product only/i.test(d), d)
+    check('and never promises a future thumbnail', !/will be|going to/i.test(d), d)
+  }
+
+  // ── what a stored preset is allowed to be ────────────────────────────────
+  //
+  // It is replayed onto ten videos by a worker with nobody watching, so every
+  // field is an enum, a clamped string, or a URL in our own storage.
+  check('a look from somebody else’s server is refused',
+    !styleReferenceAllowed('https://evil.example/pic.png', SUPA)
+    && styleReferenceAllowed(`${SUPA}/storage/v1/object/public/headshots/u/a.png`, SUPA),
+    'an arbitrary URL here is a standing instruction to fetch whatever it points at, ten times')
+  {
+    const v = validateThumbnailPreset({ styleReferenceUrl: 'https://evil.example/pic.png' }, SUPA)
+    check('and dropping it is REPORTED, not silent', v.rejected.length > 0 && v.preset.styleReferenceUrl === null,
+      'a look that was ignored must not come back looking like one that applied')
+  }
+  {
+    const v = validateThumbnailPreset({ badgeText: 'x'.repeat(500), scenePrompt: 'y'.repeat(4000) }, SUPA)
+    check('long text is clamped, not stored',
+      v.preset.badgeText.length <= 40 && v.preset.scenePrompt.length <= 300,
+      'a thousand words of badge text is a second prompt riding along on every render')
+  }
+  {
+    const v = validateThumbnailPreset({ pose: 'jump', expression: 'smug-beyond-reason' }, SUPA)
+    check('an unknown pose or expression falls back rather than being passed on',
+      v.preset.pose === null && v.preset.expression === 'auto')
+  }
+  {
+    const v = validateThumbnailPreset({ face: { kind: 'face', faceId: 'not-a-uuid' } }, SUPA)
+    check('a face id that cannot exist becomes the usual face, and says so',
+      v.preset.face.kind === 'auto' && v.rejected.length > 0)
+  }
+  check('a preset never refuses a save outright',
+    validateThumbnailPreset('nonsense', SUPA).preset.headlineStyle === 'question',
+    'a 400 here would lose every other change in the same request')
+
+  // ── one generator, and the same field names ──────────────────────────────
+  check('the batch calls the route Launchpad calls',
+    /generate-thumbnail/.test(DRAIN) && /postToSelf/.test(DRAIN)
+    // AT THE CALL SITE, not just somewhere in the file. A helper that exists
+    // and is never reached passes a grep and builds the house look on all ten.
+    && /await styledThumbnail\(/.test(DRAIN),
+    'a second generator is why a batch thumbnail had no options in the first place')
+  check('and asks for the designed path, as Launchpad does',
+    /textMode: 'graphic'/.test(DRAIN),
+    'a different textMode is a different image from the same controls')
+  {
+    // THE PANEL'S OWN FIELD NAMES. If the panel renames one, this catches the
+    // batch still sending the old one, which would fail silently: the route
+    // would simply not see the option and build the house look.
+    const f = presetToRequestFields({
+      ...defaultThumbnailPreset(), autoBadge: true, pose: 'hold', wearProduct: true,
+      accentWord: 'FREE', styleReferenceUrl: 'https://x/y.png', scenePrompt: 'kitchen',
+    })
+    for (const k of Object.keys(f)) {
+      if (k === 'accentColor' || k === 'noHuman' || k === 'faceModelId') continue
+      check(`the panel still sends "${k}"`, PANEL.includes(k),
+        'the batch and the panel must name the same field or the option is dropped in silence')
+    }
+  }
+  check('the route accepts an internal call from the worker',
+    /x-mvp-service/.test(GENROUTE) && /CRON_SECRET/.test(GENROUTE),
+    'without it the worker gets a 401 and every batch thumbnail falls back to plain')
+  check('and an internal call without an identity is refused',
+    /Service call missing identity/.test(GENROUTE),
+    'a secret with no user would generate against nobody’s account')
+
+  // ── the fallback is visible ──────────────────────────────────────────────
+  check('a fallback thumbnail is recorded as one',
+    /thumbnail_source/.test(DRAIN) && /'plain'/.test(DRAIN) && /'styled'/.test(DRAIN),
+    'a look that never applied looked exactly like one that did')
+  check('and the row says so on screen',
+    /thumbnail_source === 'plain'/.test(BOARD) && /plain look/.test(BOARD),
+    'the sentence alone is missed by somebody scanning ten rows')
+  check('the fallback keeps its reason when it reaches prepared',
+    /usedPlain$[\s\S]{0,200}?could not be applied/m.test(DRAIN),
+    'clearing the reason on the way to prepared erases the only place it was said')
+  check('the picker exists and reuses the panel',
+    /ThumbnailBoostPanel/.test(PICKER) && /useThumbnailBoost/.test(PICKER),
+    'a second set of controls would drift from the one Launchpad has')
+
+  // ── the migration ────────────────────────────────────────────────────────
+  check('the columns exist and can be added twice',
+    /add column if not exists thumbnail jsonb/.test(M359)
+    && /add column if not exists thumbnail_chosen/.test(M359)
+    && /add column if not exists thumbnail_source/.test(M359),
+    'a migration that only runs once is one Seb cannot safely re-paste')
+  check('and the route reads them back',
+    /thumbnail,thumbnail_chosen/.test(BATCH) && /thumbnail_source/.test(BATCH),
+    'a column nothing selects is a column the page never sees')
+}
+
+// ── the CTA is for YouTube, and Amazon gets the file without it ─────────────
+//
+// Seb, mid-build: "the CTA burn is only for Youtube.. the video without the cta
+// is for amazon". `clean_url` was declared in migration 357 and read by the
+// Amazon hand-off from the day it was written, and NOTHING ever set it, so
+// every batch listing was handed a null video.
+{
+  check('the render writes both files',
+    /rendered_url: out\.url, clean_url: it\.source_url/.test(DRAIN),
+    'the CTA copy is for YouTube; Amazon gets the file the creator uploaded')
+  check('a batch with no CTA still writes the clean copy',
+    /rendered_url: it\.source_url, clean_url: it\.source_url/.test(DRAIN),
+    'no CTA means both destinations get the same file, not that one gets null')
+  check('Amazon is handed the clean copy',
+    /source_video_url: it\.clean_url/.test(DRAIN),
+    'a burned-in "link in the description" on a storefront points at nothing')
+  check('and never falls back to the rendered one',
+    !/source_video_url: it\.clean_url \?\? it\.rendered_url/.test(DRAIN)
+    && !/clean_url \|\| it\.rendered_url/.test(DRAIN),
+    'that fallback would put the CTA on Amazon silently, which is the exact thing clean_url exists to prevent')
 }
 
 if (failures.length) {

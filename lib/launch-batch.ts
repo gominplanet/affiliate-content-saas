@@ -19,6 +19,7 @@
 // So the promise is: set it up, press Launch, leave the tab open, walk away.
 
 import { normalizeSlots, cadenceLabel } from '@/lib/launch-schedule'
+import { presetSummary, type ThumbnailPreset } from '@/lib/thumbnail-preset'
 
 /** The most videos in one batch. Ten is the number Seb asked for, and it is
  *  also about the point where a single Launch press stops being reviewable. */
@@ -118,6 +119,12 @@ export interface BatchRow {
    *  none. Without it, "no CTA" and "not asked yet" are the same empty value
    *  and the batch would sit waiting for an answer it already has. */
   cta_chosen?: boolean | null
+  /** The thumbnail look, chosen once and replayed on all ten. Same reasoning
+   *  as the CTA: one decision, reproduced, never a per-video copy to drift. */
+  thumbnail: ThumbnailPreset | null
+  /** Set the moment a thumbnail decision is made, INCLUDING keeping the house
+   *  look, for the same reason cta_chosen exists. */
+  thumbnail_chosen?: boolean | null
   markets: string[]
   daily_slots: string[]
   start_on: string | null
@@ -140,7 +147,7 @@ export interface ItemRow {
 
 // ── the steps, which are the page's spine and the worker's contract ─────────
 
-export type StepId = 'videos' | 'cta' | 'countries' | 'products' | 'schedule'
+export type StepId = 'videos' | 'cta' | 'thumbnail' | 'countries' | 'products' | 'schedule'
 
 export interface StepStatus {
   id: StepId
@@ -189,6 +196,16 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
         : batch.cta
           ? 'Chosen. It goes on all of them in the same spot.'
           : 'No CTA on these, which is a choice you can change here.',
+    },
+    {
+      id: 'thumbnail',
+      title: 'Choose your thumbnail look',
+      done: !!batch.thumbnail_chosen,
+      detail: !batch.thumbnail_chosen
+        ? 'The style, the face and the hook. Picked once, used on all of them.'
+        : batch.thumbnail
+          ? presetSummary(batch.thumbnail)
+          : 'The house look on all of them, which is a choice you can change here.',
     },
     {
       id: 'countries',

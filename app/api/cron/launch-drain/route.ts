@@ -27,6 +27,8 @@ import { buildProductThumbnail } from '@/lib/product-thumbnail'
 import { renderCta } from '@/lib/youtube-ingest'
 import { normalizeTier } from '@/lib/tier'
 import { ctaStickerAllowed, type CtaPreset } from '@/lib/launch-batch'
+import { validateThumbnailPreset, presetToRequestFields, type ThumbnailPreset } from '@/lib/thumbnail-preset'
+import { postToSelf } from '@/lib/self-url'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { coveragePriority } from '@/lib/storefront-coverage'
@@ -43,6 +45,10 @@ const RENDERS = 1
 const THUMBS = 2
 /** Tries before a video stops asking and says why. */
 const TRIES = 3
+/** How long the internal thumbnail call gets. The designed path runs an art
+ *  director pass and an image model, so it is minutes, not seconds, and it sits
+ *  under this route's own 300s budget with room for the write afterwards. */
+const THUMB_CALL_MS = 240_000
 /** Videos pushed to YouTube per firing. ONE: this downloads a whole file and
  *  uploads it again, which is the longest single operation in the product. */
 const PUBLISHES = 1
@@ -86,9 +92,11 @@ async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed:
 
     const cta = (batch.cta ?? null) as CtaPreset | null
     if (!cta?.stickerUrl) {
-      // NO CTA IS A REAL CHOICE. The uploaded file is the finished video.
+      // NO CTA IS A REAL CHOICE. The uploaded file is the finished video, and
+      // it is the same file for both destinations.
       await sb.from('launch_items').update({
-        rendered_url: it.source_url, state: 'preparing', reason: null, updated_at: now(),
+        rendered_url: it.source_url, clean_url: it.source_url,
+        state: 'preparing', reason: null, updated_at: now(),
       }).eq('id', it.id)
       skipped++
       continue
@@ -138,8 +146,22 @@ async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed:
         stickerUrl: cta.stickerUrl, widthPct: cta.widthPct, xPct: cta.xPct, yPct: cta.yPct,
       }, it.user_id as string)
       if (!out.ok) throw new Error(out.reason || 'the render did not finish')
+      // TWO FILES FROM HERE ON, AND THEY GO TO DIFFERENT PLACES.
+      //
+      // The CTA is for YouTube ONLY. It says "link in the description", which
+      // is true on a YouTube watch page and false on an Amazon storefront,
+      // where there is no description and no link: a burned-in call to action
+      // pointing at nothing is at best confusing and at worst a listing
+      // Amazon rejects.
+      //
+      // So `rendered_url` is the burned copy YouTube gets, and `clean_url` is
+      // the file the creator uploaded, untouched, which is what goes to every
+      // storefront. This column was read by the Amazon hand-off from the day it
+      // was written and never set by anything, so every batch listing was
+      // handed a null video.
       await sb.from('launch_items').update({
-        rendered_url: out.url, state: 'preparing', reason: null, updated_at: now(),
+        rendered_url: out.url, clean_url: it.source_url,
+        state: 'preparing', reason: null, updated_at: now(),
       }).eq('id', it.id)
       done++
     } catch (e) {
@@ -165,17 +187,31 @@ async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed:
  * because English wording sitting on a German listing is the same class of
  * failure as English audio under a translated title.
  */
-async function thumbs(sb: Sb): Promise<{ done: number; blocked: number }> {
+async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: number }> {
   const { data: rows } = await sb.from('launch_items')
     .select('id,user_id,batch_id,asin,title,thumbnail_url,thumbnail_clean_url,thumb_tries')
     .eq('state', 'preparing')
     .order('created_at', { ascending: true }).limit(THUMBS * 4)
   const items = rows ?? []
-  if (items.length === 0) return { done: 0, blocked: 0 }
+  if (items.length === 0) return { done: 0, blocked: 0, plain: 0 }
 
-  let done = 0, blocked = 0
+  let done = 0, blocked = 0, plain = 0
   let budget = THUMBS
   const now = () => new Date().toISOString()
+
+  // The batch's chosen look, read once per batch rather than once per video.
+  const presetByBatch = new Map<string, ThumbnailPreset>()
+  const loadPreset = async (batchId: string): Promise<ThumbnailPreset> => {
+    const cached = presetByBatch.get(batchId)
+    if (cached) return cached
+    const { data: b } = await sb.from('launch_batches').select('thumbnail').eq('id', batchId).maybeSingle()
+    // Re-validated on the way OUT of the database, not only on the way in. The
+    // row may predate a field, or have been written by an older build, and this
+    // is the last point before ten image generations act on it.
+    const { preset } = validateThumbnailPreset(b?.thumbnail ?? null, process.env.NEXT_PUBLIC_SUPABASE_URL)
+    presetByBatch.set(batchId, preset)
+    return preset
+  }
 
   for (const it of items) {
     if (budget <= 0) break
@@ -214,23 +250,90 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number }> {
     const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', it.user_id).maybeSingle()
     const tier = normalizeTier(integ?.tier)
     const patch: Record<string, unknown> = { updated_at: now() }
+    const preset = await loadPreset(it.batch_id)
+    let usedPlain = false
     try {
       if (!it.thumbnail_url) {
-        const branded = await buildProductThumbnail(sb, { userId: it.user_id, tier, title, asin, withText: true })
+        // THE SAME GENERATOR VIDEO LAUNCHPAD USES, with the batch's chosen
+        // look. This route is what gives a thumbnail a hook style, a face, a
+        // pose, a badge and a look to match, and calling anything else here is
+        // what left a batch thumbnail with no options at all.
+        const branded = await styledThumbnail(it.user_id, title, asin, preset)
         if (branded) patch.thumbnail_url = branded
+        else {
+          // THE FALLBACK IS RECORDED, NOT HIDDEN. A plain thumbnail is better
+          // than none, but it is NOT the look they picked, and until this was
+          // written down the two outcomes were the same row on screen.
+          const basic = await buildProductThumbnail(sb, { userId: it.user_id, tier, title, asin, withText: true })
+          if (basic) { patch.thumbnail_url = basic; usedPlain = true }
+        }
       }
       if (!it.thumbnail_clean_url) {
-        const clean = await buildProductThumbnail(sb, { userId: it.user_id, tier, title, asin, withText: false })
+        // The wordless copy for non-English storefronts. The styled route bakes
+        // a headline in by design, so the clean variant stays with the builder
+        // that can be told to write nothing at all.
+        const clean = await buildProductThumbnail(sb, {
+          userId: it.user_id, tier, title, asin, withText: false,
+          faceId: preset.face.kind === 'face' ? preset.face.faceId : null,
+          noHuman: preset.face.kind === 'none',
+        })
         if (clean) patch.thumbnail_clean_url = clean
       }
     } catch { /* the try is already counted; the next firing has another go */ }
 
+    if (patch.thumbnail_url) {
+      patch.thumbnail_source = usedPlain ? 'plain' : 'styled'
+      if (usedPlain) plain++
+    }
     const haveBranded = patch.thumbnail_url || it.thumbnail_url
     const haveClean = patch.thumbnail_clean_url || it.thumbnail_clean_url
-    if (haveBranded && haveClean) { patch.state = 'prepared'; patch.reason = null; done++ }
+    if (haveBranded && haveClean) {
+      patch.state = 'prepared'
+      // The fallback keeps its sentence. Clearing `reason` on the way to
+      // 'prepared' would erase the one place the creator could read that this
+      // thumbnail is not the look they chose.
+      patch.reason = usedPlain
+        ? 'Your chosen look could not be applied, so this one is the plain product thumbnail.'
+        : null
+      done++
+    }
     await sb.from('launch_items').update(patch).eq('id', it.id)
   }
-  return { done, blocked }
+  return { done, blocked, plain }
+}
+
+/**
+ * One thumbnail from the batch's chosen look, via the route Launchpad uses.
+ *
+ * Returns null rather than throwing, because the caller has a plain fallback
+ * and a batch that stops on a styling failure would be worse than one that
+ * finishes and says the look did not apply.
+ */
+async function styledThumbnail(
+  userId: string, title: string, asin: string, preset: ThumbnailPreset,
+): Promise<string | null> {
+  try {
+    const res = await postToSelf({
+      path: '/api/youtube/generate-thumbnail',
+      userId,
+      timeoutMs: THUMB_CALL_MS,
+      body: {
+        videoTitle: title,
+        asin,
+        // 'graphic' is what Launchpad and Co-Pilot send: the designed path at a
+        // clean 1280x720 with safe margins. Anything else is a different image
+        // from the same controls.
+        textMode: 'graphic',
+        ...presetToRequestFields(preset),
+      },
+    })
+    if (!res.ok) return null
+    const j = await res.json().catch(() => ({})) as { thumbnailUrl?: string; thumbnailUrls?: string[] }
+    const url = j.thumbnailUrl || (Array.isArray(j.thumbnailUrls) ? j.thumbnailUrls[0] : null)
+    return typeof url === 'string' && url ? url : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -364,8 +467,15 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
       thumbnail_clean_url: it.thumbnail_clean_url ?? null,
       duration_seconds: it.duration_seconds ?? null,
       asin: it.asin ?? null,
-      // The CLEAN copy, with no CTA burned in, because a storefront listing
-      // should not carry "link in the description".
+      // THE CLEAN COPY, NEVER THE RENDERED ONE. The CTA is a YouTube device:
+      // it says "link in the description", and a storefront listing has no
+      // description and no link, so a burned-in one points at nothing.
+      //
+      // Deliberately NOT falling back to `rendered_url` when this is missing.
+      // That fallback would put the CTA on Amazon, which is the exact thing
+      // this column exists to prevent, and it would do it silently. A null
+      // here means the storefront queue skips the market and names it, which
+      // is the visible failure rather than the invisible wrong one.
       source_video_url: it.clean_url ?? null,
       description: it.description ?? null,
     }, { onConflict: 'youtube_video_id' }).select('id').single()

@@ -14,14 +14,15 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { marketByDomain } from '@/lib/markets'
 import { normalizeSlots } from '@/lib/launch-schedule'
+import { validateThumbnailPreset } from '@/lib/thumbnail-preset'
 import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, type BatchRow, type ItemRow } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
 
 const ITEM_COLUMNS =
-  'id,position,source_url,rendered_url,clean_url,asin,title,description,thumbnail_url,state,reason,publish_at,youtube_video_id,duration_seconds'
+  'id,position,source_url,rendered_url,clean_url,asin,title,description,thumbnail_url,thumbnail_source,state,reason,publish_at,youtube_video_id,duration_seconds'
 const BATCH_COLUMNS =
-  'id,name,state,cta,cta_chosen,markets,daily_slots,start_on,timezone,created_at'
+  'id,name,state,cta,cta_chosen,thumbnail,thumbnail_chosen,markets,daily_slots,start_on,timezone,created_at'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -77,6 +78,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // `null` is a real answer: no CTA on any of them.
     cta?: Record<string, unknown> | null
     ctaChosen?: boolean
+    // `null` is a real answer here too: the house look on all of them.
+    thumbnail?: Record<string, unknown> | null
+    thumbnailChosen?: boolean
     markets?: string[]
     dailySlots?: string[]
     startOn?: string | null
@@ -84,6 +88,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  // What we refused to store, so the screen can say so. Saving anyway and
+  // reporting the difference beats a 400 that loses every other change in the
+  // same request.
+  let thumbnailRejected: string[] = []
   if (typeof body.name === 'string') patch.name = body.name.trim().slice(0, 120) || 'Untitled batch'
 
   // THE DECISION IS SEPARATE FROM THE VALUE. "No CTA" and "not asked yet" are
@@ -102,6 +110,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       patch.cta = null
     }
     patch.cta_chosen = body.ctaChosen ?? true
+  }
+
+  // THE SAME SHAPE AS THE CTA, for the same reason. A creator who opens the
+  // thumbnail step, looks at the controls and keeps the house look has ANSWERED
+  // it, and a batch that cannot tell that from silence waits forever.
+  if (body.thumbnailChosen !== undefined || body.thumbnail !== undefined) {
+    if (body.thumbnail) {
+      // Never refuses, so one odd control cannot block the save. What it drops,
+      // it names, and the answer goes back to the screen rather than being
+      // applied silently to ten videos.
+      const { preset, rejected } = validateThumbnailPreset(body.thumbnail, process.env.NEXT_PUBLIC_SUPABASE_URL)
+      patch.thumbnail = preset
+      if (rejected.length > 0) thumbnailRejected = rejected
+    } else {
+      patch.thumbnail = null
+    }
+    patch.thumbnail_chosen = body.thumbnailChosen ?? true
   }
 
   if (Array.isArray(body.markets)) {
@@ -130,7 +155,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { error } = await sb.from('launch_batches')
     .update(patch).eq('id', id).eq('user_id', user.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, rejected: thumbnailRejected })
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

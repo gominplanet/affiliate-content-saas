@@ -27,6 +27,8 @@ import { itemStateLabel, itemStateTone, type CtaPreset, type StepStatus } from '
 import { requestStorefrontPreflight } from '@/lib/extension-frame'
 import StepCard from './StepCard'
 import CtaPicker from './CtaPicker'
+import ThumbnailPicker from './ThumbnailPicker'
+import type { ThumbnailPreset } from '@/lib/thumbnail-preset'
 
 const text = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -40,6 +42,8 @@ interface Item {
   title: string | null
   description: string | null
   thumbnail_url: string | null
+  /** 'styled' (the batch look applied) or 'plain' (it did not). */
+  thumbnail_source: string | null
   state: string
   reason: string | null
   publish_at: string | null
@@ -49,6 +53,7 @@ interface Market { domain: string; country: string; langName: string | null; nee
 interface Batch {
   id: string; name: string; state: string
   cta: CtaPreset | null; cta_chosen: boolean | null
+  thumbnail: ThumbnailPreset | null; thumbnail_chosen: boolean | null
   markets: Market[]
   daily_slots: string[]; start_on: string | null; timezone: string
 }
@@ -171,6 +176,12 @@ export default function LaunchBoard() {
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) { toast.error(j?.error || 'Could not save that.'); return }
+      // WHAT WAS REFUSED, SAID OUT LOUD. The save succeeds with the bad field
+      // dropped, so without this a creator picks a look, sees a green tick, and
+      // gets ten thumbnails that never used it.
+      if (Array.isArray(j?.rejected) && j.rejected.length > 0) {
+        toast(j.rejected.join(' '), { duration: 10000 })
+      }
       // NOT autoOpened = false. Saving is not navigating: resetting it here is
       // what folded the countries step shut on the first country ticked.
       await load(batchId)
@@ -412,9 +423,23 @@ export default function LaunchBoard() {
         />
       </StepCard>
 
-      {/* ── 3. countries ───────────────────────────────────────────────────── */}
+      {/* ── 3. the thumbnail look ──────────────────────────────────────────── */}
       <StepCard
-        n={3} title={step('countries')?.title ?? 'Pick your Amazon countries'}
+        n={3} title={step('thumbnail')?.title ?? 'Choose your thumbnail look'}
+        detail={step('thumbnail')?.detail ?? ''} done={!!step('thumbnail')?.done}
+        current={!!step('thumbnail')?.current} open={open === 'thumbnail'} onToggle={() => toggle('thumbnail')}
+      >
+        <ThumbnailPicker
+          value={batch.thumbnail}
+          chosen={!!batch.thumbnail_chosen}
+          saving={busy === 'batch'}
+          onSave={(preset) => void patchBatch({ thumbnail: preset, thumbnailChosen: true })}
+        />
+      </StepCard>
+
+      {/* ── 4. countries ───────────────────────────────────────────────────── */}
+      <StepCard
+        n={4} title={step('countries')?.title ?? 'Pick your Amazon countries'}
         detail={step('countries')?.detail ?? ''} done={!!step('countries')?.done}
         current={!!step('countries')?.current} open={open === 'countries'} onToggle={() => toggle('countries')}
       >
@@ -480,9 +505,9 @@ export default function LaunchBoard() {
         </div>
       </StepCard>
 
-      {/* ── 4. products, the only per-video step ───────────────────────────── */}
+      {/* ── 5. products, the only per-video step ───────────────────────────── */}
       <StepCard
-        n={4} title={step('products')?.title ?? 'Set each product'}
+        n={5} title={step('products')?.title ?? 'Set each product'}
         detail={step('products')?.detail ?? ''} done={!!step('products')?.done}
         current={!!step('products')?.current} open={open === 'products'} onToggle={() => toggle('products')}
       >
@@ -500,7 +525,7 @@ export default function LaunchBoard() {
 
       {/* ── 5. cadence and launch ──────────────────────────────────────────── */}
       <StepCard
-        n={5} title={step('schedule')?.title ?? 'Schedule your YouTube posts'}
+        n={6} title={step('schedule')?.title ?? 'Schedule your YouTube posts'}
         detail={step('schedule')?.detail ?? ''} done={!!step('schedule')?.done}
         current={!!step('schedule')?.current} open={open === 'schedule'} onToggle={() => toggle('schedule')}
       >
@@ -625,6 +650,13 @@ export default function LaunchBoard() {
                   <span className="block text-[12.5px] truncate" style={text}>{it.title || 'Untitled'}</span>
                   <span className="block text-[11.5px]" style={{ color: TONE[itemStateTone(it.state as never)] }}>
                     {itemStateLabel(it.state as never)}
+                    {/* THE LOOK THAT WAS ACTUALLY USED, at a glance. The reason
+                        below says it in a sentence, but a creator scanning ten
+                        rows reads the colours, and a thumbnail built the wrong
+                        way looked identical to one built the right way. */}
+                    {it.thumbnail_source === 'plain' && (
+                      <> · <span style={{ color: '#d97706' }}>plain look</span></>
+                    )}
                     {it.publish_at && (
                       <> · goes live {new Intl.DateTimeFormat('en-GB', {
                         timeZone: batch.timezone, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,

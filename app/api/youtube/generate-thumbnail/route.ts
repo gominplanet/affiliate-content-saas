@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
@@ -850,8 +851,33 @@ export async function POST(request: Request) {
 // ── Main route ────────────────────────────────────────────────────────────────
 async function generateThumbnail(request: Request, memo: ImageMemo) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    // ── SERVICE MODE ──────────────────────────────────────────────────────
+    //
+    // The launch-batch worker calls this route internally, off nobody's
+    // request, to build the thumbnails for a batch the creator set up and then
+    // walked away from. Same shared-secret pattern the generation-job runner
+    // already uses for /api/blog/generate: the secret proves it is us, and the
+    // header says whose account to bill and read from.
+    //
+    // THIS ROUTE, NOT A SECOND ONE. The batch used to call a much simpler
+    // builder of its own, which is exactly why a batch thumbnail had none of
+    // the options Launchpad has had for months. Two generators meant two looks
+    // from one product, and only one of them could be styled.
+    const svcSecret = request.headers.get('x-mvp-service')
+    const isServiceCall = !!svcSecret
+      && !!process.env.CRON_SECRET
+      && svcSecret === process.env.CRON_SECRET
+    const svcUser = isServiceCall ? (request.headers.get('x-mvp-service-user') || '') : ''
+    if (isServiceCall && !svcUser) {
+      return NextResponse.json({ error: 'Service call missing identity' }, { status: 400 })
+    }
+
+    const supabase = isServiceCall
+      ? (createAdminClient() as unknown as Awaited<ReturnType<typeof createServerClient>>)
+      : await createServerClient()
+    const user = isServiceCall
+      ? { id: svcUser }
+      : (await supabase.auth.getUser()).data.user
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     memo.db = supabase
     memo.userId = user.id

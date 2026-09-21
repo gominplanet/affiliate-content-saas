@@ -14,6 +14,7 @@
 // 'comparison' / 'campaign' will follow the same pattern once their routes get
 // the matching service-auth branch (a later increment); they throw until then.
 
+import { resolveSelfBaseUrl } from '@/lib/self-url'
 import type { GenerationJob } from '@/lib/generation-jobs'
 import { isWpConnectionError } from '@/lib/wp-connection-health'
 import { normalizeTier, tierAllowsSocial } from '@/lib/tier'
@@ -154,13 +155,6 @@ async function cascadeAutopilotSocials(
 const LONG_RUN = process.env.GENERATION_LONG_RUN === 'true'
 const RUNNER_ABORT_MS = LONG_RUN ? 560_000 : 290_000
 
-/** This deployment's own absolute base URL (the worker calls back into it). */
-function resolveSelfBaseUrl(): string {
-  const explicit = process.env.NEXT_PUBLIC_APP_URL
-  if (explicit) return explicit.replace(/\/+$/, '')
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
-  return 'http://localhost:3000'
-}
 
 /**
  * Run one claimed job to completion and return its result payload (stored on
