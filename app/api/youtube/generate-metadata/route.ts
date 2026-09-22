@@ -505,13 +505,44 @@ Return JSON:
 // ── Main route ────────────────────────────────────────────────────────────────
 export async function POST(request: Request) {
   try {
-    const supabase = await createServerClient()
+    // ── SERVICE MODE ──────────────────────────────────────────────────────
+    //
+    // The launch-batch worker calls this internally, off nobody's request, to
+    // write the description and tags for a batch the creator set up and walked
+    // away from. Same shared-secret pattern the thumbnail route and the
+    // generation-job runner already use.
+    //
+    // WHY IT MATTERS MORE THAN IT LOOKS. The description is where the
+    // affiliate link lives. Without it a batch video goes up with an empty
+    // description while the CTA burned into the frame says "link in the
+    // description", so the video points at nothing and earns nothing.
+    const svcSecret = request.headers.get('x-mvp-service')
+    const isServiceCall = !!svcSecret
+      && !!process.env.CRON_SECRET
+      && svcSecret === process.env.CRON_SECRET
+    const svcUser = isServiceCall ? (request.headers.get('x-mvp-service-user') || '') : ''
+    if (isServiceCall && !svcUser) {
+      return NextResponse.json({ error: 'Service call missing identity' }, { status: 400 })
+    }
+
+    const supabase = isServiceCall
+      ? (createAdminClient() as unknown as Awaited<ReturnType<typeof createServerClient>>)
+      : await createServerClient()
+
     // 2026-06-09 Phase 2 (VA): resource reads use ownerId so VAs see the
     // owner's brand + integrations + history; usage cap + telemetry use
     // user.id so we bill the actual caller.
-    const auth = await getAuthAndOwner(supabase)
-    if (auth.error) return auth.error
-    const { user, ownerId } = auth
+    let user: { id: string }
+    let ownerId: string
+    if (isServiceCall) {
+      user = { id: svcUser }
+      ownerId = request.headers.get('x-mvp-service-owner') || svcUser
+    } else {
+      const auth = await getAuthAndOwner(supabase)
+      if (auth.error) return auth.error
+      user = auth.user
+      ownerId = auth.ownerId
+    }
 
     const { asin, videoTitle, videoDescription, youtubeVideoId, skipAsinCheck = false, productOverride = null, transcript: bodyTranscript = null } = await request.json() as {
       asin?: string | null

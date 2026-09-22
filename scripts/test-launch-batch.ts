@@ -1108,6 +1108,50 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'a second inline save is the copy that keeps sending both')
 }
 
+// ── the description is where the affiliate link lives ───────────────────────
+//
+// Nothing ever wrote launch_items.description, so every batch video went to
+// YouTube with an empty one. The CTA burned into that same frame says "link in
+// the description". The video pointed at nothing and earned nothing, which
+// made the YouTube half of this feature decorative.
+{
+  const META = live(read('app/api/youtube/generate-metadata/route.ts'))
+
+  check('the worker writes a description before publishing',
+    /patch\.description = meta\.description/.test(DRAIN)
+    && /await videoMetadata\(/.test(DRAIN),
+    'an empty description is a video with no affiliate link at all')
+  check('from the writer Launchpad uses, not a second one',
+    /generate-metadata/.test(DRAIN),
+    'two description writers drift, and this one carries the link')
+  check('and only when there is not one already',
+    /if \(!String\(it\.description \|\| ''\)\.trim\(\)\)/.test(DRAIN),
+    'rewriting a description the creator edited would throw their work away')
+  // THE EXACT HEADER. "x-mvp-service-user" contains "x-mvp-service", so the
+  // loose version matched the identity line while the secret line was gutted.
+  check('the route accepts the internal call',
+    /headers\.get\('x-mvp-service'\)/.test(META) && /CRON_SECRET/.test(META),
+    'without it the worker gets a 401 and every video ships linkless')
+  check('and an internal call with no identity is refused',
+    /Service call missing identity/.test(META))
+
+  check('the description reaches the upload',
+    /description: \(it\.description \|\| ''\)\.slice\(0, 4900\)/.test(DRAIN)
+    && /planned_publish_at,publish_tries,reason/.test(DRAIN),
+    'a column the publish step does not select is a description that never ships')
+  check('and the tags go with it',
+    /tags: String\(it\.tags \|\| ''\)/.test(DRAIN) && /title,description,tags,rendered_url/.test(DRAIN),
+    'tags were written and then dropped on the way to YouTube')
+
+  // A VIDEO THAT EARNS NOTHING MUST NOT LOOK LIKE ONE THAT DOES.
+  check('the row says when there is no link',
+    /no link in the description/.test(BOARD),
+    'the whole point of the burned-in CTA is a link that has to exist')
+  check('and it is a best effort, not a block',
+    /metaMissing/.test(DRAIN) && !/state: 'blocked'[\s\S]{0,200}?description/.test(DRAIN),
+    'a video on the channel beats a video held back over its description')
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

@@ -791,6 +791,13 @@ export default function LaunchBoard() {
                     {it.thumbnail_source === 'plain' && (
                       <> · <span style={{ color: '#d97706' }}>plain look</span></>
                     )}
+                    {/* NO DESCRIPTION MEANS NO AFFILIATE LINK, and the CTA
+                        burned into the frame says there is one. A video that
+                        earns nothing must not look identical to one that
+                        does. */}
+                    {!it.description && (it.state === 'prepared' || it.state === 'scheduled' || it.state === 'published') && (
+                      <> · <span style={{ color: '#d97706' }}>no link in the description</span></>
+                    )}
                     {/* WORKING AND STUCK MUST NOT READ THE SAME.
                         "Building the thumbnail" said the same thing one second
                         in and forty minutes in, which is the failure this

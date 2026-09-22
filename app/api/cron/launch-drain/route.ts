@@ -70,6 +70,9 @@ const THUMB_TRIES = 6
  *  left for the write afterwards. test-launch-batch does the arithmetic against
  *  maxDuration so raising either number fails the build rather than the batch. */
 const THUMB_CALL_MS = 240_000
+/** How long the description writer gets. Text only, so seconds rather than
+ *  minutes, and it shares a firing with an image generation. */
+const META_CALL_MS = 60_000
 /** Videos pushed to YouTube per firing. ONE: this downloads a whole file and
  *  uploads it again, which is the longest single operation in the product. */
 const PUBLISHES = 1
@@ -215,15 +218,15 @@ async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed:
  * because English wording sitting on a German listing is the same class of
  * failure as English audio under a translated title.
  */
-async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: number; failed: number }> {
+async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: number; failed: number; metaMissing: number }> {
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,asin,title,thumbnail_url,thumbnail_clean_url,thumb_tries')
+    .select('id,user_id,batch_id,asin,title,description,tags,thumbnail_url,thumbnail_clean_url,thumb_tries')
     .eq('state', 'preparing')
     .order('created_at', { ascending: true }).limit(8)
   const items = rows ?? []
-  if (items.length === 0) return { done: 0, blocked: 0, plain: 0, failed: 0 }
+  if (items.length === 0) return { done: 0, blocked: 0, plain: 0, failed: 0, metaMissing: 0 }
 
-  let done = 0, blocked = 0, plain = 0, failed = 0
+  let done = 0, blocked = 0, plain = 0, failed = 0, metaMissing = 0
   let budget = IMAGES
   const now = () => new Date().toISOString()
 
@@ -315,6 +318,27 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
       }
     } catch { /* the try is already counted; the next firing has another go */ }
 
+    // ── THE DESCRIPTION, WHICH IS WHERE THE AFFILIATE LINK LIVES ─────────
+    //
+    // Without it a batch video went to YouTube with an EMPTY description while
+    // the CTA burned into its own frame said "link in the description". The
+    // video pointed at nothing and earned nothing, which made the YouTube half
+    // of the whole feature decorative.
+    //
+    // The same writer Video Launchpad uses, so a batch description and a
+    // single-video one come from one place. Best effort: a video with no
+    // description still publishes, because a video on the channel beats a
+    // video held back, and the row says which it got.
+    if (!String(it.description || '').trim()) {
+      const meta = await videoMetadata(it.user_id, title, asin)
+      if (meta?.description) {
+        patch.description = meta.description
+        if (meta.tags?.length) patch.tags = meta.tags.join(', ')
+      } else {
+        metaMissing++
+      }
+    }
+
     if (patch.thumbnail_url) {
       patch.thumbnail_source = usedPlain ? 'plain' : 'styled'
       if (usedPlain) plain++
@@ -352,7 +376,38 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
       }).eq('id', it.id)
     }
   }
-  return { done, blocked, plain, failed }
+  return { done, blocked, plain, failed, metaMissing }
+}
+
+/**
+ * The title's description and tags, from the writer Launchpad uses.
+ *
+ * THE DESCRIPTION IS THE AFFILIATE LINK. That is the whole reason this is not
+ * optional: the CTA burned into every one of these videos says "link in the
+ * description", and an empty description makes that sentence a lie and the
+ * video unpaid.
+ *
+ * Returns null rather than throwing. A video with no description is worse than
+ * one with, and far better than one that never goes up at all.
+ */
+async function videoMetadata(
+  userId: string, title: string, asin: string,
+): Promise<{ description: string; tags: string[] } | null> {
+  try {
+    const res = await postToSelf({
+      path: '/api/youtube/generate-metadata',
+      userId,
+      timeoutMs: META_CALL_MS,
+      body: { videoTitle: title, asin: asin || undefined, skipAsinCheck: !asin },
+    })
+    if (!res.ok) return null
+    const j = await res.json().catch(() => ({})) as { generated?: { description?: string; tags?: string[] } }
+    const description = String(j.generated?.description || '').trim()
+    if (!description) return null
+    return { description, tags: Array.isArray(j.generated?.tags) ? j.generated!.tags! : [] }
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -428,7 +483,7 @@ async function styledThumbnail(
  */
 async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }> {
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,position,title,description,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason')
+    .select('id,user_id,batch_id,position,title,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason')
     .eq('state', 'prepared').not('planned_publish_at', 'is', null)
     .order('planned_publish_at', { ascending: true }).limit(PUBLISHES * 4)
   const items = rows ?? []
@@ -501,7 +556,12 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
 
       const { id: videoId, channelId } = await yt.uploadShort(bytes, {
         title: title.slice(0, 100),
+        // THE AFFILIATE LINK LIVES IN HERE. Written by the prepare step from
+        // the same writer Launchpad uses, because the CTA burned into this
+        // very frame says "link in the description" and an empty one makes
+        // that a lie and the video unpaid.
         description: (it.description || '').slice(0, 4900),
+        tags: String(it.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
         privacyStatus: goNow ? 'public' : 'private',
       })
 
