@@ -22,6 +22,7 @@ import { SocialPill } from '@/components/content/SocialPill'
 import { OrphanPostShare, OrphanShareWithBrand } from '@/components/content/OrphanPostShare'
 import { ManualEdit } from '@/components/content/ManualEdit'
 import { ChangeThumbnailButton } from '@/components/content/ChangeThumbnailButton'
+import { ArtDirectorThumbnailButton } from '@/components/content/ArtDirectorThumbnailButton'
 import { RewriteFeedbackModal } from '@/components/content/RewriteFeedbackModal'
 import { errText } from '@/lib/err-text'
 import { nudgeGeniuslinkAfterPublish } from '@/lib/geniuslink-nudge'
@@ -1549,6 +1550,7 @@ const VideoCard = memo(function VideoCardImpl({
             {post && (
               <>
                 <ChangeThumbnailButton postId={post.postId} />
+                <ArtDirectorThumbnailButton postId={post.postId} />
                 <ManualEdit postId={post.postId} />
                 <button onClick={handleDelete} disabled={deleting} className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors disabled:opacity-60">
                   {deleting ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
@@ -4753,6 +4755,7 @@ export default function ContentPage() {
                     a post MVP never recorded (a guide whose row insert failed
                     after publishing) can only be placed by its address. */}
                 <ChangeThumbnailButton postId={post.mvpId || String(post.id)} postUrl={post.link} />
+                <ArtDirectorThumbnailButton postId={post.mvpId || String(post.id)} />
                 <button
                   onClick={() => deletePostFromList(post.id)}
                   disabled={deletingPostId === post.id}
