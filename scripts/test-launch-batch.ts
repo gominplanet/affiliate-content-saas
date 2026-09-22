@@ -15,7 +15,7 @@
 //   purpose and this pins them apart.
 import { readFileSync } from 'node:fs'
 import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, BATCH_COLUMNS, ITEM_COLUMNS, type BatchRow, type ItemRow } from '../lib/launch-batch'
-import { channelBlocker, prepEta, minutesLeft } from '../lib/launch-batch'
+import { channelBlocker, prepEta, minutesLeft, stepIsOptional, batchRecap } from '../lib/launch-batch'
 import { validateThumbnailPreset, presetToRequestFields, defaultThumbnailPreset, styleReferenceAllowed, looksForRequest, LOOKS, presetSummary as presetSummaryOf } from '../lib/thumbnail-preset'
 import { VISUAL_PRESETS } from '../lib/visual-presets'
 
@@ -1216,6 +1216,73 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the schedule preview says Amazon is not on it',
     /Amazon is not on this schedule/.test(BOARD),
     'a list of dates with no caveat reads as the whole plan')
+}
+
+// ── the page has to be navigable, not just correct ──────────────────────────
+//
+// Before a live run: "I want the UI better.. easier to navigate and show
+// users' options clearly". Six accordions, one open at a time, with the
+// Launch button inside the last one and no way to see how far through you
+// were. Correct, and hard to use.
+{
+  // OPTIONAL MEANS OPTIONAL, AND IT HAS TO SAY SO. Six numbered steps with
+  // ticks read as six things you must do, so somebody works through a CTA
+  // gallery and twenty looks believing the batch will not go without them.
+  check('the two steps that can be left alone say so',
+    stepIsOptional('cta') && stepIsOptional('thumbnail'),
+    'a two minute setup reads as a twenty minute one without this')
+  check('and the ones that cannot do not',
+    !stepIsOptional('videos') && !stepIsOptional('products')
+    && !stepIsOptional('countries') && !stepIsOptional('schedule'),
+    'marking a required step optional is worse than marking none')
+  check('the card renders the mark',
+    /optional && !done/.test(STEPCARD) && /optional/.test(BOARD),
+    'a flag no screen shows changes nothing')
+  // ONLY WHILE IT IS STILL OPEN. "Optional" beside a finished step is noise.
+  check('and only while the step is unanswered',
+    /optional && !done/.test(STEPCARD),
+    'a tick and an "optional" chip on the same row is two answers to one question')
+
+  check('the page shows how far through you are',
+    /of \{steps\.length\} done/.test(BOARD),
+    'three steps in, nearly finished and barely started look identical')
+
+  // THE BUTTON WAS INSIDE STEP SIX. Reaching it meant scrolling past
+  // everything and opening an accordion.
+  check('Launch rides along rather than hiding in the last step',
+    /sticky bottom-3/.test(BOARD),
+    'the one action on the page should not be something you have to find')
+  check('and the reason it is disabled is beside it',
+    /\{blocker \?\? \(launched/.test(BOARD),
+    'a greyed button with nothing next to it is the dead end this repo keeps producing')
+
+  // EVERY DECISION IN ONE PLACE, at the moment they all matter at once.
+  {
+    const lines = batchRecap(full({ cta: null, thumbnail: null }), [item({ state: 'prepared' })])
+    check('there is a recap before the irreversible button',
+      lines.length >= 4 && /batchRecap\(/.test(BOARD),
+      'scrolling back through six accordions to check what you chose is hoping, not reviewing')
+    check('it says what happens to YouTube and to Amazon separately',
+      lines.some((l) => /YouTube/.test(l)) && lines.some((l) => /Amazon/.test(l)),
+      'the two are on different clocks and the recap is where that lands')
+    check('and it names the ones that cannot go',
+      /cannot/.test(batchRecap(full(), [item({ state: 'prepared' }), item({ id: 'j', position: 1, state: 'blocked' })]).join(' ')),
+      'a count of what goes out, over a batch where something will not, is a half truth')
+    check('a no-CTA batch says so rather than staying silent',
+      lines.some((l) => /No CTA/.test(l)),
+      'silence about a choice reads as the choice not having been made')
+  }
+
+  // TEN ROWS OF FORM IS A WALL, and the wall hides the row that needs you.
+  check('a finished video folds away',
+    /setOpenRow\(false\)/.test(BOARD) && /const \[openRow, setOpenRow\]/.test(BOARD),
+    'ten open editors buries the one that is incomplete')
+  check('and an unfinished one opens itself',
+    /useState\(incomplete\)/.test(BOARD),
+    'the row that needs attention is exactly the row that should not be folded')
+  check('folding never eats unsaved typing',
+    /disabled=\{changed \|\| incomplete\}/.test(BOARD),
+    'losing somebody’s edit without saying so is the worst kind of tidy')
 }
 
 if (failures.length) {

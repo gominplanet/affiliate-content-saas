@@ -338,6 +338,53 @@ export function channelBlocker(hasPushChannel: boolean): string | null {
 }
 
 /**
+ * Can this step be left alone.
+ *
+ * WHY IT HAS TO BE SAID. Six numbered steps with green ticks read as six
+ * things you must do, so a creator works through the CTA gallery and the
+ * twenty thumbnail looks believing the batch will not go without them. Two of
+ * the six have a perfectly good answer that is "leave it as it is", and not
+ * saying so turns a two minute setup into a twenty minute one.
+ *
+ * They still have to be ANSWERED, which is the distinction: keeping the house
+ * look is a decision, and the batch waits until one is made either way.
+ */
+export function stepIsOptional(id: StepId): boolean {
+  return id === 'cta' || id === 'thumbnail'
+}
+
+/**
+ * Every decision this batch carries, in plain sentences.
+ *
+ * READ BEFORE THE IRREVERSIBLE BUTTON. The settings are spread over six
+ * collapsed steps, and the moment they all matter at once is the moment
+ * somebody is about to publish. Scrolling back through six accordions to
+ * check what you chose is not reviewing, it is hoping.
+ */
+export function batchRecap(batch: BatchRow, items: ItemRow[]): string[] {
+  const out: string[] = []
+  const n = items.filter((i) => i.state === 'prepared').length
+  const blocked = items.filter((i) => i.state === 'blocked').length
+
+  out.push(`${n} ${n === 1 ? 'video goes' : 'videos go'} out${blocked > 0 ? `, and ${blocked} cannot` : ''}.`)
+  out.push(batch.cta
+    ? 'Your CTA is burned into every one of them, in the same spot.'
+    : 'No CTA is burned into any of them.')
+  out.push(batch.thumbnail
+    ? presetSummary(batch.thumbnail)
+    : 'Thumbnails use your brand\u2019s usual look.')
+
+  const slots = normalizeSlots(batch.daily_slots)
+  out.push(`${cadenceLabel(slots)} on YouTube${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
+
+  if (batch.markets.length === 0) out.push('No Amazon storefronts, so this is YouTube only.')
+  else {
+    out.push(`${batch.markets.length} Amazon ${batch.markets.length === 1 ? 'storefront' : 'storefronts'}, each one as soon as its translation and dub are done, not on the YouTube schedule.`)
+  }
+  return out
+}
+
+/**
  * Roughly how long the unattended half still has to run.
  *
  * WHY A NUMBER AND NOT A SPINNER. The whole promise is "press Launch and walk

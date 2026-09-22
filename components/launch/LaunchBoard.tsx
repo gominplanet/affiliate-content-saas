@@ -24,7 +24,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { deliverPreparedStorefronts, deliverySummary } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, planSchedule } from '@/lib/launch-schedule'
-import { itemStateLabel, itemStateTone, prepEta, type CtaPreset, type StepStatus, type ItemRow } from '@/lib/launch-batch'
+import { itemStateLabel, itemStateTone, prepEta, batchRecap, stepIsOptional, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
 import { requestStorefrontPreflight } from '@/lib/extension-frame'
 import StepCard from './StepCard'
 import CtaPicker from './CtaPicker'
@@ -491,9 +491,36 @@ export default function LaunchBoard() {
         </div>
       )}
 
-      {/* ── what happens, in one sentence, before any of the steps ─────────── */}
+      {/* ── WHERE YOU ARE, IN ONE LINE ──────────────────────────────────────
+          Six accordions, one open at a time, and no way to see how many were
+          left. A creator three steps in could not tell whether they were
+          nearly finished or had barely started, which is the difference
+          between carrying on and giving up. */}
       <div className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <p className="text-[13px]" style={text}>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {steps.map((st, i) => (
+            <span key={st.id} className="flex items-center gap-2.5">
+              <span
+                title={`${st.title}: ${st.detail}`}
+                className="inline-flex items-center justify-center rounded-full text-[10px] font-bold"
+                style={{
+                  width: 18, height: 18,
+                  background: st.done ? '#10B981' : st.current ? '#0EA5A4' : 'var(--surface-hover)',
+                  color: st.done || st.current ? '#fff' : 'var(--text-2)',
+                }}>
+                {st.done ? <Check size={10} /> : i + 1}
+              </span>
+              {i < steps.length - 1 && (
+                <span style={{ width: 14, height: 2, borderRadius: 2, background: st.done ? '#10B981' : 'var(--border)' }} />
+              )}
+            </span>
+          ))}
+          <span className="text-[12px] ml-1" style={muted}>
+            {steps.filter((st) => st.done).length} of {steps.length} done
+          </span>
+        </div>
+
+        <p className="text-[13px] mt-3" style={text}>
           <strong>{items.length}</strong> of {maxItems} videos in <strong>{batch.name}</strong>.
         </p>
         {/* HOW LONG, because "press Launch and walk away" is the whole promise
@@ -562,6 +589,7 @@ export default function LaunchBoard() {
         n={2} title={step('cta')?.title ?? 'Choose your CTA'}
         detail={step('cta')?.detail ?? ''} done={!!step('cta')?.done}
         current={!!step('cta')?.current} open={open === 'cta'} onToggle={() => toggle('cta')}
+        optional={stepIsOptional('cta')}
       >
         <CtaPicker
           value={batch.cta}
@@ -575,6 +603,7 @@ export default function LaunchBoard() {
         n={3} title={step('thumbnail')?.title ?? 'Choose your thumbnail look'}
         detail={step('thumbnail')?.detail ?? ''} done={!!step('thumbnail')?.done}
         current={!!step('thumbnail')?.current} open={open === 'thumbnail'} onToggle={() => toggle('thumbnail')}
+        optional={stepIsOptional('thumbnail')}
       >
         <ThumbnailPicker
           value={batch.thumbnail}
@@ -868,6 +897,57 @@ export default function LaunchBoard() {
         </div>
       )}
 
+      {/* ── EVERY DECISION, IN ONE PLACE, BEFORE THE IRREVERSIBLE BUTTON ────
+          The settings are spread over six collapsed steps, and the moment
+          they all matter at once is the moment somebody is about to publish.
+          Scrolling back through six accordions to check what you chose is not
+          reviewing, it is hoping. */}
+      {!blocker && !launched && items.length > 0 && (
+        <div className="rounded-2xl border p-4" style={{ borderColor: '#0EA5A4', background: 'rgba(14,165,164,0.05)' }}>
+          <p className="text-[13px] font-semibold mb-2" style={text}>What pressing Launch does</p>
+          <ul className="flex flex-col gap-1">
+            {batchRecap(
+              { ...batch, markets: batch.markets.map((m) => m.domain) } as never,
+              items as unknown as ItemRow[],
+            ).map((line) => (
+              <li key={line} className="text-[12.5px] flex gap-2" style={muted}>
+                <Check size={13} style={{ color: '#0EA5A4', flexShrink: 0, marginTop: 2 }} />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ── THE BUTTON IS NEVER SOMEWHERE YOU HAVE TO FIND ──────────────────
+          Launch lived inside step six, so reaching it meant scrolling past
+          everything and opening an accordion. It rides along now, with the
+          reason it is disabled beside it rather than nowhere. */}
+      {batch.state !== 'launched' && items.length > 0 && (
+        <div className="sticky bottom-3 z-10 rounded-xl border px-3 py-2.5 flex items-center gap-3 flex-wrap"
+          style={{
+            borderColor: blocker ? 'var(--border)' : '#0EA5A4',
+            background: 'var(--surface)',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.18)',
+          }}>
+          <button
+            onClick={() => void launch()}
+            disabled={!!blocker || busy === 'launch'}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-45 shrink-0"
+            style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
+            {busy === 'launch' ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
+            {launched ? 'Launched' : `Launch ${items.filter((i) => i.state === 'prepared').length || items.length}`}
+          </button>
+          <span className="text-[12px] min-w-0 flex-1" style={blocker ? { color: '#d97706' } : muted}>
+            {/* THE REASON, ALWAYS. A greyed button with nothing beside it is
+                the dead end this codebase keeps producing. */}
+            {blocker ?? (launched
+              ? 'Already on its way. The board below says where each one is.'
+              : 'Everything is answered. This schedules YouTube and starts Amazon.')}
+          </span>
+        </div>
+      )}
+
       {/* ── the board: what is actually happening to each video ────────────── */}
       {items.length > 0 && (
         <section className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -1036,6 +1116,40 @@ function ItemRowEditor({
 
   const lab = { color: 'var(--text-2)', fontSize: 11, fontWeight: 600 } as const
 
+  // COLLAPSED UNTIL IT NEEDS YOU. Each row carries a title box, a product box,
+  // a description, two buttons and a pair of arrows. That is fine for one video
+  // and a wall for ten, and the wall hides the one row that actually needs
+  // attention. A row opens when it is incomplete, because that IS the row that
+  // needs attention.
+  const incomplete = !title.trim() || !product.trim() || titleIsAsin
+  const [openRow, setOpenRow] = useState(incomplete)
+
+  if (!openRow) {
+    return (
+      <div className="rounded-lg border px-3 py-2 flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
+        <span className="flex flex-col items-center w-5 shrink-0">
+          <button type="button" onClick={() => void onMove(item.id, 'up')} disabled={busy || first}
+            title="Send this one out earlier" className="leading-none disabled:opacity-25" style={muted}>
+            <ChevronUp size={12} />
+          </button>
+          <span className="text-[11px] tabular-nums" style={muted}>{item.position + 1}</span>
+          <button type="button" onClick={() => void onMove(item.id, 'down')} disabled={busy || last}
+            title="Send this one out later" className="leading-none disabled:opacity-25" style={muted}>
+            <ChevronDown size={12} />
+          </button>
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-[12.5px] truncate" style={text}>{title || 'Untitled'}</span>
+          <span className="block text-[11px] font-mono truncate" style={muted}>{product || 'No product yet'}</span>
+        </span>
+        <button type="button" onClick={() => setOpenRow(true)}
+          className="text-[11.5px] underline shrink-0" style={muted}>
+          Edit
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-lg border p-3 flex flex-col gap-2.5" style={{ borderColor: 'var(--border)' }}>
       {/* LABELLED, NOT JUST PLACEHELD. A placeholder disappears the moment a
@@ -1130,6 +1244,13 @@ function ItemRowEditor({
           style={{ background: '#0EA5A4' }}
         >
           {busy ? <Loader2 size={12} className="animate-spin" /> : 'Save'}
+        </button>
+        {/* NOT WHILE THERE ARE UNSAVED EDITS. Folding a row away over typing
+            somebody has not saved loses it without saying so. */}
+        <button type="button" onClick={() => setOpenRow(false)} disabled={changed || incomplete}
+          title={changed ? 'Save first' : incomplete ? 'This one still needs a product and a title' : 'Fold this one away'}
+          className="text-[11.5px] underline shrink-0 disabled:opacity-30" style={muted}>
+          Done
         </button>
       </div>
 

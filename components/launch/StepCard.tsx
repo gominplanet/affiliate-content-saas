@@ -19,7 +19,7 @@ const text = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
 
 export default function StepCard({
-  n, title, detail, done, current, open, onToggle, children,
+  n, title, detail, done, current, open, optional, onToggle, children,
 }: {
   n: number
   title: string
@@ -29,6 +29,9 @@ export default function StepCard({
   /** The one step the creator should do next. */
   current: boolean
   open: boolean
+  /** True when "leave it as it is" is a real answer. Six numbered steps read
+   *  as six things you must do, and two of these are not. */
+  optional?: boolean
   onToggle: () => void
   children: ReactNode
 }) {
@@ -62,7 +65,15 @@ export default function StepCard({
           {done ? <Check size={14} /> : n}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-semibold" style={text}>{title}</span>
+          <span className="block text-[14px] font-semibold" style={text}>
+            {title}
+            {optional && !done && (
+              <span className="ml-2 text-[10.5px] font-semibold px-1.5 py-0.5 rounded"
+                style={{ background: 'var(--surface-hover)', color: 'var(--text-2)' }}>
+                optional
+              </span>
+            )}
+          </span>
           {/* THE SAME SENTENCE THE SERVER GIVES. A screen that writes its own
               summary can be more optimistic than the thing doing the work. */}
           <span className="block text-[12.5px] mt-0.5" style={done ? { color: '#10B981' } : muted}>
