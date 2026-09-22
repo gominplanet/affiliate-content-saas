@@ -903,50 +903,74 @@ function ItemRowEditor({
   }, [item.title, item.asin])
 
   const changed = title !== (item.title ?? '') || product !== (item.asin ?? '')
+  // ONE FIELD'S SAVE MUST NOT WIPE THE OTHER. Both were always sent together,
+  // so emptying one box and pressing Save deleted whatever was in it even when
+  // the creator was only editing its neighbour. An empty product field is sent
+  // ONLY when it was not empty to begin with, which is a deliberate clear.
+  function save() {
+    const body: Record<string, unknown> = {}
+    if (title !== (item.title ?? '')) body.title = title
+    if (product !== (item.asin ?? '')) body.product = product
+    dirty.current = false
+    void onSave(item.id, body)
+  }
+
+  const lab = { color: 'var(--text-2)', fontSize: 11, fontWeight: 600 } as const
+
   return (
-    <div className="rounded-lg border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border)' }}>
-      <div className="flex items-center gap-2">
-        <span className="text-[11px] tabular-nums w-5" style={muted}>{item.position + 1}</span>
-        <input
-          value={title}
-          onChange={(e) => { dirty.current = true; setTitle(e.target.value) }}
-          placeholder="Title for the English stores and YouTube"
-          className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border text-[12.5px] bg-transparent"
-          style={{ borderColor: 'var(--border)', ...text }}
-        />
+    <div className="rounded-lg border p-3 flex flex-col gap-2.5" style={{ borderColor: 'var(--border)' }}>
+      {/* LABELLED, NOT JUST PLACEHELD. A placeholder disappears the moment a
+          box has anything in it, and both boxes held the same ASIN, so there
+          was nothing on screen saying which was which. The warning about the
+          title was also sitting under the product box, so the box it pointed
+          at was the wrong one and the product got cleared instead. */}
+      <div className="flex items-start gap-2">
+        <span className="text-[11px] tabular-nums w-5 pt-5" style={muted}>{item.position + 1}</span>
+        <label className="flex-1 min-w-0">
+          <span className="block mb-1" style={lab}>Title, for YouTube and the English stores</span>
+          <input
+            value={title}
+            onChange={(e) => { dirty.current = true; setTitle(e.target.value) }}
+            placeholder="What this video is about"
+            className="w-full px-2.5 py-1.5 rounded-lg border text-[12.5px] bg-transparent"
+            style={{ borderColor: titleIsAsin ? '#d97706' : 'var(--border)', ...text }}
+          />
+          {/* BESIDE THE BOX IT IS ABOUT. */}
+          {titleIsAsin && (
+            <span className="block text-[11.5px] mt-1" style={{ color: '#d97706' }}>
+              That is the ASIN, not a title. It would go on YouTube exactly as it reads and be translated into every country.
+            </span>
+          )}
+          <button type="button" onClick={() => void writeTitle()} disabled={writing || !product.trim()}
+            title={!product.trim() ? 'Set the product first, the title is written from what it is.' : undefined}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 mt-1.5 rounded-lg border text-[11.5px] disabled:opacity-40"
+            style={{ borderColor: 'var(--border)', ...text }}>
+            {writing ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+            Write it for me
+          </button>
+        </label>
       </div>
-      <div className="flex items-center gap-2">
+
+      <div className="flex items-end gap-2">
         <span className="w-5" />
-        <input
-          value={product}
-          onChange={(e) => { dirty.current = true; setProduct(e.target.value) }}
-          placeholder="ASIN or Amazon link"
-          className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border text-[12.5px] font-mono bg-transparent"
-          style={{ borderColor: 'var(--border)', ...text }}
-        />
+        <label className="flex-1 min-w-0">
+          <span className="block mb-1" style={lab}>Product</span>
+          <input
+            value={product}
+            onChange={(e) => { dirty.current = true; setProduct(e.target.value) }}
+            placeholder="ASIN or Amazon link"
+            className="w-full px-2.5 py-1.5 rounded-lg border text-[12.5px] font-mono bg-transparent"
+            style={{ borderColor: 'var(--border)', ...text }}
+          />
+        </label>
         <button
-          onClick={() => { dirty.current = false; void onSave(item.id, { title, product }) }}
+          onClick={save}
           disabled={busy || !changed}
           className="px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-40 shrink-0"
           style={{ background: '#0EA5A4' }}
         >
           {busy ? <Loader2 size={12} className="animate-spin" /> : 'Save'}
         </button>
-      </div>
-
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="w-5" />
-        <button type="button" onClick={() => void writeTitle()} disabled={writing || !product.trim()}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11.5px] disabled:opacity-40"
-          style={{ borderColor: 'var(--border)', ...text }}>
-          {writing ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
-          Write it for me
-        </button>
-        {titleIsAsin && (
-          <span className="text-[11.5px]" style={{ color: '#d97706' }}>
-            That is the ASIN, not a title. It would go on YouTube exactly as it reads and be translated into every country.
-          </span>
-        )}
       </div>
 
       {options.length > 0 && (

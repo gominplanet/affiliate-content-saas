@@ -103,10 +103,18 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     batchSteps(full(), [item(), item({ id: 'j', position: 1, asin: null })])
       .find((s) => s.id === 'products')?.done === false)
   check('and the detail counts them rather than saying "incomplete"',
-    /1 still needs a product/.test(
+    /1 of your 2 still needs a product/.test(
       batchSteps(full(), [item(), item({ id: 'j', position: 1, asin: null })])
         .find((s) => s.id === 'products')?.detail ?? ''),
     'a creator with ten videos needs to know how many, not that something is wrong')
+  // A COUNT IS ONLY A COUNT WHEN THERE IS SOMETHING TO COUNT AGAINST. Over a
+  // batch of one, "1 still needs a product" reads as a request for ANOTHER
+  // one, and was read exactly that way: "why does it want more asin".
+  {
+    const d = batchSteps(full(), [item({ asin: null })]).find((s) => s.id === 'products')?.detail ?? ''
+    check('but a batch of one is told what to do, not counted',
+      !/^\d/.test(d) && /ASIN|Amazon link/.test(d), d)
+  }
 }
 
 // ── launch is refused with a reason, never just disabled ────────────────────
@@ -1059,8 +1067,45 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     stepOf([item({ asin: 'B0H3P7H9T2', title: ' b0h3p7h9t2 ', state: 'prepared' })]).done === false)
   // AND A VIDEO WITH NO PRODUCT YET IS NOT ACCUSED OF THIS.
   check('a video with no product is not called out for it',
-    /needs a product/.test(stepOf([item({ asin: null, title: 'Something', state: 'prepared' })]).detail),
+    /ASIN|Amazon link/.test(stepOf([item({ asin: null, title: 'Something', state: 'prepared' })]).detail)
+    && !/not a title/.test(stepOf([item({ asin: null, title: 'Something', state: 'prepared' })]).detail),
     'the earlier problem is the one to name first')
+}
+
+// ── the two boxes must be tellable apart, and must not wipe each other ──────
+//
+// Both held the same ASIN, neither had a label once filled, and the warning
+// about the TITLE was rendered under the PRODUCT box. So the box that got
+// edited was the wrong one, the product was cleared, and the step then read
+// "1 still needs a product", which over a batch of one reads as a request for
+// another: "why does it want more asin.. i only uploaded 1 video".
+{
+  check('both boxes are labelled, not just placeheld',
+    /Title, for YouTube and the English stores/.test(BOARD)
+    && />Product</.test(BOARD),
+    'a placeholder disappears the moment a box has anything in it')
+
+  // THE WARNING SITS WITH THE BOX IT IS ABOUT. This is the whole bug: it was
+  // under the product input, so that is the one that got edited.
+  {
+    const titleAt = BOARD.indexOf('Title, for YouTube and the English stores')
+    const warnAt = BOARD.indexOf('That is the ASIN, not a title')
+    const productAt = BOARD.indexOf('>Product<')
+    check('the ASIN warning sits with the title box, not the product box',
+      titleAt > -1 && warnAt > titleAt && productAt > warnAt,
+      'a warning under the wrong input points somebody at the wrong field')
+  }
+
+  // ONE FIELD'S SAVE MUST NOT WIPE THE OTHER. Both were always sent, so an
+  // empty box deleted its column even when the creator was editing its
+  // neighbour, and an empty product is stored as no product at all.
+  check('only the fields that changed are sent',
+    /if \(title !== \(item\.title \?\? ''\)\) body\.title = title/.test(BOARD)
+    && /if \(product !== \(item\.asin \?\? ''\)\) body\.product = product/.test(BOARD),
+    'sending both means emptying one box deletes it while you edit the other')
+  check('and the save goes through that one function',
+    /onClick=\{save\}/.test(BOARD) && /function save\(\)/.test(BOARD),
+    'a second inline save is the copy that keeps sending both')
 }
 
 if (failures.length) {

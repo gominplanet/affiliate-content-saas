@@ -259,12 +259,23 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
       done: n > 0 && withProduct === n && withTitle === n && asinTitled === 0,
       detail: n === 0
         ? 'Add videos first.'
+        // NAMED, NOT COUNTED, WHEN THERE IS ONLY ONE VIDEO. "1 still needs a
+        // product" over a batch of one reads as a request for ANOTHER product,
+        // and was read exactly that way: "why does it want more asin.. i only
+        // uploaded 1 video". A count is only a count when there is something to
+        // count against.
         : withProduct < n
-          ? `${n - withProduct} still ${n - withProduct === 1 ? 'needs' : 'need'} a product.`
+          ? (n === 1
+              ? 'Paste the ASIN or the Amazon link for your video.'
+              : `${n - withProduct} of your ${n} still ${n - withProduct === 1 ? 'needs' : 'need'} a product.`)
           : withTitle < n
-            ? `${n - withTitle} still ${n - withTitle === 1 ? 'needs' : 'need'} a title.`
+            ? (n === 1
+                ? 'Your video still needs a title.'
+                : `${n - withTitle} of your ${n} still ${n - withTitle === 1 ? 'needs' : 'need'} a title.`)
             : asinTitled > 0
-              ? `${asinTitled} ${asinTitled === 1 ? 'has its ASIN' : 'have their ASIN'} in the title box. That would go on YouTube exactly as it reads. Press "Write it for me" or type one.`
+              ? (n === 1
+                  ? 'The title box has your ASIN in it. That would go on YouTube exactly as it reads. Press "Write it for me" or type one.'
+                  : `${asinTitled} of your ${n} have an ASIN in the title box. That would go on YouTube exactly as it reads. Press "Write it for me" or type one.`)
               : 'Every video has a product and a title.',
     },
     {
