@@ -152,7 +152,7 @@ export const BATCH_COLUMNS =
 /** The columns an item must be read with, for the same reason. */
 export const ITEM_COLUMNS =
   'id,position,source_url,rendered_url,clean_url,asin,title,description,thumbnail_url,thumbnail_clean_url,thumbnail_source,video_id,'
-  + 'state,reason,publish_at,youtube_video_id,duration_seconds,render_tries,thumb_tries,updated_at'
+  + 'state,reason,publish_at,youtube_video_id,duration_seconds,render_tries,thumb_tries,thumbnail_set_at,thumbnail_error,updated_at'
 
 export interface ItemRow {
   id: string
@@ -171,6 +171,11 @@ export interface ItemRow {
    *  what the Amazon side has to reference, so it is also the honest answer to
    *  "is there anything for Amazon to do yet". */
   video_id?: string | null
+  /** When YouTube accepted the thumbnail we designed. */
+  thumbnail_set_at?: string | null
+  /** What YouTube said if it refused it. The video is up either way, so this
+   *  is a note on a working row rather than a failure of one. */
+  thumbnail_error?: string | null
 }
 
 // ── the steps, which are the page's spine and the worker's contract ─────────

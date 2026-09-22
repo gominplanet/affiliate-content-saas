@@ -574,7 +574,38 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
         })
       }
 
+      // ── THE THUMBNAIL WE DESIGNED, ON THE VIDEO ──────────────────────────
+      //
+      // This step did not exist. Every batch built a thumbnail, stored it,
+      // showed it on the board and gave the clean copy to Amazon, and then
+      // uploaded to YouTube without setting it, so the channel ran whichever
+      // frame YouTube picked. The board looked right because it shows the file
+      // we made, not the one on the video.
+      //
+      // IT NEVER FAILS THE UPLOAD. The video is on the channel by this point,
+      // and throwing here would send the row back for a retry that uploads it
+      // a second time. What it must not do is fail quietly, so the outcome is
+      // written either way and the board reads it.
+      const thumbSrc = String(it.thumbnail_url || '').trim()
+      const thumb: { at: string | null; error: string | null } = { at: null, error: null }
+      if (/^https:\/\//i.test(thumbSrc)) {
+        try {
+          const tr = await fetchWithTimeout(thumbSrc, { timeoutMs: 60_000 })
+          if (!tr.ok) throw new Error(`the thumbnail file could not be read (${tr.status})`)
+          const type = tr.headers.get('content-type') || 'image/jpeg'
+          await yt.uploadThumbnail(videoId, Buffer.from(await tr.arrayBuffer()), type)
+          thumb.at = stamp()
+        } catch (te) {
+          thumb.error = (te instanceof Error && te.message ? te.message : String(te)).slice(0, 200)
+          console.warn('[launch-drain] thumbnail refused', { item: it.id, said: thumb.error })
+        }
+      } else {
+        thumb.error = 'there was no designed thumbnail to set, so YouTube picked a frame'
+      }
+
       await sb.from('launch_items').update({
+        thumbnail_set_at: thumb.at,
+        thumbnail_error: thumb.error,
         // PUBLISHED, NOT SCHEDULED, when it went out now. They are different
         // facts and the row has always kept them apart; collapsing them here
         // would have the board promising a future publication for a video that

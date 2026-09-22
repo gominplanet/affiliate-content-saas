@@ -763,7 +763,10 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /nothing for \$\{mins\} minutes/.test(BOARD),
     'a slow image model and a worker that is not running look identical without this')
   check('the tries and the timestamp actually reach the page',
-    /render_tries,thumb_tries,updated_at/.test(ITEM_COLUMNS),
+    // MEMBERSHIP, NOT ADJACENCY. This pinned the three names in a row, so
+    // inserting a fourth column between them failed a check about columns
+    // being absent while all three were still there.
+    ['render_tries', 'thumb_tries', 'updated_at'].every((c) => ITEM_COLUMNS.split(',').includes(c)),
     'a column the route does not select is a fact the screen cannot report')
   check('and it is only said while something is running',
     /it\.state === 'rendering' \|\| it\.state === 'preparing'/.test(BOARD),
@@ -1492,6 +1495,30 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the Amazon heading does not promise something automatic',
     !/Amazon: straight away/.test(SCREEN) && /Amazon: you press the button/.test(SCREEN),
     'it said "straight away" and then that it needed this tab open')
+
+  // ── the thumbnail we designed has to reach the channel ───────────────────
+  //
+  // It never did. The worker built one for every video, stored both versions,
+  // gave the clean copy to Amazon and uploaded to YouTube without setting it,
+  // so the channel ran whichever frame YouTube chose. The board looked right
+  // because it draws the file we made, not the one on the video.
+  check('the launch worker sets the thumbnail it designed',
+    /yt\.uploadThumbnail\(videoId,/.test(DRAIN),
+    'the method existed the whole time and this was its one missing caller')
+  check('and a refused thumbnail never sends the video back for a second upload',
+    /thumb\.error = \(te instanceof Error/.test(DRAIN)
+    && !/throw/.test(DRAIN.slice(DRAIN.indexOf('yt.uploadThumbnail'), DRAIN.indexOf('yt.uploadThumbnail') + 400)),
+    'the video is on the channel by then, so throwing here uploads it twice')
+  check('the outcome is written whichever way it went',
+    /thumbnail_set_at: thumb\.at/.test(DRAIN) && /thumbnail_error: thumb\.error/.test(DRAIN),
+    'one nullable timestamp cannot tell "refused" apart from "not tried yet"')
+  check('the board reads them',
+    ITEM_COLUMNS.split(',').includes('thumbnail_set_at')
+    && ITEM_COLUMNS.split(',').includes('thumbnail_error'),
+    'a column the route does not select is a fact the page cannot show')
+  check('and says which frame the channel is actually running',
+    /YouTube picked its own frame/.test(SCREEN) && /thumbnail set/.test(SCREEN),
+    'the row drew our designed image either way, which is the plan reported as the result')
 
   // AND THE WORKER NEVER WRITES THE SENTENCE THAT MEANS "NO REASON".
   check('a failed upload records whatever was thrown',

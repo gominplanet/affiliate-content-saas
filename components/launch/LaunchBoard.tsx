@@ -56,6 +56,11 @@ interface Item {
   reason: string | null
   publish_at: string | null
   youtube_video_id: string | null
+  /** When YouTube accepted the thumbnail we designed, and what it said if it
+   *  refused. Without these the row draws our image whether or not the channel
+   *  is running it. */
+  thumbnail_set_at: string | null
+  thumbnail_error: string | null
 }
 interface Market { domain: string; country: string; langName: string | null; needsDub: boolean }
 /** A batch in the switcher: enough to choose between them, nothing more. */
@@ -1087,12 +1092,29 @@ export default function LaunchBoard() {
                     {(it.state === 'rendering' || it.state === 'preparing') && (
                       <> · {progressNote(it)}</>
                     )}
+                    {/* THE THUMBNAIL ON THE CHANNEL, not the one in this row.
+                        The image to the left is the file we designed, and it
+                        was drawn here whether or not YouTube ever took it,
+                        which for a long time it never did. */}
+                    {(it.state === 'scheduled' || it.state === 'published') && (
+                      it.thumbnail_set_at
+                        ? <> · <span style={{ color: '#10B981' }}>thumbnail set</span></>
+                        : <> · <span style={{ color: '#d97706' }}>YouTube picked its own frame</span></>
+                    )}
                     {it.publish_at && (
                       <> · goes live {new Intl.DateTimeFormat('en-GB', {
                         timeZone: batch.timezone, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
                       }).format(new Date(it.publish_at))}</>
                     )}
                   </span>
+                  {/* A NOTE, NOT A FAILURE. The video is on the channel; only
+                      the image we designed for it is not. */}
+                  {it.thumbnail_error && !it.reason && (
+                    <span className="block text-[11.5px] mt-1 px-2 py-1 rounded"
+                      style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
+                      The video is up, but YouTube would not take the thumbnail we made: {it.thumbnail_error}
+                    </span>
+                  )}
                   {/* THE REASON STAYS. A video that could not go looks exactly
                       like one nobody picked unless the row says otherwise. */}
                   {it.reason && (
