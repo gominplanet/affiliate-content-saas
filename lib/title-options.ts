@@ -14,6 +14,7 @@
 // product/topic — different angles each (curiosity, value, comparison,
 // problem, result). One Haiku call, ~$0.001.
 
+import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from './anthropic'
 import { recordAnthropicUsage } from './ai-usage'
 import { scrubBanned } from './scrub'
@@ -35,6 +36,16 @@ export async function generateProductTitleOptions(opts: {
   videoDescription?: string | null
   /** Amazon ASIN if we have it — a strong product-identity signal. */
   asin?: string | null
+  /** The product's REAL name.
+   *
+   *  WHY IT MATTERS MORE THAN THE ASIN. The prompt asks for the product noun
+   *  in most of the options, and an ASIN is ten characters that name nothing.
+   *  Handed "Amazon product B0H3P7H9T2" and that code, the only subject the
+   *  model can find is the retailer, and it returns AMAZON TEST, AMAZON WIN
+   *  and AMAZON PRODUCT REVIEW: five titles about a shop rather than a thing.
+   *
+   *  Left out, this is looked up from the ASIN rather than given up on. */
+  productTitle?: string | null
   count?: number
   ctx: TitleOptionsCtx
 }): Promise<string[]> {
@@ -42,10 +53,23 @@ export async function generateProductTitleOptions(opts: {
   const description = (opts.videoDescription || '').slice(0, 500).trim()
   const asin = (opts.asin || '').trim()
 
+  // THE PRODUCT'S OWN NAME, fetched when the caller did not have it. This is
+  // the difference between titles about a product and titles about a shop, and
+  // it is one call the caller should not have to know to make. Best effort: a
+  // lookup that fails leaves the prompt exactly as it was before.
+  let productTitle = (opts.productTitle || '').trim()
+  if (!productTitle && asin) {
+    try {
+      const p = await fetchAmazonProduct(asin)
+      productTitle = String(p?.title || '').trim()
+    } catch { /* the ASIN alone still beats nothing */ }
+  }
+
   const prompt = `Read the video below and write ${count} DISTINCT, scroll-stopping YouTube thumbnail titles. Every title MUST clearly pertain to THIS specific product/video — never a generic phrase that could be slapped on any random video.
 
 VIDEO TITLE: "${opts.videoTitle}"
 ${description ? `DESCRIPTION (first 500 chars): "${description}"` : ''}
+${productTitle ? `THE PRODUCT (this is the subject — write about THIS): "${productTitle}"` : ''}
 ${asin ? `Product ASIN: ${asin}` : ''}
 
 RULES (each title):
@@ -56,6 +80,8 @@ RULES (each title):
 - No spammy hype. NEVER use any of: AMAZING / INSANE / INCREDIBLE / GAME-CHANGER. And NEVER use any form of "honest" (HONEST, HONESTLY, HONESTY) — that word is permanently banned everywhere in MVP.
 - No invented results, no time-based brags ("after 30 days", "lost 10 lbs", "before/after").
 - No retailer / brand-name claims you can't verify from the title.
+- NEVER make the retailer the subject. "AMAZON TEST", "AMAZON WIN?" and "AMAZON PRODUCT REVIEW" are failures: the shop it is sold in is not what the video is about. Name the THING.
+- If the VIDEO TITLE is a placeholder with no product in it, ignore it entirely and write from THE PRODUCT above.
 
 EXAMPLES — for a video about a "wine bottle protector bag for travel":
 GOOD (2-3 words, product-evoking): "WINE BAG?", "TRAVEL WINE", "BREAK-PROOF!", "WORTH PACKING?", "FLY WITH WINE"

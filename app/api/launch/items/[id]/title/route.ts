@@ -62,7 +62,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   let options: string[] = []
   try {
     options = await generateProductTitleOptions({
-      videoTitle: useful || `Amazon product ${asin}`,
+      // NOT "Amazon product B0H3P7H9T2". That placeholder was handed to the
+      // writer as the video title, and it is the only subject in the prompt
+      // that reads as a word, so it came back with AMAZON TEST, AMAZON WIN and
+      // AMAZON PRODUCT REVIEW: five titles about a shop.
+      //
+      // Empty is honest and the writer knows what to do with it: the product's
+      // real name is looked up from the ASIN and that becomes the subject.
+      videoTitle: useful,
       asin,
       count: 5,
       ctx: { userId: user.id, tier },

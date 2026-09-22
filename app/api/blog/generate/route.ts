@@ -1,3 +1,4 @@
+import { ensureSponsoredRel, untaggedAffiliateLinks } from '@/lib/sponsored-rel'
 import { rebuildPostHero } from '@/lib/blog-hero'
 import { NextResponse, after } from 'next/server'
 import { getBrandPresetId } from '@/lib/brand-preset'
@@ -1758,6 +1759,22 @@ async function handleGenerate(request: Request) {
   // Guarantee the mechanical SEO checks (answer-first lead + image alt) on the
   // final body before publish, so a review never lands with a fixable SEO gap.
   content = enforceSeoBasics(content, { title: generated.title, seoKeyword: generated.seoKeyword })
+
+  // EVERY AFFILIATE LINK CARRIES rel="sponsored" BEFORE IT IS PUBLISHED.
+  //
+  // Every link MVP constructs already did. That is a claim about the code
+  // paths we know about, and this body is assembled from several of them plus
+  // prose written by a model. "Every link we build is tagged" and "every link
+  // in the published post is tagged" are different statements, and only the
+  // second is what somebody means when they say the posts are compliant.
+  // Sweeping the finished HTML once is what makes the second one true.
+  {
+    const before = untaggedAffiliateLinks(content)
+    content = ensureSponsoredRel(content)
+    if (before > 0) {
+      console.warn(`[blog] tagged ${before} affiliate link(s) that reached the final body without rel="sponsored"`)
+    }
+  }
 
   // ── 8. Publish text post to WordPress ────────────────────────────────────
   // For posts that already exist on WP (legacy posts attached via
