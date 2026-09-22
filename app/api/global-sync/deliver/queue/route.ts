@@ -23,7 +23,24 @@ export async function GET(req: Request) {
   if (!['pro', 'admin'].includes(tier)) return NextResponse.json({ error: 'Pro feature.' }, { status: 403 })
 
   // Optional ?jobId= to scope to one sync run.
-  const jobId = new URL(req.url).searchParams.get('jobId') || ''
+  const url = new URL(req.url)
+  const jobId = url.searchParams.get('jobId') || ''
+
+  // ── SCOPE, BECAUSE AN UNSCOPED CALL UPLOADS EVERYTHING ───────────────────
+  //
+  // With no scope this returns EVERY localized target on the account, which is
+  // correct for the storefront board, whose whole job is the standing grid.
+  // It was catastrophic for the launch page: a creator picked the US and
+  // Germany for a batch, pressed Upload to Amazon, and watched SCOUT open
+  // amazon.es, amazon.fr and amazon.it, publishing to storefronts they had
+  // never chosen for those videos.
+  //
+  // So a caller that means "just these" can say so, and the two filters are
+  // AND-ed: the videos in this batch, and the countries that batch picked.
+  const onlyVideoIds = (url.searchParams.get('videoIds') || '')
+    .split(',').map(v => v.trim()).filter(Boolean)
+  const onlyDomains = (url.searchParams.get('domains') || '')
+    .split(',').map(v => v.trim()).filter(Boolean)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
@@ -33,6 +50,20 @@ export async function GET(req: Request) {
     .in('state', ['localized'])
     .is('delivered_at', null)
   if (jobId) q = q.eq('job_id', jobId)
+  if (onlyDomains.length > 0) q = q.in('domain', onlyDomains)
+
+  // THE VIDEO FILTER GOES THROUGH THE JOBS, because a target names its job and
+  // the job names the video. An empty result here means "none of these videos
+  // have anything queued", which is a real answer and not a reason to fall
+  // back to everything: falling back is exactly what published to Spain.
+  if (onlyVideoIds.length > 0) {
+    const { data: scoped } = await sb.from('global_sync_jobs')
+      .select('id').eq('user_id', user.id).in('video_id', onlyVideoIds)
+    const ids = (scoped ?? []).map((j: { id: string }) => j.id)
+    if (ids.length === 0) return NextResponse.json({ ok: true, items: [], skipped: [], dailyRoom: [] })
+    q = q.in('job_id', ids)
+  }
+
   const { data: targets } = await q
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

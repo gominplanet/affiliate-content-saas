@@ -45,6 +45,9 @@ interface Item {
   thumbnail_url: string | null
   /** 'styled' (the batch look applied) or 'plain' (it did not). */
   thumbnail_source: string | null
+  /** The youtube_videos row this became, once it reached YouTube. The upload
+   *  scope is built from these, so a batch can only ever deliver its own. */
+  video_id: string | null
   /** Attempts so far, so a screen can tell working from stuck. */
   render_tries: number | null
   thumb_tries: number | null
@@ -278,7 +281,18 @@ export default function LaunchBoard() {
   async function uploadToAmazon() {
     setBusy('amazon')
     try {
-      const out = await deliverPreparedStorefronts()
+      // SCOPED TO THIS BATCH. Unscoped, this delivers the creator's whole
+      // account queue: the first real run picked the US and Germany and
+      // watched SCOUT open Spain, France and Italy.
+      const videoIds = items.map((i) => i.video_id).filter((v): v is string => !!v)
+      if (videoIds.length === 0) {
+        toast('None of these are on YouTube yet, so Amazon has nothing to take. That happens first.', { duration: 9000 })
+        return
+      }
+      const out = await deliverPreparedStorefronts({
+        videoIds,
+        domains: batch?.markets.map((m) => m.domain) ?? [],
+      })
       const lines = deliverySummary(out)
       if (out.error) { toast.error(lines.join(' '), { duration: 12000 }); return }
       if (out.nothingReady) { toast(lines.join(' '), { duration: 9000 }); return }

@@ -151,7 +151,7 @@ export const BATCH_COLUMNS =
 
 /** The columns an item must be read with, for the same reason. */
 export const ITEM_COLUMNS =
-  'id,position,source_url,rendered_url,clean_url,asin,title,description,thumbnail_url,thumbnail_clean_url,thumbnail_source,'
+  'id,position,source_url,rendered_url,clean_url,asin,title,description,thumbnail_url,thumbnail_clean_url,thumbnail_source,video_id,'
   + 'state,reason,publish_at,youtube_video_id,duration_seconds,render_tries,thumb_tries,updated_at'
 
 export interface ItemRow {

@@ -932,9 +932,12 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // THE CALL SITE IN EACH, not the import. An import survives its own call
   // being replaced by an inline fetch, which is precisely the second uploader
   // this check exists to forbid.
+  // BOTH CALL IT, with or without a scope. The launch page passes one now, so
+  // pinning the empty-parens form checked a call shape rather than the shared
+  // path it exists to protect.
   check('and uses the same delivery as the storefront board',
     /await deliverPreparedStorefronts\(\)/.test(live(read('components/storefront/CoverageBoard.tsx')))
-    && /await deliverPreparedStorefronts\(\)/.test(BOARD)
+    && /await deliverPreparedStorefronts\(\{/.test(BOARD)
     && /export async function deliverPreparedStorefronts/.test(DELIVERY),
     'two uploaders agree only until one of them learns something')
   check('and neither board queues for itself',
@@ -1372,6 +1375,61 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and the button says what it will do',
     /Saves the product first if you have not/.test(BOARD),
     'a button with a hidden side effect is one people press twice')
+}
+
+// ── a batch can only ever upload its own videos, to its own countries ───────
+//
+// THE WORST BUG OF THE FEATURE. A creator picked the United States and Germany
+// for a batch, pressed Upload to Amazon, and SCOUT opened amazon.es,
+// amazon.fr and amazon.it: storefronts never chosen for those videos, on their
+// real Creator account.
+//
+// The cause was one missing argument. The delivery queue returns EVERY
+// localized target on the account when it is called with no scope, which is
+// correct for the storefront board (the standing grid is its whole job) and
+// catastrophic anywhere else. The launch page called it with nothing.
+{
+  const QUEUE = live(read('app/api/global-sync/deliver/queue/route.ts'))
+  const DELIVERY = live(read('lib/storefront-delivery.ts'))
+
+  // BOTH HALVES. Looking the videos up and then not narrowing the query with
+  // what came back is the same bug with extra steps, and it reads as finished.
+  check('the queue can be scoped to named videos',
+    /\.in\('video_id', onlyVideoIds\)/.test(QUEUE) && /q = q\.in\('job_id', ids\)/.test(QUEUE),
+    'without a scope every call reaches the whole account')
+  check('and to named countries',
+    /onlyDomains/.test(QUEUE) && /q\.in\('domain', onlyDomains\)/.test(QUEUE),
+    'the batch knows both, and either alone still leaves a way to publish somewhere nobody chose')
+
+  // NO SILENT WIDENING. A scope that matches nothing must return nothing.
+  check('a scope that matches nothing returns nothing',
+    /if \(ids\.length === 0\) return NextResponse\.json\(\{ ok: true, items: \[\]/.test(QUEUE),
+    'falling back to everything is exactly what published to Spain')
+
+  check('the delivery helper passes a scope through',
+    /qs\.set\('videoIds'/.test(DELIVERY) && /qs\.set\('domains'/.test(DELIVERY),
+    'an argument the helper drops is a scope that never reaches the server')
+  check('the launch page sends its own batch',
+    /const videoIds = items\.map\(\(i\) => i\.video_id\)/.test(BOARD)
+    && /domains: batch\?\.markets\.map\(\(m\) => m\.domain\)/.test(BOARD),
+    'this is the one call that must never mean "everything"')
+  // THE WHOLE COLUMN, NOT A SUBSTRING OF ANOTHER ONE. `youtube_video_id` was
+  // already in this list and contains `video_id`, so a regex was satisfied by a
+  // column that carries a different id entirely.
+  check('and the video ids actually reach the page',
+    ITEM_COLUMNS.split(',').includes('video_id'),
+    'a column the route does not select is a scope built from undefined')
+
+  // NOTHING ON YOUTUBE MEANS NOTHING FOR AMAZON, and saying so beats an
+  // unscoped call that finds somebody else's backlog.
+  check('a batch with nothing on YouTube says so rather than uploading',
+    /None of these are on YouTube yet/.test(BOARD),
+    'an empty scope must not become an absent scope')
+
+  // THE STOREFRONT BOARD IS THE EXCEPTION and stays unscoped on purpose.
+  check('the storefront board still asks for the whole grid',
+    /await deliverPreparedStorefronts\(\)/.test(read('components/storefront/CoverageBoard.tsx')),
+    'the standing grid is that page’s entire job')
 }
 
 if (failures.length) {

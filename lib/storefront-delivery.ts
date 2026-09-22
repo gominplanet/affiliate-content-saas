@@ -45,7 +45,16 @@ export interface DeliveryOutcome {
  * The queue does the counting and the capping; this does the handing over and
  * the reporting. Neither decides the rules on its own.
  */
-export async function deliverPreparedStorefronts(): Promise<DeliveryOutcome> {
+export async function deliverPreparedStorefronts(scope?: {
+  /** Only these videos. The launch page passes its batch, because an unscoped
+   *  call delivers the creator's ENTIRE account queue: the first real run
+   *  picked the US and Germany and watched SCOUT open Spain, France and Italy. */
+  videoIds?: string[]
+  /** And only these countries, AND-ed with the videos above. Two filters
+   *  because the batch knows both, and either one alone still leaves a way to
+   *  publish somewhere nobody chose. */
+  domains?: string[]
+}): Promise<DeliveryOutcome> {
   const empty: DeliveryOutcome = {
     ok: false, handedOver: 0, waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false,
   }
@@ -54,7 +63,13 @@ export async function deliverPreparedStorefronts(): Promise<DeliveryOutcome> {
     // BOUNDED. The queue counts deliveries per storefront against Postgres and
     // can be slow on a large account, but a request with no deadline leaves the
     // button spinning forever with nothing to report.
-    const q = await fetchWithTimeout('/api/global-sync/deliver/queue', { timeoutMs: 60_000 })
+    const qs = new URLSearchParams()
+    if (scope?.videoIds?.length) qs.set('videoIds', scope.videoIds.join(','))
+    if (scope?.domains?.length) qs.set('domains', scope.domains.join(','))
+    const q = await fetchWithTimeout(
+      `/api/global-sync/deliver/queue${qs.toString() ? `?${qs}` : ''}`,
+      { timeoutMs: 60_000 },
+    )
     j = await q.json() as Record<string, unknown>
   } catch {
     return { ...empty, error: 'Could not reach MVP to work out what is ready.' }
