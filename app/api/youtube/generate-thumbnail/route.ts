@@ -603,6 +603,66 @@ async function garmentMatchesProduct(opts: {
   }
 }
 
+
+/**
+ * Did the renderer spell the headline right.
+ *
+ * WHY THIS IS CHECKED RATHER THAN ARGUED WITH. An image model draws letters,
+ * it does not type them, so a long word occasionally comes out a letter short.
+ * A creator reported one: the headline was meant to read DOES LIGHT REALLY
+ * DANCE THROUGH IT and the thumbnail said REALL. No amount of "spell the text
+ * correctly" in the prompt fixes that, because nothing was misunderstood: the
+ * render is a sample, and some samples drop a letter.
+ *
+ * So it is read back. A misspelling is the single most expensive defect this
+ * pipeline can ship, because it is the one thing every viewer notices and the
+ * only one that makes a channel look careless, and unlike a wrong garment it
+ * cannot be waved through as a matter of taste.
+ *
+ * NEVER BREAKS THE THING IT GUARDS. Any failure returns "unknown" rather than
+ * a verdict, so a thumbnail still ships when the checker is unavailable.
+ */
+async function headlineSpelledRight(opts: {
+  renderB64: string
+  expected: string
+}): Promise<{ ok: boolean | null; got: string; reason: string }> {
+  const expected = opts.expected.replace(/\s+/g, ' ').trim()
+  if (!expected) return { ok: null, got: '', reason: 'no headline to check' }
+  try {
+    const anthropic = createAnthropicClient()
+    const msg = await withAnthropicRetry(() => anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 200,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png' as const, data: opts.renderB64 } },
+          { type: 'text' as const, text: `Read the LARGE headline text in this thumbnail, exactly as the letters appear.
+
+It was supposed to say: "${expected}"
+
+Reply with ONLY JSON: {"got":"<the words you can actually read, verbatim>","same":true|false}
+
+"same" is false ONLY if a word is misspelled, truncated or has letters missing or added. Ignore differences in line breaks, punctuation, capitalisation, and small badge or label text elsewhere in the image. Judge the big headline alone.` },
+        ],
+      }],
+    }))
+    recordAnthropicUsage(msg, {
+      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_spell_check', model: 'claude-haiku-4-5-20251001',
+    })
+    const first = msg.content[0] as { type: string; text?: string }
+    const raw = first?.text || ''
+    const parsed = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as { got?: string; same?: boolean }
+    const got = String(parsed.got || '').replace(/\s+/g, ' ').trim()
+    if (parsed.same === false) return { ok: false, got, reason: `it reads "${got}" instead of "${expected}"` }
+    return { ok: true, got, reason: '' }
+  } catch (e) {
+    console.warn('[spell-check] skipped:', e instanceof Error ? e.message : e)
+    return { ok: null, got: '', reason: 'check unavailable' }
+  }
+}
+
 /**
  * Take the creator's own clothes out of an identity reference.
  *
@@ -2444,6 +2504,37 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             // one variant, so a single high render stays well under the timeout.
             let b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxRecordOverride ?? gfxModel, images: 1 })
+
+            // ── DID IT SPELL THE HEADLINE RIGHT? ───────────────────────────
+            //
+            // Reported by a creator: a thumbnail that should have read DOES
+            // LIGHT REALLY DANCE THROUGH IT came out saying REALL. An image
+            // model draws letters rather than typing them, so this is variance
+            // in the renderer and not a sentence to fix.
+            //
+            // CHECKED FIRST, before the garment, because a misspelling is the
+            // one defect every viewer notices and the only one that makes a
+            // channel look careless. One retry, same reasoning as below: the
+            // second render is a fresh sample, not a smarter attempt.
+            if (b64) {
+              const want = [line1, line2].filter(Boolean).join(' ')
+              const spell = await headlineSpelledRight({ renderB64: b64, expected: want })
+              if (spell.ok === false) {
+                console.warn(`[spell-check] re-rendering once: ${spell.reason}`)
+                const retryPrompt = `${prompt}\n\nTHE PREVIOUS ATTEMPT MISSPELLED THE HEADLINE: ${spell.reason} Render every word of the headline complete and correctly spelled, letter for letter.`
+                const retry = await openaiGfx.generateWithReferences({ prompt: retryPrompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
+                if (retry) {
+                  recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxRecordOverride ?? gfxModel, images: 1 })
+                  // THE SECOND ONE IS CHECKED TOO, and kept only if it is
+                  // better. A retry that misspells a DIFFERENT word is not an
+                  // improvement, and swapping it in unchecked would be the
+                  // plan reported as the result.
+                  const second = await headlineSpelledRight({ renderB64: retry, expected: want })
+                  if (second.ok !== false) b64 = retry
+                  else console.warn(`[spell-check] kept the first render: retry also wrong (${second.reason})`)
+                }
+              }
+            }
 
             // ── Did it put the right garment on? ────────────────────────────
             // Only for a worn product, and only once. Across one afternoon the
