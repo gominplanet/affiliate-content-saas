@@ -1496,6 +1496,42 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     !/Amazon: straight away/.test(SCREEN) && /Amazon: you press the button/.test(SCREEN),
     'it said "straight away" and then that it needed this tab open')
 
+  // ── one launch, one upload, whatever fails afterwards ────────────────────
+  //
+  // A creator launched a single video and found THREE copies of it on their
+  // real channel, all stuck on "Pending, processing will begin shortly", while
+  // the page said the upload had failed. All three uploads had succeeded. What
+  // failed was the next call, the one that sets the publish time, and the retry
+  // went back to the top and sent the file again.
+  check('a row that already has a video id never uploads again',
+    /let videoId = String\(it\.youtube_video_id \|\| ''\)\.trim\(\)/.test(DRAIN)
+    && /if \(!videoId\) \{/.test(DRAIN),
+    'every retry re-uploaded, and a real channel collected three copies of one video')
+  check('the id is written the moment YouTube hands it over',
+    /\.update\(\{ youtube_video_id: videoId, updated_at: stamp\(\) \}\)/.test(DRAIN),
+    'bundling it into the update at the end of the block is how it got lost')
+  check('and the worker can actually see it',
+    /planned_publish_at,publish_tries,reason,youtube_video_id'\)/.test(DRAIN),
+    'a column the query does not select is a resume that never happens')
+  check('a schedule that fails says the video is on the channel',
+    /the video is on your channel but YouTube would not set its publish time/.test(DRAIN),
+    'it said "check the channel is still connected" over a video that had uploaded three times')
+  check('Try again resumes rather than re-uploads',
+    /setting the publish time on the video already on your channel/.test(live(read('app/api/launch/items/[id]/retry/route.ts')))
+    && /youtube_video_id'\)/.test(read('app/api/launch/items/[id]/retry/route.ts')),
+    'the one button offered after this failure must not be the thing that duplicates')
+
+  // AN ATTEMPT THAT NEVER CAME BACK IS NOT THE SAME AS A REFUSAL.
+  check('an attempt is recorded while it runs',
+    /reason: `Attempt \$\{tries \+ 1\} of \$\{TRIES\} is running now\.`/.test(DRAIN),
+    'a firing killed mid-upload used to burn a try and write nothing at all')
+  check('and three attempts that never reported back say so',
+    /stopped before they could report back, which is a time problem rather than a YouTube one/.test(DRAIN)
+    // THE TEST ITSELF, not the name. `const inflight = false` satisfied a
+    // check for the word and turned every timeout back into a refusal.
+    && /const inflight = \/\^Attempt \\d\+ of \\d\+ is running now/.test(DRAIN),
+    'quoting the in-flight note back as "the last thing YouTube said" would hide a timeout')
+
   // ── the thumbnail we designed has to reach the channel ───────────────────
   //
   // It never did. The worker built one for every video, stored both versions,

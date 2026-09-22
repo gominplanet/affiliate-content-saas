@@ -483,7 +483,7 @@ async function styledThumbnail(
  */
 async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }> {
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,position,title,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason')
+    .select('id,user_id,batch_id,position,title,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason,youtube_video_id')
     .eq('state', 'prepared').not('planned_publish_at', 'is', null)
     .order('planned_publish_at', { ascending: true }).limit(PUBLISHES * 4)
   const items = rows ?? []
@@ -510,34 +510,43 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
       // told them apart was destroyed at the exact moment somebody went
       // looking for it.
       const said = String(it.reason || '').trim()
-      const generic = /^YouTube would not take this video/.test(said)
+      // AN ATTEMPT THAT NEVER REPORTED BACK IS ITS OWN ANSWER, and a different
+      // one from "YouTube said no". It means the firing was cut off before the
+      // catch could run, which is a time problem and not a YouTube problem, and
+      // quoting the note back as "the last thing it said" would hide that.
+      const inflight = /^Attempt \d+ of \d+ is running now\.$/.test(said)
+      const generic = inflight || /^YouTube would not take this video/.test(said)
+      // ON THE CHANNEL ALREADY CHANGES THE ADVICE ENTIRELY. "Check the channel
+      // is still connected" was printed over a video that had uploaded three
+      // times, and sent its creator to look at the one thing that was working.
+      const already = !!String(it.youtube_video_id || '').trim()
       await sb.from('launch_items').update({
         state: 'blocked',
-        reason: said && !generic
-          ? `YouTube refused this ${tries} times. The last thing it said: ${said}`.slice(0, 300)
-          : `YouTube would not take this video after ${tries} tries, and gave no reason we could read. Check the channel is still connected under Settings.`,
+        reason: already
+          ? `The video is on your channel, but its publish time could not be set after ${tries} tries${said && !generic ? `. The last thing YouTube said: ${said}` : ' and YouTube gave no reason we could read'}. It is sitting there private, so set the time on YouTube or press Try again.`.slice(0, 300)
+          : inflight
+            ? `${tries} upload attempts each stopped before they could report back, which is a time problem rather than a YouTube one. Press Try again, and tell support if it happens twice.`
+            : said && !generic
+              ? `YouTube refused this ${tries} times. The last thing it said: ${said}`.slice(0, 300)
+              : `YouTube would not take this video after ${tries} tries, and gave no reason we could read. Check the channel is still connected under Settings.`,
         updated_at: stamp(),
       }).eq('id', it.id)
       failed++
       continue
     }
-    await sb.from('launch_items')
-      .update({ publish_tries: tries + 1, updated_at: stamp() }).eq('id', it.id)
+    // THE ATTEMPT IS RECORDED BEFORE IT RUNS, so a firing killed mid-upload
+    // cannot retry forever, and the note says so plainly: a row still carrying
+    // this sentence is a row whose attempt never came back to write anything.
+    await sb.from('launch_items').update({
+      publish_tries: tries + 1,
+      reason: `Attempt ${tries + 1} of ${TRIES} is running now.`,
+      updated_at: stamp(),
+    }).eq('id', it.id)
     budget--
 
     try {
       const token = await getChannelOAuthToken(sb, it.user_id as string, null)
       if (!token) throw new Error('your YouTube channel is not connected for publishing')
-
-      // Refuse on the header before pulling the body into memory, the same way
-      // the interactive uploader does. Downloading half a gigabyte to discover
-      // it is half a gigabyte is the check becoming the problem.
-      const res = await fetchWithTimeout(src, { timeoutMs: 240_000 })
-      if (!res.ok) throw new Error(`the video file could not be read (${res.status})`)
-      const declared = Number(res.headers.get('content-length') || 0)
-      if (declared && declared > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
-      const bytes = Buffer.from(await res.arrayBuffer())
-      if (bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
 
       const yt = new YouTubeOAuthService(token)
 
@@ -554,24 +563,65 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
       // second call takes.
       const goNow = new Date(String(it.planned_publish_at)).getTime() <= Date.now()
 
-      const { id: videoId, channelId } = await yt.uploadShort(bytes, {
-        title: title.slice(0, 100),
-        // THE AFFILIATE LINK LIVES IN HERE. Written by the prepare step from
-        // the same writer Launchpad uses, because the CTA burned into this
-        // very frame says "link in the description" and an empty one makes
-        // that a lie and the video unpaid.
-        description: (it.description || '').slice(0, 4900),
-        tags: String(it.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
-        privacyStatus: goNow ? 'public' : 'private',
-      })
+      // ── THE UPLOAD HAPPENS ONCE, EVER ────────────────────────────────────
+      //
+      // THE WORST THING THIS WORKER HAS DONE. A creator launched one video and
+      // found three copies of it on their real channel, all stuck on "Pending,
+      // processing will begin shortly", while this page said the upload had
+      // failed. Every one of those three uploads SUCCEEDED. What failed was the
+      // call after it, the one that sets the publish time, and the retry
+      // started again from the top and uploaded the file afresh.
+      //
+      // So the id is written the moment YouTube hands it over, before anything
+      // else is allowed to fail, and a row that already has one never uploads
+      // again. A retry resumes at the step that broke. That is also why the
+      // file is fetched inside this branch: a resumed row has no reason to
+      // download half a gigabyte it is not going to send.
+      let videoId = String(it.youtube_video_id || '').trim()
+      let channelId: string | null = null
+      if (!videoId) {
+        // Refuse on the header before pulling the body into memory, the same
+        // way the interactive uploader does. Downloading half a gigabyte to
+        // discover it is half a gigabyte is the check becoming the problem.
+        const res = await fetchWithTimeout(src, { timeoutMs: 240_000 })
+        if (!res.ok) throw new Error(`the video file could not be read (${res.status})`)
+        const declared = Number(res.headers.get('content-length') || 0)
+        if (declared && declared > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
+        const bytes = Buffer.from(await res.arrayBuffer())
+        if (bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
+
+        const up = await yt.uploadShort(bytes, {
+          title: title.slice(0, 100),
+          // THE AFFILIATE LINK LIVES IN HERE. Written by the prepare step from
+          // the same writer Launchpad uses, because the CTA burned into this
+          // very frame says "link in the description" and an empty one makes
+          // that a lie and the video unpaid.
+          description: (it.description || '').slice(0, 4900),
+          tags: String(it.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
+          privacyStatus: goNow ? 'public' : 'private',
+        })
+        videoId = up.id
+        channelId = up.channelId
+        // IMMEDIATELY, AND ON ITS OWN. Not bundled into the update at the end
+        // of this block: everything between here and there is a way for this
+        // fact to be lost, and losing it is what put three copies on a channel.
+        await sb.from('launch_items')
+          .update({ youtube_video_id: videoId, updated_at: stamp() }).eq('id', it.id)
+      }
 
       if (!goNow) {
         // THE SCHEDULE ITSELF, and its result is what decides whether this row
-        // may call itself scheduled.
-        await yt.updateVideoStatus(videoId, {
-          publishAt: String(it.planned_publish_at),
-          notifySubscribers: true,
-        })
+        // may call itself scheduled. A failure here is now said in the terms
+        // that matter to somebody looking at their channel: the video is on it.
+        try {
+          await yt.updateVideoStatus(videoId, {
+            publishAt: String(it.planned_publish_at),
+            notifySubscribers: true,
+          })
+        } catch (se) {
+          const said = se instanceof Error && se.message ? se.message : String(se)
+          throw new Error(`the video is on your channel but YouTube would not set its publish time: ${said}`)
+        }
       }
 
       // ── THE THUMBNAIL WE DESIGNED, ON THE VIDEO ──────────────────────────

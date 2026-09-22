@@ -26,7 +26,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   const { data: item } = await sb.from('launch_items')
-    .select('id,state,rendered_url,thumbnail_url,thumbnail_clean_url,planned_publish_at')
+    .select('id,state,rendered_url,thumbnail_url,thumbnail_clean_url,planned_publish_at,youtube_video_id')
     .eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!item) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
 
@@ -55,6 +55,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   } else if (!item.thumbnail_url || !item.thumbnail_clean_url) {
     patch.state = 'preparing'; patch.thumb_tries = 0
     from = 'the thumbnail'
+  } else if (String(item.youtube_video_id || '').trim()) {
+    // ALREADY UPLOADED, so this must not start again from the file. The worker
+    // skips the upload for a row that has an id, which is what stopped one
+    // launch putting three copies of the same video on a real channel.
+    patch.state = 'prepared'; patch.publish_tries = 0
+    from = 'setting the publish time on the video already on your channel'
   } else {
     patch.state = 'prepared'; patch.publish_tries = 0
     from = 'the YouTube upload'
