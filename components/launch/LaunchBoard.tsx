@@ -1131,6 +1131,22 @@ function ItemRowEditor({
   async function writeTitle() {
     setWriting(true)
     try {
+      // ── SAVE THE PRODUCT FIRST IF IT IS SITTING THERE UNSAVED ───────────
+      //
+      // The button was enabled by the text in the PRODUCT BOX and the route
+      // read the SAVED row, so pasting an ASIN and pressing Write it for me
+      // answered "Set the product first" while the product was plainly on
+      // screen an inch away. Technically true, and it reads as broken.
+      //
+      // Two ways to fix that: refuse until they press Save, or press it for
+      // them. A creator who typed the ASIN and asked for a title has already
+      // told us everything we needed, so asking again is ceremony.
+      const unsaved = product.trim() && product !== (item.asin ?? '')
+      if (unsaved) {
+        dirty.current = false
+        await onSave(item.id, { product })
+      }
+
       const r = await fetch(`/api/launch/items/${item.id}/title`, { method: 'POST' })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !Array.isArray(j?.titles)) { toast.error(j?.error || 'Could not write a title.'); return }
@@ -1245,7 +1261,9 @@ function ItemRowEditor({
             </span>
           )}
           <button type="button" onClick={() => void writeTitle()} disabled={writing || !product.trim()}
-            title={!product.trim() ? 'Set the product first, the title is written from what it is.' : undefined}
+            title={!product.trim()
+              ? 'Paste the ASIN or the Amazon link first. The title is written from what the product is.'
+              : 'Writes a title from the product. Saves the product first if you have not.'}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 mt-1.5 rounded-lg border text-[11.5px] disabled:opacity-40"
             style={{ borderColor: 'var(--border)', ...text }}>
             {writing ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}

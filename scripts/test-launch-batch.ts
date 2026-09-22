@@ -1347,6 +1347,33 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'a name nothing can change is a name you live with')
 }
 
+// ── a button that reads your typing must act on your typing ─────────────────
+//
+// The Product box had an ASIN in it, the Write it for me button was enabled by
+// that text, and pressing it answered "Set the product first" because the ROUTE
+// reads the saved row and the button read the box. True, and it reads as
+// broken: the product is plainly on screen an inch away.
+{
+  check('writing a title saves an unsaved product first',
+    /const unsaved = product\.trim\(\) && product !== \(item\.asin \?\? ''\)/.test(BOARD)
+    && /await onSave\(item\.id, \{ product \}\)/.test(BOARD),
+    'the button is enabled by the box, so it has to act on the box')
+  // ORDER MATTERS. Saving after asking is the same bug with extra steps.
+  check('and does it before asking for the title',
+    BOARD.indexOf('await onSave(item.id, { product })')
+      < BOARD.indexOf('/title`, { method: \'POST\' }'),
+    'asking first and saving after leaves the route reading the old row')
+  check('the dirty flag is cleared so the reload is not fought',
+    /dirty\.current = false\n        await onSave\(item\.id, \{ product \}\)/.test(BOARD),
+    'a reload landing on a row still marked dirty leaves the box out of step with the server')
+  check('nothing is saved when the product has not changed',
+    /if \(unsaved\) \{/.test(BOARD),
+    'a write on every press is a request nobody asked for')
+  check('and the button says what it will do',
+    /Saves the product first if you have not/.test(BOARD),
+    'a button with a hidden side effect is one people press twice')
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
