@@ -10,6 +10,7 @@
 // page. One place decides what "done" means, so a screen cannot say ready
 // about a batch the worker will refuse.
 
+import { launchReadiness } from '@/lib/launch-readiness'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { marketByDomain } from '@/lib/markets'
@@ -58,7 +59,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     steps: batchSteps(b, items),
     // THE REASON, not just a boolean. A disabled Launch button with nothing
     // beside it is the dead end this codebase keeps producing.
-    launchBlocker: launchBlocker(b, items),
+    // THE SAME ANSWER THE LAUNCH ROUTE WILL GIVE, including the channel check
+    // that needs a lookup. A page that enables the button while the route
+    // refuses it is the bug this file already produced once.
+    launchBlocker: await launchReadiness(sb, user.id, b, items),
     maxItems: MAX_ITEMS,
   })
 }

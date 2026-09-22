@@ -292,6 +292,24 @@ export function launchBlocker(batch: BatchRow, items: ItemRow[]): string | null 
   return null
 }
 
+/**
+ * Why this batch cannot reach YouTube at all, whatever its steps say.
+ *
+ * CHECKED BEFORE LAUNCH, NOT AFTER THREE TRIES. A batch with no channel that
+ * can push runs the whole pipeline, uploads nothing, and reports "YouTube would
+ * not take this video after 3 tries" on every single video. That is the most
+ * expensive possible moment to learn something we knew before the button was
+ * pressed, and it is the failure the first real batch actually hit.
+ *
+ * SEPARATE FROM launchBlocker because it needs a database lookup and that
+ * function is pure. Both are called from one place, so the page and the launch
+ * route cannot disagree about it.
+ */
+export function channelBlocker(hasPushChannel: boolean): string | null {
+  if (hasPushChannel) return null
+  return 'No YouTube channel is connected for uploading. Connect one under Settings, then launch. Everything you have set up here is kept.'
+}
+
 /** Plain words for an item state, so no screen invents its own. */
 export function itemStateLabel(state: ItemState): string {
   switch (state) {

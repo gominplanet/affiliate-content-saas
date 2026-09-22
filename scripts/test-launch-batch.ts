@@ -15,6 +15,7 @@
 //   purpose and this pins them apart.
 import { readFileSync } from 'node:fs'
 import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, BATCH_COLUMNS, ITEM_COLUMNS, type BatchRow, type ItemRow } from '../lib/launch-batch'
+import { channelBlocker } from '../lib/launch-batch'
 import { validateThumbnailPreset, presetToRequestFields, defaultThumbnailPreset, styleReferenceAllowed, looksForRequest, LOOKS, presetSummary as presetSummaryOf } from '../lib/thumbnail-preset'
 import { VISUAL_PRESETS } from '../lib/visual-presets'
 
@@ -987,6 +988,47 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and a video already on YouTube cannot be retried',
     /already on YouTube/.test(RETRY),
     're-running the publish step would upload it twice')
+}
+
+// ── a missing channel is caught before Launch, not after three tries ────────
+//
+// The first real batch ran the whole pipeline, uploaded nothing, and reported
+// "YouTube would not take this video after 3 tries". Whether a channel can
+// receive an upload is knowable before the button is pressed, and learning it
+// afterwards costs a render, two thumbnails and three attempts per video.
+{
+  const READY = live(read('lib/launch-readiness.ts'))
+
+  check('a batch with no pushable channel is blocked with a sentence',
+    !!channelBlocker(false) && /Settings/.test(channelBlocker(false) || ''),
+    'a refusal that does not say where to go is a dead end')
+  check('and one with a channel is not',
+    channelBlocker(true) === null)
+  check('it promises the setup is kept',
+    /kept/.test(channelBlocker(false) || ''),
+    'somebody who thinks they will lose ten videos of setup will not go and fix it')
+
+  // PULL-ONLY IS NOT PUSHABLE. A channel added by URL has no tokens and cannot
+  // receive an upload, and counting it is what makes "a channel exists" the
+  // wrong question.
+  check('only a channel with tokens counts',
+    /not\('oauth_refresh_token', 'is', null\)/.test(READY),
+    'a pull-only channel exists and cannot be uploaded to')
+  check('a failed lookup does not block a launch that would have worked',
+    /return true/.test(READY.slice(READY.indexOf('} catch {'))),
+    'unknown is not blocked, and the publish step still reports honestly')
+
+  // BOTH CALLERS, ONE ANSWER. The page enabling a button the route refuses is
+  // a bug this pair has already produced once.
+  check('the page and the launch route ask the same function',
+    /await launchReadiness\(/.test(BATCH) && /await launchReadiness\(/.test(LAUNCH),
+    'two readiness checks disagree the day one of them learns something')
+  check('and neither calls the pure rules directly any more',
+    !/launchBlocker\(b, items\)/.test(BATCH) && !/launchBlocker\(batch as BatchRow/.test(LAUNCH),
+    'calling the half that skips the channel check is how the two would drift')
+  check('the steps are reported before the channel',
+    READY.indexOf('launchBlocker(batch, items)') < READY.indexOf('channelBlocker('),
+    '"connect a channel" is useless to somebody who has not added a video yet')
 }
 
 if (failures.length) {

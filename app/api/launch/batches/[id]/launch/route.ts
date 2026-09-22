@@ -17,6 +17,7 @@
 // moving it would publish somebody's video at an hour they never chose, so the
 // run stops and says which ones and what to change.
 
+import { launchReadiness } from '@/lib/launch-readiness'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
@@ -56,7 +57,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   // THE SAME RULE THE PAGE SHOWED. One function decides what ready means, so a
   // creator cannot be told ready by one screen and refused by this route.
-  const blocker = launchBlocker(batch as BatchRow, items)
+  const blocker = await launchReadiness(sb, user.id, batch as BatchRow, items)
   if (blocker) return NextResponse.json({ error: blocker }, { status: 409 })
 
   // Only the ones that actually finished preparing. A blocked video is left
