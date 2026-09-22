@@ -594,8 +594,15 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
     } catch (e) {
       // LEFT PREPARED so the next firing tries again, with the reason on the
       // row rather than in a log nobody reads.
+      // THE FALLBACK USED TO BE THE GENERIC SENTENCE ITSELF, word for word, so
+      // a throw that was not an Error wrote the very string the give-up path
+      // treats as "no reason we could read" and then discards. Two layers
+      // agreeing to say nothing. Whatever was thrown gets written now, even
+      // when it is not an Error, because an ugly string beats a blank.
       await sb.from('launch_items').update({
-        reason: (e instanceof Error ? e.message : 'YouTube would not take this video').slice(0, 200),
+        reason: (e instanceof Error && e.message
+          ? e.message
+          : `YouTube refused it and the error was ${String(e).slice(0, 120)}`).slice(0, 200),
         updated_at: stamp(),
       }).eq('id', it.id)
       failed++

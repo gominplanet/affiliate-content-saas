@@ -167,6 +167,10 @@ export interface ItemRow {
   reason: string | null
   publish_at?: string | null
   youtube_video_id?: string | null
+  /** The videos row this item became once YouTube took it. Its presence is
+   *  what the Amazon side has to reference, so it is also the honest answer to
+   *  "is there anything for Amazon to do yet". */
+  video_id?: string | null
 }
 
 // ── the steps, which are the page's spine and the worker's contract ─────────
@@ -455,6 +459,76 @@ export function itemStateLabel(state: ItemState): string {
     case 'blocked':   return 'Cannot go'
     default:          return 'Unknown'
   }
+}
+
+// ── what actually happened to a batch that was launched ────────────────────
+//
+// THE BOX THAT LIED. After Launch, the page drew a green panel reading
+// "1 video scheduled" with the first and last publication times under it, and
+// that panel was built from the launch call's own reply: a count of rows the
+// worker had been ASKED to publish, captured once and never looked at again.
+//
+// So when the worker then failed, the page said both things at once. The green
+// panel still read "1 video scheduled", and the board directly underneath it
+// read "Cannot go: YouTube would not take this video after 3 tries". A creator
+// looking at that has no way to tell which half is true, and the wrong half was
+// the loud one.
+//
+// THIS COUNTS ROWS INSTEAD. Every number below comes from the same states the
+// board paints, so the summary cannot disagree with the list under it.
+
+export interface LaunchOutcome {
+  total: number
+  /** Really on YouTube: uploaded and either scheduled or already public. */
+  onYouTube: number
+  /** Still moving. Worth waiting for, not worth worrying about. */
+  working: number
+  /** Stopped, with a reason on the row. */
+  blocked: number
+  /** Handed to the Amazon side, which needs a YouTube id to reference. */
+  handedOver: number
+  tone: 'good' | 'busy' | 'warn'
+  /** The one sentence at the top of the panel. */
+  headline: string
+  /** Why Amazon cannot run yet, or null when it can. The button reads this
+   *  rather than finding out after it is pressed. */
+  amazonBlocker: string | null
+}
+
+export function launchOutcome(items: { state: ItemState; video_id?: string | null }[]): LaunchOutcome {
+  const total = items.length
+  const onYouTube = items.filter((i) => i.state === 'scheduled' || i.state === 'published').length
+  const blocked = items.filter((i) => i.state === 'blocked').length
+  const working = total - onYouTube - blocked
+  const handedOver = items.filter((i) => !!i.video_id).length
+
+  // WORST NEWS FIRST. A batch that is half broken is a batch somebody has to
+  // act on, and burying that under a count of the ones that worked is how the
+  // old panel managed to be green while nothing had published.
+  let tone: LaunchOutcome['tone'] = 'good'
+  let headline = ''
+  if (blocked > 0 && onYouTube === 0) {
+    tone = 'warn'
+    headline = total === 1
+      ? 'This one could not go to YouTube.'
+      : `None of these reached YouTube. ${blocked} stopped with a reason below.`
+  } else if (blocked > 0) {
+    tone = 'warn'
+    headline = `${onYouTube} of ${total} on YouTube. ${blocked} could not go.`
+  } else if (working > 0) {
+    tone = 'busy'
+    headline = onYouTube === 0
+      ? `${working} of ${total} still being prepared. Nothing is on YouTube yet.`
+      : `${onYouTube} of ${total} on YouTube, ${working} still working.`
+  } else {
+    headline = total === 1 ? 'On YouTube.' : `All ${total} on YouTube.`
+  }
+
+  const amazonBlocker = handedOver === 0
+    ? 'Nothing is on YouTube yet, so there is no video for Amazon to list. That happens first.'
+    : null
+
+  return { total, onYouTube, working, blocked, handedOver, tone, headline, amazonBlocker }
 }
 
 /** The colour a state reads as. Green only for states that really are done. */

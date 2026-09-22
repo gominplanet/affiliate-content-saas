@@ -14,7 +14,7 @@
 //   publish time, not that we worked one out. They are separate columns on
 //   purpose and this pins them apart.
 import { readFileSync } from 'node:fs'
-import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, BATCH_COLUMNS, ITEM_COLUMNS, type BatchRow, type ItemRow } from '../lib/launch-batch'
+import { batchSteps, launchBlocker, validateCtaPreset, launchOutcome, MAX_ITEMS, BATCH_COLUMNS, ITEM_COLUMNS, type BatchRow, type ItemRow } from '../lib/launch-batch'
 import { channelBlocker, prepEta, minutesLeft, stepIsOptional, batchRecap, defaultBatchName } from '../lib/launch-batch'
 import { validateThumbnailPreset, presetToRequestFields, defaultThumbnailPreset, styleReferenceAllowed, looksForRequest, LOOKS, presetSummary as presetSummaryOf } from '../lib/thumbnail-preset'
 import { VISUAL_PRESETS } from '../lib/visual-presets'
@@ -918,7 +918,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       'claiming only videos whose time has come would hold the storefronts back too')
   }
   check('the result names the two sides apart',
-    /YouTube: on your schedule/.test(BOARD) && /Amazon: straight away/.test(BOARD),
+    /YouTube: automatic/.test(BOARD) && /Amazon: you press the button/.test(BOARD),
     'one paragraph covering both is what made them read as one date')
   check('and states the daily allowance in the creator’s terms',
     /20 a day on the US store and 10 a day on each other one/.test(BOARD),
@@ -927,7 +927,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // THE SENTENCE WAS FALSE. This page used SCOUT to check sign-in and never
   // uploaded, so the tab it asked you to keep open did nothing for Amazon.
   check('the page actually uploads to Amazon',
-    /deliverPreparedStorefronts/.test(BOARD) && /Upload to Amazon now/.test(BOARD),
+    /deliverPreparedStorefronts/.test(BOARD) && /Upload to Amazon \(/.test(BOARD),
     'it asked for a tab to be kept open for work it never did')
   // THE CALL SITE IN EACH, not the import. An import survives its own call
   // being replaced by an inline fetch, which is precisely the second uploader
@@ -1430,6 +1430,73 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the storefront board still asks for the whole grid',
     /await deliverPreparedStorefronts\(\)/.test(read('components/storefront/CoverageBoard.tsx')),
     'the standing grid is that page’s entire job')
+}
+
+// ── the panel after Launch says what happened, not what was asked for ──────
+//
+// A creator launched one video. The panel read "1 video scheduled" in green,
+// with the publication time under it, and the board directly below read
+// "Cannot go: YouTube would not take this video after 3 tries". Both were on
+// screen together. The green one was built from the launch call's reply, a
+// count of rows handed to the worker, captured once and never looked at again.
+{
+  const OUTCOME = live(read('lib/launch-batch.ts'))
+  // COMMENT-STRIPPED, because every negative check below is about a sentence
+  // being gone from the screen, and the note explaining why it went carries
+  // the old wording word for word.
+  const SCREEN = live(BOARD)
+
+  const blockedOnly = launchOutcome([{ state: 'blocked' }])
+  check('one video that could not go is not a video scheduled',
+    blockedOnly.tone === 'warn' && !/scheduled/i.test(blockedOnly.headline),
+    `read: ${blockedOnly.headline}`)
+
+  const mixed = launchOutcome([
+    { state: 'scheduled', video_id: 'v1' }, { state: 'blocked' }, { state: 'rendering' },
+  ])
+  check('a mixed batch leads with the ones that stopped',
+    mixed.tone === 'warn' && /1 could not go/.test(mixed.headline),
+    `read: ${mixed.headline}`)
+
+  const working = launchOutcome([{ state: 'rendering' }, { state: 'prepared' }])
+  check('nothing on YouTube yet never reads as done',
+    working.tone === 'busy' && /Nothing is on YouTube yet/.test(working.headline),
+    `read: ${working.headline}`)
+
+  const done = launchOutcome([
+    { state: 'scheduled', video_id: 'v1' }, { state: 'published', video_id: 'v2' },
+  ])
+  check('and a batch that really is on YouTube says so',
+    done.tone === 'good' && done.onYouTube === 2 && done.amazonBlocker === null,
+    `read: ${done.headline} / ${done.amazonBlocker}`)
+
+  // THE BUTTON KNOWS BEFORE IT IS PRESSED. It used to be live whatever the
+  // batch was doing and only said in a toast, afterwards, that there was
+  // nothing to send.
+  check('Amazon is blocked, with a reason, while nothing is on YouTube',
+    /no video for Amazon to list/.test(OUTCOME)
+    && /disabled=\{busy === 'amazon' \|\| !!out\.amazonBlocker\}/.test(BOARD),
+    'a button that can only fail should say so before it is pressed')
+
+  check('the panel counts rows rather than the launch reply',
+    /const out = launchOutcome\(items/.test(SCREEN) && !/launched\.scheduled/.test(SCREEN),
+    'a number captured once cannot disagree with the board under it, it can only be wrong')
+
+  // AND IT SURVIVES A RELOAD, which is when somebody actually comes back for
+  // the Amazon button.
+  check('a launched batch still shows its panel after a refresh',
+    /batch\.state === 'launched' \|\| batch\.state === 'launching'\) && \(\(\) =>/.test(BOARD),
+    'state set by pressing a button is gone the moment the tab is reloaded')
+
+  // ONE STORY ABOUT AMAZON, not two contradicting each other three lines apart.
+  check('the Amazon heading does not promise something automatic',
+    !/Amazon: straight away/.test(SCREEN) && /Amazon: you press the button/.test(SCREEN),
+    'it said "straight away" and then that it needed this tab open')
+
+  // AND THE WORKER NEVER WRITES THE SENTENCE THAT MEANS "NO REASON".
+  check('a failed upload records whatever was thrown',
+    /YouTube refused it and the error was \$\{String\(e\)/.test(DRAIN),
+    'the fallback used to be the exact string the give-up path discards as unreadable')
 }
 
 if (failures.length) {

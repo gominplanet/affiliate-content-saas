@@ -24,7 +24,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { deliverPreparedStorefronts, deliverySummary } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, planSchedule } from '@/lib/launch-schedule'
-import { itemStateLabel, itemStateTone, prepEta, batchRecap, stepIsOptional, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
+import { itemStateLabel, itemStateTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
 import { requestStorefrontPreflight } from '@/lib/extension-frame'
 import StepCard from './StepCard'
 import CtaPicker from './CtaPicker'
@@ -911,59 +911,91 @@ export default function LaunchBoard() {
       </StepCard>
 
       {/* ── after the launch ───────────────────────────────────────────────── */}
-      {launched && (
-        <div className="rounded-2xl border p-4" style={{ borderColor: '#10B981', background: 'rgba(16,185,129,0.07)' }}>
-          <p className="text-[13.5px] font-semibold" style={text}>
-            {launched.scheduled} {launched.scheduled === 1 ? 'video' : 'videos'} scheduled.
+      {/* GONE ON RELOAD, WHICH IS WHEN IT WAS WANTED. This panel, and with it
+          the only Upload to Amazon button on the page, was drawn from a piece
+          of state set by pressing Launch. Refresh the tab and it vanished, so
+          a creator coming back to a launched batch found nothing to press and
+          no sign Amazon was ever part of it. The batch's own state says it was
+          launched, and that survives a reload. */}
+      {(launched || batch.state === 'launched' || batch.state === 'launching') && (() => {
+        // WHAT THE ROWS SAY, NOT WHAT THE LAUNCH CALL PROMISED. This panel used
+        // `launched.scheduled`, a number captured from the launch reply and
+        // never revisited, so it read "1 video scheduled" in green above a
+        // board reading "Cannot go" for that same video.
+        const out = launchOutcome(items as unknown as ItemRow[])
+        // THE TIMES COME FROM THE ROWS TOO when this is a reload rather than a
+        // press, for the same reason the counts do.
+        const live = items
+          .filter((i) => (i.state === 'scheduled' || i.state === 'published') && i.publish_at)
+          .map((i) => String(i.publish_at)).sort()
+        const firstAt = launched?.firstAt ?? live[0] ?? null
+        const lastAt = launched?.lastAt ?? live[live.length - 1] ?? null
+        const shade = out.tone === 'warn' ? '#d97706' : out.tone === 'busy' ? '#0EA5A4' : '#10B981'
+        const when = (iso: string) =>
+          new Intl.DateTimeFormat('en-GB', { timeZone: batch.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
+        return (
+        <div className="rounded-2xl border p-4" style={{ borderColor: shade, background: `${shade}12` }}>
+          <p className="text-[13.5px] font-semibold flex items-center gap-1.5" style={{ color: shade }}>
+            {out.tone === 'warn' ? <AlertTriangle size={14} /> : out.tone === 'busy' ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            {out.headline}
           </p>
-          {launched.firstAt && launched.lastAt && (
+          {/* THE TIMES ONLY WHEN THERE IS SOMETHING TO TIME. Printing the
+              schedule under a batch where nothing published is the plan
+              reported as the result, one line lower down. */}
+          {out.onYouTube > 0 && firstAt && lastAt && (
             <p className="text-[12.5px] mt-1" style={muted}>
-              First on {new Intl.DateTimeFormat('en-GB', { timeZone: batch.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(launched.firstAt))},
-              last on {new Intl.DateTimeFormat('en-GB', { timeZone: batch.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(launched.lastAt))}.
+              {firstAt === lastAt
+                ? `Public on ${when(firstAt)}.`
+                : `First on ${when(firstAt)}, last on ${when(lastAt)}.`}
+            </p>
+          )}
+          {out.blocked > 0 && (
+            <p className="text-[12.5px] mt-1" style={muted}>
+              The board below says what stopped each one, and Try again puts it back in the queue.
             </p>
           )}
 
-          {/* ── THE TWO SIDES ARE NOT ON THE SAME CLOCK ──────────────────────
-              This box named the YouTube schedule and then said Amazon needed
-              this tab open, which read as "everything happens on the 23rd".
-              It does not: the file reaches YouTube within a minute of Launch
-              and Amazon starts from that moment. Only YouTube GOING PUBLIC
-              waits for the time. Two headings, because one paragraph covering
-              both is what made them look like one thing. */}
+          {/* ── THE TWO SIDES ARE NOT ON THE SAME CLOCK, AND ONE IS MANUAL ───
+              This box said "Amazon: straight away" and then, three lines on,
+              that Amazon needed this tab open. Both sentences were in view at
+              once and only one of them could be true. Nothing about Amazon is
+              automatic: SCOUT drives the creator's own signed-in Creator
+              account from this tab, and the heading now says so. */}
           <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>
             <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
-              <p className="text-[12px] font-semibold" style={text}>YouTube: on your schedule</p>
+              <p className="text-[12px] font-semibold" style={text}>YouTube: automatic</p>
               <p className="text-[11.5px] mt-1" style={muted}>
-                Each video is uploaded now and kept private, and YouTube makes it public at the time you picked.
+                Each video is uploaded for you and kept private, and YouTube makes it public at the time you picked. Nothing to press.
               </p>
             </div>
             <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
-              <p className="text-[12px] font-semibold" style={text}>Amazon: straight away</p>
+              <p className="text-[12px] font-semibold" style={text}>Amazon: you press the button</p>
               <p className="text-[11.5px] mt-1" style={muted}>
-                Not on the schedule at all. Each storefront gets its listing as soon as its translation and dub are done. Amazon takes 20 a day on the US store and 10 a day on each other one, which is its rule, not ours.
+                It is not on the schedule and it does not run on its own. When a video is on YouTube, pressing Upload sends it to the countries this batch chose, through SCOUT in this tab. Amazon takes 20 a day on the US store and 10 a day on each other one, which is its rule, not ours.
               </p>
             </div>
           </div>
 
-          {/* THE UPLOAD ITSELF, from here. This box used to say your Amazon
-              stores needed this tab open, and that was not true of this page:
-              it used SCOUT to check your sign-in and never uploaded anything.
-              Making the sentence true was the better of the two fixes. */}
+          {/* THE REASON BEFORE THE PRESS. This button used to be live whatever
+              the batch was doing, and told you only afterwards, in a toast,
+              that there was nothing for it to send. */}
           <div className="mt-3 flex items-center gap-3 flex-wrap">
             <button
               onClick={() => void uploadToAmazon()}
-              disabled={busy === 'amazon'}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-60"
+              disabled={busy === 'amazon' || !!out.amazonBlocker}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-45"
               style={{ background: '#0EA5A4' }}>
               {busy === 'amazon' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              Upload to Amazon now
+              {busy === 'amazon' ? 'Sending to Amazon…' : `Upload to Amazon (${batch.markets.length} ${batch.markets.length === 1 ? 'country' : 'countries'})`}
             </button>
-            <span className="text-[11.5px]" style={muted}>
-              Through SCOUT, in your own logged-in Creator account, so this one needs the tab open.
+            <span className="text-[11.5px] min-w-0 flex-1" style={out.amazonBlocker ? { color: '#d97706' } : muted}>
+              {out.amazonBlocker
+                ?? `${batch.markets.map((m) => m.country).join(', ')}. SCOUT uses your own signed-in Creator account, so keep this tab open while it runs.`}
             </span>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ── EVERY DECISION, IN ONE PLACE, BEFORE THE IRREVERSIBLE BUTTON ────
           The settings are spread over six collapsed steps, and the moment
