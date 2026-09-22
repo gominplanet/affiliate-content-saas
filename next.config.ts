@@ -107,6 +107,31 @@ const nextConfig: NextConfig = {
       { source: '/studio', destination: '/co-pilot', permanent: true },
     ]
   },
+  // ── /freeguide → the static file in public/ ───────────────────────────────
+  //
+  // The free Amazon Influencer guide is ONE self-contained HTML file with its
+  // own inline CSS and JS, its own <title>, description, canonical and Open
+  // Graph tags. It is not a React page and must not become one: rebuilding it
+  // as JSX would mean re-styling it, and the root layout's metadata would sit
+  // on top of the tags it already carries.
+  //
+  // A file at public/freeguide/index.html is served by Next at
+  // /freeguide/index.html and nowhere else, so this rewrites the clean URL onto
+  // it. A rewrite and not a redirect, so the address bar keeps /freeguide and
+  // the canonical tag in the file agrees with what the visitor sees.
+  //
+  // /freeguide/ with the trailing slash is handled before this, by Next's own
+  // trailing-slash normalisation, which 308s it to /freeguide.
+  //
+  // MIDDLEWARE RUNS FIRST. A rewrite here cannot help a request the auth gate
+  // has already bounced to /login, which is why '/freeguide' is also in
+  // publicPaths in middleware.ts. That ordering has caught this codebase out
+  // before: see the note about mvpl.ink below.
+  async rewrites() {
+    return [
+      { source: '/freeguide', destination: '/freeguide/index.html' },
+    ]
+  },
   // NOTE: the Passport Links short domain (mvpl.ink/<code> → /go/<code>) is
   // handled in middleware.ts, not here — it must run BEFORE the auth gate, and a
   // next.config rewrite runs after middleware, so a logged-out clicker was being

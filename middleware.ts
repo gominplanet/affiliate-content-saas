@@ -110,6 +110,13 @@ const publicPaths = [
   // thinks the signup failed.
   '/newsletter-confirmed',
   '/newsletter-unsubscribed',
+  // The free Amazon Influencer guide, a static file served from public/ through
+  // a rewrite in next.config. It is a lead magnet: every single person it is
+  // written for is logged out, which is the exact case the default (gate it)
+  // gets backwards, and the same mistake that spent ad budget on /login
+  // bounces for /amazon-influencer. Segment matching means this also covers
+  // /freeguide/index.html, which is what the rewrite actually asks for.
+  '/freeguide',
   // Help pages support sends to people mid-problem. Someone whose Instagram
   // connection just broke is not necessarily signed in when they open the link,
   // and a support link that lands on /login is worse than no link.

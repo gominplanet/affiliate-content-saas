@@ -1,0 +1,1486 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="description" content="A free Amazon Influencer Program course from Seb &amp; Michelle of Gominplanet: how we built a multiple six-figure business from product reviews, and what works after the 2026 changes."><link rel="canonical" href="https://mvpaffiliate.io/freeguide"><meta property="og:type" content="article"><meta property="og:url" content="https://mvpaffiliate.io/freeguide"><meta property="og:title" content="There Is No Shortcut: the free Amazon Influencer guide"><meta property="og:description" content="The Amazon Influencer playbook from Seb &amp; Michelle of Gominplanet. Free, no fluff, updated for 2026."><meta name="twitter:card" content="summary_large_image"><title>No Shortcut Playbook</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@500;700&display=swap"><style>body{margin:0}:root{
+  --bg:#EEF1F5; --surface:#FFFFFF; --ink:#11151D; --muted:#566070; --line:#D5DBE4;
+  --accent:#2340E8; --accent-ink:#FFFFFF; --accent-soft:#E3E8FF;
+  --marker:#FFD640; --marker-soft:#FFF6D1; --marker-ink:#3A2E00;
+  --myth:#C8322F; --myth-soft:#FCEBEA; --ok:#1C7C4A;
+  --display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D1017; --surface:#151A24; --ink:#E7EBF2; --muted:#9AA4B5; --line:#2A3242;
+  --accent:#8A9BFF; --accent-ink:#0D1017; --accent-soft:#1D2440;
+  --marker:#FFD640; --marker-soft:#2A2410; --marker-ink:#FFE89A;
+  --myth:#FF7A73; --myth-soft:#2D1718; --ok:#5BD08F;
+}}
+:root[data-theme="dark"]{
+  --bg:#0D1017; --surface:#151A24; --ink:#E7EBF2; --muted:#9AA4B5; --line:#2A3242;
+  --accent:#8A9BFF; --accent-ink:#0D1017; --accent-soft:#1D2440;
+  --marker:#FFD640; --marker-soft:#2A2410; --marker-ink:#FFE89A;
+  --myth:#FF7A73; --myth-soft:#2D1718; --ok:#5BD08F;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{background:var(--bg);color:var(--ink);font:17px/1.65 var(--body);-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-underline-offset:3px}
+a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+.draftbar{background:var(--marker);color:#241c00;font:600 13px/1.4 var(--mono);padding:8px 16px;text-align:center}
+.shell{max-width:1180px;margin:0 auto;padding-inline:20px;padding-block:0 40px}
+
+.hero{padding-block:56px 36px;border-bottom:3px solid var(--ink)}
+.eyebrow{font:700 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 18px}
+.hero h1{font-family:var(--display);font-weight:900;text-transform:uppercase;line-height:.86;
+  font-size:clamp(56px,11vw,132px);letter-spacing:-.01em;margin:0}
+.hero h1 span{display:block}
+.hero h1 span:last-child{color:var(--accent);font-style:italic;transform:skewX(-6deg);transform-origin:left}
+.lede{max-width:40em;font-size:clamp(17px,2vw,20px);margin:22px 0 20px;color:var(--ink)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 18px;font:500 13px/1.3 var(--mono);color:var(--muted)}
+.meta span+span::before{content:"/";margin-right:18px;color:var(--line)}
+.meta b{color:var(--ink)}
+.prog{display:flex;align-items:center;gap:14px;margin-top:22px;font:500 13px var(--mono);color:var(--muted)}
+.prog .bar{flex:0 1 260px;height:8px;background:var(--line);border-radius:99px;overflow:hidden}
+.prog .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+
+.layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:48px;margin-top:36px}
+.toc{position:relative}
+.toc details{position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px)}
+.toc summary{font:700 12px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);cursor:pointer;list-style:none;padding:6px 0}
+.toc summary::-webkit-details-marker{display:none}
+.toc ol{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:2px}
+.toc a{display:grid;grid-template-columns:1fr 18px;grid-template-rows:auto auto;column-gap:8px;padding:8px 10px;border-radius:8px;text-decoration:none;color:var(--ink);border-left:3px solid transparent}
+.toc a .k{font:500 11px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.toc a .t{grid-column:1;font-weight:700;font-size:15px;line-height:1.3}
+.toc a .tick{grid-column:2;grid-row:1/3;align-self:center;width:18px;height:18px;border-radius:50%;border:2px solid var(--line)}
+.toc a.is-done .tick{background:var(--ok);border-color:var(--ok);box-shadow:inset 0 0 0 3px var(--surface)}
+.toc a:hover{background:var(--surface)}
+.toc a.is-active{background:var(--surface);border-left-color:var(--accent)}
+
+main{min-width:0}
+.mod{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:40px clamp(20px,4vw,56px);margin-bottom:28px;scroll-margin-top:16px}
+.mod-h{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:8px}
+.kicker{font:700 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 10px}
+.mod-h h2{font-family:var(--display);font-weight:800;text-transform:uppercase;font-size:clamp(36px,5vw,54px);line-height:.95;margin:0;text-wrap:balance}
+.sum{color:var(--muted);margin:12px 0 0;font-size:17px}
+
+.prose{max-width:68ch}
+.prose h2{font-family:var(--display);font-weight:800;text-transform:uppercase;font-size:28px;line-height:1.05;margin:40px 0 10px;letter-spacing:.01em;text-wrap:balance}
+.prose h3{font-family:var(--display);font-weight:800;text-transform:uppercase;font-size:22px;margin:0 0 8px;letter-spacing:.02em}
+.prose p,.prose ul,.prose ol{margin:0 0 16px}
+.prose li{margin-bottom:6px}
+.prose strong{font-weight:700}
+
+.tbl{overflow-x:auto;margin:6px 0 22px;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:15px;min-width:420px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
+
+.verify{display:inline-block;font:700 10.5px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border-radius:99px;padding:5px 9px;vertical-align:2px;white-space:nowrap}
+
+.seb,.myth,.pending,.doit{border-radius:12px;padding:20px 22px;margin:24px 0}
+.seb>:last-child,.myth>:last-child,.pending>:last-child,.doit>:last-child{margin-bottom:0}
+.seb{background:var(--marker-soft);color:var(--ink);border:2px solid var(--marker);position:relative;padding-top:34px}
+.seb::before{content:"Seb & Michelle";position:absolute;top:-1px;left:18px;background:var(--marker);color:#241c00;font:700 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;padding:6px 10px;border-radius:0 0 6px 6px}
+.myth{background:var(--myth-soft);border-left:5px solid var(--myth)}
+.myth p:first-child strong{color:var(--myth)}
+.pending{border:2px dashed var(--line);color:var(--muted);font-size:15px}
+.pending strong{color:var(--ink)}
+.doit{background:var(--ink);color:var(--bg)}
+.doit h3{color:var(--marker)}
+.doit ol{padding-left:22px}
+.doit a{color:var(--marker)}
+
+.done{display:flex;align-items:center;gap:10px;margin-top:28px;padding-top:20px;border-top:1px solid var(--line);font:700 14px var(--mono);cursor:pointer;color:var(--muted)}
+.done input{width:20px;height:20px;accent-color:var(--ok)}
+.done:has(input:checked){color:var(--ok)}
+
+.cta{background:var(--accent);color:var(--accent-ink);border-radius:14px;padding:28px 26px;margin:32px 0 8px}
+.cta h3{color:var(--accent-ink);font-size:30px}
+.cta p{margin:0 0 16px}
+.cta small{opacity:.85;font-size:13px}
+.cta .btn{display:inline-block;background:var(--marker);color:#241c00;font:800 17px/1 var(--body);text-decoration:none;padding:16px 26px;border-radius:10px;margin:4px 0 14px}
+.cta .btn:hover{filter:brightness(1.05)}
+.cta .btn:focus-visible{outline:3px solid var(--accent-ink);outline-offset:3px}
+.foot{font-size:13px;color:var(--muted);padding:12px 4px 0}
+
+@media (max-width:900px){
+  .layout{grid-template-columns:1fr;gap:20px}
+  .toc details{position:static;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+  .toc summary::after{content:" ▾"}
+}
+@media (max-width:560px){
+  table{min-width:0}
+  thead{display:none}
+  tr{display:block;padding:12px 14px;border-bottom:1px solid var(--line)}
+  tr:last-child{border-bottom:0}
+  td{display:block;border:0;padding:2px 0}
+  td:first-child{min-width:0;margin-bottom:2px}
+}
+@media (max-width:520px){
+  body{font-size:16px}
+  .hero{padding-block:36px 26px}
+  .mod{padding:28px 18px}
+  .meta span+span::before{display:none}
+}
+
+@page{size:Letter;margin:18mm 16mm}
+@media print{
+  :root{--bg:#fff;--surface:#fff;--ink:#11151D;--muted:#566070;--line:#D5DBE4;--accent:#2340E8;--accent-soft:#E3E8FF;--marker-soft:#FFF6D1;--myth-soft:#FCEBEA}
+  body{font-size:11.5pt;background:#fff}
+  .draftbar,.toc,.prog,.done{display:none!important}
+  .shell{max-width:none;padding:0}
+  .layout{display:block;margin:0}
+  .hero{min-height:230mm;display:flex;flex-direction:column;justify-content:center;border-bottom:6px solid var(--ink);break-after:page}
+  .hero h1{font-size:92pt}
+  .mod{border:0;padding:0;margin:0;break-before:page;border-radius:0}
+  .seb,.myth,.doit,.pending,.tbl,tr{break-inside:avoid}
+  .doit{background:#11151D;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .cta,.cta .btn,.seb,.myth,.verify,th,.seb::before{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pending{display:none}
+  a{color:var(--ink)}
+  .prose h2{break-after:avoid}
+}
+</style></head><body>
+
+<div class="shell">
+<header class="hero">
+  <p class="eyebrow">Free course · Amazon Influencer Program · 2026 edition</p>
+  <h1><span>There is</span> <span>no shortcut.</span></h1>
+  <p class="lede">The Amazon Influencer playbook from Seb &amp; Michelle of Gominplanet: how we built a multiple six-figure business from product reviews, and exactly what works now after the 2026 changes.</p>
+  <div class="meta"><span>11 modules</span><span>~75 min read</span><span>Presented by <a href="#mvp"><b>MVP Affiliate</b></a></span></div>
+  <div class="prog" aria-live="polite"><div class="bar"><i id="progbar"></i></div><span id="progtxt">0 of 11 modules done</span></div>
+</header>
+<div class="layout">
+<nav class="toc" aria-label="Course modules">
+  <details id="tocd" open><summary>Course modules</summary><ol><li><a href="#start" data-id="start"><span class="k">Module 0</span><span class="t">Start here</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#money" data-id="money"><span class="k">Module 1</span><span class="t">How the money actually works</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#approved" data-id="approved"><span class="k">Module 2</span><span class="t">Getting approved and unlocked</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#videos" data-id="videos"><span class="k">Module 3</span><span class="t">Videos that get approved and sell</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#products" data-id="products"><span class="k">Module 4</span><span class="t">Picking products that pay</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#sourcing" data-id="sourcing"><span class="k">Module 5</span><span class="t">Getting products without getting burned</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#cc" data-id="cc"><span class="k">Module 6</span><span class="t">Creator Connections done right</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#deals" data-id="deals"><span class="k">Module 7</span><span class="t">Paid brand deals and UGC</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#traffic" data-id="traffic"><span class="k">Module 8</span><span class="t">Offsite traffic and the calendar</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#business" data-id="business"><span class="k">Module 9</span><span class="t">Run it like a business</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#plan" data-id="plan"><span class="k">The plan</span><span class="t">Your first 90 days</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#sources" data-id="sources"><span class="k">Appendix</span><span class="t">Sources</span><span class="tick" aria-hidden="true"></span></a></li>
+<li><a href="#mvp" data-id="mvp"><span class="k">Next step</span><span class="t">The tool we built for this</span><span class="tick" aria-hidden="true"></span></a></li></ol></details>
+</nav>
+<main>
+<section class="mod" id="start">
+<header class="mod-h"><p class="kicker">Module 0</p><h2>Start here</h2>
+<p class="sum">Who we are, what this course is, and what it isn&#x27;t.</p></header>
+<div class="prose"><p>This is the course we wish existed when Amazon invited us into the Influencer Program. It's free, and it's built from two things: what Michelle and I have actually done to turn this into a multiple six-figure business, and everything that changed in 2025 and 2026 (and a lot changed).</p>
+<p>You won't find "passive income" promises here. The Amazon Influencer Program is a real business. It can pay very well, it takes real work, and Amazon changes the rules often. If someone tells you it's easy money, they're usually selling you a course that costs $997.</p>
+<div class="seb">
+<p><strong>Our story, short version.</strong> We actually started on the other side of Amazon, as sellers, back in 2016. Then Michelle and I started Gominplanet as a travel account on Instagram, and it did well. We'd been Amazon Associates for years and made a few bucks here and there with links. No blog, no website, just the Instagram. Around 2019–2020, Amazon invited us into the Influencer Program. I didn't even know what it was.</p>
+<p>It was right up our alley, though. We already knew how to shoot video and talk to camera, and doing reviews looked fun. Back then almost nobody was in the program. Our first month we made about 79 videos and made a few thousand dollars.</p>
+<p>Let's be real: that was a different era. You won't get those numbers from 79 videos today. But here's what happened after: a few thousand, then consistently over $5K a month, then over $10K a month within six or seven months. We haven't dropped under that since. Our best months got close to $30K. (Those are commission numbers, before taxes and before what we spend on products.)</p>
+<p>Every story is different. What moved the needle for us wasn't luck. It was volume, not being precious about niches, and reinvesting our profits into products we'd researched. That's what this course is about.</p>
+</div>
+<h2>Who this is for</h2>
+<ul>
+<li>You just got approved (or you're about to apply) and you're thinking "OK... now what?"</li>
+<li>You've uploaded some videos and you're making $0 to a few hundred dollars a month, and you don't know why.</li>
+<li>You want to go from "side hustle" to "this pays real bills," including brand deals.</li>
+</ul>
+<h2>How to use this course</h2>
+<p>Go in order the first time. Every module ends with a short <strong>Do this</strong> list. Don't skip those; reading about videos doesn't make you money, uploading them does.</p>
+<p>A few labels you'll see:</p>
+<ul>
+<li><span class="verify">Check your dashboard</span> means this is a rule or number Amazon changes. We've sourced it as of September 2026, but always confirm in Associates Central or the Amazon app before you bet money on it.</li>
+<li><strong>Seb &amp; Michelle</strong> boxes are our personal stories and numbers. Everything else is how we do it and what we teach, with links to Amazon's own pages where it matters.</li>
+<li><strong>Myth / Reality</strong> boxes clear up the stuff we see in Facebook groups every single day.</li>
+</ul>
+<h2>What this course won't do</h2>
+<p>It won't teach you tricks that break Amazon's rules. We've been doing this for years because we protect our account. Buying through your own links, disguising where your links go, fake reviews, and "accept everything and post nothing" might work for a month. Then they cost you everything.</p>
+<div class="doit">
+<h3>Do this</h3>
+<ol>
+<li>Bookmark this page. You'll come back to it.</li>
+<li>Bookmark the pages you'll use every day: <a href="https://affiliate-program.amazon.com/home" target="_blank" rel="noopener">Associates Central</a> (your dashboard), the <a href="https://affiliate-program.amazon.com/help/operating/agreement" target="_blank" rel="noopener">Operating Agreement</a> and the <a href="https://affiliate-program.amazon.com/help/operating/policies" target="_blank" rel="noopener">Program Policies</a>.</li>
+<li>Write down your real weekly time budget (hours) and your monthly product budget (dollars, even if it's $0). You'll need both numbers in Module 4.</li>
+<li>Read Module 1 before you film anything else.</li>
+</ol>
+</div></div><label class="done"><input type="checkbox" id="done-start" data-id="start"> Mark this module done</label></section><section class="mod" id="money">
+<header class="mod-h"><p class="kicker">Module 1</p><h2>How the money actually works</h2>
+<p class="sum">The five ways you get paid, the real per-video math, and what the 2026 changes did.</p></header>
+<div class="prose"><p>Most beginners can't explain where their money comes from. That's why they can't fix it when it stops. Learn this module and you'll be ahead of 80% of the people in those Facebook groups.</p>
+<h2>The five income streams</h2>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Stream</th>
+<th>How you earn it</th>
+<th>What it pays</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Onsite commissions</strong></td>
+<td>Amazon shows your video (or idea list/photo) on a product page, a shopper watches, then buys that product.</td>
+<td>Onsite rates. These are <strong>lower</strong> than normal link rates (see table below).</td>
+</tr>
+<tr>
+<td><strong>Offsite link commissions</strong></td>
+<td>Someone clicks <em>your</em> link (storefront, YouTube, Pinterest, a DM) and buys within 24 hours.</td>
+<td>Standard Associates rates, 1–10% by category.</td>
+</tr>
+<tr>
+<td><strong>Creator Connections (CC) bonuses</strong></td>
+<td>A brand runs a campaign that pays an extra commission (often 10–20%+) on top of your base rate.</td>
+<td>Paid with your normal earnings.</td>
+</tr>
+<tr>
+<td><strong>Bonuses and bounties</strong></td>
+<td>Amazon promos (Prime sign-ups, Audible trials, occasional category boosts around Prime Day).</td>
+<td>Flat amounts or temporary higher rates.</td>
+</tr>
+<tr>
+<td><strong>Paid brand deals</strong></td>
+<td>A brand pays you directly for a video, photos, or content rights.</td>
+<td>Whatever you negotiate. Not Amazon money.</td>
+</tr>
+</tbody>
+</table></div>
+<p>The pros stack all five. Beginners usually only think about the first one.</p>
+<h2>Onsite rates (the ones nobody tells you about)</h2>
+<p>These are Amazon's published <a href="https://affiliate-program.amazon.com/help/node/topic/G4ARBJC7Z2NK48CA" target="_blank" rel="noopener">onsite rates (Table A)</a>. They're what you earn when a shopper buys after watching your video on the product page. <span class="verify">Check your dashboard</span></p>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Onsite rate</th>
+<th>Categories (examples)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4%</td>
+<td>Luxury Beauty</td>
+</tr>
+<tr>
+<td>3%</td>
+<td>Furniture, Home, Home Improvement, Lawn &amp; Garden, Pets</td>
+</tr>
+<tr>
+<td>2%</td>
+<td>Beauty, Pantry, Musical Instruments, Business &amp; Industrial</td>
+</tr>
+<tr>
+<td>1.75%</td>
+<td>Tools</td>
+</tr>
+<tr>
+<td>1.25%</td>
+<td>Kitchen, Sports, Automotive, Health &amp; Personal Care</td>
+</tr>
+<tr>
+<td>1%</td>
+<td>Apparel, Shoes, Jewelry, Headphones, most "other" categories</td>
+</tr>
+<tr>
+<td>0.75%</td>
+<td>Outdoors</td>
+</tr>
+<tr>
+<td>0.5%</td>
+<td>Toys, Baby, Books, Grocery, PC, TVs, Video Games</td>
+</tr>
+</tbody>
+</table></div>
+<p>Read that table again. A $20 toy at 0.5% pays you <strong>10 cents</strong> per onsite sale. A $150 patio set at 3% pays you <strong>$4.50</strong>. Same effort to film. This is why product selection (Module 4) matters more than how pretty your video is.</p>
+<h2>The per-video math</h2>
+<p>Here's the benchmark we use to judge a catalog in 2026. This counts <strong>all</strong> your Amazon earning streams (onsite, links, Creator Connections, bounties) during a regular month like March, April or May:</p>
+<ul>
+<li><strong>$1 per video per month:</strong> low to average.</li>
+<li><strong>$2 per video per month:</strong> average to high.</li>
+<li><strong>$3–4 per video per month:</strong> high.</li>
+</ul>
+<p>Anything above that is an outlier, not a plan.</p>
+<p>How long a video earns depends almost entirely on the product. Pick something that disappears from Amazon in two months and the video dies with it. Pick an evergreen product and it can pay you daily for years: we have staple products we filmed years ago that are still earning today. Module 4 covers how to spot them.</p>
+<p>That means <strong>income ≈ (live, earning videos) × (average per video)</strong>. You can move either lever: more videos, or better videos on better products. The people stuck at $100 a month usually have plenty of videos on products that can't pay.</p>
+<div class="myth">
+<p><strong>Myth:</strong> "Onsite videos earn your normal commission plus a bonus."</p>
+<p><strong>Reality:</strong> Onsite rates are <em>lower</em> than link rates, and since April 14, 2026 they only pay on the exact product (same ASIN variant) the shopper watched. The bonus comes from Creator Connections, not from being onsite.</p>
+</div>
+<h2>What changed in 2026</h2>
+<p>A lot of people panicked this year. Here's what actually happened, in plain words:</p>
+<ul>
+<li><strong>April 14, 2026, new <a href="https://affiliate-program.amazon.com/help/operating/agreement" target="_blank" rel="noopener">Operating Agreement</a></strong> (<a href="https://affiliate-program.amazon.com/help/operating/compare" target="_blank" rel="noopener">see exactly what changed</a>). Onsite commissions now pay only on "direct qualifying purchases" (the same product variant you featured). The old "halo" (earning on everything else in the shopper's cart) is gone <strong>for onsite</strong>. Offsite link clicks still appear to earn on the other items in the cart.</li>
+<li><strong>Paid ads don't count.</strong> Purchases that come from paid or boosted ads pointing to Amazon no longer qualify.</li>
+<li><strong>180-day window.</strong> An item has to ship and be paid for within 180 days to earn.</li>
+<li><strong>"Original content" rule.</strong> Your content needs real commentary, analysis, or transformation. Low-effort AI filler is a risk now.</li>
+<li><strong>Reporting got thinner</strong> (around March 9, 2026). Less order-level detail in the dashboard.</li>
+<li><strong>Rate cuts in the news</strong> (Adweek, May 2026) mostly hit big publishers with custom deals, not the standard public rate table.</li>
+</ul>
+<div class="seb">
+<p><strong>Halo, explained for anyone new.</strong> Halo sales were the heyday of onsite and Creator Connections. That's over, so don't build around it. Today you get paid on the sales you directly influence, from a video or a link.</p>
+<p>On <strong>onsite</strong>, "directly" means it: someone watches your video (in our experience, at least about 30 seconds of it) and buys that product right away, without watching or clicking anything else. Then you get the commission.</p>
+<p>On <strong>offsite</strong>, halo still seems to exist. If my blog link sends someone to Amazon and they add more items and check out, I can potentially earn on the whole cart. That's one more reason to build offsite traffic (Module 8).</p>
+</div>
+<p>Bottom line: the lazy version of this business got harder. The real version (good products, good videos, CC, brand deals) still works.</p>
+<div class="seb">
+<p><strong>Our take on the "is it dead?" panic.</strong> We've watched this cycle before. In 2022, a big wave of people joined after some gurus mass-marketed the program. Most of those accounts were gone or dormant within 18 months. We expect the 2026 wave to churn the same way. That's not a reason to quit. It's a reason to build properly, because the people who stay are the ones who get paid.</p>
+</div>
+<h2>Our revenue mix right now</h2>
+<div class="seb">
+<p>Here's roughly where our commission income comes from as we write this in <strong>September 2026</strong>, which is a slower month for us:</p>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Stream</th>
+<th>Share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Creator Connections</td>
+<td>47%</td>
+</tr>
+<tr>
+<td>Onsite</td>
+<td>35%</td>
+</tr>
+<tr>
+<td>Brand deals</td>
+<td>10%</td>
+</tr>
+<tr>
+<td>Offsite links</td>
+<td>5%</td>
+</tr>
+<tr>
+<td>YouTube</td>
+<td>3%</td>
+</tr>
+</tbody>
+</table></div>
+<p>That doesn't include resale (Module 4). Resale is extra, and more and more of that cash is what we reinvest into products, so we don't have to touch commission money.</p>
+<p><strong>How it shifted:</strong> before April 2026, onsite was a little higher, and CC and onsite were almost 50/50. CC grew over the summer of 2026. In Q4 we expect onsite, offsite and YouTube to grow a lot; brand deals will probably stay about the same.</p>
+<p><strong>What we're working on:</strong> growing YouTube and offsite. We recommend everyone does, because traffic you own brings way more stability to your numbers than depending on Amazon's placement alone.</p>
+</div>
+<div class="doit">
+<h3>Do this</h3>
+<ol>
+<li>Open the <a href="https://affiliate-program.amazon.com/help/node/topic/G4ARBJC7Z2NK48CA" target="_blank" rel="noopener">onsite rate table</a>. Screenshot it and keep it handy.</li>
+<li>If you already have videos: divide last month's onsite earnings by your number of live videos. That's your per-video number. Write it down; we'll improve it.</li>
+<li>Pick your top 3 earning categories from the table and keep them in mind for Module 4.</li>
+</ol>
+</div></div><label class="done"><input type="checkbox" id="done-money" data-id="money"> Mark this module done</label></section><section class="mod" id="approved">
+<header class="mod-h"><p class="kicker">Module 2</p><h2>Getting approved and unlocked</h2>
+<p class="sum">Associates vs Influencer, applying, the onsite review, and your first seven days.</p></header>
+<div class="prose"><p>"I got approved, now what?" is the most common question in every beginner group. Let's clear it up.</p>
+<h2>Associates vs Influencer: what's the difference?</h2>
+<ul>
+<li><strong>Amazon Associates</strong> is the affiliate program: you get tracking links and earn when people buy through them. To stay in, Associates need <strong>3 qualified sales within the first 180 days</strong> (your own orders don't count). <a href="https://affiliate-program.amazon.com/help/node/topic/G8TW5AE9XL2VX9VM" target="_blank" rel="noopener">Amazon's rule is here</a>.</li>
+<li><strong>The Amazon Influencer Program</strong> sits on top of that. It's for people with a social media presence. You get a <strong>storefront</strong> (amazon.com/shop/yourname), idea lists, the ability to upload <strong>video reviews</strong> that can appear on product pages (onsite), livestreams, and access to <strong>Creator Connections</strong>.</li>
+</ul>
+<p>Since April 14, 2026, Amazon's agreement says completing registration gives access to a Storefront and a Unique Creator Link, not only for Influencer Program members. The lines are blurring. What still separates serious creators is the onsite video access. <span class="verify">Check your dashboard</span></p>
+<h2>Applying</h2>
+<p>Apply here: <strong><a href="https://affiliate-program.amazon.com/influencers" target="_blank" rel="noopener">Amazon Influencer Program sign-up</a></strong>. If you're not an Associate yet, you can <a href="https://affiliate-program.amazon.com/" target="_blank" rel="noopener">join Amazon Associates here</a>.</p>
+<ul>
+<li><strong>Platforms Amazon accepts:</strong> YouTube, Instagram, TikTok, Facebook and Pinterest (<a href="https://www.aboutamazon.com/news/retail/how-amazon-influencer-program-works" target="_blank" rel="noopener">Amazon's own overview</a>).</li>
+<li><strong>Follower minimum:</strong> Amazon doesn't publish one. They look at content quality, engagement, and follower count together. Creators get approved with small but real audiences; engagement matters more than size.</li>
+<li><strong>Timing:</strong> some platforms get a decision almost instantly; others take days or weeks.</li>
+<li><strong>Rejected?</strong> Amazon says you can reapply. Fix what's weak first: post consistently for a few weeks, make sure your content looks like product/lifestyle content, and apply with your strongest account.</li>
+</ul>
+<h2>The part everyone misses: two store IDs</h2>
+<p>When you're approved you get <strong>two</strong> IDs:</p>
+<ol>
+<li>Your normal <strong>Associates tracking ID</strong> (for links).</li>
+<li>A separate <strong>Onsite Store ID</strong> (it starts with "onamz").</li>
+</ol>
+<p><strong>You have to add your payment and tax info to the Onsite Store ID separately.</strong> It doesn't copy over. We see people every week asking why they have onsite sales and no money. This is usually why. In <a href="https://affiliate-program.amazon.com/home" target="_blank" rel="noopener">Associates Central</a>, switch the store dropdown at the top to your onsite ID to see those earnings. (<a href="https://affiliate-program.amazon.com/help/node/topic/GV7VUCCSS8MQFSQT" target="_blank" rel="noopener">Amazon's explanation of onsite earnings and the Onsite Store ID</a>.)</p>
+<h2>Unlocking onsite: the 3-video review</h2>
+<p>To get your videos placed on product pages, you submit <strong>3 video reviews</strong> that Amazon reviews by hand.</p>
+<ul>
+<li>Review can take anywhere from a few days to several weeks.</li>
+<li><strong>Don't delete videos while they're in review.</strong> It can reset the clock.</li>
+<li><strong>You get 3 rounds, and that's it.</strong> If you're not approved after three submissions, you're out, and you'd have to start over with a new account. So focus and get it right the first time. It isn't hard: pick the right products (Module 4) and follow the video rules (Module 3).</li>
+<li>Treat these 3 like a job interview. Pick simple products you can demo clearly, with good light and clean audio. Module 3 covers exactly what gets rejected.</li>
+</ul>
+<div class="seb">
+<p><strong>About the "3 sales" rule.</strong> You need at least 3 qualifying sales early on (Amazon's rule says within your first 180 days) so your Associates account stays valid and active. That's what validates your onsite side too. What Amazon is looking for, and always has been, is someone who brings at least a little bit of their own audience to Amazon from offsite.</p>
+<p>So don't treat it as a box to tick. Share your storefront and your first videos on your social account, and get those first real sales from people who actually follow you. Your own purchases, and sales from paid ads, don't count.</p>
+</div>
+<div class="seb">
+<p><strong>Followers aren't the point.</strong> Our Instagram peaked around 20–25K followers when we got in. But followers aren't why you get invited or accepted. It's engagement. Focus on making content people actually react to, on whatever platform you use. A small account with real comments and saves beats a big account nobody talks to.</p>
+</div>
+<h2>Your first 7 days after approval</h2>
+<ol>
+<li><strong>Set up both IDs:</strong> payment + tax interview on your Associates ID <em>and</em> your Onsite Store ID.</li>
+<li><strong>Download the Amazon Shopping app</strong> (<a href="https://apps.apple.com/us/app/amazon-shopping/id297606951" target="_blank" rel="noopener">iPhone</a> / <a href="https://play.google.com/store/apps/details?id=com.amazon.mShop.android.shopping" target="_blank" rel="noopener">Android</a>) and find Creator Central (the mobile creator hub). You'll use it to upload and check daily earnings.</li>
+<li><strong>Set up your storefront:</strong> profile photo, a one-line bio that says what you review, your social links.</li>
+<li><strong>Make 3 idea lists</strong> from things you actually own and use ("Our kitchen", "Travel gear we use", and so on). Idea lists can earn too.</li>
+<li><strong>Film your 3 onsite test videos</strong> (Module 3 first!). Simple products, clear demos, no prices.</li>
+<li><strong>Add your disclosure</strong> to your social bios (<a href="https://affiliate-program.amazon.com/help/node/topic/GPXFHVYZMTGPUMPE" target="_blank" rel="noopener">Amazon's disclosure rules</a>): "As an Amazon Associate I earn from qualifying purchases."</li>
+<li><strong>Start a simple tracking sheet:</strong> date, product, ASIN, category, price, video status. You'll thank yourself at video 200.</li>
+</ol>
+<div class="doit">
+<h3>Do this</h3>
+<ol>
+<li>Log into <a href="https://affiliate-program.amazon.com/home" target="_blank" rel="noopener">Associates Central</a> and confirm payment and tax info on <strong>both</strong> store IDs today.</li>
+<li>Pick your 3 test products: simple, in stock, $20+, easy to demo, not clothing.</li>
+<li>Read Module 3 before you record them.</li>
+</ol>
+</div></div><label class="done"><input type="checkbox" id="done-approved" data-id="approved"> Mark this module done</label></section><section class="mod" id="videos">
+<header class="mod-h"><p class="kicker">Module 3</p><h2>Videos that get approved and sell</h2>
+<p class="sum">The rules, the rejection reasons, our filming formula step by step, and the gear we actually use.</p></header>
+<div class="prose"><p>You don't need a studio. Michelle and I came from video production, and we'll still tell you: a clean video with good light and clear audio beats a cinematic one with muddy sound. Amazon shoppers want to see the product working, and they want to hear a real person explain it.</p>
+<p>Before you film anything, read Amazon's own rules once, start to finish: the <a href="https://affiliate-program.amazon.com/help/operating/policies" target="_blank" rel="noopener">Associates Program Policies</a> and the video guidelines inside <a href="https://www.amazon.com/amazon-associates-influencer-university/b?ie=UTF8&amp;node=48482381011" target="_blank" rel="noopener">Creator University</a>. Ten minutes of reading saves you weeks of rejections.</p>
+<h2>What gets videos rejected</h2>
+<p>Most rejections come down to one of these:</p>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Rejection cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mentioning price, deals, discounts, shipping, "limited time"</td>
+<td>Never talk price. Re-record or cut it.</td>
+</tr>
+<tr>
+<td>Visible barcodes (UPC), price tags, shipping labels, addresses, license plates</td>
+<td>Cover or remove them before filming. We just Sharpie over barcodes.</td>
+</tr>
+<tr>
+<td>Anything that shows where you (or anyone else) are: house numbers, street signs, license plates</td>
+<td>Be careful shooting outdoors. Amazon won't allow anything that can locate you or anyone else.</td>
+</tr>
+<tr>
+<td>The product isn't clearly on screen</td>
+<td>Keep the product in frame. Show it in use.</td>
+</tr>
+<tr>
+<td>Tagging a product that isn't clearly in the video</td>
+<td>Tag only what you actually show.</td>
+</tr>
+<tr>
+<td>"Link in bio", URLs, asking people to follow/like/subscribe/comment</td>
+<td>Remove all calls to go anywhere or do anything.</td>
+</tr>
+<tr>
+<td>Asking for reviews</td>
+<td>Never.</td>
+</tr>
+<tr>
+<td>Music you don't have rights to</td>
+<td>No music. Your voice is the soundtrack.</td>
+</tr>
+<tr>
+<td>Medical or health claims ("cures", "lose 10 lbs")</td>
+<td>Describe what it does, not what it treats.</td>
+</tr>
+<tr>
+<td>Trashing competitor brands</td>
+<td>Compare features, not insults.</td>
+</tr>
+<tr>
+<td>Typos in the title or description</td>
+<td>Proofread.</td>
+</tr>
+<tr>
+<td>Poor audio or dark footage</td>
+<td>Fix your light and your mic (see gear below).</td>
+</tr>
+</tbody>
+</table></div>
+<p>Also: gifted products must be disclosed, kids on camera need to be relevant and supervised, and Amazon logos and service names don't belong in the video.</p>
+<p><strong>Specs:</strong> .mp4 or .mov, under 5 GB, longer than 5 seconds. Amazon doesn't require your face on camera, but we strongly recommend it (see below).</p>
+<h2>Words that get you rejected</h2>
+<p>Most of our rejections have come down to <strong>words</strong>. The ones that catch us most: <strong>safe, medical claims, Amazon, buy, purchase, deal and save</strong>. Keep all of these out of your videos, titles and descriptions:</p>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Words and phrases to avoid</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Safety claims</td>
+<td>safe, safe for kids, non-toxic, hypoallergenic, child-proof (unless you can back it up, leave it out)</td>
+</tr>
+<tr>
+<td>Medical and health</td>
+<td>cure, treat, heal, prevent, remedy, therapy, relieves pain, anxiety, depression, insomnia, arthritis, disease, doctor-recommended, FDA-approved, clinically proven, detox, weight loss, burns fat</td>
+</tr>
+<tr>
+<td>Bold claims you can't back up</td>
+<td>the best, #1, guaranteed, perfect, 100%, never breaks, lasts forever, better than [brand], miracle, life-changing results</td>
+</tr>
+<tr>
+<td>Buying words</td>
+<td>buy, purchase, order, add to cart, get yours</td>
+</tr>
+<tr>
+<td>Price and deals</td>
+<td>price, cheap, sale, discount, deal, save, save money, coupon, free shipping, limited time, Prime Day, Black Friday</td>
+</tr>
+<tr>
+<td>Calls to action</td>
+<td>link below, link in bio, click, buy now, follow, subscribe, like, comment, leave a review</td>
+</tr>
+<tr>
+<td>Amazon itself</td>
+<td>Amazon, Prime, Alexa or other Amazon service names (unless it's the actual product you're reviewing)</td>
+</tr>
+<tr>
+<td>Anything offensive</td>
+<td>slurs, crude language, insults about people or competitors</td>
+</tr>
+</tbody>
+</table></div>
+<p>Rule of thumb: describe what the product <strong>does</strong> and what <strong>you</strong> experienced. "It kept my coffee hot for about four hours" is fine. "The best mug on the market, guaranteed" isn't.</p>
+<div class="seb">
+<p><strong>How often we get rejected now:</strong> about one video for every 500 we make. As you get better, you catch yourself in the moment ("I just said that word") and reshoot the line right there, or cut it in editing.</p>
+<p>When a video does get rejected, we re-edit it and splice out whatever we think is the culprit. If we can't cut it cleanly, we just reshoot.</p>
+</div>
+<h2>Our filming formula</h2>
+<p>Use this structure on every review until you don't need to think about it. Our videos run anywhere from about <strong>a minute and a half to six or seven minutes</strong>, depending on the product. A quick, inexpensive product might get a minute or a minute and a half. A piece of tech that needs in-depth focus gets five or six minutes. Stretch or shrink the middle, never the open.</p>
+<h3>Before you hit record (5 minutes)</h3>
+<ul>
+<li><strong>Read the listing's Q&amp;A and the 3-star reviews.</strong> 3-star reviews are where buyers explain what they wish they'd known. Write down the top 2–3 questions. Those are your script.</li>
+<li><strong>Check the variant.</strong> Film the exact color and size you'll tag. Since 2026, onsite pays on the exact variant.</li>
+<li><strong>Clean the set.</strong> No boxes with labels, no clutter, nothing with an address or a price tag in frame.</li>
+<li><strong>Charge, clear space, light.</strong> Nothing kills a batch like a dead battery halfway through.</li>
+</ul>
+<h3>1. The open (first 3–5 seconds)</h3>
+<ul>
+<li><strong>Start on the product, already in frame.</strong> No intro, no "hey guys", no logo.</li>
+<li><strong>Say what it is and who it's for in one sentence.</strong> "This is a cordless stick vacuum for small apartments and pet hair."</li>
+<li><strong>Why it matters:</strong> the shopper decides in seconds whether to keep watching, and Amazon often pulls the thumbnail from the first frames. Onsite, you only get paid if they keep watching.</li>
+</ul>
+<h3>2. First look (10–15 seconds)</h3>
+<ul>
+<li><strong>Size and scale:</strong> hold it in your hand or next to something everyone knows (a phone, a mug).</li>
+<li><strong>Build and materials:</strong> tap it, flex it, show the finish up close.</li>
+<li><strong>What's included:</strong> lay out the accessories quickly. Don't do a 2-minute unboxing.</li>
+</ul>
+<h3>3. The demo (30–60 seconds, the part that sells)</h3>
+<ul>
+<li><strong>Use it for real, in the place it belongs.</strong> Vacuum the actual rug. Blend the actual smoothie. Put the dog bed where the dog sleeps.</li>
+<li><strong>Show the result:</strong> before and after, the clean floor, the finished drink.</li>
+<li><strong>Talk while you do it:</strong> what you're doing and what you notice. Short sentences.</li>
+<li><strong>Get close:</strong> buttons, settings, the part people are unsure about.</li>
+</ul>
+<h3>4. Answer the questions (15–30 seconds)</h3>
+<ul>
+<li><strong>Hit the 2–3 questions you pulled from the Q&amp;A and reviews.</strong> "A lot of people ask if it fits a queen bed. Here it is on ours."</li>
+<li><strong>Numbers help:</strong> battery life you measured, noise level, how long setup took.</li>
+</ul>
+<h3>5. The real cons (10–15 seconds)</h3>
+<ul>
+<li><strong>One or two actual downsides.</strong> "The cord's short, so you'll want an extension." It builds trust, and trust is what converts.</li>
+<li><strong>Keep it fair.</strong> If the product is bad, don't make the video. Move on.</li>
+</ul>
+<h3>6. The close (5–10 seconds)</h3>
+<ul>
+<li><strong>Who should buy it and who shouldn't.</strong> "Great for small spaces and pet hair. If you've got a big house with thick carpet, look at a stronger model."</li>
+<li><strong>Then stop.</strong> No "link below", no "follow me", no "let me know in the comments".</li>
+</ul>
+<h3>After you record</h3>
+<ul>
+<li><strong>Edit on a computer, not your phone.</strong> It's a lot faster.</li>
+<li><strong>Cut the dead air and flubs.</strong> When you mess up a line on camera, pause for 5 seconds and say it again. Don't restart the whole take.</li>
+<li><strong>Check audio before anything else.</strong> Bad audio gets rejected and doesn't convert.</li>
+<li><strong>Grab 3–5 still frames or photos</strong> while the set is up. You'll want them for thumbnails, idea lists and social.</li>
+<li><strong>Run it against the rejection table</strong> before you upload.</li>
+</ul>
+<h2>Show your face, shoot horizontal</h2>
+<div class="seb">
+<p><strong>We show our faces in 99.9% of our videos, and we highly recommend you do too.</strong> It creates a human connection, and in sales that matters a lot. Let's be clear about what this is: we're not just reviewing products here. We're selling products. A real face explaining a product sells it.</p>
+<p><strong>We only shoot horizontal for Amazon.</strong></p>
+</div>
+<h2>Gear: what we use</h2>
+<div class="seb">
+<p><strong>We started with an iPhone and a Sony FX3, and we loved it.</strong> But today we shoot <strong>exclusively on the DJI Osmo Pocket 3</strong>. Switching was the best decision we ever made for this business.</p>
+</div>
+<div class="seb">
+<p><strong>Why we switched.</strong> We shot on an iPhone for years. We film in batches, say 20 videos in one afternoon, and then I sit down at the computer to edit, because I don't edit on the phone and I don't recommend anyone does.</p>
+<p>The problem was getting the files off the phone. Phone video files are huge. AirDropping a batch took anywhere from 10 to 40 minutes depending on the connection. That was a huge waste of time.</p>
+<p>The other problem: phones are always trying to "improve" your footage with HDR and all the processing behind the lens. When you go from a shot of someone talking to a close-up of a product and back, that works against you. Shoot nonstop all afternoon, open it in your editor, and the shot isn't what you wanted.</p>
+<p><strong>The Osmo Pocket 3 fixed both.</strong> We switched last year. The image is crisp, it's very good in low light, and the dynamic range surprised us. We shoot a lot handheld (Michelle films when I present, and I film when she does), and the built-in gimbal keeps it smooth even while the camera is moving.</p>
+<p><strong>And the biggest thing:</strong> when I'm ready to edit, I plug a USB-C cable into the Pocket 3 and edit straight from the card. No transfer at all. That saves us a ton of time on every batch.</p>
+</div>
+<h3>Our kit</h3>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Gear</th>
+<th>Why we use it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><a href="https://www.mvpl.ink/fe63xdk" target="_blank" rel="sponsored noopener">DJI Osmo Pocket 3 Creator Combo</a></strong> (paid link)</td>
+<td>Our only camera now. The Creator Combo comes with an extra battery pack and a wireless lavalier mic. It's awesome when you're shooting alone too, because the flip screen lets you see yourself.</td>
+</tr>
+<tr>
+<td><strong><a href="https://www.mvpl.ink/ehywuvw" target="_blank" rel="sponsored noopener">Round light</a></strong> (paid link)</td>
+<td>We own two and love them. Great, even light with accurate color, and it lifts any video.</td>
+</tr>
+<tr>
+<td><strong><a href="https://www.mvpl.ink/r4rsvab" target="_blank" rel="sponsored noopener">Tripod</a></strong> (paid link)</td>
+<td>A must if you're shooting alone. The Osmo Pocket 3 secures to it easily.</td>
+</tr>
+<tr>
+<td><strong><a href="https://www.mvpl.ink/2qwd8af" target="_blank" rel="sponsored noopener">RGB light panels</a></strong> (paid link)</td>
+<td>Not a necessity, but nice to have when you want to add color and depth to the background of your shots.</td>
+</tr>
+</tbody>
+</table></div>
+<p>What matters no matter what you shoot on:</p>
+<ul>
+<li><strong>Start with the phone you have.</strong> 1080p is plenty to get approved. Don't buy gear before you've made your first 30 videos.</li>
+<li><strong>Audio first.</strong> A clip-on wireless mic makes a bigger difference than any camera upgrade.</li>
+<li><strong>Soft, even light.</strong> A window works. So does a basic LED panel.</li>
+<li><strong>One filming spot that stays set up</strong>, so starting a video takes seconds, not 20 minutes.</li>
+<li><strong>Editing:</strong> keep it simple. Jump cuts, filler words out, volume evened out. No music.</li>
+</ul>
+<p><em>Links marked "paid link" are our affiliate links and take you to the product on Amazon. As an Amazon Associate we earn from qualifying purchases, at no extra cost to you.</em></p>
+<h2>Titles and thumbnails</h2>
+<ul>
+<li><strong>Say what the product is and the angle:</strong> "Cordless Stick Vacuum for Pet Hair: 30 Days in a Small Apartment" beats "Amazing vacuum!!!"</li>
+<li><strong>Never put "honest" in your title.</strong> We hate it, and audiences hate it too. Every review on the internet calls itself honest, so the word means nothing, and it quietly suggests your other reviews weren't. Show it with the cons in your video instead of claiming it in the title.</li>
+<li><strong>Thumbnail, at first:</strong> clear product shot, good light, no clutter. 1280×720 is a safe size. Upload your own instead of letting Amazon pick a frame.</li>
+<li><strong>Thumbnail, once you're past the basics:</strong> go bright and colorful, with the product, your face, and a few words of text. That's exactly how we build ours now (it's what our Art Director thumbnails in MVP generate). A few words, not a paragraph: the thumbnail is small on a phone.</li>
+<li>Don't obsess over this on video #3. Get to video #50, then optimize.</li>
+</ul>
+<h2>Comparison videos</h2>
+<p>A video comparing 2–5 similar products can be tagged on several listings, so one video does several jobs. They're more work, so save them for after you're approved and your basic workflow is automatic.</p>
+<div class="doit">
+<h3>Do this</h3>
+<ol>
+<li>Print the six steps and keep them by your filming spot.</li>
+<li>Before each video, pull 2–3 questions from the Q&amp;A and 3-star reviews.</li>
+<li>Film your 3 test videos. Check them against the rejection table before uploading.</li>
+</ol>
+</div></div><label class="done"><input type="checkbox" id="done-videos" data-id="videos"> Mark this module done</label></section><section class="mod" id="products">
+<header class="mod-h"><p class="kicker">Module 4</p><h2>Picking products that pay</h2>
+<p class="sum">Why &quot;film your house&quot; stalls out, how to screen a product in two minutes, and how to invest without going broke.</p></header>
+<div class="prose"><p>This module is where the money is. A mediocre video on a great product will beat a great video on a product that can't pay you. Every time.</p>
+<h2>Why "film everything in your house" stalls</h2>
+<p>Filming what you own is how everyone starts, and it's fine for your first 30–50 videos. But your house is full of products that are cheap, in low-paying categories, discontinued, or already buried under 80 other videos. So you plateau. That's the $100-a-month wall people keep posting about.</p>
+<div class="seb">
+<p><strong>The part people don't want to hear.</strong> There are two big turning points in our story. The first was <strong>volume</strong>. We did way more videos, and we weren't picky. The second was <strong>investing</strong>. I know that's taboo in the groups. Everyone wants to believe that if they film everything in their house they'll make thousands. That's just not the reality.</p>
+<p>If you want this to be a sustainable business, you either work with the right brands or you reinvest your profits into well-researched products you know can make money. We did both.</p>
+</div>
+<h2>Don't niche down (for onsite)</h2>
+<p>Most guru advice says "pick a niche." For onsite video income, we disagree. Shoppers on Amazon don't follow you. They're on a product page, and your video is there or it isn't. A wide catalog means more product pages, more Creator Connections campaigns you qualify for, and less risk when one category's rates drop.</p>
+<div class="seb">
+<p>We tried to cast a wide net. All niches. We didn't niche down at all, and it's one of the main reasons we scaled. <strong>If we started again today, we still wouldn't niche down on the storefront.</strong> If you're doing onsite, niching makes no sense. You want the widest net possible, so you can do as many collaborations with as many brands and as many different products as you can.</p>
+<p><strong>Offsite is different.</strong> For YouTube, a blog, or social, niching down is a good idea. Our YouTube channel mirrors our storefront, so it's a general product-review channel. If we started over, we might run separate channels. We know creators with five or six YouTube channels, one each for fitness, home decor, outdoors and sports, and so on. That works very well offsite.</p>
+</div>
+<h2>The 2-minute product screen</h2>
+<p>Before you buy or film anything, check these:</p>
+<ol>
+<li><strong>Price.</strong> Aim for $25+ for anything you film, and $75+ for anything you buy with your own money. Under $15 is pennies.</li>
+<li><strong>Category rate.</strong> Check the onsite table in Module 1. Home, Pets, Furniture, Lawn &amp; Garden, and Beauty pay better onsite than Toys or Grocery.</li>
+<li><strong>Does it sell?</strong> Look at sales rank, "X bought in past month" on the listing, or a tool estimate. You want real monthly volume and a proven sales history, not a brand-new listing.</li>
+<li><strong>How crowded is it?</strong> Scroll to the videos. When you're starting out, fewer than ~20 influencer videos is a good sign; a listing with hundreds is a lottery ticket. (This matters less once you have experience and a big catalog.)</li>
+<li><strong>Is there a Creator Connections campaign?</strong> With 3+ months left, ideally. The bonus changes the whole math (Module 6).</li>
+<li><strong>Return risk.</strong> Avoid clothing, shoes, and anything with lots of 1–2 star reviews. Returns claw back commissions.</li>
+<li><strong>Will it still be here in a year?</strong> Check the brand's history and catalog, not just the listing (see "evergreen" below).</li>
+<li><strong>Can you demo it well?</strong> If it's boring on camera, it won't convert.</li>
+</ol>
+<h2>The payback math (illustrative)</h2>
+<p>Say you buy an <strong>$80</strong> home product with a <strong>15%</strong> Creator Connections campaign on it:</p>
+<ul>
+<li>Onsite Home rate: 3% of $80 = <strong>$2.40</strong> per sale</li>
+<li>CC bonus: 15% of $80 = <strong>$12.00</strong> per sale</li>
+<li>Total: <strong>$14.40 per sale</strong> while the campaign runs</li>
+</ul>
+<p>You need about <strong>6 sales</strong> to earn the product back. Resell it locally for $60 after filming and your real cost drops to $20, which is <strong>2 sales</strong>.</p>
+<p>Without the campaign, the same product would need about 34 onsite sales to pay back. That's why we tie buying decisions to CC campaigns. A simple rule: <em>if it can't plausibly pay for itself in about 30 days, don't buy it.</em></p>
+<h2>How we reinvest (and why it costs less than you think)</h2>
+<div class="seb">
+<p><strong>Early on we reinvested about 50% of our monthly commission</strong> back into buying products to review. That sounds crazy to most people. It's how the catalog grew.</p>
+<p>As the catalog grew, brands started noticing us and sending products for collaborations, so we needed to buy a lot less. <strong>Today it's about $2,000–3,000 a month, roughly 10–15% of our monthly commission.</strong></p>
+<p><strong>Here's the part that makes it work: we resell.</strong> You buy the product, film the review, make your content, and then sell it. After a review the product is practically new. We sell to friends, family, on Facebook Marketplace, and Michelle has a whole list of people locally who wait for our stuff because they get near-new products at a discount.</p>
+<p>So say we buy a <strong>$300</strong> product. We film it, it gets posted, sales start coming in, and during that first month we've probably already sold it locally for <strong>$250</strong>. Our real cost to recoup is <strong>$50</strong>, not $300. That's how our investment goes a long way.</p>
+</div>
+<p>A few ground rules if you copy this:</p>
+<ul>
+<li><strong>Only resell what you bought.</strong> Gifted samples and campaign products come with expectations from the brand; if you want to resell those, ask first.</li>
+<li><strong>Film everything you need before you sell</strong> (the review, the photos, any social cuts). You won't get the product back.</li>
+<li><strong>Keep your numbers.</strong> Log purchase price, resale price, and what the video earned. That's your real payback.</li>
+</ul>
+<h2>What "well-researched" means to us</h2>
+<div class="seb">
+<p><strong>Price point first.</strong> We don't buy $10–15 products. It's not worth it. We'll happily collaborate with brands that send us a $20 product, but when we're spending our own money, we're usually looking at <strong>products over $75 with good sales velocity</strong>.</p>
+<p><strong>Competition depends on where you are.</strong> For us today, the number of competing videos doesn't matter much. If a carousel is full, we'll still go for it, because of how we make our videos, how we pick products, and the kind of content we create. With our experience it's worth it.</p>
+<p>But if we were starting today, we'd search even harder for the right price, the right sales velocity, <strong>and the least competition</strong>. In the beginning, competition matters a lot. As you grow in experience and in catalog size, it matters less.</p>
+</div>
+<h2>Look for evergreen products</h2>
+<div class="seb">
+<p><strong>We look for products that will still be on Amazon in three, four, five, even ten years.</strong> Nothing is more of a bummer than filming a product that vanishes from the platform two months later. Some of our staple videos are on products that have been listed for many years, and they still pay us daily.</p>
+<p><strong>How to spot them:</strong> look at the brand, not just the product.</p>
+<ul>
+<li><strong>A brand with a single product</strong> on Amazon might be just starting out, and there's a good chance they never restock it or they switch niches entirely. Your video dies with the listing.</li>
+<li><strong>A brand with a real history and its own storefront</strong> is a much safer bet. Think Anker, Eufy, Shark, Ninja: established brands that release popular items every other month and keep them listed for a long time.</li>
+<li><strong>You don't need famous brands.</strong> In a really specific niche, most of the brands are ones nobody's heard of, and those products still sell and keep selling. Those count as evergreen too.</li>
+</ul>
+<p>Evergreen beats trendy. A video on a product that sticks around is an asset; a video on a flash-in-the-pan listing is a favor you did for a seller.</p>
+</div>
+<h2>Tools: only two, and not yet</h2>
+<p>You can do everything in this module by hand, and you should until you have <strong>at least 100 videos live and you're making some money</strong>. You need to know what you're looking for before a tool can help you find it.</p>
+<p>When you're there, we only recommend two:</p>
+<ul>
+<li><strong><a href="https://mvpaffiliate.io" target="_blank" rel="noopener">MVP Affiliate</a></strong> (full disclosure: it's ours, we built it for our own business). Product research, Creator Connections campaigns, and turning one review into content for your other channels.</li>
+<li><strong><a href="https://oinkforinfluencers.com/" target="_blank" rel="noopener">Oink for Influencers</a></strong>: a browser extension for spotting untagged videos, campaign matches and competition on a listing.</li>
+</ul>
+<p>That's it. <strong>Stay away from tools that grab your data and sell it back to everyone as a feature.</strong> If a tool scrapes your storefront, your earnings or your best products and turns it into "trending products" for every other user, you're paying to train your competition.</p>
+<div class="myth">
+<p><strong>Myth:</strong> "Volume is everything. Post 20 videos a day."</p>
+<p><strong>Reality:</strong> Volume only works on products that can pay. You can post 500 quick, low-effort videos on cheap products and sit at $100–200 a month. The same 500 videos on products that pass the screen above is a different business. Same volume, different products.</p>
+</div>
+<div class="doit">
+<h3>Do this</h3>
+<ol>
+<li>Run your next 10 video ideas through the 2-minute screen. Drop anything that fails 3+ checks.</li>
+<li>Set a monthly product budget as a percentage of last month's commission, not your savings. We started around 50%; pick what you can actually afford and raise it as your catalog proves itself.</li>
+<li>Line up your resale channel before you buy: Marketplace, a local group, friends and family.</li>
+<li>For every product you buy, log price, CC rate, resale price, and date so you can track real payback.</li>
+</ol>
+</div></div><label class="done"><input type="checkbox" id="done-products" data-id="products"> Mark this module done</label></section><section class="mod" id="sourcing">
+<header class="mod-h"><p class="kicker">Module 5</p><h2>Getting products without getting burned</h2>
+<p class="sum">Owned, bought, sampled, gifted. Where our products come from each week, and why we never return anything.</p></header>
+<div class="prose"><p>There are five ways products end up in front of your camera. Each one has a catch.</p>
+<h2>1. What you already own</h2>
+<p>Start here. Check your Amazon order history too: anything still listed is fair game, and so is stuff you bought elsewhere if the same product is sold on Amazon. It's free and it's how you learn. Its limit is Module 4: most of it won't pay much.</p>
+<h2>2. Buying to keep (investing)</h2>
+<p>This is the approach we use, and it's covered in Module 4. Buy products that pass the screen, preferably with a Creator Connections campaign, and treat them as inventory for your content business. Then, once the content is done, <strong>resell them locally</strong> at a discount to get most of your money back. That's the difference between "I can't afford to buy products" and "my real cost is $50." Keep receipts.</p>
+<div class="seb">
+<p><strong>How our local community works.</strong> Everyone around us knows this is our job: we do Amazon reviews for a living. They also know that if they want a good deal on something brand new but open box, because we've tested and reviewed it, they can buy it through us.</p>
+<p>So people message Michelle all the time: "Do you have a vacuum?" "Can you get an AC unit?" Anything that's on Amazon. Michelle checks the price and the sales velocity, then goes one of two ways:</p>
+<ul>
+<li><strong>It's a product we want to review</strong> (good price, sells well): we give them a really good deal, maybe $50 or even $100 off, because we know we'll make money on the video.</li>
+<li><strong>It's not one we'd pick ourselves:</strong> we still review it and sell it to them, but at a very small discount.</li>
+</ul>
+<p>Either way, the product gets reviewed and it's already sold before we've even filmed it.</p>
+</div>
+<h2>3. Buy-and-return: don't</h2>
+<p>A lot of beginners buy, film, and return. <strong>Never buy to return.</strong></p>
+<div class="seb">
+<p><strong>Our rule on returns: we don't do them. Ever.</strong> We don't return products, not even broken ones. Part of that is where we live: returning from a Caribbean island is hard and costs us money out of pocket. But it also means our account is squeaky clean, because we never create returns.</p>
+<p>Buying to return will catch up with you. Amazon will find out, and when they close your shopping account, your influencer account goes with it. If something arrives broken, fine, return it; just hopefully that's not happening every week. If you simply don't want the product anymore, <strong>resell it instead</strong>. It's easier, it's less headache, and you're running an influencer account now.</p>
+</div>
+<ul>
+<li>On <strong>February 2, 2026</strong>, Amazon warned that "excessive returns, cancellations or refunds" can lead to account restrictions or blocks. They didn't publish a threshold.</li>
+<li>If your shopping account gets closed, you can lose your orders, gift card balances, and Prime, and possibly more.</li>
+<li>It's also unfair to sellers who eat the cost of returned "used" items.</li>
+</ul>
+<h2>4. Samples from Creator Connections brands</h2>
+<p>Brands running CC campaigns often send free product to creators who ask. It happens through messaging the brand inside the campaign.</p>
+<ul>
+<li>Request only what you will actually film, on the brand's timeline.</li>
+<li>The seller ships it. You're expected to use it in your content, and <strong>you must disclose it was gifted</strong>.</li>
+<li>Not every request gets a yes. Your delivery record is what gets you the next one.</li>
+</ul>
+<div class="seb">
+<p><strong>Our rule on CC samples:</strong> we accept the campaign the moment the seller ships the product. Shipping to St. Martin takes about 20 days, so that's our buffer. Don't lock yourself into a campaign before you know the product is on its way.</p>
+</div>
+<h2>5. Brands that come to you</h2>
+<p>Once your storefront has a solid catalog, brands will message you, usually through Creator Connections messaging, email, or Instagram DMs. Some want free content in exchange for product; some will pay. Module 7 covers how to price it.</p>
+<h2>Amazon Vine is a different thing</h2>
+<p>Vine is Amazon's invite-only program for <em>customer reviewers</em> (written reviews on the listing), not the Influencer Program. You can't apply. It's nice if you get invited, but don't plan around it.</p>
+<h2>A quick word on gifted products and taxes</h2>
+<p>Gifted products can have tax implications depending on where you live. We're not going to give tax advice. Keep a simple log of what you received and what it's worth, and ask your accountant how to handle it.</p>
+<div class="seb">
+<p><strong>Where our products come from.</strong> From 2023 to early 2026, about <strong>80% of our products came from Creator Connections</strong>. We were sending hundreds of messages to brands every day and collaborating with a lot of CC brands.</p>
+<p>CC has changed. We still message brands, but a lot less than we used to, and now we do it through MVP Affiliate, so the messages are more focused. Today we buy more products than we receive for free through CC.</p>
+<p><strong>A typical week for us right now:</strong></p>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Products per week</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bought ourselves (researched, plus community resale requests)</td>
+<td>20–25</td>
+</tr>
+<tr>
+<td>Free from brands we collaborate with directly by email</td>
+<td>about 20</td>
+</tr>
+<tr>
+<td>Free through Creator Connections</td>
+<td>5–6</td>
+</tr>
+</tbody>
+</table></div>
+</div>
+<div class="doit">
+<h3>Do this</h3>
+<ol>
+<li>Go through your last 12 months of Amazon orders and list everything you could still film.</li>
+<li>Start a "gifted products" log: date, brand, product, value, where you posted.</li>
+<li>Set your rule on returns now: don't buy to return. If you don't want it, resell it.</li>
+</ol>
+</div></div><label class="done"><input type="checkbox" id="done-sourcing" data-id="sourcing"> Mark this module done</label></section><section class="mod" id="cc">
+<header class="mod-h"><p class="kicker">Module 6</p><h2>Creator Connections done right</h2>
+<p class="sum">How CC works, how the bonus stacks, the auto-accept debate, and why delivering is your edge.</p></header>
+<div class="prose"><p>Creator Connections (CC) is where a lot of the real money is now, especially after the 2026 changes squeezed base rates. It's also where a lot of creators are quietly ruining their reputation.</p>
+<div class="seb">
+<p><strong>How CC clicked for us.</strong> CC started around the end of 2023, and it made it very easy for us to talk to brands we'd never been in contact with before. The first day I was on it, there were only about 400 campaigns. You could go through all of them by hand.</p>
+<p>Today there are hundreds of thousands of campaigns, and the platform is extremely saturated. That means brands are less and less likely to answer you. So two things matter a lot now:</p>
+<ul>
+<li><strong>A good first message with a real hook.</strong> Not "Hi, I'd love to collaborate."</li>
+<li><strong>An easy way to keep talking outside CC.</strong> Give them your email, your website, whatever you choose. CC's messaging system is painful; get the conversation out of it.</li>
+</ul>
+<p><strong>CC is not dead.</strong> We've worked less with it over the last few months, but we're starting again. It's always changing, it's changing right now, and Amazon is bringing updates that are going to make it very interesting.</p>
+</div>
+<h2>How it works</h2>
+<ul>
+<li>Brands create campaigns that pay a <strong>bonus commission</strong> on top of your normal rate. Brands must commit at least a $5,000 budget and at least a 10% commission; 15–20%+ is common, some go higher.</li>
+<li>You find campaigns in <a href="https://affiliate-program.amazon.com/home" target="_blank" rel="noopener">Associates Central</a> (and in Creator Central in the app) under the brand/campaign section. You <strong>accept</strong> a campaign, and it moves to your active list.</li>
+<li>The bonus applies to qualifying purchases of the campaign products <strong>until the campaign ends or the budget runs out</strong>. After that, your content earns the normal rate.</li>
+<li><strong>It stacks with onsite.</strong> Sales credited to your onsite video for a campaign product earn the onsite rate <em>plus</em> the CC bonus (the shopper has to buy the exact variant).</li>
+<li>Tracking window is 24 hours from the click, same as normal links.</li>
+<li>CC bonuses pay out with your regular earnings, about 60 days after the month ends.</li>
+</ul>
+<h2>Why CC changes your product math</h2>
+<p>Go back to Module 4's example: an $80 product earns $2.40 per onsite sale without CC and $14.40 with a 15% campaign. That's 6× more per sale. That's why pros look for the campaign first and the product second.</p>
+<h2>Is posting content required to earn the bonus?</h2>
+<div class="seb">
+<p><strong>No. It never was.</strong> Amazon has been flip-floppy about that question and it's hard to get a straight answer, but since Creator Connections started, campaigns have paid out without content being submitted. That's the reality.</p>
+<p><strong>But it's highly encouraged, and we tell everyone the same thing.</strong> If you want brands to keep working with you, make them happy. Make good content, make good videos, and then <em>tell them about it</em>. Connect the content to the campaign, or if you're not going to connect it, at least message the brand so they can see it in all its glory. That's when a brand gets excited about you as a creator and wants to work with you again and again.</p>
+</div>
+<h2>The auto-accept debate</h2>
+<p>Some tools can scan your storefront and automatically accept every campaign that matches products you've already posted. It's tempting: more accepted campaigns, no new filming.</p>
+<p>Here's where we land: it works, and it's not against any rule we can find. But brands see it. Sellers post on Amazon's own forums about dozens of creators accepting a campaign and almost nobody delivering. Accepting everything and posting nothing pays this month and costs you the relationships that pay for years.</p>
+<div class="seb">
+<p><strong>Why we care about this.</strong> In 2026 we've had brands message us directly, frustrated that their campaigns get claimed by creators who never make content. Those brands remember who delivered. Accepting everything and posting nothing might pay this month. Being the creator brands trust is what pays for years, and it's how the paid deals start.</p>
+<p><strong>We believe Amazon is changing the CC program altogether.</strong> We expect it to actively check who is posting what and where, and to show brands proof. When that happens, the accept-everything crowd gets exposed and the creators who deliver get the campaigns. Build your delivery record now.</p>
+</div>
+<h2>Doing CC the right way</h2>
+<ol>
+<li><strong>Accept campaigns on products you've filmed or will film</strong> within the campaign window.</li>
+<li><strong>Tag your existing videos</strong> to campaigns you qualify for. This alone can add real money on content you already made. It's legitimate: you did the work.</li>
+<li><strong>Deliver fast.</strong> Most creators who accept a campaign never deliver. Simply showing up puts you ahead of most of them.</li>
+<li><strong>Disclose</strong> gifted and sponsored content.</li>
+<li><strong>Watch end dates.</strong> Video content goes to campaigns with 3+ months left. Short campaigns get quick content at most.</li>
+<li><strong>Message the brand when you deliver.</strong> One line: "Posted, here's the link, happy to do more." That's how a campaign turns into a relationship.</li>
+</ol>
+<h2>How we choose campaigns</h2>
+<div class="seb">
+<p>We look at three things:</p>
+<ol>
+<li><strong>How long the campaign runs.</strong> Anything with <strong>more than three months</strong> left gets a video from us. A campaign that only lasts two weeks, or has 30 days or less left, we're much less inclined to make video content for. We might give it something quick, like a blog post or a social post, because it's short-lived.</li>
+<li><strong>Price point.</strong> Same rule as Module 4: we don't spend our time on cheap products.</li>
+<li><strong>Sales history.</strong> Is this a brand-new product? Sometimes a new product is great right out of the gate, but most of the time we don't want to be tied to products with no proven sales history. You'd basically be making video content for a product that may never sell, and that hurts you in the long run.</li>
+</ol>
+</div>
+<h2>When a product turns out to be bad</h2>
+<div class="seb">
+<p><strong>We contact the seller right away.</strong> We explain why it's bad, add pictures and sometimes a video to show them, and tell them we won't be reviewing it because it would hurt us in the long run.</p>
+<p><strong>We don't review, or give positive reviews to, products that don't deserve it.</strong> That's our motto, and it should be yours too. Your audience's trust is the business.</p>
+</div>
+<div class="myth">
+<p><strong>Myth:</strong> "If I accept a brand's campaign, they'll put my video on their listing."</p>
+<p><strong>Reality:</strong> Brands can't control which influencer videos Amazon shows on a product page. Amazon's algorithm does. Never promise a brand placement, and don't believe anyone who promises it to you.</p>
+</div>
+<div class="doit">
+<h3>Do this</h3>
+<ol>
+<li>Open the campaigns section and filter for products you already have videos on. Tag them.</li>
+<li>Pick 5 campaigns with 3+ months left, a proven sales history, and a price point that passes the Module 4 screen.</li>
+<li>Keep a delivery log: campaign, accepted date, posted date. Aim for 100%.</li>
+</ol>
+</div></div><label class="done"><input type="checkbox" id="done-cc" data-id="cc"> Mark this module done</label></section><section class="mod" id="deals">
+<header class="mod-h"><p class="kicker">Module 7</p><h2>Paid brand deals and UGC</h2>
+<p class="sum">When brands start messaging you: what to charge, usage rights, pitching, and scams.</p></header>
+<div class="prose"><p>Your Amazon catalog is a portfolio. Once you have a few hundred solid videos, brands start reaching out, and some of them will pay. This is how you stop depending 100% on Amazon's commission table.</p>
+<div class="seb">
+<p>Brands got interested in us <em>because</em> of our growing catalog. The more we posted, the more collaborations came in, and the less we had to buy products ourselves. In summer 2026 we focused mostly on direct paid brand deals instead of Creator Connections campaigns. It's a real income stream, not a bonus.</p>
+</div>
+<h2>What UGC pays in 2025–2026</h2>
+<p>These are the market ranges we see in 2026. Use them as a starting point, not gospel.</p>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>What</th>
+<th>Typical range (USD)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>One UGC video, beginner</td>
+<td>$100–250</td>
+</tr>
+<tr>
+<td>One UGC video, mid-level</td>
+<td>$250–500</td>
+</tr>
+<tr>
+<td>One UGC video, established</td>
+<td>$500–1,500+</td>
+</tr>
+<tr>
+<td>Amazon product demo video paid by the brand (micro creator)</td>
+<td>$300–1,500</td>
+</tr>
+<tr>
+<td>Extra hook or call-to-action variation</td>
+<td>$25–50 each</td>
+</tr>
+<tr>
+<td>Raw footage</td>
+<td>+30–50% of the base price</td>
+</tr>
+<tr>
+<td>Rush delivery (48–72h)</td>
+<td>+25–50%</td>
+</tr>
+<tr>
+<td>Bundles</td>
+<td>5–25% off depending on quantity</td>
+</tr>
+</tbody>
+</table></div>
+<div class="seb">
+<p><strong>What we charge:</strong> our production fee is <strong>$55 per video, per product</strong>. That's on the lower end for us, on purpose: right now we're going for volume. If a brand wants four or five videos, we bundle them and give a better deal.</p>
+<p>We know our work is worth more than $55. But we filter the offers that come our way and make videos for products that will pay us more in the long run. The real value of a deal is <strong>production fee + resale value + sales commission</strong>: these videos go on our storefront, where we earn onsite and Creator Connections commission on every sale, and we can resell the product afterwards. Pure UGC, where the brand owns the content and you earn nothing after delivery, should be priced like the table.</p>
+</div>
+<h2>Learn the power of no</h2>
+<div class="seb">
+<p><strong>Stop underselling yourself.</strong> A lot of sellers will offer a $5 or $10 production fee, and a lot of influencers accept it. Don't. Even a beginner can get a seller to pay <strong>$25 per video</strong>.</p>
+<p>We've learned the power of <strong>no</strong>. Very often we turn down a lowball offer, and the brand comes back and accepts our terms right away.</p>
+<p>Remember who you're talking to. Many of the "brands" messaging you are paid agents whose job is to get the best deal out of influencers for the brands they represent. That's fine, it's their job. Your job is to know your worth and value your work.</p>
+</div>
+<h2>Make it easy for brands to find and pay you</h2>
+<div class="seb">
+<p>Your storefront is the ultimate portfolio: it shows exactly what you do. Your YouTube channel can be a great portfolio too. But we recommend having at least one page of your own with your whole offering.</p>
+<p>On <strong><a href="https://gominplanet.com" target="_blank" rel="noopener">gominplanet.com</a></strong> we show our best work, exactly how we work with brands, what we offer, what our production fees are and what brands get for them. We even added a way for brands to <strong>pay online, right on the site</strong>. That makes it really easy to work with us.</p>
+</div>
+<h2>Usage rights: where the real money hides</h2>
+<p>The base price usually covers the brand posting your video organically on their own pages. <strong>Anything more costs more:</strong></p>
+<ul>
+<li><strong>Paid ads usage:</strong> the brand runs your video as an ad. Common pricing is roughly 20–30% of your base price per month, or a flat uplift by term (for example +30% for 30 days, up to +100% or more for 12 months).</li>
+<li><strong>Whitelisting / Spark Ads:</strong> the brand runs ads <em>from your account</em>. Often 30% of base per month, or a flat monthly fee.</li>
+<li><strong>Using your video on their Amazon listing</strong> (the brand's own product video slot): treat it like paid usage and price it in.</li>
+<li><strong>Exclusivity</strong> (you can't work with competitors): +30–50%, and only for a set period.</li>
+<li><strong>Perpetual buyout:</strong> roughly 2.5–4× base.</li>
+</ul>
+<p>A simple formula: <strong>Base + (Base × usage % × months)</strong>. Example: a $200 video with 3 months of paid usage at 25% a month is $200 + $150 = <strong>$350</strong>.</p>
+<h2>The deal checklist (get it in writing)</h2>
+<p>Before you film, the brand's email or contract should state:</p>
+<ul>
+<li>Deliverables (how many videos/photos, length, format) and revisions (one round included is normal)</li>
+<li>Where it will be used (organic, paid ads, whitelisting, their Amazon listing) and <strong>for how long</strong></li>
+<li>Exclusivity, if any</li>
+<li>Price, payment terms, and deposit (50% upfront on larger deals is common)</li>
+<li>What happens if they cancel after you've filmed (a kill fee)</li>
+<li>Disclosure: paid content has to be labeled (#ad, "Paid partnership")</li>
+</ul>
+<h2>Never promise placement</h2>
+<p>A brand can't pay to put your influencer video on their product page, and neither can you guarantee it. Amazon's algorithm decides. Sell the video, the rights, and your onsite upload; never "top carousel spot guaranteed."</p>
+<h2>Pitching brands</h2>
+<p>Keep it short enough to read on a phone:</p>
+<ol>
+<li>A subject line that names their product.</li>
+<li>One line showing you know the product ("Your cordless pet vacuum has 2,000+ reviews and only 4 influencer videos").</li>
+<li>One line on what you'd make and why it fits.</li>
+<li>One proof line: your storefront link and a best-performing video.</li>
+<li>A clear ask: "Want me to send a rate card?"</li>
+</ol>
+<p>Follow up twice, 3–5 days apart. A 5–10% reply rate is normal. Use a professional email, ideally on your own domain.</p>
+<div class="seb">
+<p><strong>Email is the best way to talk to brands.</strong> It keeps the threads alive, and it lets you keep every contact. After years of doing this, we've built a pretty substantial list of sellers and brands we can reach out to for new opportunities, and they can reach us the same way. Start building that list from your very first deal.</p>
+</div>
+<h2>UGC platforms: where to get your first reps</h2>
+<p>Platforms are a great way to get your first paid jobs, testimonials and portfolio pieces while your catalog grows. Direct deals will always pay better, but you don't need to wait for brands to find you. Here's how each one works. Fees and rules change, so check each platform's terms before you sign up.</p>
+<h3>Billo</h3>
+<ul>
+<li><strong>Sign up:</strong> <a href="https://billo.app" target="_blank" rel="noopener">billo.app</a></li>
+<li><strong>How it works:</strong> brands post briefs (often product demos for Amazon, TikTok and ads), you apply, the brand ships the product, you film and deliver in the app.</li>
+<li><strong>Pay:</strong> roughly $50–150 per video for standard work, more for complex briefs. Paid out after the brand approves.</li>
+<li><strong>Requirements:</strong> no follower minimum. Your sample videos are your application.</li>
+<li><strong>Good for:</strong> beginners building a portfolio fast, and Amazon-style product demos that match exactly what you already film.</li>
+<li><strong>Watch out for:</strong> lower pay than direct deals. Treat it as paid practice, not your ceiling.</li>
+</ul>
+<h3>JoinBrands</h3>
+<ul>
+<li><strong>Sign up:</strong> <a href="https://joinbrands.com" target="_blank" rel="noopener">joinbrands.com</a></li>
+<li><strong>How it works:</strong> a big marketplace of brand jobs: UGC videos, photos, TikTok/IG posts, and Amazon shoppable video jobs. You apply per job.</li>
+<li><strong>Pay:</strong> default rates start low (around $50–100 per video) and go up as you level up on the platform. The platform takes a fee on your earnings (around 20%, lower with their paid creator plan).</li>
+<li><strong>Requirements:</strong> open signup; your level and ratings unlock better-paying jobs.</li>
+<li><strong>Good for:</strong> volume and Amazon-specific jobs.</li>
+<li><strong>Watch out for:</strong> popular jobs get hundreds of applicants. Pitch with your best Amazon videos, not your bio.</li>
+</ul>
+<h3>Insense</h3>
+<ul>
+<li><strong>Sign up:</strong> <a href="https://insense.pro" target="_blank" rel="noopener">insense.pro</a></li>
+<li><strong>How it works:</strong> brands (many of them DTC and ad-focused) invite or accept creators for UGC built to run as paid ads, often with whitelisting.</li>
+<li><strong>Pay:</strong> usually better per video than beginner marketplaces; set per campaign.</li>
+<li><strong>Requirements:</strong> a solid profile with sample videos; brands pick who they want.</li>
+<li><strong>Good for:</strong> learning to make ad-style UGC and getting paid for usage rights.</li>
+<li><strong>Watch out for:</strong> slower turnaround and more revisions, because the content is going into ads.</li>
+</ul>
+<h3>Collabstr</h3>
+<ul>
+<li><strong>Sign up:</strong> <a href="https://collabstr.com" target="_blank" rel="noopener">collabstr.com</a></li>
+<li><strong>How it works:</strong> you list your own packages with fixed prices (for example "1 UGC video, $150"), and brands book you directly. Payment is held in escrow until you deliver.</li>
+<li><strong>Pay:</strong> you set it.</li>
+<li><strong>Requirements:</strong> a profile with your content and prices.</li>
+<li><strong>Good for:</strong> creators who already know their rates and want inbound bookings.</li>
+<li><strong>Watch out for:</strong> you're a listing among thousands. A clear niche and strong samples matter.</li>
+</ul>
+<h3>SideShift</h3>
+<ul>
+<li><strong>Sign up:</strong> <a href="https://sideshift.app/creators" target="_blank" rel="noopener">sideshift.app/creators</a></li>
+<li><strong>How it works:</strong> an app where you apply to campaigns from brands, including big names. It covers UGC and creator jobs, with earnings tracked and paid out through the app. Free to join; you attach your social handles and top-performing videos.</li>
+<li><strong>Pay:</strong> varies by campaign (per video, per post, or ongoing).</li>
+<li><strong>Requirements:</strong> a complete profile. They offer a free UGC training course that earns a verified badge brands can see.</li>
+<li><strong>Good for:</strong> access to bigger brands and ongoing campaigns.</li>
+<li><strong>Watch out for:</strong> competition is high. Deliver on time every time; ghosting gets you filtered out fast.</li>
+</ul>
+<h3>Trybe</h3>
+<ul>
+<li><strong>Sign up:</strong> <a href="https://jointrybe.com" target="_blank" rel="noopener">jointrybe.com</a></li>
+<li><strong>How it works:</strong> a performance-based UGC app. You browse brand programs, join with a tap, submit content, and brands run approved content as Meta (Facebook/Instagram) ads. The app shows your ad performance and earnings in real time.</li>
+<li><strong>Pay:</strong> tied to results: commission on sales your content drives, pay based on ad performance, or flat per-submission fees and retainers, depending on the brand. Payouts go through Stripe to 170+ countries, which matters if you're outside the US like we are.</li>
+<li><strong>Requirements:</strong> the app, and content that can run as an ad.</li>
+<li><strong>Good for:</strong> creators who make content that sells and want upside beyond a flat fee.</li>
+<li><strong>Watch out for:</strong> performance pay means some videos earn little. Mix it with flat-fee work.</li>
+</ul>
+<h3>Fiverr</h3>
+<ul>
+<li><strong>Sign up:</strong> <a href="https://www.fiverr.com" target="_blank" rel="noopener">fiverr.com</a></li>
+<li><strong>How it works:</strong> you create "gigs" (for example "Amazon influencer product video, 60 seconds, 7-day delivery") with basic, standard and premium tiers, and buyers order them. Amazon sellers use Fiverr a lot to find product video creators.</li>
+<li><strong>Pay:</strong> you set your prices. Fiverr takes <strong>20%</strong> of every order, and payments clear after a holding period before you can withdraw.</li>
+<li><strong>Requirements:</strong> open signup. Reviews drive everything, so your first few orders matter most.</li>
+<li><strong>Good for:</strong> getting found by Amazon sellers who need product videos, and packaging your work clearly (video + raw footage + extra hooks as add-ons).</li>
+<li><strong>Watch out for:</strong> price races to the bottom. Don't compete on being cheapest; sell your Amazon experience. Never promise onsite placement in a gig.</li>
+</ul>
+<div class="seb">
+<p><strong>Our take:</strong> we don't use UGC platforms much these days. We've dabbled with Trybe and Fiverr, and there are a lot of others out there. They're useful and very easy to use, and they help you get connected with brands when you're starting out. At this point we're happy with the number of collaborations we get by email, but that doesn't mean we'll never focus on platforms again.</p>
+<p>Our one issue is fees: some charge flat fees, some take a commission or a percentage, and we're not always a fan. But if you're starting out, it's better than nothing, and we still recommend them. Use them to get reps, reviews and your first brand contacts, then move those relationships to email.</p>
+</div>
+<h2>Working with brands: what's normal and what's a red flag</h2>
+<p><strong>What's normal (don't panic):</strong></p>
+<ul>
+<li><strong>Brands want to move the conversation to email, WhatsApp, WeChat or Lark.</strong> That's commonplace now, especially with sellers based overseas.</li>
+<li><strong>You'll usually talk to an agent, not the brand owner.</strong> Many brands are represented by individual agents, sometimes with strange-looking email addresses or generic names. That alone isn't a scam.</li>
+<li><strong>English is often a second (or third) language.</strong> Be patient and be very clear. Short sentences, one question per message, and put the deliverables, price and dates in writing so there's no confusion later.</li>
+</ul>
+<p><strong>Red flags (walk away):</strong></p>
+<ul>
+<li><strong>"Buy the product first and we'll refund you."</strong> Or "buy it, leave a review, and we'll send a gift card or PayPal refund." Never do this. It breaks Amazon's rules on incentivized purchases and reviews, and it can cost you your account.</li>
+<li><strong>Any money flowing from you to them:</strong> "processing fees", "deposits to qualify", or an overpayment by check followed by "please refund the difference".</li>
+<li><strong>Payment in gift cards or crypto</strong> for your work.</li>
+<li><strong>Anything tied to a positive review or a star rating.</strong></li>
+<li><strong>"Guaranteed Amazon approval" or "guaranteed onsite placement."</strong> Nobody can promise that.</li>
+</ul>
+<p><strong>Rule of thumb: money never flows from the creator to the brand, and you never buy a product in exchange for a refund.</strong> If they want your content, they send the product and pay for the work.</p>
+<div class="doit">
+<h3>Do this</h3>
+<ol>
+<li>Build a one-page rate card: base video price, bundle price, and usage add-ons.</li>
+<li>Pick 10 products you've already reviewed that have few influencer videos. Pitch those brands this week.</li>
+<li>Pick one platform above, build your profile with your 3 best Amazon videos, and apply to 5 jobs.</li>
+<li>Save a contract checklist in your notes app and use it on every deal.</li>
+</ol>
+</div></div><label class="done"><input type="checkbox" id="done-deals" data-id="deals"> Mark this module done</label></section><section class="mod" id="traffic">
+<header class="mod-h"><p class="kicker">Module 8</p><h2>Offsite traffic and the calendar</h2>
+<p class="sum">Where your links are allowed, what works on each platform in 2026, and how to plan around Q4.</p></header>
+<div class="prose"><p>Onsite videos depend on Amazon showing them. Offsite traffic is the part you control: people who click <em>your</em> links. It also pays standard rates, which are higher than onsite rates.</p>
+<h2>Platform by platform (2026)</h2>
+<p><strong>YouTube: the big one this year.</strong> In late August 2026, Amazon joined YouTube Shopping's affiliate program in the US, so creators can tag Amazon products directly in long videos, Shorts, and lives. YouTube reports that product tags get far more clicks than description links. You need YouTube Shopping Affiliate eligibility (YouTube lowered it to 500 subscribers in 2026, with Partner Program membership) and an Amazon Influencer or Associates account linked. <span class="verify">Check your dashboard</span> Your Amazon review videos are ready-made YouTube content. Repurpose them.</p>
+<p><strong>Pinterest.</strong> Amazon Associates US is one of Pinterest's official affiliate partners (<a href="https://create.pinterest.com/en-gb/blog/affiliate-marketing-link-basics/" target="_blank" rel="noopener">Pinterest's affiliate rules</a>). Pinterest says the link should go <strong>directly to the product page</strong>, and some link shorteners aren't supported. So link each pin to your own blog post or to the full, tagged Amazon product link: no redirects, no cloaked or branded short links, no link-routing services. Disclose on every pin. Want to know what Pinterest earns you? Create a separate tracking ID just for Pinterest in Associates Central and use it on every pin.</p>
+<p><strong>Instagram.</strong> Stories links and automated DMs (comment a keyword and get the link by DM) work well. Amazon allows links in DMs and messages <strong>to people who asked for them</strong> (opted in), with an easy way to opt out.</p>
+<p><strong>TikTok.</strong> Clickable bio links need 1,000+ followers; links in captions aren't clickable. Send people to your storefront or your link-in-bio page (below) from your bio. TikTok Shop is a separate affiliate system.</p>
+<p><strong>Facebook.</strong> Post in pages and groups <strong>you own or moderate</strong>. Dropping links in other people's groups is how you get flagged as spam. Meta has been testing limits on link posts for some accounts, so keep an eye on it.</p>
+<p><strong>Blog and email.</strong> Blogs still work if the content adds real value (the 2026 "original content" rule). Email lists are allowed for opted-in subscribers. Links in PDFs, ebooks, or printed material are <strong>not</strong> allowed.</p>
+<h2>One link in bio for everything</h2>
+<p>Most platforms give you one link. Your Amazon storefront works, but it only shows Amazon, and it's built for Amazon's shoppers, not for your audience. A link-in-bio page lets you send people from <strong>any</strong> platform (Instagram, TikTok, YouTube, Facebook, Threads) to one place that shows your latest reviews, your gift guides, your storefront, your YouTube and your blog.</p>
+<p>We built one into <strong><a href="https://mvpaffiliate.io" target="_blank" rel="noopener">MVP Affiliate</a></strong> (full disclosure: it's our software) so our audience lands on a single page that's always up to date with what we've just reviewed.</p>
+<p>Whatever you use, a few rules:</p>
+<ul>
+<li><strong>Put your Amazon disclosure on the page itself</strong>, not just in your bio.</li>
+<li><strong>Make it obvious the product links go to Amazon.</strong> Label them ("See it on Amazon") and don't hide the destination.</li>
+<li><strong>Pinterest is the exception.</strong> Pins should link straight to the Amazon product page or your own blog post, not to a bio page.</li>
+</ul>
+<div class="seb">
+<p><strong>How we use ours.</strong> We use the link-in-bio page anywhere we can't put a direct product link in front of people. On Pinterest, people can click the pin and go straight to the blog post or the product. But on TikTok and Instagram, we need a way for people to see a list of our links.</p>
+<p>So when we post an Instagram story with a "link in bio" call to action, the link on our Instagram profile is our MVP link-in-bio page. Every link we create or share through MVP shows up there automatically as a product card with our affiliate link, so people land on the dozen or more products we're promoting right now.</p>
+<p>It works really well. Since we started using it, we've had a nice bump in traffic.</p>
+</div>
+<h2>Rules that apply everywhere</h2>
+<ul>
+<li>Disclose: "As an Amazon Associate I earn from qualifying purchases" in your bio or about section, plus #ad, #CommissionsEarned or "(paid link)" near links (<a href="https://affiliate-program.amazon.com/help/node/topic/GPXFHVYZMTGPUMPE" target="_blank" rel="noopener">Amazon's disclosure rules</a>, <a href="https://www.ftc.gov/business-guidance/resources/ftcs-endorsement-guides-what-people-are-asking" target="_blank" rel="noopener">FTC endorsement guides</a>).</li>
+<li>Make it clear every link goes to Amazon. Link tools and short links (amzn.to, Geniuslink-style smart links, your own branded links) are fine, as long as the reader knows they're headed to Amazon: label them ("See it on Amazon", "(paid link)"). What the <a href="https://affiliate-program.amazon.com/help/operating/policies" target="_blank" rel="noopener">Program Policies</a> prohibit is using them in a way that makes it unclear the link goes to Amazon, or that hides which site or app the click came from.</li>
+<li>Never buy through your own links, or ask friends and family to do it for you.</li>
+<li>Never offer anything in return for using your link (giveaways, rebates, "use my link and I'll...").</li>
+<li>Purchases from <strong>paid or boosted ads</strong> pointing to Amazon don't earn commission anymore (since April 14, 2026).</li>
+</ul>
+<div class="seb">
+<p><strong>We treat YouTube and our blog as search engines, not follower machines.</strong> Pretty much everything on our storefront is on our YouTube channel, or will be. We're not trying to build a huge following around one niche. We want views from people <em>searching</em> for the products we've reviewed, and a big catalog means a lot of searches we can show up for.</p>
+<p>If you want to build an audience offsite, niching down works well there (see Module 4). If you want search traffic, volume and good titles win.</p>
+</div>
+<h2>The calendar: Q4 is everything</h2>
+<p>Q4 is where the year is made. Here's our own month-by-month pattern, from three years of our earnings. Each figure is that month compared with an average month in the same year, so you can see the shape without worrying about the size of anyone's catalog.</p>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Month</th>
+<th>vs. an average month</th>
+<th>What's going on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>January</strong></td>
+<td>~70%</td>
+<td>The after-holiday slump. Some years surprise us, though, with January sales and gift cards being redeemed.</td>
+</tr>
+<tr>
+<td><strong>February</strong></td>
+<td>~70%</td>
+<td>Low to average. This is when we're already filming summer content.</td>
+</tr>
+<tr>
+<td><strong>March</strong></td>
+<td>~90%</td>
+<td>Average.</td>
+</tr>
+<tr>
+<td><strong>April</strong></td>
+<td>~80%</td>
+<td>Average.</td>
+</tr>
+<tr>
+<td><strong>May</strong></td>
+<td>~80%</td>
+<td>Average.</td>
+</tr>
+<tr>
+<td><strong>June</strong></td>
+<td>~110%</td>
+<td>Summer specials start.</td>
+</tr>
+<tr>
+<td><strong>July</strong></td>
+<td>~120%</td>
+<td>Prime Day, 4th of July, back-to-school. Our strongest non-Q4 month.</td>
+</tr>
+<tr>
+<td><strong>August</strong></td>
+<td>~95%</td>
+<td>Still summer, tapering off.</td>
+</tr>
+<tr>
+<td><strong>September</strong></td>
+<td>~110%</td>
+<td>Everyone's back in work and school mode. Can feel slow, then surprise you.</td>
+</tr>
+<tr>
+<td><strong>October</strong></td>
+<td>~115%</td>
+<td>Q4 ramping up.</td>
+</tr>
+<tr>
+<td><strong>November</strong></td>
+<td>~130%</td>
+<td>Holiday shopping everywhere, plus Black Friday and Cyber Monday.</td>
+</tr>
+<tr>
+<td><strong>December</strong></td>
+<td>~175%</td>
+<td>Our biggest month by far: last-minute shopping with fast delivery. Watch Amazon's delivery-by dates and push those products.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Across those years, an average Q4 month earned about <strong>1.4×</strong> a normal month, and December alone was about <strong>1.75×</strong>. So plan for a strong finish, not a miracle.</p>
+<h3>Your calendar for the rest of 2026</h3>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>When</th>
+<th>What</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Now (late Sept)</strong></td>
+<td>Q4 prep window</td>
+<td>Film gift-able products <em>now</em>. Review can take days to weeks; you want videos live before the rush.</td>
+</tr>
+<tr>
+<td><strong>Oct 6–7, 2026</strong></td>
+<td><a href="https://www.aboutamazon.com/news/retail/amazon-prime-big-deals-day-2026-when-october-6-7" target="_blank" rel="noopener">Prime Big Deal Days</a></td>
+<td>Share deals offsite (without quoting prices in onsite videos).</td>
+</tr>
+<tr>
+<td><strong>Nov 27 &amp; Nov 30, 2026</strong></td>
+<td>Black Friday / Cyber Monday</td>
+<td>Peak week. Refresh idea lists and gift guides.</td>
+</tr>
+<tr>
+<td><strong>December</strong></td>
+<td>Gift season</td>
+<td>Gift guides by person ("for dads", "for pet owners") on your storefront.</td>
+</tr>
+<tr>
+<td><strong>Jan–Feb</strong></td>
+<td>The slump</td>
+<td>Expected. Film and build catalog for the rest of the year.</td>
+</tr>
+<tr>
+<td><strong>Summer</strong></td>
+<td>Prime Day (it was June 23–26 in 2026)</td>
+<td>In 2025, Amazon temporarily doubled link rates in 13 categories during Prime Day. Watch for promos.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Money rule:</strong> save part of your Q4 earnings to cover the January–February dip. It'll happen every year.</p>
+<div class="doit">
+<h3>Do this</h3>
+<ol>
+<li>Pick <strong>one</strong> offsite platform to be consistent on for 90 days. For most people with review videos, that's YouTube.</li>
+<li>Add your Amazon disclosure to every bio today.</li>
+<li>List 20 giftable products that pass the Module 4 screen and film them before mid-October.</li>
+</ol>
+</div></div><label class="done"><input type="checkbox" id="done-traffic" data-id="traffic"> Mark this module done</label></section><section class="mod" id="business">
+<header class="mod-h"><p class="kicker">Module 9</p><h2>Run it like a business</h2>
+<p class="sum">Workflow, volume, getting paid, protecting your account, and not burning out.</p></header>
+<div class="prose"><p>The creators who last treat this like a business from month one. The ones who burn out treat it like a lottery ticket.</p>
+<h2>Workflow: batch everything</h2>
+<ul>
+<li><strong>Batch by stage, not by product.</strong> One session to film 10 products, one to edit, one to upload and tag. Switching tasks is what kills your time.</li>
+<li><strong>One filming spot, always set up.</strong> If setup takes 20 minutes, you'll film less.</li>
+<li><strong>Get faster before you get fancier.</strong> With a system, a video goes from taking hours to taking minutes. Cutting time per video from 30 to 5 minutes can roughly triple your hourly earnings at the same per-video income.</li>
+<li><strong>Track everything in one sheet:</strong> product, ASIN, category, price, CC campaign and end date, filmed, uploaded, approved, resold.</li>
+</ul>
+<div class="seb">
+<p><strong>Our volume, then and now.</strong> There were times when we were making <strong>400 to 500 videos a month</strong>, all in batches, mostly on weekends: 40 or 50 videos in one go. It's a business, so it can be sustained, but it takes a lot of discipline and a really good workflow.</p>
+<p>Today we make roughly <strong>50 to 75 videos a week</strong>, still in batches, but smaller ones: <strong>10 to 15 videos at a time</strong>. With our catalog and the products we have now, that's a good production rate for us.</p>
+</div>
+<h2>How we split the work</h2>
+<div class="seb">
+<p>We each do what we're good at.</p>
+<p><strong>Michelle</strong> is great at communicating with brands: the messaging back and forth, the collaborations, the deals. Most of her mornings go to that. She also runs the resale side: she posts on Facebook and to our local community, handles requests for new products, and sells the products we already have.</p>
+<p><strong>We produce the content together.</strong> We're both on-screen talent. Michelle reviews some products and I review others. Some sellers want a woman on camera and some want a man, so we can cover both.</p>
+<p><strong>I (Seb)</strong> edit and do all the computer work, and I run the MVP Affiliate side. We both do a bit of YouTube and split that work too.</p>
+<p><strong>We don't use VAs or editors.</strong> It just isn't for us. (MVP does let you add VA seats if you want them.)</p>
+<p>Our advice: <strong>when you start, do it all yourself.</strong> You'll learn a lot, you'll find your strengths, and you'll see where you actually need help. Don't pay for a VA or an editor right off the bat. You're better off figuring it out yourself first.</p>
+</div>
+<h2>Volume: what "enough" looks like</h2>
+<p>There is no magic number, and catalog size alone tells you almost nothing.</p>
+<div class="seb">
+<p>We've seen a creator with <strong>800 videos</strong> making about <strong>$3,000 a month</strong> onsite. We've also seen someone with <strong>3,000 videos</strong> making about <strong>$800 a month</strong>. We know people with <strong>15,000 products and videos</strong> on their storefront who don't earn as much as others with five or six thousand.</p>
+<p>It comes down to <strong>product selection</strong> more than anything. Volume is nice, but a huge pile of videos on poor products won't help you in the long run.</p>
+</div>
+<p>So yes, keep adding: a steady weekly rhythm beats a big burst and a long break. Just make sure every video you add passes the Module 4 screen.</p>
+<h2>Where software fits in</h2>
+<p>Once you're past a few hundred videos, the bottleneck isn't filming. It's everything around it: finding products worth buying, tracking campaigns, repurposing each review for YouTube, Pinterest, a blog, and social, and writing all the titles and descriptions.</p>
+<p>That's the problem we built <strong><a href="https://mvpaffiliate.io" target="_blank" rel="noopener">MVP Affiliate</a></strong> to solve for our own business (yes, it's ours, full disclosure): product research, Creator Connections campaigns, and turning one review into content across your channels, in your own voice. You don't need it to start. Wait until you have 100+ videos and you're making money. When the admin starts eating your filming time, it's there.</p>
+<h2>Getting paid</h2>
+<ul>
+<li>Amazon pays about <strong>60 days after the end of the month</strong> (January earnings arrive around the end of March). <a href="https://affiliate-program.amazon.com/help/node/topic/G63DR893K4DH55XZ" target="_blank" rel="noopener">Amazon's payment timing page</a>.</li>
+<li>Earnings show up as items <strong>ship</strong>, and returns claw them back.</li>
+<li>Payment and tax info must be set up on <strong>both</strong> your Associates ID and your Onsite Store ID (Module 2).</li>
+<li>US direct deposit has a $10 minimum. Checks carry a processing fee.</li>
+</ul>
+<h2>Taxes and structure: talk to a professional</h2>
+<p>Taxes depend on where you live and how you're set up, and they're personal. We're not going to give tax advice.</p>
+<div class="seb">
+<p>We set up a company to run the business and its bank accounts through. What's right for you depends on where you live and how much you're making. Sit down with a CPA early, not when your first big month lands.</p>
+</div>
+<h2>What gets accounts closed</h2>
+<p>Amazon can close your account and keep your unpaid commissions. Read the <a href="https://affiliate-program.amazon.com/help/operating/agreement" target="_blank" rel="noopener">Operating Agreement</a> and <a href="https://affiliate-program.amazon.com/help/operating/policies" target="_blank" rel="noopener">Program Policies</a> once a year; they change. These are the classic causes:</p>
+<ul>
+<li>Buying through your own links (or asking friends and family to)</li>
+<li>Links that hide they go to Amazon, or that hide where the click came from</li>
+<li>Links in ebooks, PDFs, or offline materials</li>
+<li>Offering incentives to use your links</li>
+<li>Missing disclosures</li>
+<li>Showing prices you don't pull from Amazon's tools, or outdated prices</li>
+<li>Fake or incentivized reviews, or undisclosed paid relationships with sellers</li>
+<li>Low-effort, AI-only content with no real commentary (the 2026 "original content" rule)</li>
+</ul>
+<p>A note on AI: in 2026, sellers must label images with AI-generated people, and some reports say creators will need to flag it too. Our advice: film real products with real hands. It's what converts anyway.</p>
+<h2>Don't put all your eggs in Amazon's basket</h2>
+<p>Amazon changed the rules twice in 2026 alone. We're actively working toward a 50/50 split between Amazon and everything else: brand deals, YouTube, our review blog, and our software. You don't have to start there, but build at least one income stream Amazon doesn't control by the end of your first year.</p>
+<h2>Avoiding burnout</h2>
+<ul>
+<li>Set a weekly rhythm you can keep for a year, not a week.</li>
+<li>Accept the January dip. It's the calendar, not you.</li>
+<li>Measure per-video earnings monthly, not daily. Daily numbers will drive you crazy.</li>
+</ul>
+<div class="doit">
+<h3>Do this</h3>
+<ol>
+<li>Set up your tracking sheet if you haven't (columns above).</li>
+<li>Block two fixed filming sessions a week in your calendar.</li>
+<li>Book a call with an accountant before your earnings get serious.</li>
+</ol>
+</div></div><label class="done"><input type="checkbox" id="done-business" data-id="business"> Mark this module done</label></section><section class="mod" id="plan">
+<header class="mod-h"><p class="kicker">The plan</p><h2>Your first 90 days</h2>
+<p class="sum">Everything above, in order, week by week.</p></header>
+<div class="prose"><p>Print this, or keep it open. The weeks are a guide; move faster or slower depending on your hours.</p>
+<h2>Days 1–7: set up</h2>
+<ul>
+<li>Payment and tax info on <strong>both</strong> store IDs</li>
+<li>A plan to get your first 3 real sales from your own audience</li>
+<li>Storefront profile, bio, disclosure in every social bio</li>
+<li>3 idea lists from things you own</li>
+<li>Tracking sheet created</li>
+<li>3 onsite test videos filmed with the 6-step formula, checked against the rejection table, uploaded</li>
+</ul>
+<h2>Days 8–30: first 30 videos</h2>
+<ul>
+<li>Film everything you own that's still sold on Amazon and passes at least half of the product screen</li>
+<li>Batch: 2 filming sessions a week</li>
+<li>Read the Q&amp;A and 3-star reviews before every video</li>
+<li>Tag any video that matches an active Creator Connections campaign</li>
+<li>Start one offsite channel (we suggest YouTube) and post there every week</li>
+</ul>
+<h2>Days 31–60: start investing</h2>
+<ul>
+<li>Calculate your per-video earnings</li>
+<li>Set a product budget as a percentage of your commission</li>
+<li>Buy only products that pass the screen, ideally with a CC campaign that has 3+ months left</li>
+<li>Set up your resale channel and resell products once the content is done</li>
+<li>Deliver on every campaign you accept</li>
+</ul>
+<h2>Days 61–90: build the business</h2>
+<ul>
+<li>100+ videos live</li>
+<li>Rate card built; pitch 10 brands whose products you've already reviewed</li>
+<li>Q4 list filmed (if you're in the fall)</li>
+<li>Review what earned: double down on the categories and price points that paid, drop the rest</li>
+<li>Book time with an accountant</li>
+</ul>
+<div class="seb">
+<p><strong>Last thing.</strong> There is no shortcut. Every creator you see making real money in this program did the reps: hundreds of videos, smart product choices, and showing up for brands. It's not complicated, but it's work. If you do the work in this course for 90 days, you'll know more than most people who've been "doing Amazon" for two years.</p>
+<p>— Seb &amp; Michelle, Gominplanet</p>
+</div>
+<h2>Glossary</h2>
+<p><strong>ASIN:</strong> Amazon's product ID. Each variant (color, size) can have its own.</p>
+<p><strong>Associates Central:</strong> the desktop dashboard for links, earnings, and campaigns.</p>
+<p><strong>Creator Central:</strong> the creator hub inside the Amazon Shopping app.</p>
+<p><strong>Creator Connections (CC):</strong> brand campaigns that pay a bonus commission on top of your normal rate.</p>
+<p><strong>Carousel:</strong> the rows of videos on a product page. Earlier slots get more views.</p>
+<p><strong>Halo sales:</strong> commissions on other items in a shopper's cart. Removed for onsite in April 2026; offsite links still appear to earn them.</p>
+<p><strong>Idea list:</strong> a curated product list on your storefront.</p>
+<p><strong>Onsite:</strong> your content shown on Amazon's own pages. Paid at onsite rates.</p>
+<p><strong>Offsite:</strong> traffic you send to Amazon with your links. Paid at standard rates.</p>
+<p><strong>Onsite Store ID:</strong> the separate ID ("onamz…") that tracks onsite earnings. Needs its own payment and tax setup.</p>
+<p><strong>Storefront:</strong> your page at amazon.com/shop/yourname.</p>
+<p><strong>UGC:</strong> user-generated content. Videos you make for a brand to use.</p>
+<p><strong>Usage rights:</strong> what a brand is allowed to do with your content, for how long.</p>
+<p><strong>Whitelisting / Spark Ads:</strong> a brand running ads from your account.</p></div><label class="done"><input type="checkbox" id="done-plan" data-id="plan"> Mark this module done</label></section><section class="mod" id="sources">
+<header class="mod-h"><p class="kicker">Appendix</p><h2>Sources</h2>
+<p class="sum">Where the rules and numbers in this course come from (checked September 2026).</p></header>
+<div class="prose"><p>Amazon changes things often. When a rule matters to your money, check it in <a href="https://affiliate-program.amazon.com/home" target="_blank" rel="noopener">Associates Central</a> first.</p>
+<p><strong>Where to start</strong></p>
+<ul>
+<li><a href="https://affiliate-program.amazon.com/influencers" target="_blank" rel="noopener">Amazon Influencer Program sign-up</a></li>
+<li><a href="https://affiliate-program.amazon.com/" target="_blank" rel="noopener">Amazon Associates sign-up</a></li>
+<li><a href="https://affiliate-program.amazon.com/home" target="_blank" rel="noopener">Associates Central (your dashboard)</a></li>
+<li><a href="https://www.amazon.com/amazon-associates-influencer-university/b?ie=UTF8&amp;node=48482381011" target="_blank" rel="noopener">Creator University (Amazon's free training)</a></li>
+<li><a href="https://affiliate-program.amazon.com/help/operating/agreement" target="_blank" rel="noopener">Associates Operating Agreement</a></li>
+</ul>
+<p><strong>Official Amazon</strong></p>
+<ul>
+<li><a href="https://affiliate-program.amazon.com/help/operating/compare" target="_blank" rel="noopener">Associates Operating Agreement: April 14, 2026 changes</a></li>
+<li><a href="https://affiliate-program.amazon.com/help/node/topic/G4ARBJC7Z2NK48CA" target="_blank" rel="noopener">Onsite and Creator Ads commission rates</a></li>
+<li><a href="https://affiliate-program.amazon.com/help/node/topic/GV7VUCCSS8MQFSQT" target="_blank" rel="noopener">Onsite commissions and the Onsite Store ID</a></li>
+<li><a href="https://affiliate-program.amazon.com/help/node/topic/G8TW5AE9XL2VX9VM" target="_blank" rel="noopener">Associates application review (3 sales in 180 days)</a></li>
+<li><a href="https://affiliate-program.amazon.com/help/node/topic/G63DR893K4DH55XZ" target="_blank" rel="noopener">Payment timing</a></li>
+<li><a href="https://affiliate-program.amazon.com/help/operating/policies" target="_blank" rel="noopener">Program policies</a></li>
+<li><a href="https://www.aboutamazon.com/news/retail/how-amazon-influencer-program-works" target="_blank" rel="noopener">How the Amazon Influencer Program works (Amazon newsroom, Sept 2026)</a></li>
+<li><a href="https://www.aboutamazon.com/news/retail/amazon-prime-big-deals-day-2026-when-october-6-7" target="_blank" rel="noopener">Prime Big Deal Days 2026 dates</a></li>
+<li><a href="https://www.ftc.gov/business-guidance/resources/ftcs-endorsement-guides-what-people-are-asking" target="_blank" rel="noopener">FTC: Endorsement guides, what people are asking</a></li>
+<li><a href="https://www.ftc.gov/business-guidance/resources/consumer-reviews-testimonials-rule-questions-answers" target="_blank" rel="noopener">FTC: Consumer reviews and testimonials rule</a></li>
+<li><a href="https://create.pinterest.com/en-gb/blog/affiliate-marketing-link-basics/" target="_blank" rel="noopener">Pinterest: affiliate link basics</a></li>
+</ul>
+<p><strong>News and industry</strong></p>
+<ul>
+<li><a href="https://www.adweek.com/media/amazon-associates-affiliate-rate-cuts-publishers/" target="_blank" rel="noopener">Adweek: Amazon Associates rate cuts (May 2026)</a></li>
+<li><a href="https://www.socialmediatoday.com/news/youtube-adds-amazon-affiliate-links/829031/" target="_blank" rel="noopener">Social Media Today: YouTube adds Amazon affiliate links (Aug 2026)</a></li>
+<li><a href="https://emplicit.co/amazon-warns-excessive-returns-account-risks/" target="_blank" rel="noopener">Emplicit: Amazon warns on excessive returns (Feb 2026)</a></li>
+<li><a href="https://sellercentral.amazon.com/seller-forums/discussions/t/eb63894f-3b29-447a-a7ec-e7ebd82ce17a" target="_blank" rel="noopener">Amazon Seller Central forum: brands on Creator Connections delivery</a></li>
+</ul></div></section><section class="mod" id="mvp">
+<header class="mod-h"><p class="kicker">Next step</p><h2>The tool we built for this</h2>
+<p class="sum">Everything in this guide works by hand. When the busywork starts eating your filming time, this is what we use.</p></header>
+<div class="prose"><p>You don't need software to start. Film, upload, tag, repeat. That's the job for your first 100 videos.</p>
+<p>But somewhere after that, the filming stops being the hard part. It's everything around it: finding products worth buying, keeping up with Creator Connections campaigns and their end dates, messaging brands, turning one review into a YouTube video, a Pinterest pin, a blog post and a social post, writing every title and description, adding every disclosure. That's where our hours were going.</p>
+<div class="seb">
+<p><strong>So we built MVP Affiliate for our own business.</strong> It's the tool we use every day to run Gominplanet. Full disclosure: it's ours, and yes, we'd love for you to use it. But this whole guide works without it, and we meant every word of it either way.</p>
+</div>
+<h2>What it does</h2>
+<ul>
+<li><strong>Deal Radar and full-catalog product research:</strong> price, sales velocity and competition in one view, so you can run the Module 4 screen in seconds.</li>
+<li><strong>Creator Connections finder</strong>, plus a daily digest of campaigns picked for you.</li>
+<li><strong>Brand Deals:</strong> long-form outreach emails drafted for you, and unlimited Creator Connections messages.</li>
+<li><strong>Art Director thumbnails and designs with your own face on them</strong> for Pinterest, Instagram and Facebook.</li>
+<li><strong>Auto-posting</strong> to Pinterest, Instagram and Facebook, with AI captions and your affiliate link.</li>
+<li><strong>Shoppable link-in-bio page</strong> that sends your audience from any platform to your latest reviews.</li>
+<li><strong>On Pro:</strong> blog posts written in your real voice, Video-to-Blog, Clip Factory for turning long videos into shorts, and posting to more networks.</li>
+</ul>
+<h2>Who it's for</h2>
+<ul>
+<li>You have <strong>100+ videos</strong> and you're making some money (Module 4's rule applies to our tool too).</li>
+<li>You want offsite traffic and brand deals, not just onsite.</li>
+<li>You'd rather spend your time filming than copying, pasting and formatting.</li>
+</ul>
+<div class="cta">
+<h3>Try it free</h3>
+<p><strong>Free forever:</strong> Product Research and Deal Radar.</p>
+<p><strong>Free for your first 30 days:</strong></p>
+<ul>
+<li><strong>5 full posts</strong> once you connect your WordPress site</li>
+<li><strong>5 Art Director thumbnails</strong></li>
+<li><strong>5 designs with your own face on them</strong></li>
+</ul>
+<p>When you're ready for more, the <strong>Amazon plan is $99/month</strong> and the <strong>Pro plan is $199/month</strong> at founder pricing.</p>
+<p><a class="btn" href="https://www.mvpaffiliate.io/pricing">See plans and start free</a></p>
+<p><small>Built by Seb &amp; Michelle of Gominplanet. We use it every day.</small></p>
+</div></div></section>
+<footer class="foot"><p>© 2026 Gominplanet · Seb &amp; Michelle. This course is independent and not affiliated with or endorsed by Amazon. As an Amazon Associate we earn from qualifying purchases. Nothing here is legal, tax, or financial advice.</p><p>Presented by <a href="https://mvpaffiliate.io"><b>MVP Affiliate</b></a> (our software). Links marked "paid link" are affiliate links.</p></footer>
+</main>
+</div>
+</div>
+<script>(function(){
+  var KEY="nsp-done-v1", done={};
+  try{done=JSON.parse(localStorage.getItem(KEY)||"{}")||{}}catch(e){done={}}
+  var boxes=[].slice.call(document.querySelectorAll('.done input'));
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  function render(){
+    var n=0;
+    boxes.forEach(function(b){b.checked=!!done[b.dataset.id]; if(b.checked)n++;});
+    links.forEach(function(a){a.classList.toggle('is-done',!!done[a.dataset.id]);});
+    var bar=document.getElementById('progbar'), t=document.getElementById('progtxt');
+    if(bar) bar.style.width=(boxes.length?n/boxes.length*100:0)+'%';
+    if(t) t.textContent=n+' of '+boxes.length+' modules done';
+  }
+  boxes.forEach(function(b){b.addEventListener('change',function(){
+    done[b.dataset.id]=b.checked; try{localStorage.setItem(KEY,JSON.stringify(done))}catch(e){} render();
+  });});
+  render();
+  var d=document.getElementById('tocd');
+  function fit(){ if(d) d.open = window.innerWidth>900; }
+  fit();
+  links.forEach(function(a){a.addEventListener('click',function(){ if(window.innerWidth<=900 && d) d.open=false; });});
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){es.forEach(function(e){ if(e.isIntersecting){
+      links.forEach(function(a){a.classList.toggle('is-active',a.dataset.id===e.target.id);});
+    }});},{rootMargin:'-20% 0px -70% 0px'});
+    document.querySelectorAll('.mod').forEach(function(s){io.observe(s);});
+  }
+})();
+</script>
+</body></html>

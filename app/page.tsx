@@ -1252,6 +1252,9 @@ const NAV_ANCHORS = [
   // anchor. Sits before Pricing so prospects can see what it does, then price.
   { label: 'Tour', href: '/tour' },
   { label: 'Pricing', href: '/pricing' },
+  // The free Amazon Influencer guide. A lead magnet earns its place in the nav
+  // ahead of the FAQ: it is the one link here that asks for nothing.
+  { label: 'Free Guide', href: '/freeguide' },
   { label: 'FAQ', href: '#faq' },
   // /affiliates is a full page, not an in-page anchor — added here so the
   // top nav surfaces the program for prospects who'd otherwise only see
@@ -1815,6 +1818,7 @@ function Footer() {
           <FooterCol
             title="Resources"
             links={[
+              { label: 'Free Guide', href: '/freeguide' },
               { label: 'Product tour', href: '/tour' },
               { label: 'SCOUT extension', href: 'https://chromewebstore.google.com/detail/scout-%E2%80%94-mvp-affiliate/blpmlneliggaekangckpgknphpacapkg' },
               { label: 'Pricing', href: '/pricing' },
