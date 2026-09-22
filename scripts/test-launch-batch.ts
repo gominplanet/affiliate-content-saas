@@ -1031,6 +1031,38 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     '"connect a channel" is useless to somebody who has not added a video yet')
 }
 
+// ── an ASIN in the title box blocks the step ────────────────────────────────
+//
+// The page warned "That is the ASIN, not a title" underneath a step ticked
+// green that said "Every video has a product and a title". Both were on screen
+// at once and the tick is the one people believe. A title goes on YouTube
+// exactly as typed and is the source text every translation is made from, so
+// this is ten listings, not one field.
+{
+  const asinItem = item({ asin: 'B0H3P7H9T2', title: 'B0H3P7H9T2', state: 'prepared' })
+  const realItem = item({ asin: 'B0H3P7H9T2', title: 'Steam lift pro review', state: 'prepared' })
+  const stepOf = (its: ItemRow[]) => batchSteps(full(), its).find((x) => x.id === 'products')!
+
+  check('an ASIN used as a title is not done',
+    stepOf([asinItem]).done === false,
+    'a green tick over a warning is the tick people believe')
+  check('and a real title is',
+    stepOf([realItem]).done === true)
+  check('the step says which videos and what to do',
+    /ASIN/.test(stepOf([asinItem]).detail) && /Write it for me/.test(stepOf([asinItem]).detail),
+    'a refusal with no next move is the dead end this repo keeps producing')
+  check('and it blocks the launch, not just the tick',
+    !!launchBlocker(full(), [asinItem]) && !launchBlocker(full(), [realItem]),
+    'a step that is not done must stop the button, or the tick was the only thing that changed')
+  // CASE AND SPACING DO NOT RESCUE IT.
+  check('case and padding do not get past it',
+    stepOf([item({ asin: 'B0H3P7H9T2', title: ' b0h3p7h9t2 ', state: 'prepared' })]).done === false)
+  // AND A VIDEO WITH NO PRODUCT YET IS NOT ACCUSED OF THIS.
+  check('a video with no product is not called out for it',
+    /needs a product/.test(stepOf([item({ asin: null, title: 'Something', state: 'prepared' })]).detail),
+    'the earlier problem is the one to name first')
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

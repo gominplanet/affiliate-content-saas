@@ -86,7 +86,11 @@ export async function GET(req: Request) {
         .from('brand_profiles').select('name,niches,affiliate_disclaimer').eq('user_id', u.user_id).maybeSingle()
       const niches: string[] = Array.isArray(brand?.niches) ? brand.niches : []
 
-      const rows = await pickDigestDeals(admin, niches, 5)
+      // matchedNiche says whether these deals came from a search for this
+      // creator's own niches or from the best-overall fallback. It decides
+      // whether the post may name a category at all, so it is carried through
+      // rather than dropped here.
+      const { rows, matchedNiche } = await pickDigestDeals(admin, niches, 5)
       if (rows.length < 3) { skipped++; results.push({ user: u.user_id, status: 'too_few_deals' }); await stamp(); continue }
 
       // Per-user AI-spend ceiling — a cron must honor the same dollar cap the
@@ -118,7 +122,7 @@ export async function GET(req: Request) {
       const nicheLabel = nicheLabelFrom(niches)
       const monthYear = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
       const { title, html, excerpt, theme } = await generateDigestContent({
-        client, deals, reviewerName: (brand?.name as string) || 'the team', nicheLabel, monthYear,
+        client, deals, reviewerName: (brand?.name as string) || 'the team', nicheLabel, monthYear, matchedNiche,
         recordUsage: (msg) => recordAnthropicUsage(msg, { userId: u.user_id, tier: u.tier, feature: 'weekly_digest', model: 'claude-haiku-4-5-20251001' }),
       })
       const seoKeyword = theme || nicheLabel

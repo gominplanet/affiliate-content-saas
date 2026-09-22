@@ -49,7 +49,7 @@ export async function pickDigestDeals(
   admin: any,
   niches: string[],
   limit = 5,
-): Promise<DigestDealRow[]> {
+): Promise<{ rows: DigestDealRow[]; matchedNiche: boolean }> {
   const cols = 'asin,title,brand,image_url,price_now_cents,price_was_cents,discount_pct,deal_quality,lowest_label'
   const verified = ['excellent', 'genuine']
 
@@ -65,16 +65,26 @@ export async function pickDigestDeals(
         .order('discount_pct', { ascending: false, nullsFirst: false })
         .limit(limit)
       const rows = (data ?? []) as DigestDealRow[]
-      if (rows.length >= 3) return rows
+      if (rows.length >= 3) return { rows, matchedNiche: true }
     }
   }
 
-  // Fallback: best verified deals overall.
+  // ── FALLBACK: THE BEST VERIFIED DEALS OVERALL, WHATEVER THEY ARE ─────────
+  //
+  // AND THE CALLER IS TOLD. These rows share nothing except being real
+  // discounts: they are whatever had the biggest genuine price drop across the
+  // whole catalogue. A post that names a category over this set is a post with
+  // a title about something it does not contain, which is what "s-best-toys-
+  // games-deals" turned out to be: a list with no toy in it.
+  //
+  // Returning the same shape with no flag is what let that happen. The writer
+  // could not tell a niche-matched set from a random one, so it named a
+  // category either way.
   const { data } = await admin.from('deal_radar_cache').select(cols)
     .in('deal_quality', verified)
     .order('discount_pct', { ascending: false, nullsFirst: false })
     .limit(limit)
-  return (data ?? []) as DigestDealRow[]
+  return { rows: (data ?? []) as DigestDealRow[], matchedNiche: false }
 }
 
 /**
@@ -171,6 +181,13 @@ export async function generateDigestContent(opts: {
   monthYear: string
   /** Retailer these deals are on ("Amazon" default, or "Walmart"). */
   retailer?: string
+  /** True when these deals came from a search for the creator's own niches, so
+   *  they genuinely share a subject. False when the niche search came up short
+   *  and this is the best verified deals overall: a set that shares nothing
+   *  except being real discounts, and can NEVER honestly carry a category
+   *  title. Defaults to false, because assuming a shared subject is exactly the
+   *  mistake that shipped a toys post with no toys in it. */
+  matchedNiche?: boolean
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   recordUsage?: (msg: any) => void
 }): Promise<{ title: string; html: string; excerpt: string; theme: string }> {
@@ -214,7 +231,9 @@ export async function generateDigestContent(opts: {
       messages: [{
         role: 'user',
         content: `You are ${reviewerName}, writing a hand-picked roundup of the best ${retailer} deals for your affiliate review blog.
-Your blog usually covers "${nicheLabel}", but only lean on that if these SPECIFIC products fit it — otherwise describe what is ACTUALLY in this list.
+${opts.matchedNiche === true
+  ? `Your blog usually covers "${nicheLabel}", and these products were selected because they match it. Still only lean on that if these SPECIFIC products fit.`
+  : `These products were NOT selected by subject. They are the biggest verified price drops across the whole catalogue and they share nothing else. Do NOT name a category: set "theme" to "deals" and write a title that promises only deals. Describe what is ACTUALLY in this list.`}
 
 DEALS (in order):
 ${dealLines}
@@ -238,15 +257,43 @@ Rules:
     console.warn('[weekly-digest] model content failed, using fallback prose:', err instanceof Error ? err.message : err)
   }
 
-  // Theme (for slug + WP category) and title come from the actual products.
+  // ── THE THEME HAS TO BE EARNED ───────────────────────────────────────────
+  //
+  // A post went out titled "Best Toys & Games Deals" over a list with no toy
+  // in it. Two things let that happen and both are fixed here.
+  //
+  // FIRST: the deals had not matched the creator's niche at all. The picker
+  // falls back to the best verified discounts across the whole catalogue, a set
+  // that shares nothing but being real price drops, and the writer was not told
+  // it was looking at one. No category title is honest over that set, whatever
+  // the model calls it.
+  //
+  // SECOND: even over a matched set, the model's answer was taken on trust.
+  // Now it has to be supported by the products themselves: at least one of
+  // their titles has to contain one of the theme's own words. A theme no
+  // product mentions was invented, and "deals" is the truthful answer instead.
+  //
+  // FALLING BACK TO A GENERIC TITLE IS THE CHEAP FAILURE. A wrong one costs a
+  // post Seb has to delete and a URL that outlives it.
   const themeClean = scrubBanned((model.theme || '').trim()).replace(/[^a-z0-9 &-]/gi, '').replace(/\s+/g, ' ').trim()
-  const theme = (themeClean || nicheLabel || 'deals').slice(0, 40)
+  const supported = themeIsSupported(themeClean, deals.map((d) => d.title))
+  const themeEarned = opts.matchedNiche === true && supported
+  if (themeClean && !themeEarned) {
+    console.warn('[weekly-digest] theme "%s" rejected (matchedNiche=%s, supported=%s) — using "deals"',
+      themeClean, opts.matchedNiche === true, supported)
+  }
+  const theme = (themeEarned ? themeClean : 'deals').slice(0, 40)
   const modelTitle = scrubTitle((model.title || '').trim()).replace(/^["']|["']$/g, '')
   // Roundup fallback — a clear "this week's deals" title, never a single product
   // and never a year/date stamp in the title itself.
   const themeWord = theme && theme.toLowerCase() !== 'deals' ? `${titleCase(theme)} ` : ''
   const fallbackTitle = scrubBanned(`This Week's Best ${themeWord}Deals`).slice(0, 60)
-  const title = modelTitle.length >= 8 && modelTitle.length <= 70 ? modelTitle : fallbackTitle
+  // THE TITLE FOLLOWS THE THEME. Rejecting the theme and keeping the model's
+  // title would fix the URL and the category and leave the headline still
+  // claiming toys, which is the half-fix that reads as a whole one.
+  const title = (themeEarned && modelTitle.length >= 8 && modelTitle.length <= 70)
+    ? modelTitle
+    : fallbackTitle
 
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const intro = scrubBanned(model.intro || `Here are the ${nicheLabel.toLowerCase()} deals I'd actually grab this week — each one checked against its price history so you're not paying a fake discount.`)
@@ -277,6 +324,31 @@ export function nicheLabelFrom(niches: string[]): string {
 }
 
 // Words that add no SEO value in a slug — dropped so the URL stays keyword-first.
+/**
+ * Does anything in this list of products actually mention the claimed theme.
+ *
+ * DELIBERATELY CRUDE, and the crudeness is the point. The theme was written by
+ * a model reading these titles, so a theme whose words appear in none of them
+ * was not read off anything: it was invented. This does not try to decide
+ * whether an air fryer is "kitchen", it only catches the case where there is no
+ * evidence at all, and answers "deals" when there is none.
+ */
+export function themeIsSupported(theme: string, titles: string[]): boolean {
+  const words = (theme || '').toLowerCase().split(/[^a-z]+/)
+    // Short words match everything ("pet" inside "carpet") and carry nothing.
+    .filter((w) => w.length >= 4)
+  if (words.length === 0) return false
+  const hay = titles.join(' ').toLowerCase()
+  return words.some((w) => {
+    // A crude singular, so "toys" matches "toy" and "games" matches "game".
+    const stem = w.replace(/(ies|es|s)$/, '')
+    return hay.includes(w) || (stem.length >= 4 && hay.includes(stem))
+  })
+}
+
+/** What an apostrophe leaves behind. Not words, under any rule. */
+const CONTRACTION_FRAGMENTS = new Set(['s', 't', 'd', 'll', 're', 've', 'm'])
+
 const SLUG_STOPWORDS = new Set([
   'a', 'an', 'the', 'this', 'that', 'these', 'those', 'and', 'or', 'but', 'for',
   'to', 'of', 'in', 'on', 'at', 'by', 'with', 'your', 'you', 'my', 'our', 'we',
@@ -292,7 +364,16 @@ const SLUG_STOPWORDS = new Set([
  */
 export function keywordSlug(title: string, theme: string): string {
   const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
-  const words = clean(title || '').split(' ').filter(Boolean)
+  // CONTRACTION FRAGMENTS GO FIRST, before anything else looks at the words.
+  //
+  // Stripping the apostrophe turns "This Week's" into "this week s", and that
+  // lone "s" is not a word in any sense: it led the URL of a live post as
+  // /s-best-toys-games-deals. Removing it as a stopword was not enough, because
+  // when too few words survive the stopword pass this falls back to the
+  // UNFILTERED list, and the fragment came straight back with it. A fragment is
+  // never a keyword under either path, so it is removed before the split.
+  const words = clean(title || '').split(' ')
+    .filter((w) => w && !CONTRACTION_FRAGMENTS.has(w))
   const kept = words.filter((w) => !SLUG_STOPWORDS.has(w))
   const pick = (kept.length >= 3 ? kept : words).slice(0, 7)
   const slug = pick.join('-')

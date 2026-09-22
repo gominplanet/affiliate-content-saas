@@ -199,6 +199,19 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
   const n = items.length
   const withProduct = items.filter((i) => !!(i.asin || '').trim()).length
   const withTitle = items.filter((i) => !!(i.title || '').trim()).length
+  // AN ASIN IS NOT A TITLE, AND THIS IS A BLOCK RATHER THAN A WARNING.
+  //
+  // The page warned about it under a step that was ticked green and said
+  // "Every video has a product and a title". Both sentences were on screen at
+  // once, and the tick is the one people believe. A title is the line that goes
+  // on YouTube exactly as typed and is the source text every other country's
+  // title is translated from, so shipping B0H3P7H9T2 costs ten listings, not
+  // one field.
+  const asinTitled = items.filter((i) => {
+    const t = (i.title || '').trim().toUpperCase()
+    const a = (i.asin || '').trim().toUpperCase()
+    return !!t && !!a && t === a
+  }).length
   const slots = normalizeSlots(batch.daily_slots)
 
   const steps: Array<Omit<StepStatus, 'current'>> = [
@@ -243,14 +256,16 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
       title: 'Set each product',
       // THE ONLY PER-VIDEO STEP, and the only one that cannot be shared: each
       // video sells a different thing.
-      done: n > 0 && withProduct === n && withTitle === n,
+      done: n > 0 && withProduct === n && withTitle === n && asinTitled === 0,
       detail: n === 0
         ? 'Add videos first.'
         : withProduct < n
           ? `${n - withProduct} still ${n - withProduct === 1 ? 'needs' : 'need'} a product.`
           : withTitle < n
             ? `${n - withTitle} still ${n - withTitle === 1 ? 'needs' : 'need'} a title.`
-            : 'Every video has a product and a title.',
+            : asinTitled > 0
+              ? `${asinTitled} ${asinTitled === 1 ? 'has its ASIN' : 'have their ASIN'} in the title box. That would go on YouTube exactly as it reads. Press "Write it for me" or type one.`
+              : 'Every video has a product and a title.',
     },
     {
       id: 'schedule',
