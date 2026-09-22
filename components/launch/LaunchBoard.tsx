@@ -18,13 +18,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { toast } from 'sonner'
 import {
-  Loader2, Plus, Trash2, Upload, Rocket, Clock, X, Check, AlertTriangle, LogIn, Wand2,
+  Loader2, Plus, Trash2, Upload, Rocket, Clock, X, Check, AlertTriangle, LogIn, Wand2, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { deliverPreparedStorefronts, deliverySummary } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, planSchedule } from '@/lib/launch-schedule'
-import { itemStateLabel, itemStateTone, type CtaPreset, type StepStatus } from '@/lib/launch-batch'
+import { itemStateLabel, itemStateTone, prepEta, type CtaPreset, type StepStatus, type ItemRow } from '@/lib/launch-batch'
 import { requestStorefrontPreflight } from '@/lib/extension-frame'
 import StepCard from './StepCard'
 import CtaPicker from './CtaPicker'
@@ -55,6 +55,11 @@ interface Item {
   youtube_video_id: string | null
 }
 interface Market { domain: string; country: string; langName: string | null; needsDub: boolean }
+/** A batch in the switcher: enough to choose between them, nothing more. */
+interface BatchSummary {
+  id: string; name: string; state: string; videos: number
+  start_on: string | null; created_at: string
+}
 interface Batch {
   id: string; name: string; state: string
   cta: CtaPreset | null; cta_chosen: boolean | null
@@ -111,6 +116,11 @@ export default function LaunchBoard() {
   // enforces. Reported while the creator is still choosing countries rather
   // than only at the moment an upload is refused.
   const [room, setRoom] = useState<Record<string, number>>({})
+  // EVERY BATCH, not just the open one. The page used to find the first
+  // unlaunched batch and show that, so the moment one finished it vanished:
+  // ten videos scheduled over ten days and no record of them on the page that
+  // scheduled them.
+  const [batches, setBatches] = useState<BatchSummary[]>([])
   const [launched, setLaunched] = useState<{ scheduled: number; firstAt: string | null; lastAt: string | null; note: string } | null>(null)
 
   // ── load ──────────────────────────────────────────────────────────────────
@@ -143,7 +153,11 @@ export default function LaunchBoard() {
         const r = await fetch('/api/launch/batches')
         const j = await r.json()
         if (!r.ok) { setError(j?.error || 'Could not read your batches.'); setLoading(false); return }
-        const openBatch = (j.batches ?? []).find((b: { state: string }) => b.state !== 'launched')
+        const all = (j.batches ?? []) as BatchSummary[]
+        setBatches(all)
+        // The one still being worked on, or failing that the most recent, so a
+        // finished batch is still what you see when you come back to the page.
+        const openBatch = all.find((b) => b.state !== 'launched') ?? all[0]
         if (openBatch) { setBatchId(openBatch.id); void load(openBatch.id); return }
         setLoading(false)
       } catch { setError('Could not reach the server.'); setLoading(false) }
@@ -158,6 +172,24 @@ export default function LaunchBoard() {
     const t = setInterval(() => void load(batchId), 12_000)
     return () => clearInterval(t)
   }, [batchId, load])
+
+  /** The switcher's own list, re-read whenever it could have changed. */
+  async function refreshBatches() {
+    try {
+      const r = await fetch('/api/launch/batches')
+      const j = await r.json()
+      if (r.ok && Array.isArray(j?.batches)) setBatches(j.batches as BatchSummary[])
+    } catch { /* the current batch still works without the list */ }
+  }
+
+  function openBatch(id: string) {
+    if (id === batchId) return
+    // A DIFFERENT BATCH IS A DIFFERENT PAGE, so it gets to point at its own
+    // current step rather than inheriting whichever one was open here.
+    autoOpened.current = false
+    setBatchId(id)
+    void load(id)
+  }
 
   async function startBatch() {
     setBusy('new')
@@ -174,6 +206,7 @@ export default function LaunchBoard() {
       setBatchId(j.id)
       // A NEW BATCH IS A NEW PAGE, so it may point at step one.
       autoOpened.current = false
+      await refreshBatches()
       await load(j.id)
     } finally { setBusy(null) }
   }
@@ -211,6 +244,19 @@ export default function LaunchBoard() {
       await load(batchId!)
     } catch {
       toast.error('Could not reach SCOUT. Is the extension installed?', { duration: 9000 })
+    } finally { setBusy(null) }
+  }
+
+  async function moveItem(id: string, direction: 'up' | 'down') {
+    setBusy('batch')
+    try {
+      const r = await fetch(`/api/launch/items/${id}/move`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { toast.error(j?.error || 'Could not move that one.'); return }
+      await load(batchId!)
     } finally { setBusy(null) }
   }
 
@@ -408,13 +454,55 @@ export default function LaunchBoard() {
     timezone: batch.timezone, slots, startOn: batch.start_on ?? '',
   })
 
+  const stateWord = (st: string) =>
+    st === 'launched' ? 'Launched' : st === 'launching' ? 'Going out' : st === 'ready' ? 'Ready' : 'Being set up'
+
   return (
     <div className="max-w-3xl flex flex-col gap-3">
+      {/* ── EVERY BATCH, NOT JUST THIS ONE ──────────────────────────────────
+          A launched batch used to disappear the moment it finished: ten
+          videos scheduled across ten days, and the page that scheduled them
+          showed an empty "start a batch" screen. */}
+      {batches.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {batches.map((b) => {
+            const on = b.id === batchId
+            return (
+              <button key={b.id} type="button" onClick={() => openBatch(b.id)}
+                className="px-3 py-1.5 rounded-lg border text-[12px] text-left disabled:opacity-60"
+                style={{
+                  borderColor: on ? '#0EA5A4' : 'var(--border)',
+                  background: on ? 'rgba(14,165,164,0.08)' : 'transparent',
+                  ...text,
+                }}>
+                <span className="font-medium">{b.name}</span>
+                <span style={muted}>{' \u00b7 '}{b.videos} {b.videos === 1 ? 'video' : 'videos'}{' \u00b7 '}{stateWord(b.state)}</span>
+              </button>
+            )
+          })}
+          {/* ALWAYS AVAILABLE. Somebody who posts three a day wants the next
+              batch set up while the last one is still going out. */}
+          <button type="button" onClick={() => void startBatch()} disabled={busy === 'new'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12px] disabled:opacity-60"
+            style={{ borderColor: 'var(--border)', ...muted }}>
+            {busy === 'new' ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+            New batch
+          </button>
+        </div>
+      )}
+
       {/* ── what happens, in one sentence, before any of the steps ─────────── */}
       <div className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <p className="text-[13px]" style={text}>
           <strong>{items.length}</strong> of {maxItems} videos in <strong>{batch.name}</strong>.
         </p>
+        {/* HOW LONG, because "press Launch and walk away" is the whole promise
+            and nobody walks away from a screen that will not say. */}
+        {prepEta(items as unknown as ItemRow[]) && (
+          <p className="text-[12.5px] mt-1 inline-flex items-center gap-1.5" style={{ color: '#0EA5A4' }}>
+            <Clock size={12} /> {prepEta(items as unknown as ItemRow[])}
+          </p>
+        )}
         <p className="text-[12.5px] mt-1" style={muted}>
           MVP burns your CTA into each one, builds the thumbnails, writes each country&apos;s title and
           dubs the audio. All of that runs on our servers with this tab shut. The one part that needs
@@ -594,8 +682,9 @@ export default function LaunchBoard() {
             the Amazon link, and MVP will follow a shortened one to the end.
           </p>
           {items.length === 0 && <p className="text-[12.5px]" style={muted}>Add some videos first.</p>}
-          {items.map((it) => (
-            <ItemRowEditor key={it.id} item={it} busy={busy === it.id} onSave={patchItem} />
+          {items.map((it, i) => (
+            <ItemRowEditor key={it.id} item={it} busy={busy === it.id} onSave={patchItem}
+              onMove={moveItem} first={i === 0} last={i === items.length - 1} />
           ))}
         </div>
       </StepCard>
@@ -676,6 +765,17 @@ export default function LaunchBoard() {
                   </li>
                 ))}
               </ul>
+              {/* AND WHAT AMAZON DOES, which is not on this schedule at all.
+                  The list above is YouTube only, and reading it as the whole
+                  plan is what made a creator ask whether Amazon was waiting
+                  for the same date. */}
+              {batch.markets.length > 0 && (
+                <p className="text-[11.5px] mt-2 pt-2" style={{ ...muted, borderTop: '1px solid var(--border)' }}>
+                  Amazon is not on this schedule. Each of your {batch.markets.length} {batch.markets.length === 1 ? 'storefront' : 'storefronts'} gets
+                  its listing as soon as that country&apos;s translation and dub are done, up to {' '}
+                  {batch.markets.map((m) => `${m.country} ${room[m.domain] ?? (m.domain === 'amazon.com' ? 20 : 10)}`).join(', ')} more today.
+                </p>
+              )}
             </div>
           )}
 
@@ -872,16 +972,24 @@ function progressNote(it: Item): string {
 }
 
 function ItemRowEditor({
-  item, busy, onSave,
+  item, busy, onSave, onMove, first, last,
 }: {
   item: Item
   busy: boolean
   onSave: (id: string, body: Record<string, unknown>) => Promise<void>
+  onMove: (id: string, direction: 'up' | 'down') => Promise<void>
+  first: boolean
+  last: boolean
 }) {
   const [title, setTitle] = useState(item.title ?? '')
   const [product, setProduct] = useState(item.asin ?? '')
   const [options, setOptions] = useState<string[]>([])
   const [writing, setWriting] = useState(false)
+  // THE DESCRIPTION IS WHERE THE AFFILIATE LINK GOES. MVP writes it during
+  // prepare, and this is the only place it can be read or changed before it
+  // reaches YouTube. Collapsed, because most people will never touch it.
+  const [showDesc, setShowDesc] = useState(false)
+  const [desc, setDesc] = useState(item.description ?? '')
 
   // THE TITLE MVP WROTE IS OFFERED, NOT APPLIED. This is the line that goes on
   // YouTube and gets translated into every other country, so it is the last
@@ -907,9 +1015,12 @@ function ItemRowEditor({
     if (dirty.current) return
     setTitle(item.title ?? '')
     setProduct(item.asin ?? '')
-  }, [item.title, item.asin])
+    setDesc(item.description ?? '')
+  }, [item.title, item.asin, item.description])
 
-  const changed = title !== (item.title ?? '') || product !== (item.asin ?? '')
+  const changed = title !== (item.title ?? '')
+    || product !== (item.asin ?? '')
+    || desc !== (item.description ?? '')
   // ONE FIELD'S SAVE MUST NOT WIPE THE OTHER. Both were always sent together,
   // so emptying one box and pressing Save deleted whatever was in it even when
   // the creator was only editing its neighbour. An empty product field is sent
@@ -918,6 +1029,7 @@ function ItemRowEditor({
     const body: Record<string, unknown> = {}
     if (title !== (item.title ?? '')) body.title = title
     if (product !== (item.asin ?? '')) body.product = product
+    if (desc !== (item.description ?? '')) body.description = desc
     dirty.current = false
     void onSave(item.id, body)
   }
@@ -932,7 +1044,23 @@ function ItemRowEditor({
           title was also sitting under the product box, so the box it pointed
           at was the wrong one and the product got cleared instead. */}
       <div className="flex items-start gap-2">
-        <span className="text-[11px] tabular-nums w-5 pt-5" style={muted}>{item.position + 1}</span>
+        {/* THE NUMBER IS THE PUBLISHING ORDER, not a label. With one post a
+            day, number one goes out first and number ten goes out next week,
+            and until now that was decided by the order a file dialog happened
+            to return. */}
+        <span className="flex flex-col items-center w-5 pt-4 shrink-0">
+          <button type="button" onClick={() => void onMove(item.id, 'up')}
+            disabled={busy || first} title="Send this one out earlier"
+            className="leading-none disabled:opacity-25" style={muted}>
+            <ChevronUp size={12} />
+          </button>
+          <span className="text-[11px] tabular-nums" style={muted}>{item.position + 1}</span>
+          <button type="button" onClick={() => void onMove(item.id, 'down')}
+            disabled={busy || last} title="Send this one out later"
+            className="leading-none disabled:opacity-25" style={muted}>
+            <ChevronDown size={12} />
+          </button>
+        </span>
         <label className="flex-1 min-w-0">
           <span className="block mb-1" style={lab}>Title, for YouTube and the English stores</span>
           <input
@@ -956,6 +1084,31 @@ function ItemRowEditor({
             Write it for me
           </button>
         </label>
+      </div>
+
+      {/* ── the description, where the affiliate link lives ──────────────── */}
+      <div className="flex items-start gap-2">
+        <span className="w-5" />
+        <div className="flex-1 min-w-0">
+          <button type="button" onClick={() => setShowDesc((v) => !v)}
+            className="text-[11px] font-semibold underline" style={{ color: 'var(--text-2)' }}>
+            {showDesc ? 'Hide the description' : item.description ? 'See the description' : 'Description (MVP writes it)'}
+          </button>
+          {showDesc && (
+            <>
+              <textarea
+                value={desc} rows={5}
+                onChange={(e) => { dirty.current = true; setDesc(e.target.value) }}
+                placeholder="MVP writes this when it prepares the video, with your affiliate link in it."
+                className="w-full mt-1 px-2.5 py-1.5 rounded-lg border text-[12px] bg-transparent"
+                style={{ borderColor: 'var(--border)', ...text }}
+              />
+              <span className="block text-[11px] mt-1" style={muted}>
+                This goes on YouTube as written. Your affiliate link lives in here, so the CTA burned into the video has somewhere to point.
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="flex items-end gap-2">

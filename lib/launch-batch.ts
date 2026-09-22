@@ -151,7 +151,7 @@ export const BATCH_COLUMNS =
 
 /** The columns an item must be read with, for the same reason. */
 export const ITEM_COLUMNS =
-  'id,position,source_url,rendered_url,clean_url,asin,title,description,thumbnail_url,thumbnail_source,'
+  'id,position,source_url,rendered_url,clean_url,asin,title,description,thumbnail_url,thumbnail_clean_url,thumbnail_source,'
   + 'state,reason,publish_at,youtube_video_id,duration_seconds,render_tries,thumb_tries,updated_at'
 
 export interface ItemRow {
@@ -162,6 +162,7 @@ export interface ItemRow {
   asin: string | null
   title: string | null
   thumbnail_url: string | null
+  thumbnail_clean_url?: string | null
   state: ItemState
   reason: string | null
   publish_at?: string | null
@@ -334,6 +335,40 @@ export function launchBlocker(batch: BatchRow, items: ItemRow[]): string | null 
 export function channelBlocker(hasPushChannel: boolean): string | null {
   if (hasPushChannel) return null
   return 'No YouTube channel is connected for uploading. Connect one under Settings, then launch. Everything you have set up here is kept.'
+}
+
+/**
+ * Roughly how long the unattended half still has to run.
+ *
+ * WHY A NUMBER AND NOT A SPINNER. The whole promise is "press Launch and walk
+ * away", and nobody walks away from a screen that will not say how long. The
+ * drain fires once a minute and does one image per firing, so the arithmetic is
+ * real rather than a guess: two images per video, plus a render for any video
+ * that still needs its CTA burned in.
+ *
+ * STATED AS A FLOOR, not a promise. It counts firings, and a firing can be
+ * spent on a retry, so the honest word is "about".
+ */
+export function minutesLeft(items: ItemRow[]): number {
+  let firings = 0
+  for (const i of items) {
+    if (i.state === 'draft' || i.state === 'rendering') firings += 1  // the CTA burn
+    if (i.state === 'draft' || i.state === 'rendering' || i.state === 'preparing') {
+      // Two images each, minus whichever is already built.
+      firings += (i.thumbnail_url ? 0 : 1) + (i.thumbnail_clean_url ? 0 : 1)
+    }
+  }
+  return firings
+}
+
+/** The same thing in words, or null when there is nothing left to wait for. */
+export function prepEta(items: ItemRow[]): string | null {
+  const mins = minutesLeft(items)
+  if (mins <= 0) return null
+  if (mins === 1) return 'About a minute of preparing left.'
+  if (mins < 60) return `About ${mins} minutes of preparing left. You can close this tab.`
+  const h = Math.round(mins / 60)
+  return `About ${h} ${h === 1 ? 'hour' : 'hours'} of preparing left. You can close this tab.`
 }
 
 /** Plain words for an item state, so no screen invents its own. */

@@ -15,7 +15,7 @@
 //   purpose and this pins them apart.
 import { readFileSync } from 'node:fs'
 import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, BATCH_COLUMNS, ITEM_COLUMNS, type BatchRow, type ItemRow } from '../lib/launch-batch'
-import { channelBlocker } from '../lib/launch-batch'
+import { channelBlocker, prepEta, minutesLeft } from '../lib/launch-batch'
 import { validateThumbnailPreset, presetToRequestFields, defaultThumbnailPreset, styleReferenceAllowed, looksForRequest, LOOKS, presetSummary as presetSummaryOf } from '../lib/thumbnail-preset'
 import { VISUAL_PRESETS } from '../lib/visual-presets'
 
@@ -1150,6 +1150,72 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and it is a best effort, not a block',
     /metaMissing/.test(DRAIN) && !/state: 'blocked'[\s\S]{0,200}?description/.test(DRAIN),
     'a video on the channel beats a video held back over its description')
+}
+
+// ── the page keeps what it launched, and says how long the rest will take ───
+{
+  const MOVE = live(read('app/api/launch/items/[id]/move/route.ts'))
+
+  // A LAUNCHED BATCH USED TO DISAPPEAR. The page found the first unlaunched
+  // batch, so the moment one finished it showed the empty "start a batch"
+  // screen: ten videos scheduled across ten days, and no record of them on the
+  // page that scheduled them.
+  check('every batch is listed, not just the open one',
+    /const \[batches, setBatches\]/.test(BOARD) && /batches\.map\(\(b\)/.test(BOARD),
+    'a finished batch vanishing is the page forgetting what it just did')
+  check('and the most recent is shown when none are open',
+    /all\.find\(\(b\) => b\.state !== 'launched'\) \?\? all\[0\]/.test(BOARD),
+    'falling through to an empty screen is what made it look like nothing happened')
+  check('a new batch can be started while one is still going',
+    /New batch/.test(BOARD),
+    'somebody posting three a day sets up the next one before the last finishes')
+  check('switching batches lets the new one point at its own step',
+    /function openBatch\(id: string\)[\s\S]{0,200}?autoOpened\.current = false/.test(BOARD),
+    'inheriting the last batch’s open step is state bleeding between two things')
+
+  // ORDER IS THE PUBLISHING ORDER, and it was whatever a file dialog returned.
+  check('a video can be moved in the run',
+    /items\/\$\{id\}\/move/.test(BOARD) && /export async function POST/.test(MOVE),
+    'position decides which video goes out today and which goes out next week')
+  check('the whole batch is renumbered rather than two rows swapped',
+    /next\.splice\(to, 0, next\.splice\(at, 1\)\[0\]\)/.test(MOVE),
+    'a swap against a list with a hole in it moves a video nobody asked to move')
+  check('nothing already on YouTube is moved',
+    /already has its time on YouTube/.test(MOVE) && /already on YouTube, so it cannot swap/.test(MOVE),
+    'its time is set on YouTube’s side, so the page would just disagree with the channel')
+  check('and moving past the end is not an error',
+    /ok: true, moved: false/.test(MOVE),
+    '"that failed" about a button with nowhere to go is noise')
+
+  // THE DESCRIPTION IS READABLE AND EDITABLE before it reaches YouTube.
+  check('the description can be seen and changed',
+    /See the description/.test(BOARD) && /body\.description = desc/.test(BOARD),
+    'MVP writes the affiliate link in there and nobody could check it')
+
+  // HOW LONG, counted rather than guessed.
+  {
+    const it = (over: Partial<ItemRow>): ItemRow => item(over)
+    check('nothing left to prepare says nothing',
+      prepEta([it({ state: 'prepared' })]) === null,
+      'a permanent "preparing" line is one nobody reads')
+    check('a draft video counts its render and both images',
+      minutesLeft([it({ state: 'draft', thumbnail_url: null, thumbnail_clean_url: null })]) === 3,
+      'the drain does one image a firing and fires once a minute, so this is arithmetic')
+    check('an image already built is not counted again',
+      minutesLeft([it({ state: 'preparing', thumbnail_url: 'https://x/t.png', thumbnail_clean_url: null })]) === 1)
+    check('and the words hedge, because a firing can go on a retry',
+      /About/.test(prepEta([it({ state: 'draft', thumbnail_url: null })]) ?? ''),
+      'a number stated as a promise is one that gets held against you')
+    check('it says the tab can be closed',
+      /close this tab/.test(prepEta([it({ state: 'draft', thumbnail_url: null })]) ?? ''),
+      'that is the entire promise of the feature and it was said nowhere near the waiting')
+  }
+
+  // THE PREVIEW IS YOUTUBE ONLY, and saying so is why a creator asked whether
+  // Amazon was waiting for the same date.
+  check('the schedule preview says Amazon is not on it',
+    /Amazon is not on this schedule/.test(BOARD),
+    'a list of dates with no caveat reads as the whole plan')
 }
 
 if (failures.length) {
