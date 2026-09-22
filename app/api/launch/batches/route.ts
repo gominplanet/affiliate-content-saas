@@ -7,6 +7,7 @@
 // countries, the publishing cadence) is chosen once; the product, title and
 // thumbnail belong to each video on its own.
 
+import { defaultBatchName } from '@/lib/launch-batch'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
@@ -79,7 +80,10 @@ export async function POST(req: Request) {
   const sb = supabase as any
   const { data, error } = await sb.from('launch_batches').insert({
     user_id: user.id,
-    name: (body.name || '').trim().slice(0, 120) || 'Untitled batch',
+    // NAMED ON ARRIVAL. Three rows reading "Untitled batch" are three
+    // identical buttons, not a list, and the date is the thing somebody
+    // actually uses to tell two of them apart.
+    name: (body.name || '').trim().slice(0, 120) || defaultBatchName(new Date(), timezone),
     timezone,
   }).select('id').single()
 

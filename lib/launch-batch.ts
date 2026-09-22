@@ -338,6 +338,31 @@ export function channelBlocker(hasPushChannel: boolean): string | null {
 }
 
 /**
+ * A name a batch can arrive with.
+ *
+ * "Untitled batch" three times in a row is not a list, it is three identical
+ * buttons. The date is the one thing that always exists at the moment a batch
+ * is created and is what somebody actually uses to tell two of them apart, so
+ * it is the default rather than a placeholder that names nothing.
+ *
+ * NEVER THE YEAR. Everything here is made and used inside a few weeks, and a
+ * year in a name reads as stale the moment it is not the current one.
+ */
+export function defaultBatchName(now: Date = new Date(), timezone?: string): string {
+  try {
+    const d = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone || undefined, day: 'numeric', month: 'short',
+    }).format(now)
+    const t = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone || undefined, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(now)
+    return `${d}, ${t}`
+  } catch {
+    return 'New batch'
+  }
+}
+
+/**
  * Can this step be left alone.
  *
  * WHY IT HAS TO BE SAID. Six numbered steps with green ticks read as six

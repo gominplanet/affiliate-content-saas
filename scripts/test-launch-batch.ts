@@ -15,7 +15,7 @@
 //   purpose and this pins them apart.
 import { readFileSync } from 'node:fs'
 import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, BATCH_COLUMNS, ITEM_COLUMNS, type BatchRow, type ItemRow } from '../lib/launch-batch'
-import { channelBlocker, prepEta, minutesLeft, stepIsOptional, batchRecap } from '../lib/launch-batch'
+import { channelBlocker, prepEta, minutesLeft, stepIsOptional, batchRecap, defaultBatchName } from '../lib/launch-batch'
 import { validateThumbnailPreset, presetToRequestFields, defaultThumbnailPreset, styleReferenceAllowed, looksForRequest, LOOKS, presetSummary as presetSummaryOf } from '../lib/thumbnail-preset'
 import { VISUAL_PRESETS } from '../lib/visual-presets'
 
@@ -1283,6 +1283,68 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('folding never eats unsaved typing',
     /disabled=\{changed \|\| incomplete\}/.test(BOARD),
     'losing somebody’s edit without saying so is the worst kind of tidy')
+}
+
+// ── a batch arrives named, and can be renamed or binned ─────────────────────
+//
+// Three rows reading "Untitled batch · 1 video" are not a list, they are three
+// identical buttons, and none of them could be deleted: a launched batch was
+// refused outright on the grounds that deleting the row does not unschedule
+// anything. That reasoning is right and the conclusion was wrong, because a
+// page that fills with rows you cannot act on teaches people to ignore it.
+{
+  const BATCHES = live(read('app/api/launch/batches/route.ts'))
+
+  const name = defaultBatchName(new Date('2026-09-22T14:05:00Z'), 'America/Toronto')
+  check('a new batch is named with something that tells it apart',
+    /\d/.test(name) && !/Untitled/i.test(name), name)
+  check('and never carries a year',
+    !/\b20\d\d\b/.test(name), name)
+  check('the zone is the creator’s, not the server’s',
+    // THE DATE, not just "the two strings differ". Forcing only the date
+    // formatter to UTC still left the CLOCK differing, so the loose version
+    // passed over a name filed under the wrong day.
+    defaultBatchName(new Date('2026-09-23T02:00:00Z'), 'America/Toronto').startsWith('22 Sept')
+    && defaultBatchName(new Date('2026-09-23T02:00:00Z'), 'UTC').startsWith('23 Sept'),
+    'a batch made late at night would be filed under tomorrow')
+  check('a zone nobody recognises does not throw',
+    defaultBatchName(new Date(), 'Not/AZone').length > 0,
+    'a bad zone must not take batch creation down with it')
+  check('the create route uses it',
+    /defaultBatchName\(new Date\(\), timezone\)/.test(BATCHES)
+    && !/'Untitled batch'/.test(BATCHES),
+    'a helper the route does not call leaves every row saying Untitled')
+
+  // DELETE IS ALLOWED, AND THE TRUTH IS SAID FIRST.
+  // THE GUARD CLAUSE ITSELF. Checking for the absence of an old sentence
+  // passed over a restored refusal that simply worded it differently, and
+  // checking that the query param is PARSED passed over a branch gated on
+  // `false` that never reads it.
+  check('a launched batch can be deleted',
+    /if \(launched && !confirmed\) \{/.test(BATCH),
+    'a list of finished rows nobody can tidy is a list nobody reads')
+  check('but only when the caller says it meant it',
+    /const confirmed = new URL\(req\.url\)\.searchParams\.get\('confirm'\) === '1'/.test(BATCH)
+    && /const launched = batch\.state === 'launched' \|\| batch\.state === 'launching'/.test(BATCH)
+    && /needsConfirm: true/.test(BATCH),
+    'this is the one delete somebody could expect to take the videos down')
+  check('and the refusal says what stays up',
+    /leaves the videos on YouTube and the listings on Amazon/.test(BATCH),
+    'a confirm that does not say what survives is not informed consent')
+  check('the page confirms before it calls',
+    /window\.confirm/.test(BOARD) && /stay on YouTube and the listings stay on Amazon/.test(BOARD),
+    'the server sentence is no use if the browser never shows it')
+  check('and it sends the confirm only for a launched one',
+    /\$\{gone \? '\?confirm=1' : ''\}/.test(BOARD),
+    'asking twice about a draft that published nothing is noise')
+
+  // DELETING THE ONE YOU ARE LOOKING AT has to leave you somewhere.
+  check('deleting the open batch moves to another',
+    /rest\.find\(\(b\) => b\.state !== 'launched'\) \?\? rest\[0\]/.test(BOARD),
+    'a page left pointing at a row that no longer exists')
+  check('and the rename is on the row it renames',
+    /renameBatch\(b\.id, b\.name\)/.test(BOARD) && /name: \(body\.name/.test(BATCHES + BATCH),
+    'a name nothing can change is a name you live with')
 }
 
 if (failures.length) {

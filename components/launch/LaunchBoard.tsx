@@ -191,6 +191,49 @@ export default function LaunchBoard() {
     void load(id)
   }
 
+  async function deleteBatch(id: string, name: string, state: string) {
+    const gone = state === 'launched' || state === 'launching'
+    // THE TRUTH BEFORE THE CONFIRM. This is the one delete on the page where
+    // somebody could reasonably expect the videos to come down with it.
+    const ok = window.confirm(gone
+      ? `Delete "${name}"?\n\nThis removes MVP's record of the batch. The videos stay on YouTube and the listings stay on Amazon exactly where they are.`
+      : `Delete "${name}"? It has not gone out, so nothing is published yet.`)
+    if (!ok) return
+    setBusy('batch')
+    try {
+      const r = await fetch(`/api/launch/batches/${id}${gone ? '?confirm=1' : ''}`, { method: 'DELETE' })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { toast.error(j?.error || 'Could not delete that batch.'); return }
+      toast.success('Batch deleted.')
+      // The page has to pick a new one to show, and the list it picks from has
+      // just changed, so both are re-read rather than guessed at.
+      const rest = batches.filter((b) => b.id !== id)
+      setBatches(rest)
+      if (id === batchId) {
+        const next = rest.find((b) => b.state !== 'launched') ?? rest[0]
+        autoOpened.current = false
+        if (next) { setBatchId(next.id); await load(next.id) }
+        else { setBatchId(null); setBatch(null); setItems([]) }
+      }
+      await refreshBatches()
+    } finally { setBusy(null) }
+  }
+
+  async function renameBatch(id: string, current: string) {
+    const name = window.prompt('Name this batch', current)?.trim()
+    if (!name || name === current) return
+    setBusy('batch')
+    try {
+      const r = await fetch(`/api/launch/batches/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      if (!r.ok) { toast.error('Could not rename that batch.'); return }
+      await refreshBatches()
+      if (id === batchId) await load(id)
+    } finally { setBusy(null) }
+  }
+
   async function startBatch() {
     setBusy('new')
     try {
@@ -468,16 +511,27 @@ export default function LaunchBoard() {
           {batches.map((b) => {
             const on = b.id === batchId
             return (
-              <button key={b.id} type="button" onClick={() => openBatch(b.id)}
-                className="px-3 py-1.5 rounded-lg border text-[12px] text-left disabled:opacity-60"
+              <span key={b.id}
+                className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-lg border text-[12px]"
                 style={{
                   borderColor: on ? '#0EA5A4' : 'var(--border)',
                   background: on ? 'rgba(14,165,164,0.08)' : 'transparent',
-                  ...text,
                 }}>
-                <span className="font-medium">{b.name}</span>
-                <span style={muted}>{' \u00b7 '}{b.videos} {b.videos === 1 ? 'video' : 'videos'}{' \u00b7 '}{stateWord(b.state)}</span>
-              </button>
+                <button type="button" onClick={() => openBatch(b.id)} className="text-left" style={text}>
+                  <span className="font-medium">{b.name}</span>
+                  <span style={muted}>{' \u00b7 '}{b.videos} {b.videos === 1 ? 'video' : 'videos'}{' \u00b7 '}{stateWord(b.state)}</span>
+                </button>
+                {/* RENAME AND DELETE LIVE ON THE THING THEY ACT ON. A list of
+                    rows you cannot act on teaches people to ignore the list. */}
+                <button type="button" onClick={() => void renameBatch(b.id, b.name)} disabled={busy === 'batch'}
+                  title="Rename this batch" className="leading-none disabled:opacity-40" style={muted}>
+                  <Wand2 size={11} />
+                </button>
+                <button type="button" onClick={() => void deleteBatch(b.id, b.name, b.state)} disabled={busy === 'batch'}
+                  title="Delete this batch" className="leading-none disabled:opacity-40" style={muted}>
+                  <Trash2 size={11} />
+                </button>
+              </span>
             )
           })}
           {/* ALWAYS AVAILABLE. Somebody who posts three a day wants the next

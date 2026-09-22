@@ -158,8 +158,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   return NextResponse.json({ ok: true, rejected: thumbnailRejected })
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  // `?confirm=1`, which a launched batch needs and a draft does not.
+  const confirmed = new URL(req.url).searchParams.get('confirm') === '1'
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -169,11 +171,23 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { data: batch } = await sb.from('launch_batches')
     .select('state').eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
-  // A launched batch has videos scheduled on YouTube that deleting a row here
-  // would not unschedule, so the record stays and says what happened.
-  if (batch.state === 'launched' || batch.state === 'launching') {
+  // ── A LAUNCHED BATCH CAN BE CLEARED AWAY, WITH THE TRUTH SAID FIRST ──────
+  //
+  // It used to be refused outright, on the grounds that deleting the row does
+  // not unschedule anything. That reasoning is right and the conclusion was
+  // wrong: the result was a list of finished batches nobody could tidy, and a
+  // page that fills up with rows you cannot act on teaches people to ignore it.
+  //
+  // So it is allowed, and the caller must say it meant it. The videos stay on
+  // YouTube and the storefront listings stay up; what goes is MVP's record of
+  // the batch. The screen says exactly that before the confirm, because this is
+  // the one place somebody could reasonably expect a delete to take something
+  // down.
+  const launched = batch.state === 'launched' || batch.state === 'launching'
+  if (launched && !confirmed) {
     return NextResponse.json({
-      error: 'This batch has already been launched, so its videos are on YouTube. Deleting it here would not take them down.',
+      needsConfirm: true,
+      error: 'This batch has already gone out. Deleting it here removes MVP\u2019s record of it and leaves the videos on YouTube and the listings on Amazon exactly where they are.',
     }, { status: 409 })
   }
 
