@@ -30,6 +30,7 @@ import { ctaStickerAllowed, type CtaPreset } from '@/lib/launch-batch'
 import { validateThumbnailPreset, presetToRequestFields, type ThumbnailPreset } from '@/lib/thumbnail-preset'
 import { postToSelf } from '@/lib/self-url'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
+import { generateProductTitleOptions } from '@/lib/title-options'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { coveragePriority } from '@/lib/storefront-coverage'
 import { marketByDomain } from '@/lib/markets'
@@ -220,7 +221,7 @@ async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed:
  */
 async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: number; failed: number; metaMissing: number }> {
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,asin,title,description,tags,thumbnail_url,thumbnail_clean_url,thumb_tries')
+    .select('id,user_id,batch_id,asin,title,title_source,description,tags,thumbnail_url,thumbnail_clean_url,thumb_tries')
     .eq('state', 'preparing')
     .order('created_at', { ascending: true }).limit(8)
   const items = rows ?? []
@@ -247,10 +248,42 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
   for (const it of items) {
     if (budget <= 0) break
     const asin = (it.asin || '').trim()
-    const title = (it.title || '').trim()
+    let title = (it.title || '').trim()
     // NOT BLOCKED, WAITING. The creator sets the product in their own time and
     // this is the one step that genuinely needs them.
     if (!asin || !title) continue
+
+    // ── THE TITLE MVP WRITES, NOT THE NAME OF THE FILE ───────────────────
+    //
+    // Adding videos to a batch seeded each title from the uploaded file name,
+    // and nothing ever replaced it. A creator uploaded STEAM BRUSH WORKS?.mp4
+    // and that became the video's title, the subject handed to the thumbnail
+    // generator, the subject handed to the description writer, and the title
+    // on YouTube. On the same channel, videos that went through Launchpad read
+    // "Finally, a Camping Table That Actually Fits in the Boot". The batch had
+    // a Write it for me button and it had to be pressed once per video; a
+    // creator who never pressed it got ten file names.
+    //
+    // BEFORE ANYTHING ELSE IN THIS LOOP, because the thumbnail and the
+    // description are both written FROM the title, so a file name fixed after
+    // them would leave an image and a description about a file name.
+    //
+    // ONLY WHAT NOBODY CHOSE. 'creator' is never touched and 'mvp' is never
+    // rewritten, so this runs at most once per video and a typed title is
+    // safe. Null is treated as a file name because every row that predates the
+    // column got its title from one.
+    const titleSource = String(it.title_source || 'filename')
+    if (titleSource !== 'creator' && titleSource !== 'mvp') {
+      const written = await productTitle(it.user_id, title, asin)
+      if (written) {
+        title = written
+        await sb.from('launch_items')
+          .update({ title, title_source: 'mvp', updated_at: now() }).eq('id', it.id)
+      }
+      // A FAILURE HERE IS NOT A BLOCK. The file name is a poor title and a
+      // missing video is worse, so it carries on and the row keeps saying
+      // where the title came from.
+    }
 
     // Already has both images: nothing to do but say so.
     if (it.thumbnail_url && it.thumbnail_clean_url) {
@@ -390,6 +423,41 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
  * Returns null rather than throwing. A video with no description is worse than
  * one with, and far better than one that never goes up at all.
  */
+/**
+ * Write one English title for a video from its product.
+ *
+ * THE SAME WRITER THE BUTTON USES, and the same one Launchpad uses, so a title
+ * written by the worker and a title written by a press come from one place
+ * rather than two that drift. It takes the first option because there is
+ * nobody here to pick, which is the whole point of the unattended half.
+ *
+ * Returns null rather than throwing: a poor title is better than no video.
+ */
+async function productTitle(
+  userId: string, current: string, asin: string,
+): Promise<string | null> {
+  try {
+    const { data: integ } = await (createAdminClient() as Sb)
+      .from('integrations').select('tier').eq('user_id', userId).maybeSingle()
+    // THE FILE NAME IS NOT A HINT. Feeding it back in as the video's subject is
+    // how a writer produced five variations on a file name. The product's real
+    // name is looked up from the ASIN and that is the subject.
+    const options = await generateProductTitleOptions({
+      videoTitle: '',
+      asin,
+      count: 3,
+      ctx: { userId, tier: normalizeTier(integ?.tier) },
+    })
+    const first = (options ?? []).map((t) => String(t || '').trim()).filter(Boolean)[0] || ''
+    // NOT A SWAP FOR THE SAME THING. If the writer hands back what is already
+    // there, writing it would spend a call and change nothing.
+    if (!first || first.toLowerCase() === current.trim().toLowerCase()) return null
+    return first.slice(0, 100)
+  } catch {
+    return null
+  }
+}
+
 async function videoMetadata(
   userId: string, title: string, asin: string,
 ): Promise<{ description: string; tags: string[] } | null> {

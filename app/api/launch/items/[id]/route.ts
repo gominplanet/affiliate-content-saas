@@ -29,7 +29,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
-  if (typeof body.title === 'string') patch.title = body.title.trim().slice(0, 200) || null
+  if (typeof body.title === 'string') {
+    patch.title = body.title.trim().slice(0, 200) || null
+    // THEIRS NOW, AND NEVER OVERWRITTEN. The worker writes a title from the
+    // product for any video still carrying its file name; without this line it
+    // could not tell that one apart from a title somebody meant.
+    patch.title_source = 'creator'
+  }
   if (typeof body.description === 'string') patch.description = body.description.trim().slice(0, 5000) || null
 
   // ── THE PRODUCT, FROM WHATEVER THEY PASTED ────────────────────────────────

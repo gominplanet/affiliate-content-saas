@@ -61,6 +61,8 @@ interface Item {
    *  is running it. */
   thumbnail_set_at: string | null
   thumbnail_error: string | null
+  /** 'filename', 'creator' or 'mvp'. Null reads as 'filename'. */
+  title_source: string | null
 }
 interface Market { domain: string; country: string; langName: string | null; needsDub: boolean }
 /** A batch in the switcher: enough to choose between them, nothing more. */
@@ -403,7 +405,12 @@ export default function LaunchBoard() {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sourceUrl: urlData.publicUrl,
+            // A PLACEHOLDER, AND MARKED AS ONE. This is the file's name, not a
+            // title anybody chose, and a file name reached YouTube as a title
+            // because nothing downstream could tell the difference. MVP writes
+            // a real one from the product unless the creator types their own.
             title: file.name.replace(/\.[^.]+$/, ''),
+            titleSource: 'filename',
             durationSeconds: durationSec,
           }),
         })
@@ -1075,6 +1082,16 @@ export default function LaunchBoard() {
                         way looked identical to one built the right way. */}
                     {it.thumbnail_source === 'plain' && (
                       <> · <span style={{ color: '#d97706' }}>plain look</span></>
+                    )}
+                    {/* WHOSE TITLE THIS IS. A file name and a written title
+                        look the same on a row, and one of them went to
+                        YouTube as "STEAM BRUSH WORKS?" while the channel's
+                        other videos read like titles. */}
+                    {(it.title_source ?? 'filename') === 'filename' && (
+                      <> · <span style={{ color: '#d97706' }}>still your file name</span></>
+                    )}
+                    {it.title_source === 'mvp' && (
+                      <> · <span style={{ color: '#86868b' }}>title by MVP</span></>
                     )}
                     {/* NO DESCRIPTION MEANS NO AFFILIATE LINK, and the CTA
                         burned into the frame says there is one. A video that

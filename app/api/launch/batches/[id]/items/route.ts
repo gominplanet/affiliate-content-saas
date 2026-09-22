@@ -22,6 +22,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const body = await req.json().catch(() => ({})) as {
     sourceUrl?: string
     title?: string
+    /** 'filename' (the default) or 'creator'. */
+    titleSource?: string
     durationSeconds?: number
   }
   const sourceUrl = (body.sourceUrl || '').trim()
@@ -63,6 +65,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     clean_url: sourceUrl,
     duration_seconds: Number.isFinite(body.durationSeconds) ? Math.round(Number(body.durationSeconds)) : null,
     title: (body.title || '').trim().slice(0, 200) || null,
+    // WHERE IT CAME FROM, recorded at the moment it is written. The page seeds
+    // this from the uploaded file name, which is a placeholder and not a title
+    // anybody chose, and without this column nothing downstream could tell it
+    // apart from one somebody typed. A file name reached YouTube that way.
+    title_source: body.titleSource === 'creator' ? 'creator' : 'filename',
     state: 'draft',
   }).select('id,position').single()
 

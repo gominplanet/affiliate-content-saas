@@ -151,7 +151,7 @@ export const BATCH_COLUMNS =
 
 /** The columns an item must be read with, for the same reason. */
 export const ITEM_COLUMNS =
-  'id,position,source_url,rendered_url,clean_url,asin,title,description,thumbnail_url,thumbnail_clean_url,thumbnail_source,video_id,'
+  'id,position,source_url,rendered_url,clean_url,asin,title,title_source,description,thumbnail_url,thumbnail_clean_url,thumbnail_source,video_id,'
   + 'state,reason,publish_at,youtube_video_id,duration_seconds,render_tries,thumb_tries,thumbnail_set_at,thumbnail_error,updated_at'
 
 export interface ItemRow {
@@ -171,6 +171,9 @@ export interface ItemRow {
    *  what the Amazon side has to reference, so it is also the honest answer to
    *  "is there anything for Amazon to do yet". */
   video_id?: string | null
+  /** Where the title came from: 'filename', 'creator' or 'mvp'. Null means a
+   *  row from before this was recorded, which is treated as 'filename'. */
+  title_source?: string | null
   /** When YouTube accepted the thumbnail we designed. */
   thumbnail_set_at?: string | null
   /** What YouTube said if it refused it. The video is up either way, so this
@@ -209,6 +212,10 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
   const n = items.length
   const withProduct = items.filter((i) => !!(i.asin || '').trim()).length
   const withTitle = items.filter((i) => !!(i.title || '').trim()).length
+  // STILL THE UPLOAD'S FILE NAME. Counted rather than guessed at: "STEAM BRUSH
+  // WORKS?" does not look like a file name, and the only thing that knows it
+  // was one is the row that recorded where the title came from.
+  const fileNamed = items.filter((i) => (i.title_source ?? 'filename') === 'filename').length
   // AN ASIN IS NOT A TITLE, AND THIS IS A BLOCK RATHER THAN A WARNING.
   //
   // The page warned about it under a step that was ticked green and said
@@ -286,7 +293,16 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
               ? (n === 1
                   ? 'The title box has your ASIN in it. That would go on YouTube exactly as it reads. Press "Write it for me" or type one.'
                   : `${asinTitled} of your ${n} have an ASIN in the title box. That would go on YouTube exactly as it reads. Press "Write it for me" or type one.`)
-              : 'Every video has a product and a title.',
+              // NOT A BLOCK. A file name is a real string and the worker
+              // replaces it with a written title before anything is built
+              // from it. Saying so beats a green tick that hides it, because
+              // a creator who wants to write their own needs to know which
+              // ones are about to be written for them.
+              : fileNamed > 0
+                ? (n === 1
+                    ? 'Your title is still the name of the file you uploaded. MVP writes one from the product unless you type your own.'
+                    : `${fileNamed} of your ${n} still carry the name of the file you uploaded. MVP writes those from the product unless you type your own.`)
+                : 'Every video has a product and a title.',
     },
     {
       id: 'schedule',

@@ -61,7 +61,8 @@ function full(over: Partial<BatchRow> = {}): BatchRow {
 function item(over: Partial<ItemRow> = {}): ItemRow {
   return {
     id: 'i', position: 0, source_url: 'https://x/v.mp4', rendered_url: 'https://x/r.mp4',
-    asin: 'B0GTLR8ZQL', title: 'A video', thumbnail_url: 'https://x/t.png',
+    asin: 'B0GTLR8ZQL', title: 'A video', title_source: 'creator',
+    thumbnail_url: 'https://x/t.png',
     state: 'prepared', reason: null, ...over,
   }
 }
@@ -1495,6 +1496,55 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the Amazon heading does not promise something automatic',
     !/Amazon: straight away/.test(SCREEN) && /Amazon: you press the button/.test(SCREEN),
     'it said "straight away" and then that it needed this tab open')
+
+  // ── a file name is not a title, and MVP writes the real one ──────────────
+  //
+  // Adding videos to a batch seeded each title from the uploaded file name and
+  // nothing ever replaced it, so STEAM BRUSH WORKS?.mp4 became the video's
+  // title, the subject given to the thumbnail generator, the subject given to
+  // the description writer, and the title on YouTube. The same channel's
+  // Launchpad videos read "Finally, a Camping Table That Actually Fits in the
+  // Boot". The batch had a Write it for me button, one press per video.
+  {
+    const ITEMS_POST = live(read('app/api/launch/batches/[id]/items/route.ts'))
+    const ITEM_PATCH = live(read('app/api/launch/items/[id]/route.ts'))
+
+    check('where a title came from is recorded when it is written',
+      /title_source: body\.titleSource === 'creator' \? 'creator' : 'filename'/.test(ITEMS_POST)
+      && /titleSource: 'filename'/.test(SCREEN),
+      'no pattern separates a file name from a title somebody meant, only provenance does')
+    check('a typed title becomes the creator’s and is never overwritten',
+      /patch\.title_source = 'creator'/.test(ITEM_PATCH),
+      'the worker would otherwise replace a title somebody chose')
+    check('the worker writes a title for anything nobody chose',
+      /if \(titleSource !== 'creator' && titleSource !== 'mvp'\)/.test(DRAIN)
+      && /await productTitle\(it\.user_id, title, asin\)/.test(DRAIN),
+      'a button that must be pressed once per video is not an unattended batch')
+    check('and writes it before the thumbnail and the description are built',
+      DRAIN.indexOf('await productTitle(') > -1
+      && DRAIN.indexOf('await productTitle(') < DRAIN.indexOf('await styledThumbnail('),
+      'both are written FROM the title, so fixing it after leaves an image about a file name')
+    check('it writes it once, not on every firing',
+      /title_source: 'mvp'/.test(DRAIN) && /titleSource !== 'mvp'/.test(DRAIN),
+      'rewriting an MVP title every minute would spend a call a minute per video')
+    check('the file name is not fed back to the writer as the subject',
+      /videoTitle: '',\n      asin,/.test(DRAIN),
+      'handing it back produced five variations on a file name')
+    check('the worker can see the provenance',
+      /asin,title,title_source,description/.test(DRAIN)
+      && ITEM_COLUMNS.split(',').includes('title_source'),
+      'a column neither query selects is a decision made on undefined')
+    check('and the row says whose title it is',
+      /still your file name/.test(SCREEN) && /title by MVP/.test(SCREEN),
+      'a file name and a written title look identical on a row')
+
+    // THE STEP SAYS IT TOO, rather than ticking green over ten file names.
+    const fileNamed = batchSteps(full(), [item({ title: 'steam brush works', title_source: 'filename' })])
+      .find((s) => s.id === 'products')
+    check('the products step names the ones still on a file name',
+      !!fileNamed && /name of the file you uploaded/.test(fileNamed.detail),
+      `read: ${fileNamed?.detail}`)
+  }
 
   // ── one launch, one upload, whatever fails afterwards ────────────────────
   //
