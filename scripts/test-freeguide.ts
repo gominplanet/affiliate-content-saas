@@ -69,6 +69,51 @@ if (present) {
     /<meta[^>]+property=["']og:title["']/i.test(HTML),
     'a shared link with no card is a shared link nobody opens')
 
+  // ── THE SOCIAL CARD ───────────────────────────────────────────────────────
+  //
+  // THIS WAS BROKEN AND NOTHING SAID SO. The page declared
+  // twitter:card=summary_large_image and then shipped no og:image at all, so
+  // every share of it, on X, in Messages, in Slack, in a Facebook post, drew a
+  // blank card. For a lead magnet whose distribution IS people passing the link
+  // around, that is the most expensive missing image on the page, and it is
+  // invisible from the page itself: you only ever see it in somebody else's
+  // feed. A guard is the only thing that looks.
+  const og = HTML.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ?? ''
+  check('the page has a social card image',
+    !!og,
+    'it promises summary_large_image and gave nothing, so every share drew a blank card')
+  check('and twitter is given the same one',
+    new RegExp(`name=["']twitter:image["'][^>]+content=["']${og.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`, 'i').test(HTML),
+    'some scrapers read only the twitter tag')
+  if (og) {
+    // THE FILE, NOT THE PROMISE. A tag pointing at a path nobody shipped is a
+    // blank card that now also looks correct in the markup.
+    const local = og.replace(/^https?:\/\/[^/]+/, '')
+    check('the card image is actually in the repo',
+      existsSync(`public${local}`),
+      `${og} resolves to public${local}, which is not there`)
+    // Facebook and X both reject or crop badly outside 1.91:1. The declared
+    // size is what a scraper lays out before it has the bytes.
+    check('and it declares the size scrapers lay out from',
+      /property=["']og:image:width["'][^>]+content=["']1200["']/i.test(HTML)
+      && /property=["']og:image:height["'][^>]+content=["']630["']/i.test(HTML),
+      '1200x630 is the one shape every network renders whole')
+  }
+
+  // ── THE PEOPLE ────────────────────────────────────────────────────────────
+  //
+  // The page's whole claim is "how WE built this". Everything else on the
+  // screen is type asserting it.
+  const hero = HTML.match(/<img[^>]+src=["']([^"']*hero[^"']*)["']/i)?.[1] ?? ''
+  check('the hero photo is in the page',
+    !!hero && existsSync(`public${hero}`),
+    hero ? `${hero} is referenced and not shipped` : 'no hero image in the markup')
+  check('and it has alt text and its own dimensions',
+    /<img[^>]+src=["'][^"']*hero[^"']*["'][^>]*>/i.test(HTML)
+    && /<img[^>]+alt=["'][^"']{10,}["']/i.test(HTML)
+    && /<img[^>]+width=["']\d+["'][^>]+height=["']\d+["']/i.test(HTML),
+    'width and height on the tag are what stop the page jumping while it loads')
+
   // SELF-CONTAINED. Google Fonts is the one exception and it is named here so
   // a second exception has to be argued for rather than absorbed.
   const externals = [...HTML.matchAll(/(?:src|href)=["'](https?:\/\/[^"']+)["']/gi)]
