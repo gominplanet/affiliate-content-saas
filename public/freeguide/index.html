@@ -60,7 +60,23 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 
 .layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:48px;margin-top:36px}
 .toc{position:relative}
-.toc details{position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px)}
+/* THE STICKY LIST HAS TO SCROLL ON ITS OWN.
+   Sticky pins it to the top of the viewport, and the list of modules is
+   taller than a viewport, so everything past module 8 sat below the fold of
+   an element that never moves: unreachable by scrolling the page, because
+   the page scroll leaves the sidebar exactly where it is.
+   max-height plus its own overflow gives it back. overscroll-behavior stops
+   a scroll that reaches the end of the list from grabbing the page with it,
+   and scrollbar-gutter keeps the text from shifting when the bar appears. */
+.toc details{position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);
+  max-height:calc(100vh - env(safe-area-inset-top,0px) - 32px);
+  overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.toc details::-webkit-scrollbar{width:8px}
+.toc details::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+.toc details::-webkit-scrollbar-track{background:transparent}
+/* The heading stays put while the modules move under it, so you always know
+   what the list is. */
+.toc summary{position:sticky;top:0;z-index:1;background:var(--bg)}
 .toc summary{font:700 12px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);cursor:pointer;list-style:none;padding:6px 0}
 .toc summary::-webkit-details-marker{display:none}
 .toc ol{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:2px}
@@ -125,7 +141,9 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
   .hero-lower{grid-template-columns:1fr;gap:26px}
   .hero-fig{max-width:280px}
   .layout{grid-template-columns:1fr;gap:20px}
-  .toc details{position:static;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+  .toc details{position:static;max-height:none;overflow:visible;
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+  .toc summary{position:static;background:transparent}
   .toc summary::after{content:" ▾"}
 }
 @media (max-width:560px){
@@ -226,7 +244,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <div class="seb">
 <p><strong>Our story, short version.</strong> We actually started on the other side of Amazon, as sellers, back in 2016. Then Michelle and I started Gominplanet as a travel account on Instagram, and it did well. We'd been Amazon Associates for years and made a few bucks here and there with links. No blog, no website, just the Instagram. Around 2019–2020, Amazon invited us into the Influencer Program. I didn't even know what it was.</p>
 <p>It was right up our alley, though. We already knew how to shoot video and talk to camera, and doing reviews looked fun. Back then almost nobody was in the program. Our first month we made 79 videos and earned a few thousand dollars.</p>
-<p>Let's be real: that was a different era. You won't get those numbers from 79 videos today. But here's what happened after: a few thousand, then consistently over $5K a month, then over $10K a month within six or seven months. We haven't dropped under that since. Our best months got close to $30K. (Those are commission numbers, before taxes and before what we spend on products.)</p>
+<p>Let's be real: that was a different era. You won't get those numbers from 79 videos today. But here's what happened after: a few thousand, then consistently over $5K a month, then over $10K a month within six or seven months. We haven't dropped under that since. Our best months got close to $35K. (Those are commission numbers, before taxes and before what we spend on products.)</p>
 <p><strong>And yes, we were lucky to catch the wave early.</strong> Let's not pretend otherwise. It's still a viable business today, but it needs more preparation and better systems than it did back then. The program is getting more saturated every year.</p>
 <p>We've seen this before, though. There was a big wave in 2022 and 2023, and most of those accounts are long gone. Too many newcomers are chasing the next shiny thing and an easy buck, and they'll be disappointed and quit within a few months. The ones who stick with it are the ones who end up successful.</p>
 <p>Every story is different. What moved the needle for us wasn't luck alone. It was volume, not being precious about niches, and reinvesting our profits into products we'd researched. That's what this guide is about.</p>

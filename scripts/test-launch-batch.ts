@@ -1612,6 +1612,59 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'the fallback used to be the exact string the give-up path discards as unreadable')
 }
 
+// ── a scheduled video is checked, not assumed ──────────────────────────────
+//
+// `publishes` wrote `state: goNow ? 'published' : 'scheduled'` once, at upload,
+// and nothing ever came back. A video scheduled for Tuesday read "Scheduled on
+// YouTube, goes live 23 Sept 11:30" in green on Tuesday, on Wednesday and next
+// month, whether or not YouTube made it public. And YouTube does fail to: a
+// video can still be processing, be age restricted, or take a copyright claim,
+// and the publishAt quietly does not fire. Every one of those looked like
+// success, because the only thing the screen knew was what had been ASKED for.
+//
+// 'published' was also unreachable for a scheduled video: only the publish-now
+// path ever wrote it, so the board had a state it could never show for exactly
+// the videos most likely to need it.
+{
+  const M362 = read('supabase/migrations/362_confirm_what_happened.sql')
+
+  check('something goes back and asks YouTube',
+    /async function confirms\(sb: Sb\)/.test(DRAIN) && /await confirms\(sb\)/.test(DRAIN),
+    'a state written once at upload is a promise, and the board was printing it as a record')
+  check('and only public counts as published',
+    /if \(m && m\.status === 'public'\)/.test(DRAIN) && /state: 'published', confirmed_at/.test(DRAIN),
+    'anything else is the video not being on the channel for the people it was scheduled for')
+
+  // A CHECK THAT COULD NOT RUN IS NOT A VERDICT, which is the rule the rest of
+  // this worker already follows.
+  check('a failed lookup never writes a verdict',
+    /confirm lookup failed/.test(DRAIN)
+    && /catch \(e\) \{[\s\S]{0,400}?confirm lookup failed[\s\S]{0,120}?continue/.test(DRAIN),
+    'saying "it did not publish" because our own call failed is worse than saying nothing')
+
+  check('it waits past the moment before asking',
+    /const CONFIRM_GRACE_MS = 5 \* 60_000/.test(DRAIN) && /lte\('publish_at', cutoff\)/.test(DRAIN),
+    'YouTube does not flip a video on the second, so an instant check writes a false failure')
+  check('and it stops asking eventually',
+    /const CONFIRM_TRIES = 6/.test(DRAIN) && /tries >= CONFIRM_TRIES/.test(DRAIN),
+    'a video that never publishes must not be polled forever')
+
+  // GONE AND STILL PRIVATE ARE DIFFERENT ANSWERS with different things to do.
+  check('a removed video reads differently from a stuck one',
+    /no longer has this video/.test(DRAIN) && /still has this private/.test(DRAIN),
+    'one means check the channel, the other means wait or fix a claim')
+
+  check('the worker can see what it needs',
+    /select\('id,user_id,title,youtube_video_id,publish_at,confirm_tries'\)/.test(DRAIN),
+    'a column the query does not select is a decision made on undefined')
+  check('and the columns exist, twice-runnable',
+    // ON launch_items, NOT just anywhere in the file. storefront_coverage gains
+    // columns with the same two names in the same migration, so a bare search
+    // passed with the launch_items block deleted entirely.
+    /alter table public\.launch_items\s+add column if not exists confirm_tries integer not null default 0,\s+add column if not exists confirmed_at timestamptz;/.test(M362),
+    'a column the code writes and the database has not got fails silently on every row')
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

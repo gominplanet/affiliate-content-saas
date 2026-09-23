@@ -818,6 +818,109 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
 
 /** Move a batch's own state to match its videos, so the page does not have to
  *  work it out and cannot disagree. */
+/** Scheduled videos whose moment has passed, checked per firing. Cheap: one
+ *  YouTube call covers up to fifty ids. */
+const CONFIRMS = 40
+/** How long after the planned moment to start asking. YouTube does not flip a
+ *  video to public on the second, and asking too early would write "it did not
+ *  publish" about one that is thirty seconds away. */
+const CONFIRM_GRACE_MS = 5 * 60_000
+/** How many times to ask before saying on the row that it did not go out. */
+const CONFIRM_TRIES = 6
+
+/**
+ * Did the scheduled videos actually go public?
+ *
+ * THIS STEP DID NOT EXIST, AND ITS ABSENCE WAS INVISIBLE. `publishes` above
+ * writes `state: goNow ? 'published' : 'scheduled'` once, at upload, and
+ * nothing came back afterwards. A video scheduled for Tuesday read "Scheduled
+ * on YouTube, goes live 23 Sept 11:30" on Tuesday, on Wednesday and next month,
+ * in green, whether or not YouTube ever made it public.
+ *
+ * And YouTube does fail to. A video can still be processing, be age-restricted,
+ * or take a copyright claim, and the publishAt quietly does not fire. Every one
+ * of those looked exactly like success, because the only thing the screen knew
+ * was what we had ASKED for.
+ *
+ * 'published' was also unreachable for a scheduled video: only the publish-now
+ * path ever wrote it. So the board had a state it could never show for the
+ * videos most likely to need it.
+ */
+async function confirms(sb: Sb): Promise<{ published: number; late: number }> {
+  const cutoff = new Date(Date.now() - CONFIRM_GRACE_MS).toISOString()
+  const { data: rows } = await sb.from('launch_items')
+    .select('id,user_id,title,youtube_video_id,publish_at,confirm_tries')
+    .eq('state', 'scheduled')
+    .not('youtube_video_id', 'is', null)
+    .lte('publish_at', cutoff)
+    .order('publish_at', { ascending: true }).limit(CONFIRMS)
+  const items = rows ?? []
+  if (items.length === 0) return { published: 0, late: 0 }
+
+  // GROUPED BY CREATOR, because the token is per account and one call takes
+  // fifty ids. Checking forty videos costs at most a handful of requests.
+  const byUser = new Map<string, typeof items>()
+  for (const it of items) {
+    const list = byUser.get(it.user_id) ?? []
+    list.push(it)
+    byUser.set(it.user_id, list)
+  }
+
+  let published = 0, late = 0
+  const stamp = () => new Date().toISOString()
+
+  for (const [userId, list] of byUser) {
+    let meta: Record<string, { status: string; publishAt: string | null }> = {}
+    try {
+      const token = await getChannelOAuthToken(sb, userId, null)
+      if (!token) continue
+      meta = await new YouTubeOAuthService(token).getVideoMetaByIds(
+        list.map((i: { youtube_video_id: string }) => i.youtube_video_id),
+      )
+    } catch (e) {
+      // A CHECK THAT COULD NOT RUN IS NOT A VERDICT. Leaving the rows alone
+      // means the next firing tries again, which is the opposite of writing
+      // "it did not publish" because our own call failed.
+      console.warn('[launch-drain] confirm lookup failed', { userId, said: e instanceof Error ? e.message : String(e) })
+      continue
+    }
+
+    for (const it of list) {
+      const m = meta[it.youtube_video_id as string]
+      const tries = Number(it.confirm_tries ?? 0) + 1
+
+      // PUBLIC IS THE ONLY YES. Anything else is the video not being on the
+      // channel for the people it was scheduled for.
+      if (m && m.status === 'public') {
+        await sb.from('launch_items').update({
+          state: 'published', confirmed_at: stamp(), reason: null,
+          confirm_tries: tries, updated_at: stamp(),
+        }).eq('id', it.id)
+        published++
+        continue
+      }
+
+      // GONE FROM YOUTUBE ENTIRELY is its own answer, and a different one from
+      // "still private": a deleted or rejected video returns nothing at all.
+      const missing = !m
+      if (tries >= CONFIRM_TRIES) {
+        await sb.from('launch_items').update({
+          confirm_tries: tries,
+          reason: missing
+            ? 'The time came and went and YouTube no longer has this video. It may have been removed or rejected. Check the channel.'
+            : `The time came and went and YouTube still has this private${m?.publishAt ? ` (it says it will publish at ${m.publishAt})` : ''}. That usually means it is still processing, age restricted, or has a copyright claim.`,
+          updated_at: stamp(),
+        }).eq('id', it.id)
+        late++
+      } else {
+        await sb.from('launch_items')
+          .update({ confirm_tries: tries, updated_at: stamp() }).eq('id', it.id)
+      }
+    }
+  }
+  return { published, late }
+}
+
 async function settle(sb: Sb): Promise<number> {
   const { data: batches } = await sb.from('launch_batches')
     .select('id,state').in('state', ['draft', 'preparing', 'launching']).limit(50)
@@ -866,6 +969,9 @@ export async function GET(request: Request) {
   // LAST, because it is the longest single operation here and putting it ahead
   // of the cheap steps would let one slow upload starve every other batch.
   const published = await publishes(sb)
+  // AFTER the publishing, and cheap: one YouTube call covers fifty ids, so this
+  // never competes with the upload for the firing's time.
+  const confirmed = await confirms(sb)
   const settled = await settle(sb)
-  return NextResponse.json({ ok: true, rendered, thumbed, published, settled })
+  return NextResponse.json({ ok: true, rendered, thumbed, published, confirmed, settled })
 }

@@ -129,6 +129,25 @@ if (present) {
     externals.length === 0,
     `would also fetch: ${externals.slice(0, 3).join(', ')}`)
 
+  // ── THE MODULE LIST HAS TO BE REACHABLE ───────────────────────────────────
+  //
+  // The sidebar is `position: sticky`, and the list of modules is taller than a
+  // laptop viewport. Sticky pins it, so scrolling the page moves the article
+  // and leaves the sidebar exactly where it is: everything past module 8 sat
+  // below the fold of an element that never moves, and there was no gesture
+  // that could reach it. The last four modules, including the closing call to
+  // action, were simply unavailable from the navigation.
+  check('the pinned module list can scroll on its own',
+    /\.toc details\{position:sticky[^}]*max-height:calc\(100vh/.test(HTML)
+    && /\.toc details\{position:sticky[^}]*overflow-y:auto/.test(HTML),
+    'a sticky element taller than the viewport hides its own bottom with no way to reach it')
+  check('and a scroll that hits the end does not drag the page with it',
+    /overscroll-behavior:contain/.test(HTML),
+    'without it the page lurches the moment the list runs out')
+  check('the cap comes off when the sidebar stops being pinned',
+    /\.toc details\{position:static;max-height:none;overflow:visible/.test(HTML),
+    'below 900px it is an ordinary box, and a height cap there would stunt the list on a phone')
+
   // THE ONE LINK THAT HAS TO WORK. Everything above this is plumbing; this is
   // what the page is for.
   check('the call to action goes to /pricing',

@@ -42,7 +42,7 @@ interface Reason { reason: string; count: number }
 interface Coverage {
   domain: string; country: string; langName: string | null
   signin: string; signinLabel: string; deliverable: boolean
-  live: number; uploaded: number; ready: number; preparing: number; blocked: number
+  live: number; uploaded: number; notShowing: number; ready: number; preparing: number; blocked: number
   /** The two waits before the render pipeline, shown apart from `preparing`
    *  and from each other. `checking` is the product existence check and needs
    *  Keepa; `tracking` is the language check and needs the ingest service. They
@@ -264,7 +264,12 @@ export default function CoverageBoard() {
                   {/* Live and uploaded are shown apart, always. One is confirmed
                       on the storefront and the other is only what SCOUT did. */}
                   {m.live > 0 && <span><strong style={{ color: '#10B981' }}>{m.live}</strong> live</span>}
-                  {m.uploaded > 0 && <span><strong style={{ color: '#0EA5A4' }}>{m.uploaded}</strong> uploaded</span>}
+                  {m.uploaded > 0 && <span><strong style={{ color: '#0EA5A4' }}>{m.uploaded}</strong> uploaded, not confirmed yet</span>}
+                  {/* THE ONE THAT USED TO BE INVISIBLE. SCOUT uploaded it and
+                      Amazon is not showing it, which until the confirm pass
+                      existed was indistinguishable from a listing selling every
+                      day. It reads as a problem because it is one. */}
+                  {m.notShowing > 0 && <span><strong style={{ color: '#d97706' }}>{m.notShowing}</strong> not showing on the storefront</span>}
                   {m.ready > 0 && <span><strong style={{ color: '#7C3AED' }}>{m.ready}</strong> ready to upload</span>}
                   {/* Named as its own step. These have not been translated or
                       dubbed yet: we are still checking whether Amazon sells the

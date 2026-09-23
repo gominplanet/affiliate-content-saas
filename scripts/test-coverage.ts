@@ -487,7 +487,11 @@ const SEARCH = read('lib/app-search-index.ts')
     && /<LogIn size=\{12\} \/> Sign in/.test(BOARD_RAW),
     'naming a problem without the button that solves it is the dead end this feature kept producing')
   check('live and uploaded are shown apart on screen',
-    /> live<\/span>/.test(BOARD_RAW) && /> uploaded<\/span>/.test(BOARD_RAW),
+    // THE NUMBERS, NOT THE WORDING AFTER THEM. This pinned the exact label
+    // text, so relabelling uploaded to say it is not confirmed yet, which is
+    // the whole improvement, failed a check about the two being separate while
+    // they were more separate than ever.
+    /\{m\.live\}<\/strong> live</.test(BOARD_RAW) && /\{m\.uploaded\}<\/strong> uploaded/.test(BOARD_RAW),
     'one is confirmed on the storefront and the other is only what SCOUT did')
   check('and unreachable ready listings are said out loud',
     /are prepared for countries you are not signed in to/.test(BOARD_RAW),
@@ -538,6 +542,66 @@ const SEARCH = read('lib/app-search-index.ts')
   check('no dash punctuation in the user-facing copy',
     !/[—–]/.test(copy), (copy.match(/.{0,40}[—–].{0,40}/) ?? [''])[0])
   check('no year stamped into the copy', !/\b20\d\d\b/.test(copy))
+}
+
+// ── `live` is reachable, so the map is a record and not a claim ────────────
+//
+// THIS FILE'S OWN LIBRARY SAID IT AND THE CODE DID NOT DO IT:
+//
+//    UPLOADED IS NOT LIVE, and they are deliberately separate. Collapsing them
+//    turned the whole map into a claim about what was attempted rather than a
+//    record of what is earning.
+//
+// Nothing anywhere wrote 'live'. Every cell stopped at 'uploaded', so the thing
+// that comment warns against was the behaviour: a map of attempts read as a map
+// of earnings, and a listing Amazon silently dropped looked exactly like one
+// selling every day. The line above passed for months because it only ever
+// checked that the two states EXISTED.
+{
+  const CONFIRM = live(read('app/api/coverage/confirm/route.ts'))
+  const RESULT = live(read('app/api/global-sync/deliver/result/route.ts'))
+  const M362 = read('supabase/migrations/362_confirm_what_happened.sql')
+  const SCOUT = read('extension/storefront-upload.js')
+
+  check('something actually writes the live state',
+    /state: 'live'/.test(CONFIRM),
+    'a state nothing can reach is a promise the type makes and the product does not keep')
+
+  check('the listing id SCOUT reports is kept',
+    /media_aci: aci/.test(RESULT) && /mediaAci\?: string \| null/.test(RESULT),
+    'it was being thrown away, which is why nothing could ask Amazon afterwards')
+  check('and it reaches the coverage cell',
+    // THE WRITE, not just the lookup. `media_aci: t.media_aci` also appears in
+    // the map built two lines above, so a check for the bare string passed
+    // while the update that actually carries it onto the cell was gone.
+    /\.update\(\{ state: 'uploaded', media_aci: t\.media_aci/.test(DRAIN)
+    && /state,detail,media_aci/.test(DRAIN),
+    'without carrying it across, live stays unreachable however good the confirm pass is')
+
+  check('a half-read storefront is never treated as a missing listing',
+    /if \(!body\.complete\) \{ stillWaiting\+\+; continue \}/.test(CONFIRM),
+    'calling a listing gone because a page did not finish loading is the same over-confidence pointing the other way')
+  check('and SCOUT only claims a complete read when it saw the end of the list',
+    /if \(list\.length < 50\) \{ complete = true; break \}/.test(SCOUT),
+    'a partial page reported as the whole truth would delete the protection above')
+
+  check('a listing is not called missing on the first look',
+    /const CONFIRM_TRIES = 6/.test(CONFIRM) && /SETTLE_MS/.test(CONFIRM),
+    'Amazon takes its time showing a new listing, so an immediate check means nothing')
+
+  check('the screen separates uploaded from not showing',
+    /notShowing: sum/.test(MAP) && /not showing on the storefront/.test(BOARD_RAW),
+    'both were counted as uploaded, so the failure was invisible on the one screen built to show it')
+
+  check('SCOUT can list what is live',
+    /MVP_STOREFRONT_LIST_LIVE/.test(SCOUT) && /async function listLiveAcis/.test(SCOUT),
+    'the server half is useless without the half that can see the storefront')
+
+  check('the columns exist and can be run twice',
+    /add column if not exists media_aci/.test(M362)
+    && /add column if not exists confirmed_at/.test(M362)
+    && /add column if not exists confirm_tries/.test(M362),
+    'a column the code writes and the database has not got is a silent failure on every row')
 }
 
 if (failures.length) {

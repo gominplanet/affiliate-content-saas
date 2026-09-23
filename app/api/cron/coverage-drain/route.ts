@@ -725,10 +725,10 @@ async function reconcile(sb: Sb): Promise<number> {
   if (rows.length === 0) return 0
 
   const { data: targets } = await sb.from('global_sync_targets')
-    .select('job_id,domain,state,detail')
+    .select('job_id,domain,state,detail,media_aci')
     .in('job_id', [...new Set(rows.map((r: { sync_job_id: string }) => r.sync_job_id))])
-  const byKey = new Map<string, { state: string; detail: string | null }>()
-  for (const t of (targets ?? [])) byKey.set(`${t.job_id}:${t.domain}`, { state: t.state, detail: t.detail })
+  const byKey = new Map<string, { state: string; detail: string | null; media_aci: string | null }>()
+  for (const t of (targets ?? [])) byKey.set(`${t.job_id}:${t.domain}`, { state: t.state, detail: t.detail, media_aci: t.media_aci ?? null })
 
   let moved = 0
   const now = new Date().toISOString()
@@ -736,8 +736,11 @@ async function reconcile(sb: Sb): Promise<number> {
     const t = byKey.get(`${c.sync_job_id}:${c.domain}`)
     if (!t) continue
     if (t.state === 'delivered') {
+      // THE LISTING ID COMES ACROSS WITH IT. `uploaded` still means only that
+      // SCOUT finished; the id is what the confirm pass afterwards looks for on
+      // the storefront, and without carrying it here `live` stays unreachable.
       await sb.from('storefront_coverage')
-        .update({ state: 'uploaded', reason: null, updated_at: now }).eq('id', c.id)
+        .update({ state: 'uploaded', media_aci: t.media_aci, reason: null, updated_at: now }).eq('id', c.id)
       moved++
     } else if (t.state === 'failed') {
       await sb.from('storefront_coverage').update({

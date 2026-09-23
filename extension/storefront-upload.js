@@ -177,6 +177,56 @@
     } catch { return null }
   }
 
+
+  // ── Which listings are actually ON this storefront ──────────────────────────
+  //
+  // WHY THIS EXISTS. The coverage grid has always had two separate states,
+  // `uploaded` and `live`, and only ever reached the first. `uploaded` means
+  // this extension finished the upload; `live` means the listing was afterwards
+  // found on the storefront. Nothing was doing the finding, so a video Amazon
+  // silently dropped looked identical to one selling every day.
+  //
+  // It reuses the call the duplicate check already makes: get-content-list with
+  // contentState LIVE is, by definition, the list of what is live. Nothing new
+  // is scraped and no new permission is needed.
+  //
+  // COMPLETENESS IS REPORTED, NOT ASSUMED. A listing missing from a half-read
+  // list is not a missing listing, and the server refuses to treat it as one
+  // unless `complete` is true. Reporting a partial read as the whole truth
+  // would be the same over-confidence this whole change exists to remove, just
+  // pointing the other way.
+  async function listLiveAcis(ctx) {
+    const acis = []
+    let complete = false
+    try {
+      for (let page = 0; page < 20; page++) {
+        const body = {
+          slateToken: ctx.slateToken,
+          pageSize: 50, startIndex: page * 50, contentState: 'LIVE',
+          ownerAffiliateId: ctx.ownerAffiliateId || '',
+          query: { filters: ['CONTENT_STATE', 'LAST_UPDATE'], sorts: ['LAST_UPDATE'] },
+          orderingType: 'DECREASING', retrieveMetrics: false, globalizeStatus: 'notApplicable',
+        }
+        const r = await fetch(`https://${location.host}/manage-content/api/get-content-list`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json', ...(ctx.csrf ? { 'anti-csrftoken-a2z': ctx.csrf } : {}) },
+          body: JSON.stringify(body), signal: AbortSignal.timeout(20000),
+        })
+        if (!r.ok) return { acis, complete: false }
+        const j = await r.json().catch(() => null)
+        const list = j && Array.isArray(j.result) ? j.result : []
+        for (const it of list) {
+          const cd = it && it.contentDetail
+          if (cd && cd.mediaACI) acis.push(cd.mediaACI)
+        }
+        // A short page is the end of the list, and the only honest place to
+        // call the read complete.
+        if (list.length < 50) { complete = true; break }
+      }
+    } catch (e) { return { acis, complete: false } }
+    return { acis, complete }
+  }
+
   // ── The full upload for ONE job ─────────────────────────────────────────────
   async function uploadOne(job) {
     const ctx = await readContext()
@@ -469,6 +519,18 @@
     // Background asks us to run a job on this page.
     if (msg && msg.action === 'MVP_STOREFRONT_UPLOAD_ONE' && msg.job) {
       uploadOne(msg.job).then(r => sendResponse(r)).catch(e => sendResponse({ ok: false, error: String(e && e.message || e) }))
+      return true // async
+    }
+    // Which listings are live on this storefront right now, so the coverage
+    // grid can say `live` instead of stopping at `uploaded` forever.
+    if (msg && msg.action === 'MVP_STOREFRONT_LIST_LIVE') {
+      (async () => {
+        let ctx = {}
+        try { ctx = await readContext() } catch { /* no context */ }
+        if (!ctx.slateToken) { sendResponse({ ok: false, error: 'No Creator session on this marketplace.', acis: [], complete: false }); return }
+        const out = await listLiveAcis(ctx)
+        sendResponse({ ok: true, acis: out.acis, complete: out.complete })
+      })()
       return true // async
     }
     // Pre-flight probe: report sign-in + Creator-session status without uploading.

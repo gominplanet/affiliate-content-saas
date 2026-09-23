@@ -78,7 +78,12 @@ export async function GET() {
       signinLabel: signinLabel(m.signin_state),
       deliverable: canDeliver(m.signin_state),
       live: mine('live'),
-      uploaded: mine('uploaded'),
+      // UPLOADED SPLITS IN TWO NOW THAT IT CAN BE CHECKED. A cell SCOUT
+      // uploaded and Amazon is not showing is not the same fact as one that
+      // simply has not been looked at yet, and until the confirm pass existed
+      // there was no way to tell them apart, so both read as fine.
+      uploaded: sum((b) => b.domain === m.domain && b.state === 'uploaded' && !b.reason),
+      notShowing: sum((b) => b.domain === m.domain && b.state === 'uploaded' && !!b.reason),
       ready: mine('ready'),
       // Every `unknown` cell is in one of the two earlier waits, so what is
       // left here is only the cells genuinely in the pipeline. Subtracting
