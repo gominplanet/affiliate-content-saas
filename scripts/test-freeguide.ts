@@ -350,6 +350,50 @@ check('and so does the footer',
     'nothing else on the page gives a reader a reason to return')
 }
 
+// ── the guide is part of the site, and says so ─────────────────────────────
+//
+// It is a static file, so it never passes through app/layout.tsx and never
+// inherited the top bar. A reader arriving from an ad had no way back to the
+// product they had just been told about.
+//
+// THE LINKS ARE CHECKED AGAINST THE REAL NAV, because this bar is a second
+// copy of a list that lives in app/page.tsx, and a second copy drifts. When a
+// link is added, renamed or repointed there, this fails until it is matched
+// here.
+{
+  const HTML2 = present ? read(FILE) : ''
+  const HOME = read('app/page.tsx')
+  const navSrc = HOME.slice(HOME.indexOf('const NAV_ANCHORS'), HOME.indexOf(']', HOME.indexOf('const NAV_ANCHORS')))
+  const anchors = [...navSrc.matchAll(/\{\s*label:\s*'([^']+)',\s*href:\s*'([^']+)'\s*\}/g)]
+    .map((m) => ({ label: m[1], href: m[2] }))
+
+  check('the nav list was parsed',
+    anchors.length >= 5, `${anchors.length} found`)
+
+  const bar = HTML2.slice(HTML2.indexOf('<div class="sitebar">'), HTML2.indexOf('</div>', HTML2.indexOf('</nav>')))
+  for (const a of anchors) {
+    // AN ANCHOR ON THE HOMEPAGE NEEDS THE SLASH. Copied verbatim, '#roles'
+    // points at nothing on this page and clicking it does nothing at all.
+    const want = a.href.startsWith('#') ? `/${a.href}` : a.href
+    check(`the bar carries ${a.label}`,
+      new RegExp(`href="${want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`).test(bar),
+      `expected href="${want}" in the guide's bar`)
+  }
+
+  check('the page it is on is stated rather than linked to itself',
+    /href="\/freeguide" aria-current="page"/.test(HTML2),
+    'a live link to the page you are already reading is a dead end that looks like a way out')
+  check('and the two account actions are there',
+    /class="signin" href="\/login"/.test(HTML2) && /class="cta" href="\/signup"/.test(HTML2),
+    'the bar exists so somebody who likes the guide can act on it')
+  check('the bar is not pinned',
+    !/\.sitebar\{[^}]*position:\s*(?:sticky|fixed)/.test(HTML2),
+    'the module list is already pinned, and two fixed bars spend the same screen twice')
+  check('and it is not printed',
+    /@media print\{\.sitebar\{display:none/.test(HTML2),
+    'navigation on paper is ink spent on something nobody can click')
+}
+
 if (failures.length) {
   console.error(`\n❌ freeguide: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

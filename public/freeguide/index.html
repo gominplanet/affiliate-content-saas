@@ -44,6 +44,47 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
   font-size:clamp(56px,11vw,132px);letter-spacing:-.01em;margin:0}
 .hero h1 span{display:block}
 .hero h1 span:last-child{color:var(--accent);font-style:italic;transform:skewX(-6deg);transform-origin:left}
+/* ── Site navigation ───────────────────────────────────────────────────────
+   THE GUIDE IS A STATIC FILE, so it never passes through app/layout.tsx and
+   never inherited the site's top bar. A reader who arrived from an ad had no
+   way back to the product they had just been told about, and no sign that the
+   guide was part of anything.
+
+   BUILT IN THIS PAGE'S OWN LANGUAGE, not as a copy of the purple bar on the
+   marketing site. A pixel copy would sit on a near-white poster in a different
+   typeface and read as a header pasted on from somewhere else. Same links,
+   same destinations, this page's palette.
+
+   THE ANCHORS CARRY A LEADING SLASH. Roles, Workflow and FAQ are anchors ON
+   THE HOMEPAGE. Copied verbatim they would be #roles, which on this page
+   points at nothing at all and would silently do nothing when clicked.
+
+   NOT STICKY. The module list is already pinned down the left, and a second
+   fixed bar on a 75 minute read spends the same screen twice. */
+.sitebar{border-bottom:1px solid var(--line);background:var(--surface)}
+.sitebar .in{max-width:1180px;margin:0 auto;padding:11px 20px;
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.sitebar .brand{font:800 16px/1 var(--display);letter-spacing:.01em;text-transform:uppercase;
+  color:var(--ink);text-decoration:none;margin-right:2px}
+.sitebar nav{display:flex;align-items:center;gap:2px;flex-wrap:wrap;flex:1 1 auto}
+.sitebar nav a{font:500 13px var(--body);color:var(--muted);text-decoration:none;
+  padding:6px 9px;border-radius:8px;transition:color .15s ease,background .15s ease}
+.sitebar nav a:hover{color:var(--ink);background:var(--bg)}
+/* The page you are on is stated, not linked. */
+.sitebar nav [aria-current=page]{color:var(--ink);font-weight:700}
+.sitebar .right{display:flex;align-items:center;gap:8px;margin-left:auto}
+.sitebar .signin{font:500 13px var(--body);color:var(--muted);text-decoration:none;padding:6px 9px}
+.sitebar .signin:hover{color:var(--ink)}
+.sitebar .cta{font:700 13px var(--body);color:#fff;background:var(--accent);
+  text-decoration:none;padding:8px 14px;border-radius:9px;white-space:nowrap;
+  transition:filter .15s ease}
+.sitebar .cta:hover{filter:brightness(1.08)}
+@media (max-width:640px){
+  .sitebar .in{gap:10px;padding:10px 16px}
+  .sitebar nav{order:3;flex-basis:100%;gap:0}
+  .sitebar nav a{padding:5px 7px;font-size:12.5px}
+}
+@media print{.sitebar{display:none!important}}
 .hero-lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,272px);
   gap:clamp(24px,4vw,48px);align-items:start;margin-top:26px}
 .hero-txt{min-width:0}
@@ -246,6 +287,25 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </script>
 <noscript><img height="1" width="1" style="display:none" alt="" src="https://www.facebook.com/tr?id=301488807119194&ev=PageView&noscript=1"></noscript>
 </head><body>
+
+<div class="sitebar">
+  <div class="in">
+    <a class="brand" href="https://www.mvpaffiliate.io/">MVP Affiliate</a>
+    <nav aria-label="MVP Affiliate">
+      <a href="/#roles">Roles</a>
+      <a href="/#how-it-works">Workflow</a>
+      <a href="/tour">Tour</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/freeguide" aria-current="page">Free Guide</a>
+      <a href="/#faq">FAQ</a>
+      <a href="/affiliates">Affiliates</a>
+    </nav>
+    <span class="right">
+      <a class="signin" href="/login">Sign in</a>
+      <a class="cta" href="/signup">Start free trial</a>
+    </span>
+  </div>
+</div>
 
 <div class="shell">
 <header class="hero">
