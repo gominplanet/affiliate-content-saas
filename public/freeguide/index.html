@@ -226,6 +226,11 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 .cta .btn{display:inline-block;background:var(--marker);color:#241c00;font:800 17px/1 var(--body);text-decoration:none;padding:16px 26px;border-radius:10px;margin:4px 0 14px}
 .cta .btn:hover{filter:brightness(1.05)}
 .cta .btn:focus-visible{outline:3px solid var(--accent-ink);outline-offset:3px}
+/* An ordinary link inside this panel inherits a{color:var(--accent)}, which is
+   the panel's own background: blue text on blue ground, invisible in both
+   themes. The Facebook group sentence read as a gap where a link should be. */
+.cta a:not(.btn){color:var(--accent-ink);text-decoration:underline;text-decoration-thickness:2px}
+.cta a:not(.btn):focus-visible{outline-color:var(--accent-ink)}
 .foot{font-size:13px;color:var(--muted);padding:12px 4px 0}
 
 @media (max-width:900px){
@@ -1769,11 +1774,11 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <p><strong>Free forever:</strong> Product Research and Deal Radar.</p>
 <p><strong>Free for your first 30 days:</strong></p>
 <ul>
-<li><strong>5 full posts</strong> once you connect your WordPress site</li>
 <li><strong>5 Art Director thumbnails</strong></li>
 <li><strong>5 designs with your own face on them</strong></li>
 </ul>
-<p>When you're ready for more, the <strong>Amazon plan is $99/month</strong> and the <strong>Pro plan is $199/month</strong> at founder pricing.</p>
+<p><strong>5 full posts</strong> once you connect a WordPress site. Those five are a one-off rather than a monthly allowance, and they don't run out with the 30 days.</p>
+<p>No card to start. When you're ready for more, the <strong>Amazon plan is $99/month</strong> (normally $179) and the <strong>Pro plan is $199/month</strong> (normally $399), and that price is locked for as long as you stay subscribed.</p>
 <p><a class="btn" href="https://mvpaffiliate.io/pricing" target="_blank" rel="noopener">See plans and start free</a></p>
 <p><strong>Not ready for software yet?</strong> Come and ask us instead. Our
 <a href="https://www.facebook.com/groups/mvpaffiliate" rel="noopener">private Facebook group</a>

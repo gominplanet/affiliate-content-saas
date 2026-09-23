@@ -411,6 +411,86 @@ check('and so does the footer',
     'navigation on paper is ink spent on something nobody can click')
 }
 
+// ── the offer panel says what the server actually enforces ─────────────────
+//
+// This panel is an offer, on a page an ad campaign is about to point at, and
+// every number in it is a promise somebody can hold us to. It is also a hand
+// copy of numbers that live in lib/tier.ts and lib/free-trial.ts, which is the
+// exact shape that drifts: three public pages once advertised "unlimited
+// Amazon product research" against a route that enforced fifty a day.
+//
+// So the numbers are read out of the source of truth rather than typed here.
+// Change a cap and this fails until the guide is changed with it.
+{
+  const HTML3 = present ? read(FILE) : ''
+  const panel = HTML3.slice(HTML3.indexOf('<div class="cta">'), HTML3.indexOf('</div></div></section>'))
+  const TIER = read('lib/tier.ts')
+  const TRIAL = read('lib/free-trial.ts')
+  const num = (src: string, key: string) => {
+    const m = new RegExp(`(?:^|[^A-Za-z])${key}:\\s*(\\d+)`).exec(src)
+    return m ? m[1] : '«unreadable»'
+  }
+  // The keys in TIERS are padded to line up (`trial:   {`), so slice on the
+  // key itself rather than on a literal with a guessed number of spaces. A
+  // slice that silently returns '' turns every check below into a pass.
+  const tierBlock = (from: string, to: string) => {
+    const a = new RegExp(`^  ${from}:\\s*\\{`, 'm').exec(TIER)?.index ?? -1
+    const b = new RegExp(`^  ${to}:\\s*\\{`, 'm').exec(TIER)?.index ?? -1
+    return a >= 0 && b > a ? TIER.slice(a, b) : ''
+  }
+  const trialBlock = tierBlock('trial', 'creator')
+  const amazonBlock = tierBlock('amazon', 'studio')
+  const proBlock = tierBlock('pro', 'admin')
+  check('the three tier blocks were found in lib/tier.ts',
+    !!trialBlock && !!amazonBlock && !!proBlock,
+    'an empty slice makes every number below read «unreadable» and every check below meaningless')
+
+  check('the panel was found',
+    panel.includes('Try it free'), 'everything below is checking an empty string otherwise')
+
+  check(`it offers the ${num(TRIAL, 'thumbnails')} thumbnails the tier grants`,
+    panel.includes(`${num(TRIAL, 'thumbnails')} Art Director thumbnails`), '')
+  check(`and the ${num(TRIAL, 'socialDesigns')} designs`,
+    panel.includes(`${num(TRIAL, 'socialDesigns')} designs`), '')
+  check(`over the ${num(TRIAL, 'trialDays')} days the window actually runs`,
+    panel.includes(`first ${num(TRIAL, 'trialDays')} days`), '')
+  check(`the ${num(trialBlock, 'lifetimeMax')} posts match lifetimeMax`,
+    panel.includes(`${num(trialBlock, 'lifetimeMax')} full posts`), '')
+  check(`Amazon is the $${num(amazonBlock, 'price')} we charge`,
+    panel.includes(`$${num(amazonBlock, 'price')}/month`), '')
+  check(`and Pro the $${num(proBlock, 'price')}`,
+    panel.includes(`$${num(proBlock, 'price')}/month`), '')
+  check(`the discount is off the real $${num(amazonBlock, 'regularPrice')} and $${num(proBlock, 'regularPrice')}`,
+    panel.includes(`normally $${num(amazonBlock, 'regularPrice')}`)
+    && panel.includes(`normally $${num(proBlock, 'regularPrice')}`),
+    'a saving measured against a number we never charged is the one claim here that could cost us')
+
+  // THE FIVE POSTS ARE NOT PART OF THE MONTH, and grouping them under it was
+  // the mistake this section was written for. try_consume_post_quota is handed
+  // limits.lifetimeMax and never the trial window, so those five survive day
+  // 31. The panel listed them as a bullet under "Free for your first 30 days",
+  // which tells a reader they expire, and a reader who believes that has no
+  // reason to come back and use them.
+  const monthList = panel.slice(panel.indexOf('first 30 days'), panel.indexOf('</ul>'))
+  check('the lifetime posts are not listed inside the 30-day list',
+    !monthList.includes('full posts'),
+    'a lifetime allowance sold as a monthly one is an offer that expires in the reader\'s head and not in the database')
+  check('and the panel says so in words',
+    /don't run out with the 30 days/.test(panel),
+    'the correction only works if the reader is told, not merely if the bullet moved')
+
+  // A LINK THE SAME COLOUR AS THE PANEL IT SITS ON. The Facebook group
+  // sentence rendered as a blank gap: `a{color:var(--accent)}` and
+  // `.cta{background:var(--accent)}` are the same token.
+  check('a link in the panel is not painted in the panel background',
+    /\.cta a:not\(\.btn\)\{color:var\(--accent-ink\)/.test(HTML3),
+    'blue on blue: the sentence read "Our      is where Amazon Influencers compare notes"')
+  check('and it is underlined, since colour alone no longer separates it',
+    /\.cta a:not\(\.btn\)\{[^}]*text-decoration:underline/.test(HTML3), '')
+  check('the group link is still there to be seen',
+    /facebook\.com\/groups\/mvpaffiliate/.test(panel), '')
+}
+
 if (failures.length) {
   console.error(`\n❌ freeguide: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
