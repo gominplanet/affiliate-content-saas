@@ -1595,8 +1595,14 @@ export interface StudioFinishStep {
   /** Step didn't apply to this channel (e.g. monetization on a non-monetized
    *  channel) — render as a neutral note, not a failure. */
   skipped?: boolean
+  /** SCOUT stopped before this step, so it was not attempted. Counts as not
+   *  done: a run that stopped at the disclosure did not do the rest. */
+  notReached?: boolean
   detail?: string
   error?: string
+  /** What Studio showed AFTER the click, read off the page again. The only
+   *  thing a tick on screen is allowed to be based on. */
+  readBack?: Record<string, unknown>
   debug?: Record<string, unknown>
 }
 
@@ -1604,7 +1610,19 @@ export interface StudioFinishResult {
   ok: boolean
   steps: StudioFinishStep[]
   error?: string
+  /** Which route Studio took: 'draft' (the Edit draft modal, walked page by
+   *  page), 'video' (an uploaded video's own panels), or 'unknown' when Studio
+   *  showed neither. */
+  path?: 'draft' | 'video' | 'unknown'
 }
+
+/** What SCOUT does on the Visibility page of a draft. 'keep' leaves the draft
+ *  alone; 'schedule' needs `publishAt` (ISO). Ignored for a video that is not a
+ *  draft: those are scheduled through the YouTube API instead. */
+export type StudioVisibility =
+  | { mode: 'keep' }
+  | { mode: 'public' | 'private' | 'unlisted' }
+  | { mode: 'schedule'; publishAt: string }
 
 /** Which Studio-only actions the user opted into. */
 export interface StudioFinishOpts {
@@ -1626,6 +1644,11 @@ export interface StudioFinishOpts {
   tagProduct?: boolean
   /** The product link SCOUT pastes into the Tag-products search box. */
   productUrl?: string
+  /** The product's name. When given, SCOUT only tags a result whose name
+   *  shares words with it, and says so when the top result does not. */
+  productTitle?: string
+  /** Drafts only: the last page of the modal. See StudioVisibility. */
+  visibility?: StudioVisibility
 }
 
 /**
@@ -1643,14 +1666,17 @@ export async function requestStudioFinish(
 ): Promise<StudioFinishResult> {
   if (!videoId) return { ok: false, steps: [], error: 'no-video-id' }
   if (!(await isExtensionAvailable())) return { ok: false, steps: [], error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; steps?: StudioFinishStep[]; error?: string }>(
+  const resp = await sendToExtension<{ ok?: boolean; steps?: StudioFinishStep[]; error?: string; path?: StudioFinishResult['path'] }>(
     // The toggle as an explicit boolean. SCOUT ticks Studio's notify box only
     // on `true`, so undefined is already No; said outright so it cannot drift.
     { type: 'MVP_STUDIO_FINISH', videoId, opts: { ...opts, notifySubscribers: opts.notifySubscribers === true } },
-    185000, // up to 3 page loads + UI settle time in Studio
+    // A draft is walked through every page of its modal, product search and
+    // end-screen editor included. SCOUT gives up at 290s; this waits a little
+    // longer so its own answer, not ours, is the one that arrives.
+    300000,
   )
   if (!resp) return { ok: false, steps: [], error: 'timeout' }
-  return { ok: !!resp.ok, steps: Array.isArray(resp.steps) ? resp.steps : [], error: resp.error }
+  return { ok: !!resp.ok, steps: Array.isArray(resp.steps) ? resp.steps : [], error: resp.error, path: resp.path }
 }
 
 export interface YtSaveRecipe {

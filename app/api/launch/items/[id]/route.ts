@@ -1,7 +1,8 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // PATCH  /api/launch/items/[id] — the one video's own product, copy and
-//                                 YouTube date and time.
+//                                 YouTube date and time; or, on its own, what
+//                                 SCOUT's last Studio run reported.
 // DELETE /api/launch/items/[id] — take it out of the batch.
 //
 // EVERY VIDEO IS ITS OWN VIDEO. The CTA and the countries are shared; the
@@ -13,6 +14,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeAsinInput, asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
 import { normalizeSlots, todayIn } from '@/lib/launch-schedule'
+import { readStudioRun } from '@/lib/studio-finish'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -31,6 +33,32 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     /** This video's own YouTube date and time, in the batch's zone. Null puts
      *  it back on the batch pattern. Absent leaves it as it is. */
     schedule?: { date: string; time: string } | null
+    /** SCOUT's Studio run on this video, as lib/studio-finish stores it. Sent
+     *  on its own, and accepted whatever state the video is in: the run
+     *  happens after it is on YouTube. */
+    studioFinish?: unknown
+  }
+
+  // ── WHAT SCOUT REPORTED, AND NOTHING ELSE ─────────────────────────────────
+  // Recorded so the board shows each video's Studio steps after a reload, as
+  // Studio read them back. Only a well-formed run is stored, and only this
+  // column is touched: the rules below guard a video's copy and time, and a
+  // report about the video is neither.
+  if (body.studioFinish !== undefined) {
+    const run = readStudioRun(body.studioFinish)
+    if (!run) return NextResponse.json({ error: 'That is not a Studio run.' }, { status: 400 })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).from('launch_items')
+      .update({ studio_finish: run }).eq('id', id).eq('user_id', user.id)
+    if (error) {
+      if (/studio_finish/.test(error.message)) {
+        return NextResponse.json({
+          error: 'SCOUT finished, but its report could not be kept: the database needs migration 367. The result is shown until you reload.',
+        }, { status: 503 })
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true })
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }

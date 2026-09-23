@@ -7455,8 +7455,10 @@ function studioFinishMonetizeInPage() {
     const click = (el) => {
       if (!el) return false
       try { el.scrollIntoView({ block: 'center' }) } catch (e) {}
+      // One click: el.click() plus a dispatched 'click' was two, which ticks a
+      // checkbox and unticks it again.
+      try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
       try { el.click() } catch (e) {}
-      try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
       return true
     }
     // Find the shortest-text clickable matching any regex (prefers the leaf
@@ -7591,8 +7593,10 @@ function studioFinishEndScreenInPage() {
     const click = (el) => {
       if (!el) return false
       try { el.scrollIntoView({ block: 'center' }) } catch (e) {}
+      // One click: el.click() plus a dispatched 'click' was two, which ticks a
+      // checkbox and unticks it again.
+      try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
       try { el.click() } catch (e) {}
-      try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
       return true
     }
     const find = (res) => {
@@ -7700,8 +7704,10 @@ function studioFinishDetailsInPage(notifySubscribers) {
     const click = (el) => {
       if (!el) return false
       try { el.scrollIntoView({ block: 'center' }) } catch (e) {}
+      // One click: el.click() plus a dispatched 'click' was two, which ticks a
+      // checkbox and unticks it again.
+      try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
       try { el.click() } catch (e) {}
-      try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
       return true
     }
     const isBtn = (el) => { const t = (el.tagName || '').toLowerCase(); return /button|ytcp-button/.test(t) || (el.getAttribute && el.getAttribute('role') === 'button') }
@@ -7899,7 +7905,7 @@ function studioFinishTagProductInPage(productUrl) {
     }
     const visText = (el) => { try { const a = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title')); return (a || el.textContent || '').replace(/\s+/g, ' ').trim() } catch (e) { return '' } }
     const isBtn = (el) => { const t = (el.tagName || '').toLowerCase(); return /button|ytcp-button/.test(t) || (el.getAttribute && el.getAttribute('role') === 'button') }
-    const click = (el) => { if (!el) return false; try { el.scrollIntoView({ block: 'center' }) } catch (e) {} try { el.click() } catch (e) {} try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {} return true }
+    const click = (el) => { if (!el) return false; try { el.scrollIntoView({ block: 'center' }) } catch (e) {} try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {} try { el.click() } catch (e) {} return true }
     const setInput = (el, val) => {
       try {
         const proto = (el.tagName === 'TEXTAREA') ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype
@@ -8228,6 +8234,845 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
   }
 }
 
+// ── Studio DRAFT flow: the "Edit draft" modal, step by step ─────────────────
+//
+// WHY THIS EXISTS. Every finish step above opens a video's own panels
+// (/edit, /monetization, /endscreens). A video still in DRAFT has none of
+// that. Its page carries a banner, "This video is in a draft state", and one
+// button, Edit draft, which opens the same step-by-step modal as a fresh
+// upload: Details, Monetization, Ad suitability, Video elements, Checks,
+// Visibility. The panel code looked for controls that were not on the page,
+// found nothing, and the screen still said "Paid promotion checked". Studio
+// showed the box blank.
+//
+// So a draft is driven the way its creator drives it by hand, in the order
+// they gave us:
+//
+//   1  Edit draft
+//   2  Details: Show more, paid promotion YES, AI use NO, notify box set to
+//      the creator's toggle (unticked unless they turned it on), Next
+//   3  Monetization, when the channel has it: On, Done, Next
+//   4  Ad suitability, when it is there: None of the above, Submit rating,
+//      Next
+//   5  Video elements: Tag products (paste the link, add the exact match, Next,
+//      Done), End screen (Import from video, the latest video, Save), Next
+//   6  Checks: Next
+//   7  Visibility: the date and time the creator picked, then Schedule
+//
+// EVERY STEP READS BACK WHAT IT SET. A click is not a result. Each answer is
+// read off the control again after the click, and a step is only ok when the
+// read says so. A compliance step that does not read back stops the run
+// before Visibility, so a video can never be scheduled or published without
+// its disclosure. The draft keeps what it had (Studio saves drafts as you go).
+//
+// WHY SEPARATE INJECTIONS. One long in-page script would run for minutes and
+// hold the service worker on a single call. Each step here is its own short
+// executeScript against the same open modal, with a toolkit installed on the
+// page once (window.__mvpKit) so the steps share one set of helpers.
+
+function studioKitInstallInPage() {
+  const KIT_VERSION = 1
+  if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
+  const K = { v: KIT_VERSION }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim()
+  const all = (root) => {
+    const acc = []
+    const walk = (r) => {
+      let els
+      try { els = r.querySelectorAll('*') } catch (e) { return }
+      for (const el of els) { acc.push(el); if (el.shadowRoot) walk(el.shadowRoot) }
+    }
+    const start = root || document
+    if (start !== document && start.shadowRoot) walk(start.shadowRoot)
+    walk(start)
+    return acc
+  }
+  // Parent, crossing shadow boundaries: a node at the top of a shadow tree has
+  // the ShadowRoot as its parent, and the ShadowRoot's host is the real one.
+  const up = (el) => (el ? (el.parentElement || (el.parentNode && el.parentNode.host) || null) : null)
+  const visible = (el) => {
+    try {
+      if (!el || !el.isConnected) return false
+      const r = el.getBoundingClientRect()
+      if (r.width < 1 || r.height < 1) return false
+      const cs = getComputedStyle(el)
+      return cs.visibility !== 'hidden' && cs.display !== 'none'
+    } catch (e) { return false }
+  }
+  // Text including shadow trees, without the CSS that Polymer ships inside
+  // every shadow root (a <style> full of "checked" would match anything).
+  const deepText = (el) => {
+    const parts = []
+    const visit = (n) => {
+      for (const c of Array.from(n.childNodes || [])) {
+        if (c.nodeType === 3) parts.push(c.nodeValue)
+        else if (c.nodeType === 1) {
+          const t = c.tagName
+          if (t === 'STYLE' || t === 'SCRIPT' || t === 'TEMPLATE') continue
+          if (c.shadowRoot) visit(c.shadowRoot)
+          visit(c)
+        }
+      }
+    }
+    try { if (el.shadowRoot) visit(el.shadowRoot); visit(el) } catch (e) {}
+    return norm(parts.join(' '))
+  }
+  const attrLabel = (el) => {
+    try { return norm(el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title') || '')) } catch (e) { return '' }
+  }
+  // Only what a person can see. Studio keeps every step of the modal in the
+  // DOM and hides the ones you are not on, so plain text would say we are on
+  // all six pages at once.
+  const visibleText = (scope) => {
+    const parts = []
+    for (const el of all(scope)) {
+      let own = ''
+      for (const c of Array.from(el.childNodes || [])) if (c.nodeType === 3) own += c.nodeValue
+      own = norm(own)
+      if (!own) continue
+      const t = el.tagName
+      if (t === 'STYLE' || t === 'SCRIPT') continue
+      if (visible(el)) parts.push(own)
+    }
+    return parts.join('\n')
+  }
+  const isBtn = (el) => {
+    const t = (el.tagName || '').toLowerCase()
+    if (t === 'button' || t === 'ytcp-button' || t === 'ytcp-icon-button' || t === 'tp-yt-paper-button' || t === 'tp-yt-paper-icon-button' || t === 'ytcp-button-shape') return true
+    const r = el.getAttribute && el.getAttribute('role')
+    return r === 'button'
+  }
+  const isDisabled = (el) => {
+    try {
+      if (el.disabled === true) return true
+      if (!el.getAttribute) return false
+      return el.getAttribute('aria-disabled') === 'true' || el.hasAttribute('disabled')
+    } catch (e) { return false }
+  }
+  // ONE CLICK. The older finish helpers call el.click() AND dispatch their
+  // own 'click' event, which is two clicks: harmless on a radio, and on a
+  // checkbox it ticks the box and unticks it again. Pointer and mouse downs
+  // and ups for the controls that listen to those, then a single click.
+  const click = (el) => {
+    if (!el) return false
+    try { el.scrollIntoView({ block: 'center' }) } catch (e) {}
+    try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, composed: true, view: window }))) } catch (e) {}
+    try { el.click() } catch (e) {}
+    return true
+  }
+  // The shortest visible button whose text or label matches: the leaf, not a
+  // wrapper that happens to contain the same words.
+  const findBtn = (re, scope, opts) => {
+    const o = opts || {}
+    let best = null, bestLen = 1e9
+    for (const el of all(scope)) {
+      if (!isBtn(el) || !visible(el)) continue
+      const t = deepText(el), a = attrLabel(el)
+      const hit = (t && t.length <= 60 && re.test(t)) ? t : (a && a.length <= 80 && re.test(a)) ? a : null
+      if (!hit) continue
+      if (o.enabled && isDisabled(el)) continue
+      if (hit.length < bestLen) { best = el; bestLen = hit.length }
+    }
+    return best
+  }
+  const byId = (id, scope) => all(scope).find((el) => el.id === id && visible(el)) || null
+  const waitFor = async (fn, ms, every) => {
+    const end = Date.now() + ms
+    while (Date.now() < end) {
+      let v = null
+      try { v = fn() } catch (e) {}
+      if (v) return v
+      await sleep(every || 300)
+    }
+    return null
+  }
+  const isRadio = (el) => {
+    const t = (el.tagName || '').toLowerCase()
+    const r = el.getAttribute && el.getAttribute('role')
+    if (/-group$/.test(t) || r === 'radiogroup') return false
+    return /radio/.test(t) || r === 'radio' || (t === 'input' && el.type === 'radio')
+  }
+  const isCheckbox = (el) => {
+    const t = (el.tagName || '').toLowerCase()
+    const r = el.getAttribute && el.getAttribute('role')
+    return /checkbox/.test(t) || r === 'checkbox' || (t === 'input' && el.type === 'checkbox')
+  }
+  const isChecked = (el) => {
+    if (!el) return false
+    const ac = el.getAttribute && el.getAttribute('aria-checked')
+    if (ac === 'true') return true
+    if (ac === 'false') return false
+    if (el.checked === true) return true
+    try { if (el.hasAttribute && el.hasAttribute('checked') && el.getAttribute('checked') !== 'false') return true } catch (e) {}
+    try { if (el.shadowRoot && el.shadowRoot.querySelector('[aria-checked="true"]')) return true } catch (e) {}
+    try { if (el.querySelector && el.querySelector('[aria-checked="true"]')) return true } catch (e) {}
+    return false
+  }
+
+  // ── WHICH QUESTION A CONTROL BELONGS TO ──────────────────────────────────
+  // Paid promotion is a Yes/No pair, and so is AI use. Matching "Yes" inside
+  // "somewhere near the words paid promotion" found the AI answer as often as
+  // the paid one, because eight ancestors up is the whole form. So a control
+  // belongs to the NEAREST ancestor that names exactly one question, and a
+  // climb that reaches text naming two has gone too far and answers nothing.
+  const SECTIONS = {
+    paid: /paid promotion/i,
+    altered: /altered content|altered or synthetic|synthetic content|realistic|ai use|generate or edit/i,
+    kids: /made for kids/i,
+    notify: /notify subscribers|subscriptions feed/i,
+    premiere: /premiere/i,
+  }
+  const sectionOf = (el, table) => {
+    const T = table || SECTIONS
+    let e = up(el)
+    for (let i = 0; i < 14 && e; i++) {
+      const t = deepText(e)
+      if (t.length > 6000) return null
+      const hits = Object.keys(T).filter((k) => T[k].test(t))
+      if (hits.length === 1) return hits[0]
+      if (hits.length > 1) return null
+      e = up(e)
+    }
+    return null
+  }
+  const ctrlText = (el) => deepText(el) || attrLabel(el)
+  const pickRadio = (section, choiceRe, scope) => {
+    for (const el of all(scope)) {
+      if (!isRadio(el)) continue
+      const t = ctrlText(el)
+      if (!t || !choiceRe.test(t)) continue
+      if (sectionOf(el) !== section) continue
+      return el
+    }
+    return null
+  }
+  const pickCheckbox = (section, scope) => {
+    let fallback = null
+    for (const el of all(scope)) {
+      if (!isCheckbox(el)) continue
+      if (sectionOf(el) !== section && !SECTIONS[section].test(ctrlText(el))) continue
+      // The element that carries aria-checked is the one whose state we can
+      // read, so it wins over the host that wraps it.
+      if (el.getAttribute && el.getAttribute('aria-checked') != null) return el
+      if (!fallback) fallback = el
+    }
+    return fallback
+  }
+  // ANSWER, THEN READ THE ANSWER BACK. Returns what the control says after
+  // the click, not what we hoped the click did.
+  const answerRadio = async (section, choiceRe, scope) => {
+    const el = pickRadio(section, choiceRe, scope)
+    if (!el) return { found: false, confirmed: false, did: 'not-found' }
+    let did = 'already-set'
+    if (!isChecked(el)) { click(el); did = 'set'; await sleep(600) }
+    const again = pickRadio(section, choiceRe, scope) || el
+    return { found: true, confirmed: isChecked(again), did, label: ctrlText(again).slice(0, 80) }
+  }
+  const answerCheckbox = async (section, desired, scope) => {
+    const el = pickCheckbox(section, scope)
+    if (!el) return { found: false, confirmed: false, did: 'not-found' }
+    let did = desired ? 'already-on' : 'already-off'
+    if (isChecked(el) !== desired) { click(el); did = desired ? 'turned-on' : 'turned-off'; await sleep(600) }
+    const again = pickCheckbox(section, scope) || el
+    const now = isChecked(again)
+    return { found: true, confirmed: now === desired, now, did }
+  }
+
+  // ── WHERE WE ARE ─────────────────────────────────────────────────────────
+  const mainDialog = () => {
+    const host = all(document).find((el) => (el.tagName || '').toLowerCase() === 'ytcp-uploads-dialog')
+    if (host && visible(host)) return host
+    if (host) {
+      const inner = all(host).find((el) => /dialog/i.test(el.tagName || '') && visible(el))
+      if (inner) return host
+    }
+    let best = null, area = 0
+    for (const el of all(document)) {
+      const r = el.getAttribute && el.getAttribute('role')
+      if (r !== 'dialog' && !/paper-dialog$/i.test(el.tagName || '')) continue
+      if (!visible(el)) continue
+      const b = el.getBoundingClientRect()
+      if (b.width * b.height > area) { area = b.width * b.height; best = el }
+    }
+    return best
+  }
+  const isDialogish = (el) => {
+    const t = (el.tagName || '').toLowerCase()
+    const r = el.getAttribute && el.getAttribute('role')
+    return r === 'dialog' || /(^|-)dialog$|paper-dialog|iron-dropdown|ytcp-popup|popup-container/.test(t)
+  }
+  const dialogsNow = () => all(document).filter((el) => isDialogish(el) && visible(el))
+  // A dialog that was not open before the click. The outermost of the new
+  // ones, so its content is inside the scope we search.
+  const newDialog = (before) => {
+    const fresh = dialogsNow().filter((d) => !before.includes(d))
+    let best = null, area = 0
+    for (const d of fresh) {
+      const b = d.getBoundingClientRect()
+      if (b.width * b.height > area) { area = b.width * b.height; best = d }
+    }
+    return best
+  }
+  const page = (dlg) => {
+    const vt = visibleText(dlg).toLowerCase()
+    if (/\bpublic\b/.test(vt) && /\bprivate\b/.test(vt) && /\bunlisted\b/.test(vt)) return 'visibility'
+    if (/copyright/.test(vt) && /community guidelines/.test(vt)) return 'checks'
+    if (/end screen/.test(vt) && /\bcards\b/.test(vt)) return 'elements'
+    if (/none of the above/.test(vt)) return 'adsuit'
+    if (/made for kids|title \(required\)|add a title/.test(vt)) return 'details'
+    if (/monetization/.test(vt) && /(^|\n)(on|off)(\n|$)/.test(vt)) return 'monetization'
+    return 'unknown'
+  }
+  const buttonSample = (scope) => Array.from(new Set(all(scope).filter((el) => isBtn(el) && visible(el)).map((el) => (deepText(el) || attrLabel(el)).slice(0, 40)).filter(Boolean))).slice(0, 40)
+
+  const nextBtn = (dlg) => byId('next-button', dlg) || findBtn(/^next$/i, dlg)
+  const next = async (dlg) => {
+    const from = page(dlg)
+    const btn = await waitFor(() => { const b = nextBtn(dlg); return b && !isDisabled(b) ? b : null }, 20000, 400)
+    if (!btn) return { ok: false, from, detail: 'The Next button stayed greyed out on the ' + from + ' page' }
+    click(btn)
+    const to = await waitFor(() => { const p = page(dlg); return p !== from ? p : null }, 15000, 400)
+    return to ? { ok: true, from, to } : { ok: false, from, detail: 'Pressed Next, but Studio stayed on the ' + from + ' page' }
+  }
+
+  // Text of the smallest section around `el` that names exactly one of the
+  // video-element rows, so an Add button is known to be Tag products' Add and
+  // not End screen's.
+  const ROWS = { products: /tag products|products/i, endscreen: /end screen/i, cards: /\bcards?\b/i, subtitles: /subtitles/i }
+  const rowOf = (el) => sectionOf(el, ROWS)
+
+  // ── STEPS ────────────────────────────────────────────────────────────────
+  K.steps = {}
+
+  K.steps.open = async (out) => {
+    const ready = await waitFor(() => {
+      if (mainDialog() && page(mainDialog()) !== 'unknown') return 'modal'
+      if (findBtn(/^edit draft$/i, document)) return 'draft'
+      const vt = visibleText(document).toLowerCase()
+      if (/something went wrong/.test(vt)) return 'error'
+      if (/video details/.test(vt) && !/draft state/.test(vt)) return 'video'
+      return null
+    }, 20000, 500)
+    out.readBack.pageKind = ready || 'nothing'
+    if (ready === 'error') { out.needsReload = true; out.detail = 'Studio showed its own error page'; return out }
+    if (ready === 'video') { out.ok = true; out.isDraft = false; out.detail = 'Not a draft: Studio shows this video’s normal details page'; return out }
+    if (!ready) { out.detail = 'Studio never showed the video page or an Edit draft button'; out.debug.buttons = buttonSample(document); return out }
+    if (ready === 'draft') {
+      click(findBtn(/^edit draft$/i, document))
+      const opened = await waitFor(() => { const d = mainDialog(); return d && page(d) !== 'unknown' ? d : null }, 20000, 400)
+      if (!opened) { out.detail = 'Pressed Edit draft, but the draft window did not open'; out.debug.buttons = buttonSample(document); return out }
+    }
+    // A draft somebody already clicked through reopens on the page they left
+    // it on. The steps start at Details, so go back there first.
+    const dlg = mainDialog()
+    if (dlg && page(dlg) !== 'details') {
+      const tab = byId('step-badge-0', dlg) || findBtn(/^details$/i, dlg)
+      if (tab) click(tab)
+      await waitFor(() => (page(dlg) === 'details' ? true : null), 8000, 400)
+      if (page(dlg) !== 'details') { out.detail = 'The draft opened on its ' + page(dlg) + ' page and SCOUT could not get back to Details'; out.debug.buttons = buttonSample(dlg); return out }
+    }
+    out.ok = true
+    out.isDraft = true
+    out.detail = 'Opened the draft'
+    return out
+  }
+
+  K.steps.where = async (out) => {
+    const dlg = mainDialog()
+    if (!dlg) { out.page = 'gone'; out.detail = 'The draft window is not open'; return out }
+    out.page = page(dlg)
+    out.ok = true
+    if (out.page === 'unknown') { out.debug.text = visibleText(dlg).slice(0, 600); out.debug.buttons = buttonSample(dlg) }
+    return out
+  }
+
+  K.steps.next = async (out) => {
+    const dlg = mainDialog()
+    if (!dlg) { out.detail = 'The draft window closed'; return out }
+    const r = await next(dlg)
+    out.ok = r.ok
+    out.detail = r.ok ? ('Moved on to ' + r.to) : r.detail
+    out.readBack = { from: r.from, to: r.to || null }
+    if (!r.ok) out.debug.buttons = buttonSample(dlg)
+    return out
+  }
+
+  // Details: Show more, paid promotion YES, AI use NO, notify box = toggle.
+  K.steps.details = async (out, o) => {
+    const dlg = mainDialog()
+    if (!dlg || page(dlg) !== 'details') { out.detail = 'The draft’s Details page is not open'; return out }
+    const paidThere = () => pickRadio('paid', /^yes\b/i, dlg) || pickCheckbox('paid', dlg)
+    if (!paidThere()) {
+      const more = byId('toggle-button', dlg) || findBtn(/^show more$/i, dlg)
+      out.debug.showMore = more ? (deepText(more) || attrLabel(more)).slice(0, 30) : null
+      if (more && /more/i.test(deepText(more) || attrLabel(more))) click(more)
+      await waitFor(paidThere, 6000, 300)
+    }
+    if (!paidThere()) { out.detail = 'Pressed Show more, but the paid promotion question never appeared'; out.debug.buttons = buttonSample(dlg); return out }
+    const checks = []
+    if (o.paid) {
+      // Radio layout first (current Studio); the old single checkbox only if
+      // this account is still served it.
+      let r = await answerRadio('paid', /^yes\b/i, dlg)
+      out.debug.paidLayout = r.found ? 'radio' : 'checkbox'
+      if (!r.found) r = await answerCheckbox('paid', true, dlg)
+      out.readBack.paidPromotion = r.found ? r.confirmed : null
+      checks.push(['Paid promotion: Yes', r.confirmed])
+    }
+    if (o.aiNo) {
+      const r = await answerRadio('altered', /^no\b/i, dlg)
+      out.readBack.aiUseNo = r.found ? r.confirmed : null
+      checks.push(['AI use: No', r.confirmed])
+    }
+    // The notify box follows the creator's toggle exactly: ticked only when
+    // they said yes. Read back like the rest.
+    const n = await answerCheckbox('notify', o.notify === true, dlg)
+    out.readBack.notifySubscribers = n.found ? n.now : null
+    if (n.found) checks.push([o.notify === true ? 'Notify subscribers: ticked' : 'Notify subscribers: unticked', n.confirmed])
+    else checks.push(['Notify subscribers box', false])
+    const failed = checks.filter((c) => !c[1]).map((c) => c[0])
+    out.ok = failed.length === 0
+    out.detail = out.ok
+      ? checks.map((c) => c[0]).join(', ') + '. Read back from Studio.'
+      : 'Studio did not keep: ' + failed.join(', ')
+    return out
+  }
+
+  K.steps.monetization = async (out, o) => {
+    const dlg = mainDialog()
+    if (!dlg) { out.detail = 'The draft window closed'; return out }
+    const trigger = () => {
+      const byChild = byId('child-input', dlg)
+      if (byChild) return byChild
+      for (const el of all(dlg)) {
+        if (!visible(el)) continue
+        const t = deepText(el)
+        if (!/^(on|off)$/i.test(t)) continue
+        const r = el.getAttribute && el.getAttribute('role')
+        const tag = (el.tagName || '').toLowerCase()
+        if (isBtn(el) || r === 'combobox' || r === 'listbox' || /dropdown|select|trigger/.test(tag)) return el
+      }
+      for (const el of all(dlg)) { if (visible(el) && /^(on|off)$/i.test(deepText(el))) return el }
+      return null
+    }
+    const state = () => { const t = trigger(); const s = t ? deepText(t) : ''; return /^on\b/i.test(s) ? 'on' : /^off\b/i.test(s) ? 'off' : null }
+    out.readBack.before = state()
+    if (!o.on) { out.skipped = true; out.detail = 'Left as it was: ' + (out.readBack.before || 'unknown'); return out }
+    if (out.readBack.before === 'on') { out.ok = true; out.readBack.monetization = 'on'; out.detail = 'Monetization was already On'; return out }
+    const t = trigger()
+    if (!t) { out.skipped = true; out.detail = 'No monetization switch on this channel'; return out }
+    const before = dialogsNow()
+    click(t)
+    const onOpt = await waitFor(() => {
+      const pop = newDialog(before) || document
+      return all(pop).find((el) => isRadio(el) && visible(el) && /^on$/i.test(ctrlText(el))) || null
+    }, 6000, 300)
+    if (!onOpt) { out.detail = 'Opened the monetization menu, but there was no On option'; out.debug.buttons = buttonSample(document); return out }
+    if (!isChecked(onOpt)) { click(onOpt); await sleep(600) }
+    const done = findBtn(/^done$/i, newDialog(before) || document, { enabled: true })
+    if (done) { click(done); await sleep(1200) }
+    out.readBack.monetization = state()
+    out.ok = out.readBack.monetization === 'on'
+    out.detail = out.ok ? 'Monetization On. Read back from Studio.' : 'Chose On, but Studio still shows ' + (out.readBack.monetization || 'nothing')
+    return out
+  }
+
+  K.steps.adsuit = async (out, o) => {
+    const dlg = mainDialog()
+    if (!dlg) { out.detail = 'The draft window closed'; return out }
+    if (!o.submit) { out.skipped = true; out.detail = 'Left for you: the rating was not ticked in the options'; return out }
+    const none = () => all(dlg).find((el) => isCheckbox(el) && /none of the above/i.test(ctrlText(el)) && (el.getAttribute('aria-checked') != null || el.checked != null)) ||
+      all(dlg).find((el) => isCheckbox(el) && /none of the above/i.test(ctrlText(el))) || null
+    const box = none()
+    if (!box) { out.detail = 'Could not find None of the above'; out.debug.buttons = buttonSample(dlg); return out }
+    if (!isChecked(box)) { click(box); await sleep(700) }
+    out.readBack.noneOfTheAbove = isChecked(none() || box)
+    if (!out.readBack.noneOfTheAbove) { out.detail = 'Ticked None of the above, but Studio shows it unticked'; return out }
+    const submit = findBtn(/^submit( rating)?$/i, dlg, { enabled: true })
+    if (!submit) {
+      // Already rated: Studio shows the result instead of the button.
+      const vt = visibleText(dlg).toLowerCase()
+      if (/safe for ads|rating submitted|you submitted/.test(vt)) { out.ok = true; out.readBack.submitted = true; out.detail = 'Already rated'; return out }
+      out.detail = 'None of the above is ticked, but there was no Submit rating button'
+      out.debug.buttons = buttonSample(dlg)
+      return out
+    }
+    click(submit)
+    const settled = await waitFor(() => {
+      const b = findBtn(/^submit( rating)?$/i, dlg)
+      const vt = visibleText(dlg).toLowerCase()
+      if (/safe for ads|rating submitted|you submitted|thanks for (rating|submitting)/.test(vt)) return 'said'
+      if (!b || isDisabled(b)) return 'button-gone'
+      return null
+    }, 20000, 600)
+    out.readBack.submitted = !!settled
+    out.readBack.how = settled
+    out.ok = !!settled
+    out.detail = out.ok ? 'None of the above, rating submitted' : 'Pressed Submit rating, and Studio never showed it as submitted'
+    return out
+  }
+
+  K.steps.tagproduct = async (out, o) => {
+    const dlg = mainDialog()
+    if (!dlg) { out.detail = 'The draft window closed'; return out }
+    if (!o.productUrl) { out.skipped = true; out.detail = 'No product link to tag'; return out }
+    const addBtns = () => all(dlg).filter((el) => isBtn(el) && visible(el) && /^add$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'products')
+    const rowDone = () => all(dlg).some((el) => isBtn(el) && visible(el) && /^edit$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'products')
+    if (rowDone() && !addBtns().length) { out.ok = true; out.readBack.tagged = true; out.detail = 'A product was already tagged'; return out }
+    const add = addBtns()[0]
+    if (!add) { out.skipped = true; out.detail = 'Tag products is not offered on this channel'; return out }
+    const before = dialogsNow()
+    click(add)
+    const pop = await waitFor(() => {
+      const d = newDialog(before)
+      if (!d) return null
+      const input = all(d).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el))
+      return input ? { d, input } : null
+    }, 10000, 400)
+    if (!pop) { out.detail = 'Pressed Add, but the product search did not open'; out.debug.buttons = buttonSample(document); return out }
+    const { d, input } = pop
+    try {
+      input.focus()
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+      setter.call(input, o.productUrl)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      for (const type of ['keydown', 'keypress', 'keyup']) input.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+    } catch (e) {}
+    const searchBtn = findBtn(/^search$/i, d)
+    if (searchBtn) click(searchBtn)
+    // THE EXACT MATCH, OR NOTHING. A pasted link returns the product itself
+    // first and then a "Similar results" list. Only a result above that
+    // heading is the product; tagging a similar one would put somebody else's
+    // product on the video.
+    const plusBtns = () => all(d).filter((el) => isBtn(el) && visible(el) && (/^\+$/.test(deepText(el)) || /^add\b|add product/i.test(attrLabel(el))))
+    const found = await waitFor(() => (plusBtns().length ? true : null), 20000, 500)
+    if (!found) {
+      const cancel = findBtn(/^(cancel|close)$/i, d)
+      if (cancel) click(cancel)
+      out.detail = 'Searched for the product link, and YouTube found nothing to tag'
+      return out
+    }
+    const header = all(d).find((el) => visible(el) && /^similar results$/i.test(deepText(el)))
+    const limit = header ? header.getBoundingClientRect().top : Infinity
+    const exact = plusBtns().filter((b) => b.getBoundingClientRect().top < limit)
+      .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+    if (!exact.length) {
+      const cancel = findBtn(/^(cancel|close)$/i, d)
+      if (cancel) click(cancel)
+      out.detail = 'YouTube only offered similar products, not this one, so nothing was tagged'
+      return out
+    }
+    // The product's name, from the smallest block around the button that has
+    // some words in it.
+    const nameNear = (b) => { let e = up(b); for (let i = 0; i < 6 && e; i++) { const t = deepText(e); if (t.length > 12) return t.slice(0, 160); e = up(e) } return '' }
+    const pick = exact[0]
+    const name = nameNear(pick)
+    out.readBack.productName = name
+    if (o.productTitle) {
+      const words = (s) => (String(s).toLowerCase().match(/[a-z0-9]{4,}/g) || [])
+      const want = Array.from(new Set(words(o.productTitle))).slice(0, 8)
+      const have = new Set(words(name))
+      const shared = want.filter((w) => have.has(w)).length
+      const need = Math.min(2, want.length)
+      if (want.length && shared < need) {
+        const cancel = findBtn(/^(cancel|close)$/i, d)
+        if (cancel) click(cancel)
+        out.detail = 'The top result, "' + name.slice(0, 60) + '", does not look like "' + String(o.productTitle).slice(0, 60) + '", so nothing was tagged'
+        return out
+      }
+    }
+    click(pick)
+    await sleep(900)
+    const nx = await waitFor(() => findBtn(/^next$/i, d, { enabled: true }), 8000, 400)
+    if (!nx) { out.detail = 'Added the product, but the Next button never became available'; out.debug.buttons = buttonSample(d); return out }
+    click(nx)
+    const doneBtn = await waitFor(() => findBtn(/^done$/i, document, { enabled: true }), 10000, 400)
+    if (doneBtn) click(doneBtn)
+    await waitFor(() => (rowDone() ? true : null), 10000, 500)
+    out.readBack.tagged = rowDone()
+    out.ok = out.readBack.tagged
+    out.detail = out.ok ? 'Tagged "' + name.slice(0, 70) + '"' : 'Went through Tag products, but the row does not show a tagged product'
+    return out
+  }
+
+  K.steps.endscreen = async (out, o) => {
+    const dlg = mainDialog()
+    if (!dlg) { out.detail = 'The draft window closed'; return out }
+    const importBtn = () => findBtn(/^import from video$/i, dlg, { enabled: true })
+    const rowDone = () => all(dlg).some((el) => isBtn(el) && visible(el) && /^edit$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'endscreen')
+    if (!importBtn()) {
+      if (rowDone()) { out.ok = true; out.readBack.endScreen = true; out.detail = 'The draft already had an end screen'; return out }
+      out.detail = 'Could not find Import from video'
+      out.debug.buttons = buttonSample(dlg)
+      return out
+    }
+    const before = dialogsNow()
+    click(importBtn())
+    // The grid of your videos, newest first. A card is the clickable block
+    // around a video thumbnail.
+    const cards = () => {
+      const d = newDialog(before)
+      if (!d) return []
+      const seen = new Set(), list = []
+      for (const img of all(d)) {
+        if ((img.tagName || '').toLowerCase() !== 'img' || !visible(img)) continue
+        const src = String(img.src || '')
+        if (!/ytimg|\/vi\//.test(src)) continue
+        if (o.videoId && src.indexOf(o.videoId) >= 0) continue
+        let e = img, hit = null
+        for (let i = 0; i < 7 && e; i++) {
+          const r = e.getAttribute && e.getAttribute('role')
+          const tag = (e.tagName || '').toLowerCase()
+          if (isBtn(e) || r === 'option' || r === 'gridcell' || r === 'listitem' || (e.getAttribute && e.getAttribute('tabindex') === '0') || /card|video-pick|thumbnail-container/.test(tag)) { hit = e; break }
+          e = up(e)
+        }
+        const c = hit || img
+        if (!seen.has(c)) { seen.add(c); list.push(c) }
+      }
+      return list.sort((a, b) => {
+        const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect()
+        return Math.abs(ra.top - rb.top) > 8 ? ra.top - rb.top : ra.left - rb.left
+      })
+    }
+    const got = await waitFor(() => (cards().length ? cards() : null), 15000, 500)
+    if (!got) { out.detail = 'Opened Import from video, but no videos appeared to choose from'; out.debug.buttons = buttonSample(document); return out }
+    const pick = got[0]
+    out.readBack.importedFrom = deepText(pick).slice(0, 80)
+    click(pick)
+    // The end-screen editor, and its Save.
+    const save = await waitFor(() => findBtn(/^save$/i, document, { enabled: true }), 25000, 500)
+    if (!save) { out.detail = 'Chose the latest video, but the end-screen editor never offered Save'; out.debug.buttons = buttonSample(document); return out }
+    click(save)
+    await waitFor(() => (rowDone() || !findBtn(/^save$/i, document) ? true : null), 20000, 600)
+    out.readBack.endScreen = rowDone()
+    out.ok = out.readBack.endScreen
+    out.detail = out.ok ? 'End screen imported from "' + out.readBack.importedFrom + '"' : 'Pressed Save in the end-screen editor, but the draft does not show an end screen'
+    return out
+  }
+
+  K.steps.checks = async (out) => {
+    const dlg = mainDialog()
+    if (!dlg) { out.detail = 'The draft window closed'; return out }
+    const vt = visibleText(dlg).toLowerCase()
+    out.readBack.noIssues = (vt.match(/no issues found/g) || []).length
+    out.ok = true
+    out.detail = out.readBack.noIssues ? out.readBack.noIssues + ' checks say no issues found' : 'Checks page reached'
+    return out
+  }
+
+  // Visibility. Schedule at the creator's time, or publish, or save private,
+  // or leave the draft alone. The final button is only pressed when every
+  // field it depends on reads back right.
+  K.steps.visibility = async (out, o) => {
+    const dlg = mainDialog()
+    if (!dlg || page(dlg) !== 'visibility') { out.detail = 'The Visibility page is not open'; return out }
+    const v = o.visibility || { mode: 'keep' }
+    if (v.mode === 'keep') { out.skipped = true; out.detail = 'Left as a draft, as you chose. Nothing was published or scheduled.'; return out }
+    const doneBtn = () => byId('done-button', dlg) || findBtn(/^(schedule|publish|save)$/i, dlg)
+    const finish = async (wantRe, sayRe) => {
+      const b = doneBtn()
+      const lbl = b ? (deepText(b) || attrLabel(b)) : ''
+      out.readBack.finalButton = lbl
+      if (!b || !wantRe.test(lbl)) { out.detail = 'The last button reads "' + lbl + '", not what was asked, so SCOUT did not press it'; return false }
+      if (isDisabled(b)) { out.detail = 'The ' + lbl + ' button is greyed out'; return false }
+      click(b)
+      const said = await waitFor(() => {
+        const vt = visibleText(document).toLowerCase()
+        if (sayRe.test(vt)) return 'said'
+        if (!mainDialog()) return 'closed'
+        return null
+      }, 25000, 600)
+      out.readBack.confirmation = said
+      const close = findBtn(/^close$/i, document)
+      if (close) click(close)
+      return !!said
+    }
+    if (v.mode === 'public' || v.mode === 'private' || v.mode === 'unlisted') {
+      const radio = all(dlg).find((el) => isRadio(el) && visible(el) && (new RegExp('^' + v.mode + '$', 'i').test(ctrlText(el)) || (el.getAttribute && String(el.getAttribute('name') || '').toLowerCase() === v.mode)))
+      if (!radio) { out.detail = 'Could not find the ' + v.mode + ' option'; out.debug.buttons = buttonSample(dlg); return out }
+      if (!isChecked(radio)) { click(radio); await sleep(700) }
+      out.readBack.visibility = isChecked(radio) ? v.mode : null
+      if (!out.readBack.visibility) { out.detail = 'Chose ' + v.mode + ', but Studio did not keep it'; return out }
+      const ok = await finish(v.mode === 'public' ? /^publish$/i : /^save$/i, /video (published|saved)|published|saved/)
+      out.ok = ok
+      if (ok) out.detail = v.mode === 'public' ? 'Published' : 'Saved as ' + v.mode
+      return out
+    }
+    if (v.mode !== 'schedule' || !v.publishAt) { out.detail = 'No schedule was given'; return out }
+    const when = new Date(v.publishAt)
+    if (isNaN(when.getTime()) || when.getTime() <= Date.now() + 60000) { out.detail = 'The time asked for has already gone, so nothing was scheduled'; return out }
+    // Open the schedule section.
+    const expander = byId('second-container-expand-button', dlg) ||
+      all(dlg).find((el) => visible(el) && (isBtn(el) || (el.getAttribute && el.getAttribute('role') === 'button') || /expand/i.test(el.id || '')) && /^schedule\b/i.test(deepText(el)) && deepText(el).length > 8)
+    const trigger = () => byId('datepicker-trigger', dlg) ||
+      all(dlg).find((el) => visible(el) && /^[A-Z][a-z]{2,8} \d{1,2}, \d{4}$/.test(deepText(el)) && (isBtn(el) || /trigger|dropdown/i.test(el.id || el.tagName || ''))) || null
+    if (!trigger() && expander) { click(expander); await waitFor(trigger, 6000, 300) }
+    if (!trigger()) { out.detail = 'Could not open the schedule section'; out.debug.buttons = buttonSample(dlg); return out }
+    // THE ZONE STUDIO SHOWS, not the one we assume. The picker is in whatever
+    // zone the channel's Studio uses, and it says so ("GMT-04:00").
+    const vt = visibleText(dlg)
+    const m = vt.match(/GMT\s*([+\-−])\s*(\d{1,2})(?::?(\d{2}))?/)
+    let offsetMin = null
+    if (m) offsetMin = (m[1] === '+' ? 1 : -1) * (parseInt(m[2], 10) * 60 + (m[3] ? parseInt(m[3], 10) : 0))
+    const wall = offsetMin == null ? null : new Date(when.getTime() + offsetMin * 60000)
+    const Y = wall ? wall.getUTCFullYear() : when.getFullYear()
+    const Mo = wall ? wall.getUTCMonth() : when.getMonth()
+    const D = wall ? wall.getUTCDate() : when.getDate()
+    const H = wall ? wall.getUTCHours() : when.getHours()
+    const Mi = wall ? wall.getUTCMinutes() : when.getMinutes()
+    out.readBack.zone = m ? m[0] : 'this computer’s time zone'
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const dateStr = MON[Mo] + ' ' + D + ', ' + Y
+    const setVal = (input, val) => {
+      try {
+        input.focus()
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+        setter.call(input, val)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+        for (const type of ['keydown', 'keypress', 'keyup']) input.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+        input.blur()
+      } catch (e) {}
+    }
+    // Date: open the picker, type the date into its box.
+    const before = dialogsNow()
+    click(trigger())
+    const dateInput = await waitFor(() => {
+      const d = newDialog(before) || document
+      return all(d).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /\d{4}/.test(el.value || '')) || null
+    }, 6000, 300)
+    if (!dateInput) { out.detail = 'Opened the date picker, but found no date box'; out.debug.buttons = buttonSample(document); return out }
+    setVal(dateInput, dateStr)
+    // No Escape to close the picker: Escape also closes the whole draft
+    // window. Enter in the date box closes the picker on its own.
+    await sleep(1200)
+    const shownDate = trigger() ? deepText(trigger()) : ''
+    const parsed = new Date(shownDate)
+    const dateOk = !isNaN(parsed.getTime()) && parsed.getFullYear() === Y && parsed.getMonth() === Mo && parsed.getDate() === D
+    out.readBack.date = shownDate
+    if (!dateOk) { out.detail = 'Typed ' + dateStr + ', but Studio shows "' + shownDate + '", so nothing was scheduled'; return out }
+    // Time: the box shows 12 or 24 hour depending on the account; write in
+    // whichever it already uses.
+    const timeInput = all(dlg).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el) && /^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(norm(el.value)))
+    if (!timeInput) { out.detail = 'Found the date, but no time box'; return out }
+    const twelve = /[ap]\.?m/i.test(timeInput.value)
+    const pad = (n) => String(n).padStart(2, '0')
+    const timeStr = twelve ? ((H % 12 || 12) + ':' + pad(Mi) + ' ' + (H < 12 ? 'AM' : 'PM')) : (pad(H) + ':' + pad(Mi))
+    setVal(timeInput, timeStr)
+    await sleep(900)
+    const readTime = (s) => {
+      const x = norm(s).match(/^(\d{1,2}):(\d{2})\s?([ap])?/i)
+      if (!x) return null
+      let h = parseInt(x[1], 10) % (x[3] ? 12 : 24)
+      if (x[3] && /p/i.test(x[3])) h += 12
+      return h * 60 + parseInt(x[2], 10)
+    }
+    out.readBack.time = norm(timeInput.value)
+    if (readTime(timeInput.value) !== H * 60 + Mi) { out.detail = 'Typed ' + timeStr + ', but Studio shows ' + out.readBack.time + ', so nothing was scheduled'; return out }
+    // Premiere stays off.
+    const prem = pickCheckbox('premiere', dlg)
+    if (prem && isChecked(prem)) { click(prem); await sleep(500) }
+    out.readBack.premiere = prem ? isChecked(prem) : null
+    if (prem && isChecked(prem)) { out.detail = 'Set as Premiere is ticked and would not untick, so nothing was scheduled'; return out }
+    const ok = await finish(/^schedule$/i, /video scheduled|scheduled for/)
+    out.ok = ok
+    if (ok) out.detail = 'Scheduled for ' + dateStr + ', ' + timeStr + ' (' + out.readBack.zone + ')'
+    return out
+  }
+
+  window.__mvpKit = K
+  return true
+}
+
+// One step against the open draft, using the toolkit above. Self-contained
+// apart from window.__mvpKit, which the orchestrator installs first.
+function studioDraftStepInPage(step, opts) {
+  return (async () => {
+    const out = { step, ok: false, detail: '', readBack: {}, debug: {} }
+    const K = window.__mvpKit
+    if (!K || !K.steps || !K.steps[step]) { out.detail = 'SCOUT lost its place in Studio'; out.error = 'kit-missing'; return out }
+    try {
+      return await K.steps[step](out, opts || {})
+    } catch (e) {
+      out.error = (e && e.message) || 'threw'
+      out.detail = 'SCOUT hit an error in Studio: ' + out.error
+      return out
+    }
+  })()
+}
+
+// Drive one draft from Edit draft to Visibility. `tabId` is already on the
+// video's /edit page. Returns the same shape as the panel flow, plus
+// `path: 'draft'` so the app can say which route Studio took.
+async function studioDraftExec(tabId, step, opts) {
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioKitInstallInPage })
+    const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioDraftStepInPage, args: [step, opts || {}] })
+    return (r && r[0] && r[0].result) || { step, ok: false, detail: 'Studio did not answer', readBack: {} }
+  } catch (e) {
+    return { step, ok: false, detail: 'SCOUT could not reach the Studio tab: ' + ((e && e.message) || 'error'), readBack: {} }
+  }
+}
+
+async function runStudioDraft(tabId, videoId, want) {
+  const steps = []
+  const exec = (step, opts) => studioDraftExec(tabId, step, opts)
+  const notReached = (names) => names.forEach((n) => steps.push({ step: n, ok: false, notReached: true, detail: 'Not reached: SCOUT stopped earlier, see above' }))
+  const later = () => {
+    const list = []
+    if (want.monetize) list.push('monetization')
+    if (want.selfCert) list.push('adsuit')
+    if (want.tagProduct && want.productUrl) list.push('tagproduct')
+    if (want.endScreen) list.push('endscreen')
+    if (want.visibility && want.visibility.mode && want.visibility.mode !== 'keep') list.push('visibility')
+    return list
+  }
+
+  const details = await exec('details', { paid: want.details !== false, aiNo: want.details !== false, notify: want.notifySubscribers === true })
+  steps.push(details)
+  // THE DISCLOSURE GATES EVERYTHING AFTER IT. A draft whose paid promotion did
+  // not read back is left exactly where it is: nothing scheduled, nothing
+  // published.
+  if (!details.ok) { notReached(later()); return steps }
+  let nx = await exec('next', {})
+  if (!nx.ok) { steps.push({ step: 'next', ok: false, detail: nx.detail, debug: nx.debug }); notReached(later()); return steps }
+
+  const done = new Set(['details'])
+  for (let i = 0; i < 8; i++) {
+    const where = await exec('where', {})
+    const pg = where.page
+    if (pg === 'visibility') {
+      steps.push(await exec('visibility', { visibility: want.visibility || { mode: 'keep' } }))
+      return steps
+    }
+    if (!pg || pg === 'gone' || pg === 'unknown') {
+      steps.push({ step: 'unknown', ok: false, detail: pg === 'gone' ? 'The draft window closed before Visibility' : 'SCOUT did not recognise this page of the draft', debug: where.debug })
+      return steps
+    }
+    if (done.has(pg)) {
+      steps.push({ step: pg, ok: false, detail: 'Studio would not move past the ' + pg + ' page' })
+      return steps
+    }
+    done.add(pg)
+    if (pg === 'monetization') steps.push(await exec('monetization', { on: !!want.monetize }))
+    else if (pg === 'adsuit') steps.push(await exec('adsuit', { submit: !!want.selfCert }))
+    else if (pg === 'elements') {
+      if (want.tagProduct && want.productUrl) steps.push(await exec('tagproduct', { productUrl: String(want.productUrl), productTitle: want.productTitle ? String(want.productTitle) : '' }))
+      if (want.endScreen) steps.push(await exec('endscreen', { videoId }))
+    } else if (pg === 'checks') steps.push(await exec('checks', {}))
+    nx = await exec('next', {})
+    if (!nx.ok) {
+      steps.push({ step: 'next', ok: false, detail: nx.detail, debug: nx.debug })
+      if (want.visibility && want.visibility.mode && want.visibility.mode !== 'keep') notReached(['visibility'])
+      return steps
+    }
+  }
+  steps.push({ step: 'unknown', ok: false, detail: 'SCOUT went through more pages than a draft has, and stopped' })
+  return steps
+}
+
 async function scanStudioFinish(videoId, opts, callerTabId) {
   if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) return { ok: false, error: 'bad-video-id', steps: [] }
   const want = opts || { details: true, monetize: true, selfCert: true, endScreen: true }
@@ -8235,8 +9080,12 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
   _studioChannelId = (want.channelId && /^UC[\w-]{20,}$/.test(String(want.channelId))) ? String(want.channelId) : null
   const steps = []
   let tabId = null
+  // A DRAFT FIRST. Every video is opened on its /edit page, because that is
+  // where Studio says whether it is a draft, and a draft has none of the panels
+  // the rest of this function drives (see runStudioDraft).
+  const draftFirst = want.draftFlow !== false
   // First panel we need to land on (open the tab there directly).
-  const startPanel = (want.details || want.tagProduct) ? 'edit' : (want.monetize || want.selfCert) ? 'monetization' : 'endscreens'
+  const startPanel = (draftFirst || want.details || want.tagProduct) ? 'edit' : (want.monetize || want.selfCert) ? 'monetization' : 'endscreens'
   let current = startPanel
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   // Navigate the SAME tab between Studio panels, only reloading when the panel
@@ -8271,6 +9120,37 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
     const tab = await chrome.tabs.create({ url: STUDIO_VIDEO(videoId, startPanel), active: true })
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
+    const summarise = (list, path) => {
+      // Not reached counts as asked and not done: a run that stopped at the
+      // disclosure did not do the rest, and must not read as if it had.
+      const asked = list.filter((s) => s && !s.skipped)
+      const good = asked.filter((s) => s.ok)
+      return {
+        ok: asked.length > 0 && good.length === asked.length,
+        partial: good.length > 0 && good.length < asked.length,
+        okCount: good.length,
+        askedCount: asked.length,
+        steps: list,
+        path,
+      }
+    }
+    if (draftFirst) {
+      let open = null
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await goto('edit', true)
+        await sleep(1500)
+        open = await studioDraftExec(tabId, 'open', {})
+        if (!open.needsReload) break
+      }
+      if (open && open.ok && open.isDraft) {
+        const draftSteps = await runStudioDraft(tabId, videoId, want)
+        return summarise([open].concat(draftSteps), 'draft')
+      }
+      // Neither a draft nor a video page: say so, rather than running the
+      // panel steps against a page that is not there.
+      if (!open || !open.ok) return summarise([open || { step: 'open', ok: false, detail: 'Studio did not open' }], 'unknown')
+      // A normal video: the panel flow below, as before.
+    }
     if (want.details) {
       steps.push(await runPanel('edit', studioFinishDetailsInPage, [want.notifySubscribers === true], 'details'))
     }
@@ -8304,6 +9184,7 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
       okCount: good.length,
       askedCount: asked.length,
       steps,
+      path: 'video',
     }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'finish-failed', steps }
@@ -8846,10 +9727,10 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'MVP_STUDIO_FINISH') {
     // Drive the Studio-only fields the Data API can't set (paid promotion,
     // notify-subscribers, monetization + ad self-cert, end screen), on the ONE
-    // video, only the items the user ticked. Opens up to 3 Studio panels, so
-    // allow the full 185s the dashboard waits.
+    // video, only the items the user ticked. A draft is walked through every
+    // page of its modal, so allow the full 290s the dashboard waits.
     const callerTabId = sender && sender.tab ? sender.tab.id : null
-    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 185000)
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 290000)
     scanStudioFinish(msg.videoId, msg.opts || {}, callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, steps: [], error: e && e.message ? e.message : 'error' }) })

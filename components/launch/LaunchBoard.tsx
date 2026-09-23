@@ -25,7 +25,11 @@ import { deliverPreparedStorefronts, deliverySummary } from '@/lib/storefront-de
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
 import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
-import { requestStorefrontPreflight } from '@/lib/extension-frame'
+import { requestStorefrontPreflight, requestStudioFinish, isExtensionAvailable } from '@/lib/extension-frame'
+import {
+  DEFAULT_STUDIO_OPTIONS, productLinkFor, storeStudioRun, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
+  type StoredStudioRun, type StudioOptions,
+} from '@/lib/studio-finish'
 import StepCard from './StepCard'
 import CtaPicker from './CtaPicker'
 import ThumbnailPicker from './ThumbnailPicker'
@@ -70,6 +74,12 @@ interface Item {
   /** Set by the launch route: the uploader has this video. */
   planned_publish_at?: string | null
   publish_tries?: number | null
+  /** When YouTube confirmed it is in the batch playlist, or what it said
+   *  when it was not. Absent until migration 367. */
+  playlist_added_at?: string | null
+  playlist_error?: string | null
+  /** SCOUT's last Studio run on this video, as Studio read it back. */
+  studio_finish?: StoredStudioRun | null
 }
 interface Market { domain: string; country: string; langName: string | null; needsDub: boolean }
 /** A batch in the switcher: enough to choose between them, nothing more. */
@@ -115,6 +125,18 @@ export default function LaunchBoard() {
   // Notify subscribers when each video goes public. Off unless turned on.
   const [notifySubs, setNotifySubs] = useState(false)
   const [notifyAvailable, setNotifyAvailable] = useState(true)
+  // The YouTube options (migration 367): the playlist every video joins, and
+  // the Studio steps SCOUT does when Finish in Studio is pressed.
+  const [playlistId, setPlaylistId] = useState<string | null>(null)
+  const [playlists, setPlaylists] = useState<Array<{ id: string; title: string }> | null>(null)
+  const [playlistsError, setPlaylistsError] = useState<string | null>(null)
+  const [studioOpts, setStudioOpts] = useState<StudioOptions>(DEFAULT_STUDIO_OPTIONS)
+  const [ytOptionsAvailable, setYtOptionsAvailable] = useState(true)
+  const [scoutReady, setScoutReady] = useState<boolean | null>(null)
+  // Which video SCOUT is in Studio for right now, and runs not yet stored
+  // (shown until the reload that brings the stored copy back).
+  const [studioBusy, setStudioBusy] = useState<string | null>(null)
+  const [liveRuns, setLiveRuns] = useState<Record<string, StoredStudioRun>>({})
   // Rows with an edited time that has not been saved. Launch refuses while
   // any exists, because it would launch with the old time.
   const [dirtyRows, setDirtyRows] = useState<Record<string, boolean>>({})
@@ -169,6 +191,9 @@ export default function LaunchBoard() {
       setOwnSchedules(j.ownSchedules !== false)
       setNotifySubs(j.notifySubscribers === true)
       setNotifyAvailable(j.notifyAvailable !== false)
+      setPlaylistId(j.playlistId ?? null)
+      if (j.studioOptions) setStudioOpts(j.studioOptions as StudioOptions)
+      setYtOptionsAvailable(j.youtubeOptionsAvailable !== false)
       // ONCE. See autoOpened: after this the creator drives.
       if (!autoOpened.current) {
         const current = (j.steps ?? []).find((s: StepStatus) => s.current)
@@ -206,6 +231,20 @@ export default function LaunchBoard() {
     const t = setInterval(() => void load(batchId), 12_000)
     return () => clearInterval(t)
   }, [batchId, load])
+
+  // The creator's playlists, once, for the picker. A failure is said beside
+  // the picker rather than showing an empty list that looks like "none".
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch('/api/youtube/playlists')
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) { setPlaylistsError(j?.error || 'Could not read your playlists.'); return }
+        setPlaylists(Array.isArray(j?.playlists) ? j.playlists : [])
+      } catch { setPlaylistsError('Could not read your playlists.') }
+    })()
+    void isExtensionAvailable().then(setScoutReady).catch(() => setScoutReady(false))
+  }, [])
 
   /** The switcher's own list, re-read whenever it could have changed. */
   async function refreshBatches() {
@@ -379,6 +418,73 @@ export default function LaunchBoard() {
       // what folded the countries step shut on the first country ticked.
       await load(batchId)
     } finally { setBusy(null) }
+  }
+
+  /** One Studio step on or off, saved with the batch. */
+  function setStudioOpt(k: keyof StudioOptions, v: boolean) {
+    const next = { ...studioOpts, [k]: v }
+    setStudioOpts(next)
+    void patchBatch({ studioOptions: next })
+  }
+
+  /**
+   * SCOUT in YouTube Studio for one video, with the batch's steps.
+   *
+   * THE REPORT IS STUDIO'S. Every step comes back with what Studio showed
+   * after the click, and that is what the row keeps and draws. A draft's own
+   * Schedule is only given the time this video already has on YouTube, so the
+   * Studio pass can never move a launch.
+   */
+  async function finishInStudio(it: Item): Promise<StoredStudioRun | null> {
+    if (!it.youtube_video_id) return null
+    setStudioBusy(it.id)
+    try {
+      const link = productLinkFor(it.asin)
+      const future = !!it.publish_at && new Date(it.publish_at).getTime() > Date.now() + 5 * 60_000
+      const fin = await requestStudioFinish(it.youtube_video_id, {
+        details: studioOpts.disclosures,
+        monetize: studioOpts.monetize,
+        selfCert: studioOpts.monetize && studioOpts.adRating,
+        tagProduct: studioOpts.tagProduct && !!link,
+        productUrl: link ?? undefined,
+        endScreen: studioOpts.endScreen,
+        // The batch's notify toggle, whichever way it points.
+        notifySubscribers: notifySubs,
+        visibility: it.state === 'scheduled' && future && it.publish_at
+          ? { mode: 'schedule', publishAt: it.publish_at }
+          : { mode: 'keep' },
+      })
+      const run = storeStudioRun(fin)
+      setLiveRuns((prev) => ({ ...prev, [it.id]: run }))
+      const r = await fetch(`/api/launch/items/${it.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studioFinish: run }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}))
+        toast.error(j?.error || 'SCOUT finished, but its report could not be kept.')
+      } else if (batchId) {
+        await load(batchId)
+      }
+      return run
+    } finally { setStudioBusy(null) }
+  }
+
+  /** Every video on YouTube whose Studio steps have not all read back, one
+   *  at a time, because each one takes over a Studio tab. */
+  async function finishAllInStudio() {
+    const todo = items.filter((i) => !!i.youtube_video_id && !(liveRuns[i.id] ?? i.studio_finish)?.ok)
+    let done = 0
+    for (const it of todo) {
+      const run = await finishInStudio(it)
+      if (run?.ok) done++
+      if (run?.error === 'not-installed') break
+    }
+    if (todo.length > 0) {
+      toast(done === todo.length
+        ? `Studio steps read back on all ${done}.`
+        : `Studio steps read back on ${done} of ${todo.length}. Each row says where the others stopped.`, { duration: 8000 })
+    }
   }
 
   // ── videos ────────────────────────────────────────────────────────────────
@@ -945,6 +1051,74 @@ export default function LaunchBoard() {
             </button>
           </label>
 
+          {/* ── YOUTUBE OPTIONS ─────────────────────────────────────────────
+              The playlist is set by the uploader, through YouTube's API. The
+              Studio steps are the settings that API cannot touch, and SCOUT
+              does them in Studio when Finish in Studio is pressed on the
+              board, reading each one back. Nothing here runs by itself. */}
+          <div className="rounded-xl border p-3 flex flex-col gap-2.5" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-[12.5px] font-medium" style={text}>YouTube options</p>
+            {!ytOptionsAvailable && (
+              <p className="text-[11.5px] px-2 py-1 rounded" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
+                Needs a database update (migration 367). Until then no playlist is used and Studio results are not kept after a reload.
+              </p>
+            )}
+            <label className="block text-[12px]" style={text}>
+              Playlist
+              <select
+                value={playlistId ?? ''}
+                disabled={!ytOptionsAvailable || scheduleLocked || busy === 'batch' || !playlists}
+                onChange={(e) => void patchBatch({ playlistId: e.target.value || null })}
+                className="block mt-1 w-full px-3 py-2 rounded-lg border text-sm bg-transparent disabled:opacity-60"
+                style={{ borderColor: 'var(--border)', ...text }}
+              >
+                <option value="">None</option>
+                {(playlists ?? []).map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+                {/* A saved playlist the list no longer has (deleted, or the
+                    list failed) is still shown, by id, rather than silently
+                    reading as None. */}
+                {playlistId && playlists && !playlists.some((p) => p.id === playlistId) && (
+                  <option value={playlistId}>Saved playlist ({playlistId})</option>
+                )}
+              </select>
+              <span className="block text-[11px] mt-1" style={playlistsError ? { color: '#d97706' } : muted}>
+                {playlistsError
+                  ?? (scheduleLocked
+                    ? 'Locked in: each video joins this playlist as it uploads.'
+                    : playlists === null ? 'Reading your playlists…'
+                    : playlists.length === 0 ? 'Your channel has no playlists yet.'
+                    : 'Every video in this batch is added to it as it uploads.')}
+              </span>
+            </label>
+            <div>
+              <p className="text-[12px]" style={text}>Studio steps, done by SCOUT when you press Finish in Studio</p>
+              <div className="mt-1.5 flex flex-col gap-1.5">
+                {([
+                  ['disclosures', 'Paid promotion: Yes, and AI use: No', 'Untick if these videos are AI generated or altered.'],
+                  ['monetize', 'Monetization: On', 'Skipped on a channel without it.'],
+                  ['adRating', 'Ad suitability: None of the above, then Submit rating', 'YouTube checks this rating, so only tick it when it is true.'],
+                  ['tagProduct', 'Tag each video\u2019s product', 'Only the exact match for its Amazon link, never a similar product.'],
+                  ['endScreen', 'End screen imported from your latest video', ''],
+                ] as Array<[keyof StudioOptions, string, string]>).map(([k, label, hint]) => {
+                  const off = k === 'adRating' && !studioOpts.monetize
+                  return (
+                    <label key={k} className={`flex items-start gap-2 text-[12px] ${off ? 'opacity-50' : 'cursor-pointer'}`} style={text}>
+                      <input type="checkbox" className="mt-0.5"
+                        checked={studioOpts[k] && !off}
+                        disabled={off || busy === 'batch' || !ytOptionsAvailable}
+                        onChange={(e) => setStudioOpt(k, e.target.checked)} />
+                      <span>{label}{hint && <span className="block text-[11px]" style={muted}>{hint}</span>}</span>
+                    </label>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] mt-1.5" style={muted}>
+                Notify subscribers in Studio follows the switch above ({notifySubs ? 'on' : 'off'}).
+                {scoutReady === false && ' SCOUT is not installed in this browser, so Finish in Studio will not be available.'}
+              </p>
+            </div>
+          </div>
+
           {/* ── THE PATTERN, NOW THE SHORTCUT ─────────────────────────────────
               Still the quick way to fill ten videos in one go. It only sets
               the videos that have no time of their own, so a hand-picked time
@@ -1082,7 +1256,9 @@ export default function LaunchBoard() {
             <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
               <p className="text-[12px] font-semibold" style={text}>YouTube: automatic</p>
               <p className="text-[11.5px] mt-1" style={muted}>
-                Each video is uploaded for you and kept private, and YouTube makes it public at the time you picked. Nothing to press.
+                Each video is uploaded for you and kept private, and YouTube makes it public at the time you picked.
+                The Studio settings its API cannot set (paid promotion, AI use, monetization, product tag, end screen) are done by
+                Finish in Studio on the board below, with SCOUT, ideally before each goes public.
               </p>
             </div>
             <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
@@ -1170,7 +1346,18 @@ export default function LaunchBoard() {
       {/* ── the board: what is actually happening to each video ────────────── */}
       {items.length > 0 && (
         <section className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-          <h2 className="text-[13px] font-semibold mb-2.5" style={text}>Where each video is</h2>
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-2.5">
+            <h2 className="text-[13px] font-semibold" style={text}>Where each video is</h2>
+            {/* ONE AT A TIME, ON PURPOSE. Each run takes over a Studio tab for
+                a minute or two, and two at once would fight over it. */}
+            {scoutReady && items.some((i) => !!i.youtube_video_id) && (
+              <button onClick={() => void finishAllInStudio()} disabled={!!studioBusy}
+                className="text-[12px] px-3 py-1.5 rounded-lg font-semibold text-white disabled:opacity-50"
+                style={{ background: '#0EA5A4' }}>
+                {studioBusy ? 'SCOUT is in Studio…' : 'Finish all in Studio'}
+              </button>
+            )}
+          </div>
           <ul className="flex flex-col gap-1.5">
             {items.map((it) => (
               <li key={it.id} className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5"
@@ -1233,6 +1420,48 @@ export default function LaunchBoard() {
                       }).format(new Date(it.publish_at))}</>
                     )}
                   </span>
+                  {/* THE PLAYLIST, as YouTube answered. A video missing from
+                      its playlist must not look like one that is in it. */}
+                  {it.youtube_video_id && playlistId && (it.playlist_added_at || it.playlist_error) && (
+                    <span className="block text-[11.5px]" style={{ color: it.playlist_added_at ? '#10B981' : '#d97706' }}>
+                      {it.playlist_added_at ? 'In the playlist' : `Not added to the playlist: ${it.playlist_error}`}
+                    </span>
+                  )}
+                  {/* THE STUDIO STEPS, AS STUDIO READ THEM BACK. Never run,
+                      all read back, and stopped part way each read
+                      differently at a glance; the list opens for the detail. */}
+                  {it.youtube_video_id && (() => {
+                    const run = liveRuns[it.id] ?? it.studio_finish ?? null
+                    if (studioBusy === it.id) {
+                      return <span className="block text-[11.5px] mt-0.5" style={{ color: '#0EA5A4' }}>SCOUT is in YouTube Studio with this video…</span>
+                    }
+                    if (!run) {
+                      return <span className="block text-[11.5px] mt-0.5" style={{ color: '#d97706' }}>Studio steps not done yet</span>
+                    }
+                    const asResult = { ok: run.ok, steps: run.steps, error: run.error ?? undefined, path: run.path ?? undefined }
+                    return (
+                      <details className="mt-0.5">
+                        <summary className="text-[11.5px] cursor-pointer select-none" style={{ color: run.ok ? '#10B981' : '#d97706' }}>
+                          {studioRunHeadline(asResult)}
+                        </summary>
+                        <ul className="mt-1 flex flex-col gap-0.5 pl-1">
+                          {studioPathNote(asResult.path) && (
+                            <li className="text-[11px]" style={muted}>{studioPathNote(asResult.path)}</li>
+                          )}
+                          {run.steps.filter((st) => st.step !== 'next' || !st.ok).map((st, i) => {
+                            const tone = studioStepTone(st)
+                            const colour = tone === 'good' ? '#10B981' : tone === 'bad' ? '#ef4444' : tone === 'note' ? '#d97706' : 'var(--text-2)'
+                            return (
+                              <li key={i} className="text-[11px] flex gap-1.5">
+                                <span style={{ color: colour }}>{tone === 'good' ? '✓' : tone === 'bad' ? '✗' : tone === 'note' ? 'i' : '○'}</span>
+                                <span style={text}><strong>{studioStepLabel(st.step)}</strong>: {studioStepText(st)}</span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </details>
+                    )
+                  })()}
                   {/* A NOTE, NOT A FAILURE. The video is on the channel; only
                       the image we designed for it is not. */}
                   {it.thumbnail_error && !it.reason && (
@@ -1263,6 +1492,13 @@ export default function LaunchBoard() {
                     className="text-[11.5px] px-2.5 py-1 rounded-lg border shrink-0 disabled:opacity-50"
                     style={{ borderColor: '#d97706', color: '#d97706' }}>
                     Try again
+                  </button>
+                )}
+                {it.youtube_video_id && scoutReady && (
+                  <button onClick={() => void finishInStudio(it)} disabled={!!studioBusy}
+                    className="text-[11.5px] px-2.5 py-1 rounded-lg border shrink-0 disabled:opacity-50"
+                    style={{ borderColor: '#0EA5A4', color: '#0EA5A4' }}>
+                    {(liveRuns[it.id] ?? it.studio_finish) ? 'Run Studio again' : 'Finish in Studio'}
                   </button>
                 )}
                 {it.youtube_video_id && (

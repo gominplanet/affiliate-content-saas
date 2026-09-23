@@ -1,0 +1,149 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// A YouTube draft is finished through its Edit draft window, and every answer
+// is read back before anything is scheduled.
+//
+// WHAT WENT WRONG. SCOUT's finish opened a video's own panels (/edit,
+// /monetization, /endscreens). A draft has none: its page shows a banner and
+// one button, Edit draft, which opens the step-by-step window. The panel code
+// found nothing, and Co-Pilot still printed "Paid promotion checked, AI-use
+// answered, notify off" because it wrote its own sentence over SCOUT's. It
+// also passed notify as a plain false, whatever the creator's toggle said, and
+// every older click helper clicked twice, which unticks a checkbox it ticked.
+//
+// This guard holds the shape of the fix:
+//   - drafts go through Edit draft, in the creator's order
+//   - each answer is read back, and the disclosure gates Visibility
+//   - the schedule is only pressed when the date and time read back
+//   - the screens show SCOUT's words and never invent a tick
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import {
+  storeStudioRun, readStudioRun, studioRunHeadline, studioStepTone, studioSetVisibility,
+  studioDisclosuresConfirmed, draftVisibility, normalizeStudioOptions, productLinkFor,
+} from '../lib/studio-finish'
+
+const failures: string[] = []
+const check = (name: string, cond: boolean, detail?: string) => {
+  if (!cond) failures.push(`${name}${detail ? `: ${detail}` : ''}`)
+}
+const root = new URL('..', import.meta.url).pathname
+const read = (p: string) => readFileSync(join(root, p), 'utf8')
+// Comments and import lines out, so a sentence ABOUT the rule cannot satisfy it.
+const code = (src: string) => src
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .split('\n')
+  .filter((l) => !/^\s*import\s/.test(l))
+  .map((l) => l.replace(/(^|[^:'"`])\/\/.*$/, '$1'))
+  .join('\n')
+
+const BG = code(read('extension/background.js'))
+const slice = (from: string, len: number) => { const at = BG.indexOf(from); return at < 0 ? '' : BG.slice(at, at + len) }
+
+// ── the kit ──────────────────────────────────────────────────────────────
+const kit = slice('function studioKitInstallInPage()', 60000)
+check('the draft toolkit exists', kit.length > 0)
+const kitClick = kit.slice(kit.indexOf('const click = (el) =>'), kit.indexOf('const click = (el) =>') + 500)
+check('the kit clicks once',
+  /el\.click\(\)/.test(kitClick) && !/'mouseup', 'click'\]/.test(kitClick),
+  'a dispatched click on top of el.click() ticks a checkbox and unticks it')
+check('no older finish helper clicks twice either',
+  !/'mouseup', 'click'\]/.test(BG.slice(BG.indexOf('function studioFinishMonetizeInPage'), BG.indexOf('function studioApplyDisclosuresInPage'))))
+check('a control belongs to the nearest section naming exactly one question',
+  /hits\.length === 1\) return hits\[0\]/.test(kit) && /hits\.length > 1\) return null/.test(kit),
+  'eight ancestors up is the whole form, where "Yes" is both the paid answer and the AI answer')
+check('answers are read back after the click',
+  /const again = pickRadio\(section, choiceRe, scope\) \|\| el/.test(kit) && /confirmed: isChecked\(again\)/.test(kit))
+check('the kit never presses Escape (it closes the whole draft window)',
+  !/key: 'Escape'/.test(kit))
+
+// ── the steps, in the creator's order ────────────────────────────────────
+check('open presses Edit draft', /findBtn\(\/\^edit draft\$\/i, document\)/.test(kit))
+check('and returns to Details when the draft reopens on a later page', /step-badge-0/.test(kit))
+const details = kit.slice(kit.indexOf('K.steps.details'), kit.indexOf('K.steps.monetization'))
+check('details opens Show more', /show more/i.test(details))
+check('paid promotion is answered Yes', /answerRadio\('paid', \/\^yes\\b\/i, dlg\)/.test(details))
+check('AI use is answered No', /answerRadio\('altered', \/\^no\\b\/i, dlg\)/.test(details))
+check('the notify box follows the toggle exactly',
+  /answerCheckbox\('notify', o\.notify === true, dlg\)/.test(details))
+check('details is only ok when every answer read back', /out\.ok = failed\.length === 0/.test(details))
+const tag = kit.slice(kit.indexOf('K.steps.tagproduct'), kit.indexOf('K.steps.endscreen'))
+check('only a result above "Similar results" is ever tagged',
+  /similar results/i.test(tag) && /getBoundingClientRect\(\)\.top < limit/.test(tag))
+const vis = kit.slice(kit.indexOf('K.steps.visibility'), kit.indexOf('window.__mvpKit = K'))
+check('Schedule is pressed only after the date reads back',
+  /if \(!dateOk\) \{[^}]*nothing was scheduled/.test(vis))
+check('and the time', /readTime\(timeInput\.value\) !== H \* 60 \+ Mi\) \{[^}]*nothing was scheduled/.test(vis))
+check('the final button must say what was asked before it is pressed',
+  /!wantRe\.test\(lbl\)/.test(vis) && /finish\(\/\^schedule\$\/i/.test(vis))
+check('the zone is the one Studio shows', /GMT/.test(vis))
+
+// ── the order and the gate ───────────────────────────────────────────────
+const run = slice('async function runStudioDraft(', 6000)
+check('runStudioDraft exists', run.length > 0)
+const gateAt = run.indexOf('if (!details.ok)')
+const firstNext = run.indexOf("exec('next'")
+check('a disclosure that did not read back stops the run before any Next',
+  gateAt > 0 && firstNext > gateAt, 'a draft must never reach Visibility without its paid promotion')
+check('steps not reached are listed as not reached', /notReached: true/.test(run))
+const orch = slice('async function scanStudioFinish(', 9000)
+check('scanStudioFinish tries the draft first', /draftFirst/.test(orch) && /runStudioDraft\(tabId, videoId, want\)/.test(orch))
+check('and says which way Studio went', /'draft'\)/.test(orch) && /path: 'video'/.test(orch))
+const handler = slice("msg.type === 'MVP_STUDIO_FINISH'", 900)
+const bgTimeout = Number((handler.match(/sendResponse\(\{ ok: false, error: 'timeout' \}\), (\d+)\)/) || [])[1] || 0)
+const EF = code(read('lib/extension-frame.ts'))
+const ef = EF.slice(EF.indexOf('export async function requestStudioFinish'), EF.indexOf('export async function requestStudioFinish') + 1400)
+const webTimeout = Number((ef.match(/\n\s*(\d{5,}),\s*\n/) || [])[1] || 0)
+check('the page waits longer than SCOUT does', bgTimeout > 0 && webTimeout > bgTimeout,
+  `SCOUT ${bgTimeout}, page ${webTimeout}: otherwise the page reports a timeout over SCOUT's real answer`)
+
+// ── the screens ──────────────────────────────────────────────────────────
+const CP = code(read('app/(dashboard)/co-pilot/page.tsx'))
+const cpRun = CP.slice(CP.indexOf('async function runStudioFinish('), CP.indexOf('async function settleAfterStudio('))
+check('Co-Pilot sends the creator\'s notify toggle', /notifySubscribers: proSettings\.notifySubscribers === true/.test(cpRun))
+check('and never a plain false', !/notifySubscribers: false/.test(cpRun))
+check('Co-Pilot keeps SCOUT\'s result as it came', /setFinishResult\(fin\)/.test(cpRun) && !/detail: dStep\.ok \?/.test(cpRun))
+check('Co-Pilot no longer claims the bell was set', !/Subscriber bell/.test(CP))
+const cpPush = CP.slice(CP.indexOf('const holdStatus = wantsFinish'), CP.indexOf('const holdStatus = wantsFinish') + 2500)
+check('Co-Pilot holds the schedule until SCOUT has run', /publishAt: holdStatus \? null : publishAt/.test(cpPush))
+const settle = CP.slice(CP.indexOf('async function settleAfterStudio('), CP.indexOf('async function settleAfterStudio(') + 1600)
+check('and only sets it through the API once the disclosure read back',
+  /studioDisclosuresConfirmed\(fin\)/.test(settle) && /if \(!confirmed\) \{[\s\S]*?return/.test(settle))
+const LB = code(read('components/launch/LaunchBoard.tsx'))
+check('Launch Batch sends the batch toggle to Studio', /notifySubscribers: notifySubs/.test(LB))
+check('Launch Batch stores the run as SCOUT reported it', /storeStudioRun\(fin\)/.test(LB) && /studioFinish: run/.test(LB))
+check('a Launch Batch draft is only ever given its own time',
+  /mode: 'schedule', publishAt: it\.publish_at/.test(LB))
+
+// ── the helpers ──────────────────────────────────────────────────────────
+const res = (steps: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}) =>
+  ({ ok: false, steps: steps as never, ...extra })
+check('a run that stopped at the disclosure does not headline as done',
+  !/^Done/.test(studioRunHeadline(res([{ step: 'details', ok: false, detail: 'x' }, { step: 'visibility', ok: false, notReached: true }]))))
+check('a full run does', /^Done/.test(studioRunHeadline(res([{ step: 'details', ok: true }, { step: 'visibility', ok: true }], { ok: true }))))
+check('not reached is its own tone', studioStepTone({ step: 'x', ok: false, notReached: true }) === 'idle'
+  && studioStepTone({ step: 'x', ok: false }) === 'bad' && studioStepTone({ step: 'x', ok: false, skipped: true }) === 'note')
+check('Visibility only counts as set on a draft that read it back',
+  studioSetVisibility({ ok: true, path: 'draft', steps: [{ step: 'visibility', ok: true }] })
+  && !studioSetVisibility({ ok: true, path: 'video', steps: [{ step: 'visibility', ok: true }] })
+  && !studioSetVisibility({ ok: false, path: 'draft', steps: [{ step: 'visibility', ok: false }] }))
+check('disclosures confirmed means the details step read back',
+  studioDisclosuresConfirmed({ ok: false, steps: [{ step: 'details', ok: true }] })
+  && !studioDisclosuresConfirmed({ ok: false, steps: [{ step: 'details', ok: false }] })
+  && !studioDisclosuresConfirmed(null))
+check('a draft with no time and no visibility is left alone', draftVisibility(null, 'draft').mode === 'keep')
+check('a time schedules', draftVisibility('2030-01-01T09:00:00Z', 'draft').mode === 'schedule')
+const stored = readStudioRun(JSON.parse(JSON.stringify(storeStudioRun(res([{ step: 'details', ok: true, detail: 'd', debug: { big: 'x'.repeat(5000) } }], { path: 'draft' })))))
+check('a stored run round-trips without its debug map', !!stored && stored.steps[0].detail === 'd' && !('debug' in stored.steps[0]) && stored.path === 'draft')
+check('anything else is refused', readStudioRun({ steps: 'no' }) === null && readStudioRun(null) === null)
+check('options default to the creator\'s steps, and a stored false stays false',
+  normalizeStudioOptions({}).adRating === true && normalizeStudioOptions({ adRating: false }).adRating === false)
+check('a product link only from a real ASIN', productLinkFor('B0ABCDEFGH') === 'https://www.amazon.com/dp/B0ABCDEFGH' && productLinkFor('nope') === null)
+
+// ── the SQL ──────────────────────────────────────────────────────────────
+const SQL = read('supabase/migrations/367_launch_youtube_options.sql')
+check('migration 367 can run twice', (SQL.match(/add column if not exists/g) || []).length === 5)
+
+console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
+for (const f of failures) console.log(`  ✗ ${f}`)
+process.exit(failures.length ? 1 : 0)

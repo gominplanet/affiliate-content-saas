@@ -15,8 +15,9 @@ import HeroVideo from '@/components/layout/HeroVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, requestStudioFinish, type StudioFinishResult, type StudioFinishStep, type YtSaveRecipe } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, requestStudioFinish, type StudioFinishResult, type YtSaveRecipe } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
+import { draftVisibility, productLinkFor, studioDisclosuresConfirmed, studioSetVisibility, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone } from '@/lib/studio-finish'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
 import BrandStylePanel from '@/components/co-pilot/BrandStylePanel'
@@ -550,6 +551,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // channel, monetized or not.
   const [finishDoDetails, setFinishDoDetails] = useState(true)
   const [finishDoMonetize, setFinishDoMonetize] = useState(true)
+  // The rest of the creator's draft steps: the ad rating, the product tag and
+  // the end screen imported from the latest video.
+  const [finishDoAdRating, setFinishDoAdRating] = useState(true)
+  const [finishDoTag, setFinishDoTag] = useState(true)
+  const [finishDoEndScreen, setFinishDoEndScreen] = useState(true)
+  const anyFinishStep = finishDoDetails || finishDoMonetize || finishDoTag || finishDoEndScreen
   const [finishRunning, setFinishRunning] = useState(false)
   const [finishResult, setFinishResult] = useState<StudioFinishResult | null>(null)
   // Dev: captured YouTube Studio save requests (yt-hook) — used to learn the
@@ -995,6 +1002,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     if (override) return asinFromAmazonUrl(override) || video.detectedAsin || null
     return video.detectedAsin || null
   })()
+  /** A link SCOUT can paste into Studio's Tag products search. */
+  const hasProductLink = !!(productUrl.trim() || productLinkFor(effectiveAsin))
 
   /**
    * Remember the thumbnail against the PRODUCT, so posting the same ASIN to
@@ -1243,18 +1252,22 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         const isDraft = proSettings.privacyStatus === 'draft' && !publishAt
 
         // Will SCOUT finish the Studio-only fields after this push?
-        const wantsFinish = extensionInstalled === true && finishOptIn &&
-          (finishDoDetails || finishDoMonetize)
+        const wantsFinish = extensionInstalled === true && finishOptIn && anyFinishStep
 
-        // COMPLIANCE ORDERING. Paid-promotion and AI-disclosure MUST be set
-        // before a video is public — otherwise it goes live undisclosed. When
-        // SCOUT will finish an *immediately public/unlisted* push, we land the
-        // video PRIVATE first, let SCOUT set those fields, then flip to the
-        // chosen visibility below. Drafts stay draft; scheduled videos are
-        // already private-until-publish, so both are safe to finish in place.
-        const goingLiveNow = !publishAt && (proSettings.privacyStatus === 'public' || proSettings.privacyStatus === 'unlisted')
-        const deferPublish = wantsFinish && goingLiveNow
-        const firstPrivacy = deferPublish ? 'private' : (isDraft || publishAt ? undefined : proSettings.privacyStatus)
+        // SCOUT FIRST, THEN THE TIME.
+        //
+        // When SCOUT finishes this video, the push sends the words, the
+        // thumbnail and the playlist, and NO status: no schedule, no
+        // visibility. Two reasons. A draft only stays a draft if nothing sets
+        // its status, and a draft's disclosures can only be answered through
+        // Studio's Edit draft window. And nothing may be scheduled or public
+        // before its paid promotion reads back as Yes.
+        //
+        // The time is then set by SCOUT itself on the draft's Visibility page,
+        // or, for a video that is not a draft (or when that page did not read
+        // back), through the YouTube API below, only once the disclosures did.
+        const holdStatus = wantsFinish
+        const firstPrivacy = holdStatus || isDraft || publishAt ? undefined : proSettings.privacyStatus
 
         const res = await fetch('/api/youtube/apply', {
           method: 'POST',
@@ -1272,21 +1285,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             asin: effectiveAsin ?? undefined,
             thumbnailUploaded: !!thumbnailModel?.includes('upload'),
             playlistId: proSettings.playlistId,
-            madeForKids: isDraft ? undefined : proSettings.madeForKids,
-            // Embedding is API-settable — drive it here (not just via SCOUT) so a
-            // later status PUT can't reset it. Only when the user opted into the
-            // Details finish (which is what turns embedding on).
-            embeddable: wantsFinish && finishDoDetails ? true : undefined,
-            // Don't notify on the private landing push — the real notification
-            // fires on the visibility flip below (going private→public).
-            notifySubscribers: deferPublish ? false : proSettings.notifySubscribers,
-            publishAt,
+            madeForKids: isDraft || holdStatus ? undefined : proSettings.madeForKids,
+            notifySubscribers: proSettings.notifySubscribers,
+            publishAt: holdStatus ? null : publishAt,
             privacyStatus: firstPrivacy,
           }),
         })
         const data = await safeJson(res)
         if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status} — apply failed`)
-
         const warns = Array.isArray(data.warnings) ? (data.warnings as string[]) : []
         const quotaHit = data.quotaHit === true || warns.some(w => /quotaExceeded|exceeded your/i.test(w))
         // statusOk === false means the videos.update STATUS call failed — so the
@@ -1295,7 +1301,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         // "Scheduled on YouTube" state in that case; surface a clear, retryable
         // error (and a friendly message when YouTube's daily quota is the cause,
         // instead of dumping the raw 403 JSON the API returns).
-        if (data.statusOk === false) {
+        if (data.statusOk === false && !holdStatus) {
           setApplyError(
             quotaHit
               ? `YouTube's daily API quota is used up right now, so nothing reached YouTube${publishAt ? ' — the video is NOT scheduled' : ''}. The quota resets around midnight Pacific; try again then.`
@@ -1311,51 +1317,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               : `Applied with warnings: ${warns.join(' · ')}`,
           )
         }
-        // One-button flow: if the user opted SCOUT in up in Studio Settings,
-        // finish the Studio-only fields now — while the video is still private
-        // (deferPublish) / draft / scheduled, never already public. This drives
-        // paid promotion, AI disclosure, embedding, monetization, end screen and
-        // product tag in the user's own logged-in browser. applying just flipped
-        // off in `finally`, so clear it first; runStudioFinish owns finishRunning.
         if (wantsFinish) {
           setApplying(false)
-          const fin = await runStudioFinish()
-
-          // Now flip to the requested visibility — but only if the compliance
-          // step actually landed. If Details couldn't be confirmed, KEEP the
-          // video private so it never goes public without its paid-promotion /
-          // AI disclosure; the user finishes by hand, then publishes.
-          if (deferPublish) {
-            const detailsStep = fin?.steps?.find(s => s.step === 'details')
-            const detailsConfirmed = !finishDoDetails || !!(detailsStep && detailsStep.ok)
-            if (detailsConfirmed) {
-              setApplying(true)
-              try {
-                const res2 = await fetch('/api/youtube/apply', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    videoId: video.youtubeVideoId,
-                    madeForKids: proSettings.madeForKids,
-                    // Re-assert embedding so this status PUT preserves it.
-                    embeddable: finishDoDetails ? true : undefined,
-                    notifySubscribers: proSettings.notifySubscribers,
-                    privacyStatus: proSettings.privacyStatus,
-                  }),
-                })
-                const d2 = await safeJson(res2)
-                if (!res2.ok || d2.statusOk === false) {
-                  setApplyError(`Studio settings applied, but flipping the video to ${proSettings.privacyStatus} didn't go through. Open it on YouTube and set visibility to ${proSettings.privacyStatus}.`)
-                }
-              } catch {
-                setApplyError(`Studio settings applied, but the publish step failed. Open the video on YouTube and set it to ${proSettings.privacyStatus}.`)
-              } finally {
-                setApplying(false)
-              }
-            } else {
-              setApplyError(`Kept PRIVATE on purpose: SCOUT couldn't confirm the paid-promotion / disclosure settings, and the video shouldn't go public without them. Finish the Details tab on YouTube, then set visibility to ${proSettings.privacyStatus}.`)
-            }
-          }
+          const fin = await runStudioFinish(publishAt)
+          await settleAfterStudio(fin, publishAt, isDraft)
         }
         // Leave the panel EXPANDED so the post-apply "Finish on YouTube" card
         // stays visible and usable. Auto-collapsing + reclassifying here was
@@ -1439,53 +1404,90 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     if (onApplied) onApplied(video.youtubeVideoId)
   }
 
-  async function runStudioFinish(): Promise<StudioFinishResult | null> {
-    if (!video.youtubeVideoId || !finishOptIn) return null
-    if (!finishDoDetails && !finishDoMonetize) return null
+  /**
+   * Send SCOUT into Studio for this one video, with every step the creator
+   * ticked, and keep exactly what it reports.
+   *
+   * THE RESULT IS SCOUT'S, WORD FOR WORD. This used to replace the Details
+   * step's own detail with "Paid promotion checked, AI-use answered, notify
+   * off" whenever the step came back ok, and to pass notify as a plain false
+   * whatever the toggle said. Studio showed the box blank under that sentence.
+   * SCOUT now reads every answer back off the page, and its words are the
+   * ones shown.
+   */
+  async function runStudioFinish(publishAtArg?: string | null): Promise<StudioFinishResult | null> {
+    if (!video.youtubeVideoId || !finishOptIn || !anyFinishStep) return null
     setFinishRunning(true)
     setFinishError(null)
     setFinishResult(null)
     try {
-      const steps: StudioFinishStep[] = []
-      // Paid promotion, the AI-use answer and monetization are set by DRIVING the
-      // real Studio controls (requestStudioFinish): SCOUT opens the video in the
-      // creator's own Studio, ticks the boxes / flips the monetization toggle, and
-      // lets Studio run its OWN save. That's the only path YouTube reliably
-      // persists — the hook-rewrite left "sawMeta:0" and a raw API replay 200s but
-      // drops these protected fields. Notify subscribers is forced OFF.
-      if (finishDoDetails || finishDoMonetize) {
-        const fin = await requestStudioFinish(video.youtubeVideoId, {
-          details: finishDoDetails,
-          monetize: finishDoMonetize,
-          selfCert: finishDoMonetize,
-          endScreen: false,
-          notifySubscribers: false,
-        })
-        const dStep = fin.steps.find(s => s.step === 'details')
-        const mStep = fin.steps.find(s => s.step === 'monetization')
-        if (finishDoDetails) steps.push(dStep
-          ? { ...dStep, detail: dStep.ok ? 'Paid promotion checked, AI-use answered, notify off' : (dStep.detail || 'couldn’t set — open the Details tab in Studio') }
-          : { step: 'details', ok: false, detail: 'couldn’t open the Details tab in Studio' })
-        if (finishDoMonetize) steps.push(mStep
-          ? { ...mStep, detail: mStep.skipped ? (mStep.detail || 'this channel isn’t monetized — nothing to turn on') : mStep.ok ? 'Monetization on + ad rating submitted' : (mStep.detail || 'couldn’t turn on — open the Monetization tab in Studio') }
-          : { step: 'monetization', ok: false, detail: 'couldn’t open the Monetization tab in Studio' })
-        if (fin.error === 'not-installed') setFinishError('SCOUT isn’t installed or didn’t respond. Reload SCOUT and try again.')
-        else if (fin.error === 'timeout') setFinishError('YouTube Studio took too long to respond. Try again.')
-        else if (fin.error) setFinishError(`Couldn’t finish in Studio: ${fin.error}`)
-      }
-      // End screen + product tag can't be injected (YouTube blocks automating
-      // them) — always surface as the optional "do by hand" reminder.
-      steps.push({ step: 'endscreen', ok: false, skipped: true, detail: 'add by hand — YouTube blocks automating the end-screen editor' })
-      if (video.detectedAsin) steps.push({ step: 'tagproduct', ok: false, skipped: true, detail: 'tag by hand in YouTube Shopping' })
-
-      const result: StudioFinishResult = { ok: steps.some(s => s.ok), steps }
-      setFinishResult(result)
-      return result
+      const publishAt = publishAtArg !== undefined
+        ? publishAtArg
+        : computePublishAt(proSettings.scheduleMode, proSettings.scheduleAt)
+      const link = productUrl.trim() || productLinkFor(effectiveAsin)
+      const fin = await requestStudioFinish(video.youtubeVideoId, {
+        details: finishDoDetails,
+        monetize: finishDoMonetize,
+        selfCert: finishDoMonetize && finishDoAdRating,
+        tagProduct: finishDoTag && !!link,
+        productUrl: link ?? undefined,
+        productTitle: product?.title ?? undefined,
+        endScreen: finishDoEndScreen,
+        // The creator's own toggle, whichever way it points.
+        notifySubscribers: proSettings.notifySubscribers === true,
+        visibility: draftVisibility(publishAt, proSettings.privacyStatus),
+      })
+      if (fin.error === 'not-installed') setFinishError('SCOUT isn’t installed or didn’t respond. Reload SCOUT and try again.')
+      else if (fin.error === 'timeout') setFinishError('YouTube Studio took too long to respond, so SCOUT stopped. Nothing after the last tick below was done.')
+      else if (fin.error) setFinishError(`Couldn’t finish in Studio: ${fin.error}`)
+      setFinishResult(fin)
+      return fin
     } catch (e) {
       setFinishError(e instanceof Error ? e.message : 'Failed to run the Studio finish')
       return null
     } finally {
       setFinishRunning(false)
+    }
+  }
+
+  /**
+   * After SCOUT: the time or visibility the creator asked for, if SCOUT did
+   * not already set it on the draft's own Visibility page.
+   *
+   * ONLY ONCE THE DISCLOSURE READ BACK. A video whose paid promotion did not
+   * stick stays exactly where it is, a draft or private, and the screen says
+   * so. Going public without it is the one outcome this must never produce.
+   */
+  async function settleAfterStudio(fin: StudioFinishResult | null, publishAt: string | null, isDraft: boolean) {
+    const wantsStatus = !!publishAt || !isDraft
+    if (!wantsStatus || studioSetVisibility(fin)) return
+    const confirmed = !finishDoDetails || studioDisclosuresConfirmed(fin)
+    const where = fin?.path === 'draft' ? 'a draft' : 'private'
+    if (!confirmed) {
+      setApplyError(`Kept as ${where} on purpose: SCOUT could not confirm paid promotion in Studio, and the video must not go out without it. Finish the Details page on YouTube, then ${publishAt ? 'schedule it' : `set it to ${proSettings.privacyStatus}`}.`)
+      return
+    }
+    setApplying(true)
+    try {
+      const res2 = await fetch('/api/youtube/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId: video.youtubeVideoId,
+          madeForKids: proSettings.madeForKids,
+          notifySubscribers: proSettings.notifySubscribers,
+          publishAt,
+          privacyStatus: publishAt ? undefined : proSettings.privacyStatus,
+        }),
+      })
+      const d2 = await safeJson(res2)
+      if (!res2.ok || d2.statusOk === false) {
+        setApplyError(`Studio settings are in, but ${publishAt ? 'scheduling' : `setting it to ${proSettings.privacyStatus}`} through YouTube did not go through. It is still ${where}. Open it on YouTube and ${publishAt ? 'schedule it' : `set it to ${proSettings.privacyStatus}`}.`)
+      }
+    } catch {
+      setApplyError(`Studio settings are in, but the last step failed. It is still ${where}. Open it on YouTube and ${publishAt ? 'schedule it' : `set it to ${proSettings.privacyStatus}`}.`)
+    } finally {
+      setApplying(false)
     }
   }
 
@@ -3356,25 +3358,38 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
                       {finishOptIn && (
                         <div className="px-3.5 pb-3 flex flex-col gap-3 border-t border-[#7C3AED]/10 pt-2.5">
-                          {/* Automated zone */}
+                          {/* THE CREATOR'S OWN STEPS, in their order. A draft is
+                              walked through Edit draft page by page; every
+                              answer is read back off the page before the next,
+                              and the schedule is only set once paid promotion
+                              reads back as Yes. */}
                           <div className="flex flex-col gap-1.5">
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-[#34c759] flex items-center gap-1"><CheckCircle size={10} /> SCOUT sets these automatically</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-[#34c759] flex items-center gap-1"><CheckCircle size={10} /> SCOUT does these in Studio, then reads each one back</p>
                             <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-1">
                               <input type="checkbox" checked={finishDoDetails} disabled={finishRunning || applying} onChange={e => setFinishDoDetails(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
-                              <span><strong>Paid promotion</strong> disclosure + <strong>AI / altered-content</strong> answer <span className="text-[#86868b]">(kept as &ldquo;No&rdquo; — uncheck if this video is AI-generated/altered)</span></span>
+                              <span><strong>Paid promotion: Yes</strong> and <strong>AI use: No</strong> <span className="text-[#86868b]">(untick if this video is AI generated or altered)</span></span>
                             </label>
                             <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-1">
                               <input type="checkbox" checked={finishDoMonetize} disabled={finishRunning || applying} onChange={e => setFinishDoMonetize(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
-                              <span>Turn on <strong>Monetization</strong> + submit the <strong>ad-suitability rating</strong> <span className="text-[#86868b]">(uncheck if this channel isn&apos;t monetized)</span></span>
+                              <span><strong>Monetization: On</strong> <span className="text-[#86868b]">(skipped on a channel without it)</span></span>
                             </label>
-                            <p className="text-[10px] text-[#86868b] pl-1">Notify subscribers is left <strong>off</strong> so the push doesn’t hit the bell.</p>
-                          </div>
-
-                          {/* By-hand zone */}
-                          <div className="flex flex-col gap-1">
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-[#ff9500] flex items-center gap-1"><AlertCircle size={10} /> You finish these by hand</p>
-                            <p className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] leading-relaxed pl-1">
-                              <strong>End screen</strong>{video.detectedAsin ? <> and <strong>product tagging</strong></> : ''} — YouTube blocks automating {video.detectedAsin ? 'these' : 'this'}. A one-click link to the right Studio tab appears after you push.
+                            <label className={`flex items-start gap-2 text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-5 ${finishDoMonetize ? 'cursor-pointer' : 'opacity-50'}`}>
+                              <input type="checkbox" checked={finishDoMonetize && finishDoAdRating} disabled={!finishDoMonetize || finishRunning || applying} onChange={e => setFinishDoAdRating(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
+                              <span><strong>Ad suitability:</strong> None of the above, then Submit rating <span className="text-[#86868b]">(YouTube checks this rating, so only tick it when it is true)</span></span>
+                            </label>
+                            <label className={`flex items-start gap-2 text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-1 ${hasProductLink ? 'cursor-pointer' : 'opacity-50'}`}>
+                              <input type="checkbox" checked={finishDoTag && hasProductLink} disabled={!hasProductLink || finishRunning || applying} onChange={e => setFinishDoTag(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
+                              <span><strong>Tag the product</strong> {hasProductLink
+                                ? <span className="text-[#86868b]">(only the exact match for the link, never a similar one)</span>
+                                : <span className="text-[#86868b]">(no product found for this video yet)</span>}</span>
+                            </label>
+                            <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-1">
+                              <input type="checkbox" checked={finishDoEndScreen} disabled={finishRunning || applying} onChange={e => setFinishDoEndScreen(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
+                              <span><strong>End screen</strong> imported from your latest video</span>
+                            </label>
+                            <p className="text-[10px] text-[#86868b] pl-1">
+                              Then {proSettings.scheduleMode !== 'now' ? 'the schedule you picked above' : proSettings.privacyStatus === 'draft' ? 'nothing: it stays a draft, as you chose' : `it is set to ${proSettings.privacyStatus}`}.
+                              Notify subscribers follows your choice above ({proSettings.notifySubscribers ? 'Yes' : 'No'}).
                             </p>
                           </div>
                         </div>
@@ -3392,8 +3407,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     const draft = proSettings.privacyStatus === 'draft' && !scheduling
                     // When Pro opts SCOUT in, this one button pushes THEN finishes
                     // in Studio — so the label + spinner cover both phases.
-                    const willFinish = isPro && extensionInstalled === true && finishOptIn &&
-                      (finishDoDetails || finishDoMonetize)
+                    const willFinish = isPro && extensionInstalled === true && finishOptIn && anyFinishStep
                     const busySuffix = willFinish ? ' + finishing in Studio…' : '…'
                     const idleSuffix = willFinish ? ' + Finish in Studio' : ''
                     const verb = (busyBase: string, done: string, idleBase: string) =>
@@ -3467,44 +3481,39 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
                         {finishResult && (
                           <div className="flex flex-col gap-1 text-[11px]">
-                            {finishResult.steps.map((s, i) => {
-                              // Details is the compliance gate — a real ✗ if it
-                              // fails (it blocks publish). Monetization, end screen
-                              // and product tagging are OPTIONAL: YouTube's own
-                              // pages are flaky, so a miss degrades to a neutral
-                              // "do it by hand" note, not an alarming failure.
-                              const optional = s.step === 'monetization' || s.step === 'endscreen' || s.step === 'tagproduct'
-                              const manual = !s.ok && !s.skipped && optional
-                              const icon = s.ok ? '✓' : s.skipped ? 'ℹ' : (s.partial || manual) ? '◐' : '✗'
-                              const color = s.ok ? 'text-[#34c759]' : (s.skipped || manual || s.partial) ? 'text-[#ff9500]' : 'text-[#ff3b30]'
-                              const label = s.step === 'details' ? 'Details & disclosures' : s.step === 'monetization' ? 'Monetization + ad rating' : s.step === 'endscreen' ? 'End screen' : s.step === 'tagproduct' ? 'Tag product' : s.step
+                            {/* WHAT STUDIO SHOWED, NOT WHAT WAS CLICKED. Each
+                                line is SCOUT's own sentence, written after it
+                                read the control back. Done, failed, not needed
+                                and not reached each look different, so a run
+                                that stopped at the disclosure cannot read as
+                                one that went through. */}
+                            <p className={`font-semibold ${finishResult.ok ? 'text-[#34c759]' : 'text-[#ff9500]'}`}>{studioRunHeadline(finishResult)}</p>
+                            {studioPathNote(finishResult.path) && (
+                              <p className="text-[10px] text-[#86868b]">{studioPathNote(finishResult.path)}</p>
+                            )}
+                            {finishResult.steps.filter(s => s.step !== 'next' || !s.ok).map((s, i) => {
+                              const tone = studioStepTone(s)
+                              const icon = tone === 'good' ? '✓' : tone === 'bad' ? '✗' : tone === 'note' ? 'ℹ' : '○'
+                              const color = tone === 'good' ? 'text-[#34c759]' : tone === 'bad' ? 'text-[#ff3b30]' : tone === 'note' ? 'text-[#ff9500]' : 'text-[#86868b]'
                               return (
                                 <div key={i} className="flex flex-col gap-0.5">
                                   <div className="flex items-start gap-1.5">
                                     <span className={color}>{icon}</span>
                                     <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">
-                                      <strong>{label}</strong>
-                                      {manual ? ' — optional, finish this one by hand (steps below)' : s.detail ? ` — ${s.detail}` : ''}
+                                      <strong>{studioStepLabel(s.step)}</strong>: {studioStepText(s)}
                                     </span>
                                   </div>
                                   {/* Expose SCOUT's DOM debug map on a real miss so
                                       the layout it saw can be tuned to. */}
-                                  {!s.ok && !s.skipped && s.debug && Object.keys(s.debug).length > 0 && (
+                                  {tone === 'bad' && s.debug && Object.keys(s.debug).length > 0 && (
                                     <details className="ml-5">
-                                      <summary className="text-[10px] text-[#86868b] cursor-pointer select-none">Show debug (send us this screenshot)</summary>
+                                      <summary className="text-[10px] text-[#86868b] cursor-pointer select-none">Show what SCOUT saw (send us this screenshot)</summary>
                                       <pre className="mt-1 text-[9px] leading-snug text-[#6e6e73] dark:text-[#a1a1a6] bg-black/5 dark:bg-white/5 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40">{JSON.stringify(s.debug, null, 1)}</pre>
                                     </details>
                                   )}
                                 </div>
                               )
                             })}
-                            <div className="flex items-start gap-1.5">
-                              <span className="text-[#34c759]">{'✓'}</span>
-                              <span className="text-[#1d1d1f] dark:text-[#f5f5f7]"><strong>Subscriber bell</strong> {'—'} set to match your choice above</span>
-                            </div>
-                            <p className="text-[10px] text-[#86868b] mt-0.5 leading-relaxed">
-                              The disclosures (paid promotion + AI) are the ones that matter for going public — SCOUT sets those. Monetization, end screen and product tagging are optional; YouTube&apos;s own pages are flaky to automate, so finish any that didn&apos;t tick by hand below.
-                            </p>
                           </div>
                         )}
                         {finishError && (
@@ -3513,7 +3522,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                               ❌ {finishError}
                             </p>
                             <button
-                              onClick={runStudioFinish}
+                              onClick={() => void runStudioFinish()}
                               disabled={finishRunning}
                               className="inline-flex items-center justify-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-50 transition-colors"
                             >

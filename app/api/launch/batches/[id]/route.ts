@@ -16,6 +16,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { marketByDomain } from '@/lib/markets'
 import { normalizeSlots } from '@/lib/launch-schedule'
 import { validateThumbnailPreset } from '@/lib/thumbnail-preset'
+import { normalizeStudioOptions, readStudioRun } from '@/lib/studio-finish'
 import { batchSteps, launchBlocker, validateCtaPreset, withOwnSchedules, MAX_ITEMS, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
@@ -49,6 +50,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const notifyAvailable = !nerr
   const notifySubscribers = !nerr && nrow?.notify_subscribers === true
 
+  // THE YOUTUBE OPTIONS (migration 367), read on their own for the same
+  // reason: before the SQL runs these columns do not exist, and a failed
+  // select must not empty the batch. `youtubeOptionsAvailable: false` makes
+  // the page say so instead of offering a playlist nobody would add to.
+  const { data: yrow, error: yerr } = await sb.from('launch_batches')
+    .select('playlist_id,studio_options').eq('id', id).eq('user_id', user.id).maybeSingle()
+  const youtubeOptionsAvailable = !yerr
+  const { data: irows, error: ierr } = await sb.from('launch_items')
+    .select('id,playlist_added_at,playlist_error,studio_finish').eq('batch_id', id)
+  const extra = new Map<string, { playlist_added_at: string | null; playlist_error: string | null; studio_finish: unknown }>()
+  if (!ierr) for (const r of (irows ?? []) as Array<{ id: string; playlist_added_at: string | null; playlist_error: string | null; studio_finish: unknown }>) extra.set(r.id, r)
+  const itemsOut = items.map((i) => ({
+    ...i,
+    playlist_added_at: extra.get(i.id)?.playlist_added_at ?? null,
+    playlist_error: extra.get(i.id)?.playlist_error ?? null,
+    studio_finish: readStudioRun(extra.get(i.id)?.studio_finish),
+  }))
+
   const b = batch as BatchRow
   return NextResponse.json({
     ok: true,
@@ -61,7 +80,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         needsDub: !!marketByDomain(d)?.needsTranslation,
       })),
     },
-    items,
+    items: itemsOut,
     steps: batchSteps(b, items),
     // THE REASON, not just a boolean. A disabled Launch button with nothing
     // beside it is the dead end this codebase keeps producing.
@@ -77,6 +96,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // False until migration 366 is run: the toggle is shown off and locked,
     // with the reason, and the uploader treats the batch as No.
     notifyAvailable,
+    playlistId: !yerr ? (yrow?.playlist_id ?? null) : null,
+    studioOptions: normalizeStudioOptions(!yerr ? yrow?.studio_options : null),
+    youtubeOptionsAvailable,
   })
 }
 
@@ -100,6 +122,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     timezone?: string
     /** Notify subscribers when each video goes public. */
     notifySubscribers?: boolean
+    /** The playlist each video is added to. `null` means none. */
+    playlistId?: string | null
+    /** Which Studio steps SCOUT does on Finish in Studio. */
+    studioOptions?: Record<string, unknown>
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -166,6 +192,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   if (typeof body.notifySubscribers === 'boolean') patch.notify_subscribers = body.notifySubscribers
+  if (body.playlistId !== undefined) {
+    const pl = String(body.playlistId ?? '').trim()
+    if (pl && !/^[A-Za-z0-9_-]{10,64}$/.test(pl)) return NextResponse.json({ error: 'That is not a YouTube playlist.' }, { status: 400 })
+    patch.playlist_id = pl || null
+  }
+  if (body.studioOptions !== undefined) patch.studio_options = normalizeStudioOptions(body.studioOptions)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
@@ -174,12 +206,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // the uploader may already have sent YouTube the old answer, and a switch
   // that changes on screen but not on the channel is the plan reported as
   // the result.
-  if (patch.notify_subscribers !== undefined) {
+  // THE PLAYLIST TOO: the uploader adds each video as it goes up, so a change
+  // after launch would put half the batch in one playlist and half in another
+  // while the screen showed one.
+  if (patch.notify_subscribers !== undefined || patch.playlist_id !== undefined) {
     const { data: cur } = await sb.from('launch_batches')
       .select('state').eq('id', id).eq('user_id', user.id).maybeSingle()
     if (cur && (cur.state === 'launching' || cur.state === 'launched')) {
       return NextResponse.json({
-        error: 'This batch has already been launched, so its notification setting is locked in. You can change it per video in YouTube Studio.',
+        error: patch.playlist_id !== undefined
+          ? 'This batch has already been launched, so its playlist is locked in. You can move videos between playlists in YouTube Studio.'
+          : 'This batch has already been launched, so its notification setting is locked in. You can change it per video in YouTube Studio.',
       }, { status: 409 })
     }
   }
@@ -189,6 +226,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (error) {
     // THE ONE ERROR WITH A KNOWN CAUSE, said in words: before migration 366
     // the column does not exist, and nothing else in this request was saved.
+    if ((patch.playlist_id !== undefined || patch.studio_options !== undefined) && /playlist_id|studio_options/.test(error.message)) {
+      return NextResponse.json({
+        error: 'The YouTube options are not switched on yet: the database needs migration 367. Nothing was saved.',
+      }, { status: 503 })
+    }
     if (patch.notify_subscribers !== undefined && /notify_subscribers/.test(error.message)) {
       return NextResponse.json({
         error: 'The notify toggle is not switched on yet: the database needs migration 366. Nothing was saved. Until then, batch videos do not notify subscribers.',

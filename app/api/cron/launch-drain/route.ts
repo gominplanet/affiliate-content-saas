@@ -600,6 +600,29 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
     }
   }
 
+  // EACH BATCH'S PLAYLIST, and which videos are already in it (migration 367).
+  // Read on their own, like the toggle above: before the SQL runs these
+  // columns do not exist, and on any error no video is added to anything.
+  // A video already recorded as added is never added twice, because YouTube
+  // lets a playlist hold the same video more than once and a retried row
+  // would do exactly that.
+  const playlistByBatch = new Map<string, string>()
+  const inPlaylist = new Set<string>()
+  {
+    const batchIds = [...new Set(items.map((i: { batch_id: string }) => i.batch_id))]
+    const { data: pb, error: pbErr } = await sb.from('launch_batches')
+      .select('id,playlist_id').in('id', batchIds)
+    if (!pbErr) {
+      for (const b of (pb ?? []) as Array<{ id: string; playlist_id: string | null }>) {
+        if (b.playlist_id) playlistByBatch.set(b.id, b.playlist_id)
+      }
+      const { data: pa, error: paErr } = await sb.from('launch_items')
+        .select('id').in('id', items.map((i: { id: string }) => i.id)).not('playlist_added_at', 'is', null)
+      if (paErr) playlistByBatch.clear()
+      else for (const r of (pa ?? []) as Array<{ id: string }>) inPlaylist.add(r.id)
+    }
+  }
+
   let scheduled = 0, failed = 0
   let budget = PUBLISHES
   const stamp = () => new Date().toISOString()
@@ -785,6 +808,23 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
         }
       } else {
         thumb.error = 'there was no designed thumbnail to set, so YouTube picked a frame'
+      }
+
+      // ── THE PLAYLIST THE CREATOR PICKED ──────────────────────────────────
+      // Same rule as the thumbnail: it never fails the upload, and it never
+      // fails quietly. The answer is written on its own, so a database without
+      // migration 367 loses the note and nothing else.
+      const playlist = playlistByBatch.get(it.batch_id)
+      if (playlist && !inPlaylist.has(it.id)) {
+        let added: string | null = null, plError: string | null = null
+        try {
+          await yt.addVideoToPlaylist(playlist, videoId)
+          added = stamp()
+        } catch (pe) {
+          plError = (pe instanceof Error && pe.message ? pe.message : String(pe)).slice(0, 200)
+          console.warn('[launch-drain] playlist refused', { item: it.id, said: plError })
+        }
+        await sb.from('launch_items').update({ playlist_added_at: added, playlist_error: plError }).eq('id', it.id)
       }
 
       await sb.from('launch_items').update({
