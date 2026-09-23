@@ -330,6 +330,15 @@ const live = (src: string) => decomment(src)
   check('the buy buttons read the pack price',
     /CREDIT_BLOCKS\[b\]\.usd/.test(STAGE),
     'three prices typed beside a live Stripe checkout is the $79-against-$99 setup exactly')
+  // THE CHECK MUST CHECK WHAT CHECKOUT CHARGES. It read process.env[k]
+  // directly, lib/stripe resolves Creator as CREATOR ?? STARTER, and with only
+  // STARTER set in production the live report called Creator "no price id
+  // set" and skipped comparing it: the diagnostic and the thing it diagnoses
+  // disagreed about which price was real.
+  check('the plan price check resolves ids the way checkout does',
+    /PRICE_ID_LIST\[tier as keyof typeof PRICE_ID_LIST\]\?\.\[0\]/.test(decomment(CHECK))
+    && !/const first = priceIdsFor\(process\.env\[k\]\)\[0\]/.test(decomment(CHECK)),
+    'a diagnostic that reads a different id from the one billed can agree with itself and still be wrong')
   check('and the packs are compared against what Stripe charges',
     /CREDIT_BLOCKS/.test(CHECK) && /cfg\.usd/.test(CHECK),
     'a Stripe price is immutable, so nothing in the repo changes when one is repointed: only fetching it can see the gap')

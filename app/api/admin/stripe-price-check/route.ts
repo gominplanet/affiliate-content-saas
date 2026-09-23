@@ -21,7 +21,7 @@
 // So each id is now fetched from Stripe and its unit_amount compared to
 // TIERS[tier].price. The comparison is the point; the rest is context.
 import { NextResponse } from 'next/server'
-import { priceIdsFor, getStripe } from '@/lib/stripe'
+import { priceIdsFor, getStripe, PRICE_ID_LIST } from '@/lib/stripe'
 import { CREDIT_BLOCKS } from '@/lib/credit-blocks'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, TIERS, type Tier } from '@/lib/tier'
@@ -92,7 +92,18 @@ export async function GET() {
   for (const k of KEYS) {
     const tier = TIER_FOR[k]
     if (!tier) continue
-    const first = priceIdsFor(process.env[k])[0]
+    // THE ID CHECKOUT ACTUALLY USES, not a fresh read of the env var.
+    //
+    // This read process.env[k] directly, while lib/stripe resolves Creator as
+    // STRIPE_PRICE_CREATOR ?? STRIPE_PRICE_STARTER. With only STARTER set in
+    // production, the report said Creator had "no price id set" and marked it
+    // unchecked, for a price the webhook maps and every grandfathered Creator
+    // subscriber is billed on. Two wrong answers in one row: it implied those
+    // subscribers were unmapped, and it never compared their real price to the
+    // advertised $49, which is the one thing this route exists to do.
+    // Resolving through PRICE_ID_LIST makes the diagnostic check the same id
+    // checkout charges, by construction.
+    const first = PRICE_ID_LIST[tier as keyof typeof PRICE_ID_LIST]?.[0]
     const expectedUsd = (TIERS[tier] as { price?: number }).price ?? null
     if (!first || !stripe) {
       charged[k] = { tier, expectedUsd, chargesUsd: null, matches: null, currency: null, interval: null,
