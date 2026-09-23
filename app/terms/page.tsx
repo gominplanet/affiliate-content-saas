@@ -1,10 +1,12 @@
+import { GUARANTEE_DAYS, GUARANTEE_LABEL } from '@/lib/guarantee'
+
 export const metadata = { title: 'Terms of Service — MVP Affiliate' }
 
 export default function TermsPage() {
   return (
     <main className="max-w-3xl mx-auto px-6 py-16 text-[#1d1d1f] dark:text-[#f5f5f7]">
       <h1 className="text-3xl font-bold mb-2">Terms of Service</h1>
-      <p className="text-sm text-[#86868b] dark:text-[#8e8e93] mb-10">Last updated: May 13, 2026</p>
+      <p className="text-sm text-[#86868b] dark:text-[#8e8e93] mb-10">Last updated: September 23, 2026</p>
 
       <section className="prose prose-sm max-w-none space-y-8 text-[#374151] leading-relaxed">
 
@@ -115,8 +117,15 @@ export default function TermsPage() {
           <p>
             Some features require a paid subscription, billed through Stripe. Subscriptions renew
             automatically until cancelled. You can cancel anytime from the Billing page; cancellation
-            takes effect at the end of the current billing period. Fees already paid are non-refundable
-            except where required by law.
+            takes effect at the end of the current billing period.
+          </p>
+          <p>
+            <strong>{GUARANTEE_LABEL[0].toUpperCase() + GUARANTEE_LABEL.slice(1)}.</strong> If you subscribe and MVP Affiliate is not
+            for you, email us within {GUARANTEE_DAYS} days of your first payment and we will refund it in full. No
+            questions, and nothing you made with it is taken away. The guarantee covers your first
+            payment on a subscription; renewals after that are not refundable except where required
+            by law, and neither are one-off purchases such as credit packs once the credits have
+            been used.
           </p>
         </div>
 

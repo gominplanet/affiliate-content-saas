@@ -23,6 +23,7 @@
 // the product does not keep. A sales page is the one surface where being wrong
 // is not a bug report, it is a refund and a chargeback.
 import { readFileSync } from 'node:fs'
+import { GUARANTEE_LABEL } from '../lib/guarantee'
 import { join } from 'node:path'
 import { TIERS } from '../lib/tier'
 
@@ -47,18 +48,38 @@ const AD2 = read('app/run-your-storefront/page.tsx')
 const AD2_LIVE = live(AD2)
 const TESTIMONIALS_SRC = read('lib/testimonials.ts')
 
+/** Drop the import lines before asking whether a file USES something.
+ *
+ *  `import { GUARANTEE_LABEL }` survives at the top of a page whose body has
+ *  gone back to typing the phrase by hand, so a check for the identifier
+ *  passes on the import alone. It asks whether the page knows the constant
+ *  exists, which is not the question. Two checks in test-guarantee.ts and one
+ *  here were satisfied by exactly this before anyone mutated them. */
+const noImports = (src: string) => src
+  .split('\n').filter((l) => !/^\s*import\b/.test(l)).join('\n')
+
 // ── the offer says one thing everywhere ─────────────────────────────────────
 //
 // Two surfaces state the guarantee and they drifted once already: the homepage
 // said one number while /features said another. A visitor who reads both and
 // finds two answers has learned something about us, and it is not good.
+//
+// IT WAS FOUR SURFACES, NOT TWO, and the fourth was the one that mattered.
+// This section policed the homepage against /features while the two ad pages
+// said it twice each and the Terms of Service said the opposite. So they all
+// read GUARANTEE_LABEL now, and what this checks is that they still do rather
+// than what any of them happens to spell. test-guarantee.ts owns the harder
+// half: that the promise exists in the terms at all.
 {
-  const homepage = PAGE_LIVE.match(/const GUARANTEE: string \| null = '([^']+)'/)?.[1] ?? ''
+  const homepage = GUARANTEE_LABEL
   check('the homepage states a guarantee', homepage.length > 0)
+  check('and it reads it from lib/guarantee rather than typing one',
+    /const GUARANTEE: string \| null = GUARANTEE_LABEL/.test(PAGE_LIVE),
+    'a typed string here is how the homepage and /features disagreed the first time')
   check('and it is the 30 days we settled on',
     /\b30-day\b/.test(homepage), homepage)
   check('/features states the same one',
-    FEATURES.includes(homepage),
+    /\{GUARANTEE_LABEL\}/.test(FEATURES),
     `homepage says "${homepage}"`)
   check('no 14-day guarantee survives anywhere on the marketing pages',
     !/14-day money-back/.test(PAGE) && !/14-day money-back/.test(FEATURES),
@@ -221,8 +242,12 @@ for (const { label, src } of AD_PAGES) {
   // Against the LIVE source, not the raw file. The first version tested the raw
   // file and passed on a phrase appearing in that page's own header comment,
   // which describes an objection rather than answering it for a reader.
+  // Interpolated now, not typed: the phrase lives in lib/guarantee so the two
+  // ad pages, the homepage, /features and section 9 of the Terms cannot say
+  // four different things. Still checked against the LIVE source, because the
+  // first version of this passed on the phrase appearing in a header comment.
   check(`${label} states the guarantee in the copy, not only in a comment`,
-    /30-day money-back/.test(src),
+    /GUARANTEE_LABEL/.test(noImports(label.includes('own-your-blog') ? AD_LIVE : AD2_LIVE)),
     'two different guarantees across two pages is the drift that already happened once')
   check(`${label} carries the Amazon disclaimer`,
     /not affiliated with, endorsed by, or sponsored by Amazon/.test(src))

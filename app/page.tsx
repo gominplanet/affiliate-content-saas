@@ -18,6 +18,7 @@
  * below and in app/pricing/page.tsx. If you change one, change all three.
  */
 import { TIERS } from '@/lib/tier'
+import { GUARANTEE_LABEL } from '@/lib/guarantee'
 import { FREE_TRIAL } from '@/lib/free-trial'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import {
@@ -55,9 +56,14 @@ const DARK_SECTION_VARS: React.CSSProperties = {
 // ── Sales-page config (edit these; each renders only when it has a real value,
 //    so nothing fake ever ships) ──────────────────────────────────────────────
 //
-// GUARANTEE: the risk-reversal line near the CTAs and pricing. Set to your real
-//   terms, or leave null to show none. (Awaiting the exact terms.)
-const GUARANTEE: string | null = '30-day money-back guarantee'
+// GUARANTEE: the risk-reversal line near the CTAs and pricing.
+//   It is no longer "awaiting the exact terms": the terms exist, in section 9
+//   of /terms, and this reads the same constant they do. It was typed here,
+//   typed again on /features, and typed twice more on each of the two ad
+//   pages, while the Terms of Service said fees already paid are
+//   non-refundable. Five promises against one refusal, and the refusal was
+//   the document a buyer actually agrees to.
+const GUARANTEE: string | null = GUARANTEE_LABEL
 //
 // NO DEADLINE. There was one, set three months out, and it was removed on
 //   request. A date that far away does not create urgency; it reads as a

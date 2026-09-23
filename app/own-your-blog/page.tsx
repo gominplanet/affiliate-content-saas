@@ -42,6 +42,7 @@ import {
 } from 'lucide-react'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { TIERS } from '@/lib/tier'
+import { GUARANTEE_DAYS, GUARANTEE_LABEL, GUARANTEE_SHORT } from '@/lib/guarantee'
 import { AD_PAGE_LIGHT } from '@/lib/ad-page-theme'
 import AdPricingTable from '@/components/landing/AdPricingTable'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -81,7 +82,7 @@ function Cta({ size = 'lg' }: { size?: 'lg' | 'md' }) {
 function CtaSubtext() {
   return (
     <p className="mt-3 text-[13px]" style={{ color: 'rgba(0,0,0,0.5)' }}>
-      No card to start · {TIERS.trial.lifetimeMax} full reviews free · 30-day money-back guarantee
+      No card to start · {TIERS.trial.lifetimeMax} full reviews free · {GUARANTEE_LABEL}
     </p>
   )
 }
@@ -143,7 +144,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What if it does not work for me?',
-    a: 'Start on the free tier with no card. If you subscribe and it is not for you, there is a 30-day money-back guarantee, no questions.',
+    a: `Start on the free tier with no card. If you subscribe and it is not for you, there is a ${GUARANTEE_LABEL}, no questions.`,
   },
   {
     q: 'How much of my time does this take?',
@@ -342,14 +343,14 @@ export default function OwnYourBlogPage() {
           <div className="mt-8 flex flex-col items-center">
             <Cta />
             <p className="mt-3 text-[13px] text-white/55">
-              No card to start · {TIERS.trial.lifetimeMax} full reviews free · 30-day money-back guarantee
+              No card to start · {TIERS.trial.lifetimeMax} full reviews free · {GUARANTEE_LABEL}
             </p>
           </div>
           <div className="mt-9 grid sm:grid-cols-3 gap-3 text-left">
             {[
               { icon: <ShieldCheck size={15} />, t: 'Yours to keep', b: 'The blog, the domain and every post stay yours if you leave.' },
               { icon: <Globe size={15} />, t: 'Every country counts', b: 'Shoppers are routed to their own Amazon. Unlimited, no per-click fee.' },
-              { icon: <Check size={15} />, t: '30-day guarantee', b: 'If it is not for you, you get your money back.' },
+              { icon: <Check size={15} />, t: GUARANTEE_SHORT, b: `Email us within ${GUARANTEE_DAYS} days of your first payment and we refund it in full.` },
             ].map((f) => (
               <div key={f.t} className="rounded-xl border border-white/12 bg-white/[0.05] p-4">
                 <p className="flex items-center gap-2 text-[13px] font-semibold text-white">{f.icon}{f.t}</p>
