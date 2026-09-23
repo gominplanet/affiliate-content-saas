@@ -70,7 +70,7 @@ const plans: PlanExt[] = [
       'Creator Connections catalogue search (needs your own CC access + the free Scout extension)',
       `${TIERS.trial.lifetimeMax} full published reviews if you connect a WordPress site (blog + thumbnail + metadata)`,
       'YouTube Co-Pilot: description, tags, hashtags & thumbnail pushed back to YouTube',
-      'MVP Help Desk: 20 messages / month',
+      `MVP Help Desk: ${TIERS.trial.assistantMessagesPerMonth} messages / month`,
     ],
     highlight: false,
     ctaLabel: 'Start free',

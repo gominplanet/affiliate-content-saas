@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { CheckoutButton } from '../pricing/CheckoutButton'
-import { TIERS } from '@/lib/tier'
+import { TIERS, SELLABLE_TIERS, type Tier } from '@/lib/tier'
 import { TrackCompare } from '@/components/pricing/TrackPicker'
 import MetaTrack from '@/components/analytics/MetaTrack'
 import { freeTrialHighlights, freeTrialExclusions } from '@/lib/free-trial'
@@ -39,6 +39,17 @@ const ACCENT = '#C2410C'
 // which is a refund conversation, not a support one.
 const AMZ = TIERS.amazon
 
+// AND SO IS THE PRICE, for exactly the same reason and at a higher cost.
+//
+// This page sold the Amazon plan at "$79/mo, was $129, save $50 for life" in
+// four places while lib/tier had been at $99 since the plan was repriced. It
+// is the destination of a paid Meta campaign, so the gap ran: ad → this page
+// says $79 → the button next to it opens a Stripe checkout for $99. That is a
+// refund conversation and a chargeback, not a support one, and it is the same
+// mistake the comment above describes, in the one field where being wrong
+// costs money rather than goodwill.
+const AMZ_SAVING = AMZ.regularPrice - AMZ.price
+
 // Same rule for the free plan: the numbers come from lib/free-trial.ts, which is
 // also what the server enforces and what /pricing renders.
 const FREE_THUMBS = TIERS.trial.thumbnailsPerMonth
@@ -58,11 +69,23 @@ const FEATURES: { icon: React.ReactNode; title: string; tag: string; desc: strin
   { icon: <Zap size={20} />, title: 'Priority queue + support', tag: 'Included', desc: 'Your renders jump the line and your questions get answered first. When a deal is live you are not waiting behind the free tier.' },
 ]
 
-const OTHER_TIERS: { name: string; price: string; blurb: string }[] = [
-  { name: 'Creator', price: '$49', blurb: 'A blog + YouTube starter: 20 posts/mo, thumbnails, scripts, a taster newsletter.' },
-  { name: 'Studio', price: '$99', blurb: 'The serious blogger: 45 posts/mo, Pinterest + Instagram, weekly newsletter, Deals Hub.' },
-  { name: 'Pro', price: '$199', blurb: 'Agencies & power users: 100 posts/mo, every network, 3 VA seats, all content types.' },
-]
+// THE OTHER PLANS ARE THE ONES SOMEBODY CAN ACTUALLY BUY.
+//
+// This grid offered Creator at $49 and Studio at $99 beside Pro. Both have
+// been frozen since 2026-09-15: /api/stripe/checkout calls isSellableTier and
+// refuses them outright, /pricing dropped their cards, and app/page.tsx
+// dropped its footnote naming Studio. This page was the last screen still
+// selling them, so the click went card → checkout → "that plan is not
+// available", which is worse than never showing the card at all.
+//
+// Built from SELLABLE_TIERS minus Amazon, so freezing or unfreezing a plan
+// moves this grid with it instead of leaving one page behind again.
+const OTHER_BLURBS: Partial<Record<Tier, string>> = {
+  pro: `Agencies & power users: ${TIERS.pro.postsPerMonth} posts/mo, every network, ${TIERS.pro.vaSeats} VA seats, all content types.`,
+}
+const OTHER_TIERS = SELLABLE_TIERS
+  .filter((t) => t !== 'amazon' && OTHER_BLURBS[t])
+  .map((t) => ({ name: TIERS[t].label, price: `$${TIERS[t].price}`, blurb: OTHER_BLURBS[t] as string }))
 
 export default function AmazonInfluencerPage() {
   return (
@@ -124,8 +147,8 @@ export default function AmazonInfluencerPage() {
           </div>
           <p className="mt-4 text-sm text-[#86868b] dark:text-[#8e8e93]">
             Free: {FREE_THUMBS} thumbnails, {FREE_DESIGNS} designs and your own face on them, yours to download.
-            Then <span className="text-lg font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">$79</span>/mo{' '}
-            <span className="line-through">$129</span> · save $50 for life
+            Then <span className="text-lg font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">${AMZ.price}</span>/mo{' '}
+            <span className="line-through">${AMZ.regularPrice}</span> · save ${AMZ_SAVING} for life
           </p>
           {SALES_PAUSED && <p className="mt-4 text-sm text-[#ff9500]">{SALES_PAUSED_MESSAGE}</p>}
         </div>
@@ -181,7 +204,7 @@ export default function AmazonInfluencerPage() {
               </ul>
             </div>
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] mb-2 text-[#86868b] dark:text-[#8e8e93]">Needs the $79 plan</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] mb-2 text-[#86868b] dark:text-[#8e8e93]">Needs the ${AMZ.price} plan</p>
               <ul className="space-y-1.5">
                 {freeTrialExclusions().map((f) => (
                   <li key={f} className="flex items-start gap-2 text-[13px] leading-relaxed text-[#86868b] dark:text-[#8e8e93]">
@@ -224,7 +247,7 @@ export default function AmazonInfluencerPage() {
               They need a WordPress site and a YouTube channel, which this plan never asks for.
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mx-auto">
+          <div className={`grid gap-4 mx-auto ${OTHER_TIERS.length > 1 ? 'grid-cols-1 sm:grid-cols-3 max-w-4xl' : 'grid-cols-1 max-w-sm'}`}>
             {OTHER_TIERS.map((t) => (
               <div key={t.name} className="rounded-2xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 p-5">
                 <div className="flex items-baseline justify-between mb-2">
@@ -247,7 +270,7 @@ export default function AmazonInfluencerPage() {
       <section className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-center">
         <h2 className="text-3xl font-bold tracking-tight">From storefront to scroll-stopping, without the studio.</h2>
         <p className="mt-3 text-[15px] text-[#6e6e73] dark:text-[#ebebf0]">
-          Start free, no card. Then $79/mo, locked for life. Cancel anytime.
+          Start free, no card. Then ${AMZ.price}/mo, locked for life. Cancel anytime.
         </p>
         <ul className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[13px] text-[#6e6e73] dark:text-[#ebebf0]">
           {['No website needed', 'No card to start', 'Priority support'].map((f) => (

@@ -41,6 +41,14 @@ export interface MintAllowance {
  *
  * Infinity for admin: the account that has to clean up an incident cannot be
  * the account that gets rate limited doing it.
+ *
+ * THESE ARE BURST LIMITS, NOT PLAN QUOTAS, and the difference is a promise on
+ * the homepage: "unlimited links and unlimited clicks, no matter how big you
+ * get. No overage, ever." That is true of the totals, and nothing here counts
+ * a lifetime or a month. But both refusals used to say "past the limit for
+ * your plan", which describes a quota, so the one sentence a creator reads at
+ * the wall contradicted the one sentence that sold them the feature. They now
+ * say what they are.
  */
 export function mintAllowance(tier: Tier | null | undefined): MintAllowance {
   switch (tier) {
@@ -83,14 +91,14 @@ export function mintVerdict(
     return {
       allowed: false,
       window: 'hour',
-      reason: `That is ${hour} new links in an hour, which is past the limit for your plan. Existing links keep working. If this was not you, change your password; if it was, get in touch and we will raise it.`,
+      reason: `That is ${hour} new links in an hour, which trips our anti-abuse burst limit. It is not a cap on how many links your plan allows: your total is unlimited, this is only how fast they can be minted. Existing links keep working, and you can carry on shortly. If this was not you, change your password; if it was, get in touch and we will raise it.`,
     }
   }
   if (day >= allow.perDay) {
     return {
       allowed: false,
       window: 'day',
-      reason: `That is ${day} new links today, which is past the daily limit for your plan. Existing links keep working. Get in touch if you genuinely need more.`,
+      reason: `That is ${day} new links today, which trips our anti-abuse burst limit. It is not a cap on how many links your plan allows: your total is unlimited, this is only how many can be minted in one day. Existing links keep working, and minting resumes tomorrow. Get in touch if you genuinely need more today.`,
     }
   }
   return { allowed: true, reason: null, window: null }

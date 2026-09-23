@@ -18,14 +18,15 @@
 'use client'
 
 import { useState } from 'react'
+import { TIERS as PLAN_TIERS, SELLABLE_TIERS } from '@/lib/tier'
+import { FREE_TRIAL } from '@/lib/free-trial'
+import { AFFILIATE_CAMPAIGN, AFFILIATE_RATE } from '@/lib/affiliate-campaign'
 
+// The terms themselves now live in lib/affiliate-campaign.ts, so the in-app
+// ReferralBanner quotes the same numbers instead of retyping them. Only the
+// two URLs, which are specific to this page, stay here.
 const CAMPAIGN = {
-  commissionPct: 10,
-  audienceDiscount: '20% off their first 3 months',
-  cookieDays: 60,
-  payoutThreshold: 50,
-  payoutMethod: 'Stripe',
-  clearanceDays: 60,
+  ...AFFILIATE_CAMPAIGN,
   // No shared public promo code on purpose — the discount + attribution ride on
   // each affiliate's OWN referral link, and affiliates mint their own codes in
   // their dashboard after approval. A single public code would credit nobody.
@@ -33,8 +34,19 @@ const CAMPAIGN = {
   loginUrl: 'https://mvp-affiliate.getrewardful.com/login',
 } as const
 
-const RATE = CAMPAIGN.commissionPct / 100
-const TIERS = { Amazon: 99, Pro: 199 } as const
+const RATE = AFFILIATE_RATE
+
+// THE PRICES ARE THE PRODUCT'S, NOT A COPY OF THEM.
+//
+// This was `{ Amazon: 99, Pro: 199 }`, typed here, shadowing the real TIERS
+// export under the same name so nothing flagged the duplicate. An affiliate's
+// whole decision is "what do I earn per referral", and the estimator answers
+// it by multiplying a price. A stale price here quotes a commission we do not
+// pay, to the people whose job is to repeat it in public. Read from the plan,
+// and built from SELLABLE_TIERS so a frozen plan cannot be estimated on.
+const TIERS = Object.fromEntries(
+  SELLABLE_TIERS.map((t) => [PLAN_TIERS[t].label, PLAN_TIERS[t].price]),
+) as Record<string, number>
 type PlanKey = keyof typeof TIERS
 const money = (n: number) => '$' + Math.round(n).toLocaleString('en-US')
 
@@ -94,12 +106,18 @@ function Nav() {
 }
 
 function Hero() {
-  // Earnings card amounts are honest at 10%: Pro $199→$19.90, Amazon $99→$9.90.
+  // Earnings card amounts are computed at the real commission rate from the
+  // real plan prices, so the illustration cannot quote a payout we do not pay.
+  const per = (t: 'amazon' | 'pro') => '+$' + (PLAN_TIERS[t].price * RATE).toFixed(2)
   const rows = [
-    { in: 'JM', nm: 'Jordan M.', ac: 'Upgraded to Pro', amt: '+$19.90', grad: 'linear-gradient(135deg,#3C60F0,#6A3CF0)' },
-    { in: 'AK', nm: 'Aisha K.', ac: 'Amazon plan', amt: '+$9.90', grad: 'linear-gradient(135deg,#6A3CF0,#9B5CF0)' },
-    { in: 'TR', nm: 'Theo R.', ac: 'Upgraded to Pro', amt: '+$19.90', grad: 'linear-gradient(135deg,#2945C9,#3C60F0)' },
+    { in: 'JM', nm: 'Jordan M.', ac: `Upgraded to ${PLAN_TIERS.pro.label}`, amt: per('pro'), grad: 'linear-gradient(135deg,#3C60F0,#6A3CF0)' },
+    { in: 'AK', nm: 'Aisha K.', ac: `${PLAN_TIERS.amazon.label} plan`, amt: per('amazon'), grad: 'linear-gradient(135deg,#6A3CF0,#9B5CF0)' },
+    { in: 'TR', nm: 'Theo R.', ac: `Upgraded to ${PLAN_TIERS.pro.label}`, amt: per('pro'), grad: 'linear-gradient(135deg,#2945C9,#3C60F0)' },
   ]
+  // The total under the card is the SUM OF THE THREE ROWS. Typed as $49.70 it
+  // happened to be right; the moment a price moves it becomes three rows that
+  // visibly do not add up, on the one card whose job is to look trustworthy.
+  const rowTotal = '$' + ((PLAN_TIERS.pro.price * 2 + PLAN_TIERS.amazon.price) * RATE).toFixed(2)
   return (
     <header className="hero">
       <div className="wrap hero-grid">
@@ -132,7 +150,7 @@ function Hero() {
           ))}
           <div className="hc-total">
             <span className="t-l">Recurring this month<small>+ every month they stay subscribed</small></span>
-            <span className="t-v grad-text">$49.70</span>
+            <span className="t-v grad-text">{rowTotal}</span>
           </div>
         </div>
       </div>
@@ -267,7 +285,7 @@ function Product() {
     <><b>The agent pipeline</b> turns a video into a full blog post, social fan-out, thumbnails, and brand-pitch emails — automatically.</>,
     <><b>YouTube autopilot</b> watches a channel and drafts content the moment a new video lands.</>,
     <>A <b>branded review site</b> for every creator — their content, their domain, their links.</>,
-    <>Free to start — <b>5 reviews on the house</b>, no card. That&apos;s an easy first click for your audience.</>,
+    <>Free to start — <b>{FREE_TRIAL.thumbnails} thumbnails and {FREE_TRIAL.socialDesigns} designs with their own face on them</b>, no card, nothing to connect. That&apos;s an easy first click for your audience.</>,
   ]
   return (
     <section className="sec alt">

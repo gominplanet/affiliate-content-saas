@@ -2,6 +2,16 @@
 
 import { useEffect, useState } from 'react'
 import { HandCoins, X, ArrowRight } from 'lucide-react'
+import { TIERS } from '@/lib/tier'
+import { AFFILIATE_CAMPAIGN, affiliateMonthly } from '@/lib/affiliate-campaign'
+
+// THE "REAL NUMBERS" LINE IS COMPUTED, because it is the only sentence here a
+// reader can check, and it was three typed figures resting on a plan price
+// that has already moved once. Whole dollars: a passive-income example with
+// cents on it reads like a quote rather than an illustration.
+const EXAMPLE_REFERRALS = 10
+const EXAMPLE_MONTHLY = Math.round(affiliateMonthly(EXAMPLE_REFERRALS, TIERS.pro.price))
+const EXAMPLE_YEARLY = (EXAMPLE_MONTHLY * 12).toLocaleString('en-US')
 
 /**
  * Persistent (until dismissed) green callout on the dashboard pointing
@@ -56,11 +66,11 @@ export default function ReferralBanner() {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-            Earn 10% every month — refer creators to MVP Affiliate
+            Earn {AFFILIATE_CAMPAIGN.commissionPct}% every month, refer creators to MVP Affiliate
           </p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
-            You&apos;re already using the tool. Tell another creator and earn 10% of their plan for as
-            long as they stay. Real numbers: 10 Pro referrals = <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">$199/mo passive</strong>, $2,388/year.
+            You&apos;re already using the tool. Tell another creator and earn {AFFILIATE_CAMPAIGN.commissionPct}% of their plan for as
+            long as they stay. Real numbers: {EXAMPLE_REFERRALS} {TIERS.pro.label} referrals = <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">${EXAMPLE_MONTHLY}/mo passive</strong>, ${EXAMPLE_YEARLY}/year.
           </p>
           <div className="flex items-center gap-3 flex-wrap">
             <a

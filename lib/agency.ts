@@ -21,10 +21,10 @@ import { normalizePermissions, type VaPermissions, type VaPermissionKey } from '
  *  logs and tie them to an MVP origin. */
 const INVITE_TOKEN_PREFIX = 'agi_'
 const RANDOM_LEN = 32
-/** Pending invites expire after this many days. Enforced in the app layer
- *  (the accept route checks `now - created_at`); the DB just stores the
- *  row indefinitely so the audit trail survives. */
-export const INVITE_TTL_DAYS = 14
+/** Re-exported so every existing importer keeps working. The declaration now
+ *  lives in a client-safe module, because the screen that tells an invitee
+ *  their link expired is a client component and cannot import this file. */
+export { INVITE_TTL_DAYS } from '@/lib/agency-invite-ttl'
 
 /** Constant-time-safe SHA-256 of a plaintext token. */
 export function hashAgencyToken(plaintext: string): string {

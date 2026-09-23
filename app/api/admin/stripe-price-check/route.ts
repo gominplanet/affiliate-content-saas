@@ -22,6 +22,7 @@
 // TIERS[tier].price. The comparison is the point; the rest is context.
 import { NextResponse } from 'next/server'
 import { priceIdsFor, getStripe } from '@/lib/stripe'
+import { CREDIT_BLOCKS } from '@/lib/credit-blocks'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, TIERS, type Tier } from '@/lib/tier'
 
@@ -116,6 +117,43 @@ export async function GET() {
         error: e instanceof Error ? e.message.slice(0, 160) : 'lookup failed' }
     }
   }
+  // ── and the credit packs, which had no check at all ──────────────────────
+  //
+  // Same immutable-price trap, one screen further in: three buttons that open a
+  // Stripe checkout with their amount typed beside them. Nothing here compared
+  // them to anything until the advertised number moved into CREDIT_BLOCKS.usd,
+  // so a repriced pack would have kept selling at the old label indefinitely,
+  // which is the $79-against-$99 failure with a smaller number on it.
+  for (const [block, cfg] of Object.entries(CREDIT_BLOCKS)) {
+    const key = cfg.priceEnv
+    const first = priceIdsFor(process.env[key])[0]
+    const label = `credits:${block}`
+    if (!first || !stripe) {
+      charged[key] = { tier: label, expectedUsd: cfg.usd, chargesUsd: null, matches: null, currency: null, interval: null,
+        error: !first ? 'no price id set' : 'Stripe client unavailable' }
+      continue
+    }
+    try {
+      const price = await stripe.prices.retrieve(first)
+      const chargesUsd = typeof price.unit_amount === 'number' ? price.unit_amount / 100 : null
+      charged[key] = {
+        tier: label,
+        expectedUsd: cfg.usd,
+        chargesUsd,
+        matches: chargesUsd == null ? null : chargesUsd === cfg.usd,
+        currency: price.currency ?? null,
+        // A credit pack is a ONE-TIME price, so no interval is correct here.
+        // Reporting 'one-time' rather than null keeps it distinguishable from
+        // "we could not read the interval", which is the whole habit this
+        // route is built on.
+        interval: price.recurring?.interval ?? 'one-time',
+      }
+    } catch (e) {
+      charged[key] = { tier: label, expectedUsd: cfg.usd, chargesUsd: null, matches: null, currency: null, interval: null,
+        error: e instanceof Error ? e.message.slice(0, 160) : 'lookup failed' }
+    }
+  }
+
   const mismatched = Object.entries(charged).filter(([, v]) => v.matches === false).map(([k]) => k)
   const unchecked = Object.entries(charged).filter(([, v]) => v.matches === null).map(([k]) => k)
 

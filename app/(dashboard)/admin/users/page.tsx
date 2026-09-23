@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon, ChevronLeft, ChevronRight, Users as UsersIcon, Mail, Send, Trash2 } from 'lucide-react'
 
+import { TIERS, isSellableTier } from '@/lib/tier'
+
 type Tier = 'trial' | 'creator' | 'amazon' | 'studio' | 'pro' | 'admin'
 
 interface TargetUser {
@@ -628,11 +630,16 @@ export default function AdminUsersPage() {
                 disabled={saving}
                 className="input-field text-sm w-auto"
               >
+                {/* PRICES READ FROM THE PLAN. Typed, this list told the one
+                    person who changes other people's plans that Amazon was
+                    $79 when it had been $99 for weeks, and it is the screen
+                    used to answer "what is this account paying". */}
                 <option value="trial">Free Trial</option>
-                <option value="creator">Creator — $49/mo</option>
-                <option value="amazon">Amazon — $79/mo</option>
-                <option value="studio">Studio — $99/mo</option>
-                <option value="pro">Pro — $199/mo</option>
+                {(['creator', 'amazon', 'studio', 'pro'] as const).map((t) => (
+                  <option key={t} value={t}>
+                    {TIERS[t].label} — ${TIERS[t].price}/mo{isSellableTier(t) ? '' : ' (frozen)'}
+                  </option>
+                ))}
                 <option value="admin">Admin (god mode)</option>
               </select>
               <button

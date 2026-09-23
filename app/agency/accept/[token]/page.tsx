@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { CheckCircle2, AlertTriangle, Loader2, Users } from 'lucide-react'
+import { INVITE_TTL_DAYS } from '@/lib/agency-invite-ttl'
 
 type Phase = 'checking' | 'unauthed' | 'accepting' | 'success' | 'error'
 
@@ -141,7 +142,7 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
           )}
           {errorCode === 'expired' && (
             <p className="text-xs text-red-700">
-              Ask the workspace owner to send a fresh invite — they expire after 14 days.
+              Ask the workspace owner to send a fresh invite. They expire after {INVITE_TTL_DAYS} days.
             </p>
           )}
           <Link

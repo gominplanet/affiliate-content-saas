@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefrontLogin, requestStorefrontDebug, requestStorefrontProgress, getScoutStatus, type StorefrontMarketStatus, type StorefrontProgress } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
 import { normalizeAsinInput } from '@/lib/asin'
+import { CREDIT_BLOCKS } from '@/lib/credit-blocks'
 import { decodeHtmlEntities } from '@/lib/decode-entities'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -998,11 +999,15 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
               {useMyVoice && typeof voice.credits === 'number' && (
                 <div className="flex items-center gap-2 mt-2.5 flex-wrap">
                   <span className="text-[12px]" style={muted}>Top up:</span>
-                  {([['50', '$29'], ['150', '$69'], ['500', '$199']] as const).map(([b, price]) => (
+                  {/* THE PRICE ON THE BUTTON IS THE PRICE IN THE BLOCK.
+                      These were three typed strings beside a button that opens
+                      a Stripe checkout, which is how /amazon-influencer came to
+                      advertise $79 against a $99 charge. */}
+                  {(['50', '150', '500'] as const).map((b) => (
                     <button key={b} type="button" onClick={() => void buyCredits(b)} disabled={buying}
                       className="text-[12px] font-medium px-2.5 py-1 rounded-lg border disabled:opacity-60"
                       style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
-                      {b} for {price}
+                      {b} for ${CREDIT_BLOCKS[b].usd}
                     </button>
                   ))}
                 </div>

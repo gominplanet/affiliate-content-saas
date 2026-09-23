@@ -100,15 +100,11 @@ export const PRICE_IDS = {
   amazon:  PRICE_ID_LIST.amazon[0]!,
 } as const
 
-// One-time "your-voice" dub credit blocks. Each is a Stripe ONE-TIME price
-// (mode: payment). Set the STRIPE_PRICE_CREDITS_* envs in Vercel after creating
-// the prices in Stripe. `credits` is what we add to the ledger on purchase.
-//   50 credits  → $29   150 credits → $69   500 credits → $199
-export const CREDIT_BLOCKS: Record<string, { credits: number; priceEnv: string }> = {
-  '50':  { credits: 50,  priceEnv: 'STRIPE_PRICE_CREDITS_50' },
-  '150': { credits: 150, priceEnv: 'STRIPE_PRICE_CREDITS_150' },
-  '500': { credits: 500, priceEnv: 'STRIPE_PRICE_CREDITS_500' },
-}
+// The credit packs now live in lib/credit-blocks.ts, which is client-safe.
+// Re-exported so every existing importer keeps working.
+export { CREDIT_BLOCKS, type CreditBlock } from '@/lib/credit-blocks'
+import { CREDIT_BLOCKS } from '@/lib/credit-blocks'
+
 export function creditBlockPriceId(block: string): string | null {
   const cfg = CREDIT_BLOCKS[block]
   return cfg ? (process.env[cfg.priceEnv] || null) : null
