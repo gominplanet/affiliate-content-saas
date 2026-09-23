@@ -118,7 +118,10 @@ if (present) {
   // a second exception has to be argued for rather than absorbed.
   const externals = [...HTML.matchAll(/(?:src|href)=["'](https?:\/\/[^"']+)["']/gi)]
     .map((m) => m[1])
-    .filter((u) => !/^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//i.test(u))
+    // Google Fonts, and the Meta pixel. The pixel is the second exception and
+    // it is argued for: this page is an ad destination, and without it the
+    // guide is invisible to Meta. See the pixel block's own comment.
+    .filter((u) => !/^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com|connect\.facebook\.net)\//i.test(u))
     // Links out of the page are the point of it; only things the BROWSER must
     // fetch to render count against self-contained.
     .filter((u) => /\.(css|js|woff2?|ttf)(\?|$)/i.test(u))
@@ -131,6 +134,43 @@ if (present) {
   check('the call to action goes to /pricing',
     /href=["'](?:https:\/\/(?:www\.)?mvpaffiliate\.io)?\/pricing["']/i.test(HTML),
     'a lead magnet whose button goes nowhere is a page that costs and never pays')
+
+  // ── THE PIXEL ─────────────────────────────────────────────────────────────
+  //
+  // THIS WAS MISSING AND NOTHING SAID SO, which is the same shape as the
+  // social card above. The file lives in public/ and is served through a
+  // rewrite, so it never passes through app/layout.tsx and does not inherit
+  // the pixel mounted there. The page looked completely normal and was
+  // invisible to Meta: no landing page views, no ViewContent, and no audience
+  // to retarget. An ad pointed here would have spent into nothing, which is
+  // precisely the failure that cost $115 and ten days on the last campaign.
+  check('the guide carries the Meta pixel itself',
+    /fbq\('init','301488807119194'\)/.test(HTML),
+    'public/ never passes through app/layout.tsx, so the pixel has to be in this file')
+  check('and reports the arrival',
+    /fbq\('track','PageView'\)/.test(HTML),
+    'without PageView, Meta cannot count a landing page view for any ad sent here')
+  check('and is production-only, matched on hostname',
+    /location\.hostname/.test(HTML) && /mvpaffiliate\.io/.test(HTML),
+    'a static file has no NODE_ENV, so preview traffic would otherwise pollute the audiences')
+
+  // ENGAGEMENT, NOT ARRIVAL. A ViewContent that fires on load is a second
+  // PageView wearing a different name. The campaign plan is to retarget
+  // READERS, so this event has to mean reader or the audience is bouncers.
+  check('ViewContent is tied to engagement, not to load',
+    /function engage\(/.test(HTML) && /engaged=true/.test(HTML),
+    'firing it on load would build a retargeting audience of people who left')
+  check('and there are two ways to earn it',
+    /scroll-25/.test(HTML) && /module-done/.test(HTML),
+    'scrolling a quarter of the page, or ticking a first module')
+  check('module completions are reported too',
+    /trackCustom','GuideModuleDone'/.test(HTML),
+    'so a section nobody finishes is a number rather than a hunch')
+
+  // ── THE GROUP ─────────────────────────────────────────────────────────────
+  check('the guide offers the Facebook group',
+    /facebook\.com\/groups\/mvpaffiliate/.test(HTML),
+    'every organic reader is a possible member and it costs nothing to ask')
 }
 
 // ── 2. the clean URL is rewritten onto it ───────────────────────────────────
