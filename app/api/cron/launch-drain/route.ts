@@ -738,7 +738,8 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
         updated_at: stamp(),
       }).eq('id', it.id)
 
-      await handOverToAmazon(sb, it, videoId, channelId)
+      const handed = await handOverToAmazon(sb, it, videoId, channelId, goNow ? stamp() : it.planned_publish_at)
+      await noteHandOver(sb, it.id, handed)
       scheduled++
     } catch (e) {
       // LEFT PREPARED so the next firing tries again, with the reason on the
@@ -761,30 +762,67 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
 }
 
 /**
- * Hand a freshly scheduled video to the Amazon side.
+ * Hand a video that is on YouTube to the Amazon side.
  *
  * NO SECOND PIPELINE. A video on YouTube is an ordinary video, so it gets a
  * youtube_videos row and a coverage cell per country the batch picked, and the
  * existing grid does the rest: the product check, the translation, the dub, and
- * the queue SCOUT uploads from. Everything built and tested this week.
+ * the queue SCOUT uploads from.
  *
- * Best-effort and never fails the publish: the video IS scheduled by now, and
- * throwing here would send it round the retry loop and upload it twice.
+ * ── IT HAD NEVER WORKED, AND NOTHING SAID SO ──────────────────────────────
+ *
+ * The upsert named `onConflict: 'youtube_video_id'`, but the table's unique key
+ * is (user_id, youtube_video_id), and Postgres refuses a conflict target that
+ * matches no unique key. It also never supplied `channel_title`, which the
+ * table declares NOT NULL. Either one alone fails every insert.
+ *
+ * And the failure was invisible by construction. The upsert returned
+ * `data: null`, the next line read that as "nothing to do" and returned, and
+ * the whole function sat inside a catch that swallowed anything else. Its
+ * comment promised "the grid can be seeded on a later pass"; there was no
+ * later pass. So every launched video reached YouTube, was never linked, and
+ * the page beside it said "Nothing is on YouTube yet, so there is no video for
+ * Amazon to list" about a video that was live on the channel. The first
+ * creator to launch a batch found that sentence under a video they could see.
+ *
+ * NOW: the right conflict key, a channel title, a RESULT rather than a void,
+ * a note on the row when it fails, and repairs() below, which retries every
+ * firing until it lands. It still never fails the publish: the video is on
+ * YouTube by now, and throwing would send it round the upload loop.
  */
+type HandOver = { ok: true } | { ok: false; skipped: 'no-markets' } | { ok: false; error: string }
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: string | null): Promise<void> {
+async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: string | null, publishedAt?: string | null): Promise<HandOver> {
   try {
     const { data: batch } = await sb.from('launch_batches')
       .select('markets').eq('id', it.batch_id).maybeSingle()
     const markets: string[] = (batch?.markets ?? []).filter((d: string) => !!marketByDomain(d))
-    if (markets.length === 0) return
+    if (markets.length === 0) return { ok: false, skipped: 'no-markets' }
 
-    const { data: video } = await sb.from('youtube_videos').upsert({
+    // THE CHANNEL'S NAME, borrowed from any row we already hold for the same
+    // channel. The upload call returns the channel id but not its title, and
+    // the column is NOT NULL. An empty string is what the other writer of this
+    // table uses when it does not know, and the channel sync overwrites it
+    // with the real name the next time it runs.
+    let channelTitle = ''
+    const channel = channelId || null
+    if (channel) {
+      const { data: known } = await sb.from('youtube_videos')
+        .select('channel_title').eq('user_id', it.user_id).eq('channel_id', channel)
+        .not('channel_title', 'is', null).neq('channel_title', '').limit(1).maybeSingle()
+      channelTitle = String(known?.channel_title ?? '')
+    }
+
+    const { data: video, error: upsertErr } = await sb.from('youtube_videos').upsert({
       user_id: it.user_id,
       youtube_video_id: videoId,
       title: it.title,
-      channel_id: channelId || 'unknown',
-      published_at: it.planned_publish_at,
+      channel_id: channel || 'unknown',
+      channel_title: channelTitle,
+      // WHEN IT ACTUALLY WENT, when that is known. A video sent out "now" at
+      // 18:09 against a 17:00 slot published at 18:09.
+      published_at: publishedAt || it.publish_at || it.planned_publish_at,
       thumbnail_url: it.thumbnail_url ?? null,
       thumbnail_clean_url: it.thumbnail_clean_url ?? null,
       duration_seconds: it.duration_seconds ?? null,
@@ -800,20 +838,82 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
       // is the visible failure rather than the invisible wrong one.
       source_video_url: it.clean_url ?? null,
       description: it.description ?? null,
-    }, { onConflict: 'youtube_video_id' }).select('id').single()
-    if (!video?.id) return
+    }, { onConflict: 'user_id,youtube_video_id' }).select('id').single()
+    if (upsertErr || !video?.id) {
+      return { ok: false, error: upsertErr?.message || 'the video record came back empty' }
+    }
 
-    await sb.from('launch_items').update({ video_id: video.id }).eq('id', it.id)
+    const { error: linkErr } = await sb.from('launch_items')
+      .update({ video_id: video.id, reason: null }).eq('id', it.id)
+    if (linkErr) return { ok: false, error: linkErr.message }
 
-    const priority = coveragePriority({ publishedAt: it.planned_publish_at })
-    await sb.from('storefront_coverage').upsert(
+    const priority = coveragePriority({ publishedAt: publishedAt || it.publish_at || it.planned_publish_at })
+    const { error: gridErr } = await sb.from('storefront_coverage').upsert(
       markets.map((domain) => ({
         user_id: it.user_id, video_id: video.id, domain,
         state: 'unknown', asin: it.asin ?? null, priority,
       })),
       { onConflict: 'user_id,video_id,domain', ignoreDuplicates: true },
     )
-  } catch { /* the video is scheduled; the grid can be seeded on a later pass */ }
+    if (gridErr) return { ok: false, error: gridErr.message }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** Say on the row that the hand-over did not land, in its own words. The video
+ *  is on YouTube and the row's state says so; this is a note on a working row,
+ *  and it names the next attempt so it does not read as the end. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function noteHandOver(sb: Sb, id: string, r: HandOver): Promise<void> {
+  if (r.ok || !('error' in r)) return
+  await sb.from('launch_items').update({
+    reason: `On YouTube, but it could not be passed to the Amazon side yet: ${r.error}. MVP tries again every minute.`.slice(0, 300),
+    updated_at: new Date().toISOString(),
+  }).eq('id', id)
+}
+
+/**
+ * The later pass the hand-over always promised and never had.
+ *
+ * Videos that are on YouTube (scheduled or published, with a YouTube id) and
+ * were never linked to the Amazon side. Every one launched before the
+ * hand-over was fixed is in this state, and so is any one whose hand-over
+ * fails from here on. Cheap when there is nothing to do: one indexed select.
+ */
+const REPAIRS = 10
+async function repairs(sb: Sb): Promise<{ linked: number; failed: number }> {
+  const { data: rows } = await sb.from('launch_items')
+    .select('id,user_id,batch_id,title,description,asin,thumbnail_url,thumbnail_clean_url,duration_seconds,clean_url,planned_publish_at,publish_at,youtube_video_id')
+    .in('state', ['scheduled', 'published'])
+    .not('youtube_video_id', 'is', null)
+    .is('video_id', null)
+    .order('updated_at', { ascending: true })
+    .limit(REPAIRS * 5)
+  const candidates = rows ?? []
+  if (candidates.length === 0) return { linked: 0, failed: 0 }
+
+  // A batch that picked no countries has nothing to hand over, ever. Filtered
+  // here so those rows cannot take every slot in the limit, firing after
+  // firing, and starve the ones that do.
+  const batchIds = [...new Set(candidates.map((c: { batch_id: string }) => c.batch_id))]
+  const { data: batches } = await sb.from('launch_batches').select('id,markets').in('id', batchIds)
+  const withMarkets = new Set(
+    ((batches ?? []) as Array<{ id: string; markets: string[] | null }>)
+      .filter((b) => (b.markets ?? []).some((d) => !!marketByDomain(d)))
+      .map((b) => b.id),
+  )
+
+  let linked = 0, failed = 0
+  for (const it of candidates.filter((c: { batch_id: string }) => withMarkets.has(c.batch_id)).slice(0, REPAIRS)) {
+    // The channel id is not stored on the row, so the title lookup falls back
+    // to empty here; the channel sync fills it in later.
+    const r = await handOverToAmazon(sb, it, String(it.youtube_video_id), null, it.publish_at)
+    if (r.ok) linked++
+    else { failed++; await noteHandOver(sb, it.id, r) }
+  }
+  return { linked, failed }
 }
 
 /** Move a batch's own state to match its videos, so the page does not have to
@@ -972,6 +1072,8 @@ export async function GET(request: Request) {
   // AFTER the publishing, and cheap: one YouTube call covers fifty ids, so this
   // never competes with the upload for the firing's time.
   const confirmed = await confirms(sb)
+  // Videos on YouTube that never reached the Amazon side. Cheap when empty.
+  const repaired = await repairs(sb)
   const settled = await settle(sb)
-  return NextResponse.json({ ok: true, rendered, thumbed, published, confirmed, settled })
+  return NextResponse.json({ ok: true, rendered, thumbed, published, confirmed, repaired, settled })
 }

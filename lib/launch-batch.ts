@@ -152,7 +152,11 @@ export const BATCH_COLUMNS =
 /** The columns an item must be read with, for the same reason. */
 export const ITEM_COLUMNS =
   'id,position,source_url,rendered_url,clean_url,asin,title,title_source,description,thumbnail_url,thumbnail_clean_url,thumbnail_source,video_id,'
-  + 'state,reason,publish_at,youtube_video_id,duration_seconds,render_tries,thumb_tries,thumbnail_set_at,thumbnail_error,updated_at'
+  + 'state,reason,publish_at,youtube_video_id,duration_seconds,render_tries,thumb_tries,thumbnail_set_at,thumbnail_error,updated_at,'
+  // planned_publish_at and publish_tries: the only two facts that separate a
+  // video waiting for YOU to press Launch from one waiting for the UPLOADER.
+  // Both exist since migration 358, which launching already depends on.
+  + 'planned_publish_at,publish_tries'
 
 /**
  * Each video's own YouTube date and time, attached to rows already loaded.
@@ -221,6 +225,11 @@ export interface ItemRow {
    *  batch pattern. Always both or neither (migration 364 enforces it). */
   custom_publish_date?: string | null
   custom_publish_time?: string | null
+  /** Written by the launch route: set means Launch has been pressed and the
+   *  uploader has it. Null on a prepared video means it is waiting for you. */
+  planned_publish_at?: string | null
+  /** Upload attempts so far. */
+  publish_tries?: number | null
 }
 
 // ── the steps, which are the page's spine and the worker's contract ─────────
@@ -547,6 +556,41 @@ export function itemStateLabel(state: ItemState): string {
   }
 }
 
+/**
+ * The label a video's row actually shows, which is more than its state.
+ *
+ * "READY TO LAUNCH" UNDER A BATCH THAT SAID "LAUNCHED". A prepared video is
+ * one of two very different things: waiting for the creator to press Launch,
+ * or already launched and waiting for the uploader, which runs every minute.
+ * The state is 'prepared' in both, so the row said "Ready to launch" in both,
+ * and the first creator to launch a batch sat under a green "Launched" button
+ * reading "Ready to launch" beside each video, wondering what else to press.
+ * planned_publish_at is what tells them apart: only the launch route writes
+ * it. And an attempt in progress says so, because "queued" one second in and
+ * ten minutes in is the working-versus-stuck failure again.
+ */
+export function itemProgressLabel(i: {
+  state: ItemState; planned_publish_at?: string | null; publish_tries?: number | null; reason?: string | null
+}): string {
+  if (i.state === 'prepared' && i.planned_publish_at) {
+    if (/^Attempt \d+ of \d+ is running now\.$/.test(String(i.reason ?? ''))) return 'Uploading to YouTube'
+    if (Number(i.publish_tries ?? 0) > 0) return 'Upload will be tried again'
+    return 'Queued for YouTube'
+  }
+  return itemStateLabel(i.state)
+}
+
+/** The colour for that label. Queued and uploading are MOVING, not done, so
+ *  they are not green: green is only for states that really are finished. */
+export function itemProgressTone(i: {
+  state: ItemState; planned_publish_at?: string | null; publish_tries?: number | null
+}): 'good' | 'busy' | 'warn' | 'idle' {
+  if (i.state === 'prepared' && i.planned_publish_at) {
+    return Number(i.publish_tries ?? 0) > 0 ? 'warn' : 'busy'
+  }
+  return itemStateTone(i.state)
+}
+
 // ── what actually happened to a batch that was launched ────────────────────
 //
 // THE BOX THAT LIED. After Launch, the page drew a green panel reading
@@ -581,12 +625,18 @@ export interface LaunchOutcome {
   amazonBlocker: string | null
 }
 
-export function launchOutcome(items: { state: ItemState; video_id?: string | null }[]): LaunchOutcome {
+export function launchOutcome(items: {
+  state: ItemState; video_id?: string | null; planned_publish_at?: string | null
+}[]): LaunchOutcome {
   const total = items.length
   const onYouTube = items.filter((i) => i.state === 'scheduled' || i.state === 'published').length
   const blocked = items.filter((i) => i.state === 'blocked').length
   const working = total - onYouTube - blocked
   const handedOver = items.filter((i) => !!i.video_id).length
+  // Finished preparing and handed to the uploader. "Still being prepared" was
+  // said about these too, which was false twice over: preparing was done, and
+  // the thing actually happening was an upload.
+  const queued = items.filter((i) => i.state === 'prepared' && !!i.planned_publish_at).length
 
   // WORST NEWS FIRST. A batch that is half broken is a batch somebody has to
   // act on, and burying that under a count of the ones that worked is how the
@@ -603,16 +653,28 @@ export function launchOutcome(items: { state: ItemState; video_id?: string | nul
     headline = `${onYouTube} of ${total} on YouTube. ${blocked} could not go.`
   } else if (working > 0) {
     tone = 'busy'
+    const allQueued = queued === working
     headline = onYouTube === 0
-      ? `${working} of ${total} still being prepared. Nothing is on YouTube yet.`
-      : `${onYouTube} of ${total} on YouTube, ${working} still working.`
+      ? (allQueued
+          ? `${working} of ${total} queued for YouTube. The uploader runs every minute.`
+          : `${working} of ${total} still being prepared. Nothing is on YouTube yet.`)
+      : (allQueued
+          ? `${onYouTube} of ${total} on YouTube, ${working} queued for upload.`
+          : `${onYouTube} of ${total} on YouTube, ${working} still working.`)
   } else {
     headline = total === 1 ? 'On YouTube.' : `All ${total} on YouTube.`
   }
 
-  const amazonBlocker = handedOver === 0
-    ? 'Nothing is on YouTube yet, so there is no video for Amazon to list. That happens first.'
-    : null
+  // ON YOUTUBE AND NOT YET HANDED OVER ARE DIFFERENT SENTENCES. The old line
+  // keyed only on the hand-over, so while it was failing silently it told a
+  // creator "Nothing is on YouTube yet" under a video they could see live on
+  // their channel. What is true in that gap is that the video IS on YouTube
+  // and the Amazon side has not picked it up.
+  const amazonBlocker = handedOver > 0
+    ? null
+    : onYouTube === 0
+      ? 'Nothing is on YouTube yet, so there is no video for Amazon to list. That happens first.'
+      : `${onYouTube === 1 ? 'Your video is' : `${onYouTube} videos are`} on YouTube and being passed to the Amazon side. This opens as soon as that is done, usually within a minute.`
 
   return { total, onYouTube, working, blocked, handedOver, tone, headline, amazonBlocker }
 }

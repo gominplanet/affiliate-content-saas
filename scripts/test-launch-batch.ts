@@ -261,9 +261,45 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and Amazon gets the copy with no CTA burned in',
     /source_video_url: it\.clean_url/.test(DRAIN),
     'a storefront listing should not carry "link in the description"')
+  // STILL NEVER THROWS, but it no longer says nothing. This check used to pin
+  // the comment on a catch that swallowed everything, and that catch is what
+  // hid the hand-over failing on EVERY launched video: the upsert named a
+  // conflict key the table does not have, and left out a NOT NULL column.
   check('seeding the grid never fails the publish',
-    /async function handOverToAmazon/.test(DRAIN) && /catch \{ \/\* the video is scheduled/.test(DRAIN_RAW),
+    /async function handOverToAmazon[\s\S]*?\} catch \(e\) \{\s*return \{ ok: false, error:/.test(DRAIN),
     'throwing after YouTube has the file sends it round the retry loop and uploads it twice')
+
+  // THE CONFLICT KEY IS READ OFF THE SCHEMA, not off anyone's memory of it.
+  // `onConflict: 'youtube_video_id'` against a table whose unique key is
+  // (user_id, youtube_video_id) fails every insert with "no unique or
+  // exclusion constraint matching the ON CONFLICT specification".
+  const SCHEMA = read('supabase/schema.sql')
+  const ytTable = SCHEMA.slice(SCHEMA.indexOf('create table if not exists public.youtube_videos'))
+  const ytKey = (/unique \(([^)]+)\)/.exec(ytTable.slice(0, ytTable.indexOf(');')))?.[1] ?? '').replace(/\s+/g, '')
+  const handOver = DRAIN.slice(DRAIN.indexOf('async function handOverToAmazon'), DRAIN.indexOf('async function noteHandOver'))
+  const conflict = (/from\('youtube_videos'\)\.upsert\([\s\S]*?onConflict: '([^']+)'/.exec(handOver)?.[1] ?? '').replace(/\s+/g, '')
+  check('the hand-over upserts on the key the table actually has',
+    !!ytKey && conflict === ytKey,
+    `table key (${ytKey}) vs onConflict (${conflict}): a mismatch fails every insert, silently`)
+
+  // EVERY NOT NULL COLUMN WITHOUT A DEFAULT is supplied, also read off the
+  // schema. channel_title was the one missing.
+  const required = [...ytTable.slice(0, ytTable.indexOf(');')).matchAll(/^\s+([a-z_]+)\s+[a-z]+[^,\n]*not null(?![^,\n]*default)/gm)]
+    .map((m) => m[1]).filter((c) => c !== 'id')
+  const upsertBody = /from\('youtube_videos'\)\.upsert\(\{([\s\S]*?)\}, \{ onConflict/.exec(handOver)?.[1] ?? ''
+  for (const col of required) {
+    check(`the hand-over supplies ${col}`,
+      new RegExp(`\\b${col}:`).test(upsertBody),
+      'a NOT NULL column left out fails the insert, and this one never said so')
+  }
+
+  check('a failed hand-over is written on the row',
+    /await noteHandOver\(sb, it\.id, handed\)/.test(DRAIN),
+    '"Nothing is on YouTube yet" under a live video is what silence looks like here')
+  check('and the later pass it promised exists and runs every firing',
+    /async function repairs\(sb: Sb\)/.test(DRAIN) && /const repaired = await repairs\(sb\)/.test(DRAIN)
+    && /\.is\('video_id', null\)/.test(DRAIN),
+    'its comment said "the grid can be seeded on a later pass" and nothing ever did')
 }
 
 // ── the page leads, and never decides for itself ────────────────────────────

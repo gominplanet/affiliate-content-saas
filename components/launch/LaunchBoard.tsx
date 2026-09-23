@@ -24,7 +24,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { deliverPreparedStorefronts, deliverySummary } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
-import { itemStateLabel, itemStateTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
+import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
 import { requestStorefrontPreflight } from '@/lib/extension-frame'
 import StepCard from './StepCard'
 import CtaPicker from './CtaPicker'
@@ -67,6 +67,9 @@ interface Item {
    *  batch pattern. Absent entirely until migration 364 is run. */
   custom_publish_date?: string | null
   custom_publish_time?: string | null
+  /** Set by the launch route: the uploader has this video. */
+  planned_publish_at?: string | null
+  publish_tries?: number | null
 }
 interface Market { domain: string; country: string; langName: string | null; needsDub: boolean }
 /** A batch in the switcher: enough to choose between them, nothing more. */
@@ -937,8 +940,12 @@ export default function LaunchBoard() {
           {/* SAID BEFORE THE BUTTON, not after. Going public is the one thing
               on this page that cannot be undone, so a creator about to do it
               immediately should read that first. */}
+          {/* AMBER, NOT GREEN. Green on this page means done and good; this
+              is the one action here that cannot be undone, and a creator who
+              did not mean it lost a scheduled launch to a sentence that looked
+              like good news. */}
           {goingNow > 0 && (
-            <p className="text-[12.5px] px-3 py-2 rounded-lg" style={{ color: '#10B981', background: 'rgba(16,185,129,0.08)' }}>
+            <p className="text-[12.5px] px-3 py-2 rounded-lg" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
               {goingNow === items.length
                 ? 'Those times have gone today, so these go public as soon as they are uploaded.'
                 : `${goingNow} of these ${goingNow === 1 ? 'goes' : 'go'} public as soon as ${goingNow === 1 ? 'it is' : 'they are'} uploaded, because ${goingNow === 1 ? 'its time has' : 'those times have'} gone today. The rest wait for theirs.`}
@@ -997,8 +1004,12 @@ export default function LaunchBoard() {
         const live = items
           .filter((i) => (i.state === 'scheduled' || i.state === 'published') && i.publish_at)
           .map((i) => String(i.publish_at)).sort()
-        const firstAt = launched?.firstAt ?? live[0] ?? null
-        const lastAt = launched?.lastAt ?? live[live.length - 1] ?? null
+        // THE ROWS ONLY. The launch reply carries the PLANNED times, and it
+        // used to win: the header read "First on 23 Sept, 17:00" over a video
+        // that actually went live at 18:09, and "last on 24 Sept" over one
+        // that was not on YouTube at all. The rows hold what YouTube did.
+        const firstAt = live[0] ?? null
+        const lastAt = live[live.length - 1] ?? null
         const shade = out.tone === 'warn' ? '#d97706' : out.tone === 'busy' ? '#0EA5A4' : '#10B981'
         const when = (iso: string) =>
           new Intl.DateTimeFormat('en-GB', { timeZone: batch.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
@@ -1133,8 +1144,8 @@ export default function LaunchBoard() {
                   : <span className="shrink-0 rounded" style={{ width: 64, height: 36, background: 'var(--surface-hover)' }} />}
                 <span className="flex-1 min-w-0">
                   <span className="block text-[12.5px] truncate" style={text}>{it.title || 'Untitled'}</span>
-                  <span className="block text-[11.5px]" style={{ color: TONE[itemStateTone(it.state as never)] }}>
-                    {itemStateLabel(it.state as never)}
+                  <span className="block text-[11.5px]" style={{ color: TONE[itemProgressTone(it as never)] }}>
+                    {itemProgressLabel(it as never)}
                     {/* THE LOOK THAT WAS ACTUALLY USED, at a glance. The reason
                         below says it in a sentence, but a creator scanning ten
                         rows reads the colours, and a thumbnail built the wrong
@@ -1177,8 +1188,10 @@ export default function LaunchBoard() {
                         ? <> · <span style={{ color: '#10B981' }}>thumbnail set</span></>
                         : <> · <span style={{ color: '#d97706' }}>YouTube picked its own frame</span></>
                     )}
+                    {/* PAST TENSE WHEN IT HAS HAPPENED. "Live on YouTube · goes
+                        live 23 Sept, 18:09" said both in one line. */}
                     {it.publish_at && (
-                      <> · goes live {new Intl.DateTimeFormat('en-GB', {
+                      <> · {it.state === 'published' ? 'went live' : 'goes live'} {new Intl.DateTimeFormat('en-GB', {
                         timeZone: batch.timezone, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
                       }).format(new Date(it.publish_at))}</>
                     )}
@@ -1633,7 +1646,7 @@ function ScheduleRow({
       {/* NOW IS NOT A TIME, and printing this morning's slot beside a video
           that is about to go out would be the plan reported as the result. */}
       {now && !dirty && (
-        <span className="basis-full pl-7 text-[11px]" style={{ color: '#10B981' }}>
+        <span className="basis-full pl-7 text-[11px]" style={{ color: '#d97706' }}>
           Goes public as soon as it is uploaded, because that time has gone today.
         </span>
       )}
