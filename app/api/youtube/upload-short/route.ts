@@ -4,7 +4,7 @@
  * until NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED=true (set only after Google verifies
  * the youtube.upload scope and creators reconnect).
  *
- * Body: { videoUrl, title?, description?, privacyStatus?, channelId? }
+ * Body: { videoUrl, title?, description?, privacyStatus?, channelId?, notifySubscribers? }
  * Returns: { ok, videoId, url } | { error, reconnectRequired? }
  *
  * Pro-only. videoUrl is a vertical render we host (burner output / stored Short).
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { videoUrl?: string; title?: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'; channelId?: string }
+  let body: { videoUrl?: string; title?: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'; channelId?: string; notifySubscribers?: boolean }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const videoUrl = (body.videoUrl || '').trim()
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A video URL is required.' }, { status: 400 })
@@ -78,7 +78,12 @@ export async function POST(request: Request) {
 
   try {
     const yt = new YouTubeOAuthService(token)
-    const { id } = await yt.uploadShort(bytes, { title, description, tags, privacyStatus: body.privacyStatus || 'public' })
+    const { id } = await yt.uploadShort(bytes, {
+      title, description, tags, privacyStatus: body.privacyStatus || 'public',
+      // The creator's toggle. Anything but true is No, including a page that
+      // never sent it: YouTube's own default is to notify.
+      notifySubscribers: body.notifySubscribers === true,
+    })
     recordUsage({ userId: user.id, tier, feature: 'youtube_short_upload', model: 'youtube-data-api', images: 1 })
     // Pulse: log this Short so the collector reads its views ~a day later and
     // learns which hashtags/times earn reach on YouTube. Best-effort, never blocks.

@@ -112,6 +112,9 @@ export default function LaunchBoard() {
   // False until migration 364 is run, in which case every video follows the
   // pattern and the page says why it cannot be given its own time.
   const [ownSchedules, setOwnSchedules] = useState(true)
+  // Notify subscribers when each video goes public. Off unless turned on.
+  const [notifySubs, setNotifySubs] = useState(false)
+  const [notifyAvailable, setNotifyAvailable] = useState(true)
   // Rows with an edited time that has not been saved. Launch refuses while
   // any exists, because it would launch with the old time.
   const [dirtyRows, setDirtyRows] = useState<Record<string, boolean>>({})
@@ -164,6 +167,8 @@ export default function LaunchBoard() {
       setBlocker(j.launchBlocker ?? null)
       setMaxItems(j.maxItems ?? 10)
       setOwnSchedules(j.ownSchedules !== false)
+      setNotifySubs(j.notifySubscribers === true)
+      setNotifyAvailable(j.notifyAvailable !== false)
       // ONCE. See autoOpened: after this the creator drives.
       if (!autoOpened.current) {
         const current = (j.steps ?? []).find((s: StepStatus) => s.current)
@@ -909,6 +914,36 @@ export default function LaunchBoard() {
               )}
             </div>
           )}
+
+          {/* ── NOTIFY SUBSCRIBERS: ON MEANS YES, OFF MEANS NO ─────────────────
+              Off by default. Whatever this says is sent to YouTube explicitly
+              on every upload and every scheduling call; YouTube's own default
+              is to notify, which is how batch videos used to ring the bell
+              with no switch anywhere. Locked once launched, because the
+              uploader may already have sent the answer. */}
+          <label className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 ${notifyAvailable && !scheduleLocked ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+            style={{ borderColor: 'var(--border)' }}>
+            <span className="min-w-0">
+              <span className="block text-[12.5px] font-medium" style={text}>Notify subscribers</span>
+              <span className="block text-[11.5px]" style={muted}>
+                {!notifyAvailable
+                  ? 'Needs a database update (migration 366). Until then these videos do not notify anyone.'
+                  : notifySubs
+                    ? 'On: YouTube notifies your subscribers when each video goes public.'
+                    : 'Off: your subscribers are not notified when these go public.'}
+              </span>
+            </span>
+            <button
+              type="button" role="switch" aria-checked={notifySubs}
+              disabled={!notifyAvailable || scheduleLocked || busy === 'batch'}
+              onClick={() => void patchBatch({ notifySubscribers: !notifySubs })}
+              className="relative shrink-0 rounded-full transition-colors disabled:opacity-50"
+              style={{ width: 40, height: 22, background: notifySubs ? '#0EA5A4' : 'var(--border)' }}
+            >
+              <span className="absolute top-[3px] rounded-full bg-white transition-all"
+                style={{ width: 16, height: 16, left: notifySubs ? 21 : 3 }} />
+            </button>
+          </label>
 
           {/* ── THE PATTERN, NOW THE SHORTCUT ─────────────────────────────────
               Still the quick way to fill ten videos in one go. It only sets

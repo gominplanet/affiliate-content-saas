@@ -1644,7 +1644,9 @@ export async function requestStudioFinish(
   if (!videoId) return { ok: false, steps: [], error: 'no-video-id' }
   if (!(await isExtensionAvailable())) return { ok: false, steps: [], error: 'not-installed' }
   const resp = await sendToExtension<{ ok?: boolean; steps?: StudioFinishStep[]; error?: string }>(
-    { type: 'MVP_STUDIO_FINISH', videoId, opts },
+    // The toggle as an explicit boolean. SCOUT ticks Studio's notify box only
+    // on `true`, so undefined is already No; said outright so it cannot drift.
+    { type: 'MVP_STUDIO_FINISH', videoId, opts: { ...opts, notifySubscribers: opts.notifySubscribers === true } },
     185000, // up to 3 page loads + UI settle time in Studio
   )
   if (!resp) return { ok: false, steps: [], error: 'timeout' }
@@ -1699,7 +1701,9 @@ export async function requestYtApplyDisclosures(
   if (!videoId) return { ok: false, error: 'no-video-id' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   const resp = await sendToExtension<{ ok?: boolean; detail?: string; error?: string; debug?: Record<string, unknown> }>(
-    { type: 'MVP_YT_APPLY_DISCLOSURES', videoId, opts },
+    // EXPLICIT, because here undefined is NOT No: SCOUT leaves Studio's
+    // current setting alone, which may be on.
+    { type: 'MVP_YT_APPLY_DISCLOSURES', videoId, opts: { ...opts, notify: opts.notify === true } },
     60000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
@@ -1750,7 +1754,8 @@ export async function requestYtInjectDisclosures(
   }>(
     // Longer than the old 60s: the flow now saves, RELOADS the editor and reads
     // the settings back, and a Studio page load is not fast.
-    { type: 'MVP_YT_INJECT_DISCLOSURES', videoId, opts },
+    // Explicit for the same reason as the apply path above.
+    { type: 'MVP_YT_INJECT_DISCLOSURES', videoId, opts: { ...opts, notify: opts.notify === true } },
     120000,
   )
   if (!resp) return { ok: false, error: 'timeout' }

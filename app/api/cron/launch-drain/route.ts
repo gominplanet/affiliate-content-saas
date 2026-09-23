@@ -584,6 +584,22 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
     if (!nowErr) for (const r of (nowRows ?? []) as Array<{ id: string }>) agreedNow.add(r.id)
   }
 
+  // EACH BATCH'S NOTIFY TOGGLE (migration 366), read on its own so a missing
+  // column cannot stop every upload. On any error the map is empty and every
+  // batch reads as No. YouTube's default is to notify, so the value is always
+  // sent explicitly below; this map only decides WHICH explicit value.
+  const notifyByBatch = new Map<string, boolean>()
+  {
+    const batchIds = [...new Set(items.map((i: { batch_id: string }) => i.batch_id))]
+    const { data: nb, error: nbErr } = await sb.from('launch_batches')
+      .select('id,notify_subscribers').in('id', batchIds)
+    if (!nbErr) {
+      for (const b of (nb ?? []) as Array<{ id: string; notify_subscribers: boolean | null }>) {
+        notifyByBatch.set(b.id, b.notify_subscribers === true)
+      }
+    }
+  }
+
   let scheduled = 0, failed = 0
   let budget = PUBLISHES
   const stamp = () => new Date().toISOString()
@@ -705,6 +721,8 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
           description: (it.description || '').slice(0, 4900),
           tags: String(it.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
           privacyStatus: goNow ? 'public' : 'private',
+          // The batch's toggle, sent explicitly: left out, YouTube notifies.
+          notifySubscribers: notifyByBatch.get(it.batch_id) === true,
         })
         videoId = up.id
         channelId = up.channelId
@@ -727,9 +745,12 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
         // may call itself scheduled. A failure here is now said in the terms
         // that matter to somebody looking at their channel: the video is on it.
         try {
+          // THE BATCH'S TOGGLE. This line used to pass `true` for every Launch
+          // Batch video, with no toggle anywhere, so every scheduled batch
+          // video rang the bell when it went public.
           await yt.updateVideoStatus(videoId, {
             publishAt: String(it.planned_publish_at),
-            notifySubscribers: true,
+            notifySubscribers: notifyByBatch.get(it.batch_id) === true,
           })
         } catch (se) {
           const said = se instanceof Error && se.message ? se.message : String(se)

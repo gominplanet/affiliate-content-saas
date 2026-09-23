@@ -785,7 +785,11 @@ export class YouTubeOAuthService {
       madeForKids?: boolean
       privacyStatus?: 'public' | 'unlisted' | 'private'
       publishAt?: string | null
-      notifySubscribers?: boolean
+      /** The creator's toggle: true notifies subscribers, false does not.
+       *  REQUIRED, and always sent. YouTube's own default is TRUE, so a call
+       *  that leaves it out is not neutral: it notifies. That is how a
+       *  creator who chose No still had their subscribers notified. */
+      notifySubscribers: boolean
       /** Allow embedding. Set explicitly so a `part=status` PUT can't silently
        *  reset it to YouTube's default (the omitted-field reset gotcha). */
       embeddable?: boolean
@@ -805,8 +809,14 @@ export class YouTubeOAuthService {
 
     if (Object.keys(status).length === 0) return
 
-    const params = new URLSearchParams({ part: 'status' })
-    if (args.notifySubscribers === false) params.set('notifySubscribers', 'false')
+    // THE CREATOR'S CHOICE, SAID EVERY TIME. This used to be set only when a
+    // caller passed exactly `false`; anything else fell back to YouTube's
+    // default, which is to notify. Now the value is required and always sent,
+    // so "off" means off on every call.
+    const params = new URLSearchParams({
+      part: 'status',
+      notifySubscribers: args.notifySubscribers === true ? 'true' : 'false',
+    })
 
     const res = await fetchWithTimeout(`${BASE}/videos?${params.toString()}`, {
       method: 'PUT',
@@ -867,7 +877,11 @@ export class YouTubeOAuthService {
    */
   async uploadShort(
     videoBytes: Uint8Array,
-    opts: { title: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private' },
+    opts: {
+      title: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'
+      /** The creator's toggle. REQUIRED and always sent: see updateVideoStatus. */
+      notifySubscribers: boolean
+    },
   ): Promise<{ id: string; channelId: string | null }> {
     // YouTube caps combined tag length at ~500 chars — trim defensively.
     const tags: string[] = []
@@ -907,7 +921,10 @@ export class YouTubeOAuthService {
 
     // 1) Initiate a resumable upload session — the upload URL comes back in Location.
     const initRes = await fetchWithTimeout(
-      'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+      // notifySubscribers, ALWAYS SAID. YouTube defaults it to TRUE on insert,
+      // and this URL never set it, so every video MVP uploaded was marked to
+      // notify, including ones where the creator had chosen No.
+      `https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status&notifySubscribers=${opts.notifySubscribers === true ? 'true' : 'false'}`,
       {
         method: 'POST',
         headers: {

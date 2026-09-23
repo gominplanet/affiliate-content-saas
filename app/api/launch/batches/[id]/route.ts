@@ -42,6 +42,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { data: rows } = await sb.from('launch_items')
     .select(ITEM_COLUMNS).eq('batch_id', id).order('position', { ascending: true })
   const { items, available: ownSchedules } = await withOwnSchedules(sb, id, (rows ?? []) as ItemRow[])
+  // The notify toggle, read on its own: before migration 366 the column does
+  // not exist, and folding it into BATCH_COLUMNS would fail the whole batch.
+  const { data: nrow, error: nerr } = await sb.from('launch_batches')
+    .select('notify_subscribers').eq('id', id).eq('user_id', user.id).maybeSingle()
+  const notifyAvailable = !nerr
+  const notifySubscribers = !nerr && nrow?.notify_subscribers === true
 
   const b = batch as BatchRow
   return NextResponse.json({
@@ -67,6 +73,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // False until migration 364 is run. The page then shows why per-video
     // times are missing instead of an editor whose every save is refused.
     ownSchedules,
+    notifySubscribers,
+    // False until migration 366 is run: the toggle is shown off and locked,
+    // with the reason, and the uploader treats the batch as No.
+    notifyAvailable,
   })
 }
 
@@ -88,6 +98,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     dailySlots?: string[]
     startOn?: string | null
     timezone?: string
+    /** Notify subscribers when each video goes public. */
+    notifySubscribers?: boolean
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -153,11 +165,37 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     catch { /* an unknown zone is ignored rather than stored, so the old one stands */ }
   }
 
+  if (typeof body.notifySubscribers === 'boolean') patch.notify_subscribers = body.notifySubscribers
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
+
+  // AFTER LAUNCH THE TOGGLE IS LOCKED, for the same reason the times are:
+  // the uploader may already have sent YouTube the old answer, and a switch
+  // that changes on screen but not on the channel is the plan reported as
+  // the result.
+  if (patch.notify_subscribers !== undefined) {
+    const { data: cur } = await sb.from('launch_batches')
+      .select('state').eq('id', id).eq('user_id', user.id).maybeSingle()
+    if (cur && (cur.state === 'launching' || cur.state === 'launched')) {
+      return NextResponse.json({
+        error: 'This batch has already been launched, so its notification setting is locked in. You can change it per video in YouTube Studio.',
+      }, { status: 409 })
+    }
+  }
+
   const { error } = await sb.from('launch_batches')
     .update(patch).eq('id', id).eq('user_id', user.id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    // THE ONE ERROR WITH A KNOWN CAUSE, said in words: before migration 366
+    // the column does not exist, and nothing else in this request was saved.
+    if (patch.notify_subscribers !== undefined && /notify_subscribers/.test(error.message)) {
+      return NextResponse.json({
+        error: 'The notify toggle is not switched on yet: the database needs migration 366. Nothing was saved. Until then, batch videos do not notify subscribers.',
+      }, { status: 503 })
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
   return NextResponse.json({ ok: true, rejected: thumbnailRejected })
 }
 

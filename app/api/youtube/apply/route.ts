@@ -164,7 +164,10 @@ export async function POST(request: NextRequest) {
       madeForKids: body.madeForKids,
       privacyStatus: body.privacyStatus,
       publishAt: body.publishAt ?? null,
-      notifySubscribers: body.notifySubscribers,
+      // The creator's toggle, as an explicit boolean. Anything but `true`
+      // (including a page that did not send it) is No: YouTube's own default
+      // is to notify, so leaving it undefined is what used to ring the bell.
+      notifySubscribers: body.notifySubscribers === true,
       embeddable: body.embeddable,
     })
 

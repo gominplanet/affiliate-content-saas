@@ -579,6 +579,9 @@ export default function LaunchpadPage() {
         body: JSON.stringify({
           videoUrl: renderedUrl, title: chosenTitle.trim(), description,
           tags: tagList, privacyStatus: 'private',
+          // The same toggle on the upload as on the status call below, so the
+          // two can never disagree about whether to notify.
+          notifySubscribers: notifySubs,
         }),
       })
       // Read the body as text first so a non-JSON error (a crash / 500 HTML page)

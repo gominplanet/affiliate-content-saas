@@ -5,7 +5,7 @@
  * cut straight to their channel. Same OAuth + scope rules as upload-short, minus
  * the #Shorts classification.
  *
- * Body: { videoUrl, title, description?, tags?, privacyStatus?, channelId? }
+ * Body: { videoUrl, title, description?, tags?, privacyStatus?, channelId?, notifySubscribers? }
  * Returns: { ok, videoId, url } | { error, reconnectRequired?, notEnabled? }
  *
  * Pro-only. Gated on the youtube.upload scope (reconnectRequired) and the
@@ -66,7 +66,7 @@ async function handleUpload(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { videoUrl?: string; title?: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'; channelId?: string }
+  let body: { videoUrl?: string; title?: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'; channelId?: string; notifySubscribers?: boolean }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const videoUrl = (body.videoUrl || '').trim()
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A video URL is required.' }, { status: 400 })
@@ -130,7 +130,12 @@ async function handleUpload(request: Request) {
     const yt = new YouTubeOAuthService(token)
     // uploadShort is a generic resumable video upload; the only "Short" part is
     // the caller's metadata, so it publishes a full horizontal video just as well.
-    const { id, channelId } = await yt.uploadShort(bytes, { title, description, tags, privacyStatus: body.privacyStatus || 'public' })
+    const { id, channelId } = await yt.uploadShort(bytes, {
+      title, description, tags, privacyStatus: body.privacyStatus || 'public',
+      // The creator's toggle. Anything but true is No, including a page that
+      // never sent it: YouTube's own default is to notify.
+      notifySubscribers: body.notifySubscribers === true,
+    })
     recordUsage({ userId: user.id, tier, feature: 'youtube_video_upload', model: 'youtube-data-api', images: 1 })
     void recordReachSample({
       userId: user.id, platform: 'youtube', mediaId: id,
