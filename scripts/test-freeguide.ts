@@ -383,6 +383,23 @@ check('and so does the footer',
   check('the page it is on is stated rather than linked to itself',
     /href="\/freeguide" aria-current="page"/.test(HTML2),
     'a live link to the page you are already reading is a dead end that looks like a way out')
+  // THE CHANNEL, FROM THE PAGE THAT SENDS PEOPLE TO IT. The guide spends
+  // eleven modules on making videos; the one place to see them being made was
+  // nowhere on it.
+  check('the YouTube channel is linked from the top',
+    /href="https:\/\/www\.youtube\.com\/@MVPaffiliate"/.test(HTML2),
+    'a guide about video with no link to the channel is a missing door')
+  check('and it opens away without handing over the tab',
+    /class="yt"[^>]*target="_blank"[^>]*rel="noopener"/.test(HTML2.replace(/\n\s*/g, ' ')),
+    'rel=noopener, or the new tab can reach back into this one')
+  check('the mark is drawn rather than typed',
+    /<svg viewBox="0 0 24 17"[\s\S]{0,120}?<path d="M23\.5/.test(HTML2)
+    && /aria-hidden="true"/.test(HTML2),
+    'an emoji or a unicode glyph standing in for an icon is the tell this page has avoided everywhere else')
+  check('and it still has a readable name',
+    /<span>YouTube<\/span>/.test(HTML2),
+    'an icon with no text is a guess for anyone who does not recognise the shape')
+
   check('and the two account actions are there',
     /class="signin" href="\/login"/.test(HTML2) && /class="cta" href="\/signup"/.test(HTML2),
     'the bar exists so somebody who likes the guide can act on it')

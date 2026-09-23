@@ -72,6 +72,12 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 .sitebar nav a:hover{color:var(--ink);background:var(--bg)}
 /* The page you are on is stated, not linked. */
 .sitebar nav [aria-current=page]{color:var(--ink);font-weight:700}
+.sitebar .yt{display:inline-flex;align-items:center;gap:7px;font:500 13px var(--body);
+  color:var(--muted);text-decoration:none;padding:6px 9px;border-radius:8px;
+  transition:color .15s ease,background .15s ease}
+.sitebar .yt:hover{color:var(--ink);background:var(--bg)}
+.sitebar .yt svg{width:19px;height:auto;display:block;flex:none}
+@media (max-width:520px){.sitebar .yt span{position:absolute;left:-9999px}}
 .sitebar .right{display:flex;align-items:center;gap:8px;margin-left:auto}
 .sitebar .signin{font:500 13px var(--body);color:var(--muted);text-decoration:none;padding:6px 9px}
 .sitebar .signin:hover{color:var(--ink)}
@@ -301,6 +307,13 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
       <a href="/affiliates">Affiliates</a>
     </nav>
     <span class="right">
+      <a class="yt" href="https://www.youtube.com/@MVPaffiliate" target="_blank" rel="noopener"
+         title="MVP Affiliate on YouTube">
+        <svg viewBox="0 0 24 17" aria-hidden="true" focusable="false" fill="currentColor">
+          <path d="M23.5 2.65a3 3 0 0 0-2.11-2.12C19.5 0 12 0 12 0S4.5 0 2.61.53A3 3 0 0 0 .5 2.65 31.3 31.3 0 0 0 0 8.5a31.3 31.3 0 0 0 .5 5.85 3 3 0 0 0 2.11 2.12C4.5 17 12 17 12 17s7.5 0 9.39-.53a3 3 0 0 0 2.11-2.12A31.3 31.3 0 0 0 24 8.5a31.3 31.3 0 0 0-.5-5.85ZM9.6 12.1V4.9l6.26 3.6-6.26 3.6Z"/>
+        </svg>
+        <span>YouTube</span>
+      </a>
       <a class="signin" href="/login">Sign in</a>
       <a class="cta" href="/signup">Start free trial</a>
     </span>
