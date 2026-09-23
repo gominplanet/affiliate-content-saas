@@ -283,6 +283,46 @@ const live = (src: string) => decomment(src)
     'a year in a copy string dates the page the day the year turns')
 }
 
+// ── the admin screens offer the same three plans ───────────────────────────
+//
+// "The pricing structure anywhere should only represent what is active:
+// Free Trial, Amazon Package, Pro Package." Anywhere includes the two admin
+// screens, which listed Creator and Studio with prices beside them.
+//
+// BOTH HAD THE SAME TRAP WAITING IN THE FIX. A <select> whose value is not
+// among its options does not error and does not blank: the browser renders
+// the FIRST option instead. So simply deleting the frozen entries would have
+// made the tier picker tell whoever asks "what is this account on" that a
+// Studio subscriber is on the free trial, while the real value sat unchanged
+// in state; and the billing preview would have read "My view (Admin)" with
+// the whole UI still gated as Studio from a stale localStorage key. Both are
+// a screen reporting the plan rather than the result, in the two places whose
+// entire job is to report the result.
+{
+  const UPAGE = decomment(read('app/(dashboard)/admin/users/page.tsx'))
+  const VIEWAS = decomment(read('lib/view-as.ts'))
+  const BILLING = decomment(read('app/(dashboard)/billing/page.tsx'))
+
+  check('the tier picker is built from SELLABLE_TIERS',
+    /SELLABLE_TIERS\.map\(\(t\) => \(/.test(UPAGE),
+    'a hand-listed picker is how it went on offering $79 Amazon and two frozen plans')
+  check('and it cannot assign a frozen plan',
+    !/<option value="(?:creator|studio)"(?![^>]*disabled)/.test(UPAGE),
+    'moving somebody ONTO a plan checkout refuses is the one thing this control must not do')
+  check('but a grandfathered account still shows its real plan',
+    /!isSellableTier\(user\.tier\)/.test(UPAGE) && /disabled>/.test(UPAGE),
+    'a select with no matching option renders the first one, so the screen would call a Studio subscriber a trial user')
+
+  check('the view-as list is derived, not typed',
+    /VIEW_AS_TIERS: readonly Tier\[\] = \['trial', \.\.\.SELLABLE_TIERS, 'admin'\]/.test(VIEWAS),
+    'its own comment says the hand-written version fell out of sync twice')
+  check('and the billing preview renders that list',
+    /VIEW_AS_TIERS\.filter/.test(BILLING) && !/<option value="studio">/.test(BILLING), '')
+  check('a stored tier that is no longer offered is cleared, not just ignored',
+    /localStorage\.removeItem\(KEY\)/.test(VIEWAS.slice(VIEWAS.indexOf('export function getViewAsTier'), VIEWAS.indexOf('export function setViewAsTier'))),
+    'left in place it gates the whole UI as Studio while the dropdown reads "My view (Admin)"')
+}
+
 // ── the credit packs have one price, and it is checkable ───────────────────
 {
   const STAGE = read('components/launchpad/StorefrontStage.tsx')

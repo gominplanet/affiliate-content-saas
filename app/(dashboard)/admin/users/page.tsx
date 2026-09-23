@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon, ChevronLeft, ChevronRight, Users as UsersIcon, Mail, Send, Trash2, Megaphone } from 'lucide-react'
 import { segmentOptions, type Segment } from '@/lib/admin-segments'
 
-import { TIERS, isSellableTier } from '@/lib/tier'
+import { TIERS, isSellableTier, SELLABLE_TIERS } from '@/lib/tier'
 
 // The same list the broadcast tool offers, built from the plans that exist,
 // so "the people I am looking at" and "the people that would email" cannot
@@ -663,17 +663,32 @@ export default function AdminUsersPage() {
                 disabled={saving}
                 className="input-field text-sm w-auto"
               >
-                {/* PRICES READ FROM THE PLAN. Typed, this list told the one
-                    person who changes other people's plans that Amazon was
-                    $79 when it had been $99 for weeks, and it is the screen
-                    used to answer "what is this account paying". */}
-                <option value="trial">Free Trial</option>
-                {(['creator', 'amazon', 'studio', 'pro'] as const).map((t) => (
+                {/* THE PLANS WE SELL, AND NOTHING ELSE. Prices read from
+                    lib/tier: typed, this list told the one person who changes
+                    other people's plans that Amazon was $79 when it had been
+                    $99 for weeks. Creator and Studio are gone with them, so
+                    nobody can be moved ONTO a plan checkout refuses. */}
+                <option value="trial">{TIERS.trial.label}</option>
+                {SELLABLE_TIERS.map((t) => (
                   <option key={t} value={t}>
-                    {TIERS[t].label} — ${TIERS[t].price}/mo{isSellableTier(t) ? '' : ' (frozen)'}
+                    {TIERS[t].label}, ${TIERS[t].price}/mo
                   </option>
                 ))}
                 <option value="admin">Admin (god mode)</option>
+                {/* ── AND THE TRUTH ABOUT A GRANDFATHERED ACCOUNT ─────────
+                    Five people are still on a frozen plan. Drop those plans
+                    from the list and a <select> whose value is 'studio' has
+                    no matching option, so the browser shows the FIRST one
+                    instead: this screen would have told the person answering
+                    "what is this account on" that a Studio subscriber is on
+                    the free trial, silently, with the real value still in
+                    state. Their plan appears, disabled, so the screen reports
+                    what is true and still cannot set it. */}
+                {!isSellableTier(user.tier) && user.tier !== 'trial' && user.tier !== 'admin' && (
+                  <option value={user.tier} disabled>
+                    {TIERS[user.tier as Tier]?.label ?? user.tier} — legacy plan, cannot be assigned
+                  </option>
+                )}
               </select>
               <button
                 onClick={applyTier}

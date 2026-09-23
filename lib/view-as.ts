@@ -1,6 +1,6 @@
 // Admin-only "View as tier" override.
 //
-// Lets an admin preview the UI exactly as a Trial / Creator / Pro user
+// Lets an admin preview the UI exactly as a Free Trial / Amazon / Pro user
 // sees it — locked pages greyed out, gated features hidden, etc. —
 // without changing their real tier in the DB.
 //
@@ -10,18 +10,36 @@
 // the real DB tier, so impersonation never grants real access — actions
 // you trigger while "viewing as" still run with your true admin rights.
 
-import { normalizeTier, type Tier } from '@/lib/tier'
+import { normalizeTier, SELLABLE_TIERS, type Tier } from '@/lib/tier'
 
 const KEY = 'mvp_view_as_tier'
 const EVENT = 'mvp:view-as-changed'
 
+/** The tiers this preview offers: the plans we sell, plus the free trial.
+ *
+ *  IT USED TO BE A HAND-WRITTEN LIST of every value the union allowed, with a
+ *  comment saying to keep it in sync, which it twice was not: a selection of
+ *  Studio round-tripped to null and snapped the dropdown back to "My view
+ *  (Admin)", and Amazon did the same on 2026-08-13. Derived now, so adding a
+ *  plan cannot repeat it.
+ *
+ *  Creator and Studio are deliberately NOT here. They are frozen, nothing
+ *  sells them, and previewing a plan nobody can buy answers a question nobody
+ *  is asking. A stored value naming one is treated as absent below. */
+export const VIEW_AS_TIERS: readonly Tier[] = ['trial', ...SELLABLE_TIERS, 'admin'] as const
+
 export function getViewAsTier(): Tier | null {
   if (typeof window === 'undefined') return null
   const v = window.localStorage.getItem(KEY)
-  // Every real tier must be listed here, or a selection round-trips to null and
-  // silently snaps back to 'My view (Admin)'. Happened to Studio once, and again
-  // to Amazon Influencer (2026-08-13) — keep this in sync with the Tier union.
-  return v === 'trial' || v === 'creator' || v === 'amazon' || v === 'studio' || v === 'pro' || v === 'admin' ? v : null
+  // A stored tier that is no longer offered reads as absent AND is cleared.
+  // Left in place, the <select> below would hold a value with no matching
+  // option and the browser would render the first one instead, so the screen
+  // would say "My view (Admin)" while the whole UI was still gated as Studio.
+  if (v && !(VIEW_AS_TIERS as readonly string[]).includes(v)) {
+    try { window.localStorage.removeItem(KEY) } catch { /* private mode */ }
+    return null
+  }
+  return (VIEW_AS_TIERS as readonly string[]).includes(v ?? '') ? (v as Tier) : null
 }
 
 export function setViewAsTier(t: Tier | null) {
