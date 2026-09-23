@@ -321,6 +321,17 @@ check('and so does the footer',
     /did not go out, so we will pick this up ourselves/.test(ROUTE),
     '"check your inbox" about an email that never sent is the plan reported as the result')
 
+  // THE CONFIRMATION HAS TO LOOK LIKE IT CAME FROM THE PAGE THEY WERE ON.
+  // Deriving the sender from this account's newsletter_settings, the way the
+  // blog shortcode does, would have sent it as "Gomin Reviews
+  // <newsletter@mail.gominreviews.com>" to somebody who had just been reading
+  // mvpaffiliate.io. On a double opt-in an unrecognised sender is not a
+  // cosmetic problem: it does not get opened, the link never gets clicked, and
+  // the row stays pending forever.
+  check('the confirmation sends as MVP, not as the blog',
+    !/deriveFromAddress/.test(ROUTE) && !/newsletter_settings/.test(ROUTE),
+    'that settings row belongs to another product, and its enabled flag is false today')
+
   check('an unset owner refuses loudly instead of guessing',
     /FREEGUIDE_OWNER_USER_ID/.test(ROUTE) && /Signups are not switched on yet/.test(ROUTE),
     'writing rows onto whichever account sorted first is worse than collecting nothing')

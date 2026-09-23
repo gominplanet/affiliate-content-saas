@@ -30,7 +30,6 @@ import {
   normaliseEmail,
   newToken,
   hashIp,
-  deriveFromAddress,
   confirmationEmailHtml,
 } from '@/lib/newsletter'
 
@@ -127,24 +126,24 @@ export async function POST(req: NextRequest) {
     return json({ ok: true, message: "You're on the list. Our confirmation email is not sending right now, so we will pick this up ourselves." })
   }
 
-  const { data: settings } = await admin.from('newsletter_settings')
-    .select('sender_domain,sender_local_part,sender_name,domain_status')
-    .eq('user_id', owner).maybeSingle()
-
-  const senderName = (settings?.sender_name as string | null) || 'Seb & Michelle'
-  const from = deriveFromAddress({
-    senderDomain: settings?.sender_domain ?? null,
-    senderLocalPart: settings?.sender_local_part ?? null,
-    senderName,
-    domainStatus: settings?.domain_status ?? null,
-  })
-  if (!from) {
-    // SAME SHAPE AS A FAILED SEND, because it is one: the address is stored
-    // and the confirmation cannot go out.
-    console.warn('[freeguide-subscribe] stored but no usable from address', { owner })
-    return json({ ok: true, message: "You're on the list. Our confirmation email is not sending right now, so we will pick this up ourselves." })
-  }
-
+  // ── IT SENDS AS MVP, NOT AS THE BLOG ──────────────────────────────────────
+  //
+  // The first version derived the sender from this account's
+  // newsletter_settings, the way the blog shortcode does. That row is
+  // configured for a different product: the confirmation would have arrived
+  // as "Gomin Reviews <newsletter@mail.gominreviews.com>" to somebody who had
+  // just been reading a guide on mvpaffiliate.io and had never heard of that
+  // domain.
+  //
+  // On a double opt-in that is not cosmetic. An unrecognised sender does not
+  // get opened, the link never gets clicked, the row stays pending forever,
+  // and the lead is lost in the one step that was supposed to secure it.
+  //
+  // So it uses MVP's own transactional sender, which matches the domain the
+  // reader was just on. It also drops the dependency on a settings row
+  // belonging to a different feature: `enabled` on that row is false today,
+  // and every rule attached to it is one more way for this form to stop
+  // working for reasons that have nothing to do with the guide.
   try {
     const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io'
     const confirmUrl = `${appBase}/api/newsletter/confirm?token=${encodeURIComponent(token)}`
@@ -154,8 +153,9 @@ export async function POST(req: NextRequest) {
       introLine: 'You asked to hear when the free Amazon Influencer guide changes. Confirm your address and we will send you the updates, and nothing else.',
     })
     await sendEmail({
+      // No `from`: sendEmail falls back to EMAIL_FROM, which is the address
+      // every other transactional mail in the product already sends from.
       to: email,
-      from,
       subject: 'Confirm: updates to the Amazon Influencer guide',
       html,
       text,
