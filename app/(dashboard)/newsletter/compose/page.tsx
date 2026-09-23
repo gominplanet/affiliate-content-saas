@@ -139,7 +139,7 @@ export default function NewsletterComposePage() {
   // signup window / tags. Tags are user-defined free-text labels on
   // subscribers (e.g. 'paying', 'lead', 'archived').
   const [segmentEnabled, setSegmentEnabled] = useState(false)
-  const [segSource, setSegSource] = useState<'all' | 'blog_form' | 'csv_import' | 'manual'>('all')
+  const [segSource, setSegSource] = useState<'all' | 'blog_form' | 'csv_import' | 'manual' | 'freeguide'>('all')
   const [segSignedUpAfter, setSegSignedUpAfter] = useState('')
   // signedUpBefore was supported by the back-end (lib/newsletter-send.ts)
   // since migration 090 but had no UI. Surfaced 2026-06-05 so users can
@@ -835,6 +835,13 @@ export default function NewsletterComposePage() {
                       <option value="blog_form">Blog form</option>
                       <option value="csv_import">CSV import</option>
                       <option value="manual">Manual add</option>
+                      {/* THE ONE THAT NEEDS NAMING. These readers subscribed on
+                          the free guide and were told "updates to this guide
+                          and what is changing in the program. Nothing else."
+                          Before this option existed there was no way to send
+                          to them, and no way to leave them out of a blog
+                          issue they never asked for. */}
+                      <option value="freeguide">Free guide readers</option>
                     </select>
                   </label>
 

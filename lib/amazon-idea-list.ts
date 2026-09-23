@@ -11,6 +11,8 @@ export interface IdeaListItem {
   title: string | null
   image: string | null
 }
+import { UserFacingError } from '@/lib/friendly-error'
+
 export interface IdeaListParse {
   title: string | null
   declaredCount: number | null
@@ -65,21 +67,57 @@ export function parseIdeaListHtml(html: string): IdeaListParse {
 /** Fetch + parse a list URL. Throws on a non-200 / robot page. */
 export async function fetchIdeaList(rawUrl: string): Promise<IdeaListParse> {
   const url = normalizeListUrl(rawUrl)
-  if (!url) throw new Error('That doesn’t look like an Amazon idea-list link (amazon.com/shop/…/list/…).')
+  if (!url) {
+    // FIVE CAUSES, FIVE ANSWERS. Every one of these reached the screen as
+    // "Could not read that list. Double-check the link, or use the SCOUT
+    // extension", because the route sanitised them through toUserMessage,
+    // which replaces any message it does not recognise. That sentence is
+    // wrong most of the time: it sends somebody to re-examine a link that is
+    // perfectly valid, and it offers SCOUT for problems SCOUT cannot fix.
+    //
+    // A STOREFRONT IS THE COMMON MISTAKE and earns its own sentence. It is the
+    // link already in the address bar, it is a real Amazon URL, and it is not
+    // a list. Telling somebody to double-check it is telling them to look
+    // harder at the one thing that is not the problem.
+    throw new UserFacingError(
+      isStorefrontUrl(rawUrl)
+        ? 'That is your storefront, not an idea list. Open the list itself on Amazon and copy that link: it has /list/ in it. Your lists are also shown below.'
+        : 'That does not look like an Amazon idea-list link. It should look like amazon.com/shop/yourname/list/XXXXXXX.',
+    )
+  }
   const res = await fetch(url, {
     headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9', Accept: 'text/html' },
     signal: AbortSignal.timeout(25_000),
   })
-  if (!res.ok) throw new Error(`Amazon returned ${res.status} for that list.`)
+  if (!res.ok) {
+    throw new UserFacingError(
+      res.status === 404
+        ? 'Amazon says that list does not exist. It may have been deleted, or it may be private.'
+        : `Amazon would not return that list (${res.status}). Try again in a moment, or use the SCOUT extension.`,
+    )
+  }
   const html = await res.text()
   const parsed = parseIdeaListHtml(html)
   if (parsed.items.length === 0) {
     if (/api-services-support|To discuss automated access|Robot Check/i.test(html)) {
-      throw new Error('Amazon blocked the read (bot check). Use the SCOUT extension to capture this list instead.')
+      // THE ONE CAUSE SCOUT ACTUALLY SOLVES. The old path buried this answer
+      // in a sentence that offered SCOUT whatever had gone wrong, which is the
+      // same as never offering it.
+      throw new UserFacingError('Amazon blocked the read with a bot check. Use the SCOUT extension instead: it reads the list from your own browser, where you are signed in.')
     }
-    throw new Error('Could not find any products on that list.')
+    throw new UserFacingError('That list opened fine but has no products in it yet.')
   }
   return parsed
+}
+
+/** An Amazon storefront rather than a list: /shop/<handle> with no /list/.
+ *  The single most common thing pasted into a box that wants a list. */
+export function isStorefrontUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw.trim())
+    if (!/(^|\.)amazon\.[a-z.]+$/i.test(u.hostname)) return false
+    return /^\/shop\/[^/]+\/?$/i.test(u.pathname)
+  } catch { return false }
 }
 
 /** Keep only real Amazon influencer list URLs; strip tracking params we don't need. */

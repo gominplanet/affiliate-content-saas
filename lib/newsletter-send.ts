@@ -51,7 +51,13 @@ export interface NewsletterRecipient {
 }
 
 export interface SegmentFilter {
-  source?: 'blog_form' | 'csv_import' | 'manual' | null
+  /** 'freeguide' is the free Amazon Influencer guide at /freeguide. It is here
+   *  because those readers asked for one specific thing: "Updates to this
+   *  guide and what is changing in the program. Nothing else." Without a way
+   *  to name them, a blog broadcast sent to everyone reaches them too and
+   *  breaks that promise, which is how a verified sending domain collects
+   *  spam complaints. */
+  source?: 'blog_form' | 'csv_import' | 'manual' | 'freeguide' | null
   signedUpAfter?: string | null     // ISO timestamp
   signedUpBefore?: string | null    // ISO timestamp
   /** ANY-of match — a subscriber is included if any of their tags is in the

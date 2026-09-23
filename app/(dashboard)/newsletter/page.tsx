@@ -665,6 +665,21 @@ export default function NewsletterPage() {
               ? 'Signup form shows on your homepage + every blog post sidebar. Click to turn off.'
               : 'Signup form is hidden everywhere on your blog. Click to start collecting subscribers.'}
           </p>
+          {/* THIS SWITCH IS ABOUT THE BLOG FORM, NOT THE LIST, and the screen
+              did not say so. Readers of the free guide subscribe through a
+              different form, so the count above goes up while this reads "I'm
+              not running a newsletter right now": two true statements that
+              look like a contradiction, and the first person to see it asked
+              whether their guide signups had landed somewhere unexpected. */}
+          {/* NO NUMBER. `subs` is the page of rows on screen, not the whole
+              list, and counting a fetched array as a total is the mistake this
+              codebase has made three times. Whether ANY came from the guide is
+              a fact this array can support; how many is not. */}
+          {!settings?.enabled && subs.some(x => x.source === 'freeguide') && (
+            <p className="text-[11px] mt-2 leading-relaxed text-[#d97706]">
+              Some of these came from the free guide, which has its own form and keeps collecting whatever this switch is set to.
+            </p>
+          )}
         </button>
       </div>
 
