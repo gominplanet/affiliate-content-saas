@@ -50,7 +50,6 @@ export function inSegment(tier: string, segment: Segment): boolean {
   }
 }
 
-/** The audience picker, built from the plans that exist. */
 /** The audience picker, built from the plans that exist.
  *
  *  SUPPORTED IS NOT THE SAME AS SHOWN, and this function is where the two
