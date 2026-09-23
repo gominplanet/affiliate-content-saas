@@ -1666,35 +1666,71 @@ questions in public so everyone gets the answer.</p>
     if(bar) bar.style.width=(boxes.length?n/boxes.length*100:0)+'%';
     if(t) t.textContent=n+' of '+boxes.length+' modules done';
   }
-  // ── Meta: what "read it" actually looks like ────────────────────────────
+  // ── Meta: three named depths, each one queryable on its own ─────────────
   //
   // ViewContent fires on ENGAGEMENT and never on load. A ViewContent that
-  // fires for every arrival is a second PageView wearing a different name: it
-  // would tell Meta nothing about who found the guide worth reading, and the
-  // retargeting audience built from it would be mostly people who bounced.
-  // The ad campaign's whole plan is to retarget readers, so this event has to
-  // mean reader.
+  // fires for every arrival is a second PageView wearing a different name.
+  // That part was right. The BAR was wrong.
   //
-  // The bar is a quarter of the page scrolled OR a first module ticked,
-  // whichever comes first, and it fires at most once per page load.
-  var engaged=false;
-  function engage(how){
-    if(engaged) return; engaged=true;
+  // The first version put the bar at 25% scroll. This page is about 65,000
+  // pixels tall, so a quarter of it is roughly eighteen phone screens: not
+  // "read a bit of the guide" but "read further than almost anyone reads
+  // anything". Of the 1,375 people the first campaign sent here, 3.6% cleared
+  // it. Meta was optimizing delivery on that event, so it was optimizing on
+  // almost no signal, and a conversion campaign with no signal goes hunting
+  // for the cheapest impressions on the platform. It found them: a $0.55 CPM
+  // against the $56 and $97 this account paid on its other campaigns.
+  //
+  // So the bar that DRIVES DELIVERY is now the shallow one, and the deep one
+  // keeps its own name instead of being folded into it:
+  //
+  //   ViewContent      started reading. Two screens scrolled, or twenty
+  //                    seconds on a visible tab having scrolled at all.
+  //                    This is the ad set's optimization event.
+  //   GuideRead        read a quarter of the page. The honest quality bar,
+  //                    deliberately NOT what delivery optimizes on.
+  //   GuideModuleDone  ticked a module checkbox.
+  //
+  // They are separate event NAMES rather than one event with a depth
+  // parameter because the reporting API filters by event name and cannot
+  // filter by custom parameter. Folding them together would make the
+  // difference between a reader and a bouncer invisible in exactly the
+  // report that needs to see it, which is the failure this file keeps
+  // repeating: a number that looks the same whether it worked or not.
+  //
+  // Depths are measured in PIXELS AND SCREENS, never in percent, because a
+  // percentage of a page this long does not mean what it sounds like. That
+  // was the whole bug.
+  var started=false, readDeep=false, t0=Date.now();
+  function scrollY(){ return window.pageYOffset||document.documentElement.scrollTop||document.body.scrollTop||0 }
+  function secs(){ return Math.round((Date.now()-t0)/1000) }
+  function markStarted(how){
+    if(started) return; started=true;
     if(typeof fbq!=='function') return;
-    fbq('track','ViewContent',{content_name:'Free guide: No Shortcut Playbook',content_category:'amazon-influencer-guide',content_type:'guide',engagement:how});
+    fbq('track','ViewContent',{content_name:'Free guide: No Shortcut Playbook',content_category:'amazon-influencer-guide',content_type:'guide',engagement:how,seconds:secs()});
+  }
+  function markRead(how){
+    if(readDeep) return; readDeep=true;
+    if(typeof fbq!=='function') return;
+    fbq('trackCustom','GuideRead',{content_name:'Free guide: No Shortcut Playbook',engagement:how,seconds:secs()});
   }
   function onScroll(){
-    var h=document.documentElement;
-    var max=(h.scrollHeight-h.clientHeight);
-    if(max>0 && (h.scrollTop||document.body.scrollTop)/max>=0.25) engage('scroll-25');
-    if(engaged) window.removeEventListener('scroll',onScroll);
+    var h=document.documentElement, y=scrollY(), max=h.scrollHeight-h.clientHeight;
+    if(h.clientHeight>0 && y>=h.clientHeight*2) markStarted('scroll-2-screens');
+    if(max>0 && y/max>=0.25) markRead('scroll-25');
+    if(started && readDeep) window.removeEventListener('scroll',onScroll);
   }
   window.addEventListener('scroll',onScroll,{passive:true});
+  // Twenty seconds counts as started only if they actually scrolled and the
+  // tab is in front. A timer alone would count a background tab as a reader.
+  setTimeout(function(){ if(!document.hidden && scrollY()>0) markStarted('dwell-20s') },20000);
 
   boxes.forEach(function(b){b.addEventListener('change',function(){
     done[b.dataset.id]=b.checked; try{localStorage.setItem(KEY,JSON.stringify(done))}catch(e){} render();
     if(b.checked){
-      engage('module-done');
+      // Ticking a module is the strongest engagement on the page, so it
+      // satisfies both bars at once however little was scrolled to reach it.
+      markStarted('module-done'); markRead('module-done');
       // Which modules people finish, so a section nobody completes is
       // visible as a number rather than a hunch.
       if(typeof fbq==='function') fbq('trackCustom','GuideModuleDone',{module:b.dataset.id});

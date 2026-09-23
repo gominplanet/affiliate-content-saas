@@ -177,14 +177,41 @@ if (present) {
   // PageView wearing a different name. The campaign plan is to retarget
   // READERS, so this event has to mean reader or the audience is bouncers.
   check('ViewContent is tied to engagement, not to load',
-    /function engage\(/.test(HTML) && /engaged=true/.test(HTML),
+    /function markStarted\(/.test(HTML) && /started=true/.test(HTML),
     'firing it on load would build a retargeting audience of people who left')
-  check('and there are two ways to earn it',
-    /scroll-25/.test(HTML) && /module-done/.test(HTML),
-    'scrolling a quarter of the page, or ticking a first module')
+
+  // AND THE BAR IS REACHABLE. The first version put ViewContent at 25% scroll
+  // on a page about 65,000px tall, which is roughly eighteen phone screens.
+  // 3.6% of 1,375 paid visitors cleared it. Because the ad set optimizes on
+  // ViewContent, Meta was learning from almost nothing and bought the cheapest
+  // inventory on the platform: a $0.55 CPM where this account otherwise pays
+  // $56 to $97. A percentage of a page this long does not mean what it sounds
+  // like, so the shallow bar is measured in SCREENS and SECONDS, never in
+  // percent of the document.
+  check('the optimization bar is measured in screens, not in percent of the page',
+    /y>=h\.clientHeight\*2/.test(HTML) && /scroll-2-screens/.test(HTML),
+    'a percentage bar on a 65,000px page is a bar almost nobody clears')
+  check('and dwelling counts too, but only on a visible tab that scrolled',
+    /dwell-20s/.test(HTML) && /!document\.hidden && scrollY\(\)>0/.test(HTML),
+    'a bare timer would count a backgrounded tab as a reader')
+
+  // THE DEEP BAR KEEPS ITS OWN NAME. ads_get_dataset_stats filters by event
+  // name and cannot filter by custom parameter, so folding "read a quarter"
+  // into ViewContent with a depth param would make the difference between a
+  // reader and a bouncer unreadable in the only report that checks.
+  check('reading deeply is its own named event, not a parameter',
+    /trackCustom','GuideRead'/.test(HTML) && /scroll-25/.test(HTML),
+    'a depth hidden in a parameter cannot be queried, so it would never be reported')
+  check('and the deep bar is NOT what delivery optimizes on',
+    !/fbq\('track','ViewContent'[^)]*scroll-25/.test(HTML),
+    'optimizing on the strictest signal on the page is what bought the $0.55 CPM')
+
   check('module completions are reported too',
     /trackCustom','GuideModuleDone'/.test(HTML),
     'so a section nobody finishes is a number rather than a hunch')
+  check('and ticking a module satisfies both bars',
+    /markStarted\('module-done'\); markRead\('module-done'\)/.test(HTML),
+    'it is the strongest engagement on the page however little was scrolled to reach it')
 
   // ── THE GROUP ─────────────────────────────────────────────────────────────
   check('the guide offers the Facebook group',
