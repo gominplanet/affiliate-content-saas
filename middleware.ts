@@ -110,6 +110,13 @@ const publicPaths = [
   // thinks the signup failed.
   '/newsletter-confirmed',
   '/newsletter-unsubscribed',
+  // The guide's own signup. It is NOT covered by the '/freeguide' entry below:
+  // isPublic matches on segment boundaries, and '/api/freeguide/subscribe' does
+  // not start with '/freeguide/'. Without this line every signup on a page
+  // built for logged-out readers would 307 to /login, which is the exact
+  // mistake that sent paid ad clicks for /amazon-influencer to a login screen.
+  // The route enforces its own limits: honeypot, per-IP ceiling, double opt-in.
+  '/api/freeguide/subscribe',
   // The free Amazon Influencer guide, a static file served from public/ through
   // a rewrite in next.config. It is a lead magnet: every single person it is
   // written for is logged out, which is the exact case the default (gate it)

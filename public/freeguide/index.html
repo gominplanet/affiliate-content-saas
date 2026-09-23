@@ -28,6 +28,8 @@
 html{scroll-behavior:smooth}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 body{background:var(--bg);color:var(--ink);font:17px/1.65 var(--body);-webkit-font-smoothing:antialiased}
+::selection{background:var(--accent);color:#fff}
+input,textarea{caret-color:var(--accent)}
 a{color:var(--accent);text-underline-offset:3px}
 a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:4px}
 
@@ -43,13 +45,55 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 .hero h1 span{display:block}
 .hero h1 span:last-child{color:var(--accent);font-style:italic;transform:skewX(-6deg);transform-origin:left}
 .hero-lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,272px);
-  gap:clamp(24px,4vw,48px);align-items:center;margin-top:22px}
+  gap:clamp(24px,4vw,48px);align-items:start;margin-top:26px}
 .hero-txt{min-width:0}
 .hero-txt .lede{margin-top:0}
 .hero-fig{margin:0}
 .hero-fig img{display:block;width:100%;height:auto;border-radius:3px}
+/* No accent bar down the side. A coloured left border on a caption is the
+   side-tab tell, and this is a photo credit: the mono caps already mark it as
+   a label, and it does not need a second device to say so. The panels further
+   down keep theirs, because those are the page's own committed world. */
 .hero-fig figcaption{font:500 12px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;
-  color:var(--muted);margin-top:10px;border-left:3px solid var(--accent);padding-left:10px}
+  color:var(--muted);margin-top:10px}
+/* ── The updates card ──────────────────────────────────────────────────────
+   ONE ELEMENT, BOTH JOBS. The page needed a reason to come back and a way to
+   capture the people who want more, and those are the same fact said once:
+   Amazon keeps changing this program, we keep changing the page, here is how
+   to hear about it. Split into a "what's new" box and a separate newsletter
+   box, each would have been weaker and the ask would have had no reason
+   attached to it.
+
+   IT SITS IN THE HERO, in the column the photo was leaving empty, because
+   this is a long page and anything below the first rule is seen by a
+   fraction of arrivals.
+
+   AND IT IS NOT A GATE. The ad creative promises "FREE. NO EMAIL. NO
+   SIGNUP." and until now the page never said so anywhere. The line above
+   the field is that promise kept, and it is what makes the field read as an
+   offer rather than a toll. */
+.upd{margin-top:22px;border:1px solid var(--line);border-radius:14px;
+  background:var(--surface);padding:16px 18px}
+.upd h2{font:700 15px/1.25 var(--body);margin:0 0 6px;color:var(--ink)}
+.upd p{margin:0;font-size:14px;color:var(--muted)}
+.upd .free{margin-top:10px;font:700 12px var(--mono);letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ok)}
+.upd form{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+.upd input[type=email]{flex:1 1 190px;min-width:0;font:400 15px var(--body);
+  padding:10px 12px;border:1px solid var(--line);border-radius:9px;
+  background:var(--bg);color:var(--ink)}
+.upd input[type=email]::placeholder{color:var(--muted)}
+.upd input[type=email]:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+.upd button{font:700 14px var(--body);padding:10px 16px;border:0;border-radius:9px;
+  background:var(--accent);color:#fff;cursor:pointer;transition:filter .15s ease}
+.upd button:hover{filter:brightness(1.08)}
+.upd button:disabled{opacity:.6;cursor:default}
+.upd .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.upd .said{margin-top:10px;font-size:13.5px;line-height:1.45}
+.upd .said.ok{color:var(--ok)}
+.upd .said.bad{color:var(--myth)}
+.upd .fine{margin-top:9px;font-size:12.5px;color:var(--muted)}
+@media (max-width:900px){.upd{margin-top:18px}}
 .lede{max-width:40em;font-size:clamp(17px,2vw,20px);margin:22px 0 20px;color:var(--ink)}
 .meta{display:flex;flex-wrap:wrap;gap:8px 18px;font:500 13px/1.3 var(--mono);color:var(--muted)}
 .meta span+span::before{content:"/";margin-right:18px;color:var(--line)}
@@ -211,6 +255,21 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
   <p class="lede">The Amazon Influencer playbook from Seb &amp; Michelle of Gominplanet: how we built a multiple six-figure business from product reviews, and exactly what works now after the 2026 changes.</p>
   <div class="meta"><span>11 modules</span><span>~75 min read</span><span>Presented by <a href="#mvp"><b>MVP Affiliate</b></a></span></div>
   <div class="prog" aria-live="polite"><div class="bar"><i id="progbar"></i></div><span id="progtxt">0 of 11 modules done</span></div>
+  <section class="upd" aria-labelledby="updh">
+    <h2 id="updh">This guide keeps changing, because the program does.</h2>
+    <p>Amazon moved the commission rules twice this year and changed what counts as a qualifying sale. Every time that happens we rewrite the part of this guide it broke, rather than leaving last year's advice up. Worth coming back to.</p>
+    <p class="free">Free to read. No email needed.</p>
+    <form id="updf" novalidate>
+      <label class="hp" for="updhp">Leave this empty</label>
+      <input class="hp" id="updhp" name="hp" type="text" tabindex="-1" autocomplete="off">
+      <label class="hp" for="upde">Your email address</label>
+      <input id="upde" name="email" type="email" required autocomplete="email"
+             placeholder="you@example.com" inputmode="email">
+      <button type="submit">Tell me when it changes</button>
+    </form>
+    <p class="said" id="upds" role="status" aria-live="polite"></p>
+    <p class="fine">Updates to this guide and what is changing in the program. Nothing else, and one click to stop.</p>
+  </section>
   </div>
   <figure class="hero-fig">
     <img src="/freeguide/hero.jpg" width="790" height="880" decoding="async"
@@ -1737,6 +1796,45 @@ questions in public so everyone gets the answer.</p>
     }
   });});
   render();
+  // ── The updates form ──────────────────────────────────────────────────────
+  //
+  // IT SAYS WHAT HAPPENED. The route stores the address before it tries to
+  // send, so "we saved you but the confirmation did not go out" is a real and
+  // different outcome from "check your inbox", and the server returns the
+  // sentence for whichever one it was. Printing a cheerful fixed string here
+  // would throw that away and send somebody to an empty inbox.
+  var uf = document.getElementById('updf');
+  if (uf) uf.addEventListener('submit', function(ev){
+    ev.preventDefault();
+    var say = document.getElementById('upds');
+    var btn = uf.querySelector('button');
+    var email = (document.getElementById('upde') || {}).value || '';
+    var hp = (document.getElementById('updhp') || {}).value || '';
+    if (!email.trim()) { say.className = 'said bad'; say.textContent = 'Put your email in first.'; return; }
+    btn.disabled = true; var was = btn.textContent; btn.textContent = 'Sending…';
+    say.className = 'said'; say.textContent = '';
+    fetch('/api/freeguide/subscribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, hp: hp, sourceUrl: location.href })
+    }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok, j: j }; }); })
+      .then(function(res){
+        var j = res.j || {};
+        if (res.ok && j.ok) {
+          say.className = 'said ok';
+          say.textContent = j.message || "You're on the list.";
+          uf.style.display = 'none';
+          if (typeof fbq === 'function') fbq('track', 'Lead', { content_name: 'Free guide updates' });
+        } else {
+          say.className = 'said bad';
+          say.textContent = j.error || 'That did not go through. Try again in a moment.';
+        }
+      })
+      .catch(function(){
+        say.className = 'said bad';
+        say.textContent = 'Could not reach us just now. Try again in a moment.';
+      })
+      .finally(function(){ btn.disabled = false; btn.textContent = was; });
+  });
   var d=document.getElementById('tocd');
   function fit(){ if(d) d.open = window.innerWidth>900; }
   fit();
