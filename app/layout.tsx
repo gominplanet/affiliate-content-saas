@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, Geist_Mono, Plus_Jakarta_Sans } from 'next/font/google'
 import Script from 'next/script'
+import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from 'next-themes'
 import './globals.css'
 
@@ -114,6 +115,17 @@ fbq('track', 'PageView');
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           {children}
         </ThemeProvider>
+        {/* Vercel Analytics. Page views and referrers for the traffic the Meta
+            campaign is buying, which the pixel above cannot tell us: the pixel
+            answers "did this click convert", and this answers "where did the
+            people who did not convert go".
+
+            PRODUCTION ONLY, for the same reason the pixel is. Preview
+            deployments are real URLs that we and Vercel's own bots load, and
+            their page views land in the same dataset as the live site unless
+            the component is simply not rendered. The package no-ops in local
+            dev on its own; it does not no-op on a preview. */}
+        {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
   )
