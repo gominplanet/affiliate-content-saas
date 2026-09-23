@@ -682,11 +682,13 @@ export default function AdminUsersPage() {
                     instead: this screen would have told the person answering
                     "what is this account on" that a Studio subscriber is on
                     the free trial, silently, with the real value still in
-                    state. Their plan appears, disabled, so the screen reports
-                    what is true and still cannot set it. */}
+                    state. So a disabled row reports that the account is on a
+                    grandfathered plan, truthfully, without naming a frozen plan
+                    inside a list of options: this is a picker, and nothing in a
+                    picker should read as something you could choose. */}
                 {!isSellableTier(user.tier) && user.tier !== 'trial' && user.tier !== 'admin' && (
                   <option value={user.tier} disabled>
-                    {TIERS[user.tier as Tier]?.label ?? user.tier} — legacy plan, cannot be assigned
+                    Grandfathered plan, cannot be assigned
                   </option>
                 )}
               </select>

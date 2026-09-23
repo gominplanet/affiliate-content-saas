@@ -36,7 +36,7 @@
 // carries `total` and `totalAll` separately.
 
 import { readFileSync } from 'node:fs'
-import { TIERS, type Tier } from '../lib/tier'
+import { TIERS, SELLABLE_TIERS, type Tier } from '../lib/tier'
 import { PAID_TIERS, inSegment, segmentOptions } from '../lib/admin-segments'
 
 const failures: string[] = []
@@ -82,18 +82,38 @@ const live = (src: string) => src
   check('the audience list is built, not typed',
     ids.includes('all') && ids.includes('trial') && ids.includes('paid'),
     '')
-  for (const t of PAID_TIERS) {
+  // SUPPORTED IS NOT SHOWN. Every plan we sell gets its own chip; a frozen
+  // plan gets none, even though its subscribers are still in 'paid' above.
+  // The first version of this file REQUIRED a chip per PAID_TIER, which is
+  // how "Creator only" and "Studio only" reached two admin screens on the day
+  // the rest of the site was cleared of them. The operator's rule is that only
+  // Amazon and Pro are shown, anywhere.
+  for (const t of SELLABLE_TIERS) {
     check(`${TIERS[t].label} can be targeted on its own`,
       ids.includes(t),
-      'a segment with no button is a segment that does not exist')
+      'a plan we sell with no button is a segment that does not exist')
   }
-  // The label on the "All paid" button WAS the visible half of the bug.
+  for (const t of PAID_TIERS.filter((x) => !SELLABLE_TIERS.includes(x))) {
+    check(`${TIERS[t].label} has no chip of its own`,
+      !ids.includes(t),
+      'a frozen plan is supported, not shown')
+  }
+  // The label on the "All paid" button was the visible half of the Amazon
+  // bug, so it still has to be honest about who it reaches: grandfathered
+  // subscribers included. It just must not do that by NAMING them.
   const paid = opts.find((o) => o.id === 'paid')!
-  for (const t of PAID_TIERS) {
-    check(`the paid hint names ${TIERS[t].label}`,
-      paid.hint.includes(TIERS[t].label),
-      `hint reads "${paid.hint}" — it described a segment that skipped them`)
+  check('the paid hint says grandfathered subscribers are included',
+    /grandfathered/i.test(paid.hint),
+    `hint reads "${paid.hint}" — the reader has to know who an "all paid" email reaches`)
+  for (const t of PAID_TIERS.filter((x) => !SELLABLE_TIERS.includes(x))) {
+    check(`and does it without naming ${TIERS[t].label}`,
+      !paid.hint.includes(TIERS[t].label),
+      `hint reads "${paid.hint}"`)
   }
+  check('no option anywhere names a frozen plan',
+    opts.every((o) => PAID_TIERS.filter((x) => !SELLABLE_TIERS.includes(x))
+      .every((t) => !o.label.includes(TIERS[t].label) && !o.hint.includes(TIERS[t].label))),
+    'the frozen-plan sweep cannot see these: every label is interpolated from TIERS')
   check('every option has a hint that is not its own label',
     opts.every((o) => o.hint.trim().length > 0 && o.hint !== o.label), '')
 }

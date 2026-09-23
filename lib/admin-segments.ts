@@ -24,7 +24,7 @@
 // the one place the omission was visible to a human, in a form nobody reads
 // as a list of who is excluded.
 
-import { TIERS, type Tier } from '@/lib/tier'
+import { TIERS, SELLABLE_TIERS, type Tier } from '@/lib/tier'
 
 /** Never in any segment. Staff accounts are not an audience. */
 export const NEVER_MAIL: readonly Tier[] = ['admin'] as const
@@ -51,13 +51,30 @@ export function inSegment(tier: string, segment: Segment): boolean {
 }
 
 /** The audience picker, built from the plans that exist. */
+/** The audience picker, built from the plans that exist.
+ *
+ *  SUPPORTED IS NOT THE SAME AS SHOWN, and this function is where the two
+ *  come apart on purpose.
+ *
+ *  Creator and Studio are frozen. Their subscribers are still billed, still
+ *  mapped by the webhook, and still in the 'paid' segment above: an email to
+ *  paying customers has to reach them, or this is the Amazon bug again with
+ *  different victims. What they no longer get is a BUTTON. The picker offers
+ *  one chip per plan we sell and nothing else, and the "All paid" hint says
+ *  who it reaches without naming a plan nobody can buy. The operator's rule:
+ *  only Amazon and Pro are shown, anywhere, going forward.
+ *
+ *  An earlier version of this built a chip for every PAID_TIER, which put
+ *  "Creator only" and "Studio only" on two admin screens the same day the
+ *  rest of the site was cleared of them. Nothing flagged it, because every
+ *  label here is interpolated from TIERS and the frozen-plan sweep looks for
+ *  the words, not the shape that produces them. */
 export function segmentOptions(): { id: Segment; label: string; hint: string }[] {
-  const paidLabels = PAID_TIERS.map((t) => TIERS[t].label).join(' + ')
   return [
     { id: 'all', label: 'All users', hint: 'Everyone except admin accounts' },
     { id: 'trial', label: 'Trial only', hint: 'Free accounts, including signups with no plan row yet' },
-    { id: 'paid', label: 'All paid', hint: paidLabels },
-    ...PAID_TIERS.map((t) => ({
+    { id: 'paid', label: 'All paid', hint: 'Every paying subscriber, grandfathered plans included' },
+    ...SELLABLE_TIERS.map((t) => ({
       id: t as Segment,
       label: `${TIERS[t].label} only`,
       hint: `$${(TIERS[t] as { price?: number }).price}/mo subscribers`,

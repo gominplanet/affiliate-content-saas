@@ -29,12 +29,20 @@ import { normalizeTier, TIERS, type Tier } from '@/lib/tier'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// THE PLANS WE SELL, AND ONLY THOSE.
+//
+// This reported Creator and Studio as priced plans beside Amazon and Pro, and
+// one revision even went out of its way to compare Creator against $49. Both
+// are frozen: nothing on the site shows them, so there is no advertised price
+// for Stripe to disagree with, and a "matches: true" row for a plan nobody can
+// buy is noise on the one report that has to be read at a glance.
+//
+// Their subscribers are still fully supported. The webhook maps their price
+// ids through PRICE_ID_LIST in lib/stripe, which is untouched; this route
+// just stops presenting them as part of the pricing.
 const KEYS = [
-  'STRIPE_PRICE_CREATOR',
-  'STRIPE_PRICE_STARTER',
-  'STRIPE_PRICE_STUDIO',
-  'STRIPE_PRICE_PRO',
   'STRIPE_PRICE_AMAZON',
+  'STRIPE_PRICE_PRO',
 ] as const
 
 const isValid = (v?: string) => typeof v === 'string' && /^price_[A-Za-z0-9]+$/.test(v.trim())
@@ -77,8 +85,6 @@ export async function GET() {
   // report, because the report is what someone opens when something is already
   // wrong. A price that cannot be read says so rather than reading as agreeing.
   const TIER_FOR: Partial<Record<(typeof KEYS)[number], Tier>> = {
-    STRIPE_PRICE_CREATOR: 'creator',
-    STRIPE_PRICE_STUDIO: 'studio',
     STRIPE_PRICE_PRO: 'pro',
     STRIPE_PRICE_AMAZON: 'amazon',
   }
@@ -93,16 +99,10 @@ export async function GET() {
     const tier = TIER_FOR[k]
     if (!tier) continue
     // THE ID CHECKOUT ACTUALLY USES, not a fresh read of the env var.
-    //
-    // This read process.env[k] directly, while lib/stripe resolves Creator as
-    // STRIPE_PRICE_CREATOR ?? STRIPE_PRICE_STARTER. With only STARTER set in
-    // production, the report said Creator had "no price id set" and marked it
-    // unchecked, for a price the webhook maps and every grandfathered Creator
-    // subscriber is billed on. Two wrong answers in one row: it implied those
-    // subscribers were unmapped, and it never compared their real price to the
-    // advertised $49, which is the one thing this route exists to do.
-    // Resolving through PRICE_ID_LIST makes the diagnostic check the same id
-    // checkout charges, by construction.
+    // Reading process.env[k] directly once disagreed with lib/stripe about
+    // which id was real (it resolves some tiers through a fallback variable),
+    // so the report called a billed price "not set". Resolving through
+    // PRICE_ID_LIST checks the same id checkout charges, by construction.
     const first = PRICE_ID_LIST[tier as keyof typeof PRICE_ID_LIST]?.[0]
     const expectedUsd = (TIERS[tier] as { price?: number }).price ?? null
     if (!first || !stripe) {

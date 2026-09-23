@@ -339,6 +339,18 @@ const live = (src: string) => decomment(src)
     /PRICE_ID_LIST\[tier as keyof typeof PRICE_ID_LIST\]\?\.\[0\]/.test(decomment(CHECK))
     && !/const first = priceIdsFor\(process\.env\[k\]\)\[0\]/.test(decomment(CHECK)),
     'a diagnostic that reads a different id from the one billed can agree with itself and still be wrong')
+  // THE PRICE CHECK COVERS WHAT WE SELL. It listed Creator and Studio as
+  // priced plans, and one revision compared Creator against $49 on purpose.
+  // Frozen plans have no advertised price to be wrong about, and their
+  // subscribers are mapped in lib/stripe, which this does not touch.
+  const keysBlock = decomment(CHECK).slice(decomment(CHECK).indexOf('const KEYS = ['), decomment(CHECK).indexOf('] as const'))
+  check('the price check reports only the plans we sell',
+    !/CREATOR|STUDIO|STARTER/.test(keysBlock) && /STRIPE_PRICE_AMAZON/.test(keysBlock) && /STRIPE_PRICE_PRO/.test(keysBlock),
+    'a "matches: true" row for a plan nobody can buy is noise on the report that has to be read at a glance')
+  check('and the webhook mapping that supports them is left alone',
+    /STRIPE_PRICE_CREATOR \?\? process\.env\.STRIPE_PRICE_STARTER/.test(read('lib/stripe.ts'))
+    && /studio:\s+\[\.\.\.priceIdsFor\(process\.env\.STRIPE_PRICE_STUDIO\)/.test(read('lib/stripe.ts')),
+    'not shown is not unsupported: grandfathered subscribers must still map to their plan')
   check('and the packs are compared against what Stripe charges',
     /CREDIT_BLOCKS/.test(CHECK) && /cfg\.usd/.test(CHECK),
     'a Stripe price is immutable, so nothing in the repo changes when one is repointed: only fetching it can see the gap')
