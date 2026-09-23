@@ -849,7 +849,9 @@ export default function LaunchBoard() {
               screen has to say so rather than let a creator assume. */}
           <p className="text-[12.5px] px-3 py-2 rounded-lg" style={{ ...muted, background: 'var(--surface-hover)' }}>
             This is the <strong style={text}>YouTube</strong> schedule. Each video goes up private and
-            YouTube makes it public at the time you pick.
+            YouTube makes it public at the time you pick. If a time passes before its video has finished
+            uploading, it stays private and its row asks you for a new time. Nothing goes public that you
+            did not choose.
             {batch.markets.length > 0 && (
               <> Your <strong style={text}>Amazon</strong> storefronts are not on a schedule: each listing
                 goes up as soon as its translation and dub are done.</>
@@ -1217,7 +1219,11 @@ export default function LaunchBoard() {
                     creator can fix, and until now the only way to act on that
                     was deleting the video and starting again, which throws
                     away a finished render and two thumbnails. */}
-                {it.state === 'blocked' && (
+                {/* NOT for a video kept private after a missed slot. Retrying
+                    it would reach the same past time and keep it private
+                    again; what it needs is a new time, which is set in
+                    YouTube Studio, and the Open link beside it goes there. */}
+                {it.state === 'blocked' && !/^Kept private\./.test(it.reason || '') && (
                   <button onClick={() => void retryItem(it.id)} disabled={busy === 'batch'}
                     className="text-[11.5px] px-2.5 py-1 rounded-lg border shrink-0 disabled:opacity-50"
                     style={{ borderColor: '#d97706', color: '#d97706' }}>

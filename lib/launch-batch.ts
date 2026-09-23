@@ -572,6 +572,10 @@ export function itemStateLabel(state: ItemState): string {
 export function itemProgressLabel(i: {
   state: ItemState; planned_publish_at?: string | null; publish_tries?: number | null; reason?: string | null
 }): string {
+  // ON THE CHANNEL, PRIVATE, WAITING FOR A TIME. Not "Cannot go": it went,
+  // and the uploader deliberately did not make it public because its slot
+  // passed before it was ready.
+  if (i.state === 'blocked' && /^Kept private\./.test(String(i.reason ?? ''))) return 'On YouTube, kept private'
   if (i.state === 'prepared' && i.planned_publish_at) {
     if (/^Attempt \d+ of \d+ is running now\.$/.test(String(i.reason ?? ''))) return 'Uploading to YouTube'
     if (Number(i.publish_tries ?? 0) > 0) return 'Upload will be tried again'
@@ -643,14 +647,17 @@ export function launchOutcome(items: {
   // old panel managed to be green while nothing had published.
   let tone: LaunchOutcome['tone'] = 'good'
   let headline = ''
+  // "COULD NOT GO" IS NOT TRUE OF EVERY BLOCKED ROW any more. A video kept
+  // private after its slot passed is on the channel. What is true of every
+  // blocked row is that it needs the creator, so that is what is said.
   if (blocked > 0 && onYouTube === 0) {
     tone = 'warn'
     headline = total === 1
-      ? 'This one could not go to YouTube.'
-      : `None of these reached YouTube. ${blocked} stopped with a reason below.`
+      ? 'This one needs you. The reason is below.'
+      : `None of these went public on their own. ${blocked} ${blocked === 1 ? 'needs' : 'need'} you, with the reason below.`
   } else if (blocked > 0) {
     tone = 'warn'
-    headline = `${onYouTube} of ${total} on YouTube. ${blocked} could not go.`
+    headline = `${onYouTube} of ${total} on YouTube. ${blocked} ${blocked === 1 ? 'needs' : 'need'} you, with the reason below.`
   } else if (working > 0) {
     tone = 'busy'
     const allQueued = queued === working

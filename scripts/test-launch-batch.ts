@@ -186,7 +186,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // immediately was added, which is why this reads the ternary.
   check('the worker sets publish_at only after YouTube confirms',
     DRAIN.indexOf('updateVideoStatus') > -1
-    && DRAIN.indexOf('updateVideoStatus') < DRAIN.indexOf("goNow ? 'published' : 'scheduled'"),
+    && DRAIN.indexOf('updateVideoStatus') < DRAIN.indexOf("goNow ? 'published' : missed ? 'blocked' : 'scheduled'"),
     'writing it first would promise a publication that never happened')
   check('and the two columns are kept apart in the schema',
     /planned_publish_at/.test(M358) && /publish_at\s+timestamptz/.test(M357),
@@ -227,7 +227,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and the schedule is a separate confirmed call',
     /updateVideoStatus\(videoId, \{/.test(DRAIN) && /publishAt: String\(it\.planned_publish_at\)/.test(DRAIN))
   check('which is skipped only for the ones going out now',
-    /if \(!goNow\) \{[\s\S]{0,120}?updateVideoStatus/.test(DRAIN),
+    /if \(!goNow && !missed\) \{[\s\S]{0,120}?updateVideoStatus/.test(DRAIN),
     'calling it with a past time fails every single time')
   check('one video per firing',
     /const PUBLISHES = 1/.test(DRAIN),
@@ -938,11 +938,44 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // PUBLISHED AND SCHEDULED ARE DIFFERENT FACTS, and this row has kept them
   // apart from the start.
   check('a video that went now is published, not scheduled',
-    /state: goNow \? 'published' : 'scheduled'/.test(DRAIN),
+    /state: goNow \? 'published' : missed \? 'blocked' : 'scheduled'/.test(DRAIN),
     'a board promising a future publication for a video already on the channel')
   check('and it records when it actually went',
-    /publish_at: goNow \? stamp\(\) : it\.planned_publish_at/.test(DRAIN),
+    /publish_at: goNow \? stamp\(\) : missed \? null : it\.planned_publish_at/.test(DRAIN),
     'writing this morning’s slot at two in the afternoon is the plan reported as the result')
+
+  // ── NOTHING GOES PUBLIC THAT NOBODY CHOSE ─────────────────────────────
+  //
+  // THE CLOCK DECIDED, and published a video on a real channel. LACES STAY
+  // PUT was set for 17:00 and Launch was pressed while 17:00 was still ahead;
+  // the uploader reached it at 18:09, saw a past time, read that as "now",
+  // and uploaded it public. Nobody had been told, because at the press there
+  // was nothing to warn about. "Now" is a decision only if it was true when
+  // the creator made it, so the launch route records it and the uploader
+  // reads that instead of the clock.
+  check('going public now needs the creator\'s agreement, not just a past time',
+    /const goNow = due && agreedNow\.has\(it\.id\)/.test(DRAIN)
+    && !/const goNow = new Date\(String\(it\.planned_publish_at\)\)\.getTime\(\) <= Date\.now\(\)/.test(DRAIN),
+    'reading the clock at upload time publishes a slot that merely passed while the video was queued')
+  check('the launch route records which ones were agreed, at the press',
+    /\.update\(\{ publish_now: true \}\)\.in\('id', nowIds\)/.test(LAUNCH)
+    && /const nowIds = immediate\.map/.test(LAUNCH),
+    'the press is the only moment "now" is true')
+  // FAILS SAFE. Before migration 365 the column does not exist; if reading it
+  // failed the whole upload loop, nothing would upload, and if it defaulted
+  // to "agreed", everything overdue would go public.
+  check('a missing publish_now column means nothing is treated as agreed',
+    /const agreedNow = new Set<string>\(\)[\s\S]{0,400}?if \(!nowErr\) for/.test(DRAIN), '')
+  check('and the launch reply only promises "now" when it was recorded',
+    /goingOutNow: publishNowRecorded \? immediate\.length : 0/.test(LAUNCH), '')
+  check('a missed slot stays private and the row says what to do',
+    /reason: missed\s*\n?\s*\? `Kept private\./.test(DRAIN) && /YouTube Studio/.test(DRAIN), '')
+  check('and it is not offered a Try again that would miss the same slot',
+    /it\.state === 'blocked' && !\/\^Kept private\\\.\/\.test/.test(BOARD), '')
+  const M365 = read('supabase/migrations/365_launch_item_publish_now.sql')
+  check('publish_now defaults to false',
+    /publish_now boolean not null default false/.test(M365),
+    'a default of true would publish every overdue video')
 
   // THE SCREEN SAYS SO BEFORE THE BUTTON. Going public cannot be undone.
   check('the preview says which go out immediately',
@@ -1516,7 +1549,10 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     { state: 'scheduled', video_id: 'v1' }, { state: 'blocked' }, { state: 'rendering' },
   ])
   check('a mixed batch leads with the ones that stopped',
-    mixed.tone === 'warn' && /1 could not go/.test(mixed.headline),
+    // "needs you", not "could not go": a video kept private after a missed
+    // slot is on the channel, so "could not go" is no longer true of every
+    // blocked row, and "needs you" is.
+    mixed.tone === 'warn' && /1 needs you/.test(mixed.headline),
     `read: ${mixed.headline}`)
 
   const working = launchOutcome([{ state: 'rendering' }, { state: 'prepared' }])

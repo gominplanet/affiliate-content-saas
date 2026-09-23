@@ -138,6 +138,25 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }).eq('id', ready[i].id).eq('user_id', user.id)
   }
 
+  // ── WHICH ONES YOU AGREED TO SEND NOW ─────────────────────────────────────
+  //
+  // Recorded at the moment of the press, because that is the only moment it
+  // is true. A time that has gone NOW is one the page warned about before the
+  // button; a time that goes by later, while the video waits in the queue,
+  // is a slot the uploader missed, and the uploader used to publish those too.
+  //
+  // A separate write that is allowed to fail: before migration 365 the column
+  // does not exist, and the failure mode is the safe one. Nothing is marked,
+  // so nothing goes public unasked; a video in this list is kept private and
+  // its row says why.
+  const nowIds = immediate.map((p) => p.id)
+  let publishNowRecorded = true
+  if (nowIds.length > 0) {
+    const { error: nowErr } = await sb.from('launch_items')
+      .update({ publish_now: true }).in('id', nowIds).eq('user_id', user.id)
+    if (nowErr) publishNowRecorded = false
+  }
+
   await sb.from('launch_batches')
     .update({ state: 'launching', updated_at: now }).eq('id', id).eq('user_id', user.id)
 
@@ -148,7 +167,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     cadence: cadenceLabel(batch.daily_slots),
     // SAID BACK, not assumed. A creator who picked today should be told which
     // of their videos is going out this minute rather than discovering it.
-    goingOutNow: immediate.length,
+    // Only a promise when it was recorded. Otherwise these are kept private,
+    // and saying "going out now" would be the plan reported as the result.
+    goingOutNow: publishNowRecorded ? immediate.length : 0,
     // Earliest and latest by TIME, not by batch position: with each video on
     // its own date, video 1 is not necessarily the first to go out.
     firstAt: planned.length ? new Date(Math.min(...planned.map((p) => p.at.getTime()))).toISOString() : null,

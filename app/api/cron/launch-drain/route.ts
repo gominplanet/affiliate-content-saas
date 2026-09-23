@@ -549,6 +549,22 @@ async function styledThumbnail(
  * video, so the Amazon half is the same standing grid everything else uses
  * rather than a second pipeline nobody maintains.
  */
+/** A missed slot in plain words, in the creator's own zone. Their 17:00 read
+ *  back as "21:00 UTC" would look like a second mistake on top of the first. */
+function missedWhen(iso: string, timezone: string | null): string {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return 'the time you picked'
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone || 'UTC', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(d)
+  } catch {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'UTC', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(d) + ' UTC'
+  }
+}
+
 async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }> {
   const { data: rows } = await sb.from('launch_items')
     .select('id,user_id,batch_id,position,title,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason,youtube_video_id')
@@ -556,6 +572,17 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
     .order('planned_publish_at', { ascending: true }).limit(PUBLISHES * 4)
   const items = rows ?? []
   if (items.length === 0) return { scheduled: 0, failed: 0 }
+
+  // WHICH OF THESE THE CREATOR AGREED TO SEND NOW (migration 365). Read on its
+  // own so that a missing column cannot stop every upload: on any error the
+  // set is empty, which means nothing goes public unasked. A video whose time
+  // has gone and is not in this set is kept private and flagged.
+  const agreedNow = new Set<string>()
+  {
+    const { data: nowRows, error: nowErr } = await sb.from('launch_items')
+      .select('id').in('id', items.map((i: { id: string }) => i.id)).eq('publish_now', true)
+    if (!nowErr) for (const r of (nowRows ?? []) as Array<{ id: string }>) agreedNow.add(r.id)
+  }
 
   let scheduled = 0, failed = 0
   let budget = PUBLISHES
@@ -618,18 +645,29 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
 
       const yt = new YouTubeOAuthService(token)
 
-      // ── NOW, OR AT ITS MOMENT ────────────────────────────────────────────
+      // ── NOW, AT ITS MOMENT, OR NOT AT ALL ────────────────────────────────
       //
-      // A planned time that has already gone means the creator asked for this
-      // one to go out now: they picked today and pressed Launch. YouTube
-      // refuses a publishAt in the past, so "now" cannot be said that way at
-      // all. It is said by uploading public instead, which is the same thing
-      // in the form the API accepts.
+      // THIS USED TO READ THE CLOCK, and that published a video nobody asked
+      // to publish. A creator set LACES STAY PUT for today at 17:00 and
+      // pressed Launch while 17:00 was still ahead. The uploader reached it at
+      // 18:09, saw a time in the past, decided that meant "now", and put it on
+      // their channel publicly. At no point had anybody been told.
       //
-      // Everything else uploads PRIVATE first. Uploading public and scheduling
-      // afterwards would put the video on the channel for however long the
-      // second call takes.
-      const goNow = new Date(String(it.planned_publish_at)).getTime() <= Date.now()
+      // "Now" is only a decision if it was true when the creator decided. The
+      // launch route records exactly those videos (migration 365), the ones
+      // the page warned about before the button. So:
+      //
+      //   agreed and due   upload PUBLIC. YouTube refuses a publishAt in the
+      //                    past, so "now" is said by uploading public.
+      //   due, not agreed  a slot we missed. Upload PRIVATE with no time, and
+      //                    the row asks for a new one. Nothing goes public
+      //                    unless somebody chose it.
+      //   not due          upload PRIVATE, then set the time. Uploading public
+      //                    and scheduling afterwards would put it on the
+      //                    channel for however long the second call takes.
+      const due = new Date(String(it.planned_publish_at)).getTime() <= Date.now()
+      const goNow = due && agreedNow.has(it.id)
+      const missed = due && !goNow
 
       // ── THE UPLOAD HAPPENS ONCE, EVER ────────────────────────────────────
       //
@@ -677,7 +715,14 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
           .update({ youtube_video_id: videoId, updated_at: stamp() }).eq('id', it.id)
       }
 
-      if (!goNow) {
+      // The batch's zone, only when it is needed for the kept-private note.
+      let missedZone: string | null = null
+      if (missed) {
+        const { data: zb } = await sb.from('launch_batches').select('timezone').eq('id', it.batch_id).maybeSingle()
+        missedZone = zb?.timezone ?? null
+      }
+
+      if (!goNow && !missed) {
         // THE SCHEDULE ITSELF, and its result is what decides whether this row
         // may call itself scheduled. A failure here is now said in the terms
         // that matter to somebody looking at their channel: the video is on it.
@@ -728,17 +773,25 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
         // facts and the row has always kept them apart; collapsing them here
         // would have the board promising a future publication for a video that
         // is already on the channel.
-        state: goNow ? 'published' : 'scheduled',
+        // A MISSED SLOT IS NOT A SCHEDULE. It is on the channel, private, with
+        // no publish time, and the row says so and says what to do. Calling it
+        // 'scheduled' would promise a publication nothing has arranged.
+        state: goNow ? 'published' : missed ? 'blocked' : 'scheduled',
         youtube_video_id: videoId,
         // THE MOMENT IT ACTUALLY WENT, not the slot that had gone by. A row
         // saying it published at nine this morning, written at two in the
         // afternoon, is the plan reported as the result.
-        publish_at: goNow ? stamp() : it.planned_publish_at,
-        reason: null,
+        publish_at: goNow ? stamp() : missed ? null : it.planned_publish_at,
+        reason: missed
+          ? `Kept private. Its time, ${missedWhen(String(it.planned_publish_at), missedZone)}, passed while it was still waiting to upload, so it was not made public. Set a publish time for it in YouTube Studio.`
+          : null,
         updated_at: stamp(),
       }).eq('id', it.id)
 
       const handed = await handOverToAmazon(sb, it, videoId, channelId, goNow ? stamp() : it.planned_publish_at)
+      // Not overwriting the kept-private note with a hand-over note: the
+      // private one is the thing the creator has to act on.
+      if (missed && !handed.ok) { scheduled++; continue }
       await noteHandOver(sb, it.id, handed)
       scheduled++
     } catch (e) {
