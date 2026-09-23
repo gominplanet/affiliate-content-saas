@@ -225,6 +225,11 @@ formats them for email.
 - Pro: ${proNewsletter()}
 
 ### Legacy Creator grandfathering
+NOT A PLAN ON SALE. Creator and Studio are frozen: checkout refuses both
+and no screen offers them. Never suggest either as an upgrade; the only
+plans anyone can buy are Free Trial, Amazon and Pro. This section exists
+so that if an EXISTING Creator subscriber asks why their numbers differ,
+the answer is right rather than absent.
 Creator users who were paying when the cap was lowered (2026-06-04)
 keep the OLD numbers: 1,000 subs + 4 sends/month. A grandfather banner
 on /newsletter and /billing explains this. Cancel + re-subscribe = new

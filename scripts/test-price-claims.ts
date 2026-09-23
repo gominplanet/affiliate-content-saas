@@ -226,6 +226,63 @@ const live = (src: string) => decomment(src)
     `sellable: ${SELLABLE_TIERS.join(', ')}`)
 }
 
+// ── every priced surface offers exactly the plans we sell ──────────────────
+//
+// Seb's rule, stated plainly: the pricing structure anywhere should only
+// represent what is active, which is Free Trial, Amazon and Pro.
+//
+// The plan cards followed it already. The BUNDLE MATH on /pricing did not:
+// "MVP Studio · $99 / mo replaces this stack", with seven tools, a total and
+// a saving, for a plan checkout refuses outright. It was the last screen on
+// the site pricing a frozen tier, and it is the worst place for one, because
+// a reader that section convinces then goes looking for a card that is not
+// there.
+//
+// Both cards are keyed by tier and filtered through SELLABLE_TIERS now, so a
+// plan that stops being sellable loses its bundle card in the same commit
+// rather than the next time somebody scrolls that far.
+{
+  const PRICING = read('app/pricing/page.tsx')
+  const shown = decomment(PRICING)
+
+  check('the bundle cards are built from SELLABLE_TIERS',
+    /SELLABLE_TIERS\s*\n?\s*\.filter\(\(t\) => BUNDLE_STACKS\[t\]\)/.test(shown),
+    'a hand-written pair of cards is how Studio kept a price after losing its buy button')
+  check('and no frozen tier has a stack at all',
+    !/^\s*(?:creator|studio):\s*\[/m.test(shown),
+    'filtered out at render still leaves the numbers sitting in the file for the next person to re-enable')
+
+  // THE TOTALS ARE SUMMED. They were typed: $280/$181 and $585/$386, all four
+  // correct on the day they were written, which is the same arrangement that
+  // had the ad destination advertising $79 against a $99 charge.
+  check('the total replaced is summed from the stack',
+    /stack\.reduce\(\(n, \[, usd\]\) => n \+ usd, 0\)/.test(shown),
+    'a typed total beside a list that moved is a sum a reader can do faster than we can')
+  check('and the saving is that total minus the real plan price',
+    /const saving = replaced - TIERS\[tier\]\.price/.test(shown),
+    'the one number on the card a prospect checks against the card above it')
+  check('neither total is typed any more',
+    !/\$280\/mo/.test(shown) && !/\$181\/mo/.test(shown)
+    && !/\$585\/mo/.test(shown) && !/\$386\/mo/.test(shown), '')
+
+  // AND THE AMAZON STACK STAYS HONEST. That plan has postsPerMonth 0 and no
+  // newsletter, so padding it with an AI writer, an SEO tool or Beehiiv would
+  // inflate a saving with tools it does not replace. Four real ones and $39
+  // is the weaker pitch and the true one.
+  const amazonStack = shown.slice(shown.indexOf('  amazon: ['), shown.indexOf('  pro: ['))
+  check('the Amazon stack claims no blog or newsletter tool',
+    !/AI writer|SEO|Beehiiv|newsletter/i.test(amazonStack),
+    `this plan writes no posts (postsPerMonth ${TIERS.amazon.postsPerMonth}) and has no newsletter`)
+  check('and it names nothing the Pro stack does not also name',
+    [...amazonStack.matchAll(/\['([^']+)',/g)].map((m) => m[1])
+      .every((tool) => shown.slice(shown.indexOf('  pro: [')).includes(`['${tool}',`)),
+    'a tool invented to pad this card is a competitor price nobody checked')
+
+  check('the footnote puts no year in the copy',
+    !/\bas of 20\d{2}\b/.test(shown),
+    'a year in a copy string dates the page the day the year turns')
+}
+
 // ── the credit packs have one price, and it is checkable ───────────────────
 {
   const STAGE = read('components/launchpad/StorefrontStage.tsx')

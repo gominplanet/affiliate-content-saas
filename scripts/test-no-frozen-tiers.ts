@@ -56,6 +56,27 @@ const PLAN_SHAPE = new RegExp(
     String.raw`\b(?:Creator|Studio)\s*:\s*\d`,
     String.raw`\bon\s+(?:Studio|Creator)\b`,
     String.raw`(?:Amazon|,)\s*,?\s*(?:Studio|Creator)\s*,?\s*and\s+Pro`,
+    // ── THE SHAPES /tour WROTE, WHICH NONE OF THE ABOVE CAUGHT ────────────
+    //
+    // The public product tour described MVP as Creator / Studio / Pro for
+    // months after both were frozen: which networks each one unlocked, which
+    // caps Pro beat, and an "why Pro" close that opened "Creator-tier MVP
+    // gets you the writer." It taught a reader the shape of a product they
+    // cannot buy, and it slipped past every pattern above because it used
+    // ordinary prose instead of the phrases somebody thought to list.
+    //
+    // "Creator and Studio offer" — two plan names joined by a bare `and`,
+    // where the separator patterns above all expect a comma or a bullet.
+    String.raw`\b(?:Creator|Studio)\s+and\s+(?:Studio|Creator|Pro)\b`,
+    // "Studio adds Pinterest", "Creator auto-posts to Facebook" — a plan name
+    // as the SUBJECT of a verb, which is the plainest way to describe what a
+    // plan does and was the one shape with no rule at all.
+    String.raw`\b(?:Creator|Studio)\s+(?:adds|includes|gets|unlocks|auto-posts|lifts|offers?|covers?)\b`,
+    // "Creator-tier MVP gets you the writer."
+    String.raw`\b(?:Creator|Studio)-tier\b`,
+    // "lower tiers", "what Creator and Studio offer": a comparison against the
+    // plans below, on a product whose only plans are Free, Amazon and Pro.
+    String.raw`\b(?:Creator|Studio)\s+(?:users?|subscribers?|accounts?|customers?)\b`,
   ].join('|'),
   'i',
 )
@@ -72,6 +93,13 @@ const PLAN_SHAPE = new RegExp(
  */
 const EXEMPT = new Map<string, string>([
   ['components/newsletter/LegacyCapsNotice.tsx', 'shown only to grandfathered Creator subscribers, about their own plan'],
+  // The assistant's own reference doc. Its Creator section is headed "Legacy
+  // Creator grandfathering" and opens "NOT A PLAN ON SALE … never suggest
+  // either as an upgrade", so it exists to stop the assistant recommending a
+  // frozen plan rather than to recommend one. Deleting it would leave the
+  // five grandfathered subscribers with an assistant that cannot explain why
+  // their caps differ, which is the question only they can ask.
+  ['lib/assistant-features-doc.ts', 'tells the assistant these plans are unsellable, for the subscribers already on them'],
 ])
 
 const ROOTS = ['app', 'components', 'lib', 'services']

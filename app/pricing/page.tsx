@@ -20,7 +20,7 @@ import { CheckoutButton } from './CheckoutButton'
 import { annualOfferFor } from '@/lib/stripe'
 import MetaTrack from '@/components/analytics/MetaTrack'
 import { TrackPicker, TrackCompare } from '@/components/pricing/TrackPicker'
-import { TIERS } from '@/lib/tier'
+import { TIERS, SELLABLE_TIERS, type Tier } from '@/lib/tier'
 
 export const metadata: Metadata = { title: 'Pricing · MVP Affiliate' }
 
@@ -51,6 +51,57 @@ const PLAN_GRID: Record<number, string> = {
   3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl',
   4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 max-w-6xl',
 }
+
+// ── what each plan replaces ────────────────────────────────────────────────
+//
+// Keyed by tier and filtered through SELLABLE_TIERS, so a frozen plan cannot
+// keep a bundle card after its buy button is gone. That is exactly what
+// happened to Studio: its card disappeared from the grid above on
+// 2026-09-15 and its bundle card stayed, pricing a plan checkout refuses.
+//
+// Prices are each tool's own published price at the equivalent feature tier,
+// which is why they are literals here and nowhere else on this page: they are
+// somebody else's numbers and nothing in this repo can derive them. Ours are
+// read from TIERS, and both the total and the saving are summed at render.
+const BUNDLE_STACKS: Partial<Record<Tier, [string, number][]>> = {
+  // The storefront stack. No AI writer, no SEO tool and no newsletter,
+  // because this plan does not write blog posts (postsPerMonth is 0) and has
+  // no newsletter, so it does not replace them.
+  amazon: [
+    ['thumbnailcreator.com (Creator)', 41],
+    ['Jungle Scout (product research)', 49],
+    ['Price history & deal tracking', 19],
+    ['Lasso Pro (affiliate analytics)', 29],
+  ],
+  pro: [
+    ['Cuppa Studio (multi-niche AI writer)', 199],
+    ['Jungle Scout (product research)', 49],
+    ['Helium 10 (product + keyword research)', 79],
+    ['Price history & deal tracking', 19],
+    ['Frase (SEO research + content briefs)', 97],
+    ['thumbnailcreator.com (Creator)', 41],
+    ['OpusClip Pro (vertical clips)', 29],
+    ['Beehiiv Scale (newsletter)', 43],
+    ['Lasso Pro (affiliate analytics)', 29],
+  ],
+}
+
+const BUNDLES = SELLABLE_TIERS
+  .filter((t) => BUNDLE_STACKS[t])
+  .map((t) => ({
+    tier: t,
+    stack: BUNDLE_STACKS[t] as [string, number][],
+    // The louder card is the one with the biggest real saving, rather than a
+    // plan named in a style attribute and left there through a repricing.
+    best: false,
+  }))
+  .map((b, _i, all) => ({
+    ...b,
+    best: b.tier === all.reduce((win, x) => {
+      const save = (y: typeof x) => y.stack.reduce((n, [, u]) => n + u, 0) - TIERS[y.tier].price
+      return save(x) > save(win) ? x : win
+    }, all[0]).tier,
+  }))
 
 const plans: PlanExt[] = [
   {
@@ -469,12 +520,29 @@ export default async function PricingPage({
       <TrackCompare className="mt-16" />
 
       {/* ───────────────────────────────────────────────────────────────────
-          Bundle math — the killer pitch. Show prospects exactly what MVP
-          replaces and what they save. Direct competitive numbers (real
-          published prices from research, not "premium tool"-style fluff).
-          Two rows: Studio + Pro. Trial / Creator users don't get bundle
-          math because their tier doesn't replace enough tools to be
-          meaningful — it's an honest framing, not a manipulative one.
+          Bundle math — what each plan replaces, in tools with published
+          prices, so a prospect can check it rather than take it.
+
+          THE CARDS ARE THE PLANS WE SELL. This was Studio + Pro. Studio has
+          been frozen since 2026-09-15: checkout calls isSellableTier and
+          refuses it, its card was pulled from the grid above, and this
+          section was the last screen on the site still pricing it. A bundle
+          argument for a plan nobody can buy is worse than no bundle argument,
+          because the reader who is convinced by it then cannot act on it.
+
+          So the stacks are keyed by tier and built from SELLABLE_TIERS, and
+          both totals are SUMMED rather than typed. The old ones were typed
+          ($280 / $181 and $585 / $386, all four correct on the day) which is
+          the same arrangement that had /amazon-influencer advertising $79
+          against a $99 charge: right until something moves, silent after.
+
+          THE AMAZON STACK IS DELIBERATELY SHORT. That plan does not write
+          blog posts (postsPerMonth is 0) and has no newsletter, so it does
+          not replace an AI writer, an SEO tool or Beehiiv, and padding it
+          with them would be the manipulative version of this section. Four
+          real tools and a $39 saving is a weaker pitch than Pro's, and it is
+          the true one. Every tool and price here already appeared in the Pro
+          stack below; nothing was invented to fill the card out.
           ─────────────────────────────────────────────────────────────── */}
       <section className="mt-16 w-full max-w-5xl">
         <div className="text-center mb-8">
@@ -485,90 +553,64 @@ export default async function PricingPage({
             One MVP plan replaces an entire stack
           </h2>
           <p className="mt-3 text-sm text-[#6e6e73] dark:text-[#ebebf0] max-w-xl mx-auto">
-            Other tools each do one thing. MVP does the whole pipeline from one YouTube video to
-            a blog, thumbnails, scripts, social posts, and a newsletter, all in your voice.
+            Other tools each do one thing. Amazon replaces the stack a storefront runs on;
+            Pro replaces that plus the whole pipeline from one video to a blog, scripts and
+            a newsletter, all in your voice.
           </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Studio bundle */}
-          <div className="rounded-2xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 shadow-sm p-7">
-            <div className="flex items-baseline justify-between mb-5">
-              <div>
-                <p className="text-xs font-semibold text-[#7C3AED] uppercase tracking-wide">MVP Studio · $99 / mo</p>
-                <p className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mt-0.5">replaces this stack:</p>
+          {BUNDLES.map(({ tier, stack, best }) => {
+            const replaced = stack.reduce((n, [, usd]) => n + usd, 0)
+            const saving = replaced - TIERS[tier].price
+            return (
+              <div
+                key={tier}
+                className={best
+                  ? 'rounded-2xl bg-gradient-to-br from-[#7C3AED]/[0.06] to-[#C026D3]/[0.04] dark:from-[#7C3AED]/15 dark:to-[#C026D3]/10 border border-[#7C3AED]/30 shadow-md p-7 relative overflow-hidden'
+                  : 'rounded-2xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 shadow-sm p-7'}
+              >
+                {best && (
+                  <div className="absolute top-3 right-3">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#7C3AED] text-white text-[10px] font-bold uppercase tracking-wider">
+                      Best deal
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-baseline justify-between mb-5">
+                  <div>
+                    <p className="text-xs font-semibold text-[#7C3AED] uppercase tracking-wide">
+                      MVP {TIERS[tier].label} · ${TIERS[tier].price} / mo
+                    </p>
+                    <p className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mt-0.5">replaces this stack:</p>
+                  </div>
+                </div>
+                <ul className="flex flex-col gap-2.5 mb-5 text-sm">
+                  {stack.map(([tool, usd]) => (
+                    <li
+                      key={tool}
+                      className={`flex items-baseline justify-between border-b border-dashed pb-1.5 ${best ? 'border-[#7C3AED]/15' : 'border-gray-200 dark:border-white/10'}`}
+                    >
+                      <span className="text-[#3a3a3c] dark:text-[#ebebf0]">{tool}</span>
+                      <span className="font-mono text-[#86868b] dark:text-[#8e8e93]">${usd}/mo</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex items-baseline justify-between text-sm font-semibold pt-1">
+                  <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Total replaced</span>
+                  <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">${replaced}/mo</span>
+                </div>
+                <div className={`mt-4 rounded-xl px-4 py-3 flex items-baseline justify-between ${best ? 'bg-[#34c759]/15 border border-[#34c759]/30' : 'bg-[#34c759]/10 border border-[#34c759]/25'}`}>
+                  <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">You save</span>
+                  <span className="font-mono text-lg font-bold text-[#34c759]">${saving}/mo</span>
+                </div>
               </div>
-            </div>
-            <ul className="flex flex-col gap-2.5 mb-5 text-sm">
-              {[
-                ['Cuppa Solo (AI blog writer)',           99],
-                ['Jungle Scout (product research)',        49],
-                ['Price history & deal tracking',  19],
-                ['thumbnailcreator.com (Creator)',         41],
-                ['OpusClip Pro (vertical clips)',          29],
-                ['Beehiiv Grow (newsletter)',              43],
-                ['Lasso Free (affiliate links)',            0],
-              ].map(([tool, price]) => (
-                <li key={tool as string} className="flex items-baseline justify-between border-b border-dashed border-gray-200 dark:border-white/10 pb-1.5">
-                  <span className="text-[#3a3a3c] dark:text-[#ebebf0]">{tool}</span>
-                  <span className="font-mono text-[#86868b] dark:text-[#8e8e93]">${price}/mo</span>
-                </li>
-              ))}
-            </ul>
-            <div className="flex items-baseline justify-between text-sm font-semibold pt-1">
-              <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Total replaced</span>
-              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">$280/mo</span>
-            </div>
-            <div className="mt-4 rounded-xl bg-[#34c759]/10 border border-[#34c759]/25 px-4 py-3 flex items-baseline justify-between">
-              <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">You save</span>
-              <span className="font-mono text-lg font-bold text-[#34c759]">$181/mo</span>
-            </div>
-          </div>
-
-          {/* Pro bundle — the bigger number */}
-          <div className="rounded-2xl bg-gradient-to-br from-[#7C3AED]/[0.06] to-[#C026D3]/[0.04] dark:from-[#7C3AED]/15 dark:to-[#C026D3]/10 border border-[#7C3AED]/30 shadow-md p-7 relative overflow-hidden">
-            <div className="absolute top-3 right-3">
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#7C3AED] text-white text-[10px] font-bold uppercase tracking-wider">
-                Best deal
-              </span>
-            </div>
-            <div className="flex items-baseline justify-between mb-5">
-              <div>
-                <p className="text-xs font-semibold text-[#7C3AED] uppercase tracking-wide">MVP Pro · $199 / mo</p>
-                <p className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mt-0.5">replaces this stack:</p>
-              </div>
-            </div>
-            <ul className="flex flex-col gap-2.5 mb-5 text-sm">
-              {[
-                ['Cuppa Studio (multi-niche AI writer)',  199],
-                ['Jungle Scout (product research)',        49],
-                ['Helium 10 (product + keyword research)', 79],
-                ['Price history & deal tracking',  19],
-                ['Frase (SEO research + content briefs)',  97],
-                ['thumbnailcreator.com (Creator)',         41],
-                ['OpusClip Pro (vertical clips)',          29],
-                ['Beehiiv Scale (newsletter)',             43],
-                ['Lasso Pro (affiliate analytics)',        29],
-              ].map(([tool, price]) => (
-                <li key={tool as string} className="flex items-baseline justify-between border-b border-dashed border-[#7C3AED]/15 pb-1.5">
-                  <span className="text-[#3a3a3c] dark:text-[#ebebf0]">{tool}</span>
-                  <span className="font-mono text-[#86868b] dark:text-[#8e8e93]">${price}/mo</span>
-                </li>
-              ))}
-            </ul>
-            <div className="flex items-baseline justify-between text-sm font-semibold pt-1">
-              <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Total replaced</span>
-              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">$585/mo</span>
-            </div>
-            <div className="mt-4 rounded-xl bg-[#34c759]/15 border border-[#34c759]/30 px-4 py-3 flex items-baseline justify-between">
-              <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">You save</span>
-              <span className="font-mono text-lg font-bold text-[#34c759]">$386/mo</span>
-            </div>
-          </div>
+            )
+          })}
         </div>
 
         <p className="text-center text-xs text-[#86868b] dark:text-[#8e8e93] mt-5 max-w-3xl mx-auto">
-          Pricing shown from each tool&apos;s public pricing page at the equivalent feature tier as of 2026. MVP also handles parts none of these do: fact-grounded blog, comparison &amp; buying-guide content built to rank, brand-pitch emails, a newsletter with list management, and the YouTube Co-Pilot metadata sync.
+          Each tool&apos;s own published price at the equivalent feature tier, so you can check every line. MVP also handles parts none of these do: fact-grounded blog, comparison &amp; buying-guide content built to rank, brand-pitch emails, a newsletter with list management, and the YouTube Co-Pilot metadata sync.
         </p>
       </section>
 

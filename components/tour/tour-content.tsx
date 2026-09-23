@@ -13,6 +13,19 @@
 // approved) — both are showcased in the "Social auto-posting" section.
 
 import Link from 'next/link'
+// EVERY PLAN NAME AND CAP ON THIS PAGE COMES FROM lib/tier.
+//
+// The tour described the product as Creator / Studio / Pro, listing which
+// social networks each one unlocked and which caps Pro beat. Creator and
+// Studio have been frozen since 2026-09-15 and checkout refuses both, so the
+// page was teaching a reader the shape of a product they cannot buy, and the
+// networks it attributed to them are on plans that are still sold.
+//
+// It survived the frozen-tier sweep because that guard matches plan-name
+// SHAPES ("Studio plan", "Upgrade to Creator", "Creator or Pro") and this
+// page wrote "Creator and Studio offer" and "Studio adds Pinterest", which
+// match none of them.
+import { TIERS } from '@/lib/tier'
 import {
   FileText, Youtube, Search, Mail, Handshake,
   Layers, Users, Plug, MessageSquare, Code, Sparkles, Share2,
@@ -121,7 +134,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             and adds a hero image. The post lands in your library like any other, ready to schedule or push to socials.
             The whole engine works whether your starting point is a video or a link.
           </p>
-          <h3>What Pro gets you here that lower tiers don&apos;t</h3>
+          <h3>What {TIERS.pro.label} adds on top of the {TIERS.amazon.label} plan</h3>
           <ul>
             <li>
               <strong>Comparison posts.</strong> Drop in 2–10 YouTube URLs of different products, MVP scrapes Amazon
@@ -139,8 +152,10 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               picker is built into every generation surface.
             </li>
             <li>
-              <strong>Higher generation caps.</strong> Pro lifts the monthly post + image + script limits well past what
-              Creator and Studio offer.
+              <strong>Higher generation caps.</strong> {TIERS.pro.postsPerMonth} posts and{' '}
+              {TIERS.pro.thumbnailsPerMonth} Art Director thumbnails a month, against{' '}
+              {TIERS.amazon.thumbnailsPerMonth} thumbnails and no blog posts on the{' '}
+              {TIERS.amazon.label} plan, which is built for the storefront rather than a site.
             </li>
           </ul>
           <h3>Built into every post, but worth knowing about</h3>
@@ -228,9 +243,8 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             You can fire each post manually from the Social Push tab, or let it ride your publish schedule.
           </p>
           <ul>
-            <li><strong>Creator</strong> auto-posts to Facebook, Threads, LinkedIn and Bluesky.</li>
-            <li><strong>Studio</strong> adds Pinterest, Instagram and Telegram on top.</li>
-            <li><strong>Pro</strong> adds X (Twitter) and TikTok.</li>
+            <li><strong>{TIERS.amazon.label}</strong> auto-posts to Facebook, Pinterest and Instagram, all three from one screen.</li>
+            <li><strong>{TIERS.pro.label}</strong> adds the rest: Threads, LinkedIn, Bluesky, Telegram, X (Twitter) and TikTok.</li>
           </ul>
           <p>
             TikTok posts your vertical Shorts straight to your feed from Clip Factory. Connect it once under
@@ -698,7 +712,8 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             Why Pro, and why now
           </h2>
           <p className="text-[14px] leading-relaxed mb-3" style={{ color: 'var(--text-soft)' }}>
-            Creator-tier MVP gets you the writer. Pro gets you the <em>business</em>. Multiple sites, a team, a real
+            The {TIERS.amazon.label} plan gets you the storefront: thumbnails, designs, brand deals. {TIERS.pro.label} gets
+            you the <em>business</em> on top of it. Multiple sites, a team, a real
             newsletter, brand-deal pipeline, performance analytics that drive your editorial calendar, the infrastructure
             to run all of it from one dashboard.
           </p>
