@@ -161,7 +161,29 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
   a{color:var(--ink)}
   .prose h2{break-after:avoid}
 }
-</style></head><body>
+</style><script>
+/* Meta pixel.
+
+   This file lives in public/ and is served through a rewrite in
+   next.config.ts, so it never passes through app/layout.tsx and does NOT
+   inherit the pixel mounted there. Without this block the guide is invisible
+   to Meta: no landing page views, no audience, nothing to retarget, and any
+   ad pointed here spends into a measurement black hole.
+
+   Production only, matched on hostname because a static file has no
+   NODE_ENV. app/layout.tsx gates its own copy on NODE_ENV for the same
+   reason: preview and local traffic must not pollute the pixel's audiences
+   or its conversion data. */
+(function(){
+  var h = location.hostname;
+  if (h !== 'mvpaffiliate.io' && h !== 'www.mvpaffiliate.io') return;
+  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init','301488807119194');
+  fbq('track','PageView');
+})();
+</script>
+<noscript><img height="1" width="1" style="display:none" alt="" src="https://www.facebook.com/tr?id=301488807119194&ev=PageView&noscript=1"></noscript>
+</head><body>
 
 <div class="shell">
 <header class="hero">
@@ -1609,6 +1631,10 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </ul>
 <p>When you're ready for more, the <strong>Amazon plan is $99/month</strong> and the <strong>Pro plan is $199/month</strong> at founder pricing.</p>
 <p><a class="btn" href="https://mvpaffiliate.io/pricing" target="_blank" rel="noopener">See plans and start free</a></p>
+<p><strong>Not ready for software yet?</strong> Come and ask us instead. Our
+<a href="https://www.facebook.com/groups/mvpaffiliate" rel="noopener">private Facebook group</a>
+is where Amazon Influencers compare what is working right now, and where we answer
+questions in public so everyone gets the answer.</p>
 <p><small>Built by Seb &amp; Michelle of Gominplanet. We use it every day.</small></p>
 </div></div></section>
 <footer class="foot"><p>© 2026 Gominplanet · Seb &amp; Michelle. This guide is independent and not affiliated with or endorsed by Amazon. As an Amazon Associate we earn from qualifying purchases. Nothing here is legal, tax, or financial advice.</p><p>Presented by <a href="https://mvpaffiliate.io"><b>MVP Affiliate</b></a> (our software). Links marked "paid link" are affiliate links.</p></footer>
@@ -1628,8 +1654,39 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
     if(bar) bar.style.width=(boxes.length?n/boxes.length*100:0)+'%';
     if(t) t.textContent=n+' of '+boxes.length+' modules done';
   }
+  // ── Meta: what "read it" actually looks like ────────────────────────────
+  //
+  // ViewContent fires on ENGAGEMENT and never on load. A ViewContent that
+  // fires for every arrival is a second PageView wearing a different name: it
+  // would tell Meta nothing about who found the guide worth reading, and the
+  // retargeting audience built from it would be mostly people who bounced.
+  // The ad campaign's whole plan is to retarget readers, so this event has to
+  // mean reader.
+  //
+  // The bar is a quarter of the page scrolled OR a first module ticked,
+  // whichever comes first, and it fires at most once per page load.
+  var engaged=false;
+  function engage(how){
+    if(engaged) return; engaged=true;
+    if(typeof fbq!=='function') return;
+    fbq('track','ViewContent',{content_name:'Free guide: No Shortcut Playbook',content_category:'amazon-influencer-guide',content_type:'guide',engagement:how});
+  }
+  function onScroll(){
+    var h=document.documentElement;
+    var max=(h.scrollHeight-h.clientHeight);
+    if(max>0 && (h.scrollTop||document.body.scrollTop)/max>=0.25) engage('scroll-25');
+    if(engaged) window.removeEventListener('scroll',onScroll);
+  }
+  window.addEventListener('scroll',onScroll,{passive:true});
+
   boxes.forEach(function(b){b.addEventListener('change',function(){
     done[b.dataset.id]=b.checked; try{localStorage.setItem(KEY,JSON.stringify(done))}catch(e){} render();
+    if(b.checked){
+      engage('module-done');
+      // Which modules people finish, so a section nobody completes is
+      // visible as a number rather than a hunch.
+      if(typeof fbq==='function') fbq('trackCustom','GuideModuleDone',{module:b.dataset.id});
+    }
   });});
   render();
   var d=document.getElementById('tocd');
