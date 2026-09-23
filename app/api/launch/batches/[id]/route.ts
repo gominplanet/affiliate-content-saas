@@ -16,7 +16,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { marketByDomain } from '@/lib/markets'
 import { normalizeSlots } from '@/lib/launch-schedule'
 import { validateThumbnailPreset } from '@/lib/thumbnail-preset'
-import { batchSteps, launchBlocker, validateCtaPreset, MAX_ITEMS, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
+import { batchSteps, launchBlocker, validateCtaPreset, withOwnSchedules, MAX_ITEMS, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
 
@@ -41,7 +41,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const { data: rows } = await sb.from('launch_items')
     .select(ITEM_COLUMNS).eq('batch_id', id).order('position', { ascending: true })
-  const items: ItemRow[] = rows ?? []
+  const { items, available: ownSchedules } = await withOwnSchedules(sb, id, (rows ?? []) as ItemRow[])
 
   const b = batch as BatchRow
   return NextResponse.json({
@@ -64,6 +64,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // refuses it is the bug this file already produced once.
     launchBlocker: await launchReadiness(sb, user.id, b, items),
     maxItems: MAX_ITEMS,
+    // False until migration 364 is run. The page then shows why per-video
+    // times are missing instead of an editor whose every save is refused.
+    ownSchedules,
   })
 }
 

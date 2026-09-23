@@ -157,6 +157,109 @@ export function planSchedule(count: number, plan: SchedulePlan): ScheduledSlot[]
   return out
 }
 
+// ── EACH VIDEO ITS OWN TIME ─────────────────────────────────────────────────
+//
+// The creator decides when their own videos go out, video by video: this one
+// Friday at nine, that one next Tuesday at six. The pattern above is still
+// there, as the quick way to fill a batch of ten, but it is now the DEFAULT a
+// video falls back to rather than the only way a video can be scheduled.
+//
+// A video with its own date and time steps out of the pattern's queue. The
+// rest are laid along the pattern in batch order as before, so setting video 1
+// to Friday does not leave a hole on day one: video 2 takes that slot.
+//
+// KEYED BY ID, OVER THE WHOLE BATCH. The launch route used to lay the pattern
+// over only the videos that were ready, while the preview laid it over all of
+// them. One blocked video and the two disagreed: the screen said video 4 went
+// out Thursday, and the server gave video 4 Wednesday, because video 3 had
+// dropped out of its count. Resolving every video here, once, from the same
+// list, and letting the server simply skip the ones that are not ready, means
+// the time on the screen is the time YouTube is given.
+
+export interface ItemScheduleInput {
+  id: string
+  /** YYYY-MM-DD in the batch zone, or null to follow the pattern. */
+  customDate?: string | null
+  /** HH:MM in the batch zone, or null to follow the pattern. */
+  customTime?: string | null
+}
+
+export interface ItemSchedule {
+  id: string
+  /** The absolute instant, which is what YouTube is told. */
+  at: Date
+  /** True when the creator set this video's own date and time. */
+  own: boolean
+  /** The wall-clock date and time in the batch zone, for an editor to show. */
+  date: string
+  time: string
+}
+
+const ymd = (y: number, m: number, d: number) =>
+  `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+
+/** Does this video carry its own schedule? Both halves, or it does not. */
+export function hasOwnSchedule(i: ItemScheduleInput): boolean {
+  return !!(i.customDate && i.customTime)
+}
+
+/**
+ * When every video in a batch goes out.
+ *
+ * A video missing from the result could not be scheduled: it follows the
+ * pattern and the pattern is not set, or its own date is not a date. The
+ * caller decides what that means, and the launch route treats any ready video
+ * missing from here as a reason to launch nothing, for the same reason
+ * planSchedule returns nothing on a bad plan: a published video cannot be
+ * unpublished, so a guess is never the right answer.
+ */
+export function scheduleItems(items: ItemScheduleInput[], plan: SchedulePlan): Map<string, ItemSchedule> {
+  const out = new Map<string, ItemSchedule>()
+  try {
+    // An unknown zone throws rather than falling back to UTC, and UTC would be
+    // an hour the creator never chose. Nothing is scheduled at all.
+    new Intl.DateTimeFormat('en-US', { timeZone: plan.timezone })
+  } catch { return out }
+
+  // Videos with their own time, exactly as the creator set them.
+  for (const it of items) {
+    if (!hasOwnSchedule(it)) continue
+    const date = addDays(String(it.customDate), 0)
+    const minutes = parseSlot(String(it.customTime))
+    if (!date || minutes === null) continue
+    out.set(it.id, {
+      id: it.id,
+      at: zonedTimeToInstant(date.y, date.m, date.d, minutes, plan.timezone),
+      own: true,
+      date: ymd(date.y, date.m, date.d),
+      time: normalizeSlots([String(it.customTime)])[0],
+    })
+  }
+
+  // The rest, along the pattern in batch order.
+  const following = items.filter((it) => !hasOwnSchedule(it))
+  const laid = planSchedule(following.length, plan)
+  for (const p of laid) {
+    const it = following[p.position]
+    const date = addDays(plan.startOn, p.day)
+    if (!it || !date) continue
+    out.set(it.id, { id: it.id, at: p.at, own: false, date: ymd(date.y, date.m, date.d), time: p.slot })
+  }
+  return out
+}
+
+/** The videos whose own date is before today in the batch's zone.
+ *
+ *  The same line startsBeforeToday draws for the pattern, applied per video.
+ *  A time that went by this morning means now; a date that went by last week
+ *  is a mistake, and ten of them is ten videos going public at once. */
+export function datesBeforeToday(
+  schedule: Iterable<ItemSchedule>, timezone: string, now: Date = new Date(),
+): ItemSchedule[] {
+  const today = todayIn(timezone, now)
+  return [...schedule].filter((s) => s.date < today)
+}
+
 /**
  * The slots whose moment has already gone.
  *

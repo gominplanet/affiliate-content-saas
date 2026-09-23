@@ -23,7 +23,7 @@ import {
 import { createBrowserClient } from '@/lib/supabase/client'
 import { deliverPreparedStorefronts, deliverySummary } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
-import { cadenceLabel, planSchedule } from '@/lib/launch-schedule'
+import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
 import { itemStateLabel, itemStateTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
 import { requestStorefrontPreflight } from '@/lib/extension-frame'
 import StepCard from './StepCard'
@@ -63,6 +63,10 @@ interface Item {
   thumbnail_error: string | null
   /** 'filename', 'creator' or 'mvp'. Null reads as 'filename'. */
   title_source: string | null
+  /** This video's own YouTube date and time, or both null to follow the
+   *  batch pattern. Absent entirely until migration 364 is run. */
+  custom_publish_date?: string | null
+  custom_publish_time?: string | null
 }
 interface Market { domain: string; country: string; langName: string | null; needsDub: boolean }
 /** A batch in the switcher: enough to choose between them, nothing more. */
@@ -102,6 +106,17 @@ export default function LaunchBoard() {
   const [steps, setSteps] = useState<StepStatus[]>([])
   const [blocker, setBlocker] = useState<string | null>(null)
   const [maxItems, setMaxItems] = useState(10)
+  // False until migration 364 is run, in which case every video follows the
+  // pattern and the page says why it cannot be given its own time.
+  const [ownSchedules, setOwnSchedules] = useState(true)
+  // Rows with an edited time that has not been saved. Launch refuses while
+  // any exists, because it would launch with the old time.
+  const [dirtyRows, setDirtyRows] = useState<Record<string, boolean>>({})
+  const markDirty = useCallback((id: string, v: boolean) => {
+    // Same value, same object: React skips the render, so a row reporting
+    // itself on every pass cannot start a render loop.
+    setDirtyRows((prev) => (!!prev[id] === v ? prev : { ...prev, [id]: v }))
+  }, [])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
@@ -145,6 +160,7 @@ export default function LaunchBoard() {
       setSteps(j.steps ?? [])
       setBlocker(j.launchBlocker ?? null)
       setMaxItems(j.maxItems ?? 10)
+      setOwnSchedules(j.ownSchedules !== false)
       // ONCE. See autoOpened: after this the creator drives.
       if (!autoOpened.current) {
         const current = (j.steps ?? []).find((s: StepStatus) => s.current)
@@ -472,6 +488,16 @@ export default function LaunchBoard() {
   // ── launch ────────────────────────────────────────────────────────────────
   async function launch() {
     if (!batchId) return
+    // IN launch() ITSELF, not only on the buttons. There are two Launch
+    // buttons on this page (the step and the sticky bar) and the first draft
+    // of this guard was on one of them.
+    const pending = items.filter((i) => dirtyRows[i.id]).map((i) => i.position + 1)
+    if (pending.length > 0) {
+      toast.error(pending.length === 1
+        ? `Video ${pending[0]} has a time you changed but have not set. Press Set on it first.`
+        : `Videos ${pending.join(', ')} have times you changed but have not set. Press Set on each first.`)
+      return
+    }
     setBusy('launch')
     try {
       const r = await fetch(`/api/launch/batches/${batchId}/launch`, { method: 'POST' })
@@ -519,9 +545,18 @@ export default function LaunchBoard() {
   const step = (id: string) => steps.find((s) => s.id === id)
   const toggle = (id: string) => { autoOpened.current = true; setOpen(open === id ? null : id) }
   const slots = batch.daily_slots ?? []
-  const preview = planSchedule(items.length, {
-    timezone: batch.timezone, slots, startOn: batch.start_on ?? '',
-  })
+  // THE SAME FUNCTION THE LAUNCH ROUTE USES, over the same list of videos, so
+  // the time beside each video is the time YouTube is given. Keyed by id: a
+  // video with its own date keeps it, and the rest follow the pattern.
+  const schedule = scheduleItems(items.map((i) => ({
+    id: i.id, customDate: i.custom_publish_date, customTime: i.custom_publish_time,
+  })), { timezone: batch.timezone, slots, startOn: batch.start_on ?? '' })
+  const goingNow = items.filter((i) => {
+    const sc = schedule.get(i.id)
+    return !!sc && sc.at.getTime() <= Date.now()
+  }).length
+  const unsaved = items.filter((i) => dirtyRows[i.id]).map((i) => i.position + 1)
+  const scheduleLocked = batch.state === 'launching' || batch.state === 'launched'
 
   const stateWord = (st: string) =>
     st === 'launched' ? 'Launched' : st === 'launching' ? 'Going out' : st === 'ready' ? 'Ready' : 'Being set up'
@@ -818,60 +853,42 @@ export default function LaunchBoard() {
             )}
           </p>
 
-          <div>
-            <p className="text-[12.5px] font-medium mb-1" style={text}>How many YouTube posts a day, and when</p>
-            <p className="text-[12px] mb-2" style={muted}>
-              One time per video per day. Three times means three a day. Times are yours: {batch.timezone}.
-            </p>
-            <SlotEditor
-              slots={slots}
-              disabled={busy === 'batch'}
-              onChange={(next) => void patchBatch({ dailySlots: next })}
-            />
-          </div>
-
-          <label className="text-[12.5px] font-medium" style={text}>
-            First day
-            <input
-              type="date"
-              value={batch.start_on ?? ''}
-              min={earliestDay(batch.timezone)}
-              onChange={(e) => void patchBatch({ startOn: e.target.value })}
-              className="block mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent"
-              style={{ borderColor: 'var(--border)', ...text }}
-            />
-          </label>
-
-          {/* WHEN EACH ONE ACTUALLY GOES OUT, worked out with the same function
-              the server uses. A cadence described in words is a promise; this
-              is the list. */}
-          {preview.length > 0 && (
+          {/* ── EACH VIDEO, ITS OWN DATE AND TIME ─────────────────────────────
+              The creator decides when every video goes out. Each row is the
+              time that video will actually get, and changing it gives the
+              video its own. Worked out with the same function the launch
+              route uses, over the same list, so what is on screen is what
+              YouTube is given. */}
+          {items.length > 0 && (
             <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-[12px] font-medium mb-1.5" style={text}>
+              <p className="text-[12.5px] font-medium mb-0.5" style={text}>
                 <Clock size={12} style={{ display: 'inline', marginRight: 4 }} />
-                {cadenceLabel(slots)}
+                When each video goes public on YouTube
               </p>
-              <ul className="flex flex-col gap-0.5">
-                {preview.map((p) => (
-                  <li key={p.position} className="text-[11.5px] flex gap-2" style={muted}>
-                    <span className="tabular-nums w-5">{p.position + 1}</span>
-                    <span className="flex-1 truncate" style={text}>
-                      {items[p.position]?.title || 'Untitled'}
-                    </span>
-                    {/* NOW IS NOT A TIME, and printing this morning's slot
-                        beside a video that is about to go out would be the
-                        plan reported as the result. */}
-                    {p.at.getTime() <= Date.now() ? (
-                      <span style={{ color: '#10B981' }}>as soon as it is uploaded</span>
-                    ) : (
-                      <span className="tabular-nums">
-                        {new Intl.DateTimeFormat('en-GB', {
-                          timeZone: batch.timezone, weekday: 'short', day: '2-digit', month: 'short',
-                          hour: '2-digit', minute: '2-digit', hour12: false,
-                        }).format(p.at)}
-                      </span>
-                    )}
-                  </li>
+              <p className="text-[11.5px] mb-2" style={muted}>
+                {ownSchedules
+                  ? <>Pick any day and any time for any video. Times are yours: {batch.timezone}.</>
+                  // SAID, not hidden. Without migration 364 the columns do not
+                  // exist, and an editor whose every save was refused would be
+                  // worse than no editor.
+                  : <>Every video follows the daily pattern below for now. Giving each video its own
+                    date and time needs a database update (migration 364) that has not been run yet.</>}
+              </p>
+              <ul className="flex flex-col gap-1">
+                {items.map((it) => (
+                  <ScheduleRow
+                    key={it.id}
+                    n={it.position + 1}
+                    title={it.title || ''}
+                    sched={schedule.get(it.id)}
+                    timezone={batch.timezone}
+                    locked={scheduleLocked || it.state === 'scheduled' || it.state === 'published'}
+                    available={ownSchedules}
+                    busy={busy === it.id}
+                    onSet={(date, time) => void patchItem(it.id, { schedule: { date, time } })}
+                    onReset={() => void patchItem(it.id, { schedule: null })}
+                    onDirty={(v) => markDirty(it.id, v)}
+                  />
                 ))}
               </ul>
               {/* AND WHAT AMAZON DOES, which is not on this schedule at all.
@@ -888,14 +905,54 @@ export default function LaunchBoard() {
             </div>
           )}
 
+          {/* ── THE PATTERN, NOW THE SHORTCUT ─────────────────────────────────
+              Still the quick way to fill ten videos in one go. It only sets
+              the videos that have no time of their own, so a hand-picked time
+              is never overwritten by changing it. */}
+          <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-[12.5px] font-medium mb-0.5" style={text}>Daily pattern, for the rest</p>
+            <p className="text-[11.5px] mb-2" style={muted}>
+              Videos without their own time go out on this pattern, in batch order: one per time,
+              per day. {slots.length > 0 ? cadenceLabel(slots) + '.' : 'No pattern set.'}
+            </p>
+            <SlotEditor
+              slots={slots}
+              disabled={busy === 'batch' || scheduleLocked}
+              onChange={(next) => void patchBatch({ dailySlots: next })}
+            />
+            <label className="block text-[12px] font-medium mt-3" style={text}>
+              Starting
+              <input
+                type="date"
+                value={batch.start_on ?? ''}
+                min={earliestDay(batch.timezone)}
+                disabled={scheduleLocked}
+                onChange={(e) => void patchBatch({ startOn: e.target.value })}
+                className="block mt-1 px-3 py-2 rounded-lg border text-sm bg-transparent"
+                style={{ borderColor: 'var(--border)', ...text }}
+              />
+            </label>
+          </div>
+
           {/* SAID BEFORE THE BUTTON, not after. Going public is the one thing
               on this page that cannot be undone, so a creator about to do it
               immediately should read that first. */}
-          {preview.some((p) => p.at.getTime() <= Date.now()) && (
+          {goingNow > 0 && (
             <p className="text-[12.5px] px-3 py-2 rounded-lg" style={{ color: '#10B981', background: 'rgba(16,185,129,0.08)' }}>
-              {preview.filter((p) => p.at.getTime() <= Date.now()).length === preview.length
+              {goingNow === items.length
                 ? 'Those times have gone today, so these go public as soon as they are uploaded.'
-                : `${preview.filter((p) => p.at.getTime() <= Date.now()).length} of these go public as soon as they are uploaded, because those times have gone today. The rest wait for theirs.`}
+                : `${goingNow} of these ${goingNow === 1 ? 'goes' : 'go'} public as soon as ${goingNow === 1 ? 'it is' : 'they are'} uploaded, because ${goingNow === 1 ? 'its time has' : 'those times have'} gone today. The rest wait for theirs.`}
+            </p>
+          )}
+
+          {/* AN UNSAVED TIME STOPS THE LAUNCH, and says which. Launching now
+              would give YouTube the old time while the screen shows the new
+              one. */}
+          {unsaved.length > 0 && (
+            <p className="text-[12.5px] px-3 py-2 rounded-lg" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
+              {unsaved.length === 1
+                ? `Video ${unsaved[0]} has a time you changed but have not set. Press Set on it first.`
+                : `Videos ${unsaved.join(', ')} have times you changed but have not set. Press Set on each first.`}
             </p>
           )}
 
@@ -909,7 +966,7 @@ export default function LaunchBoard() {
 
           <button
             onClick={() => void launch()}
-            disabled={!!blocker || busy === 'launch' || batch.state === 'launching' || batch.state === 'launched'}
+            disabled={!!blocker || unsaved.length > 0 || busy === 'launch' || batch.state === 'launching' || batch.state === 'launched'}
             className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
             style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}
           >
@@ -1044,16 +1101,18 @@ export default function LaunchBoard() {
           }}>
           <button
             onClick={() => void launch()}
-            disabled={!!blocker || busy === 'launch'}
+            disabled={!!blocker || unsaved.length > 0 || busy === 'launch'}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-45 shrink-0"
             style={{ background: 'linear-gradient(135deg,#0EA5A4,#0891B2)' }}>
             {busy === 'launch' ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
             {launched ? 'Launched' : `Launch ${items.filter((i) => i.state === 'prepared').length || items.length}`}
           </button>
-          <span className="text-[12px] min-w-0 flex-1" style={blocker ? { color: '#d97706' } : muted}>
+          <span className="text-[12px] min-w-0 flex-1" style={blocker || unsaved.length > 0 ? { color: '#d97706' } : muted}>
             {/* THE REASON, ALWAYS. A greyed button with nothing beside it is
                 the dead end this codebase keeps producing. */}
-            {blocker ?? (launched
+            {blocker ?? (unsaved.length > 0
+              ? `Set the time you changed on ${unsaved.length === 1 ? `video ${unsaved[0]}` : `videos ${unsaved.join(', ')}`} first.`
+              : launched
               ? 'Already on its way. The board below says where each one is.'
               : 'Everything is answered. This schedules YouTube and starts Amazon.')}
           </span>
@@ -1468,6 +1527,122 @@ function SlotEditor({
         </button>
       </div>
     </div>
+  )
+}
+
+/**
+ * One video's YouTube date and time, editable on its own.
+ *
+ * The creator decides when each of their videos goes out: this one Friday at
+ * nine, that one next Tuesday at six. A row shows the time the video will
+ * actually get, whether that came from the pattern or was set by hand, and
+ * changing either field gives the video its own time.
+ *
+ * AN EDIT IS NOT SAVED UNTIL SET IS PRESSED, and the row says so. Saving on
+ * every keystroke fires on half-typed times ("1" on the way to "17:00"), and
+ * saving on blur races the Launch button: press Launch straight after picking
+ * a date and the launch can read the time from before the edit. So the row
+ * reports itself unsaved to the board, and the board refuses to launch while
+ * any row is, naming which one. What is on screen is what YouTube gets.
+ */
+function ScheduleRow({
+  n, title, sched, timezone, locked, available, busy, onSet, onReset, onDirty,
+}: {
+  n: number
+  title: string
+  sched: ItemSchedule | undefined
+  timezone: string
+  /** Launched, or already on YouTube: the time is fixed. */
+  locked: boolean
+  /** False until migration 364 is run: the row shows the pattern time only. */
+  available: boolean
+  busy: boolean
+  onSet: (date: string, time: string) => void
+  onReset: () => void
+  onDirty: (dirty: boolean) => void
+}) {
+  const [d, setD] = useState(sched?.date ?? '')
+  const [t, setT] = useState(sched?.time ?? '')
+  // Follow the server when it changes underneath: a pattern edit, a reorder,
+  // a save coming back. Keyed on the values, not the object, which is new on
+  // every render.
+  useEffect(() => { setD(sched?.date ?? ''); setT(sched?.time ?? '') }, [sched?.date, sched?.time])
+
+  const dirty = (d !== (sched?.date ?? '') || t !== (sched?.time ?? '')) && !!d && !!t
+  useEffect(() => { onDirty(dirty) }, [dirty, onDirty])
+
+  const now = sched && sched.at.getTime() <= Date.now()
+  const editable = available && !locked
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] py-1" style={muted}>
+      <span className="tabular-nums w-5">{n}</span>
+      <span className="flex-1 min-w-[8rem] truncate" style={text}>{title || 'Untitled'}</span>
+      {editable ? (
+        <span className="inline-flex items-center gap-1.5 flex-wrap">
+          <input
+            type="date" value={d} min={todayIn(timezone)} disabled={busy}
+            onChange={(e) => setD(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && dirty) onSet(d, t) }}
+            aria-label={`Date for video ${n}`}
+            className="px-2 py-1 rounded-md border text-[12px] bg-transparent tabular-nums"
+            style={{ borderColor: dirty ? '#d97706' : 'var(--border)', ...text }}
+          />
+          <input
+            type="time" value={t} disabled={busy}
+            onChange={(e) => setT(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && dirty) onSet(d, t) }}
+            aria-label={`Time for video ${n}`}
+            className="px-2 py-1 rounded-md border text-[12px] bg-transparent tabular-nums"
+            style={{ borderColor: dirty ? '#d97706' : 'var(--border)', ...text }}
+          />
+          {dirty ? (
+            <button type="button" disabled={busy} onClick={() => onSet(d, t)}
+              className="px-2.5 py-1 rounded-md text-[11.5px] font-semibold text-white disabled:opacity-50"
+              style={{ background: '#d97706' }}>
+              {busy ? <Loader2 size={11} className="animate-spin" /> : 'Set'}
+            </button>
+          ) : sched?.own ? (
+            <>
+              <span className="px-1.5 py-0.5 rounded text-[10.5px] font-semibold"
+                style={{ background: 'rgba(14,165,164,0.12)', color: '#0EA5A4' }}>Own time</span>
+              <button type="button" disabled={busy} onClick={onReset}
+                title="Put this video back on the daily pattern"
+                className="text-[11px] underline disabled:opacity-50" style={muted}>
+                Use pattern
+              </button>
+            </>
+          ) : sched ? (
+            <span className="text-[10.5px]" style={muted}>from pattern</span>
+          ) : (
+            // NO TIME, SAID AS NO TIME. An empty pair of inputs with nothing
+            // beside it reads as a glitch rather than as a question.
+            <span className="text-[10.5px]" style={{ color: '#d97706' }}>needs a time</span>
+          )}
+        </span>
+      ) : sched ? (
+        <span className="tabular-nums">
+          {new Intl.DateTimeFormat('en-GB', {
+            timeZone: timezone, weekday: 'short', day: '2-digit', month: 'short',
+            hour: '2-digit', minute: '2-digit', hour12: false,
+          }).format(sched.at)}
+        </span>
+      ) : (
+        <span style={{ color: '#d97706' }}>no time yet</span>
+      )}
+      {/* NOW IS NOT A TIME, and printing this morning's slot beside a video
+          that is about to go out would be the plan reported as the result. */}
+      {now && !dirty && (
+        <span className="basis-full pl-7 text-[11px]" style={{ color: '#10B981' }}>
+          Goes public as soon as it is uploaded, because that time has gone today.
+        </span>
+      )}
+      {dirty && (
+        <span className="basis-full pl-7 text-[11px]" style={{ color: '#d97706' }}>
+          Not saved yet. Press Set, or this video keeps its old time.
+        </span>
+      )}
+    </li>
   )
 }
 

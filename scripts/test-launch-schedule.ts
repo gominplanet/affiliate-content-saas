@@ -10,9 +10,11 @@
 //
 // So this runs the real arithmetic against real zones, including across a
 // daylight-saving change, rather than pinning the source text.
+import { readFileSync } from 'node:fs'
 import {
   parseSlot, normalizeSlots, zonedTimeToInstant, planSchedule,
-  slotsAlreadyPast, cadenceLabel, startsBeforeToday, todayIn } from '../lib/launch-schedule'
+  slotsAlreadyPast, cadenceLabel, startsBeforeToday, todayIn,
+  scheduleItems, datesBeforeToday, hasOwnSchedule } from '../lib/launch-schedule'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -250,6 +252,128 @@ const wallClock = (at: Date, timeZone: string) =>
       past.length === 1 && past[0].slot === '09:00',
       `${past.length} past: ${past.map(p => p.slot).join(',')}`)
   }
+}
+
+// ── each video its own day and time ─────────────────────────────────────────
+//
+// THE ASK, in the operator's words: "users should be able to schedule youtube
+// videos anyway they want, any time and any day, and separate those schedules
+// per video. Video 1 can have one time and one date different than video 2,
+// all decided by user."
+//
+// The batch used to have one schedule, a list of times and a first day, and
+// every video was laid along it in order. There was no way to say "this one
+// Friday at nine, that one Tuesday at six".
+{
+  const tz = 'America/Lower_Princes'
+  const plan = { timezone: tz, slots: ['17:00'], startOn: '2026-09-23' }
+  const items = [
+    { id: 'v1', customDate: '2026-09-26', customTime: '09:30' },
+    { id: 'v2' },
+    { id: 'v3', customDate: '2026-10-02', customTime: '18:00' },
+    { id: 'v4' },
+  ]
+  const s = scheduleItems(items, plan)
+
+  check('a video with its own date and time goes out exactly then',
+    wallClock(s.get('v1')!.at, tz) === '26/09/2026, 09:30' && s.get('v1')!.own,
+    s.get('v1') ? wallClock(s.get('v1')!.at, tz) : 'missing')
+  check('and a second one keeps a different one of its own',
+    wallClock(s.get('v3')!.at, tz) === '02/10/2026, 18:00' && s.get('v3')!.own,
+    s.get('v3') ? wallClock(s.get('v3')!.at, tz) : 'missing')
+
+  // THE PATTERN CLOSES UP AROUND THEM. Setting video 1 to Saturday must not
+  // leave day one empty: video 2 takes that slot.
+  check('the rest follow the pattern, starting on its first day',
+    wallClock(s.get('v2')!.at, tz) === '23/09/2026, 17:00' && !s.get('v2')!.own,
+    s.get('v2') ? wallClock(s.get('v2')!.at, tz) : 'missing')
+  check('and do not leave a hole where an own-time video stepped out',
+    wallClock(s.get('v4')!.at, tz) === '24/09/2026, 17:00',
+    s.get('v4') ? wallClock(s.get('v4')!.at, tz) : 'missing')
+
+  // ALL OWN TIMES NEEDS NO PATTERN. Holding Launch until they also filled in a
+  // pattern would ask for a setting that changes nothing.
+  const noPattern = scheduleItems(items, { ...plan, slots: [] })
+  check('own-time videos are scheduled with no pattern at all',
+    noPattern.has('v1') && noPattern.has('v3'), [...noPattern.keys()].join(','))
+  check('and a video with neither is left unscheduled, not guessed',
+    !noPattern.has('v2') && !noPattern.has('v4'),
+    'a guessed time is a published video at an hour nobody chose')
+
+  check('an unknown zone schedules nothing, own times included',
+    scheduleItems(items, { ...plan, timezone: 'Mars/Olympus' }).size === 0,
+    'falling back to UTC is an hour the creator never picked')
+
+  // HALF AN OVERRIDE IS NOT ONE. A date with no time would have to borrow a
+  // time from a pattern the creator stepped away from.
+  check('a date without a time is not an own schedule',
+    !hasOwnSchedule({ id: 'x', customDate: '2026-09-26', customTime: null })
+    && !hasOwnSchedule({ id: 'x', customDate: null, customTime: '09:00' }), '')
+
+  // THE CLOCK CHANGE, per video. 09:00 in Toronto the week before and the week
+  // after is still 09:00 where they live, which is a different instant.
+  const tor = scheduleItems([
+    { id: 'b', customDate: '2026-10-30', customTime: '09:00' },
+    { id: 'a', customDate: '2026-11-03', customTime: '09:00' },
+  ], { timezone: 'America/Toronto', slots: [], startOn: '' })
+  check('an own time means the same wall clock across a clock change',
+    wallClock(tor.get('b')!.at, 'America/Toronto') === '30/10/2026, 09:00'
+    && wallClock(tor.get('a')!.at, 'America/Toronto') === '03/11/2026, 09:00'
+    && tor.get('a')!.at.getTime() - tor.get('b')!.at.getTime() === 4 * 86_400_000 + 3_600_000,
+    'stored as a timestamp, it would carry today\'s offset and go out an hour wrong')
+
+  // THE LINE IS THE DATE, per video. A time gone today means now; a day that
+  // has gone is a mistake.
+  const now = new Date('2026-09-23T15:00:00Z')
+  const past = datesBeforeToday(scheduleItems([
+    { id: 'old', customDate: '2026-09-20', customTime: '10:00' },
+    { id: 'earlier', customDate: '2026-09-23', customTime: '06:00' },
+    { id: 'later', customDate: '2026-09-30', customTime: '10:00' },
+  ], plan).values(), tz, now)
+  check('a video set for a day already gone is caught',
+    past.length === 1 && past[0].id === 'old', past.map((x) => x.id).join(','))
+}
+
+// ── the screen, the route and the database agree ──────────────────────────
+{
+  const read = (p: string) => readFileSync(p, 'utf8')
+  const LAUNCH = read('app/api/launch/batches/[id]/launch/route.ts')
+  const ITEM = read('app/api/launch/items/[id]/route.ts')
+  const BOARD = read('components/launch/LaunchBoard.tsx')
+  const M364 = read('supabase/migrations/364_launch_item_own_schedule.sql')
+
+  // OVER THE WHOLE BATCH, NOT ONLY THE READY ONES. The route used to lay the
+  // pattern over `ready` while the page laid it over every video, so one
+  // blocked video shifted every later one and the time on screen was not the
+  // time YouTube was given.
+  check('the launch route schedules every video, then looks up the ready ones',
+    /scheduleItems\(items\.map/.test(LAUNCH) && !/scheduleItems\(ready\.map/.test(LAUNCH), '')
+  check('and the page uses the same function over the same list',
+    /scheduleItems\(items\.map/.test(BOARD), '')
+
+  check('a video\'s own time is checked against the batch zone before saving',
+    /date < todayIn\(tz\)/.test(ITEM), 'the shape is the constraint\'s job; whether the day has gone is not')
+  check('and refused once the batch has launched',
+    /batch\.state === 'launching' \|\| batch\.state === 'launched'/.test(ITEM),
+    'the time is already written for the uploader: accepting a change shows one time and sends YouTube another')
+  check('null puts a video back on the pattern',
+    /body\.schedule === null[\s\S]{0,120}custom_publish_date = null/.test(ITEM), '')
+
+  // AN EDIT IS NOT SAVED UNTIL SET. A launch that reads the old time while
+  // the screen shows the new one is the plan reported as the result.
+  check('an edited, unsaved time blocks launch() itself',
+    /const pending = items\.filter\(\(i\) => dirtyRows\[i\.id\]\)/.test(BOARD), 'there are two Launch buttons')
+  const buttons = BOARD.match(/disabled=\{!!blocker[^}]*\}/g) ?? []
+  check('and both Launch buttons are disabled while one exists',
+    buttons.length >= 2 && buttons.every((b) => /unsaved\.length > 0/.test(b)),
+    `${buttons.length} buttons, ${buttons.filter((b) => /unsaved/.test(b)).length} guarded`)
+
+  // THE NULL THAT PASSES A CHECK. `date ~ x and null ~ y` is NULL, and a CHECK
+  // that evaluates to NULL passes: the first draft accepted exactly the half
+  // override it was written to refuse.
+  check('the database refuses half an override',
+    /custom_publish_date is not null\s+and custom_publish_time is not null/.test(M364),
+    'without the explicit not-nulls a date with no time is accepted')
 }
 
 if (failures.length) {

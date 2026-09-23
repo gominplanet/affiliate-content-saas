@@ -174,8 +174,10 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
 
 // ── the plan and the fact are different things ──────────────────────────────
 {
+  // By id now: each video's time is looked up in the schedule, which holds
+  // its own date and time when it has one.
   check('launching writes the PLANNED time',
-    /planned_publish_at: planned\[i\]\.at\.toISOString\(\)/.test(LAUNCH))
+    /planned_publish_at: schedule\.get\(ready\[i\]\.id\)!\.at\.toISOString\(\)/.test(LAUNCH))
   check('and does not call anything scheduled',
     !/state: 'scheduled'/.test(LAUNCH),
     'this route has not spoken to YouTube, so it cannot report what YouTube did')
@@ -199,13 +201,16 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // list is still worked out because the screen has to say which videos those
   // are before the button is pressed.
   check('past slots are still identified, for the screen to name',
-    /slotsAlreadyPast\(planned\)/.test(LAUNCH) && /goingOutNow/.test(LAUNCH),
+    /const immediate = planned\.filter\(\(p\) => p\.at\.getTime\(\) <= Date\.now\(\)\)/.test(LAUNCH) && /goingOutNow/.test(LAUNCH),
     'going public cannot be undone, so it cannot be a surprise')
   check('and they are not quietly moved to another hour',
     !/at\.setHours|addDays\(plan\.startOn, 1\)/.test(LAUNCH),
     'shifting a slot forward publishes at an hour nobody chose')
+  // Per video now, and the refusal NAMES which videos have no time, so it can
+  // be fixed without guessing.
   check('and a partial schedule is refused outright',
-    /planned\.length !== ready\.length/.test(LAUNCH),
+    /const unresolved = ready\.filter\(\(i\) => !schedule\.has\(i\.id\)\)/.test(LAUNCH)
+    && /if \(unresolved\.length > 0\)/.test(LAUNCH),
     'publishing half a batch at hours nobody chose is worse than publishing none')
 }
 
@@ -830,7 +835,20 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     check(`every route fetches batch.${f}`, batchCols.has(f),
       'a field the rules read and no route fetches is undefined, which reads as "not answered"')
   }
+  // THE ONE DELIBERATE EXCEPTION, and it has to earn it. A video's own date
+  // and time are loaded by a second query, withOwnSchedules, because main
+  // deploys before the SQL is run: in ITEM_COLUMNS they would fail every item
+  // query in that gap, and a failed select reads as a batch with no videos.
+  // So they are exempt from this list ONLY while both routes call the loader
+  // that fetches them, which is exactly the property this section protects.
+  const LOADS_OWN = /withOwnSchedules\(sb, id,/
+  const ownLoaded = LOADS_OWN.test(read('app/api/launch/batches/[id]/route.ts'))
+    && LOADS_OWN.test(LAUNCH)
+  check('both routes load each video\'s own time',
+    ownLoaded,
+    'a field the rules read and a route never fetches is undefined, and undefined reads as "follows the pattern"')
   for (const f of wantItem) {
+    if ((f === 'custom_publish_date' || f === 'custom_publish_time') && ownLoaded) continue
     check(`every route fetches item.${f}`, itemCols.has(f),
       'a field the rules read and no route fetches is undefined, which reads as "not answered"')
   }
@@ -868,9 +886,12 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   }
   // THE CALL SITE, not the import. An import survives the `if` being gutted,
   // which is how this repo has been caught four times now.
+  // THE LINE IS THE DATE, PER VIDEO. It used to be drawn on the pattern's
+  // first day alone, which a video with its own date never went near.
   check('a slot already gone is no longer refused',
     !/YouTube refuses a publish time in the past/.test(LAUNCH)
-    && /if \(startsBeforeToday\(plan\.startOn, plan\.timezone\)\)/.test(LAUNCH),
+    && /const stale = datesBeforeToday\(planned, plan\.timezone\)/.test(LAUNCH)
+    && /if \(stale\.length > 0\)/.test(LAUNCH),
     'refusing it is what forced tomorrow; the line is the date, not the time')
   check('a first day before today still is refused',
     /already been and gone/.test(LAUNCH),
@@ -1260,7 +1281,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /sticky bottom-3/.test(BOARD),
     'the one action on the page should not be something you have to find')
   check('and the reason it is disabled is beside it',
-    /\{blocker \?\? \(launched/.test(BOARD),
+    /\{blocker \?\? \(unsaved\.length > 0/.test(BOARD) && /: launched\s*\n?\s*\?/.test(BOARD),
     'a greyed button with nothing next to it is the dead end this repo keeps producing')
 
   // EVERY DECISION IN ONE PLACE, at the moment they all matter at once.

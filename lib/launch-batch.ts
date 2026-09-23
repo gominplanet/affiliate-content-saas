@@ -18,7 +18,7 @@
 // research, the translation, every dub, and YouTube itself) runs without them.
 // So the promise is: set it up, press Launch, leave the tab open, walk away.
 
-import { normalizeSlots, cadenceLabel } from '@/lib/launch-schedule'
+import { normalizeSlots, cadenceLabel, hasOwnSchedule } from '@/lib/launch-schedule'
 import { presetSummary, type ThumbnailPreset } from '@/lib/thumbnail-preset'
 
 /** The most videos in one batch. Ten is the number Seb asked for, and it is
@@ -154,6 +154,43 @@ export const ITEM_COLUMNS =
   'id,position,source_url,rendered_url,clean_url,asin,title,title_source,description,thumbnail_url,thumbnail_clean_url,thumbnail_source,video_id,'
   + 'state,reason,publish_at,youtube_video_id,duration_seconds,render_tries,thumb_tries,thumbnail_set_at,thumbnail_error,updated_at'
 
+/**
+ * Each video's own YouTube date and time, attached to rows already loaded.
+ *
+ * WHY A SEPARATE QUERY AND NOT TWO MORE NAMES IN ITEM_COLUMNS. main deploys
+ * the moment it is pushed, and the SQL is run by hand afterwards. Had these
+ * columns joined ITEM_COLUMNS, every item query would have failed in the gap
+ * between the two, and a failed select comes back as `data: null`, which the
+ * batch page reads as a batch with no videos in it. The creator would have
+ * opened a batch of ten and been told to add some.
+ *
+ * So this is allowed to fail, and says so. `available: false` means migration
+ * 364 has not been run: every video follows the pattern exactly as before, and
+ * the page can say per-video times are not switched on rather than offering an
+ * editor whose every save is refused.
+ */
+export async function withOwnSchedules(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any, batchId: string, items: ItemRow[],
+): Promise<{ items: ItemRow[]; available: boolean }> {
+  if (items.length === 0) return { items, available: true }
+  const { data, error } = await sb.from('launch_items')
+    .select('id,custom_publish_date,custom_publish_time').eq('batch_id', batchId)
+  if (error) return { items, available: false }
+  const byId = new Map<string, { custom_publish_date: string | null; custom_publish_time: string | null }>()
+  for (const r of (data ?? []) as Array<{ id: string; custom_publish_date: string | null; custom_publish_time: string | null }>) {
+    byId.set(r.id, r)
+  }
+  return {
+    available: true,
+    items: items.map((i) => ({
+      ...i,
+      custom_publish_date: byId.get(i.id)?.custom_publish_date ?? null,
+      custom_publish_time: byId.get(i.id)?.custom_publish_time ?? null,
+    })),
+  }
+}
+
 export interface ItemRow {
   id: string
   position: number
@@ -179,6 +216,11 @@ export interface ItemRow {
   /** What YouTube said if it refused it. The video is up either way, so this
    *  is a note on a working row rather than a failure of one. */
   thumbnail_error?: string | null
+  /** This video's own YouTube date and time, set by the creator, as
+   *  YYYY-MM-DD and HH:MM in the batch zone. Both null means it follows the
+   *  batch pattern. Always both or neither (migration 364 enforces it). */
+  custom_publish_date?: string | null
+  custom_publish_time?: string | null
 }
 
 // ── the steps, which are the page's spine and the worker's contract ─────────
@@ -230,6 +272,9 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
     return !!t && !!a && t === a
   }).length
   const slots = normalizeSlots(batch.daily_slots)
+  const ownTimed = items.filter((i) => hasOwnSchedule({
+    id: i.id, customDate: i.custom_publish_date, customTime: i.custom_publish_time,
+  })).length
 
   const steps: Array<Omit<StepStatus, 'current'>> = [
     {
@@ -311,12 +356,25 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
       // person to read it asked where YouTube had gone. Amazon is not on a
       // cadence at all: each listing goes up as soon as its dub is ready.
       title: 'Schedule your YouTube posts',
-      done: slots.length > 0 && !!batch.start_on,
-      detail: slots.length === 0
-        ? 'How many YouTube posts a day, and at what times.'
-        : !batch.start_on
-          ? `${cadenceLabel(slots)} on YouTube. Pick the first day.`
-          : `${cadenceLabel(slots)} on YouTube, from ${batch.start_on}.`,
+      // DONE WHEN EVERY VIDEO HAS A TIME, whichever way it got one. A batch
+      // where the creator set all ten by hand needs no pattern at all, and
+      // holding its Launch button until they also filled one in would be
+      // asking for a setting that changes nothing.
+      done: n > 0 && (
+        ownTimed === n
+        || (slots.length > 0 && !!batch.start_on)
+      ),
+      detail: ownTimed === n && n > 0
+        ? (n === 1 ? 'Your video has its own date and time.' : `All ${n} videos have their own date and time.`)
+        : slots.length === 0
+          ? (ownTimed > 0
+              ? `${ownTimed} of ${n} have their own time. Give the rest one, or set a daily pattern for them.`
+              : 'Pick a date and time for each video, or set a daily pattern.')
+          : !batch.start_on
+            ? `${cadenceLabel(slots)} on YouTube. Pick the first day.`
+            : ownTimed > 0
+              ? `${ownTimed} on their own time, the rest ${cadenceLabel(slots).toLowerCase()} from ${batch.start_on}.`
+              : `${cadenceLabel(slots)} on YouTube, from ${batch.start_on}.`,
     },
   ]
 
@@ -425,7 +483,14 @@ export function batchRecap(batch: BatchRow, items: ItemRow[]): string[] {
     : 'Thumbnails use your brand\u2019s usual look.')
 
   const slots = normalizeSlots(batch.daily_slots)
-  out.push(`${cadenceLabel(slots)} on YouTube${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
+  const own = items.filter((i) => i.state === 'prepared' && hasOwnSchedule({
+    id: i.id, customDate: i.custom_publish_date, customTime: i.custom_publish_time,
+  })).length
+  // SAID AS IT IS. A summary reading "One a day, at 17:00" over a batch where
+  // most videos have their own time would be the pattern reported as the plan.
+  if (own > 0 && own === n) out.push(`Every video goes out on YouTube at the date and time you gave it.`)
+  else if (own > 0) out.push(`${own} on YouTube at their own date and time, the rest ${cadenceLabel(slots).toLowerCase()}${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
+  else out.push(`${cadenceLabel(slots)} on YouTube${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
 
   if (batch.markets.length === 0) out.push('No Amazon storefronts, so this is YouTube only.')
   else {

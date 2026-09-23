@@ -1,6 +1,7 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// PATCH  /api/launch/items/[id] — the one video's own product and copy.
+// PATCH  /api/launch/items/[id] — the one video's own product, copy and
+//                                 YouTube date and time.
 // DELETE /api/launch/items/[id] — take it out of the batch.
 //
 // EVERY VIDEO IS ITS OWN VIDEO. The CTA and the countries are shared; the
@@ -11,6 +12,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeAsinInput, asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
+import { normalizeSlots, todayIn } from '@/lib/launch-schedule'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -26,6 +28,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     product?: string
     title?: string
     description?: string
+    /** This video's own YouTube date and time, in the batch's zone. Null puts
+     *  it back on the batch pattern. Absent leaves it as it is. */
+    schedule?: { date: string; time: string } | null
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -76,12 +81,55 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   const { data: item } = await sb.from('launch_items')
-    .select('id,state').eq('id', id).eq('user_id', user.id).maybeSingle()
+    .select('id,state,batch_id').eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!item) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
   if (item.state === 'scheduled' || item.state === 'published') {
     return NextResponse.json({
-      error: 'This one is already on YouTube, so its title and product are set there now.',
+      error: body.schedule !== undefined
+        ? 'This one is already on YouTube, so its time is set there now. Change it in YouTube Studio.'
+        : 'This one is already on YouTube, so its title and product are set there now.',
     }, { status: 409 })
+  }
+
+  // ── ITS OWN DATE AND TIME ─────────────────────────────────────────────────
+  //
+  // Validated here, against the batch's own zone, rather than trusted from
+  // the page: the constraint in migration 364 guarantees the SHAPE, and only
+  // this code can say whether the day has already gone where the creator is.
+  if (body.schedule !== undefined) {
+    const { data: batch } = await sb.from('launch_batches')
+      .select('timezone,state').eq('id', item.batch_id).eq('user_id', user.id).maybeSingle()
+    if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
+
+    // AFTER LAUNCH, THE TIME IS ALREADY WRITTEN. The launch route copies each
+    // video's time onto planned_publish_at, and that is what the uploader
+    // gives YouTube. Accepting a change now would show the new time on the
+    // screen while YouTube got the old one, which is the plan reported as the
+    // result. So it is refused, and the message says why.
+    if (batch.state === 'launching' || batch.state === 'launched') {
+      return NextResponse.json({
+        error: 'This batch has already been launched, so this video\'s time is locked in. Once it is on YouTube you can change it in YouTube Studio.',
+      }, { status: 409 })
+    }
+
+    if (body.schedule === null) {
+      patch.custom_publish_date = null
+      patch.custom_publish_time = null
+    } else {
+      const date = String(body.schedule?.date ?? '').trim()
+      const time = normalizeSlots([String(body.schedule?.time ?? '')])[0]
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !time) {
+        return NextResponse.json({ error: 'Pick both a date and a time for this video.' }, { status: 400 })
+      }
+      const tz = batch.timezone || 'UTC'
+      if (date < todayIn(tz)) {
+        return NextResponse.json({
+          error: 'That day has already been and gone. Pick today to send it out as soon as it uploads, or a day ahead.',
+        }, { status: 400 })
+      }
+      patch.custom_publish_date = date
+      patch.custom_publish_time = time
+    }
   }
 
   // A video that was blocked for a missing product is no longer blocked once it
@@ -92,7 +140,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const { error } = await sb.from('launch_items').update(patch).eq('id', id).eq('user_id', user.id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    // THE ONE ERROR WITH A KNOWN CAUSE. If migration 364 has not been run the
+    // columns do not exist, and PostgREST's own sentence about a schema cache
+    // means nothing to the person who just picked a time.
+    if (body.schedule !== undefined && /custom_publish_(date|time)/.test(error.message)) {
+      return NextResponse.json({
+        error: 'Per-video times are not switched on yet: the database needs migration 364. Nothing was saved.',
+      }, { status: 503 })
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
   return NextResponse.json({ ok: true, asin: patch.asin ?? null, resolvedFromLink: productNote })
 }
 
