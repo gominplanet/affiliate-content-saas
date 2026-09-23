@@ -10,8 +10,10 @@
 // Audience segments:
 //   all     → every non-admin user
 //   trial   → tier 'trial' (or no integrations row)
-//   paid    → creator | studio | pro
-//   creator | studio | pro → that exact tier
+//   paid    → every tier with a price, derived from lib/tier
+//   <tier>  → that exact tier
+// The segments live in lib/admin-segments so the admin user list and this
+// route cannot disagree about who is in one.
 // Anyone with integrations.marketing_opt_out = true is always excluded, and
 // every email carries a one-click List-Unsubscribe that sets that flag.
 //
@@ -25,12 +27,18 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { sendEmail, isEmailConfigured } from '@/services/email'
 import { signUnsub } from '@/lib/broadcast-token'
 import { renderBroadcastHtml, renderBroadcastText } from '@/lib/broadcast-email'
+import { inSegment, type Segment } from '@/lib/admin-segments'
 
 export const maxDuration = 300
 
 const APP_BASE = process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io'
-type Audience = 'all' | 'trial' | 'paid' | 'creator' | 'studio' | 'pro'
-const PAID = new Set(['creator', 'studio', 'pro'])
+// AUDIENCES COME FROM lib/admin-segments NOW. The set here was
+// `['creator','studio','pro']`, written before the Amazon plan and never
+// grown, so every Amazon subscriber was in no segment at all: not 'trial',
+// not 'paid', and 'amazon' was not offered either. "All paid" skipped the
+// people paying for the plan the ads sell, the send succeeded, the screen
+// reported a count, and nothing said who was left out.
+type Audience = Segment
 
 // Send in chunks with a short breather between them — keeps concurrency and
 // throughput inside Resend's limits.
@@ -54,15 +62,7 @@ async function resolveRecipients(
     if (r.user_id) meta.set(r.user_id, { tier: (r.tier || 'trial'), optOut: !!r.marketing_opt_out })
   }
 
-  const wants = (tier: string): boolean => {
-    if (tier === 'admin') return false // never blast staff/self accounts
-    switch (audience) {
-      case 'all': return true
-      case 'trial': return tier === 'trial'
-      case 'paid': return PAID.has(tier)
-      default: return tier === audience
-    }
-  }
+  const wants = (tier: string): boolean => inSegment(tier, audience)
 
   const out: Recipient[] = []
   const seen = new Set<string>()

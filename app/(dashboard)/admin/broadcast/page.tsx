@@ -7,29 +7,36 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { segmentOptions, type Segment } from '@/lib/admin-segments'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Button } from '@/components/ui/button'
 import { Send, Users, Mail, ShieldCheck, Info, History, RefreshCw } from 'lucide-react'
 
-type Audience = 'all' | 'trial' | 'paid' | 'creator' | 'studio' | 'pro'
+type Audience = Segment
 type BroadcastLog = {
   id: string; createdAt: string; subject: string; audience: string
   total: number; sent: number; failed: number
   delivered: number; opened: number; clicked: number; bounced: number
 }
 const pct = (n: number, d: number) => (d > 0 ? `${Math.round((n / d) * 100)}%` : '—')
-const AUDIENCES: { id: Audience; label: string; hint: string }[] = [
-  { id: 'all', label: 'All users', hint: 'Everyone (trial + paid)' },
-  { id: 'trial', label: 'Trial only', hint: 'Free-trial accounts' },
-  { id: 'paid', label: 'All paid', hint: 'Creator + Studio + Pro' },
-  { id: 'creator', label: 'Creator', hint: 'Creator tier only' },
-  { id: 'studio', label: 'Studio', hint: 'Studio tier only' },
-  { id: 'pro', label: 'Pro', hint: 'Pro tier only' },
-]
+// BUILT FROM THE PLANS THAT EXIST, not typed. This list had no Amazon button
+// and "All paid" was labelled "Creator + Studio + Pro", which was an accurate
+// description of a segment that skipped our Amazon subscribers, printed in
+// the one place a person could have noticed and in a form nobody reads as a
+// list of who is left out.
+const AUDIENCES = segmentOptions()
 
 export default function BroadcastPage() {
-  const [audience, setAudience] = useState<Audience>('all')
+  // ?audience=trial, so the link from the admin user list lands on the segment
+  // that was on screen. Validated against the real options rather than cast:
+  // a hand-edited or stale value in the URL must not preselect an audience
+  // that does not exist and then send to whatever the server falls back to.
+  const [audience, setAudience] = useState<Audience>(() => {
+    if (typeof window === 'undefined') return 'all'
+    const want = new URLSearchParams(window.location.search).get('audience')
+    return AUDIENCES.some((a) => a.id === want) ? (want as Audience) : 'all'
+  })
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [count, setCount] = useState<number | null>(null)

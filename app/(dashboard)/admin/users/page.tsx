@@ -2,9 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon, ChevronLeft, ChevronRight, Users as UsersIcon, Mail, Send, Trash2 } from 'lucide-react'
+import Link from 'next/link'
+import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon, ChevronLeft, ChevronRight, Users as UsersIcon, Mail, Send, Trash2, Megaphone } from 'lucide-react'
+import { segmentOptions, type Segment } from '@/lib/admin-segments'
 
 import { TIERS, isSellableTier } from '@/lib/tier'
+
+// The same list the broadcast tool offers, built from the plans that exist,
+// so "the people I am looking at" and "the people that would email" cannot
+// come apart.
+const SEGMENTS = segmentOptions()
 
 type Tier = 'trial' | 'creator' | 'amazon' | 'studio' | 'pro' | 'admin'
 
@@ -112,18 +119,39 @@ export default function AdminUsersPage() {
   const [hasMore, setHasMore] = useState(false)
   const detailRef = useRef<HTMLDivElement | null>(null)
 
-  useEffect(() => { loadList(1) }, [])
+  // WHICH PEOPLE, AND HOW MANY OF THEM THERE REALLY ARE.
+  //
+  // `segment` is resolved by the server across every account, not by filtering
+  // the fifty rows already on screen: the accounts most worth a message are
+  // the newest signups and the ones that went quiet, and neither is reliably
+  // on whichever page happens to be open.
+  //
+  // `total` is the size of the segment and `totalAll` the size of the account,
+  // both counted server-side. The list holds a page, so nothing here may
+  // derive a total from list.length.
+  const [segment, setSegment] = useState<Segment>('all')
+  const [total, setTotal] = useState<number | null>(null)
+  const [totalAll, setTotalAll] = useState<number | null>(null)
+  const [truncated, setTruncated] = useState(false)
 
-  async function loadList(page: number) {
+  useEffect(() => { loadList(1, segment) }, [segment])
+
+  async function loadList(page: number, seg: Segment = segment) {
     setListLoading(true)
     setListError(null)
     try {
-      const res = await fetch(`/api/admin/users-list?page=${page}&perPage=50`)
+      const res = await fetch(`/api/admin/users-list?page=${page}&perPage=50&segment=${encodeURIComponent(seg)}`)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Could not load users')
       setList((data.users ?? []) as ListUser[])
       setListPage(page)
       setHasMore(!!data.hasMore)
+      // null rather than 0 when the server did not send one. A missing count
+      // rendered as zero reads as "nobody is on this plan", which is a
+      // different and much more alarming statement than "we do not know".
+      setTotal(typeof data.total === 'number' ? data.total : null)
+      setTotalAll(typeof data.totalAll === 'number' ? data.totalAll : null)
+      setTruncated(!!data.truncated)
     } catch (err) {
       setListError(err instanceof Error ? err.message : 'Could not load users')
     } finally {
@@ -133,7 +161,7 @@ export default function AdminUsersPage() {
 
   // Accepts an optional email so a row click can open that user's detail card,
   // reusing the whole lookup → detail → tier-change flow the search box uses.
-  async function lookup(overrideEmail?: string) {
+  async function lookup(overrideEmail?: string, opts?: { message?: boolean }) {
     const em = (overrideEmail ?? email).trim()
     if (!em) return
     if (overrideEmail) setEmail(overrideEmail)
@@ -168,6 +196,11 @@ export default function AdminUsersPage() {
       if (!res.ok) throw new Error(data.error || 'Lookup failed')
       setUser(data.user as TargetUser)
       setNewTier(data.user.tier as Tier)
+      // Opened from the Email button on a row: land on the compose box rather
+      // than on a card the operator then has to hunt through. The subject and
+      // body stay empty, because a prefilled message is one somebody sends
+      // without reading it.
+      if (opts?.message) setMsgOpen(true)
       // Bring the detail card into view — the list can be far down the page.
       requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
     } catch (err) {
@@ -671,8 +704,20 @@ export default function AdminUsersPage() {
       <div className="card p-0 mt-5 overflow-hidden">
         <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100 dark:border-white/10">
           <UsersIcon size={15} className="text-[#86868b]" />
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">All users</p>
-          <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">· click a row to manage</span>
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+            {SEGMENTS.find(x => x.id === segment)?.label ?? 'All users'}
+          </p>
+          {/* THE COUNT IS THE SEGMENT'S, AND IT SAYS SO. The rows below are one
+              page of fifty; printing their length here would turn a page into a
+              total, which is the mistake this codebase has shipped three times.
+              A count we could not read shows a dash rather than a zero. */}
+          <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+            {total === null
+              ? '· count unavailable'
+              : `· ${truncated ? 'at least ' : ''}${total.toLocaleString()} ${total === 1 ? 'account' : 'accounts'}`}
+            {segment !== 'all' && totalAll !== null && ` of ${totalAll.toLocaleString()}`}
+            {' · click a row to manage'}
+          </span>
           <button
             onClick={() => loadList(listPage)}
             disabled={listLoading}
@@ -680,6 +725,36 @@ export default function AdminUsersPage() {
           >
             {listLoading ? <Loader2 size={11} className="animate-spin" /> : null} Refresh
           </button>
+        </div>
+
+        {/* ── who you are looking at ────────────────────────────────────────
+            The list was every account in signup order, so reaching the trial
+            users meant reading tier badges down the page. These filter the
+            whole account server-side, not the page on screen. */}
+        <div className="flex items-center gap-1.5 flex-wrap px-5 py-2.5 border-b border-gray-100 dark:border-white/10">
+          {SEGMENTS.map((sgmt) => (
+            <button
+              key={sgmt.id}
+              type="button"
+              onClick={() => { if (sgmt.id !== segment) { setSegment(sgmt.id); setListPage(1) } }}
+              title={sgmt.hint}
+              className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+                segment === sgmt.id
+                  ? 'bg-[#7C3AED] text-white border-[#7C3AED]'
+                  : 'border-gray-200 dark:border-white/15 text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-50 dark:hover:bg-white/5'
+              }`}
+            >
+              {sgmt.label}
+            </button>
+          ))}
+          {/* The same segments drive the bulk tool, so "everyone I am looking
+              at" and "everyone this would email" are the same set. */}
+          <Link
+            href={`/admin/broadcast?audience=${encodeURIComponent(segment)}`}
+            className="ml-auto text-[11px] font-semibold text-[#7C3AED] hover:underline inline-flex items-center gap-1"
+          >
+            <Megaphone size={11} /> Email all of them at once
+          </Link>
         </div>
 
         {listError ? (
@@ -700,6 +775,7 @@ export default function AdminUsersPage() {
                   <th className="text-left font-semibold px-3 py-2.5">Brand</th>
                   <th className="text-left font-semibold px-3 py-2.5">Signed up</th>
                   <th className="text-left font-semibold px-3 py-2.5">Last seen</th>
+                  <th className="text-right font-semibold px-5 py-2.5">Contact</th>
                 </tr>
               </thead>
               <tbody>
@@ -716,6 +792,20 @@ export default function AdminUsersPage() {
                     <td className="px-3 py-2.5 text-[#6e6e73] dark:text-[#ebebf0] max-w-[160px] truncate">{u.brandName || <span className="italic text-[#86868b]">—</span>}</td>
                     <td className="px-3 py-2.5 text-[#6e6e73] dark:text-[#ebebf0] whitespace-nowrap">{u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
                     <td className="px-3 py-2.5 text-[#6e6e73] dark:text-[#ebebf0] whitespace-nowrap">{u.lastSignInAt ? new Date(u.lastSignInAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
+                    <td className="px-5 py-2.5 text-right">
+                      {/* stopPropagation, or the row's own click fires too and
+                          the card opens twice with the compose box toggled
+                          back shut by the second one. */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); void lookup(u.email, { message: true }) }}
+                        disabled={!u.email || looking}
+                        className="text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-40 inline-flex items-center gap-1"
+                        title={u.email ? `Write to ${u.email}` : 'This account has no email address'}
+                      >
+                        <Mail size={11} /> Email
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
