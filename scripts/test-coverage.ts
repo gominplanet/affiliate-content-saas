@@ -26,6 +26,11 @@ const live = (s: string) => s
   .split('\n').filter((l) => !/^\s*(?:\/\/|\*)/.test(l)).join('\n')
 
 const DRAIN = live(read('app/api/cron/coverage-drain/route.ts'))
+// The product-availability rules moved to one shared function, which Launch
+// Batch asks too. The rules below are checked where they now live, and the
+// drain is checked to still be using them.
+const AVAIL = live(read('lib/product-availability.ts'))
+const AVAIL_RAW = read('lib/product-availability.ts')
 const MAP = live(read('app/api/coverage/route.ts'))
 const MKTS = live(read('app/api/coverage/markets/route.ts'))
 const LIB = live(read('lib/storefront-coverage.ts'))
@@ -135,10 +140,11 @@ const SEARCH = read('lib/app-search-index.ts')
     check(`the stock answer can say ${v}`, new RegExp(`'${v}'`).test(LIB))
   }
   check('Australia is answered as unanswerable, not as absent',
-    /marketByDomain\(r\.domain\)\?\.keepa == null/.test(DRAIN) && /'no_answer'/.test(DRAIN),
+    /marketByDomain\(r\.domain\)\?\.keepa == null/.test(AVAIL) && /'no_answer'/.test(AVAIL)
+      && /lookupAvailability\(sb, rows, \{ lookupBudget: STOCK_LOOKUPS \}\)/.test(DRAIN),
     'Keepa dropped amazon.com.au, and recording that as "not sold in Australia" is a lie the creator cannot check')
   check('a missing lookup is never a verdict',
-    /if \(!p\) continue/.test(DRAIN) && /ABSENT FROM THE RESPONSE/.test(read('app/api/cron/coverage-drain/route.ts')),
+    /if \(!p\) continue/.test(AVAIL) && /ABSENT FROM THE RESPONSE/.test(AVAIL_RAW),
     'Keepa returns a product with a null title for an ASIN it has no listing for, so absent means the request failed')
   check('the blocked reason names one country',
     /Amazon does not sell this product in \$\{country\}/.test(DRAIN)
@@ -148,10 +154,10 @@ const SEARCH = read('lib/app-search-index.ts')
   // The pool is shared with Deal Radar and the Finder, and this fires every
   // minute.
   check('it yields the Keepa pool to interactive use',
-    /fetchKeepaTokenStatus/.test(DRAIN) && /MIN_KEEPA_TOKENS/.test(DRAIN),
+    /fetchKeepaTokenStatus/.test(AVAIL) && /tok\.tokensLeft < MIN_KEEPA_TOKENS\) return/.test(AVAIL),
     'a background grid spending the pool every minute starves the screens somebody is waiting on')
   check('and answers are shared across creators',
-    /from\('passport_asin_market'\)/.test(DRAIN),
+    /from\('passport_asin_market'\)/.test(AVAIL) && /\.upsert\(writeBack/.test(AVAIL),
     'two creators promoting the same product should pay for one lookup between them')
 
   // THE SCREEN. A check that has stopped running must not read as progress.
@@ -225,7 +231,7 @@ const SEARCH = read('lib/app-search-index.ts')
 // ── a failed lookup is never a verdict ──────────────────────────────────────
 {
   check('an unreadable track list leaves the cell alone',
-    /NOBODY LOOKED/.test(read('app/api/cron/coverage-drain/route.ts')),
+    /NOBODY COULD LOOK/.test(read('app/api/cron/coverage-drain/route.ts')) && /if \(skipped\) \{/.test(DRAIN),
     'telling a creator their video cannot reach Germany when nobody looked is the worst thing here')
   check('a product lookup that threw is retried, not recorded',
     /Left alone so the next firing retries it/.test(read('app/api/cron/coverage-drain/route.ts')))

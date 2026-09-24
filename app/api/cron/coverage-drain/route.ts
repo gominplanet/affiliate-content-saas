@@ -43,7 +43,7 @@ import { marketByDomain } from '@/lib/markets'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
 import { coveragePriority, stockBlocks, type StockAnswer } from '@/lib/storefront-coverage'
-import { fetchKeepaBasics, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
+import { lookupAvailability } from '@/lib/product-availability'
 import { dubTarget } from '@/lib/dub-target'
 import { normalizeTier } from '@/lib/tier'
 import { STALL_AFTER_MS } from '@/lib/global-sync-recovery'
@@ -178,15 +178,6 @@ const STOCK_CELLS = 240
  *  Keepa's tokens refill a handful a minute, so a generous number here would
  *  drain the pool the whole product shares within an hour. */
 const STOCK_LOOKUPS = 20
-/** How long a cached answer stands. Whether a product is sold in a country at
- *  all barely changes; whether it is buyable today changes weekly. Two weeks is
- *  the compromise, and a wrong "out of stock" only costs ordering, never a
- *  block. */
-const STOCK_CACHE_DAYS = 14
-/** Yield the shared pool to interactive use below this. Deal Radar and the
- *  Finder are somebody waiting on a screen; this is a background grid. */
-const MIN_KEEPA_TOKENS = 200
-
 /**
  * Is the product actually on sale in that country.
  *
@@ -218,103 +209,20 @@ async function stock(sb: Sb): Promise<{ answered: number; blocked: number; spent
   if (rows.length === 0) return { answered: 0, blocked: 0, spent: 0 }
 
   const now = new Date().toISOString()
-  let answered = 0, blocked = 0, spent = 0
-
-  // The answers, keyed by the pair they are about.
-  const key = (asin: string, domain: string) => `${asin.toUpperCase()}:${domain}`
-  const answers = new Map<string, StockAnswer>()
-
-  // 1. Markets no server can answer. Free, and settled once rather than retried
-  //    every minute forever.
-  const serverless = rows.filter((r) => marketByDomain(r.domain)?.keepa == null)
-  for (const r of serverless) answers.set(key(r.asin, r.domain), 'no_answer')
-
-  const askable = rows.filter((r) => marketByDomain(r.domain)?.keepa != null)
-
-  // 2. The shared cache, across every creator.
-  const fresh = new Date(Date.now() - STOCK_CACHE_DAYS * 86_400_000).toISOString()
-  const wantedAsins = [...new Set(askable.map((r) => r.asin.toUpperCase()))]
-  if (wantedAsins.length > 0) {
-    try {
-      const { data: cached } = await sb.from('passport_asin_market')
-        .select('asin,marketplace,available,in_stock')
-        .in('asin', wantedAsins).gte('checked_at', fresh)
-      for (const c of (cached ?? [])) {
-        const mkt = [...new Set(askable.map((r) => r.domain))]
-          .find((d) => marketByDomain(d)?.host.toLowerCase() === String(c.marketplace).toLowerCase())
-        if (!mkt) continue
-        // in_stock is NULL where the writer did not know the buy box (SCOUT's
-        // /dp probe answers existence only), and that is recorded as listed
-        // rather than invented as out of stock.
-        const a: StockAnswer = !c.available ? 'not_listed' : (c.in_stock === false ? 'out_of_stock' : 'in_stock')
-        answers.set(key(String(c.asin), mkt), a)
-      }
-    } catch { /* no cache → everything below is a miss, which is correct */ }
-  }
-
-  // 3. What is left is paid for, within budget, newest-first because the claim
-  //    query already ordered by priority.
-  const misses = askable.filter((r) => !answers.has(key(r.asin, r.domain)))
-  if (misses.length > 0) {
-    if (!keepaConfigured()) {
-      // NOBODY LOOKED, and nobody can. Recorded only for the markets already
-      // settled above; the rest stay NULL and retry when a key exists.
-      await writeStock(sb, rows, answers, now)
-      return { answered: answers.size, blocked: 0, spent: 0, skipped: 'keepa_unconfigured' }
-    }
-    const tok = await fetchKeepaTokenStatus()
-    if (tok.tokensLeft != null && tok.tokensLeft < MIN_KEEPA_TOKENS) {
-      await writeStock(sb, rows, answers, now)
-      return { answered: answers.size, blocked: 0, spent: 0, skipped: 'low_tokens' }
-    }
-
-    // One call per domain, up to 100 ASINs each, so a catalogue sharing five
-    // products across two hundred videos pays five lookups per country.
-    const byDomain = new Map<string, Set<string>>()
-    for (const r of misses) byDomain.set(r.domain, (byDomain.get(r.domain) ?? new Set()).add(r.asin.toUpperCase()))
-
-    let budget = STOCK_LOOKUPS
-    const writeBack: Array<Record<string, unknown>> = []
-    for (const [domain, asinSet] of byDomain) {
-      if (budget <= 0) break
-      const mkt = marketByDomain(domain)
-      if (!mkt || mkt.keepa == null) continue
-      const batch = [...asinSet].slice(0, budget)
-      let info: Awaited<ReturnType<typeof fetchKeepaBasics>>
-      try {
-        info = await fetchKeepaBasics(batch, mkt.keepa)
-      } catch {
-        // Left alone so the next firing retries it.
-        continue
-      }
-      budget -= batch.length
-      spent += batch.length
-      for (const asin of batch) {
-        const p = info.get(asin)
-        // ABSENT FROM THE RESPONSE = the lookup did not happen for this ASIN.
-        // Never a verdict, so the cell keeps its NULL and comes back around.
-        if (!p) continue
-        const listed = !!p.title
-        const a: StockAnswer = !listed ? 'not_listed' : (p.priceNowCents != null ? 'in_stock' : 'out_of_stock')
-        answers.set(key(asin, domain), a)
-        writeBack.push({
-          asin, marketplace: mkt.host.toLowerCase(), available: listed,
-          in_stock: listed ? p.priceNowCents != null : false,
-          price_cents: p.priceNowCents ?? null, checked_at: now,
-        })
-      }
-    }
-    if (writeBack.length > 0) {
-      try {
-        await sb.from('passport_asin_market').upsert(writeBack, { onConflict: 'asin,marketplace' })
-      } catch { /* the cache is best-effort; the answers below still land */ }
-    }
+  // THE SAME QUESTION LAUNCH BATCH ASKS, answered in one place
+  // (lib/product-availability): Keepa-less countries settled, the shared cache,
+  // then Keepa within budget. Newest first, because the claim query already
+  // ordered by priority.
+  const { answers, spent, skipped } = await lookupAvailability(sb, rows, { lookupBudget: STOCK_LOOKUPS })
+  if (skipped) {
+    // NOBODY COULD LOOK at the rest (no key, or the pool is low). Recorded only
+    // for what was settled; the rest stay NULL and retry later.
+    await writeStock(sb, rows, answers, now)
+    return { answered: answers.size, blocked: 0, spent, skipped }
   }
 
   const written = await writeStock(sb, rows, answers, now)
-  answered = written.answered
-  blocked = written.blocked
-  return { answered, blocked, spent }
+  return { answered: written.answered, blocked: written.blocked, spent }
 }
 
 /** Put the answers on the cells. Separate so every early return above still

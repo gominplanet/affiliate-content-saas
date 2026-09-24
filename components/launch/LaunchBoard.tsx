@@ -221,6 +221,29 @@ export default function LaunchBoard() {
   // minutes later.
   const onYouTubeCount = items.filter((i) => !!i.video_id).length
   useEffect(() => { if (onYouTubeCount > 0) { studioTick.current(); amazonTick.current() } }, [onYouTubeCount])
+  // ── WHICH COUNTRIES SELL EACH VIDEO'S PRODUCT, before launch ─────────────
+  // Asked again whenever the set of products changes. A country that sells none
+  // of them is not blocked from being ticked; it is said, so the choice is made
+  // knowing.
+  type Verdict = 'sold' | 'out_of_stock' | 'not_sold' | 'cannot_check' | 'not_checked'
+  const [avail, setAvail] = useState<{
+    videos: Array<{ id: string; title: string }>
+    markets: Array<{ domain: string; byVideo: Array<{ id: string; verdict: Verdict }> }>
+    skipped: string | null
+  } | null>(null)
+  const [availLoading, setAvailLoading] = useState(false)
+  const productKey = items.map((i) => (i.asin || '').toUpperCase()).filter(Boolean).sort().join(',')
+  useEffect(() => {
+    if (!batchId || !productKey) { setAvail(null); return }
+    let gone = false
+    setAvailLoading(true)
+    fetch(`/api/launch/batches/${batchId}/availability`)
+      .then((r) => r.json())
+      .then((j) => { if (!gone && j?.ok) setAvail({ videos: j.videos ?? [], markets: j.markets ?? [], skipped: j.skipped ?? null }) })
+      .catch(() => { /* the step still works; it just says nothing about availability */ })
+      .finally(() => { if (!gone) setAvailLoading(false) })
+    return () => { gone = true }
+  }, [batchId, productKey])
   const [mainLaunchEl, setMainLaunchEl] = useState<HTMLButtonElement | null>(null)
   const [mainLaunchInView, setMainLaunchInView] = useState(false)
   useEffect(() => {
@@ -1010,6 +1033,48 @@ export default function LaunchBoard() {
                         ? `${m.langName}, dubbed \u00b7 thumbnail with no words`
                         : 'English \u00b7 thumbnail with the hook'}
                     </span>
+                    {/* DOES AMAZON SELL THE PRODUCT HERE, per video, from the
+                        same check the storefront grid makes. Said before the
+                        tick, because the other way round a creator launched
+                        to seven countries and six could not take one video. */}
+                    {(() => {
+                      const row = avail?.markets.find((x) => x.domain === m.domain)
+                      if (!row || row.byVideo.length === 0) {
+                        return availLoading && productKey
+                          ? <span className="block text-[11px]" style={muted}>Checking which products are sold here…</span>
+                          : null
+                      }
+                      const name = (id: string) => avail!.videos.find((v) => v.id === id)?.title ?? 'a video'
+                      const n = row.byVideo.length
+                      const sold = row.byVideo.filter((v) => v.verdict === 'sold' || v.verdict === 'out_of_stock')
+                      const notSold = row.byVideo.filter((v) => v.verdict === 'not_sold')
+                      const oos = row.byVideo.filter((v) => v.verdict === 'out_of_stock')
+                      const cannot = row.byVideo.every((v) => v.verdict === 'cannot_check')
+                      const unchecked = row.byVideo.filter((v) => v.verdict === 'not_checked')
+                      if (cannot) {
+                        return <span className="block text-[11px]" style={muted}>Cannot be checked ahead of time here; SCOUT checks when it uploads</span>
+                      }
+                      return (
+                        <span className="block text-[11px]">
+                          {notSold.length === 0 && unchecked.length === 0 && (
+                            <span style={{ color: '#10B981' }}>{n === 1 ? 'Sells this product' : `Sells all ${n} products`}</span>
+                          )}
+                          {notSold.length > 0 && (
+                            <span style={{ color: notSold.length === n ? '#ef4444' : '#d97706' }}>
+                              {notSold.length === n
+                                ? (n === 1 ? 'Does not sell this product' : `Sells none of the ${n} products`)
+                                : `Sells ${sold.length} of ${n}. Not sold: ${notSold.map((v) => name(v.id)).join(', ')}`}
+                            </span>
+                          )}
+                          {notSold.length === 0 && unchecked.length > 0 && (
+                            <span style={muted}>{`Sells ${sold.length} of ${n}; ${unchecked.length} not checked yet`}</span>
+                          )}
+                          {oos.length > 0 && (
+                            <span className="block" style={{ color: '#d97706' }}>Out of stock today: {oos.map((v) => name(v.id)).join(', ')}</span>
+                          )}
+                        </span>
+                      )
+                    })()}
                     {/* ROOM LEFT TODAY, before the wall rather than at it.
                         Amazon takes twenty a day on the US store and ten
                         everywhere else, and a number that stops moving with no
@@ -1032,6 +1097,15 @@ export default function LaunchBoard() {
               )
             })}
           </div>
+          {/* WHY SOME SAY "NOT CHECKED", rather than leaving it to look like
+              a verdict. */}
+          {avail?.skipped && (
+            <p className="text-[11.5px]" style={{ color: '#d97706' }}>
+              {avail.skipped === 'low_tokens'
+                ? 'The product lookup service is busy right now, so some countries are not checked yet. Reopen this step in a few minutes.'
+                : 'The product lookup service is not available right now, so some countries are not checked. That is not the same as not sold.'}
+            </p>
+          )}
           {batch.markets.length > 0 && (
             <div className="flex items-center gap-3 flex-wrap">
               <button

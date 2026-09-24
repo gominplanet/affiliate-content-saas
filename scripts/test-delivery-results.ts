@@ -35,6 +35,14 @@ check('a country with no listing yet still shows, from the coverage grid',
   'a video meant for seven countries showed one and said nothing about the other six')
 check('each batch row shows each country', /it\.amazon!\.map\(/.test(LB) && /a\.state === 'failed'/.test(LB))
 
+// WHICH COUNTRIES SELL THE PRODUCT, asked before launch, from the grid's own check.
+const AV = code('app/api/launch/batches/[id]/availability/route.ts')
+check('the batch asks the same availability function the grid uses',
+  /lookupAvailability\(admin, pairs/.test(AV) && /lookupAvailability\(sb, rows/.test(code('app/api/cron/coverage-drain/route.ts')))
+check('not checked and cannot check are never read as not sold',
+  /if \(a === 'not_listed'\) return 'not_sold'/.test(AV) && /return 'not_checked'/.test(AV) && /'cannot_check'/.test(AV))
+check('the countries step shows it', /\/availability`/.test(LB) && /Not sold: \$\{notSold/.test(LB))
+
 const base = { ok: false, handedOver: 0, duplicates: 0, failed: [], waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false }
 const mixed = deliverySummary({ ...base, handedOver: 3, failed: [{ domain: 'amazon.fr', country: 'France', error: 'moderation' }] })
 check('a mix names the failure and its reason', mixed.some((l) => /France: moderation/.test(l)) && mixed.some((l) => /^3 uploaded/.test(l)))
