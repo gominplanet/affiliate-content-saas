@@ -227,7 +227,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and the schedule is a separate confirmed call',
     /updateVideoStatus\(videoId, \{/.test(DRAIN) && /publishAt: String\(it\.planned_publish_at\)/.test(DRAIN))
   check('which is skipped only for the ones going out now',
-    /if \(!goNow && !missed\) \{[\s\S]{0,120}?updateVideoStatus/.test(DRAIN),
+    /if \(!goNow && !missed && !heldBack\) \{[\s\S]{0,1200}?updateVideoStatus/.test(DRAIN),
     'calling it with a past time fails every single time')
   check('one video per firing',
     /const PUBLISHES = 1/.test(DRAIN),
@@ -1624,7 +1624,8 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'each tried once; a refusal is written, not retried every minute')
   // THE YOUTUBE TITLE IS A TITLE, NOT THE THUMBNAIL HOOK.
   check('a batch video gets the YouTube title Co-Pilot\'s writer returns',
-    /title: meta\.title\.slice\(0, 100\), title_source: 'mvp'/.test(DRAIN) && /\.eq\('id', it\.id\)\.neq\('title_source', 'creator'\)/.test(DRAIN),
+    /title: meta\.title\.slice\(0, 100\), title_source: 'mvp'/.test(DRAIN) && /\.eq\('id', it\.id\)\.or\('title_source\.is\.null,title_source\.neq\.creator'\)/.test(DRAIN)
+    && !/\.neq\('title_source', 'creator'\)/.test(DRAIN),
     '"CHIA WORTH IT?" is a thumbnail hook, and it went to YouTube as the title')
   // ── THE WORKER DOES NOT DOUBLE UP, AND NEVER OUTLIVES ITS FIRING ───────
   check('an upload another firing is running is left to it',
@@ -1700,7 +1701,25 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /const keep = \{\s*madeForKids: false,\s*embeddable: true,/.test(DRAIN),
     'the scheduling call sent the time alone, which switched embedding off on every batch video')
   check('a video going out now is uploaded private and made public only once paid promotion reads back',
-    /privacyStatus: 'private',\s*notifySubscribers/.test(DRAIN) && /if \(!paidConfirmed\) \{\s*heldBack = /.test(DRAIN))
+    /privacyStatus: 'private',\s*notifySubscribers/.test(DRAIN) && /if \(!missed && !paidConfirmed\) \{\s*heldBack = /.test(DRAIN)
+    && /if \(goNow && !heldBack\) \{/.test(DRAIN))
+  {
+    // THE SCHEDULE IS GATED TOO: the read comes before the publish time is
+    // set, and a video YouTube did not confirm is not given one.
+    const readAt = DRAIN.indexOf('readBack = await yt.readDisclosures(videoId)')
+    const schedAt = DRAIN.indexOf("publishAt: String(it.planned_publish_at),")
+    check('paid promotion is read back before a publish time is set',
+      readAt > 0 && schedAt > 0 && readAt < schedAt && /if \(!goNow && !missed && !heldBack\) \{/.test(DRAIN),
+      'a scheduled video went public undisclosed at its time')
+    check('every hold starts "Kept private." so a new time can be given to it',
+      (DRAIN.match(/`Kept private\. YouTube did not confirm paid promotion/g) ?? []).length === 2 && !/Kept private: /.test(DRAIN))
+    check('a hand-over note never replaces a kept-private one',
+      /if \(\/\^Kept private\\\.\/\.test\(was\)\) return/.test(DRAIN) && /if \(\(missed \|\| heldBack\) && !handed\.ok\)/.test(DRAIN))
+    check('an unreadable Amazon-only choice waits instead of uploading',
+      /if \(abErr && !\(abErr\.code === '42703'/.test(DRAIN))
+    check('a row that cannot upload is said, not skipped for ever',
+      /It has no title, so it cannot go to YouTube/.test(DRAIN))
+  }
   check('what YouTube kept is recorded', /api_disclosures: \{/.test(DRAIN) && /await yt\.readDisclosures\(videoId\)/.test(DRAIN))
   const REPORT = live(read('components/launch/LaunchReport.tsx'))
   check('the report only says All done when nothing is still working',

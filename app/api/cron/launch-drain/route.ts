@@ -305,13 +305,16 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // ONLY WHAT NOBODY CHOSE. 'creator' is never touched, and the write is
     // conditional on it still not being 'creator', so a title typed while this
     // firing was working is not overwritten by it.
+    // A ROW WITH NO SOURCE AT ALL counts as nobody's: in SQL, NULL <> 'creator'
+    // is not true, so a plain "not creator" filter skipped exactly those rows
+    // and their file-name titles went to YouTube.
     const titleSource = String(it.title_source || 'filename')
     if (titleSource !== 'creator' && titleSource !== 'mvp') {
       const written = await productTitle(it.user_id, title, asin)
       if (written) {
         title = written
         await sb.from('launch_items')
-          .update({ title, title_source: 'mvp', updated_at: now() }).eq('id', it.id).neq('title_source', 'creator')
+          .update({ title, title_source: 'mvp', updated_at: now() }).eq('id', it.id).or('title_source.is.null,title_source.neq.creator')
       }
     }
 
@@ -340,7 +343,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
         if ((d ?? []).length > 0 && meta.title) {
           await sb.from('launch_items')
             .update({ title: meta.title.slice(0, 100), title_source: 'mvp', updated_at: now() })
-            .eq('id', it.id).neq('title_source', 'creator')
+            .eq('id', it.id).or('title_source.is.null,title_source.neq.creator')
         }
       } else {
         metaMissing++
@@ -376,9 +379,12 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       // knows what their listing will look like rather than finding out later.
       await sb.from('launch_items').update({
         state: 'prepared',
-        reason: `No thumbnail could be built after ${tries} tries, so YouTube will use a frame from the video.`,
+        // BOTH GAPS, when there are two. The missing description is the one
+        // that costs money (no affiliate link), and it used to go unsaid here.
+        reason: `No thumbnail could be built after ${tries} tries, so YouTube will use a frame from the video.`
+          + (haveDescription ? '' : ' No description could be written either, so it has no affiliate link. Add one in its row before you launch.'),
         updated_at: now(),
-      }).eq('id', it.id)
+      }).eq('id', it.id).eq('state', 'preparing')
       blocked++
       continue
     }
@@ -454,7 +460,11 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // whole update, so the state never moves and the screen reports the same
     // sentence forever. The failure lands on the row in words, through a
     // SECOND write that touches only columns the table has always had.
-    const { error: wrote } = await sb.from('launch_items').update(patch).eq('id', it.id)
+    // ONLY OVER THE ROW THIS FIRING CLAIMED. A product changed meanwhile
+    // resets the thumbnails and their try count, and this firing's image,
+    // built for the old product, must not land on top of that.
+    const { error: wrote } = await sb.from('launch_items').update(patch)
+      .eq('id', it.id).eq('state', 'preparing').eq('thumb_tries', tries + 1)
     if (wrote) {
       failed++
       await sb.from('launch_items').update({
@@ -690,6 +700,14 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
   {
     const batchIds = [...new Set(items.map((i: { batch_id: string }) => i.batch_id))]
     const { data: ab, error: abErr } = await sb.from('launch_batches').select('id,send_to_youtube').in('id', batchIds)
+    // ONLY A MISSING COLUMN MEANS "EVERY BATCH GOES TO YOUTUBE". Any other
+    // failure to read the choice (a timeout, a blip) waits for the next
+    // firing: guessing YouTube would upload and schedule a batch its creator
+    // said must not go there.
+    if (abErr && !(abErr.code === '42703' || /send_to_youtube/.test(String(abErr.message || '')))) {
+      console.warn('[launch-drain] could not read which batches are Amazon only; waiting', { said: abErr.message })
+      return { scheduled: 0, failed: 0 }
+    }
     if (!abErr) for (const b of (ab ?? []) as Array<{ id: string; send_to_youtube: boolean | null }>) if (b.send_to_youtube === false) amazonOnlyBatches.add(b.id)
   }
 
@@ -701,7 +719,17 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     if (budget <= 0) break
     const src = (it.rendered_url || '').trim()
     const title = (it.title || '').trim()
-    if (!/^https:\/\//i.test(src) || !title) continue
+    if (!/^https:\/\//i.test(src) || !title) {
+      // SAID, NOT SKIPPED. A row with no file or no title used to be passed
+      // over in silence every firing, reading "Queued for upload" for ever
+      // while it took a place in the list from rows that could go.
+      await sb.from('launch_items').update({
+        state: 'blocked',
+        reason: !title ? 'It has no title, so it cannot go to YouTube. Give it one and press Try again.' : 'Its finished video file is missing, so it cannot go to YouTube. Press Try again to prepare it again.',
+        updated_at: stamp(),
+      }).eq('id', it.id).eq('state', 'prepared').is('youtube_video_id', null)
+      continue
+    }
 
     // ── AMAZON ONLY: NOTHING GOES TO YOUTUBE ─────────────────────────────
     // Handed straight to the Amazon side under a placeholder id (the same
@@ -714,7 +742,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         .eq('id', it.id).eq('state', 'prepared').select('id')
       if (!took || took.length === 0) continue
       const handed = await handOverToAmazon(sb, it, `upload-${it.id}`, null, stamp())
-      await noteHandOver(sb, it.id, handed)
+      await noteHandOver(sb, it.id, handed, true)
       scheduled++
       continue
     }
@@ -864,13 +892,21 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         // IMMEDIATELY, AND ON ITS OWN. Not bundled into the update at the end
         // of this block: everything between here and there is a way for this
         // fact to be lost, and losing it is what put three copies on a channel.
-        await sb.from('launch_items')
-          .update({ youtube_video_id: videoId, updated_at: stamp() }).eq('id', it.id)
+        // CHECKED, AND TRIED AGAIN. A write that failed in silence here is a
+        // second upload on the next firing. Three goes, then it is logged;
+        // the update at the end of this block writes the id once more.
+        for (let w = 0; w < 3; w++) {
+          const { error: idErr } = await sb.from('launch_items')
+            .update({ youtube_video_id: videoId, updated_at: stamp() }).eq('id', it.id)
+          if (!idErr) break
+          console.error('[launch-drain] could not record the YouTube id', { item: it.id, videoId, said: idErr.message, attempt: w + 1 })
+          await new Promise((r) => setTimeout(r, 1000 * (w + 1)))
+        }
       }
 
-      // The batch's zone, only when it is needed for the kept-private note.
+      // The batch's zone, only when it is needed for a kept-private note.
       let missedZone: string | null = null
-      if (missed) {
+      if (missed || disclose) {
         const { data: zb } = await sb.from('launch_batches').select('timezone').eq('id', it.batch_id).maybeSingle()
         missedZone = zb?.timezone ?? null
       }
@@ -899,7 +935,28 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         ...(disclose ? { containsSyntheticMedia: false } : {}),
       }
 
-      if (!goNow && !missed) {
+      // ── READ BACK WHAT YOUTUBE KEPT, BEFORE ANY TIME IS SET ─────────────
+      //
+      // THE DISCLOSURE GATES THE SCHEDULE TOO, not only "now". This read used
+      // to come after the publish time was set, so a video whose paid
+      // promotion YouTube did not confirm was scheduled anyway and went public
+      // undisclosed at its time. Now it is kept private with no time, and the
+      // row says why and what to do; a new time and Launch these too resumes
+      // it from here, without uploading it again.
+      let readBack: Awaited<ReturnType<typeof yt.readDisclosures>> = null
+      try { readBack = await yt.readDisclosures(videoId) } catch (re) {
+        discloseError = discloseError ?? `could not read the video back: ${(re instanceof Error ? re.message : String(re)).slice(0, 160)}`
+      }
+      const paidConfirmed = !disclose || readBack?.paidPromotion === true
+      let heldBack: string | null = null
+      if (!missed && !paidConfirmed) {
+        heldBack = (goNow
+          ? `Kept private. YouTube did not confirm paid promotion on it${discloseError ? ` (${discloseError})` : ''}, so it was not made public. Give it a time and press Launch these too, or set paid promotion in Studio and make it public there.`
+          : `Kept private. YouTube did not confirm paid promotion on it${discloseError ? ` (${discloseError})` : ''}, so it was not scheduled for ${missedWhen(String(it.planned_publish_at), missedZone)}. Give it a time again and press Launch these too, or set paid promotion in Studio and schedule it there.`
+        ).slice(0, 400)
+      }
+
+      if (!goNow && !missed && !heldBack) {
         // THE SCHEDULE ITSELF, and its result is what decides whether this row
         // may call itself scheduled. A failure here is now said in the terms
         // that matter to somebody looking at their channel: the video is on it.
@@ -930,31 +987,17 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       // and throwing here would send the row back for a retry that uploads it
       // a second time. What it must not do is fail quietly, so the outcome is
       // written either way and the board reads it.
-      // ── READ BACK WHAT YOUTUBE KEPT, THEN (FOR "NOW") GO PUBLIC ─────────
-      let readBack: Awaited<ReturnType<typeof yt.readDisclosures>> = null
-      try { readBack = await yt.readDisclosures(videoId) } catch (re) {
-        discloseError = discloseError ?? `could not read the video back: ${(re instanceof Error ? re.message : String(re)).slice(0, 160)}`
-      }
-      const paidConfirmed = !disclose || readBack?.paidPromotion === true
-      // NOW, ONLY WITH THE DISCLOSURE IN PLACE. A video the creator agreed to
-      // send now is made public here, after paid promotion reads back; without
-      // it, it stays private and the row says why, rather than going out
-      // undisclosed.
-      let heldBack: string | null = null
-      if (goNow) {
-        if (!paidConfirmed) {
-          heldBack = `Kept private: YouTube did not confirm paid promotion on it${discloseError ? ` (${discloseError})` : ''}, and it should not go public without it. Set it in Studio and make it public there, or press Try again.`
-        } else {
-          try {
-            await yt.updateVideoStatus(videoId, {
-              privacyStatus: 'public',
-              notifySubscribers: notifyByBatch.get(it.batch_id) === true,
-              ...keep,
-            })
-          } catch (ge) {
-            const said = ge instanceof Error && ge.message ? ge.message : String(ge)
-            throw new Error(`the video is on your channel, private, but YouTube would not make it public: ${said}`)
-          }
+      // ── (FOR "NOW") GO PUBLIC, ONLY WITH THE DISCLOSURE IN PLACE ────────
+      if (goNow && !heldBack) {
+        try {
+          await yt.updateVideoStatus(videoId, {
+            privacyStatus: 'public',
+            notifySubscribers: notifyByBatch.get(it.batch_id) === true,
+            ...keep,
+          })
+        } catch (ge) {
+          const said = ge instanceof Error && ge.message ? ge.message : String(ge)
+          throw new Error(`the video is on your channel, private, but YouTube would not make it public: ${said}`)
         }
       }
       // Recorded on its own, so a database without migration 368 loses the
@@ -1029,7 +1072,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       const handed = await handOverToAmazon(sb, it, videoId, channelId, goNow ? stamp() : it.planned_publish_at)
       // Not overwriting the kept-private note with a hand-over note: the
       // private one is the thing the creator has to act on.
-      if (missed && !handed.ok) { scheduled++; continue }
+      if ((missed || heldBack) && !handed.ok) { scheduled++; continue }
       await noteHandOver(sb, it.id, handed)
       scheduled++
     } catch (e) {
@@ -1162,12 +1205,20 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
  *  is on YouTube and the row's state says so; this is a note on a working row,
  *  and it names the next attempt so it does not read as the end. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function noteHandOver(sb: Sb, id: string, r: HandOver): Promise<void> {
+async function noteHandOver(sb: Sb, id: string, r: HandOver, amazonOnly = false): Promise<void> {
   if (r.ok || !('error' in r)) return
-  await sb.from('launch_items').update({
-    reason: `On YouTube, but it could not be passed to the Amazon side yet: ${r.error}. MVP tries again every minute.`.slice(0, 300),
-    updated_at: new Date().toISOString(),
-  }).eq('id', id)
+  // NEVER OVER A KEPT-PRIVATE NOTE. The repair pass retries blocked rows too,
+  // and each failed retry used to replace "Kept private. Its time passed..."
+  // (the thing the creator has to act on) with a note about Amazon.
+  const { data: cur } = await sb.from('launch_items').select('reason').eq('id', id).maybeSingle()
+  const was = String(cur?.reason ?? '')
+  if (/^Kept private\./.test(was)) return
+  const note = amazonOnly
+    ? `It could not be passed to the Amazon side yet: ${r.error}. MVP tries again every minute.`
+    : `On YouTube, but it could not be passed to the Amazon side yet: ${r.error}. MVP tries again every minute.`
+  const q = sb.from('launch_items').update({ reason: note.slice(0, 300), updated_at: new Date().toISOString() }).eq('id', id)
+  // Written only over what was read, so a note that changed meanwhile wins.
+  await (cur?.reason == null ? q.is('reason', null) : q.eq('reason', was))
 }
 
 /**
@@ -1181,7 +1232,7 @@ async function noteHandOver(sb: Sb, id: string, r: HandOver): Promise<void> {
 const REPAIRS = 10
 async function repairs(sb: Sb): Promise<{ linked: number; failed: number }> {
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,title,description,asin,thumbnail_url,thumbnail_clean_url,duration_seconds,clean_url,planned_publish_at,publish_at,youtube_video_id')
+    .select('id,user_id,batch_id,state,title,description,asin,thumbnail_url,thumbnail_clean_url,duration_seconds,clean_url,planned_publish_at,publish_at,youtube_video_id')
     // BLOCKED TOO, when it is on YouTube: a video kept private after a missed
     // slot is still a video, and its Amazon listings do not wait for YouTube.
     // Its hand-over failing once used to mean it never reached Amazon at all.
@@ -1212,7 +1263,7 @@ async function repairs(sb: Sb): Promise<{ linked: number; failed: number }> {
     // the first hand-over did, so the retry lands on the same record.
     const r = await handOverToAmazon(sb, it, String(it.youtube_video_id || `upload-${it.id}`), null, it.publish_at)
     if (r.ok) linked++
-    else { failed++; await noteHandOver(sb, it.id, r) }
+    else { failed++; await noteHandOver(sb, it.id, r, it.state === 'amazon_only') }
   }
   return { linked, failed }
 }

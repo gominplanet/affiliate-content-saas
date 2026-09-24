@@ -49,25 +49,35 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // everything present means it was YouTube that refused.
   const patch: Record<string, unknown> = { reason: null, updated_at: new Date().toISOString() }
   let from: string
-  if (!item.rendered_url) {
+  // THE UPLOAD'S TRIES START AGAIN ON EVERY PATH. A video sent back to its
+  // thumbnail kept the tries it had used on YouTube, and could give up the
+  // moment it came back without being tried once.
+  patch.publish_tries = 0
+  if (String(item.youtube_video_id || '').trim()) {
+    // ALREADY UPLOADED, so this must not start again from the file, or from
+    // its thumbnail (checked first for that reason: a video on YouTube that
+    // went without a designed thumbnail is not rebuilt and re-queued). The
+    // worker skips the upload for a row that has an id, which is what stopped
+    // one launch putting three copies of the same video on a real channel.
+    patch.state = 'prepared'
+    from = 'setting the publish time on the video already on your channel'
+  } else if (!item.rendered_url) {
     patch.state = 'draft'; patch.render_tries = 0
     from = 'the CTA'
   } else if (!item.thumbnail_url || !item.thumbnail_clean_url) {
     patch.state = 'preparing'; patch.thumb_tries = 0
     from = 'the thumbnail'
-  } else if (String(item.youtube_video_id || '').trim()) {
-    // ALREADY UPLOADED, so this must not start again from the file. The worker
-    // skips the upload for a row that has an id, which is what stopped one
-    // launch putting three copies of the same video on a real channel.
-    patch.state = 'prepared'; patch.publish_tries = 0
-    from = 'setting the publish time on the video already on your channel'
   } else {
     patch.state = 'prepared'; patch.publish_tries = 0
     from = 'the YouTube upload'
   }
 
-  const { error } = await sb.from('launch_items').update(patch).eq('id', id).eq('user_id', user.id)
+  // Only while it is still given up: two presses, or a press racing the
+  // worker, must not both move it.
+  const { data: moved, error } = await sb.from('launch_items').update(patch)
+    .eq('id', id).eq('user_id', user.id).eq('state', 'blocked').select('id')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!moved || moved.length === 0) return NextResponse.json({ error: 'This one has already moved on. Reload to see where it is.' }, { status: 409 })
 
   // WHAT IT WILL ACTUALLY DO, so nobody presses it twice wondering.
   return NextResponse.json({
