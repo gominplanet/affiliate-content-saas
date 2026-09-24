@@ -813,6 +813,35 @@ export class YouTubeOAuthService {
 
     if (Object.keys(status).length === 0) return
 
+    // ── READ, MERGE, WRITE ────────────────────────────────────────────────
+    //
+    // A part=status PUT DELETES every status property it leaves out. Callers
+    // pass only what they mean to change (a time, a visibility), so each
+    // call quietly erased the rest: "Allow embedding" switched off, the
+    // made-for-kids answer dropped, the AI-use answer SCOUT had just set and
+    // read back wiped, a Creative Commons licence reset to Standard. So the
+    // video's current settings are read first and sent back with the change
+    // on top. A new visibility without a time drops the old schedule, which
+    // is what choosing it means. If the read fails, the call goes ahead as
+    // before rather than not at all.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await this.get<any>('/videos', { part: 'status', id: videoId })
+      const current = data?.items?.[0]?.status as Record<string, unknown> | undefined
+      if (current) {
+        const WRITABLE = ['privacyStatus', 'publishAt', 'embeddable', 'license', 'publicStatsViewable', 'selfDeclaredMadeForKids', 'containsSyntheticMedia']
+        const merged: Record<string, unknown> = {}
+        for (const k of WRITABLE) if (current[k] !== undefined && current[k] !== null) merged[k] = current[k]
+        Object.assign(merged, status)
+        if (!args.publishAt && args.privacyStatus) delete merged.publishAt
+        if (merged.publishAt) merged.privacyStatus = 'private'
+        for (const k of Object.keys(merged)) delete status[k]
+        Object.assign(status, merged)
+      }
+    } catch (e) {
+      console.warn('[youtube] status read before update failed; sending only the change', { videoId, said: e instanceof Error ? e.message : String(e) })
+    }
+
     // THE CREATOR'S CHOICE, SAID EVERY TIME. This used to be set only when a
     // caller passed exactly `false`; anything else fell back to YouTube's
     // default, which is to notify. Now the value is required and always sent,

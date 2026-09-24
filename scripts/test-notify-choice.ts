@@ -106,6 +106,21 @@ const live = (src: string) => src
     'two calls that could disagree about the same choice')
 }
 
+// ── a status call keeps what it does not change ────────────────────────────
+{
+  const YT = read('services/youtube/index.ts')
+  const fn = YT.slice(YT.indexOf('async updateVideoStatus('), YT.indexOf('async setPaidPromotion('))
+  const readAt = fn.indexOf("part: 'status', id: videoId")
+  const putAt = fn.indexOf("method: 'PUT'")
+  check('updateVideoStatus reads the video\'s status before it writes',
+    fn.length > 0 && readAt > 0 && putAt > 0 && readAt < putAt,
+    'a part=status PUT erases every field it leaves out: embedding, made for kids, the AI-use answer')
+  check('and keeps the fields it was not asked to change',
+    /const WRITABLE = \[[^\]]*'embeddable'[^\]]*'selfDeclaredMadeForKids'[^\]]*'containsSyntheticMedia'/.test(fn)
+    && /Object\.assign\(merged, status\)/.test(fn), '')
+  check('a scheduled time always goes out as private', /if \(merged\.publishAt\) merged\.privacyStatus = 'private'/.test(fn), '')
+}
+
 // ── SCOUT is told the choice explicitly ────────────────────────────────────
 {
   const EF = read('lib/extension-frame.ts')
