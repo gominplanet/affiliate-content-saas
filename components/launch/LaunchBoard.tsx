@@ -137,6 +137,20 @@ export default function LaunchBoard() {
   // (shown until the reload that brings the stored copy back).
   const [studioBusy, setStudioBusy] = useState<string | null>(null)
   const [liveRuns, setLiveRuns] = useState<Record<string, StoredStudioRun>>({})
+  // ONE LAUNCH BUTTON IN VIEW, NEVER TWO. The bar at the bottom exists so
+  // Launch is never somewhere you have to scroll to find; when the real button
+  // is already on screen, the bar was a second copy of it directly underneath,
+  // and a creator reasonably asked what the other one did. So the bar only
+  // shows while the schedule step's button is out of view (scrolled away, or
+  // its step folded shut).
+  const [mainLaunchEl, setMainLaunchEl] = useState<HTMLButtonElement | null>(null)
+  const [mainLaunchInView, setMainLaunchInView] = useState(false)
+  useEffect(() => {
+    if (!mainLaunchEl || typeof IntersectionObserver === 'undefined') { setMainLaunchInView(false); return }
+    const io = new IntersectionObserver(([e]) => setMainLaunchInView(!!e?.isIntersecting))
+    io.observe(mainLaunchEl)
+    return () => io.disconnect()
+  }, [mainLaunchEl])
   // Rows with an edited time that has not been saved. Launch refuses while
   // any exists, because it would launch with the old time.
   const [dirtyRows, setDirtyRows] = useState<Record<string, boolean>>({})
@@ -1194,6 +1208,7 @@ export default function LaunchBoard() {
           )}
 
           <button
+            ref={setMainLaunchEl}
             onClick={() => void launch()}
             disabled={!!blocker || unsaved.length > 0 || busy === 'launch' || batch.state === 'launching' || batch.state === 'launched'}
             className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
@@ -1327,7 +1342,7 @@ export default function LaunchBoard() {
           Launch lived inside step six, so reaching it meant scrolling past
           everything and opening an accordion. It rides along now, with the
           reason it is disabled beside it rather than nowhere. */}
-      {batch.state !== 'launched' && items.length > 0 && (
+      {batch.state !== 'launched' && items.length > 0 && !mainLaunchInView && (
         <div className="sticky bottom-3 z-10 rounded-xl border px-3 py-2.5 flex items-center gap-3 flex-wrap"
           style={{
             borderColor: blocker ? 'var(--border)' : '#0EA5A4',
