@@ -16,12 +16,15 @@
 // handled from our side. The Amazon upload is the one part that needs their
 // browser, because SCOUT drives their own logged-in Creator account and there
 // is no server-side session for amazon.de.
-'use client'
-
 import PageHero from '@/components/layout/PageHero'
 import LaunchBoard from '@/components/launch/LaunchBoard'
+import LiftoffRunner from '@/components/launch/LiftoffRunner'
 
-export default function LiftoffPage() {
+// ?background=1 is the tab SCOUT opens, pinned and behind, to finish launched
+// batches while this page is closed. It shows the runner, not the board.
+export default async function LiftoffPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const sp = await searchParams
+  if (sp.background === '1') return <LiftoffRunner />
   return (
     <>
       <PageHero

@@ -8989,7 +8989,10 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
     // FOREGROUND: Studio is a heavy SPA and DOM interaction is far more reliable
     // in a focused tab (background tabs throttle timers/rendering). We restore
     // the caller's tab in `finally` so MVP stays in front afterward.
-    const tab = await chrome.tabs.create({ url: STUDIO_VIDEO(videoId, startPanel), active: true })
+    // IN THE BACKGROUND RUNNER, never in front: the creator is using Chrome
+    // for something else, and a Studio tab jumping forward every few minutes
+    // would be the runner getting in the way. Read-backs keep it honest.
+    const tab = await chrome.tabs.create({ url: STUDIO_VIDEO(videoId, startPanel), active: want.background !== true })
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     const summarise = (list, path) => {
@@ -9089,7 +9092,7 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
   } finally {
     stopKeepAlive(keepAlive)
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+    if (callerTabId != null && want.background !== true) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
   }
 }
 
@@ -9480,7 +9483,129 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 })
 
+
+// ── LIFTOFF IN THE BACKGROUND ────────────────────────────────────────────────
+//
+// WHY. After Liftoff is pressed, two jobs can only run in the creator's own
+// browser: the Amazon uploads (their signed-in Creator account; Amazon has no
+// upload API) and the Studio-only settings. Both used to run only while the
+// Liftoff page happened to be open, so closing the tab stopped them.
+//
+// HOW. The page asks SCOUT to keep Liftoff running. Every few minutes an alarm
+// wakes SCOUT; if no Liftoff tab is open, it opens one, pinned and in the
+// background, with ?background=1. That page goes through every launched batch
+// (Studio steps, then Amazon), and when it has nothing left it tells SCOUT,
+// which closes the tab and sets the next wake: soon when more work is coming
+// (a dub rendering, an upload queued), not at all when everything is done
+// (the next Launch wakes it again).
+//
+// The page does the work, not SCOUT, so the rules stay in one place and run
+// with the creator's own MVP login. SCOUT only decides when to open the tab
+// and makes sure it is closed.
+const LIFTOFF_KEY = 'mvp_liftoff_auto'
+const LIFTOFF_ALARM = 'mvp-liftoff'
+const LIFTOFF_CLOSE_ALARM = 'mvp-liftoff-close'
+const LIFTOFF_ORIGINS = /^https:\/\/(www\.)?mvpaffiliate\.io$|^http:\/\/localhost:3000$/
+
+async function liftoffState() {
+  try { const st = await chrome.storage.local.get([LIFTOFF_KEY]); return st[LIFTOFF_KEY] || {} } catch (e) { return {} }
+}
+async function liftoffSave(patch) {
+  const cur = await liftoffState()
+  const next = Object.assign({}, cur, patch)
+  try { await chrome.storage.local.set({ [LIFTOFF_KEY]: next }) } catch (e) {}
+  return next
+}
+function liftoffWake(minutes) {
+  try { chrome.alarms.create(LIFTOFF_ALARM, { delayInMinutes: Math.max(1, Math.min(120, minutes)) }) } catch (e) {}
+}
+
+async function liftoffTick() {
+  const st = await liftoffState()
+  if (!st.on || !st.origin) return
+  // THE CREATOR HAS IT OPEN: that page runs the same work itself, and two
+  // copies would only get in each other's way. Look again later.
+  let open = []
+  try { open = await chrome.tabs.query({ url: st.origin + '/liftoff*' }) } catch (e) {}
+  if (open.length > 0) { liftoffWake(5); return }
+  try {
+    const tab = await chrome.tabs.create({ url: st.origin + '/liftoff?background=1', active: false, pinned: true })
+    await liftoffSave({ tabId: tab.id, openedAt: Date.now(), lastRun: 'opened' })
+    // A tab that never reports back (signed out, a page error) is closed after
+    // forty-five minutes rather than left pinned for ever.
+    try { chrome.alarms.create(LIFTOFF_CLOSE_ALARM, { delayInMinutes: 45 }) } catch (e) {}
+  } catch (e) {
+    await liftoffSave({ lastRun: 'could-not-open' })
+    liftoffWake(15)
+  }
+}
+
+async function liftoffCloseOwnTab(reason) {
+  const st = await liftoffState()
+  if (st.tabId != null) { try { await chrome.tabs.remove(st.tabId) } catch (e) {} }
+  try { chrome.alarms.clear(LIFTOFF_CLOSE_ALARM) } catch (e) {}
+  await liftoffSave({ tabId: null, lastRun: reason, lastRunAt: Date.now() })
+}
+
+try {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === LIFTOFF_ALARM) { void liftoffTick() }
+    if (alarm.name === LIFTOFF_CLOSE_ALARM) {
+      void liftoffCloseOwnTab('timed-out').then(() => liftoffWake(10))
+    }
+  })
+} catch (e) { /* alarms permission missing on an old build: the page still works when open */ }
+
+// Signed out: the background tab lands on the login page, where nothing can
+// run. Closed straight away, and remembered, so the page can say so.
+try {
+  chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+    if (info.status !== 'complete') return
+    void liftoffState().then((st) => {
+      if (st.tabId !== tabId) return
+      const url = (tab && tab.url) || ''
+      if (!/\/liftoff(\?|$)/.test(url)) void liftoffCloseOwnTab('signed-out').then(() => liftoffWake(30))
+    })
+  })
+} catch (e) {}
+
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
+  // The page asks SCOUT to keep Liftoff running (or to stop), from its own
+  // origin, which is where the background tab will be opened.
+  if (msg.type === 'MVP_LIFTOFF_AUTO') {
+    let origin = ''
+    try { origin = new URL((sender && (sender.url || (sender.tab && sender.tab.url))) || '').origin } catch (e) {}
+    if (!LIFTOFF_ORIGINS.test(origin)) { sendResponse({ ok: false, error: 'bad-origin' }); return false }
+    const on = msg.on === true
+    void liftoffSave({ on, origin }).then(async (st) => {
+      if (on) liftoffWake(typeof msg.inMinutes === 'number' ? msg.inMinutes : 5)
+      else { try { chrome.alarms.clear(LIFTOFF_ALARM) } catch (e) {} }
+      sendResponse({ ok: true, on: st.on === true, lastRun: st.lastRun || null, lastRunAt: st.lastRunAt || null, hasAlarms: !!(chrome.alarms) })
+    })
+    return true
+  }
+  // The background page is finished for now. Close SCOUT's own tab (never one
+  // the creator opened) and set the next wake.
+  if (msg.type === 'MVP_LIFTOFF_DONE') {
+    void liftoffState().then(async (st) => {
+      const fromOwn = sender && sender.tab && st.tabId === sender.tab.id
+      if (fromOwn) await liftoffCloseOwnTab(msg.more ? 'waiting' : 'all-done')
+      else await liftoffSave({ lastRun: msg.more ? 'waiting' : 'all-done', lastRunAt: Date.now() })
+      // NOTHING CHANGED SINCE LAST TIME: wait longer. A dub that never
+      // finishes must not reopen a tab every five minutes for ever, so the
+      // wait doubles while the pending work looks the same (to an hour), and
+      // drops back to five the moment anything moves.
+      const sig = typeof msg.signature === 'string' ? msg.signature : ''
+      const same = !!sig && sig === st.lastSignature
+      const wait = same ? Math.min(60, (st.lastWait || 5) * 2) : (typeof msg.nextInMinutes === 'number' ? msg.nextInMinutes : 5)
+      await liftoffSave({ lastSignature: sig, lastWait: wait })
+      if (msg.more && st.on) liftoffWake(wait)
+      else { try { chrome.alarms.clear(LIFTOFF_ALARM) } catch (e) {} }
+      sendResponse({ ok: true, closed: !!fromOwn })
+    })
+    return true
+  }
+
   if (!msg || typeof msg.type !== 'string') return
   // Storefront delivery: upload each localized/dubbed video to its Amazon
   // storefront via the creator's logged-in Creator Hub. Async.

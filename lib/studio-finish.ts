@@ -201,3 +201,33 @@ export function readStudioRun(raw: unknown): StoredStudioRun | null {
     }),
   }
 }
+
+/**
+ * The Studio request for one Liftoff video, from the batch's options.
+ *
+ * ONE BUILDER for the page's own pass and the background tab's, so the two
+ * cannot ask SCOUT for different things. A draft is only ever given the time
+ * the video already has on YouTube, so a Studio pass can never move a launch.
+ */
+export function liftoffStudioRequest(
+  it: { youtube_video_id: string | null; asin: string | null; state: string; publish_at: string | null },
+  opts: StudioOptions,
+  notifySubscribers: boolean,
+  background = false,
+): import('./extension-frame').StudioFinishOpts {
+  const link = productLinkFor(it.asin)
+  const future = !!it.publish_at && new Date(it.publish_at).getTime() > Date.now() + 5 * 60_000
+  return {
+    details: opts.disclosures,
+    monetize: opts.monetize,
+    selfCert: opts.monetize && opts.adRating,
+    tagProduct: opts.tagProduct && !!link,
+    productUrl: link ?? undefined,
+    endScreen: opts.endScreen,
+    notifySubscribers,
+    visibility: it.state === 'scheduled' && future && it.publish_at
+      ? { mode: 'schedule', publishAt: it.publish_at }
+      : { mode: 'keep' },
+    background,
+  }
+}

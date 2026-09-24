@@ -1016,7 +1016,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       'claiming only videos whose time has come would hold the storefronts back too')
   }
   check('the result names the two sides apart',
-    /YouTube: automatic/.test(BOARD) && /Amazon: automatic while this page is open/.test(BOARD),
+    /YouTube: automatic/.test(BOARD) && /Amazon: automatic while Chrome is open/.test(BOARD),
     'one paragraph covering both is what made them read as one date')
   check('and states the daily allowance in the creator’s terms',
     /20 a day on the US store and 10 a day on each other one/.test(BOARD),
@@ -1594,7 +1594,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
 
   // ONE STORY ABOUT AMAZON, not two contradicting each other three lines apart.
   check('the Amazon heading does not promise something automatic',
-    !/Amazon: straight away/.test(SCREEN) && /Amazon: automatic while this page is open/.test(SCREEN),
+    !/Amazon: straight away/.test(SCREEN) && /Amazon: automatic while Chrome is open/.test(SCREEN),
     'it said "straight away" and then that it needed this tab open. Automatic is true now, but only with the tab open, and the heading has to say both')
   // AUTOMATIC, AND IT STOPS RATHER THAN HAMMERS. Amazon goes by itself once
   // the batch is launched, but a signed-out Amazon retried every two minutes

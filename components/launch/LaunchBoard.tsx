@@ -25,10 +25,10 @@ import { deliverPreparedStorefronts, deliverySummary, type DeliveryOutcome } fro
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
 import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
-import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus } from '@/lib/extension-frame'
+import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, type LiftoffAutoState } from '@/lib/extension-frame'
 import { isScoutOutdated } from '@/lib/scout-version'
 import {
-  DEFAULT_STUDIO_OPTIONS, productLinkFor, storeStudioRun, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
+  DEFAULT_STUDIO_OPTIONS, liftoffStudioRequest, storeStudioRun, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
   type StoredStudioRun, type StudioOptions,
 } from '@/lib/studio-finish'
 import StepCard from './StepCard'
@@ -145,6 +145,25 @@ export default function LaunchBoard() {
   const [youtubeChoiceAvailable, setYoutubeChoiceAvailable] = useState(true)
   const [scoutReady, setScoutReady] = useState<boolean | null>(null)
   const [scoutVersion, setScoutVersion] = useState<string | null>(null)
+  // ── KEEP GOING WHEN THIS PAGE IS CLOSED ──────────────────────────────────
+  // On unless the creator turns it off (remembered in this browser). SCOUT
+  // then wakes every few minutes and, with this page closed, opens Liftoff in
+  // a pinned background tab to finish the Studio steps and Amazon uploads.
+  const [bgPref, setBgPref] = useState(true)
+  const [bgState, setBgState] = useState<LiftoffAutoState | null>(null)
+  useEffect(() => {
+    try { if (window.localStorage.getItem('mvp_liftoff_bg') === 'off') setBgPref(false) } catch { /* default on */ }
+  }, [])
+  async function applyBg(on: boolean, inMinutes?: number) {
+    const st = await setLiftoffAuto(on, inMinutes)
+    setBgState(st)
+    return st
+  }
+  function toggleBg(on: boolean) {
+    setBgPref(on)
+    try { window.localStorage.setItem('mvp_liftoff_bg', on ? 'on' : 'off') } catch { /* this visit only */ }
+    void applyBg(on)
+  }
   // The Studio steps need SCOUT 1.20.0 or later; an older SCOUT drives the old
   // Details script, which is exactly what left these boxes blank.
   const scoutCanStudio = scoutReady === true && !isScoutOutdated(scoutVersion)
@@ -220,6 +239,9 @@ export default function LaunchBoard() {
     if (batch.markets.length === 0 || !items.some((i) => !!i.video_id)) return
     void uploadToAmazon({ auto: true }).then((out) => {
       if (!out) return
+      // SCOUT STILL UPLOADING (the background tab's run, say) is not a
+      // failure; the next check picks up whatever is left.
+      if (out.error && /still uploading/i.test(out.error)) return
       if (out.error) setAmazonAuto('stopped')
       // Ready, not capped, and still nothing went: something is wrong that a
       // second try in two minutes will not fix.
@@ -407,6 +429,11 @@ export default function LaunchBoard() {
     void getScoutStatus().then((st) => {
       setScoutReady(st.installed)
       setScoutVersion(st.version)
+      // Tell SCOUT where Liftoff lives and that it may keep going, unless
+      // the creator switched it off in this browser.
+      let off = false
+      try { off = window.localStorage.getItem('mvp_liftoff_bg') === 'off' } catch { /* default on */ }
+      if (st.installed && !off) void setLiftoffAuto(true).then(setBgState)
     }).catch(() => setScoutReady(false))
   }, [])
 
@@ -634,25 +661,18 @@ export default function LaunchBoard() {
     studioRunning.current = true
     setStudioBusy(it.id)
     try {
-      const link = productLinkFor(it.asin)
-      const future = !!it.publish_at && new Date(it.publish_at).getTime() > Date.now() + 5 * 60_000
-      const fin = await requestStudioFinish(it.youtube_video_id, {
-        details: studioOpts.disclosures,
-        monetize: studioOpts.monetize,
-        selfCert: studioOpts.monetize && studioOpts.adRating,
-        tagProduct: studioOpts.tagProduct && !!link,
-        productUrl: link ?? undefined,
-        endScreen: studioOpts.endScreen,
-        // The batch's notify toggle, whichever way it points.
-        notifySubscribers: notifySubs,
-        visibility: it.state === 'scheduled' && future && it.publish_at
-          ? { mode: 'schedule', publishAt: it.publish_at }
-          : { mode: 'keep' },
-      })
+      // THE SAME REQUEST THE BACKGROUND TAB SENDS (lib/studio-finish).
+      const fin = await requestStudioFinish(it.youtube_video_id, liftoffStudioRequest(it, studioOpts, notifySubs))
       // SCOUT NEVER STARTED: nothing to keep. Storing it used to mark the
       // video as done-with for the automatic pass, on every later visit too.
       if (fin.error === 'not-installed') {
         toast.error('SCOUT did not answer, so nothing was done in Studio. Reload SCOUT and this page.')
+        return null
+      }
+      // SCOUT IS ON ANOTHER VIDEO (the background tab, say): nothing was done
+      // here, so nothing is kept, and the automatic pass may try again.
+      if (fin.error === 'busy') {
+        studioTried.current.delete(it.id)
         return null
       }
       const run = storeStudioRun(fin)
@@ -831,6 +851,9 @@ export default function LaunchBoard() {
       const j = await r.json().catch(() => ({}))
       if (!r.ok) { toast.error(j?.error || 'Could not launch.', { duration: 14000 }); return }
       setLaunched({ scheduled: j.scheduled, firstAt: j.firstAt, lastAt: j.lastAt, note: j.note })
+      // THE BACKGROUND WAKES NOW, not in five minutes, so closing the page
+      // straight after Launch still gets everything done.
+      if (bgPref && scoutReady) void applyBg(true, 1)
       if (Array.isArray(j.leftBehind) && j.leftBehind.length > 0) {
         // NAMED. Launching nine of ten and saying nothing is the silence this
         // codebase keeps producing.
@@ -1428,7 +1451,7 @@ export default function LaunchBoard() {
               </div>
               <p className="text-[11px] mt-1.5" style={muted}>
                 Notify subscribers in Studio follows the switch above ({notifySubs ? 'on' : 'off'}).
-                {' '}They run by themselves after launch, one video at a time, while this batch is open on this page. Untick anything that is not true for these videos before then.
+                {' '}They run by themselves after launch, one video at a time, while Chrome is open. Untick anything that is not true for these videos before then.
                 {scoutReady === false && ' SCOUT is not installed in this browser, so it cannot.'}
                 {scoutReady === true && !scoutCanStudio && ` Your SCOUT is ${scoutVersion ?? 'an older version'}; these steps need the latest SCOUT.`}
               </p>
@@ -1607,14 +1630,14 @@ export default function LaunchBoard() {
               <p className="text-[11.5px] mt-1" style={muted}>
                 Each video is uploaded for you, private, with paid promotion and AI use set through YouTube&apos;s own API and read back,
                 and YouTube makes it public at the time you picked. What only Studio can set (the notify box, monetization,
-                the ad rating, product tag, end screen) SCOUT does by itself as each video reaches YouTube, while this page is open.
+                the ad rating, product tag, end screen) SCOUT does by itself as each video reaches YouTube, while Chrome is open.
               </p>
             </div>}
             <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
-              <p className="text-[12px] font-semibold" style={text}>Amazon: automatic while this page is open</p>
+              <p className="text-[12px] font-semibold" style={text}>Amazon: automatic while Chrome is open</p>
               <p className="text-[11.5px] mt-1" style={muted}>
                 Not on the YouTube schedule. Once a video is launched and a country&apos;s translation and dub are done, SCOUT sends it to that storefront by itself.
-                Amazon has no way for MVP to upload from its servers, so SCOUT does it here, signed in as you: keep this batch open on this page.
+                Amazon has no way for MVP to upload from its servers, so SCOUT does it in your Chrome, signed in as you: on this page while it is open, and in a pinned background tab when it is closed (the switch below).
                 Amazon takes 20 a day on the US store and 10 a day on each other one, which is its rule, not ours.
               </p>
             </div>
@@ -1637,6 +1660,34 @@ export default function LaunchBoard() {
                 ?? `${batch.markets.map((m) => m.country).join(', ')}. SCOUT uses your own signed-in Creator account, so keep this tab open while it runs.`}
             </span>
           </div>
+          {/* ── KEEP GOING WHEN THIS PAGE IS CLOSED ─────────────────────────── */}
+          {scoutReady && (
+            <div className="mt-3 flex items-start justify-between gap-3 rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
+              <span className="min-w-0">
+                <span className="block text-[12.5px] font-medium" style={text}>Keep going when this page is closed</span>
+                <span className="block text-[11.5px]" style={
+                  bgState && (!bgState.hasAlarms || bgState.lastRun === 'signed-out') ? { color: '#d97706' } : muted}>
+                  {!bgPref
+                    ? 'Off: the Studio steps and Amazon uploads only run while this page is open.'
+                    : bgState && !bgState.hasAlarms
+                      ? 'Your SCOUT is too old for this. Update SCOUT to the latest version, then reload this page.'
+                      : bgState?.lastRun === 'signed-out'
+                        ? 'The last background run found you signed out of MVP in this browser, so it could not do anything. Stay signed in and it carries on.'
+                        : 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Liftoff in a pinned background tab to finish the Studio steps and Amazon uploads, then closes it.'}
+                  {bgPref && bgState?.lastRunAt ? ` Last run: ${new Date(bgState.lastRunAt).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} (${bgState.lastRun === 'all-done' ? 'all done' : bgState.lastRun === 'waiting' ? 'more to do' : bgState.lastRun})` : ''}
+                </span>
+              </span>
+              <button
+                type="button" role="switch" aria-checked={bgPref}
+                onClick={() => toggleBg(!bgPref)}
+                className="relative shrink-0 rounded-full transition-colors"
+                style={{ width: 40, height: 22, background: bgPref ? '#0EA5A4' : 'var(--border)' }}
+              >
+                <span className="absolute top-[3px] rounded-full bg-white transition-all"
+                  style={{ width: 16, height: 16, left: bgPref ? 21 : 3 }} />
+              </button>
+            </div>
+          )}
           {/* WHAT THE AUTOMATIC SEND IS DOING, in its own words, so "on" and
               "stopped" and "nothing ready yet" never look the same. */}
           <p className="mt-2 text-[11.5px]" style={amazonNote?.error || amazonAuto === 'stopped' || scoutReady === false ? { color: '#d97706' } : muted}>

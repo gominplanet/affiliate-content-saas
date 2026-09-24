@@ -1656,6 +1656,39 @@ export interface StudioFinishOpts {
   productTitle?: string
   /** Drafts only: the last page of the modal. See StudioVisibility. */
   visibility?: StudioVisibility
+  /** Run from Liftoff's background tab: Studio opens behind, never in front,
+   *  and SCOUT does not switch back to the calling tab afterwards. */
+  background?: boolean
+}
+
+export interface LiftoffAutoState {
+  ok: boolean
+  on: boolean
+  /** What the last background run did: opened, waiting, all-done,
+   *  signed-out, timed-out, could-not-open. */
+  lastRun: string | null
+  lastRunAt: number | null
+  /** False on a SCOUT without the alarms permission (older than 1.21.0). */
+  hasAlarms: boolean
+}
+
+/**
+ * Ask SCOUT to keep Liftoff running in the background (or to stop). SCOUT
+ * wakes itself every few minutes while Chrome is open and, when no Liftoff tab
+ * is open, opens one pinned in the background to finish the Studio steps and
+ * the Amazon uploads. Resolves null when SCOUT did not answer.
+ */
+export async function setLiftoffAuto(on: boolean, inMinutes?: number): Promise<LiftoffAutoState | null> {
+  if (!(await isExtensionAvailable())) return null
+  const r = await sendToExtension<LiftoffAutoState>({ type: 'MVP_LIFTOFF_AUTO', on, inMinutes }, 6000)
+  return r && typeof r === 'object' ? r : null
+}
+
+/** The background tab is finished for now: SCOUT closes it and decides when
+ *  to look again. `signature` is a short fingerprint of what is still pending,
+ *  so SCOUT can wait longer when nothing has moved. */
+export async function liftoffDone(more: boolean, signature: string): Promise<void> {
+  await sendToExtension({ type: 'MVP_LIFTOFF_DONE', more, signature, nextInMinutes: 5 }, 6000)
 }
 
 /**

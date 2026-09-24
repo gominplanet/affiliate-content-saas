@@ -132,10 +132,12 @@ const settle = CP.slice(CP.indexOf('async function settleAfterStudio('), CP.inde
 check('and only sets it through the API once the disclosure read back',
   /studioDisclosuresConfirmed\(fin\)/.test(settle) && /if \(!confirmed\) \{[\s\S]*?return/.test(settle))
 const LB = code(read('components/launch/LaunchBoard.tsx'))
-check('Launch Batch sends the batch toggle to Studio', /notifySubscribers: notifySubs/.test(LB))
+const SF = code(read('lib/studio-finish.ts'))
+check('Liftoff sends the batch toggle to Studio',
+  /liftoffStudioRequest\(it, studioOpts, notifySubs\)/.test(LB) && /notifySubscribers,\s*visibility:/.test(SF))
 check('Launch Batch stores the run as SCOUT reported it', /storeStudioRun\(fin\)/.test(LB) && /studioFinish: run/.test(LB))
-check('a Launch Batch draft is only ever given its own time',
-  /mode: 'schedule', publishAt: it\.publish_at/.test(LB))
+check('a Liftoff draft is only ever given its own time',
+  /mode: 'schedule', publishAt: it\.publish_at/.test(SF))
 
 // ── the helpers ──────────────────────────────────────────────────────────
 const res = (steps: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}) =>

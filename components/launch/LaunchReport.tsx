@@ -144,7 +144,7 @@ export default function LaunchReport({
       <p className="text-[12px] mt-0.5" style={muted}>
         {allDone
           ? `YouTube: ${sorted.filter((i) => i.state === 'scheduled' || i.state === 'published').length} of ${sorted.length} scheduled or live. Amazon: ${listed} of ${amzTotal - notSold} possible listings up${notSold ? `, ${notSold} not sold in that country` : ''}${failed ? `, ${failed} failed` : ''}.`
-          : `Still working: ${working.join(', ')}. Keep this batch open on this page while SCOUT runs; YouTube uploads carry on without it.`}
+          : `Still working: ${working.join(', ')}. SCOUT carries on while Chrome is open (with Keep going on); YouTube uploads carry on regardless.`}
       </p>
 
       <div className="mt-3 overflow-x-auto">

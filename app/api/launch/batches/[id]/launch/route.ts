@@ -231,7 +231,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     // SAID PLAINLY, because it is the one thing that is not automatic and the
     // creator is about to walk away from the screen.
     note: (batch.markets ?? []).length > 0
-      ? 'YouTube is handled from here. Amazon goes from this page, through your own logged-in Creator account, while it is open.'
+      ? 'YouTube is handled from here. Amazon goes through SCOUT in your Chrome, signed in as you: from the Liftoff page, or from a background tab SCOUT opens while Chrome is open.'
       : 'YouTube is handled from here. No Amazon countries were picked, so nothing goes to a storefront.',
   })
 }
