@@ -881,6 +881,10 @@ export class YouTubeOAuthService {
       title: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'
       /** The creator's toggle. REQUIRED and always sent: see updateVideoStatus. */
       notifySubscribers: boolean
+      /** How long the byte upload may take. It used to get the 30 second
+       *  default, so any file that took longer to send (most of them, up to the
+       *  2 GB allowed) failed every try. */
+      uploadTimeoutMs?: number
     },
   ): Promise<{ id: string; channelId: string | null }> {
     // YouTube caps combined tag length at ~500 chars — trim defensively.
@@ -948,6 +952,7 @@ export class YouTubeOAuthService {
       method: 'PUT',
       headers: { 'Content-Type': 'video/*', 'Content-Length': String(videoBytes.byteLength) },
       body,
+      timeoutMs: Math.max(30_000, opts.uploadTimeoutMs ?? 240_000),
     })
     if (!putRes.ok) {
       const b = await putRes.text()

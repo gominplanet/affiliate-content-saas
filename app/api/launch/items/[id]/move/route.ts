@@ -63,9 +63,31 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const next = [...list]
   next.splice(to, 0, next.splice(at, 1)[0])
-  for (let i = 0; i < next.length; i++) {
-    if (next[i].position !== i) {
-      await sb.from('launch_items').update({ position: i }).eq('id', next[i].id).eq('user_id', user.id)
+  const changing = next.map((r, i) => ({ id: r.id, from: r.position, to: i })).filter((r) => r.from !== r.to)
+
+  // ── TWO STEPS, BECAUSE POSITIONS ARE UNIQUE ────────────────────────────
+  //
+  // EVERY MOVE USED TO FAIL, AND SAY IT HAD WORKED. (batch_id, position) is
+  // unique (migration 357), and the rows were renumbered one at a time: video
+  // 2 going to position 1 collided with video 1 still sitting there, video 1
+  // going to 2 collided with video 2, both updates were refused, neither error
+  // was read, and the answer was { moved: true } over an unchanged list.
+  //
+  // So every row that changes first steps aside to a negative position (which
+  // nothing else uses), and only then takes its new one. Every write is
+  // checked, and a failure says so instead of reporting a move.
+  for (let i = 0; i < changing.length; i++) {
+    const { error } = await sb.from('launch_items').update({ position: -1 - i })
+      .eq('id', changing[i].id).eq('user_id', user.id)
+    if (error) return NextResponse.json({ error: `Could not move it: ${error.message}` }, { status: 500 })
+  }
+  for (const r of changing) {
+    const { error } = await sb.from('launch_items').update({ position: r.to })
+      .eq('id', r.id).eq('user_id', user.id)
+    if (error) {
+      return NextResponse.json({
+        error: `The move stopped part way: ${error.message}. Reload the page to see the order as it now stands.`,
+      }, { status: 500 })
     }
   }
   return NextResponse.json({ ok: true, moved: true })

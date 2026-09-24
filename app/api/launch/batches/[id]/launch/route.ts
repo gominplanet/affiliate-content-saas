@@ -26,7 +26,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { scheduleItems, datesBeforeToday, cadenceLabel } from '@/lib/launch-schedule'
-import { launchBlocker, withOwnSchedules, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
+import { withOwnSchedules, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -48,15 +48,26 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .select(BATCH_COLUMNS)
     .eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
-  if (batch.state === 'launching' || batch.state === 'launched') {
-    return NextResponse.json({
-      error: 'This batch has already been launched. Its videos are going out on the schedule you set.',
-    }, { status: 409 })
-  }
 
-  const { data: rows } = await sb.from('launch_items')
+  // ── A LAUNCHED BATCH CAN STILL LAUNCH ITS LATECOMERS ─────────────────────
+  //
+  // Only this route gives a video its upload time, and it used to refuse any
+  // second press. So a video that was blocked when the batch launched, and was
+  // then fixed (a product added, Try again), finished preparing and sat on
+  // "ready" for good: nothing would ever give it a time, and nothing would ever
+  // upload it. The same was true of a video kept private after a missed slot
+  // and then given a new time.
+  //
+  // A second press now launches exactly those: ready, with no upload time yet.
+  // Everything already handed to the uploader is left alone.
+  const late = batch.state === 'launching' || batch.state === 'launched'
+
+  const { data: rows, error: rowsErr } = await sb.from('launch_items')
     .select(ITEM_COLUMNS)
     .eq('batch_id', id).order('position', { ascending: true })
+  if (rowsErr) {
+    return NextResponse.json({ error: `Could not read this batch's videos: ${rowsErr.message}` }, { status: 500 })
+  }
   // Each video's own time, if the columns exist yet. Before migration 364
   // they do not, and every video follows the pattern exactly as it used to.
   const { items } = await withOwnSchedules(sb, id, (rows ?? []) as ItemRow[])
@@ -66,11 +77,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const blocker = await launchReadiness(sb, user.id, batch as BatchRow, items)
   if (blocker) return NextResponse.json({ error: blocker }, { status: 409 })
 
-  // Only the ones that actually finished preparing. A blocked video is left
-  // where it is: the batch goes without it rather than waiting forever, and the
-  // response says how many were left behind.
-  const ready = items.filter((i) => i.state === 'prepared')
-  const leftBehind = items.filter((i) => i.state !== 'prepared')
+  // Only the ones that actually finished preparing, and on a second press
+  // only the ones the uploader does not already have. A blocked video is left
+  // where it is: the batch goes without it rather than waiting forever, and
+  // the response says how many were left behind.
+  const ready = items.filter((i) => i.state === 'prepared' && (!late || !i.planned_publish_at))
+  const leftBehind = late ? [] : items.filter((i) => i.state !== 'prepared')
+  if (late && ready.length === 0) {
+    return NextResponse.json({
+      error: 'This batch has already been launched. Its videos are going out on the schedule you set.',
+    }, { status: 409 })
+  }
 
   const plan = {
     timezone: batch.timezone || 'UTC',
@@ -101,21 +118,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   // ── A TIME THAT HAS GONE TODAY MEANS NOW ─────────────────────────────────
   //
-  // This used to refuse, which made tomorrow the earliest a batch could put
-  // anything out: finish at nine in the morning and wait a day. Picking today
-  // and pressing Launch is a creator asking for it to go now, and the times
-  // already say so.
-  //
-  // A FIRST DAY BEFORE TODAY IS STILL REFUSED, and that is the whole line: a
-  // slot that went by this morning is one video going out now, a batch whose
-  // first day was last Tuesday is ten going public at once, and a published
-  // video cannot be unpublished.
-  //
-  // PER VIDEO NOW. The check used to be on the pattern's first day alone,
-  // which a video with its own date never went near: a creator could set one
-  // video to last Tuesday and it would have gone public the moment it
-  // uploaded. The same line is drawn for every video, whichever way it got
-  // its date.
+  // A FIRST DAY BEFORE TODAY IS STILL REFUSED, per video: a slot that went by
+  // this morning is one video going out now, a date that has gone is a
+  // mistake, and a published video cannot be unpublished. (launchReadiness
+  // above says the same thing first, so the page could not have offered it.)
   const stale = datesBeforeToday(planned, plan.timezone)
   if (stale.length > 0) {
     const which = ready.filter((i) => stale.some((x) => x.id === i.id)).map((i) => `Video ${i.position + 1}`)
@@ -124,31 +130,37 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }, { status: 409 })
   }
   const immediate = planned.filter((p) => p.at.getTime() <= Date.now())
-
-  // ── write the plan onto the rows ─────────────────────────────────────────
   const now = new Date().toISOString()
-  for (let i = 0; i < ready.length; i++) {
-    await sb.from('launch_items').update({
-      planned_publish_at: schedule.get(ready[i].id)!.at.toISOString(),
-      // THE STATE DOES NOT MOVE. It is still 'prepared' until YouTube has the
-      // file, because 'scheduled' is a fact about YouTube and this route has
-      // not spoken to YouTube.
-      reason: null,
-      updated_at: now,
-    }).eq('id', ready[i].id).eq('user_id', user.id)
+
+  // ── ONE PRESS WINS ───────────────────────────────────────────────────────
+  //
+  // The state used to be checked at the top and set at the bottom, so two
+  // presses could both get through. The batch is now claimed in one
+  // conditional write before anything else is written: the second press finds
+  // it already claimed and stops.
+  if (!late) {
+    const { data: claimed, error: claimErr } = await sb.from('launch_batches')
+      .update({ state: 'launching', updated_at: now })
+      .eq('id', id).eq('user_id', user.id).not('state', 'in', '("launching","launched")')
+      .select('id')
+    if (claimErr) return NextResponse.json({ error: `Could not start the launch: ${claimErr.message}` }, { status: 500 })
+    if (!claimed || claimed.length === 0) {
+      return NextResponse.json({
+        error: 'This batch has already been launched. Its videos are going out on the schedule you set.',
+      }, { status: 409 })
+    }
   }
 
-  // ── WHICH ONES YOU AGREED TO SEND NOW ─────────────────────────────────────
+  // ── WHICH ONES YOU AGREED TO SEND NOW, written FIRST ─────────────────────
   //
   // Recorded at the moment of the press, because that is the only moment it
-  // is true. A time that has gone NOW is one the page warned about before the
-  // button; a time that goes by later, while the video waits in the queue,
-  // is a slot the uploader missed, and the uploader used to publish those too.
+  // is true, and BEFORE the upload times below: the uploader claims a row the
+  // instant it has a time, and a row it claimed before this flag landed would
+  // be treated as a missed slot and kept private.
   //
-  // A separate write that is allowed to fail: before migration 365 the column
-  // does not exist, and the failure mode is the safe one. Nothing is marked,
-  // so nothing goes public unasked; a video in this list is kept private and
-  // its row says why.
+  // Allowed to fail: before migration 365 the column does not exist, and the
+  // failure mode is the safe one. Nothing is marked, so nothing goes public
+  // unasked; such a video is kept private and its row says why.
   const nowIds = immediate.map((p) => p.id)
   let publishNowRecorded = true
   if (nowIds.length > 0) {
@@ -157,11 +169,43 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     if (nowErr) publishNowRecorded = false
   }
 
-  await sb.from('launch_batches')
-    .update({ state: 'launching', updated_at: now }).eq('id', id).eq('user_id', user.id)
+  // ── write the plan onto the rows, and CHECK each write ───────────────────
+  //
+  // These used to be fire and forget, and the batch was marked launching
+  // regardless. A failed write left a video with no time, the worker then
+  // settled the batch as launched with that video never uploaded, and the
+  // screen said it had gone. Now a failure undoes what was written and says
+  // so, and the batch is back where it was.
+  const written: string[] = []
+  for (let i = 0; i < ready.length; i++) {
+    const { error: wErr } = await sb.from('launch_items').update({
+      planned_publish_at: schedule.get(ready[i].id)!.at.toISOString(),
+      // THE STATE DOES NOT MOVE. It is still 'prepared' until YouTube has the
+      // file, because 'scheduled' is a fact about YouTube and this route has
+      // not spoken to YouTube.
+      reason: null,
+      updated_at: now,
+    }).eq('id', ready[i].id).eq('user_id', user.id)
+    if (wErr) {
+      if (written.length) {
+        await sb.from('launch_items').update({ planned_publish_at: null }).in('id', written).eq('user_id', user.id)
+      }
+      if (nowIds.length) {
+        await sb.from('launch_items').update({ publish_now: false }).in('id', nowIds).eq('user_id', user.id)
+      }
+      if (!late) {
+        await sb.from('launch_batches').update({ state: batch.state, updated_at: now }).eq('id', id).eq('user_id', user.id)
+      }
+      return NextResponse.json({
+        error: `Nothing was launched: Video ${ready[i].position + 1} could not be given its time (${wErr.message}). Try again.`,
+      }, { status: 500 })
+    }
+    written.push(ready[i].id)
+  }
 
   return NextResponse.json({
     ok: true,
+    late,
     scheduled: ready.length,
     leftBehind: leftBehind.map((i) => ({ position: i.position, title: i.title, reason: i.reason })),
     cadence: cadenceLabel(batch.daily_slots),
@@ -177,7 +221,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     // SAID PLAINLY, because it is the one thing that is not automatic and the
     // creator is about to walk away from the screen.
     note: (batch.markets ?? []).length > 0
-      ? 'YouTube is handled from here. Your Amazon stores need this tab open, because MVP uploads through your own logged-in Creator account.'
+      ? 'YouTube is handled from here. Amazon goes from this page, through your own logged-in Creator account, while it is open.'
       : 'YouTube is handled from here. No Amazon countries were picked, so nothing goes to a storefront.',
   })
 }

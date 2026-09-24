@@ -417,7 +417,7 @@ export interface CtaSpec {
  *  timeout) instead of a single opaque "busy" message. */
 export type RenderCtaResult = { ok: true; url: string } | { ok: false; reason: string }
 
-export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string): Promise<RenderCtaResult> {
+export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string, timeoutMs = 540_000): Promise<RenderCtaResult> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
   const hasSticker = !!(cta.stickerUrl && /^https:\/\//i.test(cta.stickerUrl))
   if (!base) return { ok: false, reason: 'render-service-not-configured' }
@@ -442,7 +442,9 @@ export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string)
         ...(Number.isFinite(cta.xPct) && Number.isFinite(cta.yPct) ? { xPct: cta.xPct, yPct: cta.yPct } : {}),
         ...(userId ? { userId } : {}),
       }),
-      signal: AbortSignal.timeout(540_000),
+      // The caller's budget: a background worker cannot wait longer than it
+      // is allowed to live, or the answer arrives after nobody is listening.
+      signal: AbortSignal.timeout(Math.max(10_000, timeoutMs)),
     })
     if (!res.ok) {
       const detail = (await res.text().catch(() => '')).slice(0, 300)

@@ -84,6 +84,8 @@ const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
+/** Milliseconds this firing may still spend. */
+type Left = () => number
 
 /**
  * Burn the batch's CTA into each video that has not had it yet.
@@ -95,22 +97,42 @@ type Sb = any
  * A batch whose creator chose NO CTA skips straight to prepared: the upload is
  * already the finished video, and it is also what Amazon should receive.
  */
-async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed: number }> {
+async function renders(sb: Sb, left: Left): Promise<{ done: number; skipped: number; failed: number; recovered: number }> {
+  const now = () => new Date().toISOString()
+
+  // ── A RENDER THAT NEVER REPORTED BACK GOES ROUND AGAIN ──────────────────
+  // A firing killed mid-render left its row on 'rendering', which nothing
+  // picked up again and Try again refused, while the page said "This finishes
+  // on its own" forever. A row that has said nothing for ten minutes is back
+  // in the queue, its try already counted, with the reason on it.
+  const stale = new Date(Date.now() - 10 * 60_000).toISOString()
+  const { data: stuck } = await sb.from('launch_items')
+    .update({ state: 'draft', reason: 'The last CTA render did not report back, so it is being tried again.', updated_at: now() })
+    .eq('state', 'rendering').lt('updated_at', stale).select('id')
+  const recovered = (stuck ?? []).length
+
+  // MORE THAN THE BUDGET, because rows waiting on a CTA decision are skipped,
+  // and a short list of those used to hold every other creator's renders up
+  // indefinitely.
   const { data: rows } = await sb.from('launch_items')
     .select('id,batch_id,user_id,source_url,render_tries,reason')
     .eq('state', 'draft').not('source_url', 'is', null)
-    .order('created_at', { ascending: true }).limit(RENDERS * 4)
+    .order('created_at', { ascending: true }).limit(60)
   const items = rows ?? []
-  if (items.length === 0) return { done: 0, skipped: 0, failed: 0 }
+  if (items.length === 0) return { done: 0, skipped: 0, failed: 0, recovered }
 
   let done = 0, skipped = 0, failed = 0
   let budget = RENDERS
-  const now = () => new Date().toISOString()
+  const batches = new Map<string, { cta: unknown; cta_chosen: boolean | null } | null>()
 
   for (const it of items) {
     if (budget <= 0) break
-    const { data: batch } = await sb.from('launch_batches')
-      .select('cta,cta_chosen').eq('id', it.batch_id).maybeSingle()
+    if (!batches.has(it.batch_id)) {
+      const { data: b } = await sb.from('launch_batches')
+        .select('cta,cta_chosen').eq('id', it.batch_id).maybeSingle()
+      batches.set(it.batch_id, b ?? null)
+    }
+    const batch = batches.get(it.batch_id)
     // The creator has not decided yet. Not a failure, just not this video's
     // turn, and touching it would be inventing news.
     if (!batch?.cta_chosen) continue
@@ -160,8 +182,15 @@ async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed:
 
     // COUNTED BEFORE THE ATTEMPT. A render that kills the function would
     // otherwise never record the try and this video would retry forever.
-    await sb.from('launch_items')
-      .update({ state: 'rendering', render_tries: tries + 1, updated_at: now() }).eq('id', it.id)
+    // ONLY WITH TIME TO FINISH. A render takes minutes, and one started with
+    // less than that left is one the platform kills part way.
+    if (left() < 200_000) break
+    // CLAIMED, not just marked: an overlapping firing that already took this
+    // row gets nothing back and moves on, rather than rendering it twice.
+    const { data: claimed } = await sb.from('launch_items')
+      .update({ state: 'rendering', render_tries: tries + 1, updated_at: now() })
+      .eq('id', it.id).eq('state', 'draft').select('id')
+    if (!claimed || claimed.length === 0) continue
     budget--
 
     try {
@@ -176,7 +205,7 @@ async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed:
       const out = await renderCta(it.source_url as string, {
         text: '', subtext: '', style: cta.style, startSec, endSec,
         stickerUrl: cta.stickerUrl, widthPct: cta.widthPct, xPct: cta.xPct, yPct: cta.yPct,
-      }, it.user_id as string)
+      }, it.user_id as string, left() - 15_000)
       if (!out.ok) throw new Error(out.reason || 'the render did not finish')
       // TWO FILES FROM HERE ON, AND THEY GO TO DIFFERENT PLACES.
       //
@@ -207,7 +236,7 @@ async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed:
       failed++
     }
   }
-  return { done, skipped, failed }
+  return { done, skipped, failed, recovered }
 }
 
 /**
@@ -219,11 +248,13 @@ async function renders(sb: Sb): Promise<{ done: number; skipped: number; failed:
  * because English wording sitting on a German listing is the same class of
  * failure as English audio under a translated title.
  */
-async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: number; failed: number; metaMissing: number }> {
+async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: number; plain: number; failed: number; metaMissing: number }> {
+  // More rows than the budget, because rows still waiting for a product are
+  // skipped, and a short list of those used to hold every other creator up.
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,asin,title,title_source,description,tags,thumbnail_url,thumbnail_clean_url,thumb_tries')
+    .select('id,user_id,batch_id,asin,title,title_source,description,tags,thumbnail_url,thumbnail_clean_url,thumb_tries,updated_at')
     .eq('state', 'preparing')
-    .order('created_at', { ascending: true }).limit(8)
+    .order('created_at', { ascending: true }).limit(40)
   const items = rows ?? []
   if (items.length === 0) return { done: 0, blocked: 0, plain: 0, failed: 0, metaMissing: 0 }
 
@@ -247,53 +278,97 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
 
   for (const it of items) {
     if (budget <= 0) break
+    // Nothing starts without time to finish it: the write at the end is what
+    // makes the work count, and a firing killed before it throws the work away.
+    if (left() < 60_000) break
     const asin = (it.asin || '').trim()
     let title = (it.title || '').trim()
     // NOT BLOCKED, WAITING. The creator sets the product in their own time and
     // this is the one step that genuinely needs them.
     if (!asin || !title) continue
 
+    // ANOTHER FIRING HAS THIS ONE. Firings overlap (one a minute, up to five
+    // minutes each), and a row touched in the last five and a half minutes
+    // with a try already counted is being built right now. Building it twice
+    // spends two images and two of its tries on one thumbnail.
+    const tries = Number(it.thumb_tries ?? 0)
+    if (tries > 0 && it.updated_at && Date.now() - new Date(it.updated_at).getTime() < 330_000) continue
+
     // ── THE TITLE MVP WRITES, NOT THE NAME OF THE FILE ───────────────────
     //
     // Adding videos to a batch seeded each title from the uploaded file name,
-    // and nothing ever replaced it. A creator uploaded STEAM BRUSH WORKS?.mp4
-    // and that became the video's title, the subject handed to the thumbnail
-    // generator, the subject handed to the description writer, and the title
-    // on YouTube. On the same channel, videos that went through Launchpad read
-    // "Finally, a Camping Table That Actually Fits in the Boot". The batch had
-    // a Write it for me button and it had to be pressed once per video; a
-    // creator who never pressed it got ten file names.
+    // and nothing ever replaced it. The thumbnail hook is written from the
+    // product first (a short, image-sized line), and the YouTube title comes
+    // with the description below.
     //
-    // BEFORE ANYTHING ELSE IN THIS LOOP, because the thumbnail and the
-    // description are both written FROM the title, so a file name fixed after
-    // them would leave an image and a description about a file name.
-    //
-    // ONLY WHAT NOBODY CHOSE. 'creator' is never touched and 'mvp' is never
-    // rewritten, so this runs at most once per video and a typed title is
-    // safe. Null is treated as a file name because every row that predates the
-    // column got its title from one.
+    // ONLY WHAT NOBODY CHOSE. 'creator' is never touched, and the write is
+    // conditional on it still not being 'creator', so a title typed while this
+    // firing was working is not overwritten by it.
     const titleSource = String(it.title_source || 'filename')
     if (titleSource !== 'creator' && titleSource !== 'mvp') {
       const written = await productTitle(it.user_id, title, asin)
       if (written) {
         title = written
         await sb.from('launch_items')
-          .update({ title, title_source: 'mvp', updated_at: now() }).eq('id', it.id)
+          .update({ title, title_source: 'mvp', updated_at: now() }).eq('id', it.id).neq('title_source', 'creator')
       }
-      // A FAILURE HERE IS NOT A BLOCK. The file name is a poor title and a
-      // missing video is worse, so it carries on and the row keeps saying
-      // where the title came from.
     }
 
-    // Already has both images: nothing to do but say so.
+    // ── THE DESCRIPTION FIRST, WHICH IS WHERE THE AFFILIATE LINK LIVES ───
+    //
+    // Without it a batch video went to YouTube with an EMPTY description while
+    // the CTA burned into its own frame said "link in the description". It is
+    // written before the images now (seconds, not minutes), and on its own:
+    // only into a row that still has no description, and the title only while
+    // the creator has not typed one, so nothing they wrote during this firing
+    // is replaced by it.
+    let haveDescription = !!String(it.description || '').trim()
+    let metaTried = false
+    if (!haveDescription && left() > 90_000) {
+      metaTried = true
+      const meta = await videoMetadata(it.user_id, title, asin)
+      if (meta?.description) {
+        const { data: d } = await sb.from('launch_items')
+          .update({ description: meta.description, ...(meta.tags?.length ? { tags: meta.tags.join(', ') } : {}), updated_at: now() })
+          .eq('id', it.id).is('description', null).select('id')
+        haveDescription = true
+        // THE YOUTUBE TITLE CO-PILOT WOULD WRITE. The hook above ("CHIA WORTH
+        // IT?") is right on the image and wrong as a YouTube title, and it went
+        // to YouTube as one because this title, returned by the same call, was
+        // thrown away. Only alongside the description it came with.
+        if ((d ?? []).length > 0 && meta.title) {
+          await sb.from('launch_items')
+            .update({ title: meta.title.slice(0, 100), title_source: 'mvp', updated_at: now() })
+            .eq('id', it.id).neq('title_source', 'creator')
+        }
+      } else {
+        metaMissing++
+      }
+    }
+
+    // Already has both images: ready, once it also has its description.
     if (it.thumbnail_url && it.thumbnail_clean_url) {
-      await sb.from('launch_items')
-        .update({ state: 'prepared', reason: null, updated_at: now() }).eq('id', it.id)
-      done++
+      if (haveDescription) {
+        await sb.from('launch_items')
+          .update({ state: 'prepared', reason: null, updated_at: now() }).eq('id', it.id).eq('state', 'preparing')
+        done++
+      } else if (tries >= THUMB_TRIES) {
+        // SAID, NOT HIDDEN: it goes without a link rather than never, and the
+        // row says so while there is still time to add one.
+        await sb.from('launch_items').update({
+          state: 'prepared',
+          reason: 'No description could be written, so this video has no affiliate link. Add one in its row before you launch.',
+          updated_at: now(),
+        }).eq('id', it.id).eq('state', 'preparing')
+        done++
+      } else if (metaTried) {
+        await sb.from('launch_items')
+          .update({ thumb_tries: tries + 1, reason: 'Writing the description, where the affiliate link goes. Trying again.', updated_at: now() })
+          .eq('id', it.id)
+      }
       continue
     }
 
-    const tries = Number(it.thumb_tries ?? 0)
     if (tries >= THUMB_TRIES) {
       // PREPARED ANYWAY, because a missing thumbnail does not stop a listing:
       // YouTube takes a frame from the video. Said on the row so the creator
@@ -307,8 +382,15 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
       continue
     }
 
-    await sb.from('launch_items')
-      .update({ thumb_tries: tries + 1, updated_at: now() }).eq('id', it.id)
+    // AN IMAGE ONLY WITH TIME FOR IT. The styled call is allowed four minutes;
+    // started with less left, the platform kills it and the image is lost.
+    if (left() < THUMB_CALL_MS + 30_000) break
+
+    // CLAIMED on the try count it was read with, so two firings reaching the
+    // same row at the same moment cannot both build it.
+    const claim = sb.from('launch_items').update({ thumb_tries: tries + 1, updated_at: now() }).eq('id', it.id)
+    const { data: claimed } = await (it.thumb_tries == null ? claim.is('thumb_tries', null) : claim.eq('thumb_tries', tries)).select('id')
+    if (!claimed || claimed.length === 0) continue
 
     const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', it.user_id).maybeSingle()
     const tier = normalizeTier(integ?.tier)
@@ -323,21 +405,19 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
       if (!it.thumbnail_url && budget > 0) {
         budget--
         // THE SAME GENERATOR VIDEO LAUNCHPAD USES, with the batch's chosen
-        // look. This route is what gives a thumbnail a hook style, a face, a
-        // pose, a badge and a look to match, and calling anything else here is
-        // what left a batch thumbnail with no options at all.
+        // look.
         const branded = await styledThumbnail(it.user_id, title, asin, preset)
         if (branded.url) patch.thumbnail_url = branded.url
         else {
           plainWhy = branded.why
-          // THE FALLBACK IS RECORDED, NOT HIDDEN. A plain thumbnail is better
-          // than none, but it is NOT the look they picked, and until this was
-          // written down the two outcomes were the same row on screen.
-          const basic = await buildProductThumbnail(sb, { userId: it.user_id, tier, title, asin, withText: true })
-          if (basic) { patch.thumbnail_url = basic; usedPlain = true }
+          // THE FALLBACK IS RECORDED, NOT HIDDEN, and only attempted with time
+          // left to save it; otherwise the next firing tries the look again.
+          if (left() > 75_000) {
+            const basic = await buildProductThumbnail(sb, { userId: it.user_id, tier, title, asin, withText: true })
+            if (basic) { patch.thumbnail_url = basic; usedPlain = true }
+          }
         }
-      }
-      if (!it.thumbnail_clean_url && budget > 0) {
+      } else if (!it.thumbnail_clean_url && budget > 0) {
         budget--
         // The wordless copy for non-English storefronts. The styled route bakes
         // a headline in by design, so the clean variant stays with the builder
@@ -351,44 +431,13 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
       }
     } catch { /* the try is already counted; the next firing has another go */ }
 
-    // ── THE DESCRIPTION, WHICH IS WHERE THE AFFILIATE LINK LIVES ─────────
-    //
-    // Without it a batch video went to YouTube with an EMPTY description while
-    // the CTA burned into its own frame said "link in the description". The
-    // video pointed at nothing and earned nothing, which made the YouTube half
-    // of the whole feature decorative.
-    //
-    // The same writer Video Launchpad uses, so a batch description and a
-    // single-video one come from one place. Best effort: a video with no
-    // description still publishes, because a video on the channel beats a
-    // video held back, and the row says which it got.
-    if (!String(it.description || '').trim()) {
-      const meta = await videoMetadata(it.user_id, title, asin)
-      if (meta?.description) {
-        patch.description = meta.description
-        if (meta.tags?.length) patch.tags = meta.tags.join(', ')
-        // THE YOUTUBE TITLE CO-PILOT WOULD WRITE. The title above is the 2 to
-        // 3 word thumbnail hook ("CHIA WORTH IT?"), right on the image and
-        // wrong as a YouTube title, and it went to YouTube as one because
-        // nothing replaced it. The same call that writes the description
-        // writes a proper title; it used to be thrown away. Never over a
-        // title the creator typed.
-        if (meta.title && String(it.title_source || 'filename') !== 'creator') {
-          patch.title = meta.title.slice(0, 100)
-          patch.title_source = 'mvp'
-        }
-      } else {
-        metaMissing++
-      }
-    }
-
     if (patch.thumbnail_url) {
       patch.thumbnail_source = usedPlain ? 'plain' : 'styled'
       if (usedPlain) plain++
     }
     const haveBranded = patch.thumbnail_url || it.thumbnail_url
     const haveClean = patch.thumbnail_clean_url || it.thumbnail_clean_url
-    if (haveBranded && haveClean) {
+    if (haveBranded && haveClean && haveDescription) {
       patch.state = 'prepared'
       // The fallback keeps its sentence. Clearing `reason` on the way to
       // 'prepared' would erase the one place the creator could read that this
@@ -400,16 +449,10 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
     }
     // ── THE WRITE IS CHECKED ─────────────────────────────────────────────
     //
-    // This used to be fire and forget, and that is how a video sat on
-    // "Building the thumbnail" for forty minutes with nothing anywhere saying
-    // why. A column this patch names that the database does not have (a
-    // migration half applied, a deploy ahead of the schema) fails the whole
-    // update, so the state never moves, the try count climbs, and the screen
-    // reports the same sentence it reported at the start.
-    //
-    // Now the failure lands on the row in words, through a SECOND write that
-    // touches only columns the table has had since it was created, so the
-    // report itself cannot fail for the same reason the first one did.
+    // A column this patch names that the database does not have fails the
+    // whole update, so the state never moves and the screen reports the same
+    // sentence forever. The failure lands on the row in words, through a
+    // SECOND write that touches only columns the table has always had.
     const { error: wrote } = await sb.from('launch_items').update(patch).eq('id', it.id)
     if (wrote) {
       failed++
@@ -576,9 +619,9 @@ function missedWhen(iso: string, timezone: string | null): string {
   }
 }
 
-async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }> {
+async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; failed: number }> {
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,position,title,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason,youtube_video_id')
+    .select('id,user_id,batch_id,position,title,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason,youtube_video_id,updated_at')
     .eq('state', 'prepared').not('planned_publish_at', 'is', null)
     .order('planned_publish_at', { ascending: true }).limit(PUBLISHES * 4)
   const items = rows ?? []
@@ -645,6 +688,18 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
     if (!/^https:\/\//i.test(src) || !title) continue
 
     const tries = Number(it.publish_tries ?? 0)
+    const said0 = String(it.reason || '').trim()
+    // ── ANOTHER FIRING IS UPLOADING THIS ONE ──────────────────────────────
+    //
+    // THE WAY A VIDEO COULD GO UP TWICE. Firings start every minute and run up
+    // to five, and the upload writes its YouTube id only once YouTube hands it
+    // over, minutes after it starts. A second firing meanwhile saw the same
+    // row, prepared and with no id, and uploaded it again. A row marked
+    // "running now" within the last five and a half minutes belongs to a
+    // firing that is still alive; after that, the firing is dead and the row
+    // goes round again as below.
+    if (/^Attempt \d+ of \d+ is running now\.$/.test(said0) && it.updated_at
+      && Date.now() - new Date(it.updated_at).getTime() < 330_000) continue
     if (tries >= TRIES) {
       // THE LAST REAL ERROR SURVIVES THE GIVING UP.
       //
@@ -682,11 +737,18 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
     // THE ATTEMPT IS RECORDED BEFORE IT RUNS, so a firing killed mid-upload
     // cannot retry forever, and the note says so plainly: a row still carrying
     // this sentence is a row whose attempt never came back to write anything.
-    await sb.from('launch_items').update({
+    // ONLY WITH TIME TO FINISH, since an upload cut off part way is the one
+    // outcome that can leave a video on YouTube with no record of it here.
+    if (left() < 150_000) break
+    // CLAIMED on the try count it was read with, so two firings reaching the
+    // row in the same instant cannot both take it.
+    const claim = sb.from('launch_items').update({
       publish_tries: tries + 1,
       reason: `Attempt ${tries + 1} of ${TRIES} is running now.`,
       updated_at: stamp(),
-    }).eq('id', it.id)
+    }).eq('id', it.id).eq('state', 'prepared')
+    const { data: claimed } = await (it.publish_tries == null ? claim.is('publish_tries', null) : claim.eq('publish_tries', tries)).select('id')
+    if (!claimed || claimed.length === 0) continue
     budget--
 
     try {
@@ -739,7 +801,7 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
         // Refuse on the header before pulling the body into memory, the same
         // way the interactive uploader does. Downloading half a gigabyte to
         // discover it is half a gigabyte is the check becoming the problem.
-        const res = await fetchWithTimeout(src, { timeoutMs: 240_000 })
+        const res = await fetchWithTimeout(src, { timeoutMs: Math.max(30_000, Math.min(240_000, left() - 90_000)) })
         if (!res.ok) throw new Error(`the video file could not be read (${res.status})`)
         const declared = Number(res.headers.get('content-length') || 0)
         if (declared && declared > MAX_UPLOAD_BYTES) throw new Error('this video is too large for YouTube')
@@ -757,6 +819,8 @@ async function publishes(sb: Sb): Promise<{ scheduled: number; failed: number }>
           privacyStatus: goNow ? 'public' : 'private',
           // The batch's toggle, sent explicitly: left out, YouTube notifies.
           notifySubscribers: notifyByBatch.get(it.batch_id) === true,
+          // What is left of this firing, less room to record the id.
+          uploadTimeoutMs: left() - 20_000,
         })
         videoId = up.id
         channelId = up.channelId
@@ -969,8 +1033,13 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
     }
 
     const { error: linkErr } = await sb.from('launch_items')
-      .update({ video_id: video.id, reason: null }).eq('id', it.id)
+      .update({ video_id: video.id }).eq('id', it.id)
     if (linkErr) return { ok: false, error: linkErr.message }
+    // ONLY THE HAND-OVER'S OWN NOTE IS CLEARED. This used to clear any reason,
+    // and a video kept private after a missed slot lost the one sentence
+    // telling its creator to give it a new time, the moment Amazon linked up.
+    await sb.from('launch_items').update({ reason: null })
+      .eq('id', it.id).like('reason', 'On YouTube, but it could not be passed to the Amazon side%')
 
     const priority = coveragePriority({ publishedAt: publishedAt || it.publish_at || it.planned_publish_at })
     const { error: gridErr } = await sb.from('storefront_coverage').upsert(
@@ -1011,7 +1080,10 @@ const REPAIRS = 10
 async function repairs(sb: Sb): Promise<{ linked: number; failed: number }> {
   const { data: rows } = await sb.from('launch_items')
     .select('id,user_id,batch_id,title,description,asin,thumbnail_url,thumbnail_clean_url,duration_seconds,clean_url,planned_publish_at,publish_at,youtube_video_id')
-    .in('state', ['scheduled', 'published'])
+    // BLOCKED TOO, when it is on YouTube: a video kept private after a missed
+    // slot is still a video, and its Amazon listings do not wait for YouTube.
+    // Its hand-over failing once used to mean it never reached Amazon at all.
+    .in('state', ['scheduled', 'published', 'blocked'])
     .not('youtube_video_id', 'is', null)
     .is('video_id', null)
     .order('updated_at', { ascending: true })
@@ -1073,12 +1145,20 @@ const CONFIRM_TRIES = 6
  */
 async function confirms(sb: Sb): Promise<{ published: number; late: number }> {
   const cutoff = new Date(Date.now() - CONFIRM_GRACE_MS).toISOString()
+  // ── NOT THE SAME LATE VIDEOS FOREVER ──────────────────────────────────
+  // A video past its checks used to stay first in line every firing, oldest
+  // first, forty at a time across every creator, so a handful of removed or
+  // never-published videos took every slot and newer ones were never
+  // confirmed. Now the first CONFIRM_TRIES checks run every firing, after that
+  // once an hour, and the line rotates on when each was last looked at.
+  const hourAgo = new Date(Date.now() - 60 * 60_000).toISOString()
   const { data: rows } = await sb.from('launch_items')
     .select('id,user_id,title,youtube_video_id,publish_at,confirm_tries')
     .eq('state', 'scheduled')
     .not('youtube_video_id', 'is', null)
     .lte('publish_at', cutoff)
-    .order('publish_at', { ascending: true }).limit(CONFIRMS)
+    .or(`confirm_tries.is.null,confirm_tries.lt.${CONFIRM_TRIES},updated_at.lt.${hourAgo}`)
+    .order('updated_at', { ascending: true }).limit(CONFIRMS)
   const items = rows ?? []
   if (items.length === 0) return { published: 0, late: 0 }
 
@@ -1098,7 +1178,12 @@ async function confirms(sb: Sb): Promise<{ published: number; late: number }> {
     let meta: Record<string, { status: string; publishAt: string | null }> = {}
     try {
       const token = await getChannelOAuthToken(sb, userId, null)
-      if (!token) continue
+      if (!token) {
+        // Moved to the back of the line, so a disconnected channel does not
+        // hold every other creator's confirmations up.
+        await sb.from('launch_items').update({ updated_at: stamp() }).in('id', list.map((i: { id: string }) => i.id))
+        continue
+      }
       meta = await new YouTubeOAuthService(token).getVideoMetaByIds(
         list.map((i: { youtube_video_id: string }) => i.youtube_video_id),
       )
@@ -1164,7 +1249,7 @@ async function settle(sb: Sb): Promise<number> {
         .eq('batch_id', b.id).eq('state', 'prepared').not('planned_publish_at', 'is', null)
       if ((pending ?? 0) === 0) {
         await sb.from('launch_batches')
-          .update({ state: 'launched', updated_at: new Date().toISOString() }).eq('id', b.id)
+          .update({ state: 'launched', updated_at: new Date().toISOString() }).eq('id', b.id).eq('state', 'launching')
         moved++
       }
       continue
@@ -1175,8 +1260,11 @@ async function settle(sb: Sb): Promise<number> {
       .eq('batch_id', b.id).in('state', ['draft', 'rendering', 'preparing'])
     const next = (open ?? 0) > 0 ? 'preparing' : 'ready'
     if (next !== b.state) {
+      // ONLY FROM THE STATE IT WAS READ IN. A Launch pressed between the read
+      // and this write set 'launching', and this used to put it back to
+      // 'ready', undoing the launch.
       await sb.from('launch_batches')
-        .update({ state: next, updated_at: new Date().toISOString() }).eq('id', b.id)
+        .update({ state: next, updated_at: new Date().toISOString() }).eq('id', b.id).eq('state', b.state)
       moved++
     }
   }
@@ -1201,11 +1289,16 @@ async function playlistCatchUp(sb: Sb): Promise<{ added: number; failed: number 
   if (bErr || !batches?.length) return { added: 0, failed: 0 }
   const byBatch = new Map<string, { user_id: string; playlist_id: string }>()
   for (const b of batches as Array<{ id: string; user_id: string; playlist_id: string }>) byBatch.set(b.id, b)
+  // NOT 'prepared': a prepared row with an id is one the upload step is
+  // still finishing, and it adds the playlist itself. Both doing it put the
+  // video in the playlist twice.
   const { data: rows, error: iErr } = await sb.from('launch_items')
     .select('id,batch_id,youtube_video_id')
     .in('batch_id', [...byBatch.keys()])
+    .in('state', ['scheduled', 'published', 'blocked'])
     .not('youtube_video_id', 'is', null)
     .is('playlist_added_at', null).is('playlist_error', null)
+    .order('updated_at', { ascending: true })
     .limit(10)
   if (iErr || !rows?.length) return { added: 0, failed: 0 }
   let added = 0, failed = 0
@@ -1215,7 +1308,13 @@ async function playlistCatchUp(sb: Sb): Promise<{ added: number; failed: number 
     if (!b) continue
     if (!tokens.has(b.user_id)) tokens.set(b.user_id, await getChannelOAuthToken(sb, b.user_id, null).catch(() => null))
     const token = tokens.get(b.user_id)
-    if (!token) continue
+    if (!token) {
+      // SAID, not skipped: a skipped row came back every firing and took a
+      // slot another creator's video needed.
+      await sb.from('launch_items').update({ playlist_error: 'Your YouTube channel is not connected for publishing, so it could not be added to the playlist.' }).eq('id', it.id)
+      failed++
+      continue
+    }
     try {
       await new YouTubeOAuthService(token).addVideoToPlaylist(b.playlist_id, it.youtube_video_id)
       await sb.from('launch_items').update({ playlist_added_at: new Date().toISOString(), playlist_error: null }).eq('id', it.id)
@@ -1235,17 +1334,37 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const sb = createAdminClient() as Sb
-  const rendered = await renders(sb)
-  const thumbed = await thumbs(sb)
-  // LAST, because it is the longest single operation here and putting it ahead
-  // of the cheap steps would let one slow upload starve every other batch.
-  const published = await publishes(sb)
-  // AFTER the publishing, and cheap: one YouTube call covers fifty ids, so this
-  // never competes with the upload for the firing's time.
-  const confirmed = await confirms(sb)
+  const started = Date.now()
+  // Seconds of this firing left, with room kept back for the final writes.
+  const left: Left = () => maxDuration * 1000 - 15_000 - (Date.now() - started)
+
+  // ── PREPARING AND PUBLISHING TAKE TURNS ────────────────────────────────
+  //
+  // They used to share every firing: a render (minutes), then a thumbnail
+  // (minutes), then an upload (minutes), against a 300 second limit. The
+  // function was killed part way far more often than it finished, so a
+  // thumbnail that had been generated was never written, and uploads for
+  // every creator waited behind somebody else's image. Now even minutes
+  // prepare and odd minutes publish, each with the whole limit, and every step
+  // checks the time it has left before it starts rather than after.
+  // `?pass=prepare` or `?pass=publish` forces one, for a manual run.
+  const forced = new URL(request.url).searchParams.get('pass')
+  const pass = forced === 'prepare' || forced === 'publish'
+    ? forced
+    : (new Date().getUTCMinutes() % 2 === 0 ? 'prepare' : 'publish')
+
+  if (pass === 'prepare') {
+    const rendered = await renders(sb, left)
+    const thumbed = await thumbs(sb, left)
+    const settled = await settle(sb)
+    return NextResponse.json({ ok: true, pass, rendered, thumbed, settled })
+  }
+  const published = await publishes(sb, left)
+  // AFTER the publishing, and cheap: one YouTube call covers fifty ids.
+  const confirmed = left() > 30_000 ? await confirms(sb) : null
   // Videos on YouTube that never reached the Amazon side. Cheap when empty.
-  const repaired = await repairs(sb)
-  const playlisted = await playlistCatchUp(sb)
+  const repaired = left() > 20_000 ? await repairs(sb) : null
+  const playlisted = left() > 20_000 ? await playlistCatchUp(sb) : null
   const settled = await settle(sb)
-  return NextResponse.json({ ok: true, rendered, thumbed, published, confirmed, repaired, playlisted, settled })
+  return NextResponse.json({ ok: true, pass, published, confirmed, repaired, playlisted, settled })
 }

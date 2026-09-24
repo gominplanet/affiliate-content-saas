@@ -297,7 +297,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /await noteHandOver\(sb, it\.id, handed\)/.test(DRAIN),
     '"Nothing is on YouTube yet" under a live video is what silence looks like here')
   check('and the later pass it promised exists and runs every firing',
-    /async function repairs\(sb: Sb\)/.test(DRAIN) && /const repaired = await repairs\(sb\)/.test(DRAIN)
+    /async function repairs\(sb: Sb\)/.test(DRAIN) && /const repaired = [^\n]*await repairs\(sb\)/.test(DRAIN)
     && /\.is\('video_id', null\)/.test(DRAIN),
     'its comment said "the grid can be seeded on a later pass" and nothing ever did')
 }
@@ -1215,14 +1215,15 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   const META = live(read('app/api/youtube/generate-metadata/route.ts'))
 
   check('the worker writes a description before publishing',
-    /patch\.description = meta\.description/.test(DRAIN)
+    /\.update\(\{ description: meta\.description/.test(DRAIN)
     && /await videoMetadata\(/.test(DRAIN),
     'an empty description is a video with no affiliate link at all')
   check('from the writer Launchpad uses, not a second one',
     /generate-metadata/.test(DRAIN),
     'two description writers drift, and this one carries the link')
   check('and only when there is not one already',
-    /if \(!String\(it\.description \|\| ''\)\.trim\(\)\)/.test(DRAIN),
+    /let haveDescription = !!String\(it\.description \|\| ''\)\.trim\(\)/.test(DRAIN)
+      && /\.is\('description', null\)\.select\('id'\)/.test(DRAIN),
     'rewriting a description the creator edited would throw their work away')
   // THE EXACT HEADER. "x-mvp-service-user" contains "x-mvp-service", so the
   // loose version matched the identity line while the secret line was gutted.
@@ -1615,9 +1616,29 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'each tried once; a refusal is written, not retried every minute')
   // THE YOUTUBE TITLE IS A TITLE, NOT THE THUMBNAIL HOOK.
   check('a batch video gets the YouTube title Co-Pilot\'s writer returns',
-    /patch\.title = meta\.title\.slice\(0, 100\)/.test(DRAIN) && /!== 'creator'\) \{\s*patch\.title = meta\.title/.test(DRAIN),
+    /title: meta\.title\.slice\(0, 100\), title_source: 'mvp'/.test(DRAIN) && /\.eq\('id', it\.id\)\.neq\('title_source', 'creator'\)/.test(DRAIN),
     '"CHIA WORTH IT?" is a thumbnail hook, and it went to YouTube as the title')
-  check('and stops on an error, saying so',
+  // ── THE WORKER DOES NOT DOUBLE UP, AND NEVER OUTLIVES ITS FIRING ───────
+  check('an upload another firing is running is left to it',
+    /is running now\\\.\$\/\.test\(said0\) && it\.updated_at\s*&& Date\.now\(\) - new Date\(it\.updated_at\)\.getTime\(\) < 330_000\) continue/.test(DRAIN) && /claim\.eq\('publish_tries', tries\)/.test(DRAIN),
+    'firings overlap; the second one saw a prepared row with no id and uploaded it again')
+  check('a render and a thumbnail are claimed before they start',
+    /\.eq\('id', it\.id\)\.eq\('state', 'draft'\)\.select\('id'\)/.test(DRAIN) && /claim\.eq\('thumb_tries', tries\)/.test(DRAIN))
+  check('a render that never reported back goes round again',
+    /\.eq\('state', 'rendering'\)\.lt\('updated_at', stale\)/.test(DRAIN),
+    'a killed firing left the row on rendering, which nothing picked up and Try again refused')
+  check('preparing and publishing take turns, each with the whole limit',
+    /getUTCMinutes\(\) % 2 === 0 \? 'prepare' : 'publish'/.test(DRAIN) && /if \(left\(\) < THUMB_CALL_MS \+ 30_000\) break/.test(DRAIN)
+      && /if \(left\(\) < 150_000\) break/.test(DRAIN) && /uploadTimeoutMs: left\(\) - 20_000/.test(DRAIN))
+  check('late videos do not hold the confirm line forever',
+    /confirm_tries\.lt\.\$\{CONFIRM_TRIES\},updated_at\.lt\./.test(DRAIN) && /order\('updated_at', \{ ascending: true \}\)\.limit\(CONFIRMS\)/.test(DRAIN))
+  check('settle only moves a batch from the state it read',
+    /\.eq\('id', b\.id\)\.eq\('state', b\.state\)/.test(DRAIN) && /\.eq\('id', b\.id\)\.eq\('state', 'launching'\)/.test(DRAIN),
+    'a Launch pressed between the read and the write was undone')
+  check('the hand-over clears only its own note',
+    /like\('reason', 'On YouTube, but it could not be passed to the Amazon side%'\)/.test(DRAIN),
+    'a kept-private video lost the sentence telling its creator to give it a new time')
+  check('stops on an error, saying so',
     /if \(out\.error\) setAmazonAuto\('stopped'\)/.test(SCREEN) && /Automatic sending stopped:/.test(SCREEN))
 
   // ── a file name is not a title, and MVP writes the real one ──────────────
@@ -1684,7 +1705,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /\.update\(\{ youtube_video_id: videoId, updated_at: stamp\(\) \}\)/.test(DRAIN),
     'bundling it into the update at the end of the block is how it got lost')
   check('and the worker can actually see it',
-    /planned_publish_at,publish_tries,reason,youtube_video_id'\)/.test(DRAIN),
+    /planned_publish_at,publish_tries,reason,youtube_video_id[,']/.test(DRAIN),
     'a column the query does not select is a resume that never happens')
   check('a schedule that fails says the video is on the channel',
     /the video is on your channel but YouTube would not set its publish time/.test(DRAIN),
