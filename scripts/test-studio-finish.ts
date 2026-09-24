@@ -25,6 +25,7 @@ const check = (name: string, cond: boolean, detail?: string) => {
 
 const root = new URL('..', import.meta.url).pathname
 const BG = readFileSync(join(root, 'extension/background.js'), 'utf8')
+const inOrderRaw = (src: string, a: string, b: string) => { const i = src.indexOf(a), j = src.indexOf(b); return i > -1 && j > -1 && i < j }
 
 // The toolkit both Studio routes use (a draft's Edit draft window, and a
 // video's own Details page), so a match elsewhere in a 9,000-line file cannot
@@ -121,6 +122,18 @@ check('the manifest and the app registry agree on the version',
     && /if \(viaName && !sameProduct\(viaName, name\)\)/.test(kitTag))
   check('the Amazon product page is tried first', /const links = \[o\.amazonUrl, o\.productUrl\]/.test(kitTag)
     && /amazonUrl: productLinkFor\(effectiveAsin\)/.test(readFileSync(join(root, 'app/(dashboard)/co-pilot/page.tsx'), 'utf8')))
+}
+
+// ── third real run, 1.21.4: the creator's own route to a product tag ─────
+{
+  const kitTag = BG.slice(BG.indexOf('K.steps.tagproduct = '), BG.indexOf('K.steps.endscreen = '))
+  check('the empty search bar is clicked first, and YouTube\'s own suggestion followed',
+    /try \{ input\.focus\(\); click\(input\) \} catch/.test(kitTag) && /const sugg0 = await waitFor\(suggestion, 5000, 300\)/.test(kitTag)
+    && kitTag.indexOf('const sugg0') < kitTag.indexOf('const links = [o.amazonUrl, o.productUrl]'))
+  check('the Recently tagged list is never taken for results', /if \(recentShown\(\)\) return \[\]/.test(kitTag))
+  check('the + is found as an icon button with no text, rightmost in its row',
+    /lbl === '' \|\| lbl === '\+'/.test(kitTag) && /else if \(r\.left > row\.b\.getBoundingClientRect\(\)\.left\) row\.b = b/.test(kitTag))
+  check('then Next, then Done on the timestamps page', inOrderRaw(kitTag, 'click(pick)', "findBtn(/^next$/i, d, { enabled: true })") && /findBtn\(\/\^done\$\/i, document, \{ enabled: true \}\)/.test(kitTag))
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

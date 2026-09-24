@@ -8626,7 +8626,7 @@ function studioKitInstallInPage() {
     }, 10000, 400)
     if (!pop) { out.detail = 'Pressed Add, but the product search did not open'; out.debug.buttons = buttonSample(document); return out }
     const { d, input } = pop
-    const type = (q) => {
+    const setInput = (q) => {
       try {
         input.focus()
         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
@@ -8638,7 +8638,6 @@ function studioKitInstallInPage() {
       const searchBtn = findBtn(/^search$/i, d)
       if (searchBtn) click(searchBtn)
     }
-    const plusBtns = () => all(d).filter((el) => isBtn(el) && visible(el) && (/^\+$/.test(deepText(el)) || /^add\b|add product/i.test(attrLabel(el))))
     const giveUp = (detail) => {
       const cancel = findBtn(/^(cancel|close)$/i, d)
       if (cancel) click(cancel)
@@ -8646,11 +8645,10 @@ function studioKitInstallInPage() {
       out.detail = detail
       return out
     }
+    const toks = (x) => (String(x || '').toLowerCase().match(/[a-z0-9]+/g) || [])
     // A MODEL NUMBER MUST MATCH. "70mai A900 Dash Cam" and "70mai Dash Cam
     // Front and Rear" share three words and are different products, so any
-    // word with a digit in it (A900, 4K, 70mai) that the product's name has,
-    // the result must have too, and most of the other words besides.
-    const toks = (x) => (String(x || '').toLowerCase().match(/[a-z0-9]+/g) || [])
+    // word with a digit in it that the name has, the result must have too.
     const sameProduct = (wantName, gotName) => {
       const want = Array.from(new Set(toks(wantName))).slice(0, 10)
       const have = new Set(toks(gotName))
@@ -8660,53 +8658,93 @@ function studioKitInstallInPage() {
       const shared = words.filter((w) => have.has(w)).length
       return shared >= Math.min(3, words.length)
     }
-    // ── THE PRODUCT LINK FIRST ───────────────────────────────────────────
-    // An Amazon product page, or the creator's own link, which YouTube
-    // resolves to the product itself above a "Similar results" list.
-    let viaName = null
-    const links = [o.amazonUrl, o.productUrl].filter((x, i, arr) => x && arr.indexOf(x) === i)
-    let found = false
-    for (const q of links) {
-      type(q)
-      found = !!(await waitFor(() => (plusBtns().length ? true : null), 12000, 500))
-      if (found) break
-    }
-    // ── THEN YOUTUBE'S OWN READING OF IT ─────────────────────────────────
-    // A short link (mvpl.ink) finds nothing, but YouTube offers the product's
-    // name underneath as a search suggestion ("70mai A900 Dash Cam"). That
-    // suggestion is YouTube naming the product, so it is searched, and a
-    // result is only tagged when its name matches it, model number and all.
-    if (!found) {
-      const sugg = all(d).find((el) => {
-        if (!visible(el) || el === input) return false
-        const t = deepText(el)
-        if (!t || t.length > 90 || /^search suggestions$/i.test(t) || /^https?:/i.test(t)) return false
-        const r = el.getAttribute && el.getAttribute('role')
-        const tag = (el.tagName || '').toLowerCase()
-        return (r === 'option' || r === 'menuitem' || /suggestion|autocomplete|list-item|paper-item/.test(tag)) && /[a-z]/i.test(t)
+    // ── THE RESULTS, NOT THE RECENTLY TAGGED LIST ────────────────────────
+    // The dialog opens on "Recently tagged" (other products, each with its own
+    // + button), so a + on screen is not a result until that list has gone.
+    // And the + is an icon with no text: it is found as a button with no
+    // words of its own (or labelled add/tag), in the results column, and one
+    // per row, the rightmost, so the Save bookmark beside it is never taken.
+    const recentShown = () => all(d).some((el) => visible(el) && /^recently tagged$/i.test(deepText(el)))
+    const plusBtns = () => {
+      if (recentShown()) return []
+      const box = d.getBoundingClientRect()
+      const inTop = input.getBoundingClientRect().bottom
+      const cands = all(d).filter((el) => {
+        if (!isBtn(el) || !visible(el)) return false
+        const lbl = ((deepText(el) || '') + ' ' + (attrLabel(el) || '')).trim().toLowerCase()
+        if (/sellers|saved products|^next|^back|^done|close|cancel|clear|search|feedback|save|bookmark|remove|option/.test(lbl)) return false
+        if (!(lbl === '' || lbl === '+' || /\badd\b|\btag\b/.test(lbl))) return false
+        const r = el.getBoundingClientRect()
+        return r.top > inTop && (r.left + r.width / 2) < box.left + box.width * 0.62
       })
-      viaName = sugg ? deepText(sugg) : (o.productTitle ? toks(o.productTitle).slice(0, 6).join(' ') : null)
-      out.readBack.searchedFor = viaName
-      if (viaName) {
-        if (sugg) click(sugg); else type(viaName)
+      const rows = []
+      for (const b of cands.sort((x, y) => x.getBoundingClientRect().top - y.getBoundingClientRect().top)) {
+        const r = b.getBoundingClientRect()
+        const row = rows.find((w) => Math.abs(w.top - r.top) < r.height * 0.8)
+        if (!row) rows.push({ top: r.top, b })
+        else if (r.left > row.b.getBoundingClientRect().left) row.b = b
+      }
+      return rows.map((w) => w.b)
+    }
+    const nameNear = (b) => { let e = up(b); for (let i = 0; i < 6 && e; i++) { const t = deepText(e); if (t.length > 12) return t.slice(0, 160); e = up(e) } return '' }
+    const suggestion = () => all(d).find((el) => {
+      if (!visible(el) || el === input) return false
+      const t = deepText(el)
+      if (!t || t.length > 90 || /^search suggestions$/i.test(t) || /^https?:/i.test(t)) return false
+      const r = el.getAttribute && el.getAttribute('role')
+      const tag = (el.tagName || '').toLowerCase()
+      return (r === 'option' || r === 'menuitem' || /suggestion|autocomplete|list-item|paper-item/.test(tag)) && /[a-z]/i.test(t)
+    }) || null
+    const brandOk = (name) => {
+      // The suggestion is YouTube's guess from the video. With a product
+      // known, it must share a real word with it (the brand, usually).
+      if (!o.productTitle) return true
+      const have = new Set(toks(name).filter((w) => w.length >= 4))
+      return toks(o.productTitle).filter((w) => w.length >= 4).some((w) => have.has(w))
+    }
+    let viaName = null
+    let found = false
+    // ── 1. WHAT YOUTUBE ALREADY SUGGESTS ─────────────────────────────────
+    // Clicking into the empty search bar makes YouTube suggest the product it
+    // sees in this video ("Wavytalk Steamlift Pro"). That is the route a
+    // creator takes by hand, and it finds products a pasted link does not.
+    try { input.focus(); click(input) } catch (e) {}
+    const sugg0 = await waitFor(suggestion, 5000, 300)
+    if (sugg0 && brandOk(deepText(sugg0))) {
+      viaName = deepText(sugg0)
+      click(sugg0)
+      found = !!(await waitFor(() => (plusBtns().length ? true : null), 12000, 500))
+    }
+    // ── 2. THE PRODUCT LINK ──────────────────────────────────────────────
+    if (!found) {
+      viaName = null
+      const links = [o.amazonUrl, o.productUrl].filter((x, i, arr) => x && arr.indexOf(x) === i)
+      for (const q of links) {
+        setInput(q)
         found = !!(await waitFor(() => (plusBtns().length ? true : null), 12000, 500))
+        if (found) break
+        // A link YouTube cannot open still gets a suggestion underneath: its
+        // name for the product, searched and held to the same match.
+        const sg = suggestion()
+        if (sg && brandOk(deepText(sg))) {
+          viaName = deepText(sg)
+          click(sg)
+          found = !!(await waitFor(() => (plusBtns().length ? true : null), 12000, 500))
+          if (found) break
+          viaName = null
+        }
       }
     }
+    out.readBack.searchedFor = viaName
     if (!found) return giveUp('YouTube Shopping has no listing for this product, so there was nothing to tag')
-    // THE EXACT MATCH, OR NOTHING. A pasted link returns the product itself
-    // first and then a "Similar results" list. Only a result above that
-    // heading is the product; tagging a similar one would put somebody else's
-    // product on the video.
+    // THE EXACT MATCH, OR NOTHING. Only a result above a "Similar results"
+    // heading is the product itself.
     const header = all(d).find((el) => visible(el) && /^similar results$/i.test(deepText(el)))
     const limit = header ? header.getBoundingClientRect().top : Infinity
     const exact = plusBtns().filter((b) => b.getBoundingClientRect().top < limit)
-      .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
     if (!exact.length) {
       return giveUp('YouTube Shopping only offered similar products, not this one, so nothing was tagged (tagging a look-alike would put someone else’s product on your video)')
     }
-    // The product's name, from the smallest block around the button that has
-    // some words in it.
-    const nameNear = (b) => { let e = up(b); for (let i = 0; i < 6 && e; i++) { const t = deepText(e); if (t.length > 12) return t.slice(0, 160); e = up(e) } return '' }
     const pick = exact[0]
     const name = nameNear(pick)
     out.readBack.productName = name
@@ -8714,29 +8752,23 @@ function studioKitInstallInPage() {
       return giveUp('YouTube Shopping does not list "' + viaName.slice(0, 60) + '". Its closest result, "' + name.slice(0, 60) + '", is a different product, so nothing was tagged')
     }
     if (!viaName && o.productTitle) {
-      const words = (s) => (String(s).toLowerCase().match(/[a-z0-9]{4,}/g) || [])
-      const want = Array.from(new Set(words(o.productTitle))).slice(0, 8)
-      const have = new Set(words(name))
-      const shared = want.filter((w) => have.has(w)).length
-      const need = Math.min(2, want.length)
-      if (want.length && shared < need) {
-        const cancel = findBtn(/^(cancel|close)$/i, d)
-        if (cancel) click(cancel)
-        out.detail = 'The top result, "' + name.slice(0, 60) + '", does not look like "' + String(o.productTitle).slice(0, 60) + '", so nothing was tagged'
-        return out
+      const want = Array.from(new Set(toks(o.productTitle).filter((w) => w.length >= 4))).slice(0, 8)
+      const have = new Set(toks(name))
+      if (want.length && want.filter((w) => have.has(w)).length < Math.min(2, want.length)) {
+        return giveUp('The top result, "' + name.slice(0, 60) + '", does not look like "' + String(o.productTitle).slice(0, 60) + '", so nothing was tagged')
       }
     }
+    // ── +, THEN NEXT, THEN DONE ON THE TIMESTAMPS PAGE ───────────────────
     click(pick)
-    await sleep(900)
     const nx = await waitFor(() => findBtn(/^next$/i, d, { enabled: true }), 8000, 400)
-    if (!nx) { out.detail = 'Added the product, but the Next button never became available'; out.debug.buttons = buttonSample(d); return out }
+    if (!nx) { out.detail = 'Pressed + on "' + name.slice(0, 60) + '", but Next never lit up'; out.debug.buttons = buttonSample(d); return out }
     click(nx)
     const doneBtn = await waitFor(() => findBtn(/^done$/i, document, { enabled: true }), 10000, 400)
     if (doneBtn) click(doneBtn)
     await waitFor(() => (rowDone() ? true : null), 10000, 500)
     out.readBack.tagged = rowDone()
     out.ok = out.readBack.tagged
-    out.detail = out.ok ? 'Tagged "' + name.slice(0, 70) + '"' : 'Went through Tag products, but the row does not show a tagged product'
+    out.detail = out.ok ? 'Tagged "' + name.slice(0, 70) + '"' : 'Pressed +, Next and Done, but the draft does not show a tagged product'
     return out
   }
 
