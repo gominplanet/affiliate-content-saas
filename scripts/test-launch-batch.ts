@@ -1012,7 +1012,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       'claiming only videos whose time has come would hold the storefronts back too')
   }
   check('the result names the two sides apart',
-    /YouTube: automatic/.test(BOARD) && /Amazon: you press the button/.test(BOARD),
+    /YouTube: automatic/.test(BOARD) && /Amazon: automatic while this page is open/.test(BOARD),
     'one paragraph covering both is what made them read as one date')
   check('and states the daily allowance in the creator’s terms',
     /20 a day on the US store and 10 a day on each other one/.test(BOARD),
@@ -1021,7 +1021,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // THE SENTENCE WAS FALSE. This page used SCOUT to check sign-in and never
   // uploaded, so the tab it asked you to keep open did nothing for Amazon.
   check('the page actually uploads to Amazon',
-    /deliverPreparedStorefronts/.test(BOARD) && /Upload to Amazon \(/.test(BOARD),
+    /deliverPreparedStorefronts/.test(BOARD) && /Send to Amazon now \(/.test(BOARD),
     'it asked for a tab to be kept open for work it never did')
   // THE CALL SITE IN EACH, not the import. An import survives its own call
   // being replaced by an inline fetch, which is precisely the second uploader
@@ -1587,8 +1587,17 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
 
   // ONE STORY ABOUT AMAZON, not two contradicting each other three lines apart.
   check('the Amazon heading does not promise something automatic',
-    !/Amazon: straight away/.test(SCREEN) && /Amazon: you press the button/.test(SCREEN),
-    'it said "straight away" and then that it needed this tab open')
+    !/Amazon: straight away/.test(SCREEN) && /Amazon: automatic while this page is open/.test(SCREEN),
+    'it said "straight away" and then that it needed this tab open. Automatic is true now, but only with the tab open, and the heading has to say both')
+  // AUTOMATIC, AND IT STOPS RATHER THAN HAMMERS. Amazon goes by itself once
+  // the batch is launched, but a signed-out Amazon retried every two minutes
+  // is noise, so an error turns it off and the page says why.
+  check('Amazon sends by itself once launched',
+    /amazonTick\.current = \(\) =>/.test(SCREEN) && /uploadToAmazon\(\{ auto: true \}\)/.test(SCREEN)
+      && /batch\.state !== 'launched' && batch\.state !== 'launching'\) return/.test(SCREEN),
+    'it waited for a press nobody knew was still needed')
+  check('and stops on an error, saying so',
+    /if \(out\.error\) setAmazonAuto\('stopped'\)/.test(SCREEN) && /Automatic sending stopped:/.test(SCREEN))
 
   // ── a file name is not a title, and MVP writes the real one ──────────────
   //

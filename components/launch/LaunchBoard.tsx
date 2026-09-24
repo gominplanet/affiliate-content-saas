@@ -21,7 +21,7 @@ import {
   Loader2, Plus, Trash2, Upload, Rocket, Clock, X, Check, AlertTriangle, LogIn, Wand2, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { deliverPreparedStorefronts, deliverySummary } from '@/lib/storefront-delivery'
+import { deliverPreparedStorefronts, deliverySummary, type DeliveryOutcome } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
 import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
@@ -143,6 +143,45 @@ export default function LaunchBoard() {
   // and a creator reasonably asked what the other one did. So the bar only
   // shows while the schedule step's button is out of view (scrolled away, or
   // its step folded shut).
+  // ── AMAZON GOES BY ITSELF, WHILE THIS PAGE IS OPEN ───────────────────────
+  // It used to wait for a press. It cannot run from our servers: Amazon has no
+  // upload API for storefront videos, so SCOUT does it in this browser, signed
+  // in as the creator. What CAN go is the press. Once the batch is launched,
+  // this page checks every two minutes and hands over whatever is ready (on
+  // YouTube, translated, dubbed). The queue only ever serves listings not yet
+  // delivered, so nothing goes twice.
+  //
+  // IT STOPS RATHER THAN HAMMERS. An error, or a run where listings were ready
+  // and none went, turns it off and says why; the button is still there to try
+  // again by hand. A loop retrying a signed-out Amazon every two minutes would
+  // be noise at best.
+  const amazonRunning = useRef(false)
+  const [amazonAuto, setAmazonAuto] = useState<'on' | 'stopped'>('on')
+  const [amazonNote, setAmazonNote] = useState<{ at: Date; lines: string[]; error: boolean } | null>(null)
+  // The latest state, read by a timer set once. A closure over the first
+  // render would check a batch that has since launched as still a draft.
+  const amazonTick = useRef<() => void>(() => {})
+  amazonTick.current = () => {
+    if (amazonAuto !== 'on' || scoutReady !== true || !batch || amazonRunning.current) return
+    if (batch.state !== 'launched' && batch.state !== 'launching') return
+    if (batch.markets.length === 0 || !items.some((i) => !!i.video_id)) return
+    void uploadToAmazon({ auto: true }).then((out) => {
+      if (!out) return
+      if (out.error) setAmazonAuto('stopped')
+      // Ready, not capped, and still nothing went: something is wrong that a
+      // second try in two minutes will not fix.
+      else if (!out.nothingReady && out.handedOver === 0 && out.atCap.length === 0) setAmazonAuto('stopped')
+    })
+  }
+  useEffect(() => {
+    const first = setTimeout(() => amazonTick.current(), 5_000)
+    const every = setInterval(() => amazonTick.current(), 120_000)
+    return () => { clearTimeout(first); clearInterval(every) }
+  }, [])
+  // And at once when another video reaches YouTube, rather than up to two
+  // minutes later.
+  const onYouTubeCount = items.filter((i) => !!i.video_id).length
+  useEffect(() => { if (onYouTubeCount > 0) amazonTick.current() }, [onYouTubeCount])
   const [mainLaunchEl, setMainLaunchEl] = useState<HTMLButtonElement | null>(null)
   const [mainLaunchInView, setMainLaunchInView] = useState(false)
   useEffect(() => {
@@ -362,7 +401,10 @@ export default function LaunchBoard() {
   // THE SAME DELIVERY THE STOREFRONT BOARD USES, not a copy. The dub check and
   // the daily cap live in lib/storefront-delivery, because two uploaders agree
   // only until one of them learns something.
-  async function uploadToAmazon() {
+  async function uploadToAmazon(opts?: { auto?: boolean }): Promise<DeliveryOutcome | null> {
+    const auto = opts?.auto === true
+    if (amazonRunning.current) return null
+    amazonRunning.current = true
     setBusy('amazon')
     try {
       // SCOPED TO THIS BATCH. Unscoped, this delivers the creator's whole
@@ -370,22 +412,29 @@ export default function LaunchBoard() {
       // watched SCOUT open Spain, France and Italy.
       const videoIds = items.map((i) => i.video_id).filter((v): v is string => !!v)
       if (videoIds.length === 0) {
-        toast('None of these are on YouTube yet, so Amazon has nothing to take. That happens first.', { duration: 9000 })
-        return
+        if (!auto) toast('None of these are on YouTube yet, so Amazon has nothing to take. That happens first.', { duration: 9000 })
+        return null
       }
       const out = await deliverPreparedStorefronts({
         videoIds,
         domains: batch?.markets.map((m) => m.domain) ?? [],
       })
       const lines = deliverySummary(out)
-      if (out.error) { toast.error(lines.join(' '), { duration: 12000 }); return }
-      if (out.nothingReady) { toast(lines.join(' '), { duration: 9000 }); return }
+      setAmazonNote({ at: new Date(), lines, error: !!out.error })
+      // AUTOMATIC IS QUIET UNLESS SOMETHING HAPPENED. The note under the
+      // button always says the latest run; a toast only when listings went up
+      // or it went wrong, not every two minutes that nothing was ready.
+      if (out.error) { toast.error(lines.join(' '), { duration: 12000 }); return out }
+      if (out.nothingReady) { if (!auto) toast(lines.join(' '), { duration: 9000 }); return out }
       toast.success(lines[0])
-      for (const l of lines.slice(1)) toast(l, { duration: 12000 })
+      if (!auto) for (const l of lines.slice(1)) toast(l, { duration: 12000 })
       await load(batchId!)
+      return out
     } catch {
       toast.error('Could not reach SCOUT. Is the extension installed?', { duration: 9000 })
-    } finally { setBusy(null) }
+      setAmazonNote({ at: new Date(), lines: ['Could not reach SCOUT. Is the extension installed?'], error: true })
+      return { ok: false, error: 'scout', handedOver: 0, waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false }
+    } finally { amazonRunning.current = false; setBusy(null) }
   }
 
   async function moveItem(id: string, direction: 'up' | 'down') {
@@ -1201,7 +1250,9 @@ export default function LaunchBoard() {
 
           {/* THE REASON, always. A disabled button with nothing beside it is the
               dead end this codebase keeps producing. */}
-          {blocker && (
+          {/* Not after launch: "nothing is ready to launch" printed over a
+              batch that had just launched read as something going wrong. */}
+          {blocker && !scheduleLocked && (
             <p className="text-[12.5px] px-3 py-2 rounded-lg" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
               {blocker}
             </p>
@@ -1288,9 +1339,11 @@ export default function LaunchBoard() {
               </p>
             </div>
             <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
-              <p className="text-[12px] font-semibold" style={text}>Amazon: you press the button</p>
+              <p className="text-[12px] font-semibold" style={text}>Amazon: automatic while this page is open</p>
               <p className="text-[11.5px] mt-1" style={muted}>
-                It is not on the schedule and it does not run on its own. When a video is on YouTube, pressing Upload sends it to the countries this batch chose, through SCOUT in this tab. Amazon takes 20 a day on the US store and 10 a day on each other one, which is its rule, not ours.
+                Not on the YouTube schedule. Once a video is on YouTube and a country&apos;s translation and dub are done, SCOUT sends it to that storefront by itself.
+                Amazon has no way for MVP to upload from its servers, so SCOUT does it here, signed in as you: keep this tab open.
+                Amazon takes 20 a day on the US store and 10 a day on each other one, which is its rule, not ours.
               </p>
             </div>
           </div>
@@ -1300,18 +1353,29 @@ export default function LaunchBoard() {
               that there was nothing for it to send. */}
           <div className="mt-3 flex items-center gap-3 flex-wrap">
             <button
-              onClick={() => void uploadToAmazon()}
+              onClick={() => { setAmazonAuto('on'); void uploadToAmazon() }}
               disabled={busy === 'amazon' || !!out.amazonBlocker}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-45"
               style={{ background: '#0EA5A4' }}>
               {busy === 'amazon' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              {busy === 'amazon' ? 'Sending to Amazon…' : `Upload to Amazon (${batch.markets.length} ${batch.markets.length === 1 ? 'country' : 'countries'})`}
+              {busy === 'amazon' ? 'Sending to Amazon…' : `Send to Amazon now (${batch.markets.length} ${batch.markets.length === 1 ? 'country' : 'countries'})`}
             </button>
             <span className="text-[11.5px] min-w-0 flex-1" style={out.amazonBlocker ? { color: '#d97706' } : muted}>
               {out.amazonBlocker
                 ?? `${batch.markets.map((m) => m.country).join(', ')}. SCOUT uses your own signed-in Creator account, so keep this tab open while it runs.`}
             </span>
           </div>
+          {/* WHAT THE AUTOMATIC SEND IS DOING, in its own words, so "on" and
+              "stopped" and "nothing ready yet" never look the same. */}
+          <p className="mt-2 text-[11.5px]" style={amazonNote?.error || amazonAuto === 'stopped' || scoutReady === false ? { color: '#d97706' } : muted}>
+            {scoutReady === false
+              ? 'SCOUT is not installed in this browser, so Amazon cannot go by itself. Install SCOUT, then reload this page.'
+              : amazonAuto === 'stopped'
+                ? `Automatic sending stopped: ${amazonNote?.lines.join(' ') || 'the last run did not go through'} Fix that, then press Send to Amazon now.`
+                : amazonNote
+                  ? `Automatic, checked at ${amazonNote.at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: ${amazonNote.lines.join(' ')} Checks again every two minutes.`
+                  : 'Automatic: checks every two minutes while this page is open.'}
+          </p>
         </div>
         )
       })()}
