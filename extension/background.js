@@ -8069,7 +8069,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 6
+  const KIT_VERSION = 7
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -8670,6 +8670,16 @@ K.steps.monetization = async (out, o) => {
       out.debug.popups = dialogsNow().filter((x) => !before.includes(x)).map((x) => (x.tagName || '').toLowerCase()).slice(0, 6)
       // Every visible On or Off on the page, with what it is, so the next
       // screenshot of this says exactly which element the choice lives in.
+      // WHICH "OFF" WAS CLICKED: inside the draft window, or on the video's own
+      // Details page behind it (which has a monetization field of its own).
+      const host = all(document).find((el) => (el.tagName || '').toLowerCase() === 'ytcp-uploads-dialog')
+      const chain = []
+      let c = t
+      for (let i = 0; i < 12 && c; i++) { chain.push((c.tagName || '').toLowerCase() + (c.id ? '#' + c.id : '')); c = up(c) }
+      out.debug.switchPath = chain.join(' < ')
+      out.debug.inDraftWindow = !!(host && chain.some((x) => x.indexOf('ytcp-uploads-dialog') === 0))
+      out.debug.draftWindowOpen = !!(host && visible(host))
+      out.debug.pageText = visibleText(dlg).slice(0, 400)
       out.debug.onOff = all(document).filter((el) => visible(el) && /^(on|off)$/i.test(deepText(el)))
         .map((el) => (el.tagName || '').toLowerCase() + (el.id ? '#' + el.id : '') + '[' + ((el.getAttribute && el.getAttribute('role')) || '') + ']=' + deepText(el)).slice(0, 12)
       return out
@@ -8915,11 +8925,17 @@ K.steps.monetization = async (out, o) => {
     }
     // ── +, THEN NEXT, THEN DONE ON THE TIMESTAMPS PAGE ───────────────────
     click(pick)
-    const nx = await waitFor(() => findBtn(/^next$/i, d, { enabled: true }), 8000, 400)
-    if (!nx) { out.detail = 'Pressed + on "' + name.slice(0, 60) + '", but Next never lit up'; out.debug.buttons = buttonSample(d); return out }
+    // NEXT OR DONE. One Tag products window goes +, Next, then Done on the
+    // timestamps page; another (SCOUT's own record: "Tag", "Done") goes +,
+    // then Done. Whichever lights up is pressed.
+    const nx = await waitFor(() => findBtn(/^(next|done)$/i, d, { enabled: true }), 8000, 400)
+    if (!nx) { out.detail = 'Pressed + on "' + name.slice(0, 60) + '", but neither Next nor Done lit up'; out.debug.buttons = buttonSample(d); return out }
+    const wasNext = /^next$/i.test(deepText(nx) || attrLabel(nx))
     click(nx)
-    const doneBtn = await waitFor(() => findBtn(/^done$/i, document, { enabled: true }), 10000, 400)
-    if (doneBtn) click(doneBtn)
+    if (wasNext) {
+      const doneBtn = await waitFor(() => findBtn(/^done$/i, document, { enabled: true }), 10000, 400)
+      if (doneBtn) click(doneBtn)
+    }
     await waitFor(() => (rowDone() ? true : null), 10000, 500)
     out.readBack.tagged = rowDone()
     out.ok = out.readBack.tagged
