@@ -29,6 +29,10 @@ const Q = code('app/api/global-sync/deliver/queue/route.ts')
 check('failed listings come back only on request', /retryFailed'\) === '1' \? \['localized', 'failed'\] : \['localized'\]/.test(Q))
 const LB = code('components/launch/LaunchBoard.tsx')
 check('a press retries failures, the automatic run does not', /retryFailed: !auto/.test(LB))
+const BR = code('app/api/launch/batches/[id]/route.ts')
+check('a country with no listing yet still shows, from the coverage grid',
+  /from\('storefront_coverage'\)/.test(BR) && /state: `grid:\$\{c\.state\}`/.test(BR),
+  'a video meant for seven countries showed one and said nothing about the other six')
 check('each batch row shows each country', /it\.amazon!\.map\(/.test(LB) && /a\.state === 'failed'/.test(LB))
 
 const base = { ok: false, handedOver: 0, duplicates: 0, failed: [], waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false }

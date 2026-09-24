@@ -85,6 +85,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         amazonByVideo.set(v, list)
       }
     }
+    // EVERY COUNTRY THE BATCH PICKED, NOT ONLY THE ONES WITH A LISTING. A
+    // country the coverage grid stopped before it made a listing (the product
+    // is not sold there, say) had no row at all, so a video meant for seven
+    // countries showed one and said nothing about the other six. Those come
+    // from the grid, with its own state and reason.
+    const { data: cells } = await sb.from('storefront_coverage')
+      .select('video_id,domain,state,reason').eq('user_id', user.id).in('video_id', vids)
+    for (const c of (cells ?? []) as Array<{ video_id: string; domain: string; state: string; reason: string | null }>) {
+      if (!((batch as BatchRow).markets ?? []).includes(c.domain)) continue
+      const list = amazonByVideo.get(c.video_id) ?? []
+      if (list.some((a) => a.domain === c.domain)) continue
+      list.push({ domain: c.domain, state: `grid:${c.state}`, detail: c.reason, waitingOnDub: false })
+      amazonByVideo.set(c.video_id, list)
+    }
   }
 
   const itemsOut = items.map((i) => ({

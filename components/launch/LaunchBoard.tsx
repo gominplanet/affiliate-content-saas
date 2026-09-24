@@ -1583,6 +1583,10 @@ export default function LaunchBoard() {
                         const [word, colour] = a.state === 'delivered' ? ['on Amazon', '#10B981']
                           : a.state === 'failed' ? ['failed', '#ef4444']
                           : a.state === 'localized' ? (a.waitingOnDub ? ['dubbing', '#0EA5A4'] : ['ready to send', '#d97706'])
+                          // From the coverage grid: no listing made yet.
+                          : a.state === 'grid:blocked' ? ['cannot go', '#ef4444']
+                          : a.state === 'grid:live' || a.state === 'grid:uploaded' ? ['on Amazon', '#10B981']
+                          : a.state === 'grid:unknown' ? ['not checked yet', 'var(--text-2)']
                           : ['preparing', 'var(--text-2)']
                         return (
                           <span key={a.domain} title={a.state === 'failed' && a.detail ? a.detail : undefined}>
@@ -1593,9 +1597,9 @@ export default function LaunchBoard() {
                       })}
                     </span>
                   )}
-                  {it.amazon?.some((a) => a.state === 'failed' && a.detail) && (
+                  {it.amazon?.some((a) => (a.state === 'failed' || a.state === 'grid:blocked') && a.detail) && (
                     <span className="block text-[11.5px] mt-0.5 px-2 py-1 rounded" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.08)' }}>
-                      {it.amazon.filter((a) => a.state === 'failed').map((a) =>
+                      {it.amazon.filter((a) => (a.state === 'failed' || a.state === 'grid:blocked') && a.detail).map((a) =>
                         `${MARKETS.find((m) => m.domain === a.domain)?.country ?? a.domain}: ${a.detail}`).join(' · ')}
                     </span>
                   )}
