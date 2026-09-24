@@ -747,8 +747,11 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     // first like everything else; a hand-over that fails is written on the
     // row and repairs() tries again every minute.
     if (amazonOnlyBatches.has(it.batch_id)) {
+      // WHEN IT WAS HANDED OVER, as its date: with none, an Amazon-only video
+      // never aged out of the background tab's work, and the coverage steps
+      // gave it the lowest priority there is.
       const { data: took } = await sb.from('launch_items')
-        .update({ state: 'amazon_only', publish_at: null, reason: null, updated_at: stamp() })
+        .update({ state: 'amazon_only', publish_at: stamp(), reason: null, updated_at: stamp() })
         .eq('id', it.id).eq('state', 'prepared').select('id')
       if (!took || took.length === 0) continue
       const handed = await handOverToAmazon(sb, it, `upload-${it.id}`, null, stamp())
@@ -1187,15 +1190,10 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
       return { ok: false, error: upsertErr?.message || 'the video record came back empty' }
     }
 
-    const { error: linkErr } = await sb.from('launch_items')
-      .update({ video_id: video.id }).eq('id', it.id)
-    if (linkErr) return { ok: false, error: linkErr.message }
-    // ONLY THE HAND-OVER'S OWN NOTE IS CLEARED. This used to clear any reason,
-    // and a video kept private after a missed slot lost the one sentence
-    // telling its creator to give it a new time, the moment Amazon linked up.
-    await sb.from('launch_items').update({ reason: null })
-      .eq('id', it.id).like('reason', 'On YouTube, but it could not be passed to the Amazon side%')
-
+    // THE COUNTRIES FIRST, THEN THE LINK. The link (video_id) used to be
+    // written first, and the retry pass only picks rows with no video_id, so
+    // a video whose country rows then failed to write was never tried again,
+    // under a note promising it would be. Both writes are safe to repeat.
     const priority = coveragePriority({ publishedAt: publishedAt || it.publish_at || it.planned_publish_at })
     const { error: gridErr } = await sb.from('storefront_coverage').upsert(
       markets.map((domain) => ({
@@ -1205,6 +1203,15 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
       { onConflict: 'user_id,video_id,domain', ignoreDuplicates: true },
     )
     if (gridErr) return { ok: false, error: gridErr.message }
+
+    const { error: linkErr } = await sb.from('launch_items')
+      .update({ video_id: video.id }).eq('id', it.id)
+    if (linkErr) return { ok: false, error: linkErr.message }
+    // ONLY THE HAND-OVER'S OWN NOTE IS CLEARED. This used to clear any reason,
+    // and a video kept private after a missed slot lost the one sentence
+    // telling its creator to give it a new time, the moment Amazon linked up.
+    await sb.from('launch_items').update({ reason: null })
+      .eq('id', it.id).like('reason', '%could not be passed to the Amazon side%')
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }

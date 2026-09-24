@@ -69,11 +69,21 @@ function amazonCell(entry: AmazonEntry | undefined, reachable: boolean, youtubeF
   }
   switch (entry.state) {
     case 'delivered': case 'grid:uploaded': case 'grid:live':
-      return { word: 'Listed', colour: GOOD, done: true }
+      // Up, but with the English-text image on a non-English store: amber,
+      // and said, not a plain green tick.
+      return /english-text thumbnail/i.test(entry.detail || '')
+        ? { word: 'Listed', colour: WARN, done: true, problem: 'Listed with the English-text thumbnail, because the text-free one was never made.' }
+        : { word: 'Listed', colour: GOOD, done: true }
     case 'failed':
       return { word: 'Failed', colour: BAD, done: true, problem: entry.detail || 'The upload failed.' }
     case 'grid:blocked':
-      return { word: 'Not sold here', colour: IDLE, done: true, problem: undefined }
+      // NOT SOLD HERE ONLY WHEN IT IS NOT SOLD HERE. A missing product link,
+      // no audio to dub, or a dub that gave up was drawn the same grey "Not
+      // sold here" and left out of the problems, though each is something to
+      // fix. The coverage step's own reason decides.
+      return /does not sell this product/i.test(entry.detail || '')
+        ? { word: 'Not sold here', colour: IDLE, done: true, problem: undefined }
+        : { word: 'Blocked', colour: BAD, done: true, problem: entry.detail ? entry.detail.charAt(0).toUpperCase() + entry.detail.slice(1) + '.' : 'Blocked, with no reason recorded.' }
     case 'localized':
       return entry.waitingOnDub ? { word: 'Dubbing', colour: BUSY, done: false } : { word: 'Ready to send', colour: BUSY, done: false }
     default:
@@ -137,9 +147,9 @@ export default function LaunchReport({
       const c = amazonCell(i.amazon?.find((a) => a.domain === m.domain), reachable, ytFailed)
       amzTotal++
       if (!c.done) amzLeft++
-      if (c.word === 'Listed') listed++
+      if (c.word === 'Listed') { listed++; if (c.problem) problems.push({ video: name, where: `Amazon ${m.country}`, what: c.problem }) }
       if (c.word === 'Not sold here') notSold++
-      if (c.word === 'Failed') { failed++; problems.push({ video: name, where: `Amazon ${m.country}`, what: c.problem || '' }) }
+      if (c.word === 'Failed' || c.word === 'Blocked') { failed++; problems.push({ video: name, where: `Amazon ${m.country}`, what: c.problem || '' }) }
     }
   }
   const allDone = ytLeft === 0 && amzLeft === 0 && studioLeft === 0
