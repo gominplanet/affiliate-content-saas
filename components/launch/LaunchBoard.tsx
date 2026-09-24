@@ -26,7 +26,7 @@ import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
 import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
 import { liftoffPending } from '@/lib/liftoff-pending'
-import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, type LiftoffAutoState } from '@/lib/extension-frame'
+import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, type LiftoffAutoState, type StudioFinishResult } from '@/lib/extension-frame'
 import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION } from '@/lib/scout-version'
 import {
   DEFAULT_STUDIO_OPTIONS, liftoffStudioRequest, storeStudioRun, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
@@ -174,6 +174,9 @@ export default function LaunchBoard() {
   // (shown until the reload that brings the stored copy back).
   const [studioBusy, setStudioBusy] = useState<string | null>(null)
   const [liveRuns, setLiveRuns] = useState<Record<string, StoredStudioRun>>({})
+  // SCOUT's own record of each step, kept for this visit only (the stored run
+  // leaves it out, it can be long), so a failed step can be copied as text.
+  const liveRaw = useRef<Record<string, StudioFinishResult>>({})
   // ONE LAUNCH BUTTON IN VIEW, NEVER TWO. The bar at the bottom exists so
   // Launch is never somewhere you have to scroll to find; when the real button
   // is already on screen, the bar was a second copy of it directly underneath,
@@ -710,6 +713,7 @@ export default function LaunchBoard() {
         studioBusyUntil.current = Date.now() + 60_000
         return null
       }
+      liveRaw.current[it.id] = fin
       const run = storeStudioRun(fin, new Date(), liveRuns[it.id] ?? it.studio_finish)
       setLiveRuns((prev) => ({ ...prev, [it.id]: run }))
       const r = await fetch(`/api/launch/items/${it.id}`, {
@@ -1970,6 +1974,20 @@ export default function LaunchBoard() {
                             )
                           })}
                         </ul>
+                        {(() => {
+                          // COPIED AS TEXT: SCOUT's record of the steps that did
+                          // not work, from a run made on this page. Button and
+                          // option labels only, never a login.
+                          const raw = liveRaw.current[it.id]
+                          const bad = raw ? raw.steps.filter((x) => !x.ok && !x.skipped && x.debug && Object.keys(x.debug).length > 0) : []
+                          if (bad.length === 0) return null
+                          return (
+                            <button type="button" className="mt-1 text-[11px] font-semibold underline" style={{ color: '#0EA5A4' }}
+                              onClick={() => { void navigator.clipboard?.writeText(JSON.stringify(bad.map((x) => ({ step: x.step, detail: x.detail, saw: x.debug })), null, 1)).then(() => toast.success('Copied. Paste it to support.')).catch(() => toast.error('Could not copy.')) }}>
+                              Copy what SCOUT saw
+                            </button>
+                          )
+                        })()}
                       </details>
                     )
                   })()}
