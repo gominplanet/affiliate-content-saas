@@ -8069,7 +8069,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 4
+  const KIT_VERSION = 5
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -8826,11 +8826,42 @@ K.steps.monetization = async (out, o) => {
     // creator takes by hand, and it finds products a pasted link does not.
     try { input.focus(); click(input) } catch (e) {}
     const sugg0 = await waitFor(suggestion, 5000, 300)
-    if (sugg0 && brandOk(deepText(sugg0))) {
-      viaName = deepText(sugg0)
-      click(sugg0)
-      found = !!(await waitFor(() => (plusBtns().length ? true : null), 12000, 500))
+    // EVERY SUGGESTION, THE SPECIFIC ONES FIRST. YouTube offered "Dreame Air
+    // Purifier" and "Dreame AP5"; only the first was tried, it led to a DREO,
+    // and the right one (the AP5, one click away) was never searched. A
+    // suggestion with a model number in it goes first, and each is searched
+    // until the top result matches it.
+    const hasModel = (t) => toks(t).some((w) => /\d/.test(w) && /[a-z]/.test(w) && w.length >= 2)
+    const suggTexts = sugg0
+      ? Array.from(new Set(all(d).filter((el) => {
+          if (!visible(el) || el === input) return false
+          const t = deepText(el)
+          if (!t || t.length > 90 || /^search suggestions$/i.test(t) || /^https?:/i.test(t)) return false
+          const r = el.getAttribute && el.getAttribute('role')
+          const tag = (el.tagName || '').toLowerCase()
+          return (r === 'option' || r === 'menuitem' || /suggestion|autocomplete|list-item|paper-item/.test(tag)) && /[a-z]/i.test(t)
+        }).map((el) => deepText(el)))).filter(brandOk).sort((x, y) => (hasModel(y) ? 1 : 0) - (hasModel(x) ? 1 : 0)).slice(0, 4)
+      : []
+    out.readBack.suggestions = suggTexts
+    const rejected = []
+    let lastTop = ''
+    for (const t of suggTexts) {
+      setInput(t)
+      await sleep(1200)
+      // Fresh results for THIS query: a top result that changed, or a wait.
+      const got = await waitFor(() => {
+        const b = plusBtns()[0]
+        if (!b) return null
+        const nm = nameNear(b)
+        return nm && nm !== lastTop ? nm : null
+      }, 10000, 400)
+      const top = got || (plusBtns()[0] ? nameNear(plusBtns()[0]) : '')
+      if (!top) continue
+      lastTop = top
+      if (sameProduct(t, top)) { viaName = t; found = true; break }
+      rejected.push('"' + t.slice(0, 40) + '" gave "' + top.slice(0, 50) + '"')
     }
+    if (!found && rejected.length) out.readBack.rejected = rejected
     // ── 2. THE PRODUCT LINK ──────────────────────────────────────────────
     if (!found) {
       viaName = null
@@ -8852,6 +8883,7 @@ K.steps.monetization = async (out, o) => {
       }
     }
     out.readBack.searchedFor = viaName
+    if (!found && out.readBack.rejected) return giveUp('YouTube Shopping has no exact match, so nothing was tagged. Tried ' + out.readBack.rejected.join('; ') + ', each a different product')
     if (!found) return giveUp('YouTube Shopping has no listing for this product, so there was nothing to tag')
     // THE EXACT MATCH, OR NOTHING. Only a result above a "Similar results"
     // heading is the product itself.
