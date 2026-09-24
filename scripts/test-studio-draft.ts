@@ -38,6 +38,9 @@ const code = (src: string) => src
   .join('\n')
 
 const BG = code(read('extension/background.js'))
+// Raw too: a `/*` inside one of background.js's regexes opens a false block
+// comment for the stripper above, and a large stretch of the file vanishes.
+const BG_RAW = read('extension/background.js')
 const slice = (from: string, len: number) => { const at = BG.indexOf(from); return at < 0 ? '' : BG.slice(at, at + len) }
 
 // ── the kit ──────────────────────────────────────────────────────────────
@@ -48,7 +51,8 @@ check('the kit clicks once',
   /el\.click\(\)/.test(kitClick) && !/'mouseup', 'click'\]/.test(kitClick),
   'a dispatched click on top of el.click() ticks a checkbox and unticks it')
 check('no older finish helper clicks twice either',
-  !/'mouseup', 'click'\]/.test(BG.slice(BG.indexOf('function studioFinishMonetizeInPage'), BG.indexOf('function studioApplyDisclosuresInPage'))))
+  BG_RAW.indexOf('function studioFinishMonetizeInPage') > 0
+    && !/'mouseup', 'click'\]/.test(BG_RAW.slice(BG_RAW.indexOf('function studioFinishMonetizeInPage'), BG_RAW.indexOf('function studioApplyDisclosuresInPage'))))
 check('a control belongs to the nearest section naming exactly one question',
   /hits\.length === 1\) return hits\[0\]/.test(kit) && /hits\.length > 1\) return null/.test(kit),
   'eight ancestors up is the whole form, where "Yes" is both the paid answer and the AI answer')
@@ -90,7 +94,24 @@ const orch = slice('async function scanStudioFinish(', 9000)
 check('scanStudioFinish tries the draft first', /draftFirst/.test(orch) && /runStudioDraft\(tabId, videoId, want\)/.test(orch))
 check('and says which way Studio went', /'draft'\)/.test(orch) && /path: 'video'/.test(orch))
 const handler = slice("msg.type === 'MVP_STUDIO_FINISH'", 900)
-const bgTimeout = Number((handler.match(/sendResponse\(\{ ok: false, error: 'timeout' \}\), (\d+)\)/) || [])[1] || 0)
+const bgTimeout = Number((handler.match(/error: 'timeout' \}\)[^\n]*?, (\d+)\)/) || [])[1] || 0)
+check('a timed-out run stops, and only one runs at a time',
+  /_studioAbort = true; sendResponse/.test(handler) && /if \(_studioBusy\) \{ sendResponse/.test(handler)
+    && /if \(_studioAbort\) return \{ step, ok: false, notReached: true/.test(BG),
+  'the page was told "timeout" and the run carried on, and could press Schedule afterwards')
+check('a Studio run keeps the worker alive', /const keepAlive = startKeepAlive\(\)[\s\S]{0,400}STUDIO_VIDEO\(videoId, startPanel\)/.test(BG))
+check('a problem in the checks stops before Visibility',
+  /if \(settled === 'problem'\)/.test(kit) && /if \(!ck\.ok\) \{/.test(run))
+check('an asked-for page the draft never showed is said', /This draft had no Monetization page/.test(run))
+check('a greyed Submit rating is not a submitted one', !/if \(!b \|\| isDisabled\(b\)\) return 'button-gone'/.test(kit))
+check('the old monetization step takes the choices and reads back',
+  /function studioFinishMonetizeInPage\(opts\)/.test(BG_RAW) && /const submitCert = o\.selfCert \?/.test(BG_RAW) && /out\.ok = \/\\bon\\b\/i\.test\(reads\)/.test(BG_RAW))
+check('the old end screen never ticks without a read-back', !/click\(save\); await sleep\(1500\); out\.ok = true/.test(BG_RAW) && /SCOUT cannot read end screens back on this page/.test(BG_RAW))
+check('no product is tagged by the first Add button on a page', !/function studioFinishTagProductInPage/.test(BG_RAW))
+check('one Amazon delivery at a time', /if \(_sfBusy\) \{ sendResponse/.test(BG_RAW))
+const EFR = code(read('lib/extension-frame.ts'))
+check('a timeout is not taken for a missing SCOUT', /setTimeout\(\(\) => done\(true, null\), timeoutMs\)/.test(EFR),
+  'the same job was sent to the next SCOUT id, and with two builds installed it ran twice')
 const EF = code(read('lib/extension-frame.ts'))
 const ef = EF.slice(EF.indexOf('export async function requestStudioFinish'), EF.indexOf('export async function requestStudioFinish') + 1400)
 const webTimeout = Number((ef.match(/\n\s*(\d{5,}),\s*\n/) || [])[1] || 0)
@@ -99,6 +120,7 @@ check('the page waits longer than SCOUT does', bgTimeout > 0 && webTimeout > bgT
 
 // ── the screens ──────────────────────────────────────────────────────────
 const CP = code(read('app/(dashboard)/co-pilot/page.tsx'))
+check('Co-Pilot retry also sets the time', /onClick=\{\(\) => void retryStudioFinish\(\)\}/.test(CP) && /await settleAfterStudio\(fin, publishAt, isDraft\)\s*\}/.test(CP))
 const cpRun = CP.slice(CP.indexOf('async function runStudioFinish('), CP.indexOf('async function settleAfterStudio('))
 check('Co-Pilot sends the creator\'s notify toggle', /notifySubscribers: proSettings\.notifySubscribers === true/.test(cpRun))
 check('and never a plain false', !/notifySubscribers: false/.test(cpRun))

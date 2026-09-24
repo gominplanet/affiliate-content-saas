@@ -7425,7 +7425,8 @@ const STUDIO_VIDEO = (id, panel) => _studioChannelId
 // concatenation is overkill — instead we just duplicate the tiny helpers inline
 // in each function below. (Kept identical on purpose.)
 
-function studioFinishMonetizeInPage() {
+function studioFinishMonetizeInPage(opts) {
+  const o = opts || {}
   return (async () => {
     const out = { step: 'monetization', ok: false, certOk: false, detail: '', debug: {} }
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -7539,9 +7540,9 @@ function studioFinishMonetizeInPage() {
       out.debug.onOptText = onOpt ? visText(onOpt) : null
       if (onOpt) { click(onOpt); await sleep(1000) }
 
-      // 2) Ad-suitability self-certification. The questionnaire defaults to
-      //    "None" → "Safe for ads", so the action is to submit the rating.
-      const submitCert = await waitFind([/submit rating/i, /^submit$/i], 6000)
+      // 2) Ad-suitability self-certification, ONLY WHEN ASKED. This used to
+      //    submit the rating whatever the creator had ticked.
+      const submitCert = o.selfCert ? await waitFind([/submit rating/i, /^submit$/i], 6000) : null
       out.debug.submitCertText = submitCert ? visText(submitCert) : null
       if (submitCert) { click(submitCert); out.certOk = true; await sleep(1000) }
 
@@ -7549,8 +7550,16 @@ function studioFinishMonetizeInPage() {
       const save = await waitFind([/^save$/i, /^done$/i], 6000)
       out.debug.saveText = save ? visText(save) : null
       if (save) {
-        click(save); await sleep(1500); out.ok = true
-        out.detail = 'Monetization set; ' + (out.certOk ? 'rating submitted' : 'rating control not found')
+        click(save); await sleep(1500)
+        // READ BACK: the switch has to say On after the save, not merely have
+        // been clicked.
+        const after = find([/edit video monetization/i, /monetization status/i, /^on$/i, /^off$/i])
+        const reads = after ? visText(after) : ''
+        out.debug.afterText = reads
+        out.ok = /\bon\b/i.test(reads) && !/\boff\b/i.test(reads)
+        out.detail = out.ok
+          ? 'Monetization On. Read back from Studio.' + (o.selfCert ? (out.certOk ? ' Rating submitted.' : ' The rating button was not found.') : '')
+          : 'Pressed Save, but Studio does not show monetization as On'
       } else {
         out.detail = out.certOk ? 'Rating submitted; Save not found' : 'Controls not found — see debug'
       }
@@ -7656,13 +7665,24 @@ function studioFinishEndScreenInPage() {
         })
         return items[0] || null
       })()
-      if (pick) { click(pick); await sleep(1400) } else { out.partial = true }
+      if (!pick) {
+        // NOTHING PICKED IS NOT DONE. This used to press Save anyway and
+        // report a tick beside "pick last video & save in Studio".
+        out.partial = true
+        out.detail = 'Opened Import from video, but found no video to pick. Finish the end screen in Studio.'
+        out.debug.controlsAfter = sample()
+        return out
+      }
+      click(pick); await sleep(1400)
 
       const save = await waitFind([/^save$/i, /^done$/i, /^apply$/i], 6000)
       out.debug.saveText = save ? visText(save) : null
       if (save) {
-        click(save); await sleep(1500); out.ok = true
-        out.detail = out.partial ? 'Import opened — pick last video & save in Studio' : 'End screen copied from last video'
+        click(save); await sleep(1500)
+        // NOT A TICK: this page gives SCOUT no way to read an end screen back,
+        // and a tick on this screen means read back.
+        out.partial = true
+        out.detail = 'Imported from your latest video and saved. SCOUT cannot read end screens back on this page, so check it in Studio.'
       } else {
         out.partial = true
         out.detail = 'Import opened; finish & save in Studio'
@@ -7673,81 +7693,6 @@ function studioFinishEndScreenInPage() {
       out.error = (e && e.message) || 'exception'
       return out
     }
-  })()
-}
-
-// Tag the reviewed PRODUCT on the video via Studio's "Tag products" flow (only
-// works for creators enrolled in YouTube Shopping). Opens the Products area,
-// pastes the product URL MVP resolved, adds the first match, and saves. Best-
-// effort and self-contained (piercing Studio's shadow DOM); returns a `debug`
-// map so the selectors can be tuned against live Studio like the other steps.
-function studioFinishTagProductInPage(productUrl) {
-  return (async () => {
-    const out = { step: 'tagproduct', ok: false, detail: '', debug: {} }
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-    const deepAll = () => {
-      const acc = []
-      const walk = (root) => { let els; try { els = root.querySelectorAll('*') } catch (e) { return } for (const el of els) { acc.push(el); if (el.shadowRoot) walk(el.shadowRoot) } }
-      walk(document); return acc
-    }
-    const visText = (el) => { try { const a = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title')); return (a || el.textContent || '').replace(/\s+/g, ' ').trim() } catch (e) { return '' } }
-    const isBtn = (el) => { const t = (el.tagName || '').toLowerCase(); return /button|ytcp-button/.test(t) || (el.getAttribute && el.getAttribute('role') === 'button') }
-    const click = (el) => { if (!el) return false; try { el.scrollIntoView({ block: 'center' }) } catch (e) {} try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {} try { el.click() } catch (e) {} return true }
-    const setInput = (el, val) => {
-      try {
-        const proto = (el.tagName === 'TEXTAREA') ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype
-        const setter = Object.getOwnPropertyDescriptor(proto, 'value').set
-        setter.call(el, val)
-        el.dispatchEvent(new Event('input', { bubbles: true }))
-        el.dispatchEvent(new Event('change', { bubbles: true }))
-        return true
-      } catch (e) { try { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); return true } catch (e2) { return false } }
-    }
-    try {
-      if (!productUrl) { out.detail = 'no product url'; return out }
-      await sleep(1500)
-      // 1) Open the "Tag products" / Products area. Scope to Studio's OWN
-      //    controls (ytcp-*) so a third-party extension's injected button can't
-      //    be mistaken for it.
-      const openBtn = deepAll().filter(isBtn).find((el) => /^(tag products|add products|products)$/i.test(visText(el)))
-      out.debug.openBtn = openBtn ? visText(openBtn).slice(0, 40) : null
-      if (openBtn) { click(openBtn); await sleep(1800) }
-      // 2) The product search / paste-a-link input. Must be an ACTUAL product
-      //    box — matched by its own placeholder/label. NEVER fall back to
-      //    "the first input on the page" (that grabbed the video-title field
-      //    and produced a false success). No product box = report it, don't
-      //    pretend it worked.
-      const inputs = deepAll().filter((el) => { const t = (el.tagName || '').toLowerCase(); return t === 'input' || t === 'textarea' })
-      const input = inputs.find((el) => /search (for )?products|paste a product|product link|add a product|find a product/i.test(visText(el)))
-      out.debug.foundInput = !!input
-      out.debug.inputCandidates = inputs.map((el) => visText(el).slice(0, 40)).filter(Boolean).slice(0, 12)
-      if (!input) {
-        out.detail = openBtn
-          ? 'Opened Products, but couldn’t find the product search box — see debug'
-          : 'Couldn’t find the Tag-products control on this page — see debug'
-        return out
-      }
-      try { input.focus() } catch (e) {}
-      setInput(input, productUrl)
-      try { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })) } catch (e) {}
-      await sleep(2800) // let YouTube resolve the pasted link to a product
-      // 3) Add the first resolved product. Only a real, short "Add"/"Add
-      //    product" button — dropped the loose aria*="add" fallback that
-      //    matched the channel's "Add a title that describes you" CTA.
-      const addBtn = deepAll().filter(isBtn).find((el) => { const t = visText(el); return /^add$/i.test(t) || /^add product$/i.test(t) || /^tag product$/i.test(t) })
-      out.debug.addBtn = addBtn ? visText(addBtn).slice(0, 30) : null
-      if (addBtn) { click(addBtn); await sleep(1200) }
-      // 4) Next / Done / Save through the confirm step.
-      for (let i = 0; i < 2; i++) {
-        const go = deepAll().filter(isBtn).find((el) => /^(next|done|save|add products)$/i.test(visText(el)))
-        if (!go) break
-        out.debug['step' + i] = visText(go)
-        click(go); await sleep(1400)
-      }
-      out.ok = !!(input && addBtn)
-      out.detail = out.ok ? 'Product tagged' : `product box found, but the Add button didn’t appear — see debug`
-      return out
-    } catch (e) { out.detail = (e && e.message) || 'threw'; return out }
   })()
 }
 
@@ -8579,9 +8524,11 @@ function studioKitInstallInPage() {
       const b = findBtn(/^submit( rating)?$/i, dlg)
       const vt = visibleText(dlg).toLowerCase()
       if (/safe for ads|rating submitted|you submitted|thanks for (rating|submitting)/.test(vt)) return 'said'
-      if (!b || isDisabled(b)) return 'button-gone'
+      // GONE, not greyed: Studio greys the button while the rating is still
+      // being sent, and a send that then fails was being counted as done.
+      if (!b) return 'button-gone'
       return null
-    }, 20000, 600)
+    }, 30000, 600)
     out.readBack.submitted = !!settled
     out.readBack.how = settled
     out.ok = !!settled
@@ -8728,13 +8675,33 @@ function studioKitInstallInPage() {
     return out
   }
 
+  // WHAT THE CHECKS SAY, not that the page was reached. A copyright claim
+  // used to read as a tick and the draft went on to be scheduled. A problem
+  // stops the run before Visibility; checks still running are said as such.
   K.steps.checks = async (out) => {
     const dlg = mainDialog()
     if (!dlg) { out.detail = 'The draft window closed'; return out }
+    const problem = (vt) => {
+      const rest = vt.replace(/no issues found/g, '')
+      return /claim|issues? found|violation|restrict|blocked/.test(rest)
+    }
+    const settled = await waitFor(() => {
+      const vt = visibleText(dlg).toLowerCase()
+      if (problem(vt)) return 'problem'
+      if ((vt.match(/no issues found/g) || []).length >= 3) return 'clear'
+      return null
+    }, 45000, 1000)
     const vt = visibleText(dlg).toLowerCase()
     out.readBack.noIssues = (vt.match(/no issues found/g) || []).length
+    if (settled === 'problem') {
+      out.detail = 'YouTube\u2019s checks found something (a claim or a restriction). SCOUT stopped so you can look at it before this is scheduled.'
+      out.debug.text = visibleText(dlg).slice(0, 600)
+      return out
+    }
     out.ok = true
-    out.detail = out.readBack.noIssues ? out.readBack.noIssues + ' checks say no issues found' : 'Checks page reached'
+    out.detail = settled === 'clear'
+      ? 'Copyright, ad suitability and Community Guidelines: no issues found'
+      : 'YouTube was still running its checks; it finishes them after this is saved'
     return out
   }
 
@@ -8882,7 +8849,17 @@ function studioDraftStepInPage(step, opts) {
 // Drive one draft from Edit draft to Visibility. `tabId` is already on the
 // video's /edit page. Returns the same shape as the panel flow, plus
 // `path: 'draft'` so the app can say which route Studio took.
+// ONE STUDIO RUN AT A TIME, AND A RUN THAT HAS TIMED OUT STOPS.
+// The page is told "timeout" at 290 seconds, and the run used to carry on
+// regardless: it could press Schedule twenty seconds after the page had said
+// the video was held back, and a retry started a second run over the first
+// (which also shared the channel id below). Every step now checks the flag
+// before it starts, so after a timeout nothing further is done.
+let _studioBusy = false
+let _studioAbort = false
+
 async function studioDraftExec(tabId, step, opts) {
+  if (_studioAbort) return { step, ok: false, notReached: true, detail: 'Not done: SCOUT ran out of time before this step', readBack: {} }
   try {
     await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioKitInstallInPage })
     const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioDraftStepInPage, args: [step, opts || {}] })
@@ -8920,6 +8897,14 @@ async function runStudioDraft(tabId, videoId, want) {
     const where = await exec('where', {})
     const pg = where.page
     if (pg === 'visibility') {
+      // ASKED FOR, BUT THE DRAFT NEVER SHOWED IT. Said, rather than left out:
+      // a missing row let the headline read "every setting was read back".
+      if (want.monetize && !done.has('monetization')) steps.push({ step: 'monetization', ok: false, skipped: true, detail: 'This draft had no Monetization page, so there was nothing to turn on (the channel may not be in the Partner Program).' })
+      if (want.selfCert && !done.has('adsuit')) steps.push({ step: 'adsuit', ok: false, skipped: true, detail: 'This draft had no Ad suitability page, so there was no rating to submit.' })
+      if (!done.has('elements')) {
+        if (want.tagProduct && want.productUrl) steps.push({ step: 'tagproduct', ok: false, skipped: true, detail: 'This draft had no Video elements page.' })
+        if (want.endScreen) steps.push({ step: 'endscreen', ok: false, skipped: true, detail: 'This draft had no Video elements page.' })
+      }
       steps.push(await exec('visibility', { visibility: want.visibility || { mode: 'keep' } }))
       return steps
     }
@@ -8937,7 +8922,15 @@ async function runStudioDraft(tabId, videoId, want) {
     else if (pg === 'elements') {
       if (want.tagProduct && want.productUrl) steps.push(await exec('tagproduct', { productUrl: String(want.productUrl), productTitle: want.productTitle ? String(want.productTitle) : '' }))
       if (want.endScreen) steps.push(await exec('endscreen', { videoId }))
-    } else if (pg === 'checks') steps.push(await exec('checks', {}))
+    } else if (pg === 'checks') {
+      const ck = await exec('checks', {})
+      steps.push(ck)
+      // A PROBLEM FOUND STOPS HERE: nothing is scheduled over a claim.
+      if (!ck.ok) {
+        if (want.visibility && want.visibility.mode && want.visibility.mode !== 'keep') notReached(['visibility'])
+        return steps
+      }
+    }
     nx = await exec('next', {})
     if (!nx.ok) {
       steps.push({ step: 'next', ok: false, detail: nx.detail, debug: nx.debug })
@@ -8979,6 +8972,7 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
   // Run a panel's in-page script, and if it reports needsReload (bounced to the
   // dashboard / hit YouTube's error page), re-navigate fresh and try again.
   const runPanel = async (panel, func, args, stepName) => {
+    if (_studioAbort) return { step: stepName, ok: false, notReached: true, detail: 'Not done: SCOUT ran out of time before this step' }
     let res = null
     for (let attempt = 0; attempt < 3; attempt++) {
       await goto(panel, attempt > 0)
@@ -8989,6 +8983,8 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
     if (res && res.needsReload) { res.detail = (res.detail || '') + ' (still failing after retries)' }
     return res
   }
+  // A run takes minutes; the service worker must not be reclaimed under it.
+  const keepAlive = startKeepAlive()
   try {
     // FOREGROUND: Studio is a heavy SPA and DOM interaction is far more reliable
     // in a focused tab (background tabs throttle timers/rendering). We restore
@@ -9055,13 +9051,15 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
       }
     }
     if (want.tagProduct && want.productUrl) {
-      // Product tagging lives on the video's edit page (YouTube Shopping only).
-      await goto('edit')
-      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishTagProductInPage, args: [String(want.productUrl)] })
-      steps.push((r && r[0] && r[0].result) || { step: 'tagproduct', ok: false, error: 'no-result' })
+      // NOT ON THIS PAGE, NOT YET. The old script clicked the first "Add"
+      // button it found and reported success on the click, with no check that
+      // it tagged the product rather than a similar one. Tagging a stranger's
+      // product on a creator's video is worse than not tagging, so on a
+      // video that is not a draft it is said, not guessed at.
+      steps.push({ step: 'tagproduct', ok: false, skipped: true, detail: 'Tagging on a video that is not a draft is not automated yet. Tag it in Studio under Shopping.' })
     }
     if (want.monetize || want.selfCert) {
-      steps.push(await runPanel('monetization', studioFinishMonetizeInPage, [], 'monetization'))
+      steps.push(await runPanel('monetization', studioFinishMonetizeInPage, [{ selfCert: want.selfCert === true }], 'monetization'))
     }
     if (want.endScreen) {
       steps.push(await runPanel('endscreens', studioFinishEndScreenInPage, [], 'endscreen'))
@@ -9089,6 +9087,7 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'finish-failed', steps }
   } finally {
+    stopKeepAlive(keepAlive)
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
     if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
   }
@@ -9163,6 +9162,7 @@ async function deliverOneDomain(domain, jobs) {
   return out
 }
 
+let _sfBusy = false
 async function deliverStorefronts(items) {
   // Fresh run: never reuse an S3 key uploaded for a previous video.
   _sfUploadedKeys = {}
@@ -9487,9 +9487,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'MVP_STOREFRONT_DELIVER') {
     const items = Array.isArray(msg.items) ? msg.items : []
     if (items.length === 0) { sendResponse({ ok: true, results: [] }); return false }
+    // ONE DELIVERY AT A TIME. A second one used to start while the first was
+    // still uploading and reset the upload keys it depended on, so listings
+    // went up twice.
+    if (_sfBusy) { sendResponse({ ok: false, error: 'SCOUT is still uploading the last set of listings. Wait for it to finish, then try again.' }); return false }
+    _sfBusy = true
+    const keepAlive = startKeepAlive()
     deliverStorefronts(items)
       .then((results) => sendResponse({ ok: true, results }))
       .catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'delivery-failed' }))
+      .finally(() => { _sfBusy = false; stopKeepAlive(keepAlive) })
     return true // async
   }
   // Pre-flight sign-in / enrollment check across marketplaces (no upload).
@@ -9630,10 +9637,14 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // video, only the items the user ticked. A draft is walked through every
     // page of its modal, so allow the full 290s the dashboard waits.
     const callerTabId = sender && sender.tab ? sender.tab.id : null
-    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 290000)
+    if (_studioBusy) { sendResponse({ ok: false, steps: [], error: 'busy' }); return false }
+    _studioBusy = true
+    _studioAbort = false
+    const timeout = setTimeout(() => { _studioAbort = true; sendResponse({ ok: false, steps: [], error: 'timeout' }) }, 290000)
     scanStudioFinish(msg.videoId, msg.opts || {}, callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, steps: [], error: e && e.message ? e.message : 'error' }) })
+      .finally(() => { _studioBusy = false; _studioAbort = false })
     return true // async response — keep the channel open
   }
   if (msg.type === 'MVP_PING') {

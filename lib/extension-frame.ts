@@ -94,7 +94,11 @@ function sendToOneId<T>(id: string, message: unknown, timeoutMs: number): Promis
     if (!rt?.sendMessage) { resolve({ reached: false, value: null }); return }
     let settled = false
     const done = (reached: boolean, value: T | null) => { if (!settled) { settled = true; resolve({ reached, value }) } }
-    const timer = setTimeout(() => done(false, null), timeoutMs)
+    // A TIMEOUT IS AN ANSWER: the extension took the message and did not
+    // reply in time. Treating it as "not installed" sent the same job to the
+    // next SCOUT id, and with two builds installed it ran twice. A missing
+    // extension fails fast through lastError below, not through this.
+    const timer = setTimeout(() => done(true, null), timeoutMs)
     try {
       rt.sendMessage(id, message, (resp: unknown) => {
         clearTimeout(timer)
@@ -136,7 +140,10 @@ export async function requestStorefrontDelivery(
 ): Promise<StorefrontDeliverResult> {
   // Large videos upload slowly (download from storage → PUT to S3, per market,
   // sequentially), so give the whole delivery a generous ceiling.
-  const res = await sendToExtension<StorefrontDeliverResult>({ type: 'MVP_STOREFRONT_DELIVER', items }, 1_800_000)
+  // Three hours. SCOUT uploads two storefronts at a time and each listing can
+  // take minutes; thirty minutes was shorter than a full batch, and the page
+  // then gave up and recorded nothing while SCOUT was still uploading.
+  const res = await sendToExtension<StorefrontDeliverResult>({ type: 'MVP_STOREFRONT_DELIVER', items }, 10_800_000)
   return res || { ok: false, error: 'SCOUT not reachable — is the extension installed and are you signed into Amazon?' }
 }
 

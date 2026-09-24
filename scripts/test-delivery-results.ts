@@ -27,6 +27,11 @@ check('the old count is gone', !/handedOver: items\.length/.test(D))
 check('a listing SCOUT never answered for is a failure', /SCOUT did not report on this one/.test(D))
 const Q = code('app/api/global-sync/deliver/queue/route.ts')
 check('failed listings come back only on request', /retryFailed'\) === '1' \? \['localized', 'failed'\] : \['localized'\]/.test(Q))
+check('a failed record is said, not counted as done', /recorded = w\.ok/.test(D) && /if \(!recorded && \(r\.ok \|\| dup\)\) unrecorded\+\+/.test(D))
+check('an empty country list sends nothing', /scope\.domains\.length === 0\) \{\s*return \{ \.\.\.empty, error:/.test(D))
+check('only listings that will go count against the daily limit',
+  /if \(!i\.videoUrl \|\| !i\.title \|\| i\.audioIsMasterFallback\) \{ withinCap\.push\(i\); continue \}/.test(Q),
+  'five waiting dubs ahead of three ready ones meant nothing uploaded and "limit reached"')
 const LB = code('components/launch/LaunchBoard.tsx')
 check('a press retries failures, the automatic run does not', /retryFailed: !auto/.test(LB))
 const BR = code('app/api/launch/batches/[id]/route.ts')

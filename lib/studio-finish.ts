@@ -87,7 +87,9 @@ export type StudioTone = 'good' | 'bad' | 'note' | 'idle'
 export function studioStepTone(s: StudioFinishStep): StudioTone {
   if (s.ok) return 'good'
   if (s.notReached) return 'idle'
-  if (s.skipped) return 'note'
+  // Done but not confirmable (an end screen on a video's own page), or not
+  // needed: amber, never green and never red.
+  if (s.skipped || s.partial) return 'note'
   return 'bad'
 }
 
@@ -103,14 +105,20 @@ export function studioStepText(s: StudioFinishStep): string {
  *  was asked for actually did. */
 export function studioRunHeadline(r: StudioFinishResult): string {
   if (r.error === 'not-installed') return 'SCOUT is not installed or did not answer'
-  if (r.error === 'timeout') return 'YouTube Studio took too long, so SCOUT stopped'
+  if (r.error === 'timeout') return 'YouTube Studio took too long, so SCOUT stopped. Nothing after the last tick was done.'
+  if (r.error === 'busy') return 'SCOUT is already working on another video in Studio. Try again when it finishes.'
   const asked = r.steps.filter((s) => !s.skipped)
   const done = asked.filter((s) => s.ok)
   if (asked.length === 0) return r.error ? `SCOUT could not start: ${r.error}` : 'Nothing was asked of SCOUT'
   if (done.length === asked.length) return 'Done in Studio. Every setting was read back.'
   const first = asked.find((s) => !s.ok && !s.notReached)
-  if (first) return `Stopped at ${studioStepLabel(first.step)}. ${done.length} of ${asked.length} done.`
-  return `${done.length} of ${asked.length} done in Studio`
+  // "STOPPED" ONLY WHEN IT STOPPED. A step that could not be confirmed, with
+  // everything after it done, is not a stop, and saying so sent people
+  // looking for a failure that was not there.
+  const stopped = asked.some((s) => s.notReached)
+  if (first && stopped) return `Stopped at ${studioStepLabel(first.step)}. ${done.length} of ${asked.length} done.`
+  const open = asked.filter((s) => !s.ok).map((s) => studioStepLabel(s.step))
+  return `${done.length} of ${asked.length} confirmed in Studio. Check: ${open.join(', ')}.`
 }
 
 /** Which way Studio went, said plainly. */

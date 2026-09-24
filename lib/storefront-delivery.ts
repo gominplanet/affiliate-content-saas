@@ -140,7 +140,7 @@ export async function deliverPreparedStorefronts(scope?: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const byTarget = new Map<string, any>(items.map((i: any) => [String(i.targetId), i]))
   const rows = Array.isArray(res.results) ? res.results : []
-  let uploaded = 0, duplicates = 0
+  let uploaded = 0, duplicates = 0, unrecorded = 0
   const failed: DeliveryOutcome['failed'] = []
   for (const r of rows) {
     const dup = !r.ok && !!r.duplicate
@@ -148,8 +148,11 @@ export async function deliverPreparedStorefronts(scope?: {
     if (r.ok) uploaded++
     else if (dup) duplicates++
     else failed.push({ domain: String(it?.domain || ''), country: String(it?.country || it?.domain || ''), error: String(r.error || 'no reason given') })
+    // THE RECORD IS CHECKED. A refused write used to be ignored, so a listing
+    // counted "uploaded" was never marked delivered and was offered again.
+    let recorded = false
     try {
-      await fetchWithTimeout('/api/global-sync/deliver/result', {
+      const w = await fetchWithTimeout('/api/global-sync/deliver/result', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           targetId: r.targetId,
@@ -159,13 +162,18 @@ export async function deliverPreparedStorefronts(scope?: {
         }),
         timeoutMs: 15_000,
       })
-    } catch { /* the count below still says what happened */ }
+      recorded = w.ok
+    } catch { /* said below */ }
+    if (!recorded && (r.ok || dup)) unrecorded++
   }
   // A listing SCOUT never answered for is a failure too, not a silent gap.
   const answered = new Set(rows.map((r) => String(r.targetId)))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const it of items as any[]) {
     if (!answered.has(String(it.targetId))) failed.push({ domain: String(it.domain || ''), country: String(it.country || it.domain || ''), error: 'SCOUT did not report on this one' })
+  }
+  if (unrecorded > 0) {
+    failed.push({ domain: '', country: `${unrecorded} ${unrecorded === 1 ? 'listing' : 'listings'}`, error: 'uploaded, but MVP could not record it, so it may be offered again (SCOUT will spot it as already there)' })
   }
   return {
     ok: uploaded + duplicates > 0 && failed.length === 0,

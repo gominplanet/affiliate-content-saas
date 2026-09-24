@@ -199,6 +199,11 @@ export async function GET(req: Request) {
   const withinCap: typeof items = []
   const takenNow = new Map<string, number>()
   for (const i of items) {
+    // ONLY WHAT WILL ACTUALLY GO counts against the day. A listing still
+    // waiting on its dub, or missing a title or video, is filtered out after
+    // this, and it used to use up the room first: five waiting French dubs
+    // ahead of three ready ones meant nothing uploaded and "limit reached".
+    if (!i.videoUrl || !i.title || i.audioIsMasterFallback) { withinCap.push(i); continue }
     const mkt = marketByDomain(i.domain)
     const cap = mkt?.dailyUploads ?? 10
     const used = (usedToday.get(i.domain) ?? 0) + (takenNow.get(i.domain) ?? 0)

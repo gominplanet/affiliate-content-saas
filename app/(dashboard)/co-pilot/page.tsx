@@ -1415,6 +1415,17 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    * SCOUT now reads every answer back off the page, and its words are the
    * ones shown.
    */
+  /** Retry: SCOUT again, then the time, exactly as the push does. The retry
+   *  used to run SCOUT only, so a video that was not a draft was left with
+   *  no schedule under a green result that said its time was set. */
+  async function retryStudioFinish() {
+    const publishAt = computePublishAt(proSettings.scheduleMode, proSettings.scheduleAt)
+    const isDraft = proSettings.privacyStatus === 'draft' && !publishAt
+    setApplyError(null)
+    const fin = await runStudioFinish(publishAt)
+    await settleAfterStudio(fin, publishAt, isDraft)
+  }
+
   async function runStudioFinish(publishAtArg?: string | null): Promise<StudioFinishResult | null> {
     if (!video.youtubeVideoId || !finishOptIn || !anyFinishStep) return null
     setFinishRunning(true)
@@ -1439,6 +1450,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       })
       if (fin.error === 'not-installed') setFinishError('SCOUT isn’t installed or didn’t respond. Reload SCOUT and try again.')
       else if (fin.error === 'timeout') setFinishError('YouTube Studio took too long to respond, so SCOUT stopped. Nothing after the last tick below was done.')
+      else if (fin.error === 'busy') setFinishError('SCOUT is already working on another video in Studio. Try again when it has finished.')
       else if (fin.error) setFinishError(`Couldn’t finish in Studio: ${fin.error}`)
       setFinishResult(fin)
       return fin
@@ -1461,6 +1473,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   async function settleAfterStudio(fin: StudioFinishResult | null, publishAt: string | null, isDraft: boolean) {
     const wantsStatus = !!publishAt || !isDraft
     if (!wantsStatus || studioSetVisibility(fin)) return
+    // SCOUT DID NOT FINISH, which is not the same as the disclosure failing.
+    // Said as what it is, with the one thing to press.
+    if (fin?.error === 'timeout' || fin?.error === 'busy' || fin?.error === 'not-installed') {
+      setApplyError(`SCOUT did not finish in Studio, so ${publishAt ? 'the schedule' : `the ${proSettings.privacyStatus} setting`} was not applied. The video is unchanged on YouTube. Press Retry finish in Studio.`)
+      return
+    }
     const confirmed = !finishDoDetails || studioDisclosuresConfirmed(fin)
     const where = fin?.path === 'draft' ? 'a draft' : 'private'
     if (!confirmed) {
@@ -3522,7 +3540,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                               ❌ {finishError}
                             </p>
                             <button
-                              onClick={() => void runStudioFinish()}
+                              onClick={() => void retryStudioFinish()}
                               disabled={finishRunning}
                               className="inline-flex items-center justify-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-50 transition-colors"
                             >
