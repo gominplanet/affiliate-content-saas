@@ -1655,7 +1655,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /\.eq\('id', b\.id\)\.eq\('state', b\.state\)/.test(DRAIN) && /\.eq\('id', b\.id\)\.eq\('state', 'launching'\)/.test(DRAIN),
     'a Launch pressed between the read and the write was undone')
   check('the hand-over clears only its own note',
-    /like\('reason', 'On YouTube, but it could not be passed to the Amazon side%'\)/.test(DRAIN),
+    /like\('reason', '%could not be passed to the Amazon side%'\)/.test(DRAIN) && !/like\('reason', '%Kept private/.test(DRAIN),
     'a kept-private video lost the sentence telling its creator to give it a new time')
   // ── THE API SAYS WHAT HAPPENED, AND ONE PRESS WINS ─────────────────────
   {
@@ -1665,6 +1665,25 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       && /\.eq\('position', changing\[i\]\.from\)/.test(MOVE)
       && /for \(const r of parked\) await sb\.from\('launch_items'\)\.update\(\{ position: r\.from \}\)/.test(MOVE),
       'every reorder collided with its neighbour, failed, and reported moved: true')
+    // ── Amazon side, start to finish ────────────────────────────────────
+    {
+      const COV = read('app/api/cron/coverage-drain/route.ts')
+      check('a dub that gives up fails its listing, with the reason, so nothing waits for it for ever',
+        (COV.match(/await failListing\(/g) ?? []).length === 2 && /\.eq\('id', target\.id\)\.is\('video_url', null\)\.neq\('state', 'delivered'\)/.test(COV))
+      const DR = read('app/api/cron/launch-drain/route.ts')
+      check('the countries are written before the link, so a failed hand-over is retried',
+        inOrder(DR, "const { error: gridErr } = await sb.from('storefront_coverage').upsert(", ".update({ video_id: video.id }).eq('id', it.id)"))
+      check('an Amazon-only video carries its hand-over time and ages out',
+        /update\(\{ state: 'amazon_only', publish_at: stamp\(\)/.test(DR) && /i\.state === 'amazon_only' \? i\.updated_at : null/.test(read('lib/liftoff-pending.ts')))
+      check('a translation that gives up fails its countries, and the dub queue is not starved by them',
+        /\.eq\('job_id', job\.id\)\.eq\('state', 'pending'\)/.test(read('app/api/cron/drain-global-sync/route.ts'))
+        && /\.limit\(DUBS \* 25\)/.test(COV) && /The title and description could not be translated\/\.test/.test(COV))
+      const REP = read('components/launch/LaunchReport.tsx')
+      check('only "does not sell this product" reads as Not sold here; any other block is a problem',
+        /\/does not sell this product\/i\.test\(entry\.detail \|\| ''\)/.test(REP) && /word: 'Blocked', colour: BAD/.test(REP))
+      check('an English-text thumbnail on a non-English store is said, on the listing and the report',
+        /Uploaded, with the English-text thumbnail/.test(read('lib/storefront-delivery.ts')) && /english-text thumbnail/i.test(REP))
+    }
     // ── audit fixes, API side ──────────────────────────────────────────
     const ITEM_R = live(read('app/api/launch/items/[id]/route.ts'))
     check('a CTA change also catches a video being burned in right now',

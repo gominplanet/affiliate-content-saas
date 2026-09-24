@@ -511,7 +511,10 @@ async function dubs(sb: Sb): Promise<{ dubbed: number; blocked: number; failed: 
   const { data: cells } = await sb.from('storefront_coverage')
     .select('id,user_id,domain,sync_job_id,dub_attempts,video_id')
     .eq('state', 'preparing').not('sync_job_id', 'is', null)
-    .order('priority', { ascending: false }).limit(DUBS * 4)
+    // A WIDER LOOK than the dubs it may do: listings still waiting on their
+    // translation are skipped without spending the budget, and four of them
+    // at the top used to be the whole look, so no dub was ever reached.
+    .order('priority', { ascending: false }).limit(DUBS * 25)
   const rows = cells ?? []
   if (rows.length === 0) return { dubbed: 0, blocked: 0, failed: 0 }
 
@@ -541,6 +544,16 @@ async function dubs(sb: Sb): Promise<{ dubbed: number; blocked: number; failed: 
     // news.
     if (!target) continue
     if (target.state === 'pending') continue
+    // THE TRANSLATION GAVE UP, so there is no French title to put a French
+    // voice under. The cell says so and leaves the queue, rather than waiting
+    // for a listing that is never coming.
+    if (target.state === 'failed' && !target.video_url && /^The title and description could not be translated/.test(String(target.detail || ''))) {
+      await sb.from('storefront_coverage').update({
+        state: 'blocked', reason: String(target.detail).slice(0, 200), checked_at: now, updated_at: now,
+      }).eq('id', c.id)
+      blocked++
+      continue
+    }
 
     // Already has audio, from this lane or from the creator's own browser.
     if (target.video_url) {
@@ -550,16 +563,28 @@ async function dubs(sb: Sb): Promise<{ dubbed: number; blocked: number; failed: 
       continue
     }
 
+    // THE LISTING SAYS IT TOO. Only the coverage cell used to be blocked; the
+    // listing stayed 'localized' or 'dubbing', which the Liftoff report reads
+    // as "Dubbing" or "Preparing" for ever, and the background tab kept coming
+    // back for it. A dub that has given up fails its listing, with the reason,
+    // and never one that already has audio or is already up.
+    const failListing = async (why: string) => {
+      await sb.from('global_sync_targets')
+        .update({ state: 'failed', detail: why.slice(0, 200), updated_at: now })
+        .eq('id', target.id).is('video_url', null).neq('state', 'delivered')
+    }
     const tries = Number(c.dub_attempts ?? 0)
     if (tries >= DUB_TRIES) {
       // BLOCKED, in the pipeline's own words. A cell that has given up must say
       // so: sitting in 'preparing' forever is the silence that looks exactly
       // like work in progress.
+      const why = `could not produce the ${mkt.langName} audio after ${tries} tries (${target.detail || 'no reason recorded'})`
       await sb.from('storefront_coverage').update({
         state: 'blocked',
-        reason: `could not produce the ${mkt.langName} audio after ${tries} tries (${target.detail || 'no reason recorded'})`.slice(0, 200),
+        reason: why.slice(0, 200),
         checked_at: now, updated_at: now,
       }).eq('id', c.id)
+      await failListing(`The ${mkt.langName} dub could not be made after ${tries} tries (${target.detail || 'no reason recorded'}).`)
       blocked++
       continue
     }
@@ -603,6 +628,7 @@ async function dubs(sb: Sb): Promise<{ dubbed: number; blocked: number; failed: 
         reason: 'this video has no transcript yet, so there is nothing to translate into speech',
         checked_at: now, updated_at: now,
       }).eq('id', c.id)
+      await failListing(`No ${mkt.langName} dub: the video has no speech MVP could transcribe, so there was nothing to translate.`)
       blocked++
     } else {
       await sb.from('storefront_coverage')

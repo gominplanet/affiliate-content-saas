@@ -14,6 +14,7 @@ export interface PendingItem {
   state: string
   planned_publish_at?: string | null
   publish_at?: string | null
+  updated_at?: string | null
   youtube_video_id: string | null
   video_id?: string | null
   studio_finish?: { ok: boolean; error?: string | null; tries?: number } | null
@@ -50,7 +51,10 @@ export function liftoffPending(
   const parts: string[] = []
   const oldest = (opts.now ?? Date.now()) - LIFTOFF_WORK_WINDOW_DAYS * 86_400_000
   for (const i of items) {
-    const when = i.publish_at ? new Date(i.publish_at).getTime() : NaN
+    // An Amazon-only video handed over before it carried a date is dated by
+    // its row, so it too ages out instead of being work for ever.
+    const dated = i.publish_at || (i.state === 'amazon_only' ? i.updated_at : null)
+    const when = dated ? new Date(dated).getTime() : NaN
     if (Number.isFinite(when) && when < oldest) continue
     // Waiting for the uploader. A ready video with no upload time is waiting
     // for the creator (Launch these too), which no background run can do.

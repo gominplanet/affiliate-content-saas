@@ -94,6 +94,13 @@ export async function GET(request: Request) {
         await admin.from('global_sync_jobs')
           .update({ status: 'failed', error: decision.reason, updated_at: new Date().toISOString() })
           .eq('id', job.id)
+        // ITS COUNTRIES FAIL WITH IT. They were left 'pending', which nothing
+        // after this ever picks up: the dub step skips pending listings, so
+        // each sat on "Preparing" for good, and enough of them at the top of
+        // the dub queue stopped every other dub from being reached.
+        await admin.from('global_sync_targets')
+          .update({ state: 'failed', detail: `The title and description could not be translated (${String(decision.reason || 'no reason given').slice(0, 140)}).`, updated_at: new Date().toISOString() })
+          .eq('job_id', job.id).eq('state', 'pending')
         results.push({ job: job.id, action: 'failed' })
         continue
       }

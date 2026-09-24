@@ -34,6 +34,9 @@ export interface DeliveryOutcome {
   duplicates: number
   /** Listings SCOUT tried and could not upload, each with its own reason. */
   failed: Array<{ domain: string; country: string; error: string }>
+  /** Uploaded to a non-English store with the English-text thumbnail, because
+   *  the text-free one was never made. Said, never silent. */
+  englishThumb?: string[]
   /** Ready in every way except their translated audio. NOT a failure, and not
    *  uploaded either: English audio under a French title is invisible from
    *  every angle except a French shopper pressing play. */
@@ -159,7 +162,9 @@ export async function deliverPreparedStorefronts(scope?: {
           ok: r.ok || dup,
           duplicate: dup,
           mediaAci: r.mediaAci ?? null,
-          detail: dup ? 'Already on this storefront, skipped duplicate' : (r.ok ? 'Uploaded to storefront' : (r.error || 'Upload failed')),
+          detail: dup ? 'Already on this storefront, skipped duplicate'
+            : r.ok ? (it?.thumbnailIsTextFallback ? 'Uploaded, with the English-text thumbnail (no text-free one was made)' : 'Uploaded to storefront')
+            : (r.error || 'Upload failed'),
         }),
         timeoutMs: 15_000,
       })
@@ -176,9 +181,13 @@ export async function deliverPreparedStorefronts(scope?: {
   if (unrecorded > 0) {
     failed.push({ domain: '', country: `${unrecorded} ${unrecorded === 1 ? 'listing' : 'listings'}`, error: 'uploaded, but MVP could not record it, so it may be offered again (SCOUT will spot it as already there)' })
   }
+  // THE ENGLISH IMAGE ON A NON-ENGLISH STORE, named by country. The queue
+  // flagged it and this path used to ignore the flag.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const englishThumb = rows.filter((r) => r.ok && byTarget.get(String(r.targetId))?.thumbnailIsTextFallback).map((r) => String(byTarget.get(String(r.targetId))?.country || byTarget.get(String(r.targetId))?.domain || ''))
   return {
     ok: uploaded + duplicates > 0 && failed.length === 0,
-    handedOver: uploaded, duplicates, failed,
+    handedOver: uploaded, duplicates, failed, englishThumb,
     waitingOnDub: waiting.length, atCap, dailyRoom,
     nothingReady: false,
     error: uploaded + duplicates === 0 && failed.length > 0
@@ -210,6 +219,9 @@ export function deliverySummary(o: DeliveryOutcome): string[] {
     }
     if (o.waitingOnDub > 0) {
       out.push(`${o.waitingOnDub} held back until their translated audio is ready.`)
+    }
+    if (o.englishThumb && o.englishThumb.length > 0) {
+      out.push(`${o.englishThumb.length} went up with the English-text thumbnail (${[...new Set(o.englishThumb)].join(', ')}), because the text-free one was never made.`)
     }
   }
   // THE CAP IS AMAZON'S AND THE ONLY REMEDY IS TOMORROW, so it is said whether
