@@ -78,9 +78,44 @@ async function enrol(sb: Sb): Promise<number> {
     // Newest first, because that is also the drain order and it puts the most
     // valuable rows in the grid first on a catalogue too big for one pass.
     const { data: vids } = await sb.from('youtube_videos')
-      .select('id,published_at,created_at').eq('user_id', userId)
+      .select('id,youtube_video_id,published_at,created_at').eq('user_id', userId)
       .order('published_at', { ascending: false, nullsFirst: false }).limit(ENROL)
-    const videos = vids ?? []
+    const all = (vids ?? []) as Array<{ id: string; youtube_video_id: string | null; published_at: string | null; created_at: string | null }>
+    if (all.length === 0) continue
+
+    // ── A LIFTOFF VIDEO GOES ONLY WHERE ITS BATCH SAID ─────────────────────
+    // The creator's rule: the countries picked for a Liftoff batch are the
+    // whole list for those videos. The account-wide ticks used to be added on
+    // top, so a video launched to the US and Germany was also dubbed for
+    // France, Italy and Spain, in the same one-a-minute dub queue as the
+    // batch's own German dub. Matched by the video row and by its YouTube id
+    // (or Amazon-only placeholder), so the moment between the hand-over
+    // creating the row and linking it cannot let the ticks in.
+    const liftoff = new Set<string>()
+    {
+      const ids = all.map((v) => v.id)
+      const yts = all.map((v) => v.youtube_video_id).filter((x): x is string => !!x)
+      const { data: byRow } = await sb.from('launch_items').select('video_id').eq('user_id', userId).in('video_id', ids)
+      for (const r of (byRow ?? []) as Array<{ video_id: string | null }>) if (r.video_id) liftoff.add(r.video_id)
+      if (yts.length) {
+        const { data: byYt } = await sb.from('launch_items').select('youtube_video_id').eq('user_id', userId).in('youtube_video_id', yts.filter((y) => !y.startsWith('upload-')))
+        const liftYt = new Set(((byYt ?? []) as Array<{ youtube_video_id: string | null }>).map((r) => r.youtube_video_id))
+        // An Amazon-only Liftoff video's placeholder is "upload-<its item id>".
+        // Matched to real items, not by the prefix: Video Launchpad used the
+        // same prefix, and its videos keep the account-wide countries.
+        const placeholders = yts.filter((y) => y.startsWith('upload-')).map((y) => y.slice('upload-'.length))
+        const liftItems = new Set<string>()
+        if (placeholders.length) {
+          const { data: byItem } = await sb.from('launch_items').select('id').eq('user_id', userId).in('id', placeholders)
+          for (const r of (byItem ?? []) as Array<{ id: string }>) liftItems.add(r.id)
+        }
+        for (const v of all) {
+          if (!v.youtube_video_id) continue
+          if (liftYt.has(v.youtube_video_id) || (v.youtube_video_id.startsWith('upload-') && liftItems.has(v.youtube_video_id.slice('upload-'.length)))) liftoff.add(v.id)
+        }
+      }
+    }
+    const videos = all.filter((v) => !liftoff.has(v.id))
     if (videos.length === 0) continue
 
     const { data: have } = await sb.from('storefront_coverage')
