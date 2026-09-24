@@ -76,10 +76,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // So every row that changes first steps aside to a negative position (which
   // nothing else uses), and only then takes its new one. Every write is
   // checked, and a failure says so instead of reporting a move.
+  //
+  // EACH ROW STEPS ASIDE ONLY FROM THE PLACE IT WAS READ AT. Two fast presses
+  // used to interleave: the second parked a row the first had already moved,
+  // then stopped on a clash and left it at -1, where it read as "Video 0" and
+  // took the first slot. Now a row that has moved since it was read stops
+  // this request, and the rows it had already parked go back where they were.
+  const parked: typeof changing = []
   for (let i = 0; i < changing.length; i++) {
-    const { error } = await sb.from('launch_items').update({ position: -1 - i })
-      .eq('id', changing[i].id).eq('user_id', user.id)
-    if (error) return NextResponse.json({ error: `Could not move it: ${error.message}` }, { status: 500 })
+    const { data: took, error } = await sb.from('launch_items').update({ position: -1 - i })
+      .eq('id', changing[i].id).eq('user_id', user.id).eq('position', changing[i].from).select('id')
+    if (error || !took || took.length === 0) {
+      for (const r of parked) await sb.from('launch_items').update({ position: r.from }).eq('id', r.id).eq('user_id', user.id)
+      return NextResponse.json({
+        error: error ? `Could not move it: ${error.message}` : 'The order changed while this was moving it. Reload the page and try again.',
+      }, { status: error ? 500 : 409 })
+    }
+    parked.push(changing[i])
   }
   for (const r of changing) {
     const { error } = await sb.from('launch_items').update({ position: r.to })

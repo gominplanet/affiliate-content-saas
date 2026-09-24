@@ -327,13 +327,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const lookChanged = patch.thumbnail !== undefined && !same(before.thumbnail, patch.thumbnail)
     if (ctaChanged || lookChanged) {
       const { data: built } = await sb.from('launch_items')
-        .select('id,rendered_url,thumbnail_url,thumbnail_clean_url')
+        .select('id,state,rendered_url,thumbnail_url,thumbnail_clean_url')
         .eq('batch_id', id).eq('user_id', user.id)
-        .in('state', ['preparing', 'prepared', 'blocked'])
+        // RENDERING TOO: a video being burned in right now has already read
+        // the old CTA. Sent back to draft here, and the worker's write only
+        // lands on the render it claimed, so the old one is thrown away.
+        .in('state', ['rendering', 'preparing', 'prepared', 'blocked'])
         .is('youtube_video_id', null).is('planned_publish_at', null)
-      for (const it of (built ?? []) as Array<{ id: string; rendered_url: string | null; thumbnail_url: string | null; thumbnail_clean_url: string | null }>) {
+      for (const it of (built ?? []) as Array<{ id: string; state?: string; rendered_url: string | null; thumbnail_url: string | null; thumbnail_clean_url: string | null }>) {
         const redo: Record<string, unknown> = { reason: null, updated_at: new Date().toISOString() }
-        if (ctaChanged && it.rendered_url) {
+        if (ctaChanged && (it.rendered_url || it.state === 'rendering')) {
           Object.assign(redo, { state: 'draft', rendered_url: null, render_tries: 0 })
         } else if (lookChanged && (it.thumbnail_url || it.thumbnail_clean_url)) {
           Object.assign(redo, { state: 'preparing', thumbnail_url: null, thumbnail_clean_url: null, thumbnail_source: null, thumb_tries: 0 })
@@ -378,6 +381,22 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       needsConfirm: true,
       error: 'This batch has already gone out. Deleting it here removes MVP\u2019s record of it and leaves the videos on YouTube and the listings on Amazon exactly where they are.',
     }, { status: 409 })
+  }
+
+  // NOT WHILE THE UPLOADER STILL HAS ANY OF IT. Deleting the batch deletes
+  // its videos' rows, so a video queued for YouTube was silently cancelled
+  // (the opposite of what the confirm says), and one mid-upload still reached
+  // the channel with no record left here to show it.
+  if (launched) {
+    const { data: queued, error: qErr } = await sb.from('launch_items').select('id')
+      .eq('batch_id', id).eq('user_id', user.id).eq('state', 'prepared').not('planned_publish_at', 'is', null)
+    if (qErr) return NextResponse.json({ error: `Could not check this batch's uploads: ${qErr.message}` }, { status: 500 })
+    if ((queued ?? []).length > 0) {
+      const n = (queued ?? []).length
+      return NextResponse.json({
+        error: `${n} ${n === 1 ? 'video is' : 'videos are'} still on the way to YouTube. Delete this batch once ${n === 1 ? 'it is' : 'they are'} on YouTube, or it would cancel ${n === 1 ? 'it' : 'them'} part way.`,
+      }, { status: 409 })
+    }
   }
 
   const { error } = await sb.from('launch_batches').delete().eq('id', id).eq('user_id', user.id)

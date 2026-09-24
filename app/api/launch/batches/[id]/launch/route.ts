@@ -124,6 +124,26 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
   const planned = ready.map((i) => schedule.get(i.id)!)
 
+  // ── A LATECOMER NEVER SHARES A MINUTE WITH A VIDEO ALREADY GOING ─────────
+  // The pattern hands out slots by position, and positions can shift after a
+  // launch (a video removed, one moved), so a latecomer could be given the
+  // exact time a queued or scheduled video already has. Refused by name
+  // rather than sent out as two videos in one minute.
+  if (late && !amazonOnly) {
+    const taken = new Set(items
+      .filter((i) => !ready.some((r) => r.id === i.id))
+      .map((i) => i.planned_publish_at || i.publish_at)
+      .filter((t): t is string => !!t)
+      .map((t) => Math.floor(new Date(t).getTime() / 60_000)))
+    const clash = planned.filter((p) => taken.has(Math.floor(p.at.getTime() / 60_000)))
+    if (clash.length > 0) {
+      const which = ready.filter((i) => clash.some((c) => c.id === i.id)).map((i) => `Video ${i.position + 1}`)
+      return NextResponse.json({
+        error: `${which.join(', ')} would go out in the same minute as a video already on its way. Give ${which.length === 1 ? 'it' : 'them'} a date and time of ${which.length === 1 ? 'its' : 'their'} own, then launch.`,
+      }, { status: 409 })
+    }
+  }
+
   // ── A TIME THAT HAS GONE TODAY MEANS NOW ─────────────────────────────────
   //
   // A FIRST DAY BEFORE TODAY IS STILL REFUSED, per video: a slot that went by

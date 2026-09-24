@@ -305,7 +305,7 @@ const SEARCH = read('lib/app-search-index.ts')
     /DUB_TRIES/.test(DRAIN) && /could not produce the \$\{mkt\.langName\} audio after/.test(DRAIN),
     'sitting in preparing forever is the silence that looks exactly like work in progress')
   check('the try is counted before the attempt',
-    DRAIN.indexOf('dub_attempts: tries + 1') < DRAIN.indexOf('const res = await dubTarget'),
+    (DRAIN.indexOf('dub_attempts: tries + 1') > -1 && DRAIN.indexOf('dub_attempts: tries + 1') < DRAIN.indexOf('const res = await dubTarget')),
     'a render that kills the function would never record the try and the cell would retry forever')
   check('a video with no transcript blocks instead of retrying',
     /res\.noTranscript/.test(DRAIN) && /nothing to translate into speech/.test(DRAIN),

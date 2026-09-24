@@ -170,6 +170,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !time) {
         return NextResponse.json({ error: 'Pick both a date and a time for this video.' }, { status: 400 })
       }
+      // A REAL DAY, not only the right shape. 2026-02-30 used to be stored
+      // and quietly scheduled for 2 March.
+      const [yy, mm, dd] = date.split('-').map(Number)
+      const probe = new Date(Date.UTC(yy, mm - 1, dd))
+      if (probe.getUTCFullYear() !== yy || probe.getUTCMonth() !== mm - 1 || probe.getUTCDate() !== dd) {
+        return NextResponse.json({ error: `${date} is not a real day. Pick one from the calendar.` }, { status: 400 })
+      }
       const tz = batch.timezone || 'UTC'
       if (date < todayIn(tz)) {
         return NextResponse.json({
@@ -259,12 +266,26 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
       error: 'This one is already on YouTube. Removing it here would not take it down.',
     }, { status: 409 })
   }
+  // AMAZON ONLY, HANDED OVER: its listings are on their way (or up) with no
+  // YouTube id to show for it, so the checks above never caught it.
+  if (item.state === 'amazon_only') {
+    return NextResponse.json({
+      error: 'This one has already gone to the Amazon side. Removing it here would not take its listings down, and MVP would lose track of them.',
+    }, { status: 409 })
+  }
+
+  const { data: owner } = await sb.from('launch_batches').select('state').eq('id', item.batch_id).maybeSingle()
+  const batchLaunched = owner?.state === 'launching' || owner?.state === 'launched'
 
   const { error } = await sb.from('launch_items').delete().eq('id', id).eq('user_id', user.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // CLOSE THE GAP. Position drives the publishing order, and a hole in it would
   // leave the cadence with an empty slot in the middle of the run.
+  // NOT ONCE LAUNCHED: the videos already queued have their times, and moving
+  // everyone up a place handed a later latecomer the slot a queued video
+  // already had, so two went out in the same minute.
+  if (batchLaunched) return NextResponse.json({ ok: true })
   const { data: rest } = await sb.from('launch_items')
     .select('id,position').eq('batch_id', item.batch_id).order('position', { ascending: true })
   let i = 0

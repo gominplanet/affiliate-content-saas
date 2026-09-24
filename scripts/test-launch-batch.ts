@@ -24,6 +24,13 @@ const check = (name: string, cond: boolean, detail?: string) => {
   if (!cond) failures.push(`${name}${detail ? `: ${detail}` : ''}`)
 }
 const read = (p: string) => readFileSync(p, 'utf8')
+// ORDER, WITH BOTH ENDS PRESENT. \`a.indexOf(x) < a.indexOf(y)\` passes when x
+// is missing (-1 is less than anything), so a renamed line made these checks
+// true for ever. Both must be found, and in that order.
+const inOrder = (src: string, first: string, then: string) => {
+  const i = src.indexOf(first), j = src.indexOf(then)
+  return i > -1 && j > -1 && i < j
+}
 const live = (s: string) => s
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n').filter((l) => !/^\s*(?:\/\/|\*)/.test(l)).join('\n')
@@ -186,7 +193,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // immediately was added, which is why this reads the ternary.
   check('the worker sets publish_at only after YouTube confirms',
     DRAIN.indexOf('updateVideoStatus') > -1
-    && DRAIN.indexOf('updateVideoStatus') < DRAIN.indexOf("goNow ? 'published' : missed ? 'blocked' : 'scheduled'"),
+    && inOrder(DRAIN, 'updateVideoStatus', "goNow ? 'published' : missed ? 'blocked' : 'scheduled'"),
     'writing it first would promise a publication that never happened')
   check('and the two columns are kept apart in the schema',
     /planned_publish_at/.test(M358) && /publish_at\s+timestamptz/.test(M357),
@@ -240,7 +247,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /render_tries/.test(DRAIN) && /thumb_tries/.test(DRAIN) && /publish_tries/.test(DRAIN),
     'without a count a failing step retries every minute forever and the board shows nothing')
   check('the try is counted BEFORE the attempt',
-    DRAIN.indexOf('render_tries: tries + 1') < DRAIN.indexOf('const out = await renderCta'),
+    inOrder(DRAIN, 'render_tries: tries + 1', 'const out = await renderCta'),
     'a render that kills the function would never record the try')
   check('a missing thumbnail does not block the video',
     /YouTube will use a frame from the video/.test(DRAIN_RAW),
@@ -395,7 +402,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the page is in the nav',
     /href: '\/liftoff'/.test(NAV) && /label: 'Liftoff'/.test(NAV))
   check('and it is behind Labs while it is unproven',
-    NAV.indexOf("label: 'Labs'") < NAV.indexOf("href: '/liftoff'"),
+    inOrder(NAV, "label: 'Labs'", "href: '/liftoff'"),
     'anything risky lives in Labs, which is the agreement that makes shipping straight to main safe')
 }
 
@@ -1005,10 +1012,14 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // version tested whether `planned_publish_at` appeared near the call, which
   // it does for an unrelated reason: proximity is not a gate.
   {
-    const at = DRAIN.indexOf('await handOverToAmazon(')
-    const before = at > -1 ? DRAIN.slice(Math.max(0, at - 400), at) : ''
+    // THE YOUTUBE PATH'S HAND-OVER, from the row's final write up to it. The
+    // old check looked at 400 characters that always ended in "const handed
+    // =", so it could never see a gate and passed whatever was there.
+    const from = DRAIN.indexOf('reason: heldBack ? heldBack : missed')
+    const at = DRAIN.indexOf('const handed = await handOverToAmazon(sb, it, videoId')
+    const between = from > -1 && at > from ? DRAIN.slice(from, at) : null
     check('nothing gates the Amazon side on the publish time',
-      at > -1 && !/if \([^)]*\b(Date\.now|planned_publish_at|goNow)\b[^)]*\)\s*\{?\s*$/.test(before.trim()),
+      between !== null && !/\bif \(|\bcontinue\b|\breturn\b/.test(between),
       'a listing waiting on a YouTube slot would be a day of storefront sales lost for nothing')
     // AND THE QUEUE THAT FEEDS IT DOES NOT WAIT EITHER.
     check('the publish step does not wait for the slot to arrive',
@@ -1136,7 +1147,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     !/launchBlocker\(b, items\)/.test(BATCH) && !/launchBlocker\(batch as BatchRow/.test(LAUNCH),
     'calling the half that skips the channel check is how the two would drift')
   check('the steps are reported before the channel',
-    READY.indexOf('launchBlocker(batch, items)') < READY.indexOf('channelBlocker('),
+    inOrder(READY, 'launchBlocker(batch, items)', 'channelBlocker('),
     '"connect a channel" is useless to somebody who has not added a video yet')
 }
 
@@ -1464,8 +1475,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'the button is enabled by the box, so it has to act on the box')
   // ORDER MATTERS. Saving after asking is the same bug with extra steps.
   check('and does it before asking for the title',
-    BOARD.indexOf('await onSave(item.id, { product })')
-      < BOARD.indexOf('/title`, { method: \'POST\' }'),
+    inOrder(BOARD, 'await onSave(item.id, { product })', '/title`, { method: \'POST\' }'),
     'asking first and saving after leaves the route reading the old row')
   check('the dirty flag is cleared so the reload is not fought',
     /dirty\.current = false\n        await onSave\(item\.id, \{ product \}\)/.test(BOARD),
@@ -1651,8 +1661,38 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   {
     const MOVE = live(read('app/api/launch/items/[id]/move/route.ts'))
     check('a move steps aside first, because positions are unique',
-      /update\(\{ position: -1 - i \}\)/.test(MOVE) && /if \(error\) return NextResponse\.json/.test(MOVE),
+      /update\(\{ position: -1 - i \}\)/.test(MOVE) && /if \(error \|\| !took \|\| took\.length === 0\)/.test(MOVE)
+      && /\.eq\('position', changing\[i\]\.from\)/.test(MOVE)
+      && /for \(const r of parked\) await sb\.from\('launch_items'\)\.update\(\{ position: r\.from \}\)/.test(MOVE),
       'every reorder collided with its neighbour, failed, and reported moved: true')
+    // ── audit fixes, API side ──────────────────────────────────────────
+    const ITEM_R = live(read('app/api/launch/items/[id]/route.ts'))
+    check('a CTA change also catches a video being burned in right now',
+      /\.in\('state', \['rendering', 'preparing', 'prepared', 'blocked'\]\)/.test(BATCH)
+      && /\.eq\('id', it\.id\)\.eq\('state', 'rendering'\)\.eq\('render_tries', tries \+ 1\)/.test(DRAIN),
+      'the old render landed after the change and shipped the old CTA')
+    check('a launched batch is not deleted while the uploader still has any of it',
+      /still on the way to YouTube\. Delete this batch once/.test(BATCH))
+    check('an Amazon-only video already handed over cannot be removed',
+      /if \(item\.state === 'amazon_only'\)/.test(ITEM_R))
+    check('removing a video from a launched batch does not shift the others',
+      /if \(batchLaunched\) return NextResponse\.json\(\{ ok: true \}\)/.test(ITEM_R))
+    check('a latecomer never shares a minute with a video already going',
+      /would go out in the same minute as a video already on its way/.test(live(read('app/api/launch/batches/[id]/launch/route.ts'))))
+    check('an impossible date is refused', /is not a real day\. Pick one from the calendar\./.test(ITEM_R))
+    {
+      const RES = live(read('app/api/global-sync/deliver/result/route.ts'))
+      check('a duplicate listing does not use up the daily cap',
+        /delivered_at: dup \? null : new Date\(\)\.toISOString\(\)/.test(RES) && /duplicate: dup,/.test(read('lib/storefront-delivery.ts')))
+      check('recording a result that matched nothing is not ok', /if \(!wrote \|\| wrote\.length === 0\)/.test(RES))
+    }
+    {
+      const RETRY = live(read('app/api/launch/items/[id]/retry/route.ts'))
+      check('Try again never sends a video already on YouTube back to its thumbnail',
+        inOrder(RETRY, "if (String(item.youtube_video_id || '').trim()) {", "} else if (!item.thumbnail_url || !item.thumbnail_clean_url) {")
+        && /patch\.publish_tries = 0\n\s*if \(String\(item\.youtube_video_id/.test(RETRY)
+        && /\.eq\('state', 'blocked'\)\.select\('id'\)/.test(RETRY))
+    }
     const LAUNCH = live(read('app/api/launch/batches/[id]/launch/route.ts'))
     check('Launch claims the batch in one conditional write',
       /\.not\('state', 'in', '\("launching","launched"\)'\)\s*\.select\('id'\)/.test(LAUNCH))
@@ -1767,7 +1807,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       'a button that must be pressed once per video is not an unattended batch')
     check('and writes it before the thumbnail and the description are built',
       DRAIN.indexOf('await productTitle(') > -1
-      && DRAIN.indexOf('await productTitle(') < DRAIN.indexOf('await styledThumbnail('),
+      && inOrder(DRAIN, 'await productTitle(', 'await styledThumbnail('),
       'both are written FROM the title, so fixing it after leaves an image about a file name')
     check('it writes it once, not on every firing',
       /title_source: 'mvp'/.test(DRAIN) && /titleSource !== 'mvp'/.test(DRAIN),

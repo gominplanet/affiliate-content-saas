@@ -221,10 +221,13 @@ async function renders(sb: Sb, left: Left): Promise<{ done: number; skipped: num
       // storefront. This column was read by the Amazon hand-off from the day it
       // was written and never set by anything, so every batch listing was
       // handed a null video.
+      // ONLY OVER THE RENDER THIS FIRING CLAIMED. A CTA changed while it was
+      // burning in sends the row back to draft with its tries reset, and this
+      // render (the old CTA) must not land on top of that.
       await sb.from('launch_items').update({
         rendered_url: out.url, clean_url: it.source_url,
         state: 'preparing', reason: null, updated_at: now(),
-      }).eq('id', it.id)
+      }).eq('id', it.id).eq('state', 'rendering').eq('render_tries', tries + 1)
       done++
     } catch (e) {
       // BACK TO DRAFT so the next firing picks it up again, with the reason on
@@ -233,7 +236,7 @@ async function renders(sb: Sb, left: Left): Promise<{ done: number; skipped: num
         state: 'draft',
         reason: (e instanceof Error ? e.message : 'the render did not finish').slice(0, 200),
         updated_at: now(),
-      }).eq('id', it.id)
+      }).eq('id', it.id).eq('state', 'rendering').eq('render_tries', tries + 1)
       failed++
     }
   }

@@ -157,6 +157,7 @@ export async function deliverPreparedStorefronts(scope?: {
         body: JSON.stringify({
           targetId: r.targetId,
           ok: r.ok || dup,
+          duplicate: dup,
           mediaAci: r.mediaAci ?? null,
           detail: dup ? 'Already on this storefront, skipped duplicate' : (r.ok ? 'Uploaded to storefront' : (r.error || 'Upload failed')),
         }),
