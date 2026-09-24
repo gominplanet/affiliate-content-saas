@@ -386,9 +386,20 @@ export async function GET(request: Request) {
     // description on YouTube drops out of "Needs metadata" (the cache never
     // refreshes existing rows' descriptions on its own).
     const trued = await backfillTrueDescriptions(createYouTubeOAuthService(token), drafts)
+    // WHAT WENT LIVE LEAVES THE LIST, and the saved copy learns it too, so it
+    // is not shown again as a draft on the next visit.
+    const changed = new Map(trued.filter((t, i) => t.status !== drafts[i].status || t.publishAt !== drafts[i].publishAt).map(t => [t.youtubeVideoId, t]))
+    if (changed.size > 0 && cache?.uploads_playlist_id && !channelScoped) {
+      const updated = allVideos.map((v: ReturnType<typeof buildDraftVideo>) => {
+        const c = changed.get(v.youtubeVideoId)
+        return c ? { ...v, status: c.status, publishAt: c.publishAt, description: c.description } : v
+      })
+      try { await writeCache(supabase, user.id, cache.uploads_playlist_id, updated, cache.full_scan, cache.next_cursor ?? null) } catch { /* the list below is still right */ }
+    }
+    const current = trued.filter((v: ReturnType<typeof buildDraftVideo>) => includePublished || v.status !== 'public')
 
     return NextResponse.json({
-      drafts: await enrichWithPushState(supabase, user.id, trued),
+      drafts: await enrichWithPushState(supabase, user.id, current),
       nextPageToken: nextCursor,
       fromCache: usedCache,
       includePublished,
@@ -577,9 +588,11 @@ async function backfillTrueDescriptions(
   yt: ReturnType<typeof createYouTubeOAuthService>,
   drafts: ReturnType<typeof buildDraftVideo>[],
 ): Promise<ReturnType<typeof buildDraftVideo>[]> {
-  const suspects = drafts.filter(
-    d => d.youtubeVideoId && d.status !== 'public' && !d.publishAt && (d.description || '').trim().length < 40,
-  ).slice(0, 200)
+  // EVERY VIDEO NOT YET PUBLIC, not only the ones with an empty description.
+  // The saved list is only ever topped up with new uploads, so a video that
+  // was private when first seen stayed "Private, not scheduled" here after it
+  // went live, and kept showing as work to do. One call covers fifty videos.
+  const suspects = drafts.filter(d => d.youtubeVideoId && d.status !== 'public').slice(0, 200)
   if (!suspects.length) return drafts
   let meta: Record<string, { description: string; status: string; publishAt: string | null }> = {}
   try {
@@ -596,7 +609,9 @@ async function backfillTrueDescriptions(
       description: m.description || d.description,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       status: (m.status || d.status) as any,
-      publishAt: m.publishAt ?? d.publishAt,
+      // YouTube's answer, even when it is "no time": a video that went out at
+      // its time no longer has one, and the old time must not linger.
+      publishAt: m.publishAt ?? null,
     }
   })
 }

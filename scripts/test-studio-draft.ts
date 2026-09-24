@@ -121,6 +121,16 @@ check('the page waits longer than SCOUT does', bgTimeout > 0 && webTimeout > bgT
 // ── the screens ──────────────────────────────────────────────────────────
 const CP = code(read('app/(dashboard)/co-pilot/page.tsx'))
 {
+  // ── Co-Pilot's list: a video that went live leaves it ──────────────────
+  const DR2 = read('app/api/youtube/drafts/route.ts')
+  check('every video not yet public has its status re-read, not only ones with no description',
+    /const suspects = drafts\.filter\(d => d\.youtubeVideoId && d\.status !== 'public'\)\.slice\(0, 200\)/.test(DR2))
+  check('a video that went public is dropped from the list and from the saved copy',
+    /const current = trued\.filter\(\(v: ReturnType<typeof buildDraftVideo>\) => includePublished \|\| v\.status !== 'public'\)/.test(DR2)
+    && /drafts: await enrichWithPushState\(supabase, user\.id, current\)/.test(DR2) && /await writeCache\(supabase, user\.id, cache\.uploads_playlist_id, updated/.test(DR2))
+  check('YouTube\'s "no time" wins over an old one', /publishAt: m\.publishAt \?\? null,/.test(DR2))
+}
+{
   // ── Co-Pilot's product: the one the creator set wins, everywhere ───────
   const CPP = read('app/(dashboard)/co-pilot/page.tsx')
   check('the product can be set on every card, not only when the title has an ASIN',

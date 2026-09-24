@@ -97,6 +97,18 @@ function ProductConfirm({ youtubeVideoId, detectedAsin, onFixed, onRewrite }: {
     }
   }
 
+  // QUIET WHEN THERE IS NOTHING TO CONFIRM. With no product found, a full
+  // purple bar on every card in the list was noise; a small link is enough,
+  // and it opens the box when pressed.
+  if (!detectedAsin && !fixed && !open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="mb-2 text-[11px] font-medium text-[#7C3AED] hover:underline">
+        + Set the product
+      </button>
+    )
+  }
+
   return (
     <div className="mb-2 rounded-lg border border-[#7C3AED]/20 bg-[#7C3AED]/[0.04] px-2.5 py-1.5 text-[11px]">
       {fixed ? (
