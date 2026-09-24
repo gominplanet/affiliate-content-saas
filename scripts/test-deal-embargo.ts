@@ -18,6 +18,7 @@
 // scheduled for the moment the embargo lifts. So what these pin is that the hold
 // is applied, that it lifts at the right instant, and that it never silently
 // passes when it should hold.
+import { readFileSync } from 'node:fs'
 import { dealEmbargo, canNameEvent, EVENT_ANNOUNCE_EMBARGO } from '../lib/deal-embargo'
 
 const failures: string[] = []
@@ -106,6 +107,17 @@ const ANNOUNCE = new Date(EVENT_ANNOUNCE_EMBARGO.prime_big_deal_days!)
     // The no-year rule: a message is copy, and it must not stamp a year in.
     check('no year injected into the message', !/\b20\d\d\b/.test(v.message ?? ''), String(v.message))
   }
+}
+
+// ── a scheduled deal is recorded in a status the table allows ─────────────
+{
+  const R = readFileSync('app/api/deals/route.ts', 'utf8')
+  const allowed = (readFileSync('supabase/schema.sql', 'utf8').match(/check \(status in \(([^)]*)\)\)/) ?? [])[1] ?? ''
+  check('the deal row\'s status is one blog_posts accepts',
+    /\n\s*status: 'published',\n\s*post_type: 'deal',/.test(R) && allowed.includes("'published'") && !/status: scheduledAtIso \? 'scheduled'/.test(R),
+    "'scheduled' was refused after WordPress had queued the post, so the deal went out untracked")
+  check('and its time is kept where the Library reads it',
+    /update\(\{ scheduled_for: scheduledAtIso, schedule_mode: 'wp-native' \}\)/.test(R))
 }
 
 if (failures.length) {

@@ -262,7 +262,9 @@ export async function GET() {
       dealEndsAt: (meta.dealEndsAt as string) || null,
       // Status surfaced for the UI's Live/Scheduled pill. Falls through
       // to 'published' for pre-feature rows (status NULL on legacy data).
-      status: (r.status as string) || 'published',
+      // A deal whose time is still ahead reads as scheduled, from its own
+      // time, since the column now says 'published' for both.
+      status: (meta.scheduledAt && new Date(String(meta.scheduledAt)).getTime() > Date.now()) ? 'scheduled' : ((r.status as string) || 'published'),
       scheduledAt: (meta.scheduledAt as string) || null,
     }
   })
@@ -1050,8 +1052,12 @@ export async function POST(req: Request) {
   //     hint via the response body.
   //   - Surfaces the actual error in the response if both fail so the
   //     user doesn't get a false success while their post is orphaned.
-  // Scheduled posts get status='scheduled' so the Library's Scheduled
-  // tab + the dashboard counters separate them from live-published rows.
+  // A SCHEDULED DEAL IS 'published' WITH A scheduled_for, the same way the
+  // blog generator records one. blog_posts.status only allows pending,
+  // draft, published and failed, so 'scheduled' was refused by the database
+  // AFTER WordPress had queued the post: the deal went out untracked, and the
+  // creator was told it failed. The time goes in scheduled_for (migration
+  // 104), which the Library already reads for its "Scheduled" pill.
   // published_at is set anyway (to scheduledAtIso) so the dashboard's
   // "this period" counts use a consistent timestamp.
   const baseRow = {
@@ -1064,7 +1070,7 @@ export async function POST(req: Request) {
     wordpress_post_id: wpPost.id,
     wordpress_url: wpPost.link,
     wordpress_site_id: site.site_id,
-    status: scheduledAtIso ? 'scheduled' : 'published',
+    status: 'published',
     post_type: 'deal',
     seo_keyword: product.title || `deal-${asin}`,
     published_at: scheduledAtIso ?? new Date().toISOString(),
@@ -1207,6 +1213,14 @@ export async function POST(req: Request) {
   }
 
   if (saved?.id) await recordDestination(saved.id as string)
+  // THE TIME, where the Library looks for it. On its own write, so a database
+  // without migration 104 keeps the post and loses only the pill.
+  if (saved?.id && scheduledAtIso) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('blog_posts').update({ scheduled_for: scheduledAtIso, schedule_mode: 'wp-native' }).eq('id', saved.id)
+    } catch { /* un-migrated column; the post is still scheduled on WordPress */ }
+  }
 
   return NextResponse.json({
     ok: true,
