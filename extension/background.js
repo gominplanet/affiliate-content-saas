@@ -8069,7 +8069,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 2
+  const KIT_VERSION = 3
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -8141,11 +8141,21 @@ function studioKitInstallInPage() {
     const r = el.getAttribute && el.getAttribute('role')
     return r === 'button'
   }
+  // GREYED OUT ON THE WRAPPER COUNTS. Studio's buttons are a host element
+  // (ytcp-button) around an inner <button>, and "disabled" is set on the
+  // host. The inner one read as enabled, so a greyed Save was "found" and
+  // pressed before the end screen had anything in it, and the real Save that
+  // lit up afterwards was never pressed.
   const isDisabled = (el) => {
     try {
-      if (el.disabled === true) return true
-      if (!el.getAttribute) return false
-      return el.getAttribute('aria-disabled') === 'true' || el.hasAttribute('disabled')
+      let e = el
+      for (let i = 0; i < 4 && e; i++) {
+        if (e.disabled === true) return true
+        if (e.getAttribute && (e.getAttribute('aria-disabled') === 'true' || e.hasAttribute('disabled'))) return true
+        e = e.parentElement || (e.parentNode && e.parentNode.host) || null
+        if (e && e.getAttribute && /dialog|popup|page|section/i.test(e.tagName || '')) break
+      }
+      return false
     } catch (e) { return false }
   }
   // ONE CLICK. The older finish helpers call el.click() AND dispatch their
@@ -8636,12 +8646,19 @@ K.steps.monetization = async (out, o) => {
       out.debug.tried.push(((opener.tagName || '') + ' ' + (deepText(opener) || attrLabel(opener)).slice(0, 30)).trim())
       onOpt = await waitFor(() => findOn(before), 4000, 300)
       if (onOpt) break
+      // A MENU THAT OPENED is not clicked shut by the next try. The creator
+      // watched it open and close again: that was this loop.
+      if (dialogsNow().some((x) => !before.includes(x))) { onOpt = await waitFor(() => findOn(before), 3000, 300); break }
     }
     if (!onOpt) {
       out.detail = 'Clicked the monetization switch, but no On choice appeared'
       out.debug.buttons = buttonSample(document)
       out.debug.radios = all(document).filter((el) => isRadio(el) && visible(el)).map((el) => ctrlText(el).slice(0, 40)).slice(0, 12)
       out.debug.popups = dialogsNow().filter((x) => !before.includes(x)).map((x) => (x.tagName || '').toLowerCase()).slice(0, 6)
+      // Every visible On or Off on the page, with what it is, so the next
+      // screenshot of this says exactly which element the choice lives in.
+      out.debug.onOff = all(document).filter((el) => visible(el) && /^(on|off)$/i.test(deepText(el)))
+        .map((el) => (el.tagName || '').toLowerCase() + (el.id ? '#' + el.id : '') + '[' + ((el.getAttribute && el.getAttribute('role')) || '') + ']=' + deepText(el)).slice(0, 12)
       return out
     }
     if (!isChecked(onOpt)) { click(onOpt); await sleep(600) }
@@ -8910,12 +8927,18 @@ K.steps.monetization = async (out, o) => {
           return out
         }
         click(save)
-        await waitFor(() => (!editorOpen() ? true : null), 20000, 600)
-        await waitFor(() => (rowDone() ? true : null), 10000, 500)
+        const closed = await waitFor(() => (!editorOpen() ? true : null), 20000, 600)
+        await waitFor(() => (rowDone() ? true : null), 8000, 500)
+        out.readBack.editorClosed = !!closed
         out.readBack.endScreen = rowDone()
         out.readBack.importedFrom = 'your latest video'
-        out.ok = out.readBack.endScreen
-        out.detail = out.ok ? 'End screen imported from your latest video' : 'Saved the end screen, but the draft does not show one'
+        // THE EDITOR CLOSING ON A LIT SAVE is Studio accepting it; the row's
+        // Edit button is the second read. Either one, said as which.
+        out.ok = out.readBack.endScreen || !!closed
+        out.detail = out.readBack.endScreen ? 'End screen imported from your latest video'
+          : closed ? 'End screen imported from your latest video (Studio closed the editor on Save)'
+          : 'Pressed Save in the end-screen editor, but it stayed open, so the end screen was not saved'
+        if (!out.ok) out.debug.buttons = buttonSample(document)
         return out
       }
       out.debug.editor = 'did not open'

@@ -153,6 +153,20 @@ check('the manifest and the app registry agree on the version',
     /const nextBtn = await waitFind\(\[\/\^next\$\/i\], 4000\)/.test(vid) && /if \(enabled\(b\)\) \{ submit = b; break \}/.test(vid) && /out\.certOk = !rateOpen\(\)/.test(vid))
 }
 
+// ── 1.21.6: a greyed button is greyed on its wrapper too ──────────────────
+{
+  const kit = BG.slice(BG.indexOf('function studioKitInstallInPage()'), BG.indexOf('K.steps = {}'))
+  check('disabled is read on the button\'s wrapper as well as the button',
+    /const isDisabled = \(el\) => \{[\s\S]{0,400}?for \(let i = 0; i < 4 && e; i\+\+\)/.test(kit))
+  check('the kit version moves when the kit changes', /const KIT_VERSION = 3\b/.test(BG))
+  const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
+  check('a menu that opened is not clicked shut by the next try',
+    /if \(dialogsNow\(\)\.some\(\(x\) => !before\.includes\(x\)\)\) \{ onOpt = await waitFor/.test(kitMon))
+  const kitEnd = BG.slice(BG.indexOf('K.steps.endscreen = '), BG.indexOf('K.steps.checks = '))
+  check('an end-screen editor that stayed open after Save is a failure, said as such',
+    /it stayed open, so the end screen was not saved/.test(kitEnd))
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)
