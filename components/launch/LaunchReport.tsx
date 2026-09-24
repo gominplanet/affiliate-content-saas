@@ -41,6 +41,8 @@ type Cell = { word: string; colour: string; done: boolean; problem?: string }
 
 /** A YouTube cell: where the video is. */
 function youtubeCell(i: ReportItem, when: (iso: string) => string): Cell {
+  // CHOSEN, NOT MISSED: an Amazon-only batch never goes to YouTube.
+  if (i.state === 'amazon_only') return { word: 'Skipped (Amazon only)', colour: IDLE, done: true }
   if (i.state === 'published') return { word: `Live${i.publish_at ? ` since ${when(i.publish_at)}` : ''}`, colour: GOOD, done: true }
   if (i.state === 'scheduled') return { word: `Scheduled${i.publish_at ? ` for ${when(i.publish_at)}` : ''}`, colour: GOOD, done: true }
   if (i.state === 'blocked') {

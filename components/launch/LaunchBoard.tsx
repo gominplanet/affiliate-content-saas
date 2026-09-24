@@ -101,6 +101,8 @@ interface Batch {
   thumbnail: ThumbnailPreset | null; thumbnail_chosen: boolean | null
   markets: Market[]
   daily_slots: string[]; start_on: string | null; timezone: string
+  /** False: Amazon only. Absent (before migration 369) reads as true. */
+  send_to_youtube?: boolean
 }
 
 const TONE: Record<string, string> = {
@@ -140,6 +142,7 @@ export default function LaunchBoard() {
   const [playlistsError, setPlaylistsError] = useState<string | null>(null)
   const [studioOpts, setStudioOpts] = useState<StudioOptions>(DEFAULT_STUDIO_OPTIONS)
   const [ytOptionsAvailable, setYtOptionsAvailable] = useState(true)
+  const [youtubeChoiceAvailable, setYoutubeChoiceAvailable] = useState(true)
   const [scoutReady, setScoutReady] = useState<boolean | null>(null)
   const [scoutVersion, setScoutVersion] = useState<string | null>(null)
   // The Studio steps need SCOUT 1.20.0 or later; an older SCOUT drives the old
@@ -333,6 +336,7 @@ export default function LaunchBoard() {
       setPlaylistId(j.playlistId ?? null)
       if (j.studioOptions) setStudioOpts(j.studioOptions as StudioOptions)
       setYtOptionsAvailable(j.youtubeOptionsAvailable !== false)
+      setYoutubeChoiceAvailable(j.youtubeChoiceAvailable !== false)
       // ONCE. See autoOpened: after this the creator drives.
       if (!autoOpened.current) {
         const current = (j.steps ?? []).find((s: StepStatus) => s.current)
@@ -892,6 +896,8 @@ export default function LaunchBoard() {
   const latecomers = items.filter((i) => i.state === 'prepared' && !i.planned_publish_at)
   const unsaved = items.filter((i) => dirtyRows[i.id]).map((i) => i.position + 1)
   const scheduleLocked = batch.state === 'launching' || batch.state === 'launched'
+  // YouTube and Amazon, unless the creator chose Amazon only (migration 369).
+  const youtubeOn = batch.send_to_youtube !== false
 
   const stateWord = (st: string) =>
     st === 'launched' ? 'Launched' : st === 'launching' ? 'Going out' : st === 'ready' ? 'Ready' : 'Being set up'
@@ -1229,6 +1235,38 @@ export default function LaunchBoard() {
         current={!!step('schedule')?.current} open={open === 'schedule'} onToggle={() => toggle('schedule')}
       >
         <div className="flex flex-col gap-4">
+          {/* ── WHERE THIS BATCH GOES ────────────────────────────────────────
+              YouTube and Amazon, or Amazon only (what Video Launchpad's
+              "skip YouTube" did). Amazon only has no schedule, no notify
+              switch and no YouTube options, so they are not on the page. */}
+          <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-[12.5px] font-medium mb-2" style={text}>Where do these videos go?</p>
+            <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+              {([
+                [true, 'YouTube and Amazon', 'Scheduled on YouTube at your times, then to every Amazon country you picked.'],
+                [false, 'Amazon only', 'Skip YouTube. Each video goes to your Amazon storefronts as soon as it is ready.'],
+              ] as Array<[boolean, string, string]>).map(([v, label, hint]) => {
+                const on = youtubeOn === v
+                return (
+                  <button key={label} type="button"
+                    disabled={scheduleLocked || busy === 'batch' || (!v && !youtubeChoiceAvailable)}
+                    onClick={() => { if (!on) void patchBatch({ sendToYouTube: v }) }}
+                    className="text-left rounded-lg border px-3 py-2 disabled:opacity-60"
+                    style={{ borderColor: on ? '#0EA5A4' : 'var(--border)', background: on ? 'rgba(14,165,164,0.07)' : 'transparent' }}>
+                    <span className="block text-[12.5px] font-semibold" style={text}>{label}</span>
+                    <span className="block text-[11.5px]" style={muted}>{hint}</span>
+                  </button>
+                )
+              })}
+            </div>
+            {!youtubeChoiceAvailable && (
+              <p className="text-[11.5px] mt-2" style={{ color: '#d97706' }}>
+                Amazon only needs a database update (migration 369). Until then batches go to YouTube and Amazon.
+              </p>
+            )}
+          </div>
+
+          {youtubeOn && (<>
           {/* WHICH PLATFORM THIS IS, up front. The step used to say "cadence"
               and nothing else, and the first person to read it asked where
               YouTube was. The two halves behave completely differently and the
@@ -1437,6 +1475,8 @@ export default function LaunchBoard() {
           </div>
           )}
 
+          </>)}
+
           {/* SAID BEFORE THE BUTTON, not after. Going public is the one thing
               on this page that cannot be undone, so a creator about to do it
               immediately should read that first. */}
@@ -1562,18 +1602,18 @@ export default function LaunchBoard() {
               automatic: SCOUT drives the creator's own signed-in Creator
               account from this tab, and the heading now says so. */}
           <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>
-            <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
+            {youtubeOn && <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
               <p className="text-[12px] font-semibold" style={text}>YouTube: automatic</p>
               <p className="text-[11.5px] mt-1" style={muted}>
-                Each video is uploaded for you and kept private, and YouTube makes it public at the time you picked.
-                The Studio settings its API cannot set (paid promotion, AI use, the notify box, monetization, product tag, end screen)
-                are done by SCOUT by itself as each video reaches YouTube, while this page is open. Each row says what Studio kept.
+                Each video is uploaded for you, private, with paid promotion and AI use set through YouTube&apos;s own API and read back,
+                and YouTube makes it public at the time you picked. What only Studio can set (the notify box, monetization,
+                the ad rating, product tag, end screen) SCOUT does by itself as each video reaches YouTube, while this page is open.
               </p>
-            </div>
+            </div>}
             <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
               <p className="text-[12px] font-semibold" style={text}>Amazon: automatic while this page is open</p>
               <p className="text-[11.5px] mt-1" style={muted}>
-                Not on the YouTube schedule. Once a video is on YouTube and a country&apos;s translation and dub are done, SCOUT sends it to that storefront by itself.
+                Not on the YouTube schedule. Once a video is launched and a country&apos;s translation and dub are done, SCOUT sends it to that storefront by itself.
                 Amazon has no way for MVP to upload from its servers, so SCOUT does it here, signed in as you: keep this batch open on this page.
                 Amazon takes 20 a day on the US store and 10 a day on each other one, which is its rule, not ours.
               </p>
@@ -1622,7 +1662,7 @@ export default function LaunchBoard() {
           markets={batch.markets.map((m) => m.domain)}
           timezone={batch.timezone}
           playlistChosen={!!playlistId}
-          studioPossible={scoutCanStudio}
+          studioPossible={scoutCanStudio && youtubeOn}
         />
       )}
 

@@ -17,7 +17,7 @@ import { marketByDomain } from '@/lib/markets'
 import { normalizeSlots } from '@/lib/launch-schedule'
 import { validateThumbnailPreset } from '@/lib/thumbnail-preset'
 import { normalizeStudioOptions, readStudioRun } from '@/lib/studio-finish'
-import { batchSteps, launchBlocker, validateCtaPreset, withOwnSchedules, MAX_ITEMS, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
+import { batchSteps, launchBlocker, validateCtaPreset, withOwnSchedules, withYouTubeChoice, MAX_ITEMS, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
 
@@ -118,7 +118,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     studio_finish: readStudioRun(extra.get(i.id)?.studio_finish),
   }))
 
-  const b = batch as BatchRow
+  // YOUTUBE OR AMAZON ONLY (migration 369), read on its own like the rest.
+  const { batch: b, available: youtubeChoiceAvailable } = await withYouTubeChoice(sb, batch as BatchRow)
   return NextResponse.json({
     ok: true,
     batch: {
@@ -149,6 +150,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     playlistId: !yerr ? (yrow?.playlist_id ?? null) : null,
     studioOptions: normalizeStudioOptions(!yerr ? yrow?.studio_options : null),
     youtubeOptionsAvailable,
+    youtubeChoiceAvailable,
   })
 }
 
@@ -176,6 +178,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     playlistId?: string | null
     /** Which Studio steps SCOUT does on Finish in Studio. */
     studioOptions?: Record<string, unknown>
+    /** False: Amazon only, nothing goes to YouTube. */
+    sendToYouTube?: boolean
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -254,6 +258,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     patch.playlist_id = pl || null
   }
   if (body.studioOptions !== undefined) patch.studio_options = normalizeStudioOptions(body.studioOptions)
+  if (typeof body.sendToYouTube === 'boolean') patch.send_to_youtube = body.sendToYouTube
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
@@ -266,12 +271,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // every video, including the ones already up (playlistCatchUp in the
   // uploader). Changing it once videos are in one adds the rest to the new one
   // and leaves the earlier ones where they are, and the rows say which.
-  if (patch.notify_subscribers !== undefined) {
+  if (patch.notify_subscribers !== undefined || patch.send_to_youtube !== undefined) {
     const { data: cur } = await sb.from('launch_batches')
       .select('state').eq('id', id).eq('user_id', user.id).maybeSingle()
     if (cur && (cur.state === 'launching' || cur.state === 'launched')) {
       return NextResponse.json({
-        error: 'This batch has already been launched, so its notification setting is locked in. You can change it per video in YouTube Studio.',
+        error: patch.send_to_youtube !== undefined
+          ? 'This batch has already been launched, so where it goes is locked in.'
+          : 'This batch has already been launched, so its notification setting is locked in. You can change it per video in YouTube Studio.',
       }, { status: 409 })
     }
   }
@@ -287,6 +294,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (error) {
     // THE ONE ERROR WITH A KNOWN CAUSE, said in words: before migration 366
     // the column does not exist, and nothing else in this request was saved.
+    if (patch.send_to_youtube !== undefined && /send_to_youtube/.test(error.message)) {
+      return NextResponse.json({
+        error: 'Amazon only is not switched on yet: the database needs migration 369. Nothing was saved; this batch goes to YouTube and Amazon.',
+      }, { status: 503 })
+    }
     if ((patch.playlist_id !== undefined || patch.studio_options !== undefined) && /playlist_id|studio_options/.test(error.message)) {
       return NextResponse.json({
         error: 'The YouTube options are not switched on yet: the database needs migration 367. Nothing was saved.',

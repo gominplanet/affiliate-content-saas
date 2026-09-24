@@ -41,6 +41,7 @@ export type ItemState =
   | 'prepared'   // everything unattended is done, waiting for Launch
   | 'scheduled'  // YouTube has it and knows when to make it public
   | 'published'  // live on YouTube
+  | 'amazon_only' // Liftoff set to Amazon only: handed to the Amazon side, never sent to YouTube
   | 'blocked'    // it cannot go, and `reason` says why
 
 /** States the worker still has something to do about. */
@@ -129,6 +130,25 @@ export interface BatchRow {
   daily_slots: string[]
   start_on: string | null
   timezone: string
+  /** False when the creator chose Amazon only (migration 369). Absent reads
+   *  as true: YouTube and Amazon, as every batch did before. */
+  send_to_youtube?: boolean
+}
+
+/**
+ * The batch's YouTube-or-not choice, attached to a batch already loaded.
+ *
+ * A SEPARATE READ, like every column added after launch, so a batch still
+ * loads before migration 369 is run. `available: false` means the choice
+ * cannot be saved yet, and the batch goes to YouTube as it always did.
+ */
+export async function withYouTubeChoice<B extends BatchRow>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any, batch: B,
+): Promise<{ batch: B; available: boolean }> {
+  const { data, error } = await sb.from('launch_batches').select('send_to_youtube').eq('id', batch.id).maybeSingle()
+  if (error) return { batch: { ...batch, send_to_youtube: true }, available: false }
+  return { batch: { ...batch, send_to_youtube: data?.send_to_youtube !== false }, available: true }
 }
 
 /**
@@ -369,11 +389,15 @@ export function batchSteps(batch: BatchRow, items: ItemRow[]): StepStatus[] {
       // where the creator set all ten by hand needs no pattern at all, and
       // holding its Launch button until they also filled one in would be
       // asking for a setting that changes nothing.
+      // AMAZON ONLY NEEDS NO SCHEDULE: nothing waits for a YouTube slot.
       done: n > 0 && (
-        ownTimed === n
+        batch.send_to_youtube === false
+        || ownTimed === n
         || (slots.length > 0 && !!batch.start_on)
       ),
-      detail: ownTimed === n && n > 0
+      detail: batch.send_to_youtube === false
+        ? 'Amazon only: no YouTube schedule. Each video goes to your storefronts once it is ready.'
+        : ownTimed === n && n > 0
         ? (n === 1 ? 'Your video has its own date and time.' : `All ${n} videos have their own date and time.`)
         : slots.length === 0
           ? (ownTimed > 0
@@ -497,7 +521,8 @@ export function batchRecap(batch: BatchRow, items: ItemRow[]): string[] {
   })).length
   // SAID AS IT IS. A summary reading "One a day, at 17:00" over a batch where
   // most videos have their own time would be the pattern reported as the plan.
-  if (own > 0 && own === n) out.push(`Every video goes out on YouTube at the date and time you gave it.`)
+  if (batch.send_to_youtube === false) out.push('Nothing goes to YouTube: Amazon only, as you chose.')
+  else if (own > 0 && own === n) out.push(`Every video goes out on YouTube at the date and time you gave it.`)
   else if (own > 0) out.push(`${own} on YouTube at their own date and time, the rest ${cadenceLabel(slots).toLowerCase()}${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
   else out.push(`${cadenceLabel(slots)} on YouTube${batch.start_on ? `, starting ${batch.start_on}` : ''}.`)
 
@@ -551,6 +576,7 @@ export function itemStateLabel(state: ItemState): string {
     case 'prepared':  return 'Ready to launch'
     case 'scheduled': return 'Scheduled on YouTube'
     case 'published': return 'Live on YouTube'
+    case 'amazon_only': return 'Sent to Amazon (YouTube skipped)'
     case 'blocked':   return 'Cannot go'
     default:          return 'Unknown'
   }
@@ -634,8 +660,10 @@ export function launchOutcome(items: {
 }[]): LaunchOutcome {
   const total = items.length
   const onYouTube = items.filter((i) => i.state === 'scheduled' || i.state === 'published').length
+  // Amazon only: finished with YouTube by choice, not waiting on it.
+  const amazonOnly = items.filter((i) => i.state === 'amazon_only').length
   const blocked = items.filter((i) => i.state === 'blocked').length
-  const working = total - onYouTube - blocked
+  const working = total - onYouTube - blocked - amazonOnly
   const handedOver = items.filter((i) => !!i.video_id).length
   // Finished preparing and handed to the uploader. "Still being prepared" was
   // said about these too, which was false twice over: preparing was done, and
@@ -668,6 +696,8 @@ export function launchOutcome(items: {
       : (allQueued
           ? `${onYouTube} of ${total} on YouTube, ${working} queued for upload.`
           : `${onYouTube} of ${total} on YouTube, ${working} still working.`)
+  } else if (amazonOnly > 0 && onYouTube === 0) {
+    headline = total === 1 ? 'Handed to Amazon. YouTube skipped, as you chose.' : `All ${total} handed to Amazon. YouTube skipped, as you chose.`
   } else {
     headline = total === 1 ? 'On YouTube.' : `All ${total} on YouTube.`
   }
@@ -679,6 +709,8 @@ export function launchOutcome(items: {
   // and the Amazon side has not picked it up.
   const amazonBlocker = handedOver > 0
     ? null
+    : amazonOnly > 0
+      ? 'Being passed to the Amazon side. This opens as soon as that is done, usually within a minute.'
     : onYouTube === 0
       ? 'Nothing is on YouTube yet, so there is no video for Amazon to list. That happens first.'
       : `${onYouTube === 1 ? 'Your video is' : `${onYouTube} videos are`} on YouTube and being passed to the Amazon side. This opens as soon as that is done, usually within a minute.`
@@ -690,6 +722,7 @@ export function launchOutcome(items: {
 export function itemStateTone(state: ItemState): 'good' | 'busy' | 'warn' | 'idle' {
   switch (state) {
     case 'published': return 'good'
+    case 'amazon_only': return 'good'
     case 'scheduled': return 'good'
     case 'prepared':  return 'good'
     case 'rendering':

@@ -105,6 +105,12 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: '/studio', destination: '/co-pilot', permanent: true },
+      // LIFTOFF. Launch Batch was renamed, and Video Launchpad retired into it:
+      // it did the same job one video at a time, and its one extra (skip
+      // YouTube, Amazon only) is a choice in Liftoff now. Not permanent, so the
+      // name can still move without browsers remembering the old answer.
+      { source: '/launch', destination: '/liftoff', permanent: false },
+      { source: '/launchpad', destination: '/liftoff', permanent: false },
     ]
   },
   // ── /freeguide → the static file in public/ ───────────────────────────────

@@ -39,7 +39,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // PRO, like every other Launch Batch route: this spends shared Keepa tokens.
   const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!['pro', 'admin'].includes(normalizeTier(integ?.tier))) {
-    return NextResponse.json({ error: 'Launch batches are a Pro feature.' }, { status: 403 })
+    return NextResponse.json({ error: 'Liftoff is a Pro feature.' }, { status: 403 })
   }
   const { data: batch } = await sb.from('launch_batches').select('id').eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })

@@ -683,6 +683,16 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     }
   }
 
+  // WHICH BATCHES ARE AMAZON ONLY (migration 369), read on its own so a
+  // missing column cannot stop uploads: on any error every batch goes to
+  // YouTube, which is what every batch did before the choice existed.
+  const amazonOnlyBatches = new Set<string>()
+  {
+    const batchIds = [...new Set(items.map((i: { batch_id: string }) => i.batch_id))]
+    const { data: ab, error: abErr } = await sb.from('launch_batches').select('id,send_to_youtube').in('id', batchIds)
+    if (!abErr) for (const b of (ab ?? []) as Array<{ id: string; send_to_youtube: boolean | null }>) if (b.send_to_youtube === false) amazonOnlyBatches.add(b.id)
+  }
+
   let scheduled = 0, failed = 0
   let budget = PUBLISHES
   const stamp = () => new Date().toISOString()
@@ -692,6 +702,22 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     const src = (it.rendered_url || '').trim()
     const title = (it.title || '').trim()
     if (!/^https:\/\//i.test(src) || !title) continue
+
+    // ── AMAZON ONLY: NOTHING GOES TO YOUTUBE ─────────────────────────────
+    // Handed straight to the Amazon side under a placeholder id (the same
+    // shape Video Launchpad used when a creator skipped YouTube). Claimed
+    // first like everything else; a hand-over that fails is written on the
+    // row and repairs() tries again every minute.
+    if (amazonOnlyBatches.has(it.batch_id)) {
+      const { data: took } = await sb.from('launch_items')
+        .update({ state: 'amazon_only', publish_at: null, reason: null, updated_at: stamp() })
+        .eq('id', it.id).eq('state', 'prepared').select('id')
+      if (!took || took.length === 0) continue
+      const handed = await handOverToAmazon(sb, it, `upload-${it.id}`, null, stamp())
+      await noteHandOver(sb, it.id, handed)
+      scheduled++
+      continue
+    }
 
     const tries = Number(it.publish_tries ?? 0)
     const said0 = String(it.reason || '').trim()
@@ -1159,8 +1185,8 @@ async function repairs(sb: Sb): Promise<{ linked: number; failed: number }> {
     // BLOCKED TOO, when it is on YouTube: a video kept private after a missed
     // slot is still a video, and its Amazon listings do not wait for YouTube.
     // Its hand-over failing once used to mean it never reached Amazon at all.
-    .in('state', ['scheduled', 'published', 'blocked'])
-    .not('youtube_video_id', 'is', null)
+    .in('state', ['scheduled', 'published', 'blocked', 'amazon_only'])
+    .or('youtube_video_id.not.is.null,state.eq.amazon_only')
     .is('video_id', null)
     .order('updated_at', { ascending: true })
     .limit(REPAIRS * 5)
@@ -1182,7 +1208,9 @@ async function repairs(sb: Sb): Promise<{ linked: number; failed: number }> {
   for (const it of candidates.filter((c: { batch_id: string }) => withMarkets.has(c.batch_id)).slice(0, REPAIRS)) {
     // The channel id is not stored on the row, so the title lookup falls back
     // to empty here; the channel sync fills it in later.
-    const r = await handOverToAmazon(sb, it, String(it.youtube_video_id), null, it.publish_at)
+    // Amazon-only videos have no YouTube id; they use the same placeholder
+    // the first hand-over did, so the retry lands on the same record.
+    const r = await handOverToAmazon(sb, it, String(it.youtube_video_id || `upload-${it.id}`), null, it.publish_at)
     if (r.ok) linked++
     else { failed++; await noteHandOver(sb, it.id, r) }
   }

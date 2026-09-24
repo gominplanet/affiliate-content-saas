@@ -37,7 +37,7 @@ const ITEMS = live(read('app/api/launch/batches/[id]/items/route.ts'))
 const ITEM = live(read('app/api/launch/items/[id]/route.ts'))
 const BOARD = read('components/launch/LaunchBoard.tsx')
 const STEPCARD = read('components/launch/StepCard.tsx')
-const PAGE = read('app/(dashboard)/launch/page.tsx')
+const PAGE = read('app/(dashboard)/liftoff/page.tsx')
 const M357 = read('supabase/migrations/357_launch_batches.sql')
 const M358 = read('supabase/migrations/358_launch_batch_worker.sql')
 const M359 = read('supabase/migrations/359_launch_batch_thumbnail.sql')
@@ -201,7 +201,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // list is still worked out because the screen has to say which videos those
   // are before the button is pressed.
   check('past slots are still identified, for the screen to name',
-    /const immediate = planned\.filter\(\(p\) => p\.at\.getTime\(\) <= Date\.now\(\)\)/.test(LAUNCH) && /goingOutNow/.test(LAUNCH),
+    /const immediate = (amazonOnly \? \[\] : )?planned\.filter\(\(p\) => p\.at\.getTime\(\) <= Date\.now\(\)\)/.test(LAUNCH) && /goingOutNow/.test(LAUNCH),
     'going public cannot be undone, so it cannot be a surprise')
   check('and they are not quietly moved to another hour',
     !/at\.setHours|addDays\(plan\.startOn, 1\)/.test(LAUNCH),
@@ -393,9 +393,9 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /\/api\/cron\/launch-drain/.test(VERCEL),
     'a cron nobody calls is a feature that works only in the repository')
   check('the page is in the nav',
-    /href: '\/launch'/.test(NAV) && /Launch Batch/.test(NAV))
+    /href: '\/liftoff'/.test(NAV) && /label: 'Liftoff'/.test(NAV))
   check('and it is behind Labs while it is unproven',
-    NAV.indexOf("label: 'Labs'") < NAV.indexOf("href: '/launch'"),
+    NAV.indexOf("label: 'Labs'") < NAV.indexOf("href: '/liftoff'"),
     'anything risky lives in Labs, which is the agreement that makes shipping straight to main safe')
 }
 
@@ -867,7 +867,11 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
 
   check('the rules read something at all', wantBatch.size > 2 && wantItem.size > 0,
     `${wantBatch.size} batch fields, ${wantItem.size} item fields`)
+  // THE SAME EXCEPTION for the Amazon-only choice (migration 369), loaded by
+  // withYouTubeChoice in both routes for the same reason.
+  const choiceLoaded = /withYouTubeChoice\(sb,/.test(read('app/api/launch/batches/[id]/route.ts')) && /withYouTubeChoice\(sb,/.test(LAUNCH)
   for (const f of wantBatch) {
+    if (f === 'send_to_youtube' && choiceLoaded) continue
     check(`every route fetches batch.${f}`, batchCols.has(f),
       'a field the rules read and no route fetches is undefined, which reads as "not answered"')
   }
@@ -926,7 +930,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // first day alone, which a video with its own date never went near.
   check('a slot already gone is no longer refused',
     !/YouTube refuses a publish time in the past/.test(LAUNCH)
-    && /const stale = datesBeforeToday\(planned, plan\.timezone\)/.test(LAUNCH)
+    && /const stale = (amazonOnly \? \[\] : )?datesBeforeToday\(planned, plan\.timezone\)/.test(LAUNCH)
     && /if \(stale\.length > 0\)/.test(LAUNCH),
     'refusing it is what forced tomorrow; the line is the date, not the time')
   check('a first day before today still is refused',
@@ -1700,6 +1704,20 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the report only says All done when nothing is still working',
     /const allDone = ytLeft === 0 && amzLeft === 0 && studioLeft === 0/.test(REPORT))
   check('and lists every problem with its reason', /problems\.map\(/.test(REPORT) && /<LaunchReport/.test(SCREEN))
+  // ── LIFTOFF: ONE NAME, ONE PAGE, AND AMAZON ONLY WHERE LAUNCHPAD HAD IT ──
+  {
+    const CFG = read('next.config.ts')
+    check('the old addresses forward to Liftoff',
+      /source: '\/launch', destination: '\/liftoff'/.test(CFG) && /source: '\/launchpad', destination: '\/liftoff'/.test(CFG))
+    check('the menu has Liftoff and no Launchpad',
+      /href: '\/liftoff', icon: <Rocket size=\{15\} \/>, label: 'Liftoff'/.test(NAV) && !/href: '\/launchpad'/.test(NAV))
+    check('an Amazon-only batch is handed to Amazon and never uploaded',
+      /if \(amazonOnlyBatches\.has\(it\.batch_id\)\) \{/.test(DRAIN) && /handOverToAmazon\(sb, it, `upload-\$\{it\.id\}`/.test(DRAIN),
+      'Launchpad let a creator skip YouTube; retiring it without this would take that away')
+    check('and needs no YouTube channel or schedule to launch',
+      /if \(batch\.send_to_youtube === false\) return null/.test(live(read('lib/launch-readiness.ts'))))
+    check('a batch still loads before migration 369', /export async function withYouTubeChoice/.test(read('lib/launch-batch.ts')))
+  }
   check('stops on an error, saying so',
     /if \(out\.error\) setAmazonAuto\('stopped'\)/.test(SCREEN) && /Automatic sending stopped:/.test(SCREEN))
 

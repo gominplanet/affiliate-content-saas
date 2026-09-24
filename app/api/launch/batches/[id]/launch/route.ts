@@ -26,7 +26,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { scheduleItems, datesBeforeToday, cadenceLabel } from '@/lib/launch-schedule'
-import { withOwnSchedules, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
+import { withOwnSchedules, withYouTubeChoice, type BatchRow, type ItemRow, BATCH_COLUMNS, ITEM_COLUMNS } from '@/lib/launch-batch'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -39,15 +39,18 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   const { data: integ } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!['pro', 'admin'].includes(normalizeTier(integ?.tier))) {
-    return NextResponse.json({ error: 'Launch batches are a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
+    return NextResponse.json({ error: 'Liftoff is a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
-  const { data: batch } = await sb.from('launch_batches')
+  const { data: raw } = await sb.from('launch_batches')
     .select(BATCH_COLUMNS)
     .eq('id', id).eq('user_id', user.id).maybeSingle()
-  if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
+  if (!raw) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
+  // YouTube and Amazon, or Amazon only (migration 369; absent reads as both).
+  const { batch } = await withYouTubeChoice(sb, raw as BatchRow)
+  const amazonOnly = batch.send_to_youtube === false
 
   // ── A LAUNCHED BATCH CAN STILL LAUNCH ITS LATECOMERS ─────────────────────
   //
@@ -100,9 +103,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // time on screen was not the time YouTube was given. Resolved once, from
   // the full list, the same way the page does it; the ready ones are then
   // simply looked up. A video with its own date and time keeps it.
-  const schedule = scheduleItems(items.map((i) => ({
-    id: i.id, customDate: i.custom_publish_date, customTime: i.custom_publish_time,
-  })), plan)
+  // AMAZON ONLY: no YouTube slot to wait for, so every video's "time" is
+  // now, which is simply when the worker hands it to the Amazon side.
+  const nowAt = new Date()
+  const schedule = amazonOnly
+    ? new Map(ready.map((i) => [i.id, { id: i.id, at: nowAt, own: false, date: '', time: '' }]))
+    : scheduleItems(items.map((i) => ({
+        id: i.id, customDate: i.custom_publish_date, customTime: i.custom_publish_time,
+      })), plan)
   const unresolved = ready.filter((i) => !schedule.has(i.id))
   if (unresolved.length > 0) {
     // NOTHING PARTIAL. Publishing half a batch at hours nobody chose is worse
@@ -122,14 +130,16 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // this morning is one video going out now, a date that has gone is a
   // mistake, and a published video cannot be unpublished. (launchReadiness
   // above says the same thing first, so the page could not have offered it.)
-  const stale = datesBeforeToday(planned, plan.timezone)
+  const stale = amazonOnly ? [] : datesBeforeToday(planned, plan.timezone)
   if (stale.length > 0) {
     const which = ready.filter((i) => stale.some((x) => x.id === i.id)).map((i) => `Video ${i.position + 1}`)
     return NextResponse.json({
       error: `${which.join(', ')} ${which.length === 1 ? 'is' : 'are'} set for a day that has already been and gone. Pick today to send ${which.length === 1 ? 'it' : 'them'} out now, or a day ahead to schedule ${which.length === 1 ? 'it' : 'them'}.`,
     }, { status: 409 })
   }
-  const immediate = planned.filter((p) => p.at.getTime() <= Date.now())
+  // Nothing goes public on YouTube for an Amazon-only batch, so nothing is
+  // recorded as agreed to go out now.
+  const immediate = amazonOnly ? [] : planned.filter((p) => p.at.getTime() <= Date.now())
   const now = new Date().toISOString()
 
   // ── ONE PRESS WINS ───────────────────────────────────────────────────────

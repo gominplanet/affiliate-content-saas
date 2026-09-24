@@ -1,7 +1,11 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Launch Batch — ten videos set up in one sitting and released on a schedule.
+// Liftoff (was Launch Batch, and replaces Video Launchpad) — up to ten videos
+// set up in one sitting, then YouTube and every Amazon country from one press.
 //
+// Launchpad did one video at a time with the creator watching, and its one
+// extra (skip YouTube, Amazon only) is a choice here now, so /launchpad and
+// the old /launch both forward to this page (next.config.js).
 // Video Launchpad is one video with a creator watching it, which is the right
 // shape for one video. It is the wrong shape for ten: the CTA burn, the
 // thumbnails, the translation and every dub run on our servers and need nobody
@@ -17,12 +21,12 @@
 import PageHero from '@/components/layout/PageHero'
 import LaunchBoard from '@/components/launch/LaunchBoard'
 
-export default function LaunchPage() {
+export default function LiftoffPage() {
   return (
     <>
       <PageHero
-        title="Launch Batch"
-        subtitle="Set up ten videos in one sitting. Choose your CTA and your Amazon countries once, give each video its product, then press Launch and walk away. MVP burns the CTA, builds every thumbnail, translates and dubs for each country, and puts your videos on YouTube at the times you pick."
+        title="Liftoff"
+        subtitle="Up to ten videos, one press. Choose your CTA, thumbnail look and Amazon countries once, give each video its product, then press Launch. MVP burns the CTA, builds every thumbnail, schedules YouTube with paid promotion and AI use set, then translates, dubs and sends each video to every Amazon country, and shows you where each one landed."
       />
       <div className="pb-28">
         <LaunchBoard />

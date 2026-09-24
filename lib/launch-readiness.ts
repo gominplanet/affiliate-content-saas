@@ -77,6 +77,9 @@ export async function launchReadiness(
   // channel" to somebody who has not added a video.
   const steps = launchBlocker(batch, items)
   if (steps) return steps
+  // AMAZON ONLY: no YouTube channel is needed and there is no schedule to be
+  // in the past. Asking for either would block a launch that needs neither.
+  if (batch.send_to_youtube === false) return null
   const dates = pastDates(batch, items)
   if (dates) return dates
   return channelBlocker(await hasPushChannel(sb, userId))

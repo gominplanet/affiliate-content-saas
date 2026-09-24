@@ -63,7 +63,7 @@ export async function POST(req: Request) {
 
   const { data: integ } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!['pro', 'admin'].includes(normalizeTier(integ?.tier))) {
-    return NextResponse.json({ error: 'Launch batches are a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
+    return NextResponse.json({ error: 'Liftoff is a Pro feature.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
   const body = await req.json().catch(() => ({})) as { name?: string; timezone?: string }
