@@ -88,6 +88,24 @@ check('the manifest and the app registry agree on the version',
   check('Amazon tab that never opened rejects instead of hanging', /if \(chrome\.runtime\.lastError \|\| !tab \|\| tab\.id == null\)/.test(BG))
 }
 
+// ── first real Co-Pilot run, 1.21.2 ───────────────────────────────────────
+{
+  const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
+  check('the On choice is found even with help text after it, or by its id',
+    /isRadio\(el\) && visible\(el\) && \/\^on\\b\/i\.test\(ctrlText\(el\)\)/.test(kitMon) && /byId\('radio-on', sc\)/.test(kitMon))
+  check('and the menu is opened through the label\'s button if the label opens nothing',
+    /for \(const opener of openers\)/.test(kitMon))
+  const kitVis = BG.slice(BG.indexOf('K.steps.visibility = '), BG.indexOf('window.__mvpKit = K'))
+  check('the scheduled date is read once Studio has caught up, not after a fixed pause',
+    /let matched = await waitFor\(dateMatches, 6000, 300\)/.test(kitVis) && !/await sleep\(1200\)\n\s*const shownDate/.test(kitVis))
+  const kitTag = BG.slice(BG.indexOf('K.steps.tagproduct = '), BG.indexOf('K.steps.endscreen = '))
+  check('a product YouTube Shopping does not list is not a red cross',
+    /out\.skipped = true\n\s*out\.detail = 'YouTube Shopping has no listing for this product/.test(kitTag))
+  const kitEnd = BG.slice(BG.indexOf('K.steps.endscreen = '), BG.indexOf('K.steps.checks = '))
+  check('the end-screen picker is searched in every popup that opened',
+    /const pops = dialogsNow\(\)\.filter\(\(x\) => !before\.includes\(x\)\)/.test(kitEnd) && /tagCards\(\)/.test(kitEnd))
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)

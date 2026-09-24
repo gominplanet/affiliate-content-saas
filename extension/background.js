@@ -8516,13 +8516,48 @@ function studioKitInstallInPage() {
     if (out.readBack.before === 'on') { out.ok = true; out.readBack.monetization = 'on'; out.detail = 'Monetization was already On'; return out }
     const t = trigger()
     if (!t) { out.skipped = true; out.detail = 'No monetization switch on this channel'; return out }
-    const before = dialogsNow()
-    click(t)
-    const onOpt = await waitFor(() => {
-      const pop = newDialog(before) || document
-      return all(pop).find((el) => isRadio(el) && visible(el) && /^on$/i.test(ctrlText(el))) || null
-    }, 6000, 300)
-    if (!onOpt) { out.detail = 'Opened the monetization menu, but there was no On option'; out.debug.buttons = buttonSample(document); return out }
+    // THE ON CHOICE, however Studio draws it: a radio whose label starts with
+    // "On" (the label often carries a line of help text after it, which the
+    // old exact match refused), the radio Studio ids "radio-on", or a menu
+    // option reading On. Looked for in every popup that opened and in the page.
+    const findOn = (before) => {
+      const scopes = dialogsNow().filter((x) => !before.includes(x)).concat([document])
+      for (const sc of scopes) {
+        const byOnId = byId('radio-on', sc)
+        if (byOnId && visible(byOnId)) return byOnId
+        const r = all(sc).find((el) => isRadio(el) && visible(el) && /^on\b/i.test(ctrlText(el)))
+        if (r) return r
+        const opt = all(sc).find((el) => {
+          const role = el.getAttribute && el.getAttribute('role')
+          return (role === 'option' || role === 'menuitemradio' || role === 'menuitem') && visible(el) && /^on\b/i.test(ctrlText(el))
+        })
+        if (opt) return opt
+      }
+      return null
+    }
+    // AND MORE THAN ONE WAY IN. The text "Off" is often a label inside the
+    // real button, and a click on the label opens nothing; its button-like
+    // ancestors are tried next.
+    const openers = [t]
+    let e = up(t)
+    for (let i = 0; i < 4 && e && e !== dlg; i++) { if (isBtn(e) || (e.getAttribute && (e.getAttribute('role') === 'button' || e.getAttribute('tabindex') === '0'))) openers.push(e); e = up(e) }
+    let before = dialogsNow()
+    let onOpt = null
+    out.debug.tried = []
+    for (const opener of openers) {
+      before = dialogsNow()
+      click(opener)
+      out.debug.tried.push(((opener.tagName || '') + ' ' + (deepText(opener) || attrLabel(opener)).slice(0, 30)).trim())
+      onOpt = await waitFor(() => findOn(before), 4000, 300)
+      if (onOpt) break
+    }
+    if (!onOpt) {
+      out.detail = 'Opened the monetization menu, but there was no On option'
+      out.debug.buttons = buttonSample(document)
+      out.debug.radios = all(document).filter((el) => isRadio(el) && visible(el)).map((el) => ctrlText(el).slice(0, 40)).slice(0, 12)
+      out.debug.popups = dialogsNow().filter((x) => !before.includes(x)).map((x) => (x.tagName || '').toLowerCase()).slice(0, 6)
+      return out
+    }
     if (!isChecked(onOpt)) { click(onOpt); await sleep(600) }
     const done = findBtn(/^done$/i, newDialog(before) || document, { enabled: true })
     if (done) { click(done); await sleep(1200) }
@@ -8607,7 +8642,10 @@ function studioKitInstallInPage() {
     if (!found) {
       const cancel = findBtn(/^(cancel|close)$/i, d)
       if (cancel) click(cancel)
-      out.detail = 'Searched for the product link, and YouTube found nothing to tag'
+      // NOT A FAILURE OF SCOUT'S: YouTube Shopping has no listing for this
+      // product, so there is nothing anyone could tag. Said as such.
+      out.skipped = true
+      out.detail = 'YouTube Shopping has no listing for this product, so there was nothing to tag'
       return out
     }
     const header = all(d).find((el) => visible(el) && /^similar results$/i.test(deepText(el)))
@@ -8617,7 +8655,8 @@ function studioKitInstallInPage() {
     if (!exact.length) {
       const cancel = findBtn(/^(cancel|close)$/i, d)
       if (cancel) click(cancel)
-      out.detail = 'YouTube only offered similar products, not this one, so nothing was tagged'
+      out.skipped = true
+      out.detail = 'YouTube Shopping only offered similar products, not this one, so nothing was tagged (tagging a look-alike would put someone else\u2019s product on your video)'
       return out
     }
     // The product's name, from the smallest block around the button that has
@@ -8668,14 +8707,17 @@ function studioKitInstallInPage() {
     click(importBtn())
     // The grid of your videos, newest first. A card is the clickable block
     // around a video thumbnail.
+    // EVERY POPUP THAT OPENED, not only the largest (which was sometimes a
+    // backdrop with nothing in it), and thumbnails however they load: a lazy
+    // image keeps its address in data-src or srcset until it scrolls in.
     const cards = () => {
-      const d = newDialog(before)
-      if (!d) return []
+      const pops = dialogsNow().filter((x) => !before.includes(x))
+      if (!pops.length) return []
       const seen = new Set(), list = []
-      for (const img of all(d)) {
+      for (const img of pops.flatMap((d) => all(d))) {
         if ((img.tagName || '').toLowerCase() !== 'img' || !visible(img)) continue
-        const src = String(img.src || '')
-        if (!/ytimg|\/vi\//.test(src)) continue
+        const src = String(img.src || '') + ' ' + String((img.getAttribute && (img.getAttribute('data-src') || img.getAttribute('srcset'))) || '')
+        if (!/ytimg|\/vi\/|ggpht|googleusercontent/.test(src)) continue
         if (o.videoId && src.indexOf(o.videoId) >= 0) continue
         let e = img, hit = null
         for (let i = 0; i < 7 && e; i++) {
@@ -8692,8 +8734,22 @@ function studioKitInstallInPage() {
         return Math.abs(ra.top - rb.top) > 8 ? ra.top - rb.top : ra.left - rb.left
       })
     }
-    const got = await waitFor(() => (cards().length ? cards() : null), 15000, 500)
-    if (!got) { out.detail = 'Opened Import from video, but no videos appeared to choose from'; out.debug.buttons = buttonSample(document); return out }
+    // Or no thumbnails at all: the picker's own video cards, by their tags.
+    const tagCards = () => {
+      const pops = dialogsNow().filter((x) => !before.includes(x))
+      return pops.flatMap((d) => all(d)).filter((el) => visible(el) && /video-card|entity-card|video-pick.*item|video-list-item/.test((el.tagName || '').toLowerCase()))
+        .filter((el) => !o.videoId || !(el.innerHTML || '').includes(o.videoId))
+    }
+    const got = await waitFor(() => (cards().length ? cards() : tagCards().length ? tagCards() : null), 20000, 500)
+    if (!got) {
+      out.detail = 'Opened Import from video, but no videos appeared to choose from'
+      const pops = dialogsNow().filter((x) => !before.includes(x))
+      out.debug.popups = pops.map((x) => (x.tagName || '').toLowerCase()).slice(0, 6)
+      out.debug.images = pops.flatMap((d) => all(d)).filter((x) => (x.tagName || '').toLowerCase() === 'img').map((x) => String(x.src || x.getAttribute('data-src') || '').slice(0, 60)).slice(0, 8)
+      out.debug.text = pops.map((x) => visibleText(x)).join(' | ').slice(0, 400)
+      out.debug.buttons = buttonSample(document)
+      return out
+    }
     const pick = got[0]
     out.readBack.importedFrom = deepText(pick).slice(0, 80)
     click(pick)
@@ -8825,10 +8881,20 @@ function studioKitInstallInPage() {
     setVal(dateInput, dateStr)
     // No Escape to close the picker: Escape also closes the whole draft
     // window. Enter in the date box closes the picker on its own.
-    await sleep(1200)
-    const shownDate = trigger() ? deepText(trigger()) : ''
-    const parsed = new Date(shownDate)
-    const dateOk = !isNaN(parsed.getTime()) && parsed.getFullYear() === Y && parsed.getMonth() === Mo && parsed.getDate() === D
+    // READ WHEN STUDIO HAS CAUGHT UP. The button under the picker kept showing
+    // today's date for a moment after the new one was typed, and a read after
+    // a fixed 1.2 seconds reported "Studio shows Sep 25" for a video Studio
+    // then scheduled for the 28th. Polled for up to six seconds; if the picker
+    // is still open, its own button closes it and the date is read again.
+    const dateMatches = () => {
+      const shown = trigger() ? deepText(trigger()) : ''
+      const p2 = new Date(shown)
+      return !isNaN(p2.getTime()) && p2.getFullYear() === Y && p2.getMonth() === Mo && p2.getDate() === D ? shown : null
+    }
+    let matched = await waitFor(dateMatches, 6000, 300)
+    if (!matched && newDialog(before) && trigger()) { click(trigger()); matched = await waitFor(dateMatches, 4000, 300) }
+    const shownDate = matched || (trigger() ? deepText(trigger()) : '')
+    const dateOk = !!matched
     out.readBack.date = shownDate
     if (!dateOk) { out.detail = 'Typed ' + dateStr + ', but Studio shows "' + shownDate + '", so nothing was scheduled'; return out }
     // Time: the box shows 12 or 24 hour depending on the account; write in
