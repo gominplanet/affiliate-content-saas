@@ -541,22 +541,25 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [generating, setGenerating] = useState(false)
   const [applying, setApplying] = useState(false)
   const [finishCheckDone, setFinishCheckDone] = useState(false)
-  // Opt-in + run state for the SCOUT "Finish on YouTube" automation. Off by
-  // default — the user must tick the box that states what SCOUT does in Studio.
+  // Run state for SCOUT's Studio steps, which now run by themselves after
+  // every push when SCOUT is installed (see finishOptIn below).
   // Monetization is a separate sub-toggle because not every channel is
   // monetized (no YPP = no toggle and no ad rating); end screen applies to all.
-  const [finishOptIn, setFinishOptIn] = useState(false)
-  // Details-page disclosures + feed settings (paid promotion on, AI-use No,
-  // embedding on, "publish to subs feed & notify" OFF) — applies to every
-  // channel, monetized or not.
-  const [finishDoDetails, setFinishDoDetails] = useState(true)
-  const [finishDoMonetize, setFinishDoMonetize] = useState(true)
-  // The rest of the creator's draft steps: the ad rating, the product tag and
-  // the end screen imported from the latest video.
-  const [finishDoAdRating, setFinishDoAdRating] = useState(true)
-  const [finishDoTag, setFinishDoTag] = useState(true)
-  const [finishDoEndScreen, setFinishDoEndScreen] = useState(true)
-  const anyFinishStep = finishDoDetails || finishDoMonetize || finishDoTag || finishDoEndScreen
+  // NO LONGER AN OPT-IN. The creator's rule: nobody should ever have to finish
+  // a video in Studio. With SCOUT installed it runs every step by itself right
+  // after the push; there is nothing to tick.
+  const finishOptIn = true
+  const finishDoDetails = true
+  const finishDoMonetize = true
+  const finishDoAdRating = true
+  const finishDoTag = true
+  const finishDoEndScreen = true
+  const anyFinishStep = true
+  // What YouTube reported about paid promotion and AI use after the push,
+  // through its own API. A ref as well, for the step after SCOUT, which runs
+  // in the same call as the push and cannot wait for a re-render.
+  const [apiDisclosures, setApiDisclosures] = useState<{ asked: boolean; paidPromotion: boolean | null; aiUseNo: boolean | null; error: string | null } | null>(null)
+  const apiDisclosuresRef = React.useRef<typeof apiDisclosures>(null)
   const [finishRunning, setFinishRunning] = useState(false)
   const [finishResult, setFinishResult] = useState<StudioFinishResult | null>(null)
   // Dev: captured YouTube Studio save requests (yt-hook) — used to learn the
@@ -1297,6 +1300,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             notifySubscribers: proSettings.notifySubscribers,
             publishAt: holdStatus ? null : publishAt,
             privacyStatus: firstPrivacy,
+            // Paid promotion Yes and AI use No through YouTube's own API, the
+            // same step Liftoff's uploader takes, read back before any time.
+            disclosures: true,
           }),
         })
         const data = await safeJson(res)
@@ -1318,6 +1324,19 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           return
         }
         setApplied(true)
+        const disc = (data.disclosures && typeof data.disclosures === 'object') ? data.disclosures as NonNullable<typeof apiDisclosures> : null
+        apiDisclosuresRef.current = disc
+        setApiDisclosures(disc)
+        // WITHOUT SCOUT the push itself sets the time, so its outcome is known
+        // here: held when paid promotion did not read back, set otherwise.
+        if (!holdStatus && (publishAt || !isDraft)) {
+          if (typeof data.heldBack === 'string' && data.heldBack) {
+            setStatusOutcome('held')
+            setApplyError(`${data.heldBack} See it in YouTube Studio.`)
+            return
+          }
+          if (data.statusOk !== false) setStatusOutcome('set')
+        }
         if (warns.length > 0) {
           setApplyError(
             quotaHit
@@ -1496,7 +1515,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     // SCOUT DID NOT FINISH, which is not the same as the disclosure failing.
     // Said as what it is, with the one thing to press.
     if (fin?.error === 'timeout' || fin?.error === 'busy' || fin?.error === 'not-installed') {
-      setApplyError(`SCOUT did not finish in Studio, so ${publishAt ? 'the schedule' : `the ${proSettings.privacyStatus} setting`} was not applied. The video is unchanged on YouTube. Press Retry finish in Studio.`)
+      setApplyError(`SCOUT did not finish in Studio, so ${publishAt ? 'the schedule' : `the ${proSettings.privacyStatus} setting`} was not applied. The video is unchanged on YouTube. Press Run SCOUT again.`)
       return
     }
     // A DRAFT SCOUT STOPPED IN is left a draft. Its own Schedule is on the
@@ -1509,13 +1528,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     const vis = fin?.steps.find((s) => s.step === 'visibility')
     if (fin?.path === 'draft' && (!vis || vis.notReached)) {
       const stoppedAt = fin.steps.find((s) => !s.ok && !s.skipped && !s.notReached)
-      setApplyError(`SCOUT stopped${stoppedAt ? ` at ${studioStepLabel(stoppedAt.step)}` : ''} in the draft, so it was not ${publishAt ? 'scheduled' : `set to ${proSettings.privacyStatus}`}. It is still a draft on YouTube.${stoppedAt?.detail ? ` ${stoppedAt.detail}` : ''} Finish it in Studio, or press Retry finish in Studio.`)
+      setApplyError(`SCOUT stopped${stoppedAt ? ` at ${studioStepLabel(stoppedAt.step)}` : ''} in the draft, so it was not ${publishAt ? 'scheduled' : `set to ${proSettings.privacyStatus}`}. It is still a draft on YouTube.${stoppedAt?.detail ? ` ${stoppedAt.detail}` : ''} Press Run SCOUT again, or see it in YouTube Studio.`)
       return
     }
-    const confirmed = !finishDoDetails || studioDisclosuresConfirmed(fin)
+    // Paid promotion confirmed by YouTube's API counts as much as SCOUT's read
+    // of the Details page: either one is YouTube saying Yes.
+    const confirmed = !finishDoDetails || studioDisclosuresConfirmed(fin) || apiDisclosuresRef.current?.paidPromotion === true
     const where = fin?.path === 'draft' ? 'a draft' : 'private'
     if (!confirmed) {
-      setApplyError(`Kept as ${where} on purpose: SCOUT could not confirm paid promotion in Studio, and the video must not go out without it. Finish the Details page on YouTube, then ${publishAt ? 'schedule it' : `set it to ${proSettings.privacyStatus}`}.`)
+      setApplyError(`Kept as ${where} on purpose: SCOUT could not confirm paid promotion in Studio, and the video must not go out without it. Press Run SCOUT again, or see it in YouTube Studio.`)
       return
     }
     setApplying(true)
@@ -1529,9 +1550,18 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           notifySubscribers: proSettings.notifySubscribers,
           publishAt,
           privacyStatus: publishAt ? undefined : proSettings.privacyStatus,
+          disclosures: true,
         }),
       })
       const d2 = await safeJson(res2)
+      if (d2.disclosures && typeof d2.disclosures === 'object') {
+        apiDisclosuresRef.current = d2.disclosures as NonNullable<typeof apiDisclosures>
+        setApiDisclosures(apiDisclosuresRef.current)
+      }
+      if (typeof d2.heldBack === 'string' && d2.heldBack) {
+        setApplyError(`${d2.heldBack} See it in YouTube Studio.`)
+        return
+      }
       if (res2.ok && d2.statusOk !== false) setStatusOutcome('set')
       if (!res2.ok || d2.statusOk === false) {
         setApplyError(`Studio settings are in, but ${publishAt ? 'scheduling' : `setting it to ${proSettings.privacyStatus}`} through YouTube did not go through. It is still ${where}. Open it on YouTube and ${publishAt ? 'schedule it' : `set it to ${proSettings.privacyStatus}`}.`)
@@ -3382,72 +3412,31 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] -mt-0.5">Sent to YouTube either way. For a video that is already uploaded, YouTube only promises to honour it through Studio&apos;s own box, which SCOUT sets when it finishes the video in Studio.</p>
                   </div>
 
-                  {/* SCOUT auto-finish — the compliance fields YouTube's API
-                      can't set (paid promotion, AI disclosure, monetization +
-                      ad rating). Explicit opt-in, OFF by default. Only shown
-                      when the extension is installed. Gathered HERE so ONE
-                      button does push → finish in Studio. */}
-                  {extensionInstalled === true && (
-                    <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/[0.04] overflow-hidden">
-                      <label className="flex items-start gap-2.5 cursor-pointer px-3.5 py-3 hover:bg-[#7C3AED]/[0.03] transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={finishOptIn}
-                          disabled={finishRunning || applying}
-                          onChange={e => setFinishOptIn(e.target.checked)}
-                          className="mt-0.5 flex-shrink-0 w-4 h-4 accent-[#7C3AED]"
-                        />
-                        <span className="flex flex-col gap-0.5 min-w-0">
-                          <span className="text-xs font-bold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5 flex-wrap">
-                            <Sparkles size={12} className="text-[#7C3AED] flex-shrink-0" /> Also finish this video in YouTube Studio
-                            <span className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#7C3AED]/15 text-[#7C3AED]">Optional</span>
-                          </span>
-                          <span className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] leading-relaxed">
-                            The few settings YouTube&apos;s API can&apos;t touch. Right after you push, SCOUT opens Studio in your own logged-in browser and sets them on this video only. Nothing else on your channel changes.
-                          </span>
-                        </span>
-                      </label>
-
-                      {finishOptIn && (
-                        <div className="px-3.5 pb-3 flex flex-col gap-3 border-t border-[#7C3AED]/10 pt-2.5">
-                          {/* THE CREATOR'S OWN STEPS, in their order. A draft is
-                              walked through Edit draft page by page; every
-                              answer is read back off the page before the next,
-                              and the schedule is only set once paid promotion
-                              reads back as Yes. */}
-                          <div className="flex flex-col gap-1.5">
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-[#34c759] flex items-center gap-1"><CheckCircle size={10} /> SCOUT does these in Studio, then reads each one back</p>
-                            <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-1">
-                              <input type="checkbox" checked={finishDoDetails} disabled={finishRunning || applying} onChange={e => setFinishDoDetails(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
-                              <span><strong>Paid promotion: Yes</strong> and <strong>AI use: No</strong> <span className="text-[#86868b]">(untick if this video is AI generated or altered)</span></span>
-                            </label>
-                            <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-1">
-                              <input type="checkbox" checked={finishDoMonetize} disabled={finishRunning || applying} onChange={e => setFinishDoMonetize(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
-                              <span><strong>Monetization: On</strong> <span className="text-[#86868b]">(skipped on a channel without it)</span></span>
-                            </label>
-                            <label className={`flex items-start gap-2 text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-5 ${finishDoMonetize ? 'cursor-pointer' : 'opacity-50'}`}>
-                              <input type="checkbox" checked={finishDoMonetize && finishDoAdRating} disabled={!finishDoMonetize || finishRunning || applying} onChange={e => setFinishDoAdRating(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
-                              <span><strong>Ad suitability:</strong> None of the above, then Submit rating <span className="text-[#86868b]">(YouTube checks this rating, so only tick it when it is true)</span></span>
-                            </label>
-                            <label className={`flex items-start gap-2 text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-1 ${hasProductLink ? 'cursor-pointer' : 'opacity-50'}`}>
-                              <input type="checkbox" checked={finishDoTag && hasProductLink} disabled={!hasProductLink || finishRunning || applying} onChange={e => setFinishDoTag(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
-                              <span><strong>Tag the product</strong> {hasProductLink
-                                ? <span className="text-[#86868b]">(only the exact match for the link, never a similar one)</span>
-                                : <span className="text-[#86868b]">(no product found for this video yet)</span>}</span>
-                            </label>
-                            <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-1">
-                              <input type="checkbox" checked={finishDoEndScreen} disabled={finishRunning || applying} onChange={e => setFinishDoEndScreen(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
-                              <span><strong>End screen</strong> imported from your latest video</span>
-                            </label>
-                            <p className="text-[10px] text-[#86868b] pl-1">
-                              Then {proSettings.scheduleMode !== 'now' ? 'the schedule you picked above' : proSettings.privacyStatus === 'draft' ? 'nothing: it stays a draft, as you chose' : `it is set to ${proSettings.privacyStatus}`}.
-                              Notify subscribers follows your choice above ({proSettings.notifySubscribers ? 'Yes' : 'No'}).
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {/* NOTHING TO TICK. The creator asked never to have to finish a
+                      video in Studio: paid promotion and AI use go through
+                      YouTube's API on every push (read back, and nothing goes
+                      out without them), and SCOUT does the Studio-only steps
+                      by itself whenever it is installed. This only says what
+                      will happen. */}
+                  <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/[0.04] px-3.5 py-3 flex flex-col gap-1.5">
+                    <span className="text-xs font-bold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
+                      <Sparkles size={12} className="text-[#7C3AED] flex-shrink-0" /> Every YouTube setting, done for you
+                    </span>
+                    <span className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] leading-relaxed">
+                      <strong>Paid promotion: Yes</strong> and <strong>AI use: No</strong> are set through YouTube and read back. Nothing is scheduled or made public until paid promotion reads back as Yes.
+                    </span>
+                    {extensionInstalled === true ? (
+                      <span className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] leading-relaxed">
+                        Then SCOUT does the rest in Studio in your own browser, and reads each one back: <strong>monetization On</strong>, the <strong>ad suitability rating</strong>, the <strong>product tag</strong>{hasProductLink ? '' : ' (when a product is found)'} and the <strong>end screen</strong> from your latest video.
+                        {' '}Then {proSettings.scheduleMode !== 'now' ? 'the schedule you picked' : proSettings.privacyStatus === 'draft' ? 'it stays a draft, as you chose' : `it is set to ${proSettings.privacyStatus}`}. Notify subscribers: {proSettings.notifySubscribers ? 'Yes' : 'No'}.
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-[#ff9500] leading-relaxed">
+                        Monetization, the ad rating, the product tag and the end screen need SCOUT, which is not installed in this browser.{' '}
+                        <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className="underline font-semibold">Add SCOUT to Chrome</a> and MVP does them for you on the next push.
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -3460,13 +3449,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     // When Pro opts SCOUT in, this one button pushes THEN finishes
                     // in Studio — so the label + spinner cover both phases.
                     const willFinish = isPro && extensionInstalled === true && finishOptIn && anyFinishStep
-                    const busySuffix = willFinish ? ' + finishing in Studio…' : '…'
-                    const idleSuffix = willFinish ? ' + Finish in Studio' : ''
+                    const busySuffix = willFinish ? ' + Studio steps…' : '…'
+                    const idleSuffix = ''
                     // SENT IS NOT SCHEDULED: with SCOUT finishing, the time is set
-                    // after it, and only says so once it is.
-                    const held = applied && willFinish && statusOutcome !== 'set'
+                    // after it, and only says so once it is. Without SCOUT the
+                    // push sets it, unless paid promotion did not read back.
+                    const held = applied && (willFinish ? statusOutcome !== 'set' : statusOutcome === 'held')
                     const verb = (busyBase: string, done: string, idleBase: string) =>
-                      held && !draft ? (finishRunning ? 'Sent, finishing in Studio…' : statusOutcome === 'held' ? (scheduling ? 'Sent, NOT scheduled (see below)' : 'Sent, visibility NOT set (see below)') : 'Sent to YouTube')
+                      held && !draft ? (finishRunning ? 'Sent, SCOUT is in Studio…' : statusOutcome === 'held' ? (scheduling ? 'Sent, NOT scheduled (see below)' : 'Sent, visibility NOT set (see below)') : 'Sent to YouTube')
                       : scheduling ? (applying ? `Scheduling${busySuffix}` : applied ? 'Scheduled on YouTube' : `Schedule on YouTube${idleSuffix}`)
                         : draft ? (applying ? `Saving draft${busySuffix}` : applied ? 'Saved to Draft' : `Save Draft to YouTube${idleSuffix}`)
                           : (applying ? `${busyBase}${busySuffix}` : applied ? done : `${idleBase}${idleSuffix}`)
@@ -3494,44 +3484,58 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                   </p>
                 )}
 
-                {/* Post-apply Studio finish — fields YouTube's API can't set.
-                    When SCOUT is installed the user can OPT IN (explicit
-                    checkbox) and SCOUT drives Studio's real controls for them;
-                    otherwise it's the 3-click manual checklist. Dismissible so
-                    repeat applies don't nag. */}
+                {/* AFTER THE PUSH: what YouTube and Studio now show, and one
+                    button to look. No checklist to do by hand: the creator's
+                    rule is that nobody should have to finish a video in
+                    Studio. What did not work is said, with Run SCOUT again. */}
                 {applied && !finishCheckDone && (
-                  <div className="rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 px-4 py-3 flex flex-col gap-3">
+                  <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/[0.04] px-4 py-3 flex flex-col gap-3">
                     <div className="flex items-start gap-2">
-                      <AlertCircle size={14} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
+                      <Youtube size={14} className="text-[#ff0000] mt-0.5 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Finish on YouTube</p>
-                        <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-                          {extensionInstalled === true
-                            ? (finishOptIn
-                                ? 'SCOUT is handling the Studio-only fields you ticked in step 4. Here’s how it went — anything left over you can tick by hand below.'
-                                : 'A few settings YouTube’s API can’t touch. Tick “Also finish in Studio” up in step 4 next time, or do them by hand below.')
-                            : 'YouTube’s API doesn’t accept these fields — open YouTube and tick them once. Takes 10 seconds.'}
-                        </p>
+                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">On YouTube now</p>
+                        {/* READ BACK FROM YOUTUBE after the push, not what was
+                            sent: ? means YouTube did not say. */}
+                        {apiDisclosures?.asked && (
+                          <p className="text-[11px] flex flex-wrap gap-x-3 gap-y-0.5">
+                            <span className={apiDisclosures.paidPromotion === true ? 'text-[#34c759]' : apiDisclosures.paidPromotion === false ? 'text-[#ff3b30]' : 'text-[#86868b]'}>
+                              {apiDisclosures.paidPromotion === true ? '✓' : apiDisclosures.paidPromotion === false ? '✗' : '?'} Paid promotion: Yes
+                            </span>
+                            <span className={apiDisclosures.aiUseNo === true ? 'text-[#34c759]' : 'text-[#86868b]'}>
+                              {apiDisclosures.aiUseNo === true ? '✓' : '?'} AI use: No{apiDisclosures.aiUseNo === true ? '' : ' (SCOUT sets it in Studio)'}
+                            </span>
+                          </p>
+                        )}
+                        {!isPro && (
+                          <p className="text-[11px] text-[#ff9500] leading-relaxed">
+                            Title, description, tags and thumbnail were sent. Paid promotion, AI use, the schedule and the Studio steps were not: those come with the Pro plan&apos;s one click push.
+                          </p>
+                        )}
+                        {apiDisclosures?.error && (
+                          <p className="text-[10px] text-[#ff9500] mt-0.5 break-words">YouTube said: {apiDisclosures.error}</p>
+                        )}
+                        {isPro && extensionInstalled !== true && (
+                          <p className="text-[11px] text-[#ff9500] mt-1 leading-relaxed">
+                            Monetization, the ad rating, the product tag and the end screen were not set: SCOUT is not installed in this browser.{' '}
+                            <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className="underline font-semibold">Add SCOUT to Chrome</a>, then push again.
+                          </p>
+                        )}
                       </div>
                       <button
                         onClick={dismissFinish}
                         className="text-[10px] text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] flex-shrink-0"
-                        title="Done — move this video to Metadata sent"
+                        title="Done: move this video to Metadata sent"
                       >
                         Dismiss
                       </button>
                     </div>
 
-                    {/* SCOUT auto-finish RESULTS. The opt-in + per-action
-                        checkboxes now live up in Studio Settings (step 4) and
-                        run chained off the one push button — so here we only
-                        report what SCOUT did (or that it's still running). */}
                     {extensionInstalled === true && (finishRunning || finishResult || finishError) && (
                       <div className="rounded-lg border border-[#7C3AED]/30 bg-[#7C3AED]/5 px-3 py-2.5 flex flex-col gap-2">
                         {finishRunning && (
                           <div className="flex items-center gap-2 text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
                             <Loader2 size={12} className="animate-spin text-[#7C3AED]" />
-                            <span>Finishing this video in YouTube Studio…</span>
+                            <span>SCOUT is doing the Studio steps on this video…</span>
                           </div>
                         )}
 
@@ -3582,43 +3586,22 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                               disabled={finishRunning}
                               className="inline-flex items-center justify-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-50 transition-colors"
                             >
-                              <RefreshCw size={11} /> Retry finish in Studio
+                              <RefreshCw size={11} /> Run SCOUT again
                             </button>
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* Manual checklist — the always-available fallback. Paid
-                        promotion is manual either way (SCOUT doesn't touch it). */}
-                    <div className="flex flex-col gap-2">
-                      <p className="text-[10px] uppercase tracking-wide text-[#86868b] font-semibold">
-                        {extensionInstalled === true ? 'Or do it by hand' : 'Do it by hand (3 clicks)'}
-                      </p>
-                      <ul className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] flex flex-col gap-1.5 pl-1">
-                        <li className="flex items-start gap-2">
-                          <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">1</span>
-                          <span><strong>Paid promotion</strong>: Details → tick <em>&quot;Yes, the video contains paid promotion&quot;</em>.</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                          <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">2</span>
-                          <span><strong>Monetization</strong>: Monetization tab → toggle <em>On</em>.</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                          <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">3</span>
-                          <span><strong>Content rating</strong>: pick <em>&quot;None of the above&quot;</em> for each row, then Submit.</span>
-                        </li>
-                      </ul>
 
-                      <a
-                        href={`https://studio.youtube.com/video/${video.youtubeVideoId}/edit`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#ff0000] hover:bg-[#cc0000] transition-colors"
-                      >
-                        <Youtube size={11} /> Open this video on YouTube <ExternalLink size={10} />
-                      </a>
-                    </div>
+                    <a
+                      href={`https://studio.youtube.com/video/${video.youtubeVideoId}/edit`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#ff0000] hover:bg-[#cc0000] transition-colors"
+                    >
+                      <Youtube size={11} /> See in YouTube Studio <ExternalLink size={10} />
+                    </a>
                   </div>
                 )}
               </div>

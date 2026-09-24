@@ -121,10 +121,32 @@ check('the page waits longer than SCOUT does', bgTimeout > 0 && webTimeout > bgT
 // ── the screens ──────────────────────────────────────────────────────────
 const CP = code(read('app/(dashboard)/co-pilot/page.tsx'))
 {
+  // ── Co-Pilot takes Liftoff's API steps, and nobody finishes in Studio ──
+  const AP = read('app/api/youtube/apply/route.ts')
+  const CPX = read('app/(dashboard)/co-pilot/page.tsx')
+  const paidAt = AP.indexOf('await yt.setPaidPromotion(body.videoId, true)')
+  const readAt = AP.indexOf('const rb = await yt.readDisclosures(body.videoId)')
+  const statusAt = AP.indexOf('await yt.updateVideoStatus(body.videoId, {')
+  check('the push sets paid promotion through the API and reads it back before any status call',
+    paidAt > -1 && readAt > paidAt && statusAt > readAt)
+  check('nothing is scheduled or made public unless paid promotion read back',
+    /if \(goesOut && disclosures\.paidPromotion !== true\) \{/.test(AP)
+    && /privacyStatus: heldBack \? undefined : body\.privacyStatus,/.test(AP) && /publishAt: heldBack \? null : body\.publishAt \?\? null,/.test(AP))
+  check('AI use No rides on a status call that happens anyway, so a draft stays a draft',
+    /if \(!sendingStatus\) return/.test(AP) && /\.\.\.\(disclosures\.asked \? \{ containsSyntheticMedia: false \} : \{\}\)/.test(AP))
+  check('Co-Pilot asks for the disclosures on the push and on the step after SCOUT',
+    (CPX.match(/disclosures: true,/g) ?? []).length === 2)
+  check('there is no Studio opt-in to tick', !/setFinishOptIn|setFinishDo/.test(CPX) && /const finishOptIn = true/.test(CPX))
+  check('no by-hand checklist, one See in YouTube Studio button',
+    /See in YouTube Studio/.test(CPX) && !/Or do it by hand|Do it by hand \(3 clicks\)|Retry finish in Studio/.test(CPX))
+  check('the API\'s paid promotion answer counts for the schedule after SCOUT',
+    /apiDisclosuresRef\.current\?\.paidPromotion === true/.test(CPX))
+}
+{
   // ── audit: what the Co-Pilot button and Retry say and do ───────────────
   const CPR = read('app/(dashboard)/co-pilot/page.tsx')
   check('Co-Pilot does not say Scheduled until the time is set',
-    /const held = applied && willFinish && statusOutcome !== 'set'/.test(CPR) && /Sent, NOT scheduled \(see below\)/.test(CPR))
+    /const held = applied && \(willFinish \? statusOutcome !== 'set' : statusOutcome === 'held'\)/.test(CPR) && /Sent, NOT scheduled \(see below\)/.test(CPR))
   check('the outcome is only "set" when something set it',
     /if \(studioSetVisibility\(fin\)\) \{ setStatusOutcome\('set'\); return \}/.test(CPR)
     && /if \(res2\.ok && d2\.statusOk !== false\) setStatusOutcome\('set'\)/.test(CPR))

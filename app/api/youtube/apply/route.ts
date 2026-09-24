@@ -12,9 +12,12 @@
  *     query param
  *   - Adds the video to a playlist (if `playlistId` provided)
  *
- * Things YouTube does NOT expose to apps (surface in the UI as a
- * post-apply "Finish in Studio (3 clicks)" checklist instead):
- *   - Paid promotion disclosure (containsPaidPromotion is read-only via API)
+ * Paid promotion (paidProductPlacementDetails) and the AI-use answer
+ * (status.containsSyntheticMedia) ARE set here now, the same way Liftoff sets
+ * them, and read back. Nothing is scheduled or made public unless paid
+ * promotion reads back as Yes.
+ *
+ * Things YouTube does NOT expose to apps (SCOUT does them in Studio):
  *   - Monetization access policy (only available with youtubepartner scope,
  *     which Google doesn't grant to general third-party tools)
  *   - The advertiser-friendly content rating questionnaire — Studio-only
@@ -85,6 +88,9 @@ export async function POST(request: NextRequest) {
       /** Allow embedding (status.embeddable). Passed explicitly so a status PUT
        *  doesn't reset it — matters for the two-phase finish flow. */
       embeddable?: boolean
+      /** Paid promotion Yes and AI use No, through YouTube's own API, then
+       *  read back. The page sends true; the gate below depends on it. */
+      disclosures?: boolean
     }
     if (!body.videoId) return NextResponse.json({ error: 'videoId required' }, { status: 400 })
 
@@ -157,19 +163,60 @@ export async function POST(request: NextRequest) {
       })())
     }
 
-    // 2. Status update (privacy, made-for-kids, paid promotion, altered
-    //    content, schedule / notifySubscribers). Run AFTER snippet update
-    //    so a videos.list race can't read stale state if YT replicates.
-    const statusUpdate = yt.updateVideoStatus(body.videoId, {
-      madeForKids: body.madeForKids,
-      privacyStatus: body.privacyStatus,
-      publishAt: body.publishAt ?? null,
-      // The creator's toggle, as an explicit boolean. Anything but `true`
-      // (including a page that did not send it) is No: YouTube's own default
-      // is to notify, so leaving it undefined is what used to ring the bell.
-      notifySubscribers: body.notifySubscribers === true,
-      embeddable: body.embeddable,
-    })
+    // 2. THE DISCLOSURES, THEN THE STATUS, IN THAT ORDER (the same steps
+    //    Liftoff's uploader takes). Paid promotion is set through YouTube's
+    //    API and read back; the AI-use answer rides on the status call.
+    //
+    //    NOTHING GOES OUT WITHOUT IT. A time or a public/unlisted setting is
+    //    only sent once paid promotion reads back as Yes. Otherwise the
+    //    video's visibility is left as it was and the answer says why.
+    //
+    //    A DRAFT IS LEFT A DRAFT. The page sends no status fields for a draft
+    //    (SCOUT answers its questions in Studio), so the AI-use answer and
+    //    embedding are only added to a status call that is happening anyway.
+    const sendingStatus = body.madeForKids !== undefined || !!body.privacyStatus || !!body.publishAt
+    const goesOut = !!body.publishAt || body.privacyStatus === 'public' || body.privacyStatus === 'unlisted'
+    const disclosures: {
+      asked: boolean; paidPromotion: boolean | null; aiUseNo: boolean | null; error: string | null
+    } = { asked: body.disclosures === true, paidPromotion: null, aiUseNo: null, error: null }
+    let heldBack: string | null = null
+    const statusUpdate = (async () => {
+      if (disclosures.asked) {
+        try { await yt.setPaidPromotion(body.videoId, true) } catch (pe) {
+          disclosures.error = (pe instanceof Error ? pe.message : String(pe)).slice(0, 200)
+        }
+        try {
+          const rb = await yt.readDisclosures(body.videoId)
+          disclosures.paidPromotion = rb?.paidPromotion ?? null
+          disclosures.aiUseNo = rb ? rb.containsSyntheticMedia === false : null
+        } catch (re) {
+          disclosures.error = disclosures.error ?? `could not read the video back: ${(re instanceof Error ? re.message : String(re)).slice(0, 160)}`
+        }
+        if (goesOut && disclosures.paidPromotion !== true) {
+          heldBack = `YouTube did not confirm paid promotion on this video${disclosures.error ? ` (${disclosures.error})` : ''}, so it was not ${body.publishAt ? 'scheduled' : `set to ${body.privacyStatus}`}. Its visibility was left exactly as it was.`
+        }
+      }
+      if (!sendingStatus) return
+      await yt.updateVideoStatus(body.videoId, {
+        madeForKids: body.madeForKids,
+        // HELD MEANS UNTOUCHED, not forced private: this route also serves
+        // videos that are already public, and taking one down is not a hold.
+        privacyStatus: heldBack ? undefined : body.privacyStatus,
+        publishAt: heldBack ? null : body.publishAt ?? null,
+        // The creator's toggle, as an explicit boolean. Anything but `true`
+        // (including a page that did not send it) is No: YouTube's own default
+        // is to notify, so leaving it undefined is what used to ring the bell.
+        notifySubscribers: body.notifySubscribers === true,
+        embeddable: body.embeddable ?? (disclosures.asked ? true : undefined),
+        ...(disclosures.asked ? { containsSyntheticMedia: false } : {}),
+      })
+      if (disclosures.asked) {
+        try {
+          const rb2 = await yt.readDisclosures(body.videoId)
+          if (rb2) disclosures.aiUseNo = rb2.containsSyntheticMedia === false
+        } catch { /* the first read stands */ }
+      }
+    })()
 
     // 3. Playlist add — independent, run in parallel with status.
     const playlistTask = body.playlistId
@@ -258,7 +305,11 @@ export async function POST(request: NextRequest) {
       }))
     }
 
-    return NextResponse.json({ ok: warnings.length === 0, warnings, statusOk, quotaHit, productImageSaved })
+    return NextResponse.json({
+      ok: warnings.length === 0 && !heldBack, warnings, statusOk, quotaHit, productImageSaved,
+      // What YouTube reports after the push, and whether the time was held.
+      disclosures, heldBack,
+    })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return NextResponse.json({ error: msg }, { status: 500 })
