@@ -7556,13 +7556,51 @@ function studioFinishMonetizeInPage(opts) {
       out.debug.onOptText = onOpt ? visText(onOpt) : null
       if (onOpt) { click(onOpt); await sleep(1000) }
 
-      // 2) Ad-suitability self-certification, ONLY WHEN ASKED. This used to
-      //    submit the rating whatever the creator had ticked.
-      const submitCert = o.selfCert ? await waitFind([/submit rating/i, /^submit$/i], 6000) : null
-      out.debug.submitCertText = submitCert ? visText(submitCert) : null
-      if (submitCert) { click(submitCert); out.certOk = true; await sleep(1000) }
+      // 2) ON TURNS DONE INTO NEXT, and Next opens the rating ("Tell us
+      //    what's in your video"): None of the above, then Submit, which only
+      //    lights up once the box is ticked. Pressing a greyed Submit used to
+      //    count as the rating sent.
+      const nextBtn = await waitFind([/^next$/i], 4000)
+      out.debug.nextText = nextBtn ? visText(nextBtn) : null
+      if (nextBtn) { click(nextBtn); await sleep(1500) }
+      const rateOpen = () => /tell us what.s in your video|does your video.s content/i.test(document.body ? document.body.innerText : '')
+      if (rateOpen()) {
+        if (!o.selfCert) {
+          const cancel = find([/^cancel$/i])
+          if (cancel) click(cancel)
+          out.debug.rating = 'not-asked'
+        } else {
+          const isBox = (el) => { const t = (el.tagName || '').toLowerCase(); const r = el.getAttribute && el.getAttribute('role'); return /checkbox/.test(t) || r === 'checkbox' }
+          let box = null
+          for (const el of deepAll()) {
+            if (!isBox(el)) continue
+            let e = el, txt = ''
+            for (let i = 0; i < 4 && e; i++) { txt = (e.textContent || '') + ' ' + ((e.getAttribute && e.getAttribute('aria-label')) || ''); if (/none of the above/i.test(txt)) break; e = e.parentElement || (e.parentNode && e.parentNode.host) }
+            if (/none of the above/i.test(txt)) { box = el; break }
+          }
+          if (!box) box = deepAll().find((el) => /^none of the above$/i.test(visText(el))) || null
+          out.debug.noneFound = !!box
+          if (box) {
+            try { box.scrollIntoView({ block: 'center' }) } catch (e) {}
+            await sleep(400)
+            if ((box.getAttribute && box.getAttribute('aria-checked')) !== 'true') { click(box); await sleep(800) }
+            const enabled = (el) => el && el.getAttribute && el.getAttribute('aria-disabled') !== 'true' && !el.hasAttribute('disabled')
+            let submit = null
+            const end = Date.now() + 8000
+            while (Date.now() < end) { const b = find([/^submit( rating)?$/i]); if (enabled(b)) { submit = b; break } await sleep(400) }
+            if (submit) {
+              click(submit)
+              const closeBy = Date.now() + 15000
+              while (Date.now() < closeBy && rateOpen()) await sleep(500)
+              out.certOk = !rateOpen()
+            }
+            out.debug.rating = out.certOk ? 'submitted' : (submit ? 'did not close' : 'Submit never lit up')
+          }
+        }
+      }
 
-      // 3) Save the monetization change.
+      // 3) Save the monetization change on the page (Ways to earn has its own
+      //    Save at the top).
       const save = await waitFind([/^save$/i, /^done$/i], 6000)
       out.debug.saveText = save ? visText(save) : null
       if (save) {
@@ -7586,7 +7624,7 @@ function studioFinishMonetizeInPage(opts) {
         out.ok = monOn && (!o.selfCert || out.certOk)
         out.partial = monOn && !out.ok
         out.detail = monOn
-          ? 'Monetization On. Read back from Studio.' + (o.selfCert ? (out.certOk ? ' Submit rating pressed (Studio does not show the rating back).' : ' The Submit rating button was not found, so the rating was not sent.') : '')
+          ? 'Monetization On. Read back from Studio.' + (o.selfCert ? (out.certOk ? ' Rating: None of the above, submitted (the rating window closed).' : ' The rating was not submitted (' + (out.debug.rating || 'no rating window appeared') + ').') : '')
           : 'Pressed Save, but Studio does not show monetization as On'
       } else {
         out.detail = out.certOk ? 'Rating submitted; Save not found' : 'Controls not found — see debug'
@@ -8493,7 +8531,45 @@ function studioKitInstallInPage() {
     return out
   }
 
-  K.steps.monetization = async (out, o) => {
+    // ── YOUTUBE'S RATING: "Tell us what's in your video" ───────────────────
+  // Opened by Next after monetization On. Scroll to None of the above, tick
+  // it, then Submit, which only lights up once it is ticked. Read back by the
+  // dialog closing. Returns submitted, not-asked, failed, or null (no rating
+  // dialog appeared, so there was nothing to answer).
+  K.rate = async (o, out) => {
+    const open = () => (/tell us what.s in your video|does your video.s content/i.test(visibleText(document)) ? true : null)
+    if (!(await waitFor(open, 8000, 400))) return null
+    if (!o.selfCert) {
+      const cancel = findBtn(/^cancel$/i, document)
+      if (cancel) click(cancel)
+      return 'not-asked'
+    }
+    const none = () => {
+      let fb = null
+      for (const el of all(document)) {
+        if (!isCheckbox(el) || !visible(el) && !(el.getAttribute && el.getAttribute('aria-checked') != null)) continue
+        if (!/none of the above/i.test(labelOf(el))) continue
+        if (el.getAttribute && el.getAttribute('aria-checked') != null) return el
+        if (!fb) fb = el
+      }
+      if (fb) return fb
+      // Or the words themselves, which toggle the box beside them.
+      return all(document).find((el) => visible(el) && /^none of the above$/i.test(deepText(el))) || null
+    }
+    const box = await waitFor(none, 8000, 400)
+    if (!box) { out.readBack.ratingWhy = 'no None of the above box'; return 'failed' }
+    try { box.scrollIntoView({ block: 'center' }) } catch (e) {}
+    await sleep(400)
+    if (!isChecked(box)) { click(box); await sleep(700) }
+    const submit = await waitFor(() => findBtn(/^submit( rating)?$/i, document, { enabled: true }), 8000, 400)
+    if (!submit) { out.readBack.ratingWhy = 'Submit never lit up after ticking None of the above'; return 'failed' }
+    click(submit)
+    const closed = await waitFor(() => (open() ? null : true), 15000, 500)
+    if (!closed) { out.readBack.ratingWhy = 'the rating window did not close after Submit'; return 'failed' }
+    return 'submitted'
+  }
+
+K.steps.monetization = async (out, o) => {
     const dlg = mainDialog()
     if (!dlg) { out.detail = 'The draft window closed'; return out }
     const trigger = () => {
@@ -8536,6 +8612,13 @@ function studioKitInstallInPage() {
         })
         if (opt) return opt
       }
+      // THE WORD ITSELF, in a popup that just opened: clicking the label "On"
+      // checks the circle beside it, as a hand does.
+      for (const sc of dialogsNow().filter((x) => !before.includes(x))) {
+        const w = all(sc).filter((el) => visible(el) && /^on$/i.test(deepText(el)))
+          .sort((x, y) => (x.getBoundingClientRect().width * x.getBoundingClientRect().height) - (y.getBoundingClientRect().width * y.getBoundingClientRect().height))[0]
+        if (w) return w
+      }
       return null
     }
     // AND MORE THAN ONE WAY IN. The text "Off" is often a label inside the
@@ -8562,11 +8645,21 @@ function studioKitInstallInPage() {
       return out
     }
     if (!isChecked(onOpt)) { click(onOpt); await sleep(600) }
-    const done = findBtn(/^(done|save)$/i, newDialog(before) || document, { enabled: true })
-    if (done) { click(done); await sleep(1200) }
+    // ON TURNS "DONE" INTO "NEXT". With On picked the menu's button reads
+    // Next, and Next opens YouTube's rating ("Tell us what's in your video").
+    // Only Done or Save was looked for, so the run stopped in the menu.
+    const scopeNow = () => newDialog(before) || document
+    const nextOrDone = await waitFor(() => findBtn(/^(next|done|save)$/i, scopeNow(), { enabled: true }), 5000, 300)
+    out.readBack.menuButton = nextOrDone ? (deepText(nextOrDone) || attrLabel(nextOrDone)) : null
+    if (nextOrDone) { click(nextOrDone); await sleep(1200) }
+    out.readBack.rating = await K.rate(o, out)
     out.readBack.monetization = state()
     out.ok = out.readBack.monetization === 'on'
-    out.detail = out.ok ? 'Monetization On. Read back from Studio.' : 'Chose On, but Studio still shows ' + (out.readBack.monetization || 'nothing')
+    const said = out.readBack.rating === 'submitted' ? ' Rating: None of the above, submitted.'
+      : out.readBack.rating === 'not-asked' ? ' The rating was not asked for, so it was cancelled.'
+      : out.readBack.rating === 'failed' ? ' The rating could not be submitted: ' + (out.readBack.ratingWhy || 'see Studio') + '.' : ''
+    out.detail = (out.ok ? 'Monetization On. Read back from Studio.' : 'Chose On, but Studio still shows ' + (out.readBack.monetization || 'nothing')) + said
+    if (out.ok && out.readBack.rating === 'failed') { out.ok = false; out.partial = true }
     return out
   }
 
@@ -9148,7 +9241,19 @@ async function runStudioDraft(tabId, videoId, want) {
       return steps
     }
     done.add(pg)
-    if (pg === 'monetization') steps.push(await exec('monetization', { on: !!want.monetize }))
+    if (pg === 'monetization') {
+      const mo = await exec('monetization', { on: !!want.monetize, selfCert: !!want.selfCert })
+      steps.push(mo)
+      // THE RATING WENT WITH IT: Next after On opens it, so the separate Ad
+      // suitability page never comes, and this is its row.
+      const rt = mo && mo.readBack ? mo.readBack.rating : null
+      if (want.selfCert && rt) {
+        done.add('adsuit')
+        steps.push(rt === 'submitted'
+          ? { step: 'adsuit', ok: true, detail: 'None of the above, submitted. Read back by the rating window closing.' }
+          : { step: 'adsuit', ok: false, detail: 'The rating could not be submitted: ' + (mo.readBack.ratingWhy || 'see Studio') })
+      }
+    }
     else if (pg === 'adsuit') steps.push(await exec('adsuit', { submit: !!want.selfCert }))
     else if (pg === 'elements') {
       if (want.tagProduct && want.productUrl) steps.push(await exec('tagproduct', { productUrl: String(want.productUrl), amazonUrl: want.amazonUrl ? String(want.amazonUrl) : '', productTitle: want.productTitle ? String(want.productTitle) : '' }))

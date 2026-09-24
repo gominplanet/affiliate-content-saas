@@ -136,6 +136,23 @@ check('the manifest and the app registry agree on the version',
   check('then Next, then Done on the timestamps page', inOrderRaw(kitTag, 'click(pick)', "findBtn(/^next$/i, d, { enabled: true })") && /findBtn\(\/\^done\$\/i, document, \{ enabled: true \}\)/.test(kitTag))
 }
 
+// ── 1.21.5: monetization the way the creator does it ─────────────────────
+{
+  const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
+  check('after On, Next is pressed (On turns Done into Next)', /findBtn\(\/\^\(next\|done\|save\)\$\/i, scopeNow\(\), \{ enabled: true \}\)/.test(kitMon))
+  const rate = BG.slice(BG.indexOf('K.rate = async'), BG.indexOf('K.steps.monetization = '))
+  check('the rating ticks None of the above, then Submits only once it lights up, and counts only a window that closed',
+    /none of the above/i.test(rate) && /if \(!isChecked\(box\)\) \{ click\(box\)/.test(rate)
+    && /findBtn\(\/\^submit\( rating\)\?\$\/i, document, \{ enabled: true \}\)/.test(rate) && /return 'submitted'/.test(rate)
+    && rate.indexOf("waitFor(() => (open() ? null : true)") > -1 && rate.indexOf("waitFor(() => (open() ? null : true)") < rate.indexOf("return 'submitted'"))
+  check('not asked for, the rating is cancelled, never submitted', /if \(!o\.selfCert\) \{\s*const cancel = findBtn\(\/\^cancel\$\/i, document\)/.test(rate))
+  check('the rating done with monetization is the Ad suitability row',
+    /const mo = await exec\('monetization', \{ on: !!want\.monetize, selfCert: !!want\.selfCert \}\)/.test(BG) && /done\.add\('adsuit'\)/.test(BG))
+  const vid = BG.slice(BG.indexOf('function studioFinishMonetizeInPage('), BG.indexOf('function studioFinishEndScreenInPage('))
+  check('the video page does the same: Next, None of the above, a lit Submit, then its own Save',
+    /const nextBtn = await waitFind\(\[\/\^next\$\/i\], 4000\)/.test(vid) && /if \(enabled\(b\)\) \{ submit = b; break \}/.test(vid) && /out\.certOk = !rateOpen\(\)/.test(vid))
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)
