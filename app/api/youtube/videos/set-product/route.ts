@@ -40,8 +40,10 @@ export async function POST(request: Request) {
     .eq(isUuid ? 'id' : 'youtube_video_id', videoId)
     .eq('user_id', user.id)
     .maybeSingle()
-  if (!vid) return NextResponse.json({ error: 'Video not found' }, { status: 404 })
-  const rowId = vid.id as string
+  // NOT SYNCED YET is not "no such video": Co-Pilot lists videos straight
+  // from YouTube, and one MVP has never stored still gets its product for
+  // this card. The answer says it was not kept.
+  const rowId = vid ? vid.id as string : null
 
   // Resolve the ASIN: straight from the URL/ASIN, else follow the link to its
   // true Amazon destination (geni.us, amzn.to, a.co…) and read it there.
@@ -69,6 +71,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Couldn’t load that product from Amazon. Try again in a moment.' }, { status: 502 })
   }
 
+  if (!rowId) return NextResponse.json({ ok: true, asin, title, imageUrl, stored: false })
+
   const ok = await checkedWrite('youtube.videos.set-product',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('youtube_videos').update({
@@ -79,5 +83,5 @@ export async function POST(request: Request) {
     { userId: user.id, videoId: rowId, asin })
   if (!ok) return NextResponse.json({ error: 'Could not save the product. Try again.' }, { status: 500 })
 
-  return NextResponse.json({ ok: true, asin, title, imageUrl })
+  return NextResponse.json({ ok: true, asin, title, imageUrl, stored: true })
 }

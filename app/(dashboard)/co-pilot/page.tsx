@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { asinFromAmazonUrl } from '@/lib/asin'
-import { saveProductImage } from '@/components/product/SavedProductImage'
+import SavedProductImage, { saveProductImage, useSavedProductImage } from '@/components/product/SavedProductImage'
 import { detectLineEdit, LINE_META, type LineKey } from '@/lib/yt-description-lines'
 import PageHero from '@/components/layout/PageHero'
 import { CoPilotGuide } from '@/components/guide/tool-guides'
@@ -61,12 +61,19 @@ interface DraftVideo {
  * generator (thumbnails, blog, pins) reads it — so fixing it here fixes the
  * "wrong product" everywhere at once. Renders only inside an expanded card.
  */
-function ProductConfirm({ youtubeVideoId, detectedAsin }: { youtubeVideoId: string; detectedAsin: string | null }) {
+function ProductConfirm({ youtubeVideoId, detectedAsin, onFixed, onRewrite }: {
+  youtubeVideoId: string; detectedAsin: string | null
+  /** The card now works on this ASIN: every generator is sent it. */
+  onFixed?: (asin: string) => void
+  /** Rewrite the title, description and thumbnail for the product just set.
+   *  Offered, not done automatically, so edits already made are not lost. */
+  onRewrite?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const [link, setLink] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [fixed, setFixed] = useState<{ title: string; imageUrl: string | null } | null>(null)
+  const [fixed, setFixed] = useState<{ title: string; imageUrl: string | null; stored: boolean } | null>(null)
 
   async function submit() {
     const v = link.trim()
@@ -80,7 +87,8 @@ function ProductConfirm({ youtubeVideoId, detectedAsin }: { youtubeVideoId: stri
       })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(d.error || 'Could not set the product')
-      setFixed({ title: d.title, imageUrl: d.imageUrl ?? null })
+      setFixed({ title: d.title, imageUrl: d.imageUrl ?? null, stored: d.stored !== false })
+      if (typeof d.asin === 'string' && d.asin) onFixed?.(d.asin)
       setOpen(false); setLink('')
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed')
@@ -95,7 +103,12 @@ function ProductConfirm({ youtubeVideoId, detectedAsin }: { youtubeVideoId: stri
         <div className="flex items-center gap-1.5 text-[#1d1d1f] dark:text-[#f5f5f7]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           {fixed.imageUrl && <img src={fixed.imageUrl} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />}
-          <span className="font-medium truncate">Product set: {fixed.title}</span>
+          <span className="font-medium truncate">Product set: {fixed.title}{fixed.stored ? '' : ' (for this visit: MVP has not synced this video yet, so it is not saved)'}</span>
+          {onRewrite && (
+            <button type="button" onClick={onRewrite} className="ml-auto flex-shrink-0 font-semibold text-[#7C3AED] hover:underline">
+              Rewrite for this product →
+            </button>
+          )}
         </div>
       ) : (
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -735,6 +748,13 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   /** Optional creator-pasted product link — guarantees MVP renders the exact
    *  product (Amazon / geni.us / store URL). Sent on every generate path. */
   const [productUrl, setProductUrl] = useState('')
+  // THE PRODUCT THE CREATOR SET on this card, which wins over the ASIN read
+  // from the video's title. It used to be stored and then ignored: every
+  // generator was still sent the title's ASIN, so fixing a wrong product
+  // changed nothing until a reload, and a wrong ASIN in the title won even
+  // then.
+  const [fixedAsin, setFixedAsin] = useState<string | null>(null)
+  const cardAsin = fixedAsin ?? video.detectedAsin ?? null
   /** When a product is already detected for the video, the paste box is hidden
    *  behind this toggle — the creator only reveals it to override the detection. */
   const [overrideProduct, setOverrideProduct] = useState(false)
@@ -1010,8 +1030,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    */
   const effectiveAsin = (() => {
     const override = productUrl.trim()
-    if (override) return asinFromAmazonUrl(override) || video.detectedAsin || null
-    return video.detectedAsin || null
+    if (override) return asinFromAmazonUrl(override) || cardAsin || null
+    return cardAsin || null
   })()
   /** A link SCOUT can paste into Studio's Tag products search. */
   const hasProductLink = !!(productUrl.trim() || productLinkFor(effectiveAsin))
@@ -1031,8 +1051,16 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    * UI that reports what actually happened.
    */
   const [savedProductImage, setSavedProductImage] = useState<'saving' | 'saved' | 'failed' | null>(null)
+  // THE THUMBNAIL ALREADY MADE FOR THIS PRODUCT (the Thumbnail Generator, or
+  // an earlier Co-Pilot run, files its latest one against the ASIN). Offered
+  // before the generate button, so a second image is not paid for when the
+  // creator already has one they like.
+  const recalledThumb = useSavedProductImage(effectiveAsin)
   useEffect(() => {
     if (!thumbnailUrl || !effectiveAsin) { setSavedProductImage(null); return }
+    // A RECALLED IMAGE IS ALREADY FILED: saving it again would only restamp
+    // it as approved in Co-Pilot today.
+    if (thumbnailModel === 'recalled') { setSavedProductImage('saved'); return }
     let cancelled = false
     setSavedProductImage('saving')
     ;(async () => {
@@ -1131,7 +1159,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          asin: video.detectedAsin,
+          asin: cardAsin,
           videoTitle: video.title,
           videoDescription: video.description,
           // Used server-side to persist the generated metadata back to
@@ -1162,11 +1190,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       // Amazon blocked the SERVER scrape (datacenter IP). Fetch the product
       // through SCOUT — it runs in the user's own browser / logged-in Amazon
       // session, which Amazon doesn't block — and retry once with that data.
-      if (!res.ok && data.scrapeFailed && video.detectedAsin) {
+      if (!res.ok && data.scrapeFailed && cardAsin) {
         try {
           if (await isExtensionAvailable()) {
             setProgress('Amazon blocked our server, so SCOUT is fetching the product from your browser…')
-            const prod = await requestAmazonProduct(video.detectedAsin)
+            const prod = await requestAmazonProduct(cardAsin)
             if (prod.ok && prod.product?.title) {
               res = await callOnce(prod.product)
               data = await safeJson(res)
@@ -1813,7 +1841,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         body: JSON.stringify({
           videoTitle: editTitle || video.title,
           videoDescription: video.description,
-          asin: video.detectedAsin ?? undefined,
+          asin: cardAsin ?? undefined,
           count: 4,
         }),
       })
@@ -1899,7 +1927,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         signal: AbortSignal.timeout(290000),
         body: JSON.stringify({
           videoTitle: editTitle || video.title,
-          asin: video.detectedAsin ?? undefined,
+          asin: cardAsin ?? undefined,
           // Co-Pilot converts product links to geni.us, so the RAW video
           // description usually has no resolvable product link. The MVP-generated
           // description (editDesc) carries the geni.us link — send that so the
@@ -1996,11 +2024,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       // it runs in the creator's own browser, which Amazon doesn't block — and
       // retry once with those images. Guard against a loop (only when we haven't
       // already passed an override).
-      if (!res.ok && data.scrapeFailed && video.detectedAsin && !opts?.productImageUrlsOverride) {
+      if (!res.ok && data.scrapeFailed && cardAsin && !opts?.productImageUrlsOverride) {
         try {
           if (await isExtensionAvailable()) {
             setThumbnailStatus('Amazon blocked our server — grabbing the product through SCOUT…')
-            const prod = await requestAmazonProduct(video.detectedAsin)
+            const prod = await requestAmazonProduct(cardAsin)
             const imgs = prod.ok && prod.product
               ? [prod.product.imageUrl, ...(prod.product.images || [])].filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u))
               : []
@@ -2046,7 +2074,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoTitle: overrides.title || video.title,
-          asin: video.detectedAsin ?? undefined,
+          asin: cardAsin ?? undefined,
           // Co-Pilot converts product links to geni.us, so the RAW video
           // description usually has no resolvable product link. The MVP-generated
           // description (editDesc) carries the geni.us link — send that so the
@@ -2376,16 +2404,21 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                 <Lock size={9} className="text-[#ff9500]" /> Private · not scheduled
               </span>
             )}
-            {video.detectedAsin && (
+            {cardAsin && (
               <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500]">
-                <Tag size={9} /> ASIN: {video.detectedAsin}
+                <Tag size={9} /> ASIN: {cardAsin}
               </span>
             )}
           </div>
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] leading-snug line-clamp-2 mb-2">{video.title}</p>
-          {video.detectedAsin && (
-            <ProductConfirm youtubeVideoId={video.youtubeVideoId} detectedAsin={video.detectedAsin} />
-          )}
+          {/* ALWAYS THERE: a title with no ASIN is exactly when the creator
+              most needs to say which product this is. */}
+          <ProductConfirm
+            youtubeVideoId={video.youtubeVideoId}
+            detectedAsin={cardAsin}
+            onFixed={(a) => setFixedAsin(a)}
+            onRewrite={() => { if (!generating) void generate() }}
+          />
           <div className="flex items-center gap-2 flex-wrap">
             {generating ? (
               <div className="flex flex-col gap-1">
@@ -2394,7 +2427,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                   Running MVP agent swarm…
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {(video.detectedAsin
+                  {(cardAsin
                     ? ['🔬 Product Analyst', '🎯 Title Strategist', '🔍 SEO Researcher', '✍️ Content Writer', '💬 Engagement Agent']
                     : ['🔬 Video Analyst', '🎯 Title Strategist', '🔍 SEO Researcher', '✍️ Description Writer', '💬 Engagement Agent']
                   ).map(a => (
@@ -2406,19 +2439,19 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               <button
                 onClick={() => generate()}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ background: video.detectedAsin
+                style={{ background: cardAsin
                   ? 'linear-gradient(135deg, #ff9500 0%, #ff3b30 100%)'
                   : 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
               >
                 <Wand2 size={12} />
                 {generated
                   ? 'Regenerate'
-                  : video.detectedAsin
+                  : cardAsin
                     ? 'Generate YouTube metadata'
                     : 'Generate metadata (no product)'}
               </button>
             )}
-            {!video.detectedAsin && !generating && (
+            {!cardAsin && !generating && (
               <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93] italic">
                 No ASIN in the title — we&apos;ll use a product link from your description if there is one (Amazon or a direct store link, wrapped with your Geniuslink), otherwise we write everything around the video&apos;s topic.
               </span>
@@ -2917,11 +2950,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       a toggle for the rare case the creator wants a different product.
                       When nothing was detected, the paste box is shown outright. */}
                   <div className="flex flex-col gap-1.5 px-1">
-                    {video.detectedAsin && !overrideProduct ? (
+                    {cardAsin && !overrideProduct ? (
                       <>
                         <span className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Product</span>
                         <div className="flex items-center justify-between gap-2 text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e]">
-                          <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Using detected product <span className="font-mono">{video.detectedAsin}</span></span>
+                          <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Using detected product <span className="font-mono">{cardAsin}</span></span>
                           <button type="button" disabled={generatingThumbnail}
                             onClick={() => setOverrideProduct(true)}
                             className="text-[11px] font-medium text-[#7C3AED] hover:underline whitespace-nowrap disabled:opacity-50">
@@ -2935,7 +2968,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     ) : (
                       <>
                         <label htmlFor="product-url" className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">
-                          Product link <span className="font-normal normal-case tracking-normal text-[#a1a1a6]">{video.detectedAsin ? '(override)' : '(optional — recommended)'}</span>
+                          Product link <span className="font-normal normal-case tracking-normal text-[#a1a1a6]">{cardAsin ? '(override)' : '(optional — recommended)'}</span>
                         </label>
                         <input
                           id="product-url"
@@ -2947,13 +2980,36 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                           className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6] focus:outline-none focus:border-[#7C3AED] transition"
                         />
                         <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
-                          {video.detectedAsin
-                            ? <>Overrides the detected product (<span className="font-mono">{video.detectedAsin}</span>). Leave blank to keep it. <button type="button" onClick={() => { setProductUrl(''); setOverrideProduct(false) }} className="text-[#7C3AED] hover:underline">Cancel</button></>
+                          {cardAsin
+                            ? <>Overrides the detected product (<span className="font-mono">{cardAsin}</span>). Leave blank to keep it. <button type="button" onClick={() => { setProductUrl(''); setOverrideProduct(false) }} className="text-[#7C3AED] hover:underline">Cancel</button></>
                             : 'MVP auto-detects the product from your video. Paste the link to be 100% sure it renders the exact product.'}
                         </p>
                       </>
                     )}
                   </div>
+
+                  {/* ALREADY MADE FOR THIS PRODUCT: the image, where and when it
+                      was made, and Use it. Never swapped in silently, and the
+                      generate button below still makes a new one. */}
+                  {recalledThumb.saved && (
+                    <SavedProductImage
+                      saved={recalledThumb.saved}
+                      inUse={thumbnailUrl === recalledThumb.saved.imageUrl}
+                      onUse={() => {
+                        const img = recalledThumb.saved
+                        if (!img) return
+                        setThumbnailUrl(img.imageUrl)
+                        setThumbnailVariants([])
+                        setThumbnailPrompt(null)
+                        setThumbnailHook(null)
+                        setThumbnailModel('recalled')
+                        setThumbnailError(null)
+                      }}
+                      onReplace={() => { setThumbnailUrl(null); setThumbnailModel(null) }}
+                      replaceLabel="Don't use it"
+                      keepLabel="press Create my MVP Thumbnail below for a new one"
+                    />
+                  )}
 
                   {/* Primary CTA: Create my MVP Thumbnail — order-1 so this big
                       generate button sits BELOW the method/border/badge options

@@ -121,6 +121,24 @@ check('the page waits longer than SCOUT does', bgTimeout > 0 && webTimeout > bgT
 // ── the screens ──────────────────────────────────────────────────────────
 const CP = code(read('app/(dashboard)/co-pilot/page.tsx'))
 {
+  // ── Co-Pilot's product: the one the creator set wins, everywhere ───────
+  const CPP = read('app/(dashboard)/co-pilot/page.tsx')
+  check('the product can be set on every card, not only when the title has an ASIN',
+    /<ProductConfirm\s+youtubeVideoId=\{video\.youtubeVideoId\}\s+detectedAsin=\{cardAsin\}\s+onFixed=/.test(CPP)
+    && !/\{cardAsin && \(\s*<ProductConfirm/.test(CPP) && !/\{video\.detectedAsin && \(\s*<ProductConfirm/.test(CPP))
+  check('every generator is sent the product the creator set',
+    /const cardAsin = fixedAsin \?\? video\.detectedAsin \?\? null/.test(CPP) && /asin: cardAsin,/.test(CPP)
+    && (CPP.match(/video\.detectedAsin/g) ?? []).length <= 2)
+  const DR = read('app/api/youtube/drafts/route.ts')
+  check('a product set earlier survives a reload',
+    /detectedAsin: setAsinMap\[d\.youtubeVideoId\] \?\? d\.detectedAsin/.test(DR) && /\.not\('product_title', 'is', null\)/.test(DR))
+  check('a video MVP has not synced can still be given its product',
+    /if \(!rowId\) return NextResponse\.json\(\{ ok: true, asin, title, imageUrl, stored: false \}\)/.test(read('app/api/youtube/videos/set-product/route.ts')))
+  check('the thumbnail already made for this product is offered before a new one',
+    /const recalledThumb = useSavedProductImage\(effectiveAsin\)/.test(CPP) && /<SavedProductImage\s+saved=\{recalledThumb\.saved\}/.test(CPP)
+    && /setThumbnailModel\('recalled'\)/.test(CPP) && /if \(thumbnailModel === 'recalled'\) \{ setSavedProductImage\('saved'\); return \}/.test(CPP))
+}
+{
   // ── Co-Pilot takes Liftoff's API steps, and nobody finishes in Studio ──
   const AP = read('app/api/youtube/apply/route.ts')
   const CPX = read('app/(dashboard)/co-pilot/page.tsx')

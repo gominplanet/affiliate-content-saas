@@ -610,6 +610,10 @@ async function enrichWithPushState(
   const videoIds = drafts.map(d => d.youtubeVideoId).filter(Boolean)
   const appliedMap: Record<string, string> = {}
   const generatedMap: Record<string, string> = {}
+  // THE PRODUCT THE CREATOR SET (Co-Pilot's "Set the product", which writes
+  // product_title with product_url). It wins over the ASIN in the title, which
+  // is all the card knew before: a correction lasted until the next reload.
+  const setAsinMap: Record<string, string> = {}
   if (videoIds.length > 0) {
     try {
       // Two Co-Pilot signals decide the "Metadata sent" bucket:
@@ -634,12 +638,24 @@ async function enrichWithPushState(
       for (const row of (Array.isArray(genRes.data) ? genRes.data : [])) {
         if (row.youtube_video_id && row.generated_at) generatedMap[row.youtube_video_id as string] = row.generated_at as string
       }
+      // Read on its own: a failure here loses only the correction.
+      const { data: setRows } = await (supabase as any)
+        .from('youtube_videos')
+        .select('youtube_video_id,product_url')
+        .eq('user_id', userId)
+        .in('youtube_video_id', videoIds)
+        .not('product_title', 'is', null)
+      for (const row of (Array.isArray(setRows) ? setRows : [])) {
+        const m = String(row.product_url || '').match(/\/dp\/([A-Z0-9]{10})\b/i)
+        if (row.youtube_video_id && m) setAsinMap[row.youtube_video_id as string] = m[1].toUpperCase()
+      }
     } catch (err) {
       console.warn('[yt-drafts] push/generated-state lookup failed (non-fatal):', err instanceof Error ? err.message : String(err))
     }
   }
   return drafts.map(d => ({
     ...d,
+    detectedAsin: setAsinMap[d.youtubeVideoId] ?? d.detectedAsin,
     metadataAppliedAt: appliedMap[d.youtubeVideoId] ?? null,
     metadataGeneratedAt: generatedMap[d.youtubeVideoId] ?? null,
   }))
