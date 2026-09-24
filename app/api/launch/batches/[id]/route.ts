@@ -180,7 +180,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // both an empty cta column, and a batch would otherwise sit waiting for an
   // answer the creator had already given.
   if (body.ctaChosen !== undefined || body.cta !== undefined) {
-    if (body.cta) {
+    // `cta` left out means "unchanged", not "none": ctaChosen on its own used
+    // to wipe the design. Only an explicit null clears it.
+    if (body.cta === undefined) {
+      /* the decision alone */
+    } else if (body.cta) {
       // VALIDATED BEFORE IT IS STORED. This preset is replayed by a background
       // worker onto ten videos with nobody watching, so an arbitrary image URL
       // here would be a standing instruction to composite whatever it points
@@ -198,7 +202,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // thumbnail step, looks at the controls and keeps the house look has ANSWERED
   // it, and a batch that cannot tell that from silence waits forever.
   if (body.thumbnailChosen !== undefined || body.thumbnail !== undefined) {
-    if (body.thumbnail) {
+    if (body.thumbnail === undefined) {
+      /* the decision alone, the look unchanged */
+    } else if (body.thumbnail) {
       // Never refuses, so one odd control cannot block the save. What it drops,
       // it names, and the answer goes back to the screen rather than being
       // applied silently to ten videos.
@@ -261,6 +267,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
+  // What the CTA and the look were before this save, to know whether the
+  // videos already built from them need building again (below).
+  const { data: before } = (patch.cta !== undefined || patch.thumbnail !== undefined)
+    ? await sb.from('launch_batches').select('cta,thumbnail,state').eq('id', id).eq('user_id', user.id).maybeSingle()
+    : { data: null }
+
   const { error } = await sb.from('launch_batches')
     .update(patch).eq('id', id).eq('user_id', user.id)
   if (error) {
@@ -278,7 +290,40 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  return NextResponse.json({ ok: true, rejected: thumbnailRejected })
+
+  // ── A NEW CTA OR LOOK REBUILDS WHAT WAS BUILT FROM THE OLD ONE ───────────
+  //
+  // The CTA is burned in and the thumbnails generated once, when each video
+  // is prepared. Changing either afterwards used to change only the setting:
+  // the videos already built kept the old design while the step said "It goes
+  // on all of them". Now every video not yet handed to the uploader is sent
+  // back to be built again with the new one. Videos queued or on YouTube are
+  // left alone, and the answer says how many were rebuilt.
+  let rebuilt = 0
+  if (before && before.state !== 'launching' && before.state !== 'launched') {
+    const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+    const ctaChanged = patch.cta !== undefined && !same(before.cta, patch.cta)
+    const lookChanged = patch.thumbnail !== undefined && !same(before.thumbnail, patch.thumbnail)
+    if (ctaChanged || lookChanged) {
+      const { data: built } = await sb.from('launch_items')
+        .select('id,rendered_url,thumbnail_url,thumbnail_clean_url')
+        .eq('batch_id', id).eq('user_id', user.id)
+        .in('state', ['preparing', 'prepared', 'blocked'])
+        .is('youtube_video_id', null).is('planned_publish_at', null)
+      for (const it of (built ?? []) as Array<{ id: string; rendered_url: string | null; thumbnail_url: string | null; thumbnail_clean_url: string | null }>) {
+        const redo: Record<string, unknown> = { reason: null, updated_at: new Date().toISOString() }
+        if (ctaChanged && it.rendered_url) {
+          Object.assign(redo, { state: 'draft', rendered_url: null, render_tries: 0 })
+        } else if (lookChanged && (it.thumbnail_url || it.thumbnail_clean_url)) {
+          Object.assign(redo, { state: 'preparing', thumbnail_url: null, thumbnail_clean_url: null, thumbnail_source: null, thumb_tries: 0 })
+        } else continue
+        if (lookChanged) Object.assign(redo, { thumbnail_url: null, thumbnail_clean_url: null, thumbnail_source: null, thumb_tries: 0 })
+        const { error: rErr } = await sb.from('launch_items').update(redo).eq('id', it.id).eq('user_id', user.id)
+        if (!rErr) rebuilt++
+      }
+    }
+  }
+  return NextResponse.json({ ok: true, rejected: thumbnailRejected, rebuilt })
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {

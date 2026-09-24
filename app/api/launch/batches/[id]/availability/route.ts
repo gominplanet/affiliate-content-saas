@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { MARKETS } from '@/lib/markets'
+import { normalizeTier } from '@/lib/tier'
 import { availabilityKey, lookupAvailability } from '@/lib/product-availability'
 
 export const runtime = 'nodejs'
@@ -35,6 +36,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
+  // PRO, like every other Launch Batch route: this spends shared Keepa tokens.
+  const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  if (!['pro', 'admin'].includes(normalizeTier(integ?.tier))) {
+    return NextResponse.json({ error: 'Launch batches are a Pro feature.' }, { status: 403 })
+  }
   const { data: batch } = await sb.from('launch_batches').select('id').eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
   const { data: rows } = await sb.from('launch_items').select('id,title,asin,position').eq('batch_id', id).order('position')

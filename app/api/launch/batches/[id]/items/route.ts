@@ -30,6 +30,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!/^https:\/\//i.test(sourceUrl)) {
     return NextResponse.json({ error: 'A hosted video URL is required.' }, { status: 400 })
   }
+  // OUR OWN STORAGE ONLY. The background worker downloads this file with
+  // nobody watching and sends it to YouTube, so any https address used to be a
+  // standing instruction to fetch whatever it pointed at. The page uploads to
+  // this project's storage first; the CTA image is held to the same rule.
+  const own = (() => {
+    try { return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL || '').host } catch { return '' }
+  })()
+  let host = ''
+  try { host = new URL(sourceUrl).host } catch { /* not a URL */ }
+  if (!own || host !== own || !new URL(sourceUrl).pathname.startsWith('/storage/v1/object/public/')) {
+    return NextResponse.json({ error: 'Videos have to be uploaded through this page.' }, { status: 400 })
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any

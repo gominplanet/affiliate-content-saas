@@ -109,13 +109,33 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   const { data: item } = await sb.from('launch_items')
-    .select('id,state,batch_id').eq('id', id).eq('user_id', user.id).maybeSingle()
+    .select('id,state,batch_id,reason,rendered_url,title_source,youtube_video_id,planned_publish_at')
+    .eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!item) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
+  const onYouTube = !!String(item.youtube_video_id || '').trim()
+  // A video kept private after a missed slot: on the channel, with no time.
+  // Its time is the one thing it needs, and the one thing it could not get.
+  const keptPrivate = item.state === 'blocked' && onYouTube && /^Kept private\./.test(String(item.reason || ''))
   if (item.state === 'scheduled' || item.state === 'published') {
     return NextResponse.json({
       error: body.schedule !== undefined
         ? 'This one is already on YouTube, so its time is set there now. Change it in YouTube Studio.'
         : 'This one is already on YouTube, so its title and product are set there now.',
+    }, { status: 409 })
+  }
+  // ON YOUTUBE ALREADY, whatever its state says: its words and product are
+  // set there. Only checking 'scheduled' and 'published' let a blocked video
+  // that was already on the channel be sent back for a full re-render.
+  if (onYouTube && (typeof body.product === 'string' || typeof body.title === 'string' || typeof body.description === 'string')) {
+    return NextResponse.json({
+      error: 'This one is already on your YouTube channel, so its title, description and product are set there now. Change them in YouTube Studio.',
+    }, { status: 409 })
+  }
+  // QUEUED FOR UPLOAD: the product is locked, because the thumbnails and the
+  // description the uploader is about to send were made from the old one.
+  if (item.planned_publish_at && typeof body.product === 'string') {
+    return NextResponse.json({
+      error: 'This one is already queued for YouTube, so its product is locked in. Its title and description can still be changed until it uploads.',
     }, { status: 409 })
   }
 
@@ -129,14 +149,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       .select('timezone,state').eq('id', item.batch_id).eq('user_id', user.id).maybeSingle()
     if (!batch) return NextResponse.json({ error: 'Batch not found.' }, { status: 404 })
 
-    // AFTER LAUNCH, THE TIME IS ALREADY WRITTEN. The launch route copies each
-    // video's time onto planned_publish_at, and that is what the uploader
-    // gives YouTube. Accepting a change now would show the new time on the
-    // screen while YouTube got the old one, which is the plan reported as the
-    // result. So it is refused, and the message says why.
-    if (batch.state === 'launching' || batch.state === 'launched') {
+    // ONCE THE UPLOADER HAS THE TIME, IT IS LOCKED. The launch route copies
+    // each video's time onto planned_publish_at, and that is what the
+    // uploader gives YouTube; a change now would show one time on screen while
+    // YouTube got another. Per VIDEO, not per batch: a video left behind at
+    // launch and fixed since, or one kept private after a missed slot, has no
+    // time the uploader holds, and a new one is exactly what it needs.
+    if (item.planned_publish_at && !keptPrivate) {
       return NextResponse.json({
-        error: 'This batch has already been launched, so this video\'s time is locked in. Once it is on YouTube you can change it in YouTube Studio.',
+        error: 'This video is already queued for YouTube, so its time is locked in. Once it is on YouTube you can change it in YouTube Studio.',
       }, { status: 409 })
     }
 
@@ -160,11 +181,38 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
-  // A video that was blocked for a missing product is no longer blocked once it
-  // has one. Left alone, it would sit in the way of a launch it could join.
-  if (patch.asin && item.state === 'blocked') {
-    patch.state = 'draft'
+  // A KEPT-PRIVATE VIDEO WITH A NEW TIME is ready to go again: back to
+  // prepared with no upload time, so "Launch these too" hands it to the
+  // uploader, which sees its YouTube id and only sets the time.
+  if (keptPrivate && body.schedule) {
+    patch.state = 'prepared'
+    patch.planned_publish_at = null
+    patch.publish_tries = 0
     patch.reason = null
+  }
+
+  // ── A NEW PRODUCT MEANS NEW THUMBNAILS AND A NEW DESCRIPTION ─────────────
+  //
+  // Changing the product used to change only the ASIN on a video that was
+  // already ready, so it launched with thumbnails of the old product and a
+  // description whose affiliate link sold something else. Now everything made
+  // from the product is cleared and made again; the CTA render is kept, since
+  // it does not depend on the product. A title MVP wrote goes back to being
+  // rewritten; one the creator typed is left alone. (A blocked video with no
+  // render goes back to the start, as it always did.)
+  if (patch.asin && patch.asin !== undefined) {
+    const { data: cur } = await sb.from('launch_items').select('asin').eq('id', id).maybeSingle()
+    const changed = String(cur?.asin || '').toUpperCase() !== String(patch.asin).toUpperCase()
+    if (changed || item.state === 'blocked') {
+      patch.state = item.rendered_url ? 'preparing' : 'draft'
+      patch.reason = null
+      patch.thumbnail_url = null
+      patch.thumbnail_clean_url = null
+      patch.thumbnail_source = null
+      patch.thumb_tries = 0
+      if (typeof body.description !== 'string') patch.description = null
+      if (item.title_source === 'mvp' && typeof body.title !== 'string') patch.title_source = 'filename'
+    }
   }
 
   const { error } = await sb.from('launch_items').update(patch).eq('id', id).eq('user_id', user.id)
@@ -191,8 +239,21 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   const { data: item } = await sb.from('launch_items')
-    .select('id,batch_id,position,state').eq('id', id).eq('user_id', user.id).maybeSingle()
+    .select('id,batch_id,position,state,youtube_video_id,planned_publish_at').eq('id', id).eq('user_id', user.id).maybeSingle()
   if (!item) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
+  // ON THE CHANNEL OR ON ITS WAY THERE, whatever the state says. Only checking
+  // 'scheduled' and 'published' let a video mid-upload, or one kept private,
+  // be deleted here while it stayed on YouTube with no record left in MVP.
+  if (String(item.youtube_video_id || '').trim()) {
+    return NextResponse.json({
+      error: 'This one is already on your YouTube channel. Removing it here would not take it down, and MVP would lose track of it.',
+    }, { status: 409 })
+  }
+  if (item.planned_publish_at && item.state === 'prepared') {
+    return NextResponse.json({
+      error: 'This one is queued for YouTube and may be uploading right now, so it cannot be removed here.',
+    }, { status: 409 })
+  }
   if (item.state === 'scheduled' || item.state === 'published') {
     return NextResponse.json({
       error: 'This one is already on YouTube. Removing it here would not take it down.',

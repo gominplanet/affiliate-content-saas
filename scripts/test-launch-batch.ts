@@ -1117,11 +1117,11 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // receive an upload, and counting it is what makes "a channel exists" the
   // wrong question.
   check('only a channel with tokens counts',
-    /not\('oauth_refresh_token', 'is', null\)/.test(READY),
+    /if \(def\?\.oauth_access_token\) return !!def\.oauth_refresh_token/.test(READY),
     'a pull-only channel exists and cannot be uploaded to')
   check('a failed lookup does not block a launch that would have worked',
-    /return true/.test(READY.slice(READY.indexOf('} catch {'))),
-    'unknown is not blocked, and the publish step still reports honestly')
+    /if \(defErr\) return true/.test(READY) && /if \(legErr\) return true/.test(READY),
+    'unknown is not blocked; supabase-js returns errors rather than throwing them, so a catch never saw one')
 
   // BOTH CALLERS, ONE ANSWER. The page enabling a button the route refuses is
   // a bug this pair has already produced once.
@@ -1268,7 +1268,9 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /New batch/.test(BOARD),
     'somebody posting three a day sets up the next one before the last finishes')
   check('switching batches lets the new one point at its own step',
-    /function openBatch\(id: string\)[\s\S]{0,200}?autoOpened\.current = false/.test(BOARD),
+    /function openBatch\(id: string\)[\s\S]{0,300}?showBatch\(id\)/.test(BOARD)
+      && /const showBatch = useCallback\([\s\S]{0,600}?autoOpened\.current = false/.test(BOARD)
+      && /const showBatch = useCallback\([\s\S]{0,600}?setLaunched\(null\)/.test(BOARD),
     'inheriting the last batch’s open step is state bleeding between two things')
 
   // ORDER IS THE PUBLISHING ORDER, and it was whatever a file dialog returned.
@@ -1573,7 +1575,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // nothing to send.
   check('Amazon is blocked, with a reason, while nothing is on YouTube',
     /no video for Amazon to list/.test(OUTCOME)
-    && /disabled=\{busy === 'amazon' \|\| !!out\.amazonBlocker\}/.test(BOARD),
+    && /disabled=\{amazonBusy \|\| !!studioBusy \|\| !!out\.amazonBlocker/.test(BOARD),
     'a button that can only fail should say so before it is pressed')
 
   check('the panel counts rows rather than the launch reply',
@@ -1638,6 +1640,50 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the hand-over clears only its own note',
     /like\('reason', 'On YouTube, but it could not be passed to the Amazon side%'\)/.test(DRAIN),
     'a kept-private video lost the sentence telling its creator to give it a new time')
+  // ── THE API SAYS WHAT HAPPENED, AND ONE PRESS WINS ─────────────────────
+  {
+    const MOVE = live(read('app/api/launch/items/[id]/move/route.ts'))
+    check('a move steps aside first, because positions are unique',
+      /update\(\{ position: -1 - i \}\)/.test(MOVE) && /if \(error\) return NextResponse\.json/.test(MOVE),
+      'every reorder collided with its neighbour, failed, and reported moved: true')
+    const LAUNCH = live(read('app/api/launch/batches/[id]/launch/route.ts'))
+    check('Launch claims the batch in one conditional write',
+      /\.not\('state', 'in', '\("launching","launched"\)'\)\s*\.select\('id'\)/.test(LAUNCH))
+    check('go-now is written before the times',
+      LAUNCH.indexOf("update({ publish_now: true })") > 0 && LAUNCH.indexOf("update({ publish_now: true })") < LAUNCH.indexOf('planned_publish_at: schedule.get('))
+    check('a failed write undoes the launch and says so',
+      /if \(wErr\) \{/.test(LAUNCH) && /Nothing was launched/.test(LAUNCH))
+    check('a launched batch can launch its latecomers',
+      /const late = batch\.state === 'launching' \|\| batch\.state === 'launched'/.test(LAUNCH)
+        && /i\.state === 'prepared' && \(!late \|\| !i\.planned_publish_at\)/.test(LAUNCH),
+      'a video fixed after launch sat on ready forever')
+    const ITEM = live(read('app/api/launch/items/[id]/route.ts'))
+    check('a time is locked per video, once the uploader has it',
+      /if \(item\.planned_publish_at && !keptPrivate\)/.test(ITEM))
+    check('a new product rebuilds what was made from the old one',
+      /patch\.thumbnail_url = null/.test(ITEM) && /patch\.description = null/.test(ITEM))
+    check('nothing on YouTube or queued can be deleted here',
+      /if \(String\(item\.youtube_video_id \|\| ''\)\.trim\(\)\) \{/.test(ITEM) && /queued for YouTube and may be uploading/.test(ITEM))
+    const READY = live(read('lib/launch-readiness.ts'))
+    check('readiness uses the uploader\'s channel rule and refuses past days',
+      /eq\('is_default', true\)/.test(READY) && /if \(defErr\) return true/.test(READY) && /const dates = pastDates\(batch, items\)/.test(READY))
+    const ADD = live(read('app/api/launch/batches/[id]/items/route.ts'))
+    check('only videos uploaded to our own storage are accepted',
+      /host !== own/.test(ADD) && /\/storage\/v1\/object\/public\//.test(ADD))
+    const BPATCH = live(read('app/api/launch/batches/[id]/route.ts'))
+    check('a new CTA or look rebuilds the videos built from the old one',
+      /const ctaChanged = /.test(BPATCH) && /rendered_url: null, render_tries: 0/.test(BPATCH))
+  }
+  // ── THE PAGE SHOWS THE BATCH IT IS ON, AND ONE SCOUT JOB AT A TIME ────
+  check('a reply for another batch is ignored', /if \(currentId\.current !== id\) return/.test(SCREEN))
+  check('a failed poll does not replace the page', /void load\(batchId, true\)/.test(SCREEN) && /if \(!quiet\) setError/.test(SCREEN))
+  check('the buttons keep Studio and Amazon apart too',
+    /if \(studioRunning\.current\) \{/.test(SCREEN) && /SCOUT is sending to Amazon right now/.test(SCREEN))
+  check('no countries means nothing is sent, not everything',
+    /No Amazon countries are picked for this batch/.test(SCREEN))
+  check('a launched batch offers its latecomers a launch', /Launch \{latecomers\.length === 1/.test(SCREEN))
+  check('a locked row shows the time the uploader has, not the pattern',
+    /fixedAt=\{it\.publish_at \?\? it\.planned_publish_at \?\? null\}/.test(SCREEN) && /const now = !locked &&/.test(SCREEN))
   check('stops on an error, saying so',
     /if \(out\.error\) setAmazonAuto\('stopped'\)/.test(SCREEN) && /Automatic sending stopped:/.test(SCREEN))
 

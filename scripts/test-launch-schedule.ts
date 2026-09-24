@@ -353,9 +353,9 @@ const wallClock = (at: Date, timeZone: string) =>
 
   check('a video\'s own time is checked against the batch zone before saving',
     /date < todayIn\(tz\)/.test(ITEM), 'the shape is the constraint\'s job; whether the day has gone is not')
-  check('and refused once the batch has launched',
-    /batch\.state === 'launching' \|\| batch\.state === 'launched'/.test(ITEM),
-    'the time is already written for the uploader: accepting a change shows one time and sends YouTube another')
+  check('and refused once the uploader has it',
+    /if \(item\.planned_publish_at && !keptPrivate\)/.test(ITEM),
+    'the time is already written for the uploader: accepting a change shows one time and sends YouTube another. Per video, so one left behind at launch can still get one')
   check('null puts a video back on the pattern',
     /body\.schedule === null[\s\S]{0,120}custom_publish_date = null/.test(ITEM), '')
 

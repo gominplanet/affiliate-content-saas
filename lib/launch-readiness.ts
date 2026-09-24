@@ -11,6 +11,29 @@
 // a lookup lives here with it, and both callers call this.
 
 import { launchBlocker, channelBlocker, type BatchRow, type ItemRow } from '@/lib/launch-batch'
+import { scheduleItems, datesBeforeToday } from '@/lib/launch-schedule'
+
+/**
+ * A video set for a day that has already gone.
+ *
+ * THE LAUNCH ROUTE REFUSED THIS AND THE PAGE DID NOT KNOW. A batch set up
+ * yesterday with yesterday as its first day showed an enabled Launch button,
+ * and pressing it got a refusal. The same check now runs here, so the button
+ * and the route say the same thing before anybody presses it. Only the videos
+ * the uploader does not already have are looked at: a launched batch's past
+ * days are history, not a mistake.
+ */
+function pastDates(batch: BatchRow, items: ItemRow[]): string | null {
+  const open = items.filter((i) => i.state === 'prepared' && !i.planned_publish_at)
+  if (open.length === 0) return null
+  const plan = { timezone: batch.timezone || 'UTC', slots: batch.daily_slots ?? [], startOn: batch.start_on ?? '' }
+  const schedule = scheduleItems(items.map((i) => ({ id: i.id, customDate: i.custom_publish_date, customTime: i.custom_publish_time })), plan)
+  const planned = open.map((i) => schedule.get(i.id)).filter((p): p is NonNullable<typeof p> => !!p)
+  const stale = datesBeforeToday(planned, plan.timezone)
+  if (stale.length === 0) return null
+  const which = open.filter((i) => stale.some((x) => x.id === i.id)).map((i) => `Video ${i.position + 1}`)
+  return `${which.join(', ')} ${which.length === 1 ? 'is' : 'are'} set for a day that has already gone. Pick today to send ${which.length === 1 ? 'it' : 'them'} out now, or a later day.`
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -24,17 +47,26 @@ type Sb = any
  * connection into three failed tries per video.
  */
 export async function hasPushChannel(sb: Sb, userId: string): Promise<boolean> {
-  try {
-    const { data } = await sb.from('youtube_channels')
-      .select('id,oauth_refresh_token').eq('user_id', userId)
-      .not('oauth_refresh_token', 'is', null).limit(1)
-    return (data ?? []).length > 0
-  } catch {
-    // UNKNOWN IS NOT BLOCKED. A lookup that failed must not stop a launch that
-    // would have worked; the publish step still reports honestly if it cannot
-    // get a token.
-    return true
-  }
+  // THE UPLOADER'S OWN RULE, not a looser one. It publishes through the
+  // DEFAULT channel when that channel has a login, and only otherwise through
+  // the older account-level login (lib/youtube-channels getChannelOAuthToken).
+  // This used to pass if ANY channel had a login, so a creator whose default
+  // was added by URL only got an enabled Launch and then three failed tries
+  // per video; and it refused older accounts whose only login is the
+  // account-level one, which the uploader would have used happily.
+  //
+  // UNKNOWN IS NOT BLOCKED. supabase-js returns errors rather than throwing
+  // them, so a failed lookup used to read as "no channel". Any error now means
+  // "could not tell", which lets the launch through; the upload still reports
+  // honestly if it cannot get a token.
+  const { data: def, error: defErr } = await sb.from('youtube_channels')
+    .select('oauth_access_token,oauth_refresh_token').eq('user_id', userId).eq('is_default', true).maybeSingle()
+  if (defErr) return true
+  if (def?.oauth_access_token) return !!def.oauth_refresh_token
+  const { data: legacy, error: legErr } = await sb.from('integrations')
+    .select('youtube_oauth_access_token,youtube_oauth_refresh_token').eq('user_id', userId).maybeSingle()
+  if (legErr) return true
+  return !!(legacy?.youtube_oauth_access_token && legacy?.youtube_oauth_refresh_token)
 }
 
 /** The first reason this batch cannot launch, or null. */
@@ -45,5 +77,7 @@ export async function launchReadiness(
   // channel" to somebody who has not added a video.
   const steps = launchBlocker(batch, items)
   if (steps) return steps
+  const dates = pastDates(batch, items)
+  if (dates) return dates
   return channelBlocker(await hasPushChannel(sb, userId))
 }

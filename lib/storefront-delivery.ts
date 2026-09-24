@@ -69,6 +69,11 @@ export async function deliverPreparedStorefronts(scope?: {
   const empty: DeliveryOutcome = {
     ok: false, handedOver: 0, duplicates: 0, failed: [], waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false,
   }
+  // AN EMPTY COUNTRY LIST IS NO COUNTRIES. Left off the request, it read as
+  // "every country", so a batch with none picked sent to all of them.
+  if (scope && Array.isArray(scope.domains) && scope.domains.length === 0) {
+    return { ...empty, error: 'No Amazon countries were picked, so nothing was sent.' }
+  }
   let j: Record<string, unknown>
   try {
     // BOUNDED. The queue counts deliveries per storefront against Postgres and

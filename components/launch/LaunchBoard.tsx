@@ -165,6 +165,9 @@ export default function LaunchBoard() {
   // again by hand. A loop retrying a signed-out Amazon every two minutes would
   // be noise at best.
   const amazonRunning = useRef(false)
+  // Its own flag, not the page's shared `busy`: an Amazon run takes minutes,
+  // and ending it used to clear a Launch or a save still in flight.
+  const [amazonBusy, setAmazonBusy] = useState(false)
   const [amazonAuto, setAmazonAuto] = useState<'on' | 'stopped'>('on')
   const [amazonNote, setAmazonNote] = useState<{ at: Date; lines: string[]; error: boolean } | null>(null)
   // ── AND THE STUDIO STEPS, BY THEMSELVES, FIRST ─────────────────────────
@@ -186,7 +189,13 @@ export default function LaunchBoard() {
   studioTick.current = () => {
     if (!scoutCanStudio || !batch || studioRunning.current || studioManual.current || amazonRunning.current) return
     if (batch.state !== 'launched' && batch.state !== 'launching') return
-    const next = items.find((i) => !!i.youtube_video_id && !(liveRuns[i.id] ?? i.studio_finish) && !studioTried.current.has(i.id))
+    // A run that timed out did not finish, so it goes again (once per visit);
+    // one that ran to the end, whatever it found, is left for Run again.
+    const needsRun = (i: Item) => {
+      const r = liveRuns[i.id] ?? i.studio_finish
+      return !r || r.error === 'timeout'
+    }
+    const next = items.find((i) => !!i.youtube_video_id && needsRun(i) && !studioTried.current.has(i.id))
     if (!next) return
     studioTried.current.add(next.id)
     void finishInStudio(next)
@@ -236,6 +245,9 @@ export default function LaunchBoard() {
   useEffect(() => {
     if (!batchId || !productKey) { setAvail(null); return }
     let gone = false
+    // Cleared first, so a failed answer for this batch can never leave the
+    // last batch's countries showing.
+    setAvail(null)
     setAvailLoading(true)
     fetch(`/api/launch/batches/${batchId}/availability`)
       .then((r) => r.json())
@@ -292,11 +304,20 @@ export default function LaunchBoard() {
   const [launched, setLaunched] = useState<{ scheduled: number; firstAt: string | null; lastAt: string | null; note: string } | null>(null)
 
   // ── load ──────────────────────────────────────────────────────────────────
-  const load = useCallback(async (id: string) => {
+  // THE BATCH ON SCREEN, read synchronously. A reply for another batch (a
+  // poll, or an Amazon or Studio run that finished minutes after the creator
+  // switched) used to be drawn over the one they had switched to, and the
+  // next tick of a country then saved that batch's list onto this one.
+  const currentId = useRef<string | null>(null)
+  const load = useCallback(async (id: string, quiet = false) => {
     try {
       const r = await fetch(`/api/launch/batches/${id}`)
       const j = await r.json()
-      if (!r.ok || !j?.ok) { setError(j?.error || 'Could not load this batch.'); return }
+      if (currentId.current !== id) return
+      // A POLL THAT FAILS IS NOT A PAGE THAT FAILED. One bad twelve-second
+      // poll used to replace the whole page with an error, taking unsaved
+      // edits with it. Only the load that opens a batch reports.
+      if (!r.ok || !j?.ok) { if (!quiet) setError(j?.error || 'Could not load this batch.'); return }
       setError(null)
       setBatch(j.batch)
       setItems(j.items ?? [])
@@ -315,8 +336,26 @@ export default function LaunchBoard() {
         if (current) { setOpen(current.id); autoOpened.current = true }
       }
     } catch {
-      setError('Could not reach the server.')
+      if (!quiet) setError('Could not reach the server.')
     } finally { setLoading(false) }
+  }, [])
+
+  // ── A DIFFERENT BATCH STARTS CLEAN ───────────────────────────────────────
+  // What the last batch's launch, Amazon runs and Studio runs said used to
+  // stay on screen for the next one: a new draft showed "Launched" and the
+  // previous batch's "Automatic sending stopped".
+  const showBatch = useCallback((id: string | null) => {
+    currentId.current = id
+    setBatchId(id)
+    setLaunched(null)
+    setAmazonAuto('on')
+    setAmazonNote(null)
+    setLiveRuns({})
+    studioTried.current = new Set()
+    setDirtyRows({})
+    setAvail(null)
+    setError(null)
+    autoOpened.current = false
   }, [])
 
   // Find or start a batch on first paint, so the page is never an empty screen
@@ -332,18 +371,18 @@ export default function LaunchBoard() {
         // The one still being worked on, or failing that the most recent, so a
         // finished batch is still what you see when you come back to the page.
         const openBatch = all.find((b) => b.state !== 'launched') ?? all[0]
-        if (openBatch) { setBatchId(openBatch.id); void load(openBatch.id); return }
+        if (openBatch) { showBatch(openBatch.id); void load(openBatch.id); return }
         setLoading(false)
       } catch { setError('Could not reach the server.'); setLoading(false) }
     })()
-  }, [load])
+  }, [load, showBatch])
 
   // THE WORK HAPPENS ELSEWHERE, so the page watches rather than drives. Slow
   // enough not to hammer the API, fast enough that a finished render shows up
   // while the creator is still looking at the screen.
   useEffect(() => {
     if (!batchId) return
-    const t = setInterval(() => void load(batchId), 12_000)
+    const t = setInterval(() => void load(batchId, true), 12_000)
     return () => clearInterval(t)
   }, [batchId, load])
 
@@ -377,8 +416,7 @@ export default function LaunchBoard() {
     if (id === batchId) return
     // A DIFFERENT BATCH IS A DIFFERENT PAGE, so it gets to point at its own
     // current step rather than inheriting whichever one was open here.
-    autoOpened.current = false
-    setBatchId(id)
+    showBatch(id)
     void load(id)
   }
 
@@ -402,9 +440,9 @@ export default function LaunchBoard() {
       setBatches(rest)
       if (id === batchId) {
         const next = rest.find((b) => b.state !== 'launched') ?? rest[0]
-        autoOpened.current = false
-        if (next) { setBatchId(next.id); await load(next.id) }
-        else { setBatchId(null); setBatch(null); setItems([]) }
+        showBatch(next?.id ?? null)
+        if (next) await load(next.id)
+        else { setBatch(null); setItems([]) }
       }
       await refreshBatches()
     } finally { setBusy(null) }
@@ -437,9 +475,8 @@ export default function LaunchBoard() {
       })
       const j = await r.json()
       if (!r.ok || !j?.ok) { toast.error(j?.error || 'Could not start a batch.'); return }
-      setBatchId(j.id)
       // A NEW BATCH IS A NEW PAGE, so it may point at step one.
-      autoOpened.current = false
+      showBatch(j.id)
       await refreshBatches()
       await load(j.id)
     } finally { setBusy(null) }
@@ -469,8 +506,21 @@ export default function LaunchBoard() {
   async function uploadToAmazon(opts?: { auto?: boolean }): Promise<DeliveryOutcome | null> {
     const auto = opts?.auto === true
     if (amazonRunning.current) return null
+    // ONE SCOUT JOB AT A TIME. The automatic passes kept Studio and Amazon
+    // apart, but the buttons did not: pressing one while the other ran sent
+    // SCOUT into both at once.
+    if (studioRunning.current) {
+      if (!auto) toast('SCOUT is finishing a video in YouTube Studio. Amazon goes as soon as it is done.', { duration: 8000 })
+      return null
+    }
+    // NO COUNTRIES MEANS NOTHING TO SEND, not every country. An empty list was
+    // left off the request, and the queue read that as "all of them".
+    if ((batch?.markets.length ?? 0) === 0) {
+      if (!auto) toast.error('No Amazon countries are picked for this batch, so there is nothing to send.')
+      return null
+    }
     amazonRunning.current = true
-    setBusy('amazon')
+    setAmazonBusy(true)
     try {
       // SCOPED TO THIS BATCH. Unscoped, this delivers the creator's whole
       // account queue: the first real run picked the US and Germany and
@@ -504,7 +554,7 @@ export default function LaunchBoard() {
       toast.error('Could not reach SCOUT. Is the extension installed?', { duration: 9000 })
       setAmazonNote({ at: new Date(), lines: ['Could not reach SCOUT. Is the extension installed?'], error: true })
       return { ok: false, error: 'scout', handedOver: 0, duplicates: 0, failed: [], waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false }
-    } finally { amazonRunning.current = false; setBusy(null) }
+    } finally { amazonRunning.current = false; setAmazonBusy(false) }
   }
 
   async function moveItem(id: string, direction: 'up' | 'down') {
@@ -570,6 +620,10 @@ export default function LaunchBoard() {
    */
   async function finishInStudio(it: Item): Promise<StoredStudioRun | null> {
     if (!it.youtube_video_id || studioRunning.current) return null
+    if (amazonRunning.current) {
+      toast('SCOUT is sending to Amazon right now. Try Studio again when it has finished.', { duration: 8000 })
+      return null
+    }
     studioRunning.current = true
     setStudioBusy(it.id)
     try {
@@ -588,6 +642,12 @@ export default function LaunchBoard() {
           ? { mode: 'schedule', publishAt: it.publish_at }
           : { mode: 'keep' },
       })
+      // SCOUT NEVER STARTED: nothing to keep. Storing it used to mark the
+      // video as done-with for the automatic pass, on every later visit too.
+      if (fin.error === 'not-installed') {
+        toast.error('SCOUT did not answer, so nothing was done in Studio. Reload SCOUT and this page.')
+        return null
+      }
       const run = storeStudioRun(fin)
       setLiveRuns((prev) => ({ ...prev, [it.id]: run }))
       const r = await fetch(`/api/launch/items/${it.id}`, {
@@ -811,10 +871,22 @@ export default function LaunchBoard() {
   const schedule = scheduleItems(items.map((i) => ({
     id: i.id, customDate: i.custom_publish_date, customTime: i.custom_publish_time,
   })), { timezone: batch.timezone, slots, startOn: batch.start_on ?? '' })
+  // LOCKED PER VIDEO, once the uploader has its time (or it is on YouTube).
+  // A video left behind at launch, or kept private after a missed slot, is
+  // not, and a new time is what it needs.
+  const keptPrivate = (i: Item) => i.state === 'blocked' && !!i.youtube_video_id && /^Kept private\./.test(i.reason || '')
+  const rowLocked = (i: Item) => i.state === 'scheduled' || i.state === 'published' || (!!i.planned_publish_at && !keptPrivate(i))
+  // ONLY VIDEOS STILL TO BE LAUNCHED. "These go public as soon as they are
+  // uploaded" was printed over a batch launched days ago, about videos that
+  // were already live.
   const goingNow = items.filter((i) => {
+    if (rowLocked(i)) return false
     const sc = schedule.get(i.id)
     return !!sc && sc.at.getTime() <= Date.now()
   }).length
+  // Ready, with no upload time: left behind at launch and fixed since, or
+  // given a new time after a missed slot. Launch these too sends them.
+  const latecomers = items.filter((i) => i.state === 'prepared' && !i.planned_publish_at)
   const unsaved = items.filter((i) => dirtyRows[i.id]).map((i) => i.position + 1)
   const scheduleLocked = batch.state === 'launching' || batch.state === 'launched'
 
@@ -1050,7 +1122,10 @@ export default function LaunchBoard() {
                       const notSold = row.byVideo.filter((v) => v.verdict === 'not_sold')
                       const oos = row.byVideo.filter((v) => v.verdict === 'out_of_stock')
                       const cannot = row.byVideo.every((v) => v.verdict === 'cannot_check')
-                      const unchecked = row.byVideo.filter((v) => v.verdict === 'not_checked')
+                      // NOT CHECKED AND CANNOT CHECK BOTH COUNT AS UNKNOWN. A
+                      // mix of sold and cannot-check used to read "Sells all"
+                      // in green.
+                      const unchecked = row.byVideo.filter((v) => v.verdict === 'not_checked' || v.verdict === 'cannot_check')
                       if (cannot) {
                         return <span className="block text-[11px]" style={muted}>Cannot be checked ahead of time here. If Amazon does not sell it, the upload fails and the row says so</span>
                       }
@@ -1194,8 +1269,9 @@ export default function LaunchBoard() {
                     n={it.position + 1}
                     title={it.title || ''}
                     sched={schedule.get(it.id)}
+                    fixedAt={it.publish_at ?? it.planned_publish_at ?? null}
                     timezone={batch.timezone}
-                    locked={scheduleLocked || it.state === 'scheduled' || it.state === 'published'}
+                    locked={rowLocked(it)}
                     available={ownSchedules}
                     busy={busy === it.id}
                     onSet={(date, time) => void patchItem(it.id, { schedule: { date, time } })}
@@ -1288,7 +1364,7 @@ export default function LaunchBoard() {
               </span>
             </label>
             <div>
-              <p className="text-[12px]" style={text}>Studio steps, done by SCOUT when you press Finish in Studio</p>
+              <p className="text-[12px]" style={text}>Studio steps SCOUT does for each video once it is on YouTube</p>
               <div className="mt-1.5 flex flex-col gap-1.5">
                 {([
                   ['disclosures', 'Paid promotion: Yes, and AI use: No', 'Untick if these videos are AI generated or altered.'],
@@ -1311,7 +1387,7 @@ export default function LaunchBoard() {
               </div>
               <p className="text-[11px] mt-1.5" style={muted}>
                 Notify subscribers in Studio follows the switch above ({notifySubs ? 'on' : 'off'}).
-                {' '}Once launched, SCOUT does these by itself for each video as it reaches YouTube, while this page is open.
+                {' '}They run by themselves after launch, one video at a time, while this batch is open on this page. Untick anything that is not true for these videos before then.
                 {scoutReady === false && ' SCOUT is not installed in this browser, so it cannot.'}
                 {scoutReady === true && !scoutCanStudio && ` Your SCOUT is ${scoutVersion ?? 'an older version'}; these steps need the latest SCOUT.`}
               </p>
@@ -1458,6 +1534,23 @@ export default function LaunchBoard() {
               The board below says what stopped each one, and Try again puts it back in the queue.
             </p>
           )}
+          {/* THE ONES THE LAUNCH DID NOT TAKE, ready now. They used to sit on
+              ready forever: only Launch gives a video its upload time, and
+              Launch refused a second press. */}
+          {latecomers.length > 0 && (
+            <div className="mt-2 flex items-center gap-3 flex-wrap rounded-lg px-3 py-2" style={{ background: 'rgba(217,119,6,0.08)' }}>
+              <span className="text-[12.5px] flex-1 min-w-0" style={{ color: '#d97706' }}>
+                {latecomers.length === 1 ? 'Video' : 'Videos'} {latecomers.map((i) => i.position + 1).join(', ')} {latecomers.length === 1 ? 'is' : 'are'} ready
+                but not launched yet. {latecomers.length === 1 ? 'It goes' : 'They go'} at {latecomers.length === 1 ? 'its' : 'their'} own time, or the daily pattern.
+              </span>
+              <button onClick={() => void launch()} disabled={busy === 'launch' || unsaved.length > 0}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white disabled:opacity-50"
+                style={{ background: '#0EA5A4' }}>
+                {busy === 'launch' ? <Loader2 size={13} className="animate-spin" /> : <Rocket size={13} />}
+                Launch {latecomers.length === 1 ? 'this one' : `these ${latecomers.length}`} too
+              </button>
+            </div>
+          )}
 
           {/* ── THE TWO SIDES ARE NOT ON THE SAME CLOCK, AND ONE IS MANUAL ───
               This box said "Amazon: straight away" and then, three lines on,
@@ -1478,7 +1571,7 @@ export default function LaunchBoard() {
               <p className="text-[12px] font-semibold" style={text}>Amazon: automatic while this page is open</p>
               <p className="text-[11.5px] mt-1" style={muted}>
                 Not on the YouTube schedule. Once a video is on YouTube and a country&apos;s translation and dub are done, SCOUT sends it to that storefront by itself.
-                Amazon has no way for MVP to upload from its servers, so SCOUT does it here, signed in as you: keep this tab open.
+                Amazon has no way for MVP to upload from its servers, so SCOUT does it here, signed in as you: keep this batch open on this page.
                 Amazon takes 20 a day on the US store and 10 a day on each other one, which is its rule, not ours.
               </p>
             </div>
@@ -1490,11 +1583,11 @@ export default function LaunchBoard() {
           <div className="mt-3 flex items-center gap-3 flex-wrap">
             <button
               onClick={() => { setAmazonAuto('on'); void uploadToAmazon() }}
-              disabled={busy === 'amazon' || !!out.amazonBlocker}
+              disabled={amazonBusy || !!studioBusy || !!out.amazonBlocker || batch.markets.length === 0}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-45"
               style={{ background: '#0EA5A4' }}>
-              {busy === 'amazon' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              {busy === 'amazon' ? 'Sending to Amazon…' : `Send to Amazon now (${batch.markets.length} ${batch.markets.length === 1 ? 'country' : 'countries'})`}
+              {amazonBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {amazonBusy ? 'Sending to Amazon…' : `Send to Amazon now (${batch.markets.length} ${batch.markets.length === 1 ? 'country' : 'countries'})`}
             </button>
             <span className="text-[11.5px] min-w-0 flex-1" style={out.amazonBlocker ? { color: '#d97706' } : muted}>
               {out.amazonBlocker
@@ -1521,7 +1614,7 @@ export default function LaunchBoard() {
           they all matter at once is the moment somebody is about to publish.
           Scrolling back through six accordions to check what you chose is not
           reviewing, it is hoping. */}
-      {!blocker && !launched && items.length > 0 && (
+      {!blocker && !launched && !scheduleLocked && items.length > 0 && (
         <div className="rounded-2xl border p-4" style={{ borderColor: '#0EA5A4', background: 'rgba(14,165,164,0.05)' }}>
           <p className="text-[13px] font-semibold mb-2" style={text}>What pressing Launch does</p>
           <ul className="flex flex-col gap-1">
@@ -1542,7 +1635,7 @@ export default function LaunchBoard() {
           Launch lived inside step six, so reaching it meant scrolling past
           everything and opening an accordion. It rides along now, with the
           reason it is disabled beside it rather than nowhere. */}
-      {batch.state !== 'launched' && items.length > 0 && !mainLaunchInView && (
+      {!scheduleLocked && items.length > 0 && !mainLaunchInView && (
         <div className="sticky bottom-3 z-10 rounded-xl border px-3 py-2.5 flex items-center gap-3 flex-wrap"
           style={{
             borderColor: blocker ? 'var(--border)' : '#0EA5A4',
@@ -1577,7 +1670,7 @@ export default function LaunchBoard() {
             {/* ONE AT A TIME, ON PURPOSE. Each run takes over a Studio tab for
                 a minute or two, and two at once would fight over it. */}
             {scoutCanStudio && items.some((i) => !!i.youtube_video_id) && (
-              <button onClick={() => void finishAllInStudio()} disabled={!!studioBusy}
+              <button onClick={() => void finishAllInStudio()} disabled={!!studioBusy || amazonBusy}
                 className="text-[12px] px-3 py-1.5 rounded-lg font-semibold text-white disabled:opacity-50"
                 style={{ background: '#0EA5A4' }}>
                 {studioBusy ? 'SCOUT is in Studio…' : 'Finish all in Studio'}
@@ -1758,7 +1851,7 @@ export default function LaunchBoard() {
                   </button>
                 )}
                 {it.youtube_video_id && scoutCanStudio && (
-                  <button onClick={() => void finishInStudio(it)} disabled={!!studioBusy}
+                  <button onClick={() => void finishInStudio(it)} disabled={!!studioBusy || amazonBusy}
                     className="text-[11.5px] px-2.5 py-1 rounded-lg border shrink-0 disabled:opacity-50"
                     style={{ borderColor: '#0EA5A4', color: '#0EA5A4' }}>
                     {(liveRuns[it.id] ?? it.studio_finish) ? 'Run Studio again' : 'Finish in Studio'}
@@ -2099,11 +2192,14 @@ function SlotEditor({
  * any row is, naming which one. What is on screen is what YouTube gets.
  */
 function ScheduleRow({
-  n, title, sched, timezone, locked, available, busy, onSet, onReset, onDirty,
+  n, title, sched, fixedAt, timezone, locked, available, busy, onSet, onReset, onDirty,
 }: {
   n: number
   title: string
   sched: ItemSchedule | undefined
+  /** When locked: the time the uploader has, or the time YouTube confirmed.
+   *  Not the pattern's, which may have been changed since. */
+  fixedAt?: string | null
   timezone: string
   /** Launched, or already on YouTube: the time is fixed. */
   locked: boolean
@@ -2123,8 +2219,11 @@ function ScheduleRow({
 
   const dirty = (d !== (sched?.date ?? '') || t !== (sched?.time ?? '')) && !!d && !!t
   useEffect(() => { onDirty(dirty) }, [dirty, onDirty])
+  // FOLDED AWAY IS NOT UNSAVED. Closing the step unmounts this row and loses
+  // the edit, so it must stop holding Launch back for a row nobody can see.
+  useEffect(() => () => onDirty(false), [onDirty])
 
-  const now = sched && sched.at.getTime() <= Date.now()
+  const now = !locked && sched && sched.at.getTime() <= Date.now()
   const editable = available && !locked
 
   return (
@@ -2173,12 +2272,12 @@ function ScheduleRow({
             <span className="text-[10.5px]" style={{ color: '#d97706' }}>needs a time</span>
           )}
         </span>
-      ) : sched ? (
+      ) : (locked && fixedAt) || sched ? (
         <span className="tabular-nums">
           {new Intl.DateTimeFormat('en-GB', {
             timeZone: timezone, weekday: 'short', day: '2-digit', month: 'short',
             hour: '2-digit', minute: '2-digit', hour12: false,
-          }).format(sched.at)}
+          }).format(locked && fixedAt ? new Date(fixedAt) : sched!.at)}
         </span>
       ) : (
         <span style={{ color: '#d97706' }}>no time yet</span>
