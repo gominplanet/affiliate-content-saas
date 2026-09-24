@@ -352,7 +352,7 @@ async function loadInterestProfile(sb: any, userId: string) {
     sb.from('brand_profiles').select('niches, custom_categories').eq('user_id', userId).maybeSingle()
       .then((r: { data: { niches?: string[] | null; custom_categories?: string[] | null } | null }) => r.data, () => null),
     sb.from('youtube_videos').select('title, generated_tags, selected_category')
-      .eq('user_id', userId).order('published_at', { ascending: false }).limit(60)
+      .eq('user_id', userId).order('published_at', { ascending: false, nullsFirst: false }).limit(60)
       .then((r: { data: { title: string | null; generated_tags: unknown; selected_category: string | null }[] | null }) => r.data ?? [], () => []),
     sb.from('blog_posts').select('title, seo_keyword, affiliate_keywords')
       .eq('user_id', userId).order('created_at', { ascending: false }).limit(60)

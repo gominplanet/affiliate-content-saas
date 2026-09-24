@@ -2678,7 +2678,7 @@ export default function ContentPage() {
           .select('*')
           .eq('user_id', user.id)
           .or(`title.ilike.${like},description.ilike.${like},channel_title.ilike.${like}`)
-          .order('published_at', { ascending: false })
+          .order('published_at', { ascending: false, nullsFirst: false })
           .limit(300)
         if (!cancelled) setVideoSearchExtra((data as Record<string, unknown>[]) ?? [])
       } catch { if (!cancelled) setVideoSearchExtra([]) }
@@ -2785,7 +2785,7 @@ export default function ContentPage() {
           .from('youtube_videos')
           .select(COLS)
           .eq('user_id', uid)
-          .order('published_at', { ascending: false })
+          .order('published_at', { ascending: false, nullsFirst: false })
           .range(from, from + PAGE - 1)
         if (error) {
           // Stash for the toast below. Previously a silent break, which
@@ -2838,7 +2838,7 @@ export default function ContentPage() {
       // Bounded to the same newest-MAX_VIDEOS window the main list loads (same
       // published_at desc order), so we never pull the user's entire catalog a
       // second time just for tags, and every loaded video still gets its tag.
-      (async () => { try { const { data } = await (sb.from('youtube_videos') as any).select('id,brand_tags').eq('user_id', user.id).order('published_at', { ascending: false }).limit(4000); return (data as Record<string, unknown>[]) || [] } catch { return [] } })(),
+      (async () => { try { const { data } = await (sb.from('youtube_videos') as any).select('id,brand_tags').eq('user_id', user.id).order('published_at', { ascending: false, nullsFirst: false }).limit(4000); return (data as Record<string, unknown>[]) || [] } catch { return [] } })(),
     ])
 
     // Merge brand_tags into the video rows by id (best-effort; absent → null).

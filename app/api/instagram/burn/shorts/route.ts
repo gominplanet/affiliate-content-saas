@@ -24,7 +24,7 @@ export async function GET() {
     .select('id,title,thumbnail_url,view_count,published_at,product_url,instagram_video_url,youtube_video_id,tiktok_posted_at,instagram_posted_at')
     .eq('user_id', user.id)
     .eq('is_vertical', true)
-    .order('published_at', { ascending: false })
+    .order('published_at', { ascending: false, nullsFirst: false })
     .limit(200)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

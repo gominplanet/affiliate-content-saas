@@ -262,7 +262,7 @@ export default function ClipFactoryPage() {
         .from('youtube_videos')
         .select('id,youtube_video_id,title,thumbnail_url,duration_seconds,is_vertical,published_at')
         .eq('user_id', user.id).or('is_vertical.is.null,is_vertical.eq.false')
-        .order('published_at', { ascending: false }).limit(200)
+        .order('published_at', { ascending: false, nullsFirst: false }).limit(200)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setVideos(((data ?? []) as any[]).map(v => ({
         id: v.id, youtubeVideoId: v.youtube_video_id ?? null, title: v.title ?? 'Untitled',

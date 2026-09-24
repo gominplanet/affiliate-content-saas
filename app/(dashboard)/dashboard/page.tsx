@@ -120,7 +120,7 @@ export default async function DashboardPage() {
     sb.from('youtube_videos')
       .select('id, title, published_at, thumbnail_url, youtube_video_id, is_vertical')
       .eq('user_id', user!.id)
-      .order('published_at', { ascending: false })
+      .order('published_at', { ascending: false, nullsFirst: false })
       .limit(6),
   ])
   const postsUsed = plan.lifetimeMax !== null ? (postCount ?? 0) : (postsThisPeriod ?? 0)
