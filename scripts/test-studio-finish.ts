@@ -79,7 +79,14 @@ check('the manifest and the app registry agree on the version',
 {
   const mon = BG.slice(BG.indexOf('function studioFinishMonetizeInPage(opts) {'), BG.indexOf('function studioFinishEndScreenInPage() {'))
   check('monetization is only switched On when it was asked for', /const wantOn = o\.monetize !== false/.test(mon) && /const trigger = wantOn \?/.test(mon))
-  check('and the Video page run passes both answers', /\[\{ monetize: want\.monetize === true, selfCert: want\.selfCert === true \}\]/.test(BG))
+  check('and the Video page run passes both answers', /studioDraftExec\(tabId, 'monetization', \{ page: true, on: !!want\.monetize, selfCert: !!want\.selfCert \}\)/.test(BG))
+  // ── 1.21.12: a video that is not a draft gets the same steps ───────────
+  check('a video that is not a draft (a Liftoff upload) is tagged, monetized and given its end screen by the kit, on its own pages',
+    /studioDraftExec\(tabId, 'tagproduct', \{ page: true,/.test(BG) && /studioDraftExec\(tabId, 'endscreen', \{ page: true, videoId \}\)/.test(BG)
+    && !/Tagging on a video that is not a draft is not automated yet/.test(BG)
+    && !/runPanel\('endscreens', studioFinishEndScreenInPage/.test(BG) && !/runPanel\('monetization', studioFinishMonetizeInPage/.test(BG))
+  check('and each of those pages is kept with its own Save',
+    (BG.match(/const pageSave = await waitFor\(\(\) => findBtn\(\/\^save\$\/i, document, \{ enabled: true \}\), 6000, 400\)/g) ?? []).length === 2)
   check('the read-back only looks at what is on screen', /const shown = \(el\) =>/.test(mon) && /!shown\(el\)/.test(mon))
   check('a rating asked for and not sent is not a green tick', /out\.ok = monOn && \(!o\.selfCert \|\| out\.certOk\)/.test(mon))
   check('the checks page does not stop on its own age-restriction help text',
@@ -158,7 +165,7 @@ check('the manifest and the app registry agree on the version',
   const kit = BG.slice(BG.indexOf('function studioKitInstallInPage()'), BG.indexOf('K.steps = {}'))
   check('disabled is read on the button\'s wrapper as well as the button',
     /const isDisabled = \(el\) => \{[\s\S]{0,400}?for \(let i = 0; i < 4 && e; i\+\+\)/.test(kit))
-  check('the kit version moves when the kit changes', /const KIT_VERSION = 8\b/.test(BG))
+  check('the kit version moves when the kit changes', /const KIT_VERSION = 9\b/.test(BG))
   const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
   check('a menu that opened is not clicked shut by the next try',
     /if \(dialogsNow\(\)\.some\(\(x\) => !before\.includes\(x\)\)\) \{ onOpt = await waitFor/.test(kitMon))

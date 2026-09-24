@@ -70,7 +70,7 @@ check('an empty fingerprint counts as the same', /\|\| 'empty'/.test(handlers))
 }
 check('stuck work waits longer each time, up to an hour',
   /Math\.min\(60, \(st\.lastWait \|\| 5\) \* 2\)/.test(handlers) && /sig === st\.lastSignature/.test(handlers))
-const scan = BG.slice(BG.indexOf('async function scanStudioFinish('), BG.indexOf('async function scanStudioFinish(') + 9000)
+const scan = BG.slice(BG.indexOf('async function scanStudioFinish('), BG.indexOf('async function scanStudioFinish(') + 16000)
 check('a background Studio pass opens Studio behind, and does not jump back',
   /active: want\.background !== true/.test(scan) && /callerTabId != null && want\.background !== true/.test(scan))
 

@@ -8069,7 +8069,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 8
+  const KIT_VERSION = 9
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -8586,7 +8586,9 @@ function studioKitInstallInPage() {
   }
 
 K.steps.monetization = async (out, o) => {
-    const dlg = mainDialog()
+    // A draft's Monetization page, or (o.page) a video's own Ways to earn
+    // page, where Liftoff's uploads are finished, with its own Save.
+    const dlg = o.page ? document.body : mainDialog()
     if (!dlg) { out.detail = 'The draft window closed'; return out }
     const trigger = () => {
       // VISIBLE ONLY. The draft window keeps its other pages in the page, and
@@ -8710,8 +8712,18 @@ K.steps.monetization = async (out, o) => {
     out.readBack.menuButton = nextOrDone ? (deepText(nextOrDone) || attrLabel(nextOrDone)) : null
     if (nextOrDone) { click(nextOrDone); await sleep(1200) }
     out.readBack.rating = await K.rate(o, out)
+    // WAYS TO EARN KEEPS NOTHING UNTIL ITS OWN SAVE. The draft saves as it
+    // goes; a video's page does not.
+    if (o.page) {
+      const pageSave = await waitFor(() => findBtn(/^save$/i, document, { enabled: true }), 6000, 400)
+      out.readBack.pageSave = !!pageSave
+      if (pageSave) {
+        click(pageSave)
+        out.readBack.saved = !!(await waitFor(() => { const b = findBtn(/^save$/i, document); return !b || isDisabled(b) ? true : null }, 20000, 500))
+      }
+    }
     out.readBack.monetization = state()
-    out.ok = out.readBack.monetization === 'on'
+    out.ok = out.readBack.monetization === 'on' && (!o.page || out.readBack.saved !== false)
     const said = out.readBack.rating === 'submitted' ? ' Rating: None of the above, submitted.'
       : out.readBack.rating === 'not-asked' ? ' The rating was not asked for, so it was cancelled.'
       : out.readBack.rating === 'failed' ? ' The rating could not be submitted: ' + (out.readBack.ratingWhy || 'see Studio') + '.' : ''
@@ -8758,11 +8770,16 @@ K.steps.monetization = async (out, o) => {
   }
 
   K.steps.tagproduct = async (out, o) => {
-    const dlg = mainDialog()
+    // A draft's Video elements page, or (o.page) a video's own Details page,
+    // where the same Tag products window opens from its Products button and
+    // the page's own Save keeps it.
+    const dlg = o.page ? document.body : mainDialog()
     if (!dlg) { out.detail = 'The draft window closed'; return out }
     if (!o.productUrl && !o.amazonUrl) { out.skipped = true; out.detail = 'No product link to tag'; return out }
-    const addBtns = () => all(dlg).filter((el) => isBtn(el) && visible(el) && /^add$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'products')
-    const rowDone = () => all(dlg).some((el) => isBtn(el) && visible(el) && /^edit$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'products')
+    const addBtns = () => o.page
+      ? [findBtn(/^(products|add products|tag products|shopping)$/i, document)].filter(Boolean)
+      : all(dlg).filter((el) => isBtn(el) && visible(el) && /^add$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'products')
+    const rowDone = () => !o.page && all(dlg).some((el) => isBtn(el) && visible(el) && /^edit$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'products')
     if (rowDone() && !addBtns().length) { out.ok = true; out.readBack.tagged = true; out.detail = 'A product was already tagged'; return out }
     const add = addBtns()[0]
     if (!add) { out.skipped = true; out.detail = 'Tag products is not offered on this channel'; return out }
@@ -8953,6 +8970,21 @@ K.steps.monetization = async (out, o) => {
       const doneBtn = await waitFor(() => findBtn(/^done$/i, document, { enabled: true }), 10000, 400)
       if (doneBtn) click(doneBtn)
     }
+    if (o.page) {
+      // The window closes on Done; the video's page keeps it on its Save.
+      const gone = await waitFor(() => (!d.isConnected || !visible(d) ? true : null), 10000, 400)
+      const pageSave = await waitFor(() => findBtn(/^save$/i, document, { enabled: true }), 6000, 400)
+      if (pageSave) click(pageSave)
+      const saved = pageSave ? !!(await waitFor(() => { const b = findBtn(/^save$/i, document); return !b || isDisabled(b) ? true : null }, 20000, 500)) : false
+      out.readBack.tagged = !!gone
+      out.readBack.saved = saved
+      out.ok = !!gone && saved
+      out.detail = out.ok ? 'Tagged "' + name.slice(0, 70) + '" and saved on the video\u2019s page'
+        : !gone ? 'Pressed + and Done, but the Tag products window stayed open'
+        : 'Tagged "' + name.slice(0, 60) + '", but the video\u2019s page did not save it'
+      if (!out.ok) out.debug.buttons = buttonSample(document)
+      return out
+    }
     await waitFor(() => (rowDone() ? true : null), 10000, 500)
     out.readBack.tagged = rowDone()
     out.ok = out.readBack.tagged
@@ -8974,51 +9006,62 @@ K.steps.monetization = async (out, o) => {
     const addBtn = () => all(dlg).find((el) => isBtn(el) && visible(el) && /^add$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'endscreen') || null
     const editorOpen = () => (findBtn(/^discard changes$/i, document) && /import from latest video/i.test(visibleText(document)) ? true : null)
     const editorSave = () => findBtn(/^save$/i, document, { enabled: true })
-    if (!rowDone() && addBtn()) {
-      click(addBtn())
-      if (await waitFor(editorOpen, 20000, 500)) {
-        const label = all(document).find((el) => visible(el) && /^import from latest video$/i.test(deepText(el)))
-        const targets = []
-        if (label) {
-          let e = label
-          for (let i = 0; i < 5 && e; i++) {
-            if (isBtn(e) || (e.getAttribute && (e.getAttribute('tabindex') === '0' || /^(button|option|listitem|gridcell)$/.test(e.getAttribute('role') || '')))) targets.push(e)
-            e = up(e)
-          }
-          // The card drawn above the label, when the label is its caption.
-          const prev = label.previousElementSibling
-          if (prev) targets.push(prev)
-          targets.push(label)
+    const inEditor = async () => {
+      const label = all(document).find((el) => visible(el) && /^import from latest video$/i.test(deepText(el)))
+      const targets = []
+      if (label) {
+        let e = label
+        for (let i = 0; i < 5 && e; i++) {
+          if (isBtn(e) || (e.getAttribute && (e.getAttribute('tabindex') === '0' || /^(button|option|listitem|gridcell)$/.test(e.getAttribute('role') || '')))) targets.push(e)
+          e = up(e)
         }
-        out.debug.templateTargets = targets.map((t) => (t.tagName || '').toLowerCase()).slice(0, 6)
-        let save = null
-        for (const t of targets) {
-          click(t)
-          save = await waitFor(editorSave, 6000, 400)
-          if (save) break
-        }
-        if (!save) {
-          out.detail = label ? 'Chose Import from latest video, but the editor had nothing to save (does your latest video have an end screen?)' : 'Opened the end-screen editor, but found no Import from latest video'
-          out.debug.buttons = buttonSample(document)
-          const discard = findBtn(/^discard changes$/i, document)
-          if (discard) click(discard)
-          return out
-        }
-        click(save)
-        const closed = await waitFor(() => (!editorOpen() ? true : null), 20000, 600)
-        await waitFor(() => (rowDone() ? true : null), 8000, 500)
-        out.readBack.editorClosed = !!closed
-        out.readBack.endScreen = rowDone()
-        out.readBack.importedFrom = 'your latest video'
-        // THE EDITOR CLOSING ON A LIT SAVE is Studio accepting it; the row's
-        // Edit button is the second read. Either one, said as which.
-        out.ok = out.readBack.endScreen || !!closed
-        out.detail = out.readBack.endScreen ? 'End screen imported from your latest video'
-          : closed ? 'End screen imported from your latest video (Studio closed the editor on Save)'
-          : 'Pressed Save in the end-screen editor, but it stayed open, so the end screen was not saved'
-        if (!out.ok) out.debug.buttons = buttonSample(document)
+        // The card drawn above the label, when the label is its caption.
+        const prev = label.previousElementSibling
+        if (prev) targets.push(prev)
+        targets.push(label)
+      }
+      out.debug.templateTargets = targets.map((t) => (t.tagName || '').toLowerCase()).slice(0, 6)
+      let save = null
+      for (const t of targets) {
+        click(t)
+        save = await waitFor(editorSave, 6000, 400)
+        if (save) break
+      }
+      if (!save) {
+        out.detail = label ? 'Chose Import from latest video, but the editor had nothing to save (does your latest video have an end screen?)' : 'Opened the end-screen editor, but found no Import from latest video'
+        out.debug.buttons = buttonSample(document)
+        const discard = findBtn(/^discard changes$/i, document)
+        if (discard) click(discard)
         return out
       }
+      click(save)
+      // SAVED = the editor gone, or its Save gone grey again. The templates
+      // panel (and its "Import from latest video" text) disappears as soon as a
+      // template is applied, so that text is not the sign the editor closed.
+      const closed = await waitFor(() => (!findBtn(/^discard changes$/i, document) || !editorSave() ? true : null), 20000, 600)
+      await waitFor(() => (rowDone() ? true : null), 8000, 500)
+      out.readBack.editorClosed = !!closed
+      out.readBack.endScreen = rowDone()
+      out.readBack.importedFrom = 'your latest video'
+      // THE EDITOR CLOSING ON A LIT SAVE is Studio accepting it; the row's
+      // Edit button is the second read. Either one, said as which.
+      out.ok = out.readBack.endScreen || !!closed
+      out.detail = out.readBack.endScreen ? 'End screen imported from your latest video'
+        : closed ? 'End screen imported from your latest video (Studio closed the editor on Save)'
+        : 'Pressed Save in the end-screen editor, but it stayed open, so the end screen was not saved'
+      if (!out.ok) out.debug.buttons = buttonSample(document)
+      return out
+    }
+    if (o.page) {
+      if (await waitFor(editorOpen, 25000, 500)) return await inEditor()
+      out.detail = 'The video\u2019s end-screen page did not open the editor'
+      out.debug.buttons = buttonSample(document)
+      out.debug.url = location.href.slice(0, 160)
+      return out
+    }
+    if (!rowDone() && addBtn()) {
+      click(addBtn())
+      if (await waitFor(editorOpen, 20000, 500)) return await inEditor()
       out.debug.editor = 'did not open'
     }
     if (!importBtn()) {
@@ -9490,21 +9533,39 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
         steps.push(Object.assign({}, check || {}, { step: 'details' }))
       }
     }
+    // ── THE SAME STEPS AS A DRAFT, ON THE VIDEO'S OWN PAGES ─────────────
+    // Liftoff uploads through YouTube's API, so its videos are never drafts,
+    // and they were finished by older scripts: the product tag was not done
+    // at all, monetization clicked the outer layer of its switch (a click
+    // that opens nothing), and the end screen went through a picker that
+    // never saved. Now the kit's own steps run on the Details, Ways to earn
+    // and end-screen pages, the ones proven on Co-Pilot's drafts, each read
+    // back and saved with the page's own Save.
     if (want.tagProduct && want.productUrl) {
-      // NOT ON THIS PAGE, NOT YET. The old script clicked the first "Add"
-      // button it found and reported success on the click, with no check that
-      // it tagged the product rather than a similar one. Tagging a stranger's
-      // product on a creator's video is worse than not tagging, so on a
-      // video that is not a draft it is said, not guessed at.
-      steps.push({ step: 'tagproduct', ok: false, skipped: true, detail: 'Tagging on a video that is not a draft is not automated yet. Tag it in Studio under Shopping.' })
+      await goto('edit', true)
+      await sleep(1500)
+      steps.push(await studioDraftExec(tabId, 'tagproduct', { page: true, productUrl: String(want.productUrl), amazonUrl: want.amazonUrl ? String(want.amazonUrl) : '', productTitle: want.productTitle ? String(want.productTitle) : '' }))
     }
     if (want.monetize || want.selfCert) {
-      // Only what was asked: monetization off in the batch's options no
-      // longer switches it on here because the rating was wanted.
-      steps.push(await runPanel('monetization', studioFinishMonetizeInPage, [{ monetize: want.monetize === true, selfCert: want.selfCert === true }], 'monetization'))
+      let mo = null
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await goto('monetization', attempt > 0)
+        await sleep(2000)
+        mo = await studioDraftExec(tabId, 'monetization', { page: true, on: !!want.monetize, selfCert: !!want.selfCert })
+        if (!mo.needsReload) break
+      }
+      steps.push(mo)
+      const rt = mo && mo.readBack ? mo.readBack.rating : null
+      if (want.selfCert && rt) {
+        steps.push(rt === 'submitted'
+          ? { step: 'adsuit', ok: true, detail: 'None of the above, submitted. Read back by the rating window closing.' }
+          : { step: 'adsuit', ok: false, detail: 'The rating could not be submitted: ' + (mo.readBack.ratingWhy || 'see Studio') })
+      }
     }
     if (want.endScreen) {
-      steps.push(await runPanel('endscreens', studioFinishEndScreenInPage, [], 'endscreen'))
+      await goto('endscreens', true)
+      await sleep(2000)
+      steps.push(await studioDraftExec(tabId, 'endscreen', { page: true, videoId }))
     }
     // ONE STEP WORKING IS NOT "IT WORKED".
     // This used to be steps.some(), so a run where details failed and end
