@@ -158,7 +158,7 @@ check('the manifest and the app registry agree on the version',
   const kit = BG.slice(BG.indexOf('function studioKitInstallInPage()'), BG.indexOf('K.steps = {}'))
   check('disabled is read on the button\'s wrapper as well as the button',
     /const isDisabled = \(el\) => \{[\s\S]{0,400}?for \(let i = 0; i < 4 && e; i\+\+\)/.test(kit))
-  check('the kit version moves when the kit changes', /const KIT_VERSION = 7\b/.test(BG))
+  check('the kit version moves when the kit changes', /const KIT_VERSION = 8\b/.test(BG))
   const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
   check('a menu that opened is not clicked shut by the next try',
     /if \(dialogsNow\(\)\.some\(\(x\) => !before\.includes\(x\)\)\) \{ onOpt = await waitFor/.test(kitMon))
@@ -189,7 +189,7 @@ check('the manifest and the app registry agree on the version',
   const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
   check('an On that was not on the page before the click is the choice, wherever Studio draws it',
     /const fresh = all\(document\)\.filter\(\(el\) => visible\(el\) && \/\^on\$\/i\.test\(deepText\(el\)\) && !onBefore\.has\(el\)\)/.test(kitMon)
-    && /return smallest\(fresh\)/.test(kitMon)
+    && /const f1 = smallest\(fresh\)\n\s*if \(f1\) return f1/.test(kitMon)
     && /onBefore = new Set\(all\(document\)\.filter/.test(kitMon)
     && kitMon.indexOf('onBefore = new Set(all(document)') < kitMon.indexOf('click(opener)'))
 }
@@ -201,6 +201,14 @@ check('the manifest and the app registry agree on the version',
     /findBtn\(\/\^\(next\|done\)\$\/i, d, \{ enabled: true \}\)/.test(kitTag) && /if \(wasNext\) \{/.test(kitTag))
   const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
   check('a monetization miss records where the switch it clicked lives', /out\.debug\.inDraftWindow = /.test(kitMon) && /out\.debug\.switchPath = /.test(kitMon))
+}
+
+// ── 1.21.11: click the innermost Off, as a hand does ──────────────────────
+{
+  const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
+  check('the monetization switch is clicked at its innermost Off, so the click passes every layer',
+    /for \(const el of all\(t\)\) \{ if \(visible\(el\) && \/\^\(on\|off\)\$\/i\.test\(deepText\(el\)\)\) inner = el \}/.test(kitMon)
+    && /const openers = \[inner\]/.test(kitMon))
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

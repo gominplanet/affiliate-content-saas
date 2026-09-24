@@ -8069,7 +8069,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 7
+  const KIT_VERSION = 8
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -8640,13 +8640,29 @@ K.steps.monetization = async (out, o) => {
       // appeared, in no popup Studio marks as one, so none of the above saw
       // it. An "On" that appeared with the click is the choice.
       const fresh = all(document).filter((el) => visible(el) && /^on$/i.test(deepText(el)) && !onBefore.has(el))
-      return smallest(fresh)
+      const f1 = smallest(fresh)
+      if (f1) return f1
+      // Or an On that was already drawn (a menu Studio keeps in the page and
+      // only shows), when it sits in something option-like.
+      const optionish = (el) => { let x = el; for (let i = 0; i < 8 && x; i++) { if (/radio|option|item|listbox|menu/i.test((x.tagName || '') + ' ' + ((x.getAttribute && x.getAttribute('role')) || ''))) return true; x = up(x) } return false }
+      return smallest(all(document).filter((el) => visible(el) && /^on$/i.test(deepText(el)) && optionish(el)))
     }
     // AND MORE THAN ONE WAY IN. The text "Off" is often a label inside the
     // real button, and a click on the label opens nothing; its button-like
     // ancestors are tried next.
-    const openers = [t]
-    let e = up(t)
+    // THE INNERMOST "OFF" FIRST. SCOUT's record of the draft's page:
+    //   child-input > ytcp-video-monetization > container > text-container > Off
+    // It clicked child-input, the outermost, and a click only travels UP from
+    // where it lands, so whatever inside ytcp-video-monetization opens the menu
+    // never heard it. A click on the innermost "Off" passes through every one
+    // of them on its way up, the way a hand's does.
+    let inner = t
+    for (const el of all(t)) { if (visible(el) && /^(on|off)$/i.test(deepText(el))) inner = el }
+    const openers = [inner]
+    let e = up(inner)
+    for (let i = 0; i < 8 && e && e !== t; i++) { if (/monetization|trigger|dropdown|container/i.test((e.tagName || '') + ' ' + (e.id || ''))) openers.push(e); e = up(e) }
+    openers.push(t)
+    e = up(t)
     for (let i = 0; i < 4 && e && e !== dlg; i++) { if (isBtn(e) || (e.getAttribute && (e.getAttribute('role') === 'button' || e.getAttribute('tabindex') === '0'))) openers.push(e); e = up(e) }
     let before = dialogsNow()
     let onOpt = null
@@ -8680,6 +8696,7 @@ K.steps.monetization = async (out, o) => {
       out.debug.inDraftWindow = !!(host && chain.some((x) => x.indexOf('ytcp-uploads-dialog') === 0))
       out.debug.draftWindowOpen = !!(host && visible(host))
       out.debug.pageText = visibleText(dlg).slice(0, 400)
+      out.debug.onPaths = all(document).filter((el) => visible(el) && /^on$/i.test(deepText(el))).slice(0, 3).map((el) => { const ch = []; let x = el; for (let i = 0; i < 8 && x; i++) { ch.push((x.tagName || '').toLowerCase() + (x.id ? '#' + x.id : '')); x = up(x) } return ch.join(' < ') })
       out.debug.onOff = all(document).filter((el) => visible(el) && /^(on|off)$/i.test(deepText(el)))
         .map((el) => (el.tagName || '').toLowerCase() + (el.id ? '#' + el.id : '') + '[' + ((el.getAttribute && el.getAttribute('role')) || '') + ']=' + deepText(el)).slice(0, 12)
       return out
