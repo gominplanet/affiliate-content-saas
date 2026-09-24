@@ -8069,7 +8069,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 3
+  const KIT_VERSION = 4
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -8342,7 +8342,7 @@ function studioKitInstallInPage() {
   const page = (dlg) => {
     const vt = visibleText(dlg).toLowerCase()
     if (/\bpublic\b/.test(vt) && /\bprivate\b/.test(vt) && /\bunlisted\b/.test(vt)) return 'visibility'
-    if (/copyright/.test(vt) && /community guidelines/.test(vt)) return 'checks'
+    if (/copyright/.test(vt) && /community guidelines|we.ll check your video|checking/.test(vt)) return 'checks'
     if (/end screen/.test(vt) && /\bcards\b/.test(vt)) return 'elements'
     if (/none of the above/.test(vt)) return 'adsuit'
     if (/made for kids|title \(required\)|add a title/.test(vt)) return 'details'
@@ -8404,9 +8404,15 @@ function studioKitInstallInPage() {
   }
 
   K.steps.where = async (out) => {
+    // A PAGE STILL LOADING IS NOT AN UNKNOWN PAGE. Right after the end-screen
+    // editor closes, Next lands on Checks while it is still drawing, before
+    // "Community Guidelines" is on it, and a single look called it unknown and
+    // stopped the run short of Visibility. Looked at again for up to fifteen
+    // seconds before giving up.
+    const known = await waitFor(() => { const d = mainDialog(); if (!d) return null; const p = page(d); return p !== 'unknown' ? p : null }, 15000, 500)
     const dlg = mainDialog()
     if (!dlg) { out.page = 'gone'; out.detail = 'The draft window is not open'; return out }
-    out.page = page(dlg)
+    out.page = known || page(dlg)
     out.ok = true
     if (out.page === 'unknown') { out.debug.text = visibleText(dlg).slice(0, 600); out.debug.buttons = buttonSample(dlg) }
     return out

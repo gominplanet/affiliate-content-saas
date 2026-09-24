@@ -1556,8 +1556,13 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     // far in is held.
     const vis = fin?.steps.find((s) => s.step === 'visibility')
     if (fin?.path === 'draft' && (!vis || vis.notReached)) {
-      const stoppedAt = fin.steps.find((s) => !s.ok && !s.skipped && !s.notReached)
-      setApplyError(`SCOUT stopped${stoppedAt ? ` at ${studioStepLabel(stoppedAt.step)}` : ''} in the draft, so it was not ${publishAt ? 'scheduled' : `set to ${proSettings.privacyStatus}`}. It is still a draft on YouTube.${stoppedAt?.detail ? ` ${stoppedAt.detail}` : ''} Press Run SCOUT again, or see it in YouTube Studio.`)
+      // THE STEP IT STOPPED AT is the LAST one that failed: an earlier step can
+      // fail and the run carry on (monetization did, and the banner blamed it
+      // for a stop that happened pages later).
+      const failedSteps = fin.steps.filter((s) => !s.ok && !s.skipped && !s.notReached)
+      const stoppedAt = failedSteps[failedSteps.length - 1]
+      const why = stoppedAt?.detail ? ` ${stoppedAt.detail.replace(/[.\s]*$/, '')}.` : ''
+      setApplyError(`SCOUT stopped${stoppedAt ? ` at ${studioStepLabel(stoppedAt.step)}` : ''} in the draft, so it was not ${publishAt ? 'scheduled' : `set to ${proSettings.privacyStatus}`}. It is still a draft on YouTube.${why} Press Run SCOUT again, or see it in YouTube Studio.`)
       return
     }
     // Paid promotion confirmed by YouTube's API counts as much as SCOUT's read
