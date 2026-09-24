@@ -1678,6 +1678,9 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       check('a translation that gives up fails its countries, and the dub queue is not starved by them',
         /\.eq\('job_id', job\.id\)\.eq\('state', 'pending'\)/.test(read('app/api/cron/drain-global-sync/route.ts'))
         && /\.limit\(DUBS \* 25\)/.test(COV) && /The title and description could not be translated\/\.test/.test(COV))
+      check('a Liftoff video goes only to its batch\'s countries, never the account-wide ticks',
+        /const videos = all\.filter\(\(v\) => !liftoff\.has\(v\.id\)\)/.test(COV) && /from\('launch_items'\)\.select\('video_id'\)/.test(COV)
+        && /liftItems\.has\(v\.youtube_video_id\.slice\('upload-'\.length\)\)/.test(COV))
       const REP = read('components/launch/LaunchReport.tsx')
       check('only "does not sell this product" reads as Not sold here; any other block is a problem',
         /\/does not sell this product\/i\.test\(entry\.detail \|\| ''\)/.test(REP) && /word: 'Blocked', colour: BAD/.test(REP))
