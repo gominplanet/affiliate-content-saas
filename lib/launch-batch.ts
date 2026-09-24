@@ -426,7 +426,10 @@ export function launchBlocker(batch: BatchRow, items: ItemRow[]): string | null 
   if (open) return `${open.title}: ${open.detail}`
   // Nothing unattended may still be running, or Launch would schedule a video
   // whose CTA is half burned in.
-  const busy = items.filter((i) => i.state === 'draft' || i.state === 'rendering' || i.state === 'preparing')
+  // A LAUNCHED BATCH is only launching its latecomers, each already burned
+  // in; another video still preparing (a Try again) must not hold them back.
+  const late = batch.state === 'launching' || batch.state === 'launched'
+  const busy = late ? [] : items.filter((i) => i.state === 'draft' || i.state === 'rendering' || i.state === 'preparing')
   if (busy.length > 0) {
     return `${busy.length} ${busy.length === 1 ? 'video is' : 'videos are'} still being prepared. This finishes on its own.`
   }

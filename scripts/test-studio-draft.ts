@@ -105,7 +105,7 @@ check('a problem in the checks stops before Visibility',
 check('an asked-for page the draft never showed is said', /This draft had no Monetization page/.test(run))
 check('a greyed Submit rating is not a submitted one', !/if \(!b \|\| isDisabled\(b\)\) return 'button-gone'/.test(kit))
 check('the old monetization step takes the choices and reads back',
-  /function studioFinishMonetizeInPage\(opts\)/.test(BG_RAW) && /const submitCert = o\.selfCert \?/.test(BG_RAW) && /out\.ok = \/\\bon\\b\/i\.test\(reads\)/.test(BG_RAW))
+  /function studioFinishMonetizeInPage\(opts\)/.test(BG_RAW) && /const submitCert = o\.selfCert \?/.test(BG_RAW) && /const monOn = \/\\bon\\b\/i\.test\(reads\)/.test(BG_RAW) && /out\.ok = monOn/.test(BG_RAW))
 check('the old end screen never ticks without a read-back', !/click\(save\); await sleep\(1500\); out\.ok = true/.test(BG_RAW) && /SCOUT cannot read end screens back on this page/.test(BG_RAW))
 check('no product is tagged by the first Add button on a page', !/function studioFinishTagProductInPage/.test(BG_RAW))
 check('one Amazon delivery at a time', /if \(_sfBusy\) \{ sendResponse/.test(BG_RAW))
@@ -135,7 +135,7 @@ const LB = code(read('components/launch/LaunchBoard.tsx'))
 const SF = code(read('lib/studio-finish.ts'))
 check('Liftoff sends the batch toggle to Studio',
   /liftoffStudioRequest\(it, studioOpts, notifySubs\)/.test(LB) && /notifySubscribers,\s*visibility:/.test(SF))
-check('Launch Batch stores the run as SCOUT reported it', /storeStudioRun\(fin\)/.test(LB) && /studioFinish: run/.test(LB))
+check('Launch Batch stores the run as SCOUT reported it', /storeStudioRun\(fin, new Date\(\), liveRuns\[it\.id\] \?\? it\.studio_finish\)/.test(LB) && /studioFinish: run/.test(LB))
 check('a Liftoff draft is only ever given its own time',
   /mode: 'schedule', publishAt: it\.publish_at/.test(SF))
 

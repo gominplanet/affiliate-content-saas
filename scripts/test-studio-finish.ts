@@ -74,6 +74,20 @@ check('the manifest and the app registry agree on the version',
   manifest.version === SCOUT_LATEST_VERSION,
   `manifest ${manifest.version}, registry ${SCOUT_LATEST_VERSION}`)
 
+// ── audit, 1.21.1 ─────────────────────────────────────────────────────────
+{
+  const mon = BG.slice(BG.indexOf('function studioFinishMonetizeInPage(opts) {'), BG.indexOf('function studioFinishEndScreenInPage() {'))
+  check('monetization is only switched On when it was asked for', /const wantOn = o\.monetize !== false/.test(mon) && /const trigger = wantOn \?/.test(mon))
+  check('and the Video page run passes both answers', /\[\{ monetize: want\.monetize === true, selfCert: want\.selfCert === true \}\]/.test(BG))
+  check('the read-back only looks at what is on screen', /const shown = \(el\) =>/.test(mon) && /!shown\(el\)/.test(mon))
+  check('a rating asked for and not sent is not a green tick', /out\.ok = monOn && \(!o\.selfCert \|\| out\.certOk\)/.test(mon))
+  check('the checks page does not stop on its own age-restriction help text',
+    /return \/claim\|issues\? found\|violation\|blocked\/\.test\(rest\)/.test(BG) && !/violation\|restrict\|blocked/.test(BG))
+  check('a missing notify box only fails when Yes was asked',
+    /if \(rb\.notifySubscribers === null && o\.notify !== true\)/.test(BG) && /else if \(o\.notify !== true\) checks\.push/.test(BG))
+  check('Amazon tab that never opened rejects instead of hanging', /if \(chrome\.runtime\.lastError \|\| !tab \|\| tab\.id == null\)/.test(BG))
+}
+
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)
 process.exit(failures.length ? 1 : 0)

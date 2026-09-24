@@ -25,6 +25,7 @@ import { deliverPreparedStorefronts, deliverySummary, type DeliveryOutcome } fro
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
 import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
+import { liftoffPending } from '@/lib/liftoff-pending'
 import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, type LiftoffAutoState } from '@/lib/extension-frame'
 import { isScoutOutdated } from '@/lib/scout-version'
 import {
@@ -210,30 +211,37 @@ export default function LaunchBoard() {
   const studioRunning = useRef(false)
   const studioTried = useRef<Set<string>>(new Set())
   const studioManual = useRef(false)
+  const studioBusyUntil = useRef(0)
+  const lastStudioError = useRef<string | null>(null)
+  // THE SAME RULE AS THE BACKGROUND TAB (lib/liftoff-pending): on YouTube,
+  // within the work window, and no run yet or one that timed out with tries
+  // left. Opening an old batch no longer drives its public videos through
+  // Studio again.
+  const studioDue = (i: Item) => liftoffPending(
+    [{ ...i, studio_finish: liveRuns[i.id] ?? i.studio_finish }], [],
+    { sendToYouTube: batch?.send_to_youtube !== false, studioPossible: scoutCanStudio },
+  ).studio > 0
   const studioTick = useRef<() => void>(() => {})
   studioTick.current = () => {
     if (!scoutCanStudio || !batch || studioRunning.current || studioManual.current || amazonRunning.current) return
+    if (Date.now() < studioBusyUntil.current) return
     if (batch.state !== 'launched' && batch.state !== 'launching') return
     // A run that timed out did not finish, so it goes again (once per visit);
     // one that ran to the end, whatever it found, is left for Run again.
-    const needsRun = (i: Item) => {
-      const r = liveRuns[i.id] ?? i.studio_finish
-      return !r || r.error === 'timeout'
-    }
-    const next = items.find((i) => !!i.youtube_video_id && needsRun(i) && !studioTried.current.has(i.id))
+    const next = items.find((i) => studioDue(i) && !studioTried.current.has(i.id))
     if (!next) return
     studioTried.current.add(next.id)
     void finishInStudio(next)
   }
   // Every video that needs the Studio steps and has not had them yet.
-  const studioPending = items.some((i) => !!i.youtube_video_id && !(liveRuns[i.id] ?? i.studio_finish))
+  const studioPending = items.some((i) => studioDue(i))
 
   // The latest state, read by a timer set once. A closure over the first
   // render would check a batch that has since launched as still a draft.
   const amazonTick = useRef<() => void>(() => {})
   amazonTick.current = () => {
     // The Studio steps go first; Amazon waits for them to finish.
-    if (studioRunning.current || (scoutCanStudio && studioPending && items.some((i) => !!i.youtube_video_id && !studioTried.current.has(i.id)))) return
+    if (studioRunning.current || (scoutCanStudio && items.some((i) => studioDue(i) && !studioTried.current.has(i.id)))) return
     if (amazonAuto !== 'on' || scoutReady !== true || !batch || amazonRunning.current) return
     if (batch.state !== 'launched' && batch.state !== 'launching') return
     if (batch.markets.length === 0 || !items.some((i) => !!i.video_id)) return
@@ -248,6 +256,20 @@ export default function LaunchBoard() {
       else if (!out.nothingReady && out.handedOver + out.duplicates === 0 && out.atCap.length === 0) setAmazonAuto('stopped')
     })
   }
+  // WORK LEFT ON THIS BATCH: SCOUT is asked to look again later, so closing
+  // the page does not stop it. Opening Liftoff with nothing pending no longer
+  // sets a background tab going behind it.
+  const armedFor = useRef<string | null>(null)
+  const pendingHere = batch && (batch.state === 'launched' || batch.state === 'launching')
+    ? liftoffPending(items, batch.markets.map((m) => m.domain), { sendToYouTube: batch.send_to_youtube !== false, studioPossible: scoutCanStudio })
+    : null
+  const workLeft = !!pendingHere && pendingHere.youtube + pendingHere.studio + pendingHere.amazon > 0
+  useEffect(() => {
+    if (!batch || !workLeft || !bgPref || scoutReady !== true || armedFor.current === batch.id) return
+    armedFor.current = batch.id
+    void applyBg(true, 5)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batch?.id, workLeft, bgPref, scoutReady])
   useEffect(() => {
     const first = setTimeout(() => { studioTick.current(); amazonTick.current() }, 5_000)
     const studioEvery = setInterval(() => studioTick.current(), 20_000)
@@ -564,6 +586,7 @@ export default function LaunchBoard() {
         if (!auto) toast('None of these are on YouTube yet, so Amazon has nothing to take. That happens first.', { duration: 9000 })
         return null
       }
+      const forBatch = batchId
       const out = await deliverPreparedStorefronts({
         videoIds,
         domains: batch?.markets.map((m) => m.domain) ?? [],
@@ -572,7 +595,13 @@ export default function LaunchBoard() {
         retryFailed: !auto,
       })
       const lines = deliverySummary(out)
+      // SWITCHED BATCH WHILE IT RAN: this answer belongs to the other one,
+      // and must not be drawn under the batch now on screen.
+      if (currentId.current !== forBatch) return out
       setAmazonNote({ at: new Date(), lines, error: !!out.error })
+      // SCOUT ALREADY UPLOADING (the background tab) is not a failure of the
+      // automatic run, and a red toast every two minutes said it was.
+      if (auto && out.error && /still uploading/i.test(out.error)) return out
       // AUTOMATIC IS QUIET UNLESS SOMETHING HAPPENED. The note under the
       // button always says the latest run; a toast only when listings went up
       // or it went wrong, not every two minutes that nothing was ready.
@@ -665,6 +694,7 @@ export default function LaunchBoard() {
       const fin = await requestStudioFinish(it.youtube_video_id, liftoffStudioRequest(it, studioOpts, notifySubs))
       // SCOUT NEVER STARTED: nothing to keep. Storing it used to mark the
       // video as done-with for the automatic pass, on every later visit too.
+      lastStudioError.current = fin.error ?? null
       if (fin.error === 'not-installed') {
         toast.error('SCOUT did not answer, so nothing was done in Studio. Reload SCOUT and this page.')
         return null
@@ -673,9 +703,12 @@ export default function LaunchBoard() {
       // here, so nothing is kept, and the automatic pass may try again.
       if (fin.error === 'busy') {
         studioTried.current.delete(it.id)
+        // AND WAITS A MINUTE. The retry straight after used to ask SCOUT
+        // again every second and a half for as long as the other run took.
+        studioBusyUntil.current = Date.now() + 60_000
         return null
       }
-      const run = storeStudioRun(fin)
+      const run = storeStudioRun(fin, new Date(), liveRuns[it.id] ?? it.studio_finish)
       setLiveRuns((prev) => ({ ...prev, [it.id]: run }))
       const r = await fetch(`/api/launch/items/${it.id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -710,7 +743,10 @@ export default function LaunchBoard() {
         studioTried.current.add(it.id)
         const run = await finishInStudio(it)
         if (run?.ok) done++
-        if (run?.error === 'not-installed') break
+        // finishInStudio keeps nothing when SCOUT never started, so the
+        // reason is read from the ref: one "did not answer" stops the lot
+        // instead of one toast per video.
+        if (lastStudioError.current === 'not-installed' || lastStudioError.current === 'busy') break
       }
     } finally { studioManual.current = false }
     if (todo.length > 0) {
@@ -1607,9 +1643,14 @@ export default function LaunchBoard() {
             <div className="mt-2 flex items-center gap-3 flex-wrap rounded-lg px-3 py-2" style={{ background: 'rgba(217,119,6,0.08)' }}>
               <span className="text-[12.5px] flex-1 min-w-0" style={{ color: '#d97706' }}>
                 {latecomers.length === 1 ? 'Video' : 'Videos'} {latecomers.map((i) => i.position + 1).join(', ')} {latecomers.length === 1 ? 'is' : 'are'} ready
-                but not launched yet. {latecomers.length === 1 ? 'It goes' : 'They go'} at {latecomers.length === 1 ? 'its' : 'their'} own time, or the daily pattern.
+                but not launched yet. {batch.send_to_youtube === false
+                  ? `${latecomers.length === 1 ? 'It goes' : 'They go'} to Amazon as soon as ${latecomers.length === 1 ? 'it is' : 'they are'} launched.`
+                  : `${latecomers.length === 1 ? 'It goes' : 'They go'} at ${latecomers.length === 1 ? 'its' : 'their'} own time, or the daily pattern.`}
+                {/* WHY THE BUTTON IS GREYED, said beside it rather than left
+                    for a press that comes back refused. */}
+                {blocker && <span className="block mt-0.5" style={{ color: 'var(--text)' }}>{blocker}</span>}
               </span>
-              <button onClick={() => void launch()} disabled={busy === 'launch' || unsaved.length > 0}
+              <button onClick={() => void launch()} disabled={busy === 'launch' || unsaved.length > 0 || !!blocker}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white disabled:opacity-50"
                 style={{ background: '#0EA5A4' }}>
                 {busy === 'launch' ? <Loader2 size={13} className="animate-spin" /> : <Rocket size={13} />}
@@ -1666,15 +1707,19 @@ export default function LaunchBoard() {
               <span className="min-w-0">
                 <span className="block text-[12.5px] font-medium" style={text}>Keep going when this page is closed</span>
                 <span className="block text-[11.5px]" style={
-                  bgState && (!bgState.hasAlarms || bgState.lastRun === 'signed-out') ? { color: '#d97706' } : muted}>
+                  bgPref && bgState && (bgState.ok === false || !bgState.hasAlarms || bgState.lastRun === 'signed-out' || bgState.lastRun === 'timed-out') ? { color: '#d97706' } : muted}>
                   {!bgPref
                     ? 'Off: the Studio steps and Amazon uploads only run while this page is open.'
+                    : bgState?.error === 'bad-origin'
+                      ? 'SCOUT only keeps Liftoff going from mvpaffiliate.io. Open Liftoff there for this to work.'
+                    : bgState?.error === 'no-reply'
+                      ? 'SCOUT did not answer, so nothing will run with this page closed. Update SCOUT to the latest version, then reload this page.'
                     : bgState && !bgState.hasAlarms
                       ? 'Your SCOUT is too old for this. Update SCOUT to the latest version, then reload this page.'
                       : bgState?.lastRun === 'signed-out'
                         ? 'The last background run found you signed out of MVP in this browser, so it could not do anything. Stay signed in and it carries on.'
                         : 'On: while Chrome is open, SCOUT checks every few minutes and, with this page closed, opens Liftoff in a pinned background tab to finish the Studio steps and Amazon uploads, then closes it.'}
-                  {bgPref && bgState?.lastRunAt ? ` Last run: ${new Date(bgState.lastRunAt).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} (${bgState.lastRun === 'all-done' ? 'all done' : bgState.lastRun === 'waiting' ? 'more to do' : bgState.lastRun})` : ''}
+                  {bgPref && bgState?.lastRunAt ? ` Last run: ${new Date(bgState.lastRunAt).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} (${({ 'all-done': 'all done', waiting: 'more to do', 'timed-out': 'stopped answering, closed', 'tab-closed': 'its tab was closed', 'could-not-open': 'could not open a tab', 'signed-out': 'signed out', opened: 'running now', armed: 'waiting to start' } as Record<string, string>)[bgState.lastRun ?? ''] ?? bgState.lastRun})` : ''}
                 </span>
               </span>
               <button
@@ -2326,10 +2371,16 @@ function ScheduleRow({
   useEffect(() => { setD(sched?.date ?? ''); setT(sched?.time ?? '') }, [sched?.date, sched?.time])
 
   const dirty = (d !== (sched?.date ?? '') || t !== (sched?.time ?? '')) && !!d && !!t
-  useEffect(() => { onDirty(dirty) }, [dirty, onDirty])
+  // THROUGH A REF. The parent passes a new arrow every render, and with it in
+  // the effects' deps an unsaved row ran "not dirty" (the cleanup) then
+  // "dirty" on every render, two state changes that caused the next render:
+  // a loop for as long as a time was typed and not set.
+  const onDirtyRef = useRef(onDirty)
+  onDirtyRef.current = onDirty
+  useEffect(() => { onDirtyRef.current(dirty) }, [dirty])
   // FOLDED AWAY IS NOT UNSAVED. Closing the step unmounts this row and loses
   // the edit, so it must stop holding Launch back for a row nobody can see.
-  useEffect(() => () => onDirty(false), [onDirty])
+  useEffect(() => () => onDirtyRef.current(false), [])
 
   const now = !locked && sched && sched.at.getTime() <= Date.now()
   const editable = available && !locked

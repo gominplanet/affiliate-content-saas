@@ -1670,6 +1670,8 @@ export interface LiftoffAutoState {
   lastRunAt: number | null
   /** False on a SCOUT without the alarms permission (older than 1.21.0). */
   hasAlarms: boolean
+  /** Why SCOUT said no: 'bad-origin', or 'no-reply' when it did not answer. */
+  error?: string
 }
 
 /**
@@ -1681,12 +1683,20 @@ export interface LiftoffAutoState {
 export async function setLiftoffAuto(on: boolean, inMinutes?: number): Promise<LiftoffAutoState | null> {
   if (!(await isExtensionAvailable())) return null
   const r = await sendToExtension<LiftoffAutoState>({ type: 'MVP_LIFTOFF_AUTO', on, inMinutes }, 6000)
-  return r && typeof r === 'object' ? r : null
+  // NO ANSWER IS AN ANSWER: a SCOUT older than 1.21.0 does not know this
+  // message, and "On" must not be shown over a switch that did nothing.
+  return r && typeof r === 'object' ? r : { ok: false, on: false, lastRun: null, lastRunAt: null, hasAlarms: false, error: 'no-reply' }
 }
 
 /** The background tab is finished for now: SCOUT closes it and decides when
  *  to look again. `signature` is a short fingerprint of what is still pending,
  *  so SCOUT can wait longer when nothing has moved. */
+/** The background tab is still working: SCOUT pushes its close back by
+ *  fifteen minutes. A tab that stops saying so is closed. */
+export async function liftoffAlive(): Promise<void> {
+  await sendToExtension({ type: 'MVP_LIFTOFF_ALIVE' }, 4000)
+}
+
 export async function liftoffDone(more: boolean, signature: string): Promise<void> {
   await sendToExtension({ type: 'MVP_LIFTOFF_DONE', more, signature, nextInMinutes: 5 }, 6000)
 }

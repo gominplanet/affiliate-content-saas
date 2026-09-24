@@ -160,20 +160,35 @@ export interface StoredStudioRun {
   ok: boolean
   path: StudioFinishResult['path'] | null
   error: string | null
-  steps: Array<Pick<StudioFinishStep, 'step' | 'ok' | 'skipped' | 'notReached' | 'detail'>>
+  /** How many runs this video has had. A run that timed out goes again, but
+   *  only up to MAX_STUDIO_TRIES, so a video Studio never finishes cannot
+   *  keep the background tab coming back for ever. */
+  tries: number
+  steps: Array<Pick<StudioFinishStep, 'step' | 'ok' | 'skipped' | 'notReached' | 'partial' | 'detail'>>
 }
 
-export function storeStudioRun(r: StudioFinishResult, at: Date = new Date()): StoredStudioRun {
+export const MAX_STUDIO_TRIES = 3
+
+/** Does this video still need a Studio run? None yet, or one that timed out
+ *  with tries left. ONE RULE for the page, the background tab and the count. */
+export function studioRunNeeded(r: Pick<StoredStudioRun, 'error' | 'tries'> | null | undefined): boolean {
+  if (!r) return true
+  return r.error === 'timeout' && (r.tries ?? 1) < MAX_STUDIO_TRIES
+}
+
+export function storeStudioRun(r: StudioFinishResult, at: Date = new Date(), prior?: StoredStudioRun | null): StoredStudioRun {
   return {
     at: at.toISOString(),
     ok: r.ok,
     path: r.path ?? null,
     error: r.error ?? null,
-    steps: r.steps.map((s) => ({
+    tries: Math.min(99, (prior?.tries ?? 0) + 1),
+    steps: r.steps.slice(0, 20).map((s) => ({
       step: String(s.step).slice(0, 30),
       ok: !!s.ok,
       skipped: !!s.skipped,
       notReached: !!s.notReached,
+      partial: !!s.partial,
       detail: String(s.detail ?? '').slice(0, 240),
     })),
   }
@@ -185,18 +200,21 @@ export function readStudioRun(raw: unknown): StoredStudioRun | null {
   const o = raw as Record<string, unknown>
   if (typeof o.at !== 'string' || !Array.isArray(o.steps)) return null
   return {
-    at: o.at,
+    at: o.at.slice(0, 40),
     ok: o.ok === true,
     path: (o.path === 'draft' || o.path === 'video' || o.path === 'unknown') ? o.path : null,
-    error: typeof o.error === 'string' ? o.error : null,
-    steps: (o.steps as unknown[]).filter((s) => s && typeof s === 'object').map((s) => {
+    error: typeof o.error === 'string' ? o.error.slice(0, 200) : null,
+    tries: typeof o.tries === 'number' && Number.isFinite(o.tries) ? Math.max(1, Math.min(99, Math.floor(o.tries))) : 1,
+    // Capped: this is read from a request body as well as from the row.
+    steps: (o.steps as unknown[]).slice(0, 20).filter((s) => s && typeof s === 'object').map((s) => {
       const x = s as Record<string, unknown>
       return {
-        step: String(x.step ?? ''),
+        step: String(x.step ?? '').slice(0, 30),
         ok: x.ok === true,
         skipped: x.skipped === true,
         notReached: x.notReached === true,
-        detail: String(x.detail ?? ''),
+        partial: x.partial === true,
+        detail: String(x.detail ?? '').slice(0, 240),
       }
     }),
   }

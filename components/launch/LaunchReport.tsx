@@ -10,7 +10,7 @@
 'use client'
 
 import { MARKETS } from '@/lib/markets'
-import type { StoredStudioRun } from '@/lib/studio-finish'
+import { studioRunNeeded, type StoredStudioRun } from '@/lib/studio-finish'
 
 const GOOD = '#10B981', WARN = '#d97706', BAD = '#ef4444', BUSY = '#0EA5A4', IDLE = 'var(--text-2)'
 const text = { color: 'var(--text)' } as const
@@ -60,8 +60,13 @@ function youtubeCell(i: ReportItem, when: (iso: string) => string): Cell {
 
 /** One Amazon country for one video. */
 type AmazonEntry = NonNullable<ReportItem['amazon']>[number]
-function amazonCell(entry: AmazonEntry | undefined, onYouTube: boolean): Cell {
-  if (!entry) return onYouTube ? { word: 'Starting', colour: BUSY, done: false } : { word: 'After YouTube', colour: IDLE, done: false }
+function amazonCell(entry: AmazonEntry | undefined, reachable: boolean, youtubeFailed: boolean): Cell {
+  if (!entry) {
+    // THE VIDEO NEVER MADE IT, so nothing is coming: said as such, not left
+    // as "After YouTube", which held the report on "Still working" for ever.
+    if (youtubeFailed) return { word: 'Not sent', colour: IDLE, done: true }
+    return reachable ? { word: 'Starting', colour: BUSY, done: false } : { word: 'After YouTube', colour: IDLE, done: false }
+  }
   switch (entry.state) {
     case 'delivered': case 'grid:uploaded': case 'grid:live':
       return { word: 'Listed', colour: GOOD, done: true }
@@ -115,13 +120,21 @@ export default function LaunchReport({
     if (d?.asked && d.paidPromotion === false) problems.push({ video: name, where: 'YouTube settings', what: 'YouTube reports paid promotion as No.' })
     if (i.playlist_error) problems.push({ video: name, where: 'Playlist', what: i.playlist_error })
     if (i.thumbnail_error) problems.push({ video: name, where: 'Thumbnail', what: i.thumbnail_error })
-    if (i.youtube_video_id && studioPossible && !i.studio_finish) studioLeft++
-    if (i.studio_finish && !i.studio_finish.ok) {
+    // One rule with the background tab: a run that timed out with tries left
+    // is still to come, not a problem yet.
+    const studioDue = !!i.youtube_video_id && studioPossible && i.state !== 'amazon_only' && studioRunNeeded(i.studio_finish)
+    if (studioDue) studioLeft++
+    if (i.studio_finish && !i.studio_finish.ok && !studioDue) {
       const open = i.studio_finish.steps.filter((s) => !s.ok && !s.skipped).map((s) => s.detail).filter(Boolean)
-      if (open.length) problems.push({ video: name, where: 'YouTube Studio', what: open.join(' ') })
+      problems.push({
+        video: name, where: 'YouTube Studio',
+        what: open.length ? open.join(' ') : i.studio_finish.error === 'timeout' ? 'Studio timed out on every try. Press Run Studio again.' : `SCOUT stopped${i.studio_finish.error ? `: ${i.studio_finish.error}` : ''}.`,
+      })
     }
+    const reachable = !!i.youtube_video_id || i.state === 'amazon_only'
+    const ytFailed = i.state === 'blocked' && !i.youtube_video_id
     for (const m of mkts) {
-      const c = amazonCell(i.amazon?.find((a) => a.domain === m.domain), !!i.youtube_video_id)
+      const c = amazonCell(i.amazon?.find((a) => a.domain === m.domain), reachable, ytFailed)
       amzTotal++
       if (!c.done) amzLeft++
       if (c.word === 'Listed') listed++
@@ -137,9 +150,13 @@ export default function LaunchReport({
   ].filter(Boolean)
 
   return (
-    <section className="rounded-2xl border p-4" style={{ borderColor: allDone ? GOOD : 'var(--border)', background: 'var(--surface)' }}>
-      <h2 className="text-[13.5px] font-semibold" style={{ color: allDone ? GOOD : text.color }}>
-        {allDone ? 'All done. Here is where every video landed.' : 'Launch report'}
+    <section className="rounded-2xl border p-4" style={{ borderColor: allDone ? (problems.length ? WARN : GOOD) : 'var(--border)', background: 'var(--surface)' }}>
+      {/* FINISHED IS NOT THE SAME AS FINE: a finished batch with failures
+          says so in the headline, not only in the list below it. */}
+      <h2 className="text-[13.5px] font-semibold" style={{ color: allDone ? (problems.length ? WARN : GOOD) : text.color }}>
+        {allDone
+          ? (problems.length ? 'Finished, with things to look at below. Here is where every video landed.' : 'All done. Here is where every video landed.')
+          : 'Launch report'}
       </h2>
       <p className="text-[12px] mt-0.5" style={muted}>
         {allDone
@@ -201,7 +218,7 @@ export default function LaunchReport({
                     )}
                   </td>
                   {mkts.map((m) => {
-                    const c = amazonCell(i.amazon?.find((a) => a.domain === m.domain), !!i.youtube_video_id)
+                    const c = amazonCell(i.amazon?.find((a) => a.domain === m.domain), !!i.youtube_video_id || i.state === 'amazon_only', i.state === 'blocked' && !i.youtube_video_id)
                     return (
                       <td key={m.domain} className="py-2 pr-2" title={c.problem || undefined}>
                         <span style={{ color: c.colour }}>{c.done && c.word === 'Listed' ? '✓ ' : c.word === 'Failed' ? '✗ ' : ''}{c.word}</span>

@@ -37,11 +37,27 @@ const BG = read('extension/background.js')
 const block = BG.slice(BG.indexOf('// ── LIFTOFF IN THE BACKGROUND'), BG.indexOf('chrome.runtime.onMessageExternal.addListener'))
 const handlers = BG.slice(BG.indexOf("msg.type === 'MVP_LIFTOFF_AUTO'"), BG.indexOf("msg.type === 'MVP_LIFTOFF_DONE'") + 1600)
 check('only MVP can switch it on', /if \(!LIFTOFF_ORIGINS\.test\(origin\)\)/.test(handlers) && /mvpaffiliate\\\.io/.test(block))
-check('an open Liftoff page is left to do the work itself', /if \(open\.length > 0\) \{ liftoffWake\(5\); return \}/.test(block))
+check('an open Liftoff page is left to do the work itself', /if \(creatorTabs\.length > 0\) \{ liftoffWake\(5\); return \}/.test(block))
+check('a leftover background tab is closed, not taken for the creator\'s page',
+  /if \(LIFTOFF_BG_URL\.test\(t\.url \|\| ''\)\)[\s\S]{0,300}?chrome\.tabs\.remove\(t\.id\)/.test(block))
 check('the background tab is pinned and never in front', /active: false, pinned: true/.test(block))
-check('a tab that never reports back is closed', /LIFTOFF_CLOSE_ALARM, \{ delayInMinutes: 45 \}/.test(block))
-check('a signed-out run is closed and remembered', /liftoffCloseOwnTab\('signed-out'\)/.test(block))
-check('SCOUT only ever closes its own tab', /const fromOwn = sender && sender\.tab && st\.tabId === sender\.tab\.id/.test(handlers))
+check('a tab that goes quiet is closed', /LIFTOFF_CLOSE_ALARM, \{ delayInMinutes: LIFTOFF_SILENT_MIN \}/.test(block) && /const LIFTOFF_SILENT_MIN = 15\b/.test(block))
+check('a tab that says it is alive is kept, up to a cap',
+  /msg\.type === 'MVP_LIFTOFF_ALIVE'/.test(BG) && /if \(own && young\) \{ try \{ chrome\.alarms\.create\(LIFTOFF_CLOSE_ALARM/.test(BG))
+check('a signed-out or silent run backs off, doubling to two hours',
+  /liftoffBackOff\('signed-out'\)/.test(block) && /liftoffBackOff\('timed-out'\)/.test(block) && /Math\.min\(120, 10 \* Math\.pow\(2, misses - 1\)\)/.test(block))
+check('SCOUT only ever closes its own tab',
+  /const fromOwn = !!senderTab && \(st\.tabId === senderTab\.id \|\| LIFTOFF_BG_URL\.test\(senderTab\.url \|\| ''\)\)/.test(handlers))
+check('a restart or update re-arms it', /chrome\.runtime\.onStartup\.addListener\(\(\) => \{ void liftoffResume\(\) \}\)/.test(block)
+  && /chrome\.runtime\.onInstalled\.addListener\(\(\) => \{ void liftoffResume\(\) \}\)/.test(block))
+check('a closed background tab is forgotten', /chrome\.tabs\.onRemoved\.addListener/.test(block))
+check('merely opening Liftoff does not arm it', /if \(on && typeof msg\.inMinutes === 'number'\)/.test(handlers))
+check('an empty fingerprint counts as the same', /\|\| 'empty'/.test(handlers))
+{
+  const L = BG.indexOf("chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {")
+  const first = BG.slice(L, L + 200)
+  check('a message with no type is ignored before anything reads it', /=> \{\n  if \(!msg \|\| typeof msg\.type !== 'string'\) return/.test(first))
+}
 check('stuck work waits longer each time, up to an hour',
   /Math\.min\(60, \(st\.lastWait \|\| 5\) \* 2\)/.test(handlers) && /sig === st\.lastSignature/.test(handlers))
 const scan = BG.slice(BG.indexOf('async function scanStudioFinish('), BG.indexOf('async function scanStudioFinish(') + 9000)
@@ -51,7 +67,11 @@ check('a background Studio pass opens Studio behind, and does not jump back',
 const RUN = read('components/launch/LiftoffRunner.tsx')
 check('the runner never retries a refused listing', /retryFailed: false/.test(RUN))
 check('nothing is kept when SCOUT never started or was busy', /fin\.error === 'not-installed' \|\| fin\.error === 'busy'\) \{ more = true; continue \}/.test(RUN))
-check('a Studio pass that ran is not run again', /if \(it\.studio_finish && it\.studio_finish\.error !== 'timeout'\) continue/.test(RUN))
+check('a Studio pass that ran is not run again (the count decides)', /liftoffPending\(\[it\], \[\], pend\)\.studio === 0\) continue/.test(RUN))
+check('the runner says it is alive while it works', /setInterval\(\(\) => \{ void liftoffAlive\(\) \}, 120_000\)/.test(RUN))
+check('a report that could not be saved is not counted as done', /if \(!pr \|\| !pr\.ok\)/.test(RUN))
+check('a failed re-read is not "nothing left"', /if \(!ar\.ok \|\| !a\?\.ok\)/.test(RUN))
+check('the page arms SCOUT only when work is left', /if \(!batch \|\| !workLeft \|\| !bgPref/.test(read('components/launch/LaunchBoard.tsx')))
 check('it asks the same request builder as the page', /liftoffStudioRequest\(it, opts, notify, true\)/.test(RUN)
   && /liftoffStudioRequest\(it, studioOpts, notifySubs\)/.test(read('components/launch/LaunchBoard.tsx')))
 check('it always tells SCOUT when it is finished', /await liftoffDone\(more, sigs\.join\('#'\)\)/.test(RUN))
@@ -72,6 +92,18 @@ const amzOnly = liftoffPending([{ id: 'c', state: 'amazon_only', youtube_video_i
 check('an Amazon-only video is reachable without YouTube, and has no Studio pass', amzOnly.amazon === 1 && amzOnly.studio === 0)
 const noRun = liftoffPending([{ ...base, state: 'scheduled', studio_finish: null, amazon: [] }], [], { sendToYouTube: true, studioPossible: true })
 check('a video with no Studio pass yet is', noRun.studio === 1)
+
+// ── a timed-out run goes again, but not for ever ─────────────────────────
+const timedOut = (tries: number) => liftoffPending([{ ...base, state: 'scheduled', studio_finish: { ok: false, error: 'timeout', tries }, amazon: [] }], [], { sendToYouTube: true, studioPossible: true })
+check('a timed-out Studio run goes again', timedOut(1).studio === 1)
+check('but stops after three tries', timedOut(3).studio === 0)
+// ── old videos are history, not work ─────────────────────────────────────
+const old = liftoffPending([{ ...base, state: 'published', publish_at: new Date(Date.now() - 30 * 86_400_000).toISOString(), studio_finish: null, amazon: [] }],
+  ['amazon.de'], { sendToYouTube: true, studioPossible: true })
+check('a month-old video is not sent through Studio or Amazon again', old.studio + old.amazon === 0)
+const fresh = liftoffPending([{ ...base, state: 'scheduled', publish_at: new Date(Date.now() + 86_400_000).toISOString(), studio_finish: null, amazon: [] }],
+  ['amazon.de'], { sendToYouTube: true, studioPossible: true })
+check('a video going out tomorrow still is', fresh.studio === 1 && fresh.amazon === 1)
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
 for (const f of failures) console.log(`  ✗ ${f}`)

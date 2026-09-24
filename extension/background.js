@@ -7513,7 +7513,23 @@ function studioFinishMonetizeInPage(opts) {
 
       // 1) Open the Monetization on/off dropdown (currently reads "Off") and
       //    choose the "On" option.
-      const trigger = find([/edit video monetization/i, /monetization status/i, /monetization (is )?off/i, /^off$/i, /turn on monetization/i, /watch page ads/i])
+      // Monetization is only switched On when the creator asked for it. The
+      // rating alone used to switch it on too.
+      const wantOn = o.monetize !== false
+      const trigger = wantOn ? find([/edit video monetization/i, /monetization status/i, /monetization (is )?off/i, /^off$/i, /turn on monetization/i, /watch page ads/i]) : null
+      if (!wantOn) {
+        const submitOnly = o.selfCert ? await waitFind([/submit rating/i, /^submit$/i], 8000) : null
+        out.debug.submitCertText = submitOnly ? visText(submitOnly) : null
+        if (submitOnly) { click(submitOnly); out.certOk = true; await sleep(1000) }
+        const save0 = await waitFind([/^save$/i, /^done$/i], 4000)
+        if (save0) { click(save0); await sleep(1500) }
+        // PRESSED, NOT READ BACK: Studio shows no rating to read, so this is
+        // amber, never a green tick.
+        out.partial = out.certOk
+        out.detail = out.certOk ? 'Ad suitability: Submit rating pressed. Studio does not show the rating back, so check it there.' : 'The Submit rating button was not found'
+        out.debug.controlsAfter = sample()
+        return out
+      }
       out.debug.triggerText = trigger ? visText(trigger) : null
       if (!trigger) {
         out.debug.controlsAfter = sample()
@@ -7553,12 +7569,24 @@ function studioFinishMonetizeInPage(opts) {
         click(save); await sleep(1500)
         // READ BACK: the switch has to say On after the save, not merely have
         // been clicked.
-        const after = find([/edit video monetization/i, /monetization status/i, /^on$/i, /^off$/i])
+        // Only what is on screen: the closed dropdown still holds a hidden
+        // "On" option, which used to read as On whatever the switch said.
+        const shown = (el) => { try { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 } catch (e) { return false } }
+        let after = null
+        for (const el of deepAll()) {
+          if (!clickable(el) || !shown(el)) continue
+          const tx = visText(el)
+          if (tx && tx.length <= 60 && /edit video monetization|monetization status|^on$|^off$/i.test(tx)) { after = el; break }
+        }
         const reads = after ? visText(after) : ''
         out.debug.afterText = reads
-        out.ok = /\bon\b/i.test(reads) && !/\boff\b/i.test(reads)
-        out.detail = out.ok
-          ? 'Monetization On. Read back from Studio.' + (o.selfCert ? (out.certOk ? ' Rating submitted.' : ' The rating button was not found.') : '')
+        const monOn = /\bon\b/i.test(reads) && !/\boff\b/i.test(reads)
+        // THE RATING COUNTS. Monetization On with the rating asked for and
+        // not submitted is amber, not a green tick with a note inside it.
+        out.ok = monOn && (!o.selfCert || out.certOk)
+        out.partial = monOn && !out.ok
+        out.detail = monOn
+          ? 'Monetization On. Read back from Studio.' + (o.selfCert ? (out.certOk ? ' Submit rating pressed (Studio does not show the rating back).' : ' The Submit rating button was not found, so the rating was not sent.') : '')
           : 'Pressed Save, but Studio does not show monetization as On'
       } else {
         out.detail = out.certOk ? 'Rating submitted; Save not found' : 'Controls not found — see debug'
@@ -8375,7 +8403,11 @@ function studioKitInstallInPage() {
     const checks = []
     if (o.paid) checks.push(['Paid promotion: Yes', rb.paidPromotion === true])
     if (o.aiNo) checks.push(['AI use: No', rb.aiUseNo === true])
-    checks.push([o.notify === true ? 'Notify subscribers: ticked' : 'Notify subscribers: unticked', rb.notifySubscribers === (o.notify === true)])
+    // NO BOX IS NOT A FAILURE WHEN THE ANSWER IS NO. Studio does not show the
+    // notify box on every page, and the upload already told YouTube No. A
+    // missing box only fails when the creator asked for Yes.
+    if (rb.notifySubscribers === null && o.notify !== true) checks.push(['Notify subscribers: no box on this page (YouTube was told No on upload)', true])
+    else checks.push([o.notify === true ? 'Notify subscribers: ticked' : 'Notify subscribers: unticked', rb.notifySubscribers === (o.notify === true)])
     return checks
   }
 
@@ -8451,6 +8483,7 @@ function studioKitInstallInPage() {
     const n = await answerCheckbox('notify', o.notify === true, dlg)
     out.readBack.notifySubscribers = n.found ? n.now : null
     if (n.found) checks.push([o.notify === true ? 'Notify subscribers: ticked' : 'Notify subscribers: unticked', n.confirmed])
+    else if (o.notify !== true) checks.push(['Notify subscribers: no box on this page (YouTube was told No on upload)', true])
     else checks.push(['Notify subscribers box', false])
     const failed = checks.filter((c) => !c[1]).map((c) => c[0])
     out.ok = failed.length === 0
@@ -8683,7 +8716,9 @@ function studioKitInstallInPage() {
     if (!dlg) { out.detail = 'The draft window closed'; return out }
     const problem = (vt) => {
       const rest = vt.replace(/no issues found/g, '')
-      return /claim|issues? found|violation|restrict|blocked/.test(rest)
+      // Not "restrict": the Checks page explains age restriction in its own
+      // help text on every video, so it stopped clean runs.
+      return /claim|issues? found|violation|blocked/.test(rest)
     }
     const settled = await waitFor(() => {
       const vt = visibleText(dlg).toLowerCase()
@@ -9062,7 +9097,9 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
       steps.push({ step: 'tagproduct', ok: false, skipped: true, detail: 'Tagging on a video that is not a draft is not automated yet. Tag it in Studio under Shopping.' })
     }
     if (want.monetize || want.selfCert) {
-      steps.push(await runPanel('monetization', studioFinishMonetizeInPage, [{ selfCert: want.selfCert === true }], 'monetization'))
+      // Only what was asked: monetization off in the batch's options no
+      // longer switches it on here because the rating was wanted.
+      steps.push(await runPanel('monetization', studioFinishMonetizeInPage, [{ monetize: want.monetize === true, selfCert: want.selfCert === true }], 'monetization'))
     }
     if (want.endScreen) {
       steps.push(await runPanel('endscreens', studioFinishEndScreenInPage, [], 'endscreen'))
@@ -9104,6 +9141,12 @@ function openCreateTab(domain) {
   const url = `https://${host}/create/post`
   return new Promise((resolve, reject) => {
     chrome.tabs.create({ url, active: false }, (tab) => {
+      // No tab (a closing window, a Chrome that refused): say so, instead of
+      // throwing inside the callback and leaving the delivery hanging.
+      if (chrome.runtime.lastError || !tab || tab.id == null) {
+        reject(new Error(`Could not open Amazon ${domain || 'amazon.com'}: ${(chrome.runtime.lastError && chrome.runtime.lastError.message) || 'no tab'}`))
+        return
+      }
       const tabId = tab.id
       let settled = false
       const onUpdated = (id, info) => {
@@ -9520,41 +9563,83 @@ function liftoffWake(minutes) {
   try { chrome.alarms.create(LIFTOFF_ALARM, { delayInMinutes: Math.max(1, Math.min(120, minutes)) }) } catch (e) {}
 }
 
+// A background tab is ours when SCOUT opened it, or when its address says so:
+// after a restart or an update SCOUT no longer knows the id it opened.
+const LIFTOFF_BG_URL = /\/liftoff\?(.*&)?background=1(&|$)/
+// How long a background tab may stay silent before SCOUT closes it. The page
+// says it is alive every two minutes; a page that stopped (signed out, an
+// error, a hang) goes quiet and is closed well before the old 45 minutes.
+const LIFTOFF_SILENT_MIN = 15
+// And the most any one background run may take, however alive it says it is.
+const LIFTOFF_MAX_RUN_MS = 3 * 60 * 60 * 1000
+
 async function liftoffTick() {
   const st = await liftoffState()
   if (!st.on || !st.origin) return
-  // THE CREATOR HAS IT OPEN: that page runs the same work itself, and two
-  // copies would only get in each other's way. Look again later.
   let open = []
   try { open = await chrome.tabs.query({ url: st.origin + '/liftoff*' }) } catch (e) {}
-  if (open.length > 0) { liftoffWake(5); return }
+  // A LEFTOVER BACKGROUND TAB (from before a restart, or one whose run never
+  // reported back) is closed, not counted as "the creator has it open", which
+  // used to stop every later run for as long as it stayed pinned.
+  const creatorTabs = []
+  for (const t of open) {
+    if (LIFTOFF_BG_URL.test(t.url || '')) {
+      if (t.id === st.tabId && st.openedAt && Date.now() - st.openedAt < LIFTOFF_MAX_RUN_MS) { liftoffWake(5); return }
+      try { await chrome.tabs.remove(t.id) } catch (e) {}
+    } else creatorTabs.push(t)
+  }
+  // THE CREATOR HAS IT OPEN: that page runs the same work itself, and two
+  // copies would only get in each other's way. Look again later.
+  if (creatorTabs.length > 0) { liftoffWake(5); return }
   try {
     const tab = await chrome.tabs.create({ url: st.origin + '/liftoff?background=1', active: false, pinned: true })
     await liftoffSave({ tabId: tab.id, openedAt: Date.now(), lastRun: 'opened' })
-    // A tab that never reports back (signed out, a page error) is closed after
-    // forty-five minutes rather than left pinned for ever.
-    try { chrome.alarms.create(LIFTOFF_CLOSE_ALARM, { delayInMinutes: 45 }) } catch (e) {}
+    try { chrome.alarms.create(LIFTOFF_CLOSE_ALARM, { delayInMinutes: LIFTOFF_SILENT_MIN }) } catch (e) {}
   } catch (e) {
     await liftoffSave({ lastRun: 'could-not-open' })
     liftoffWake(15)
   }
 }
 
-async function liftoffCloseOwnTab(reason) {
+async function liftoffCloseOwnTab(reason, alsoTabId) {
   const st = await liftoffState()
   if (st.tabId != null) { try { await chrome.tabs.remove(st.tabId) } catch (e) {} }
+  if (alsoTabId != null && alsoTabId !== st.tabId) { try { await chrome.tabs.remove(alsoTabId) } catch (e) {} }
   try { chrome.alarms.clear(LIFTOFF_CLOSE_ALARM) } catch (e) {}
   await liftoffSave({ tabId: null, lastRun: reason, lastRunAt: Date.now() })
+}
+
+// SIGNED OUT, OR A PAGE THAT NEVER REPORTS: the wait doubles each time (to
+// two hours) instead of reopening a tab every half hour for ever, and drops
+// back as soon as a run reports in.
+async function liftoffBackOff(reason) {
+  const st = await liftoffState()
+  const misses = (st.misses || 0) + 1
+  await liftoffCloseOwnTab(reason)
+  await liftoffSave({ misses })
+  liftoffWake(Math.min(120, 10 * Math.pow(2, misses - 1)))
+}
+
+// Re-arm after Chrome restarts or SCOUT updates: alarms are not promised to
+// survive either, and the tab id SCOUT kept belongs to the old session.
+async function liftoffResume() {
+  const st = await liftoffState()
+  if (st.tabId != null) await liftoffSave({ tabId: null })
+  if (!st.on || !st.origin) return
+  if (st.lastRun === 'all-done') return
+  let has = null
+  try { has = await chrome.alarms.get(LIFTOFF_ALARM) } catch (e) {}
+  if (!has) liftoffWake(3)
 }
 
 try {
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === LIFTOFF_ALARM) { void liftoffTick() }
-    if (alarm.name === LIFTOFF_CLOSE_ALARM) {
-      void liftoffCloseOwnTab('timed-out').then(() => liftoffWake(10))
-    }
+    if (alarm.name === LIFTOFF_CLOSE_ALARM) { void liftoffBackOff('timed-out') }
   })
 } catch (e) { /* alarms permission missing on an old build: the page still works when open */ }
+try { chrome.runtime.onStartup.addListener(() => { void liftoffResume() }) } catch (e) {}
+try { chrome.runtime.onInstalled.addListener(() => { void liftoffResume() }) } catch (e) {}
 
 // Signed out: the background tab lands on the login page, where nothing can
 // run. Closed straight away, and remembered, so the page can say so.
@@ -9564,12 +9649,23 @@ try {
     void liftoffState().then((st) => {
       if (st.tabId !== tabId) return
       const url = (tab && tab.url) || ''
-      if (!/\/liftoff(\?|$)/.test(url)) void liftoffCloseOwnTab('signed-out').then(() => liftoffWake(30))
+      if (!/\/liftoff(\?|$)/.test(url)) void liftoffBackOff('signed-out')
+    })
+  })
+  // The creator closed the pinned tab, or Chrome did: forget it, and look
+  // again later rather than never.
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    void liftoffState().then(async (st) => {
+      if (st.tabId !== tabId) return
+      try { chrome.alarms.clear(LIFTOFF_CLOSE_ALARM) } catch (e) {}
+      await liftoffSave({ tabId: null, lastRun: 'tab-closed', lastRunAt: Date.now() })
+      if (st.on) liftoffWake(30)
     })
   })
 } catch (e) {}
 
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
+  if (!msg || typeof msg.type !== 'string') return
   // The page asks SCOUT to keep Liftoff running (or to stop), from its own
   // origin, which is where the background tab will be opened.
   if (msg.type === 'MVP_LIFTOFF_AUTO') {
@@ -9578,9 +9674,23 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     if (!LIFTOFF_ORIGINS.test(origin)) { sendResponse({ ok: false, error: 'bad-origin' }); return false }
     const on = msg.on === true
     void liftoffSave({ on, origin }).then(async (st) => {
-      if (on) liftoffWake(typeof msg.inMinutes === 'number' ? msg.inMinutes : 5)
-      else { try { chrome.alarms.clear(LIFTOFF_ALARM) } catch (e) {} }
-      sendResponse({ ok: true, on: st.on === true, lastRun: st.lastRun || null, lastRunAt: st.lastRunAt || null, hasAlarms: !!(chrome.alarms) })
+      // ONLY WHEN THERE IS WORK. The page says when (after Launch, or when
+      // it sees work still pending); merely opening Liftoff no longer opens
+      // a background tab behind it the moment it is closed.
+      if (on && typeof msg.inMinutes === 'number') { await liftoffSave({ misses: 0, lastRun: 'armed' }); liftoffWake(msg.inMinutes) }
+      else if (!on) { try { chrome.alarms.clear(LIFTOFF_ALARM) } catch (e) {} }
+      const now = await liftoffState()
+      sendResponse({ ok: true, on: now.on === true, lastRun: now.lastRun || null, lastRunAt: now.lastRunAt || null, hasAlarms: !!(chrome.alarms) })
+    })
+    return true
+  }
+  // The background page is still working: push the close back.
+  if (msg.type === 'MVP_LIFTOFF_ALIVE') {
+    void liftoffState().then((st) => {
+      const own = sender && sender.tab && st.tabId === sender.tab.id
+      const young = st.openedAt && Date.now() - st.openedAt < LIFTOFF_MAX_RUN_MS
+      if (own && young) { try { chrome.alarms.create(LIFTOFF_CLOSE_ALARM, { delayInMinutes: LIFTOFF_SILENT_MIN }) } catch (e) {} }
+      sendResponse({ ok: true, own: !!own })
     })
     return true
   }
@@ -9588,17 +9698,19 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   // the creator opened) and set the next wake.
   if (msg.type === 'MVP_LIFTOFF_DONE') {
     void liftoffState().then(async (st) => {
-      const fromOwn = sender && sender.tab && st.tabId === sender.tab.id
-      if (fromOwn) await liftoffCloseOwnTab(msg.more ? 'waiting' : 'all-done')
+      const senderTab = sender && sender.tab ? sender.tab : null
+      const fromOwn = !!senderTab && (st.tabId === senderTab.id || LIFTOFF_BG_URL.test(senderTab.url || ''))
+      if (fromOwn) await liftoffCloseOwnTab(msg.more ? 'waiting' : 'all-done', senderTab.id)
       else await liftoffSave({ lastRun: msg.more ? 'waiting' : 'all-done', lastRunAt: Date.now() })
       // NOTHING CHANGED SINCE LAST TIME: wait longer. A dub that never
       // finishes must not reopen a tab every five minutes for ever, so the
       // wait doubles while the pending work looks the same (to an hour), and
-      // drops back to five the moment anything moves.
-      const sig = typeof msg.signature === 'string' ? msg.signature : ''
-      const same = !!sig && sig === st.lastSignature
+      // drops back to five the moment anything moves. An empty fingerprint
+      // (a batch that could not be read) counts as "the same" too.
+      const sig = (typeof msg.signature === 'string' && msg.signature) || 'empty'
+      const same = sig === st.lastSignature
       const wait = same ? Math.min(60, (st.lastWait || 5) * 2) : (typeof msg.nextInMinutes === 'number' ? msg.nextInMinutes : 5)
-      await liftoffSave({ lastSignature: sig, lastWait: wait })
+      await liftoffSave({ lastSignature: sig, lastWait: wait, misses: 0 })
       if (msg.more && st.on) liftoffWake(wait)
       else { try { chrome.alarms.clear(LIFTOFF_ALARM) } catch (e) {} }
       sendResponse({ ok: true, closed: !!fromOwn })
@@ -9606,7 +9718,6 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     return true
   }
 
-  if (!msg || typeof msg.type !== 'string') return
   // Storefront delivery: upload each localized/dubbed video to its Amazon
   // storefront via the creator's logged-in Creator Hub. Async.
   if (msg.type === 'MVP_STOREFRONT_DELIVER') {
