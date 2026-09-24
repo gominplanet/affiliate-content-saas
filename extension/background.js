@@ -8069,7 +8069,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 5
+  const KIT_VERSION = 6
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -8630,12 +8630,17 @@ K.steps.monetization = async (out, o) => {
       }
       // THE WORD ITSELF, in a popup that just opened: clicking the label "On"
       // checks the circle beside it, as a hand does.
+      const smallest = (list) => list.sort((x, y) => (x.getBoundingClientRect().width * x.getBoundingClientRect().height) - (y.getBoundingClientRect().width * y.getBoundingClientRect().height))[0] || null
       for (const sc of dialogsNow().filter((x) => !before.includes(x))) {
-        const w = all(sc).filter((el) => visible(el) && /^on$/i.test(deepText(el)))
-          .sort((x, y) => (x.getBoundingClientRect().width * x.getBoundingClientRect().height) - (y.getBoundingClientRect().width * y.getBoundingClientRect().height))[0]
+        const w = smallest(all(sc).filter((el) => visible(el) && /^on$/i.test(deepText(el))))
         if (w) return w
       }
-      return null
+      // OR ANYWHERE, IF IT WAS NOT THERE BEFORE THE CLICK. SCOUT's own record
+      // from a real run: the click opened the menu and a plain <span>On</span>
+      // appeared, in no popup Studio marks as one, so none of the above saw
+      // it. An "On" that appeared with the click is the choice.
+      const fresh = all(document).filter((el) => visible(el) && /^on$/i.test(deepText(el)) && !onBefore.has(el))
+      return smallest(fresh)
     }
     // AND MORE THAN ONE WAY IN. The text "Off" is often a label inside the
     // real button, and a click on the label opens nothing; its button-like
@@ -8646,8 +8651,10 @@ K.steps.monetization = async (out, o) => {
     let before = dialogsNow()
     let onOpt = null
     out.debug.tried = []
+    let onBefore = new Set()
     for (const opener of openers) {
       before = dialogsNow()
+      onBefore = new Set(all(document).filter((el) => visible(el) && /^on$/i.test(deepText(el))))
       click(opener)
       out.debug.tried.push(((opener.tagName || '') + ' ' + (deepText(opener) || attrLabel(opener)).slice(0, 30)).trim())
       onOpt = await waitFor(() => findOn(before), 4000, 300)

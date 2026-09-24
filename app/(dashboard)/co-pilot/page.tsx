@@ -3643,7 +3643,17 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                                       the layout it saw can be tuned to. */}
                                   {tone === 'bad' && s.debug && Object.keys(s.debug).length > 0 && (
                                     <details className="ml-5">
-                                      <summary className="text-[10px] text-[#86868b] cursor-pointer select-none">Show what SCOUT saw (send us this screenshot)</summary>
+                                      <summary className="text-[10px] text-[#86868b] cursor-pointer select-none">Show what SCOUT saw</summary>
+                                      {/* COPIED AS TEXT, whole: a screenshot of this box
+                                          cuts it off at its scroll height. It holds the
+                                          page's button and option labels, never a login. */}
+                                      <button
+                                        type="button"
+                                        onClick={() => { void navigator.clipboard?.writeText(JSON.stringify({ step: s.step, detail: s.detail, saw: s.debug }, null, 1)).then(() => toast.success('Copied. Paste it to support.')).catch(() => toast.error('Could not copy. Select the text below instead.')) }}
+                                        className="mt-1 text-[10px] font-semibold text-[#7C3AED] hover:underline"
+                                      >
+                                        Copy what SCOUT saw
+                                      </button>
                                       <pre className="mt-1 text-[9px] leading-snug text-[#6e6e73] dark:text-[#a1a1a6] bg-black/5 dark:bg-white/5 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40">{JSON.stringify(s.debug, null, 1)}</pre>
                                     </details>
                                   )}

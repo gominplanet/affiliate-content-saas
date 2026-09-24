@@ -158,7 +158,7 @@ check('the manifest and the app registry agree on the version',
   const kit = BG.slice(BG.indexOf('function studioKitInstallInPage()'), BG.indexOf('K.steps = {}'))
   check('disabled is read on the button\'s wrapper as well as the button',
     /const isDisabled = \(el\) => \{[\s\S]{0,400}?for \(let i = 0; i < 4 && e; i\+\+\)/.test(kit))
-  check('the kit version moves when the kit changes', /const KIT_VERSION = 5\b/.test(BG))
+  check('the kit version moves when the kit changes', /const KIT_VERSION = 6\b/.test(BG))
   const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
   check('a menu that opened is not clicked shut by the next try',
     /if \(dialogsNow\(\)\.some\(\(x\) => !before\.includes\(x\)\)\) \{ onOpt = await waitFor/.test(kitMon))
@@ -182,6 +182,16 @@ check('the manifest and the app registry agree on the version',
   check('every YouTube suggestion is tried, the ones with a model number first',
     /\.sort\(\(x, y\) => \(hasModel\(y\) \? 1 : 0\) - \(hasModel\(x\) \? 1 : 0\)\)/.test(kitTag) && /for \(const t of suggTexts\)/.test(kitTag)
     && /if \(sameProduct\(t, top\)\) \{ viaName = t; found = true; break \}/.test(kitTag))
+}
+
+// ── 1.21.9: the On that appeared with the click (from SCOUT's own record) ─
+{
+  const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
+  check('an On that was not on the page before the click is the choice, wherever Studio draws it',
+    /const fresh = all\(document\)\.filter\(\(el\) => visible\(el\) && \/\^on\$\/i\.test\(deepText\(el\)\) && !onBefore\.has\(el\)\)/.test(kitMon)
+    && /return smallest\(fresh\)/.test(kitMon)
+    && /onBefore = new Set\(all\(document\)\.filter/.test(kitMon)
+    && kitMon.indexOf('onBefore = new Set(all(document)') < kitMon.indexOf('click(opener)'))
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')
