@@ -133,7 +133,7 @@ check('the manifest and the app registry agree on the version',
   check('the Recently tagged list is never taken for results', /if \(recentShown\(\)\) return \[\]/.test(kitTag))
   check('the + is found as an icon button with no text, rightmost in its row',
     /lbl === '' \|\| lbl === '\+'/.test(kitTag) && /else if \(r\.left > row\.b\.getBoundingClientRect\(\)\.left\) row\.b = b/.test(kitTag))
-  check('then Next, then Done on the timestamps page', inOrderRaw(kitTag, 'click(pick)', "findBtn(/^next$/i, d, { enabled: true })") && /findBtn\(\/\^done\$\/i, document, \{ enabled: true \}\)/.test(kitTag))
+  check('then Next (or Done), then Done on the timestamps page', inOrderRaw(kitTag, 'click(pick)', "findBtn(/^(next|done)$/i, d, { enabled: true })") && /findBtn\(\/\^done\$\/i, document, \{ enabled: true \}\)/.test(kitTag))
 }
 
 // ── 1.21.5: monetization the way the creator does it ─────────────────────
