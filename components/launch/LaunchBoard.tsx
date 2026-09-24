@@ -81,6 +81,10 @@ interface Item {
   playlist_error?: string | null
   /** SCOUT's last Studio run on this video, as Studio read it back. */
   studio_finish?: StoredStudioRun | null
+  /** Each Amazon country for this video, as recorded: 'delivered', 'failed'
+   *  (with SCOUT's reason in detail), 'localized' (ready, or waiting on its
+   *  dub) or 'pending'. */
+  amazon?: Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean }>
 }
 interface Market { domain: string; country: string; langName: string | null; needsDub: boolean }
 /** A batch in the switcher: enough to choose between them, nothing more. */
@@ -204,7 +208,7 @@ export default function LaunchBoard() {
       if (out.error) setAmazonAuto('stopped')
       // Ready, not capped, and still nothing went: something is wrong that a
       // second try in two minutes will not fix.
-      else if (!out.nothingReady && out.handedOver === 0 && out.atCap.length === 0) setAmazonAuto('stopped')
+      else if (!out.nothingReady && out.handedOver + out.duplicates === 0 && out.atCap.length === 0) setAmazonAuto('stopped')
     })
   }
   useEffect(() => {
@@ -456,22 +460,27 @@ export default function LaunchBoard() {
       const out = await deliverPreparedStorefronts({
         videoIds,
         domains: batch?.markets.map((m) => m.domain) ?? [],
+        // A press means try again, failures included; the automatic run
+        // leaves a refused listing alone until somebody asks.
+        retryFailed: !auto,
       })
       const lines = deliverySummary(out)
       setAmazonNote({ at: new Date(), lines, error: !!out.error })
       // AUTOMATIC IS QUIET UNLESS SOMETHING HAPPENED. The note under the
       // button always says the latest run; a toast only when listings went up
       // or it went wrong, not every two minutes that nothing was ready.
-      if (out.error) { toast.error(lines.join(' '), { duration: 12000 }); return out }
+      if (out.error) { toast.error(lines.join(' '), { duration: 15000 }); await load(batchId!); return out }
       if (out.nothingReady) { if (!auto) toast(lines.join(' '), { duration: 9000 }); return out }
-      toast.success(lines[0])
-      if (!auto) for (const l of lines.slice(1)) toast(l, { duration: 12000 })
+      // Green only when every listing went; a mix is said as a mix.
+      if (out.failed.length === 0) toast.success(lines[0])
+      else toast.error(lines.join(' '), { duration: 15000 })
+      if (!auto && out.failed.length === 0) for (const l of lines.slice(1)) toast(l, { duration: 12000 })
       await load(batchId!)
       return out
     } catch {
       toast.error('Could not reach SCOUT. Is the extension installed?', { duration: 9000 })
       setAmazonNote({ at: new Date(), lines: ['Could not reach SCOUT. Is the extension installed?'], error: true })
-      return { ok: false, error: 'scout', handedOver: 0, waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false }
+      return { ok: false, error: 'scout', handedOver: 0, duplicates: 0, failed: [], waitingOnDub: 0, atCap: [], dailyRoom: [], nothingReady: false }
     } finally { amazonRunning.current = false; setBusy(null) }
   }
 
@@ -1563,6 +1572,33 @@ export default function LaunchBoard() {
                       }).format(new Date(it.publish_at))}</>
                     )}
                   </span>
+                  {/* AMAZON, COUNTRY BY COUNTRY, as recorded. Uploaded, failed
+                      with SCOUT's reason, waiting on its dub, or ready and not
+                      sent yet each read differently; a batch whose every
+                      upload failed used to look the same as one that went. */}
+                  {(it.amazon?.length ?? 0) > 0 && (
+                    <span className="block text-[11.5px] mt-0.5">
+                      {it.amazon!.map((a, i) => {
+                        const c = MARKETS.find((m) => m.domain === a.domain)?.country ?? a.domain
+                        const [word, colour] = a.state === 'delivered' ? ['on Amazon', '#10B981']
+                          : a.state === 'failed' ? ['failed', '#ef4444']
+                          : a.state === 'localized' ? (a.waitingOnDub ? ['dubbing', '#0EA5A4'] : ['ready to send', '#d97706'])
+                          : ['preparing', 'var(--text-2)']
+                        return (
+                          <span key={a.domain} title={a.state === 'failed' && a.detail ? a.detail : undefined}>
+                            {i > 0 && <span style={muted}> · </span>}
+                            <span style={text}>{c}</span> <span style={{ color: colour }}>{word}</span>
+                          </span>
+                        )
+                      })}
+                    </span>
+                  )}
+                  {it.amazon?.some((a) => a.state === 'failed' && a.detail) && (
+                    <span className="block text-[11.5px] mt-0.5 px-2 py-1 rounded" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.08)' }}>
+                      {it.amazon.filter((a) => a.state === 'failed').map((a) =>
+                        `${MARKETS.find((m) => m.domain === a.domain)?.country ?? a.domain}: ${a.detail}`).join(' · ')}
+                    </span>
+                  )}
                   {/* THE PLAYLIST, as YouTube answered. A video missing from
                       its playlist must not look like one that is in it. */}
                   {it.youtube_video_id && playlistId && (it.playlist_added_at || it.playlist_error) && (

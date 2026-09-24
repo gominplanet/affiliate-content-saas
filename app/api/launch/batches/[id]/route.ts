@@ -61,7 +61,34 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     .select('id,playlist_added_at,playlist_error,studio_finish').eq('batch_id', id)
   const extra = new Map<string, { playlist_added_at: string | null; playlist_error: string | null; studio_finish: unknown }>()
   if (!ierr) for (const r of (irows ?? []) as Array<{ id: string; playlist_added_at: string | null; playlist_error: string | null; studio_finish: unknown }>) extra.set(r.id, r)
+  // ── AMAZON, PER VIDEO, PER COUNTRY, AS RECORDED ──────────────────────────
+  // The board said "handed to Amazon" and nothing else, so a batch whose every
+  // upload failed looked the same as one that went up. Each row now carries
+  // each country's own state and, for a failure, SCOUT's reason. Read-only and
+  // best effort: a failure here leaves the list empty, never the batch.
+  const amazonByVideo = new Map<string, Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean }>>()
+  const vids = items.map((i) => i.video_id).filter((v): v is string => !!v)
+  if (vids.length) {
+    const { data: jobs } = await sb.from('global_sync_jobs').select('id,video_id').eq('user_id', user.id).in('video_id', vids)
+    const videoByJob = new Map<string, string>()
+    for (const j of (jobs ?? []) as Array<{ id: string; video_id: string }>) videoByJob.set(j.id, j.video_id)
+    if (videoByJob.size) {
+      const { data: targets } = await sb.from('global_sync_targets')
+        .select('job_id,domain,state,detail,dub,video_url').eq('user_id', user.id).in('job_id', [...videoByJob.keys()])
+      const wanted = new Set((batch as BatchRow).markets ?? [])
+      for (const t of (targets ?? []) as Array<{ job_id: string; domain: string; state: string; detail: string | null; dub: unknown; video_url: string | null }>) {
+        if (wanted.size && !wanted.has(t.domain)) continue
+        const v = videoByJob.get(t.job_id)
+        if (!v) continue
+        const list = amazonByVideo.get(v) ?? []
+        list.push({ domain: t.domain, state: t.state, detail: t.detail, waitingOnDub: !!t.dub && !t.video_url })
+        amazonByVideo.set(v, list)
+      }
+    }
+  }
+
   const itemsOut = items.map((i) => ({
+    amazon: (i.video_id && amazonByVideo.get(i.video_id)) || [],
     ...i,
     playlist_added_at: extra.get(i.id)?.playlist_added_at ?? null,
     playlist_error: extra.get(i.id)?.playlist_error ?? null,

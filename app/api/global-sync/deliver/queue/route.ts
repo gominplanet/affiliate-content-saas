@@ -47,7 +47,9 @@ export async function GET(req: Request) {
   let q = sb.from('global_sync_targets')
     .select('id,job_id,domain,lang,title,description,video_url,asin,state,delivered_at,dub')
     .eq('user_id', user.id)
-    .in('state', ['localized'])
+    // A failed listing comes back only when somebody asked to try again: an
+    // automatic run must not re-offer what Amazon just refused.
+    .in('state', url.searchParams.get('retryFailed') === '1' ? ['localized', 'failed'] : ['localized'])
     .is('delivered_at', null)
   if (jobId) q = q.eq('job_id', jobId)
   if (onlyDomains.length > 0) q = q.in('domain', onlyDomains)

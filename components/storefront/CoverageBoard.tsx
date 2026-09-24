@@ -155,9 +155,11 @@ export default function CoverageBoard() {
       // because two uploaders agree only until one of them learns something.
       const out = await deliverPreparedStorefronts()
       const lines = deliverySummary(out)
-      if (out.error) { toast.error(lines.join(' '), { duration: 12000 }); return }
+      if (out.error) { toast.error(lines.join(' '), { duration: 15000 }); await loadBoard(); return }
       if (out.nothingReady) { toast.error(lines.join(' '), { duration: 8000 }); return }
       await loadBoard()
+      // A MIX IS SAID AS A MIX. Green only when every listing went up.
+      if (out.failed.length > 0) { toast.error(lines.join(' '), { duration: 15000 }); return }
       toast.success(lines[0])
       // THE HELD-BACK CASES SEPARATELY, so they are not read as part of the
       // success sentence above.
