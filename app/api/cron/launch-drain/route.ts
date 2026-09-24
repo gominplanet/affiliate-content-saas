@@ -188,8 +188,12 @@ async function renders(sb: Sb, left: Left): Promise<{ done: number; skipped: num
     if (left() < 200_000) break
     // CLAIMED, not just marked: an overlapping firing that already took this
     // row gets nothing back and moves on, rather than rendering it twice.
+    // THE CLAIM'S OWN STAMP is what later writes match on. The try count is
+    // not enough: a CTA change resets it to 0, the next claim sets it back to
+    // 1, and a stale first render matched that and landed on top.
+    const renderClaim = now()
     const { data: claimed } = await sb.from('launch_items')
-      .update({ state: 'rendering', render_tries: tries + 1, updated_at: now() })
+      .update({ state: 'rendering', render_tries: tries + 1, updated_at: renderClaim })
       .eq('id', it.id).eq('state', 'draft').select('id')
     if (!claimed || claimed.length === 0) continue
     budget--
@@ -227,7 +231,7 @@ async function renders(sb: Sb, left: Left): Promise<{ done: number; skipped: num
       await sb.from('launch_items').update({
         rendered_url: out.url, clean_url: it.source_url,
         state: 'preparing', reason: null, updated_at: now(),
-      }).eq('id', it.id).eq('state', 'rendering').eq('render_tries', tries + 1)
+      }).eq('id', it.id).eq('state', 'rendering').eq('updated_at', renderClaim)
       done++
     } catch (e) {
       // BACK TO DRAFT so the next firing picks it up again, with the reason on
@@ -236,7 +240,7 @@ async function renders(sb: Sb, left: Left): Promise<{ done: number; skipped: num
         state: 'draft',
         reason: (e instanceof Error ? e.message : 'the render did not finish').slice(0, 200),
         updated_at: now(),
-      }).eq('id', it.id).eq('state', 'rendering').eq('render_tries', tries + 1)
+      }).eq('id', it.id).eq('state', 'rendering').eq('updated_at', renderClaim)
       failed++
     }
   }
@@ -398,7 +402,10 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
 
     // CLAIMED on the try count it was read with, so two firings reaching the
     // same row at the same moment cannot both build it.
-    const claim = sb.from('launch_items').update({ thumb_tries: tries + 1, updated_at: now() }).eq('id', it.id)
+    // Stamped, for the same reason as the render claim: the final write
+    // matches this claim, not a try count a product change can reset.
+    const thumbClaim = now()
+    const claim = sb.from('launch_items').update({ thumb_tries: tries + 1, updated_at: thumbClaim }).eq('id', it.id)
     const { data: claimed } = await (it.thumb_tries == null ? claim.is('thumb_tries', null) : claim.eq('thumb_tries', tries)).select('id')
     if (!claimed || claimed.length === 0) continue
 
@@ -467,7 +474,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // resets the thumbnails and their try count, and this firing's image,
     // built for the old product, must not land on top of that.
     const { error: wrote } = await sb.from('launch_items').update(patch)
-      .eq('id', it.id).eq('state', 'preparing').eq('thumb_tries', tries + 1)
+      .eq('id', it.id).eq('state', 'preparing').eq('updated_at', thumbClaim)
     if (wrote) {
       failed++
       await sb.from('launch_items').update({
@@ -728,7 +735,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       // while it took a place in the list from rows that could go.
       await sb.from('launch_items').update({
         state: 'blocked',
-        reason: !title ? 'It has no title, so it cannot go to YouTube. Give it one and press Try again.' : 'Its finished video file is missing, so it cannot go to YouTube. Press Try again to prepare it again.',
+        reason: !title ? 'It has no title, so it cannot go out. Give it one and press Try again.' : 'Its finished video file is missing, so it cannot go out. Press Try again to prepare it again.',
         updated_at: stamp(),
       }).eq('id', it.id).eq('state', 'prepared').is('youtube_video_id', null)
       continue

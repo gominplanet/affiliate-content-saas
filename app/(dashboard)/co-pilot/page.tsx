@@ -1513,7 +1513,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       return
     }
     const confirmed = !finishDoDetails || studioDisclosuresConfirmed(fin)
-    const where = 'private'
+    const where = fin?.path === 'draft' ? 'a draft' : 'private'
     if (!confirmed) {
       setApplyError(`Kept as ${where} on purpose: SCOUT could not confirm paid promotion in Studio, and the video must not go out without it. Finish the Details page on YouTube, then ${publishAt ? 'schedule it' : `set it to ${proSettings.privacyStatus}`}.`)
       return

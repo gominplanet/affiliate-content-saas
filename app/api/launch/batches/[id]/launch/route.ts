@@ -130,8 +130,11 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // exact time a queued or scheduled video already has. Refused by name
   // rather than sent out as two videos in one minute.
   if (late && !amazonOnly) {
+    // Only videos that will actually go at their time: a given-up row or a
+    // kept-private hold keeps a planned time nothing will use.
     const taken = new Set(items
       .filter((i) => !ready.some((r) => r.id === i.id))
+      .filter((i) => (i.state === 'prepared' && !!i.planned_publish_at) || i.state === 'scheduled' || i.state === 'published')
       .map((i) => i.planned_publish_at || i.publish_at)
       .filter((t): t is string => !!t)
       .map((t) => Math.floor(new Date(t).getTime() / 60_000)))

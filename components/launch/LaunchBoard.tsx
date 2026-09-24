@@ -163,7 +163,9 @@ export default function LaunchBoard() {
   function toggleBg(on: boolean) {
     setBgPref(on)
     try { window.localStorage.setItem('mvp_liftoff_bg', on ? 'on' : 'off') } catch { /* this visit only */ }
-    void applyBg(on)
+    // Switched back on with work left: armed again here, since the page's
+    // own arming runs once per batch and switching off cleared the wake.
+    void applyBg(on, on && workLeft ? 5 : undefined)
   }
   // The Studio steps need SCOUT 1.20.0 or later; an older SCOUT drives the old
   // Details script, which is exactly what left these boxes blank.

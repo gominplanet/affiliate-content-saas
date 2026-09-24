@@ -39,7 +39,7 @@ const handlers = BG.slice(BG.indexOf("msg.type === 'MVP_LIFTOFF_AUTO'"), BG.inde
 check('only MVP can switch it on', /if \(!LIFTOFF_ORIGINS\.test\(origin\)\)/.test(handlers) && /mvpaffiliate\\\.io/.test(block))
 check('an open Liftoff page is left to do the work itself', /if \(creatorTabs\.length > 0\) \{ liftoffWake\(5\); return \}/.test(block))
 check('a leftover background tab is closed, not taken for the creator\'s page',
-  /if \(LIFTOFF_BG_URL\.test\(t\.url \|\| ''\)\)[\s\S]{0,300}?chrome\.tabs\.remove\(t\.id\)/.test(block))
+  /if \(LIFTOFF_BG_URL\.test\(t\.url \|\| ''\)\)[\s\S]{0,1200}?chrome\.tabs\.remove\(t\.id\)/.test(block))
 check('the background tab is pinned and never in front', /active: false, pinned: true/.test(block))
 check('a tab that goes quiet is closed', /LIFTOFF_CLOSE_ALARM, \{ delayInMinutes: LIFTOFF_SILENT_MIN \}/.test(block) && /const LIFTOFF_SILENT_MIN = 15\b/.test(block))
 check('a tab that says it is alive is kept, up to a cap',
@@ -51,6 +51,16 @@ check('SCOUT only ever closes its own tab',
 check('a restart or update re-arms it', /chrome\.runtime\.onStartup\.addListener\(\(\) => \{ void liftoffResume\(\) \}\)/.test(block)
   && /chrome\.runtime\.onInstalled\.addListener\(\(\) => \{ void liftoffResume\(\) \}\)/.test(block))
 check('a closed background tab is forgotten', /chrome\.tabs\.onRemoved\.addListener/.test(block))
+{
+  const close = block.slice(block.indexOf('async function liftoffCloseOwnTab('), block.indexOf('async function liftoffBackOff('))
+  const saveAt = close.indexOf('await liftoffSave({ tabId: null'), removeAt = close.indexOf('chrome.tabs.remove(')
+  check('SCOUT forgets its tab before closing it, so its own close is not "the creator closed it"',
+    saveAt > -1 && removeAt > -1 && saveAt < removeAt)
+}
+check('a tab Chrome restored is adopted, not closed mid-run',
+  /if \(st\.tabId == null\) \{\s*await liftoffSave\(\{ tabId: t\.id/.test(block)
+  && /if \(!own && tab && st\.tabId == null && LIFTOFF_BG_URL\.test\(tab\.url \|\| ''\)\)/.test(BG))
+check('switching back on with work left arms it again', /void applyBg\(on, on && workLeft \? 5 : undefined\)/.test(read('components/launch/LaunchBoard.tsx')))
 check('merely opening Liftoff does not arm it', /if \(on && typeof msg\.inMinutes === 'number'\)/.test(handlers))
 check('an empty fingerprint counts as the same', /\|\| 'empty'/.test(handlers))
 {

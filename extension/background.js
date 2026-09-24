@@ -9585,6 +9585,15 @@ async function liftoffTick() {
   for (const t of open) {
     if (LIFTOFF_BG_URL.test(t.url || '')) {
       if (t.id === st.tabId && st.openedAt && Date.now() - st.openedAt < LIFTOFF_MAX_RUN_MS) { liftoffWake(5); return }
+      // A TAB CHROME RESTORED (after a restart or an update SCOUT keeps no id
+      // for) may be mid-run: it is adopted, not killed, and the silence
+      // alarm closes it if it has in fact stopped.
+      if (st.tabId == null) {
+        await liftoffSave({ tabId: t.id, openedAt: Date.now(), lastRun: 'opened' })
+        try { chrome.alarms.create(LIFTOFF_CLOSE_ALARM, { delayInMinutes: LIFTOFF_SILENT_MIN }) } catch (e) {}
+        liftoffWake(5)
+        return
+      }
       try { await chrome.tabs.remove(t.id) } catch (e) {}
     } else creatorTabs.push(t)
   }
@@ -9603,10 +9612,14 @@ async function liftoffTick() {
 
 async function liftoffCloseOwnTab(reason, alsoTabId) {
   const st = await liftoffState()
+  // FORGOTTEN BEFORE IT IS CLOSED. Closing first let the onRemoved listener
+  // see its own id still saved, take it for the creator closing the tab,
+  // write "tab-closed" over this reason and set a wake for a batch that was
+  // all done.
+  await liftoffSave({ tabId: null, lastRun: reason, lastRunAt: Date.now() })
+  try { chrome.alarms.clear(LIFTOFF_CLOSE_ALARM) } catch (e) {}
   if (st.tabId != null) { try { await chrome.tabs.remove(st.tabId) } catch (e) {} }
   if (alsoTabId != null && alsoTabId !== st.tabId) { try { await chrome.tabs.remove(alsoTabId) } catch (e) {} }
-  try { chrome.alarms.clear(LIFTOFF_CLOSE_ALARM) } catch (e) {}
-  await liftoffSave({ tabId: null, lastRun: reason, lastRunAt: Date.now() })
 }
 
 // SIGNED OUT, OR A PAGE THAT NEVER REPORTS: the wait doubles each time (to
@@ -9686,11 +9699,20 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   }
   // The background page is still working: push the close back.
   if (msg.type === 'MVP_LIFTOFF_ALIVE') {
-    void liftoffState().then((st) => {
-      const own = sender && sender.tab && st.tabId === sender.tab.id
+    void liftoffState().then(async (st) => {
+      const tab = sender && sender.tab ? sender.tab : null
+      let own = !!tab && st.tabId === tab.id
+      // A background tab SCOUT lost track of (restored after a restart) says
+      // it is alive: adopted, so its heartbeat counts and the next tick does
+      // not close it mid-upload.
+      if (!own && tab && st.tabId == null && LIFTOFF_BG_URL.test(tab.url || '')) {
+        await liftoffSave({ tabId: tab.id, openedAt: Date.now(), lastRun: 'opened' })
+        st = await liftoffState()
+        own = true
+      }
       const young = st.openedAt && Date.now() - st.openedAt < LIFTOFF_MAX_RUN_MS
       if (own && young) { try { chrome.alarms.create(LIFTOFF_CLOSE_ALARM, { delayInMinutes: LIFTOFF_SILENT_MIN }) } catch (e) {} }
-      sendResponse({ ok: true, own: !!own })
+      sendResponse({ ok: true, own })
     })
     return true
   }

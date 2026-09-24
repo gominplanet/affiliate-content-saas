@@ -1669,16 +1669,17 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     const ITEM_R = live(read('app/api/launch/items/[id]/route.ts'))
     check('a CTA change also catches a video being burned in right now',
       /\.in\('state', \['rendering', 'preparing', 'prepared', 'blocked'\]\)/.test(BATCH)
-      && /\.eq\('id', it\.id\)\.eq\('state', 'rendering'\)\.eq\('render_tries', tries \+ 1\)/.test(DRAIN),
+      && (DRAIN.match(/\.eq\('id', it\.id\)\.eq\('state', 'rendering'\)\.eq\('updated_at', renderClaim\)/g) ?? []).length === 2
+      && /updated_at: renderClaim \}\)/.test(DRAIN)
+      && /\.eq\('state', 'preparing'\)\.eq\('updated_at', thumbClaim\)/.test(DRAIN),
       'the old render landed after the change and shipped the old CTA')
     check('a launched batch is not deleted while the uploader still has any of it',
       /still on the way to YouTube\. Delete this batch once/.test(BATCH))
     check('an Amazon-only video already handed over cannot be removed',
       /if \(item\.state === 'amazon_only'\)/.test(ITEM_R))
-    check('removing a video from a launched batch does not shift the others',
-      /if \(batchLaunched\) return NextResponse\.json\(\{ ok: true \}\)/.test(ITEM_R))
-    check('a latecomer never shares a minute with a video already going',
-      /would go out in the same minute as a video already on its way/.test(live(read('app/api/launch/batches/[id]/launch/route.ts'))))
+    check('a latecomer never shares a minute with a video already going, and only live rows count',
+      /would go out in the same minute as a video already on its way/.test(live(read('app/api/launch/batches/[id]/launch/route.ts')))
+      && /\(i\.state === 'prepared' && !!i\.planned_publish_at\) \|\| i\.state === 'scheduled' \|\| i\.state === 'published'/.test(read('app/api/launch/batches/[id]/launch/route.ts')))
     check('an impossible date is refused', /is not a real day\. Pick one from the calendar\./.test(ITEM_R))
     {
       const RES = live(read('app/api/global-sync/deliver/result/route.ts'))
@@ -1758,7 +1759,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     check('an unreadable Amazon-only choice waits instead of uploading',
       /if \(abErr && !\(abErr\.code === '42703'/.test(DRAIN))
     check('a row that cannot upload is said, not skipped for ever',
-      /It has no title, so it cannot go to YouTube/.test(DRAIN))
+      /It has no title, so it cannot go out\./.test(DRAIN))
   }
   check('what YouTube kept is recorded', /api_disclosures: \{/.test(DRAIN) && /await yt\.readDisclosures\(videoId\)/.test(DRAIN))
   const REPORT = live(read('components/launch/LaunchReport.tsx'))

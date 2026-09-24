@@ -274,18 +274,11 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     }, { status: 409 })
   }
 
-  const { data: owner } = await sb.from('launch_batches').select('state').eq('id', item.batch_id).maybeSingle()
-  const batchLaunched = owner?.state === 'launching' || owner?.state === 'launched'
-
   const { error } = await sb.from('launch_items').delete().eq('id', id).eq('user_id', user.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // CLOSE THE GAP. Position drives the publishing order, and a hole in it would
   // leave the cadence with an empty slot in the middle of the run.
-  // NOT ONCE LAUNCHED: the videos already queued have their times, and moving
-  // everyone up a place handed a later latecomer the slot a queued video
-  // already had, so two went out in the same minute.
-  if (batchLaunched) return NextResponse.json({ ok: true })
   const { data: rest } = await sb.from('launch_items')
     .select('id,position').eq('batch_id', item.batch_id).order('position', { ascending: true })
   let i = 0
