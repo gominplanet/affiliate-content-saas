@@ -120,6 +120,22 @@ check('the page waits longer than SCOUT does', bgTimeout > 0 && webTimeout > bgT
 
 // ── the screens ──────────────────────────────────────────────────────────
 const CP = code(read('app/(dashboard)/co-pilot/page.tsx'))
+{
+  // ── audit: what the Co-Pilot button and Retry say and do ───────────────
+  const CPR = read('app/(dashboard)/co-pilot/page.tsx')
+  check('Co-Pilot does not say Scheduled until the time is set',
+    /const held = applied && willFinish && statusOutcome !== 'set'/.test(CPR) && /Sent, NOT scheduled \(see below\)/.test(CPR))
+  check('the outcome is only "set" when something set it',
+    /if \(studioSetVisibility\(fin\)\) \{ setStatusOutcome\('set'\); return \}/.test(CPR)
+    && /if \(res2\.ok && d2\.statusOk !== false\) setStatusOutcome\('set'\)/.test(CPR))
+  check('Retry finishes the push it follows, with the time that push used',
+    /pushedRef\.current = \{ publishAt, isDraft \}/.test(CPR) && /const publishAt = pushed \? pushed\.publishAt/.test(CPR)
+    && /has passed\. Pick a new time and push again\./.test(CPR))
+  check('a draft SCOUT stopped in before its Visibility page is not scheduled through the API',
+    /if \(fin\?\.path === 'draft' && \(!vis \|\| vis\.notReached\)\) \{/.test(CPR)
+    && CPR.indexOf("if (fin?.path === 'draft' && (!vis || vis.notReached)) {") > -1
+    && CPR.indexOf("if (fin?.path === 'draft' && (!vis || vis.notReached)) {") < CPR.indexOf("const res2 = await fetch('/api/youtube/apply'"))
+}
 check('Co-Pilot retry also sets the time', /onClick=\{\(\) => void retryStudioFinish\(\)\}/.test(CP) && /await settleAfterStudio\(fin, publishAt, isDraft\)\s*\}/.test(CP))
 const cpRun = CP.slice(CP.indexOf('async function runStudioFinish('), CP.indexOf('async function settleAfterStudio('))
 check('Co-Pilot sends the creator\'s notify toggle', /notifySubscribers: proSettings\.notifySubscribers === true/.test(cpRun))
@@ -128,7 +144,7 @@ check('Co-Pilot keeps SCOUT\'s result as it came', /setFinishResult\(fin\)/.test
 check('Co-Pilot no longer claims the bell was set', !/Subscriber bell/.test(CP))
 const cpPush = CP.slice(CP.indexOf('const holdStatus = wantsFinish'), CP.indexOf('const holdStatus = wantsFinish') + 2500)
 check('Co-Pilot holds the schedule until SCOUT has run', /publishAt: holdStatus \? null : publishAt/.test(cpPush))
-const settle = CP.slice(CP.indexOf('async function settleAfterStudio('), CP.indexOf('async function settleAfterStudio(') + 1600)
+const settle = CP.slice(CP.indexOf('async function settleAfterStudio('), CP.indexOf('async function settleAfterStudio(') + 4000)
 check('and only sets it through the API once the disclosure read back',
   /studioDisclosuresConfirmed\(fin\)/.test(settle) && /if \(!confirmed\) \{[\s\S]*?return/.test(settle))
 const LB = code(read('components/launch/LaunchBoard.tsx'))

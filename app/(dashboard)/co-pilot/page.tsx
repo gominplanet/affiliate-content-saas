@@ -614,6 +614,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [asinMismatch, setAsinMismatch] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
   const [applied, setApplied] = useState(false)
+  // WHAT HAPPENED TO THE TIME, not what was asked. With SCOUT finishing, the
+  // push sends no status, and the button used to turn green with "Scheduled
+  // on YouTube" before (and whether or not) anything set the schedule.
+  const [statusOutcome, setStatusOutcome] = useState<'set' | 'held' | null>(null)
+  // The time and draft choice the push actually used, so Retry finishes THAT
+  // push. Recomputed from the dropdown, "in 1 hour" became an hour from the
+  // retry, not from the push.
+  const pushedRef = React.useRef<{ publishAt: string | null; isDraft: boolean } | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
@@ -1319,6 +1327,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         }
         if (wantsFinish) {
           setApplying(false)
+          pushedRef.current = { publishAt, isDraft }
+          setStatusOutcome(null)
           const fin = await runStudioFinish(publishAt)
           await settleAfterStudio(fin, publishAt, isDraft)
         }
@@ -1419,9 +1429,17 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    *  used to run SCOUT only, so a video that was not a draft was left with
    *  no schedule under a green result that said its time was set. */
   async function retryStudioFinish() {
-    const publishAt = computePublishAt(proSettings.scheduleMode, proSettings.scheduleAt)
-    const isDraft = proSettings.privacyStatus === 'draft' && !publishAt
+    const pushed = pushedRef.current
+    const publishAt = pushed ? pushed.publishAt : computePublishAt(proSettings.scheduleMode, proSettings.scheduleAt)
+    const isDraft = pushed ? pushed.isDraft : proSettings.privacyStatus === 'draft' && !publishAt
+    // A TIME THAT HAS GONE is refused by YouTube, and scheduling "now" by
+    // accident is worse. Said, with what to do.
+    if (publishAt && new Date(publishAt).getTime() <= Date.now() + 60_000) {
+      setApplyError(`The time this was pushed with (${new Date(publishAt).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}) has passed. Pick a new time and push again.`)
+      return
+    }
     setApplyError(null)
+    setStatusOutcome(null)
     const fin = await runStudioFinish(publishAt)
     await settleAfterStudio(fin, publishAt, isDraft)
   }
@@ -1472,15 +1490,30 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    */
   async function settleAfterStudio(fin: StudioFinishResult | null, publishAt: string | null, isDraft: boolean) {
     const wantsStatus = !!publishAt || !isDraft
-    if (!wantsStatus || studioSetVisibility(fin)) return
+    if (!wantsStatus) return
+    if (studioSetVisibility(fin)) { setStatusOutcome('set'); return }
+    setStatusOutcome('held')
     // SCOUT DID NOT FINISH, which is not the same as the disclosure failing.
     // Said as what it is, with the one thing to press.
     if (fin?.error === 'timeout' || fin?.error === 'busy' || fin?.error === 'not-installed') {
       setApplyError(`SCOUT did not finish in Studio, so ${publishAt ? 'the schedule' : `the ${proSettings.privacyStatus} setting`} was not applied. The video is unchanged on YouTube. Press Retry finish in Studio.`)
       return
     }
+    // A DRAFT SCOUT STOPPED IN is left a draft. Its own Schedule is on the
+    // last page; when SCOUT stopped before it (checks found a claim, a page
+    // never loaded), setting the time through the API instead scheduled a
+    // draft SCOUT had stopped on purpose. The step it stopped at is named.
+    // A Visibility page SCOUT reached and could not read back still falls
+    // through to the API below, as before: only a draft it never got that
+    // far in is held.
+    const vis = fin?.steps.find((s) => s.step === 'visibility')
+    if (fin?.path === 'draft' && (!vis || vis.notReached)) {
+      const stoppedAt = fin.steps.find((s) => !s.ok && !s.skipped && !s.notReached)
+      setApplyError(`SCOUT stopped${stoppedAt ? ` at ${studioStepLabel(stoppedAt.step)}` : ''} in the draft, so it was not ${publishAt ? 'scheduled' : `set to ${proSettings.privacyStatus}`}. It is still a draft on YouTube.${stoppedAt?.detail ? ` ${stoppedAt.detail}` : ''} Finish it in Studio, or press Retry finish in Studio.`)
+      return
+    }
     const confirmed = !finishDoDetails || studioDisclosuresConfirmed(fin)
-    const where = fin?.path === 'draft' ? 'a draft' : 'private'
+    const where = 'private'
     if (!confirmed) {
       setApplyError(`Kept as ${where} on purpose: SCOUT could not confirm paid promotion in Studio, and the video must not go out without it. Finish the Details page on YouTube, then ${publishAt ? 'schedule it' : `set it to ${proSettings.privacyStatus}`}.`)
       return
@@ -1499,6 +1532,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         }),
       })
       const d2 = await safeJson(res2)
+      if (res2.ok && d2.statusOk !== false) setStatusOutcome('set')
       if (!res2.ok || d2.statusOk === false) {
         setApplyError(`Studio settings are in, but ${publishAt ? 'scheduling' : `setting it to ${proSettings.privacyStatus}`} through YouTube did not go through. It is still ${where}. Open it on YouTube and ${publishAt ? 'schedule it' : `set it to ${proSettings.privacyStatus}`}.`)
       }
@@ -3345,7 +3379,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         ))}
                       </div>
                     </div>
-                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] -mt-0.5">Applies whether MVP publishes it or SCOUT finishes it in Studio.</p>
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] -mt-0.5">Sent to YouTube either way. For a video that is already uploaded, YouTube only promises to honour it through Studio&apos;s own box, which SCOUT sets when it finishes the video in Studio.</p>
                   </div>
 
                   {/* SCOUT auto-finish — the compliance fields YouTube's API
@@ -3428,8 +3462,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     const willFinish = isPro && extensionInstalled === true && finishOptIn && anyFinishStep
                     const busySuffix = willFinish ? ' + finishing in Studio…' : '…'
                     const idleSuffix = willFinish ? ' + Finish in Studio' : ''
+                    // SENT IS NOT SCHEDULED: with SCOUT finishing, the time is set
+                    // after it, and only says so once it is.
+                    const held = applied && willFinish && statusOutcome !== 'set'
                     const verb = (busyBase: string, done: string, idleBase: string) =>
-                      scheduling ? (applying ? `Scheduling${busySuffix}` : applied ? 'Scheduled on YouTube' : `Schedule on YouTube${idleSuffix}`)
+                      held && !draft ? (finishRunning ? 'Sent, finishing in Studio…' : statusOutcome === 'held' ? (scheduling ? 'Sent, NOT scheduled (see below)' : 'Sent, visibility NOT set (see below)') : 'Sent to YouTube')
+                      : scheduling ? (applying ? `Scheduling${busySuffix}` : applied ? 'Scheduled on YouTube' : `Schedule on YouTube${idleSuffix}`)
                         : draft ? (applying ? `Saving draft${busySuffix}` : applied ? 'Saved to Draft' : `Save Draft to YouTube${idleSuffix}`)
                           : (applying ? `${busyBase}${busySuffix}` : applied ? done : `${idleBase}${idleSuffix}`)
                     return (
@@ -3438,7 +3476,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         disabled={applying || applied || scheduleNeedsDate || finishRunning}
                         title={scheduleNeedsDate ? 'Pick a future date & time first' : undefined}
                         className="flex items-center justify-center gap-2.5 flex-1 py-3.5 rounded-xl text-base font-bold text-white disabled:opacity-60 transition-all shadow-lg hover:opacity-90 active:scale-[0.98]"
-                        style={{ background: applied ? '#34c759' : 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)', boxShadow: applied ? undefined : '0 4px 14px rgba(255,0,0,0.35)' }}
+                        style={{ background: applied ? (held && !draft && statusOutcome === 'held' ? '#d97706' : '#34c759') : 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)', boxShadow: applied ? undefined : '0 4px 14px rgba(255,0,0,0.35)' }}
                       >
                         {(applying || finishRunning) ? <Loader2 size={16} className="animate-spin" /> : applied ? <CheckCircle size={16} /> : <Youtube size={16} />}
                         {verb('Pushing to YouTube', 'Pushed to YouTube!', 'Push to YouTube')}
