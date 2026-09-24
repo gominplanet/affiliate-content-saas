@@ -26,32 +26,36 @@ const check = (name: string, cond: boolean, detail?: string) => {
 const root = new URL('..', import.meta.url).pathname
 const BG = readFileSync(join(root, 'extension/background.js'), 'utf8')
 
-// Just the details step, so a match elsewhere in a 9,000-line file cannot pass this.
-const at = BG.indexOf('function studioFinishDetailsInPage')
-check('the details step is findable', at > 0)
-const fn = BG.slice(at, at + 12000)
+// The toolkit both Studio routes use (a draft's Edit draft window, and a
+// video's own Details page), so a match elsewhere in a 9,000-line file cannot
+// pass this.
+const at = BG.indexOf('function studioKitInstallInPage')
+check('the Studio toolkit is findable', at > 0)
+const fn = BG.slice(at, at + 60000)
 
 check('there is a radio helper distinct from the checkbox one',
-  /const setRadio = \(sectionRe, choiceRe, key\)/.test(fn))
-check('and it only clicks a radio that is already the wanted answer',
-  /if \(isChecked\(el\)\) \{ out\.actions\[key\] = 'already-set' \} else \{ click\(el\)/.test(fn),
+  /const pickRadio = \(section, choiceRe, scope\)/.test(fn) && /const pickCheckbox = \(section, scope\)/.test(fn))
+check('and it only clicks a radio that is not already the wanted answer',
+  /if \(!isChecked\(el\)\) \{ click\(el\); did = 'set'/.test(fn),
   'toggling a radio pair is how the No answer got selected')
-check('it scopes by section AND matches the radio\'s own text',
-  /choiceRe\.test\(own\)/.test(fn) && /sectionRe\.test\(ctx\(c, 8\)\)/.test(fn),
+check('it matches the radio\'s own text AND its nearest section',
+  /choiceRe\.test\(t\)/.test(fn) && /sectionOf\(el\) !== section/.test(fn),
   'both radios say "paid promotion", so the section alone cannot tell them apart')
+check('a checkbox is matched by its own label, not its section',
+  /SECTIONS\[section\]\.test\(labelOf\(el\)\)/.test(fn),
+  'allow embedding and notify subscribers share a block; by section they were interchangeable')
 
 check('paid promotion asks for Yes through the radio helper',
-  /setRadio\(\/paid promotion\/i, \/\^yes/.test(fn))
+  /answerRadio\('paid', \/\^yes/.test(fn))
 check('with the old checkbox kept only as a fallback',
-  /if \(!paidRadio\)/.test(fn),
+  /if \(!r\.found\) (r = )?await answerCheckbox\('paid', true/.test(fn),
   'some accounts may still be served the previous layout')
-check('and the layout it found is recorded',
-  /out\.debug\.paidLayout/.test(fn),
-  'when Studio changes again, the debug should say which shape it saw')
-
 check('AI use goes through the same helper',
-  /setRadio\(\/ai use\|/.test(fn),
+  /answerRadio\('altered', \/\^no/.test(fn),
   'its radios are a bare Yes and No, so nothing but the section identifies them')
+check('a video that is not a draft is saved, reloaded and read back',
+  /K\.steps\.readDetails/.test(fn) && /studioDraftExec\(tabId, 'readDetails', ask\)/.test(BG),
+  'a Save that went grey is Studio saying it saved, not proof it kept the answers')
 
 // The headline must not claim a clean run off one lucky step.
 const orch = BG.slice(BG.indexOf('const asked = steps.filter'), BG.indexOf('const asked = steps.filter') + 400)
@@ -60,8 +64,8 @@ check('a run is only ok when every asked-for step is ok',
   'steps.some() reported success when details failed and end screens happened to work')
 check('and a partial run says so',
   /partial: good\.length > 0 && good\.length < asked\.length/.test(orch))
-check('success requires paid promotion to be SET, not merely seen',
-  /out\.actions\.paidPromotion === 'set'/.test(fn),
+check('success requires every answer to read back, not merely be found',
+  /rb\.paidPromotion === true/.test(fn) && /out\.ok = failed\.length === 0/.test(fn),
   '"not-found" was the only thing that counted as failure, so any other outcome passed')
 
 // A fix nobody can install is not a fix.

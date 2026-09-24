@@ -7676,219 +7676,6 @@ function studioFinishEndScreenInPage() {
   })()
 }
 
-// Details page (/edit): the disclosures + feed settings the Data API can't set.
-// Sets paid-promotion ON, AI-use = No (genuine footage — the user owns this in
-// the opt-in copy), Allow embedding ON, and sets "Publish to subscriptions feed
-// and notify subscribers" to the user's Yes/No choice (`notifySubscribers`) —
-// the same choice the API publish path uses. Then Saves.
-function studioFinishDetailsInPage(notifySubscribers) {
-  return (async () => {
-    const out = { step: 'details', ok: false, detail: '', actions: {}, debug: {} }
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-    const deepAll = () => {
-      const acc = []
-      const walk = (root) => {
-        let els
-        try { els = root.querySelectorAll('*') } catch (e) { return }
-        for (const el of els) { acc.push(el); if (el.shadowRoot) walk(el.shadowRoot) }
-      }
-      walk(document)
-      return acc
-    }
-    const visText = (el) => {
-      try {
-        const a = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))
-        return (a || el.textContent || '').replace(/\s+/g, ' ').trim()
-      } catch (e) { return '' }
-    }
-    const click = (el) => {
-      if (!el) return false
-      try { el.scrollIntoView({ block: 'center' }) } catch (e) {}
-      // One click: el.click() plus a dispatched 'click' was two, which ticks a
-      // checkbox and unticks it again.
-      try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
-      try { el.click() } catch (e) {}
-      return true
-    }
-    const isBtn = (el) => { const t = (el.tagName || '').toLowerCase(); return /button|ytcp-button/.test(t) || (el.getAttribute && el.getAttribute('role') === 'button') }
-    const isCtrl = (el) => {
-      const t = (el.tagName || '').toLowerCase()
-      const r = el.getAttribute && el.getAttribute('role')
-      return /checkbox|radio/.test(t) || r === 'checkbox' || r === 'radio'
-    }
-    const isChecked = (el) => {
-      if (!el) return false
-      const ac = el.getAttribute && el.getAttribute('aria-checked')
-      if (ac === 'true') return true
-      if (ac === 'false') return false
-      if (el.checked === true) return true
-      const cls = (el.className || '').toString()
-      if (/(^|[\s-])(checked|selected|active)([\s-]|$)/.test(cls)) return true
-      try { if (el.querySelector && el.querySelector('[aria-checked="true"]')) return true } catch (e) {}
-      return false
-    }
-    // Ancestor text up to N levels — used to scope a control to its section.
-    const ctx = (el, n) => { let s = '', e = el; for (let i = 0; i < n && e; i++) { s += ' ' + (e.textContent || ''); e = e.parentElement } return s.replace(/\s+/g, ' ').toLowerCase() }
-    const findCtrl = (labelRe, ownTextRe) => {
-      const ctrls = deepAll().filter(isCtrl)
-      if (ownTextRe) { for (const el of ctrls) { if (ownTextRe.test(visText(el)) && labelRe.test(ctx(el, 8))) return el } }
-      for (const el of ctrls) { if (labelRe.test(visText(el)) || labelRe.test(ctx(el, 5))) return el }
-      return null
-    }
-    const setCheckbox = (labelRe, desired, key) => {
-      const el = findCtrl(labelRe)
-      if (!el) { out.actions[key] = 'not-found'; return }
-      const cur = isChecked(el)
-      if (cur !== desired) { click(el); out.actions[key] = desired ? 'turned-on' : 'turned-off' }
-      else { out.actions[key] = desired ? 'already-on' : 'already-off' }
-    }
-
-    // A RADIO PAIR is not a checkbox, and treating one as the other is worse
-    // than failing to find it.
-    //
-    // Paid promotion used to be a single checkbox labelled "This video contains
-    // paid promotion like a paid product placement, sponsorship, or
-    // endorsement". Studio replaced it with two radios: "Yes, my video includes
-    // paid promotion" and "No, my video doesn't include paid promotion". BOTH
-    // contain the words "paid promotion", so a checkbox-style search matched
-    // whichever came first, found it unchecked, and clicked it. Landing on the
-    // "No" radio does not merely miss the setting, it answers a compliance
-    // question wrongly on the creator's behalf.
-    //
-    // So: find radios by their OWN text within the right section, and only ever
-    // click the one that IS the wanted answer. Never toggle.
-    const setRadio = (sectionRe, choiceRe, key) => {
-      const ctrls = deepAll().filter(isCtrl)
-      let el = null
-      for (const c of ctrls) {
-        const own = visText(c)
-        if (!own || !choiceRe.test(own)) continue
-        if (!sectionRe.test(ctx(c, 8))) continue
-        el = c
-        break
-      }
-      if (!el) { out.actions[key] = 'not-found'; return false }
-      if (isChecked(el)) { out.actions[key] = 'already-set' } else { click(el); out.actions[key] = 'set' }
-      return true
-    }
-    const snapshot = () => Array.from(new Set(deepAll().filter(isCtrl).map((el) => `${visText(el).slice(0, 40)}=${isChecked(el) ? 'on' : 'off'}`))).slice(0, 60)
-
-    try {
-      await sleep(1800)
-      out.debug.url = location.href.slice(0, 160)
-
-      // Wait for the details form to actually render. Private / first-edit
-      // videos render slower, and scanning too early is what made paid-promotion
-      // etc. come back "not-found". Poll for a known control before touching it.
-      const waitCtrl = async (re, ms) => { const end = Date.now() + ms; while (Date.now() < end) { if (findCtrl(re)) return true; await sleep(300) } return false }
-      const formReady = await waitCtrl(/made for kids|paid promotion|allow embedding|restrict my video/i, 12000)
-      out.debug.formReady = formReady
-
-      // Paid promotion, embedding, subs-feed and AI-use live under "Show more".
-      // Previous builds found a "Show more" and clicked it, but nothing
-      // expanded — so we were clicking a non-interactive leaf. Collect EVERY
-      // plausible toggle (its interactive ancestor), log what they are, and
-      // click each visible one until the paid-promotion control appears.
-      const isVisible = (el) => { try { return !!(el.offsetParent || (el.getClientRects && el.getClientRects().length)) } catch (e) { return true } }
-      const tagId = (el) => `${(el.tagName || '').toLowerCase()}#${el.id || ''}[${(el.getAttribute && el.getAttribute('aria-expanded')) || ''}]`
-      const interactiveAncestor = (leaf) => {
-        let e = leaf
-        for (let i = 0; i < 5 && e; i++) {
-          const tag = (e.tagName || '').toLowerCase()
-          if (e.id === 'toggle-button' || /ytcp-button|paper-button|tp-yt-paper-button/.test(tag) || tag === 'button' || (e.getAttribute && (e.getAttribute('role') === 'button' || e.getAttribute('aria-expanded') != null))) return e
-          e = e.parentElement
-        }
-        return leaf
-      }
-      const showMoreToggles = () => {
-        const seen = new Set(), out2 = []
-        for (const el of deepAll()) {
-          const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
-          if (!/^show more$/i.test(t)) continue
-          const target = interactiveAncestor(el)
-          if (target && isVisible(target) && !seen.has(target)) { seen.add(target); out2.push(target) }
-        }
-        return out2
-      }
-      // The paid-promotion control label in Studio is long ("This video
-      // contains paid promotion like a paid product placement, sponsorship, or
-      // endorsement"); match broadly so we know when it's rendered.
-      const paidThere = () => !!findCtrl(/paid promotion|product placement|sponsorship|endorsement|contains paid/i)
-      let expanded = paidThere()
-      for (let tries = 0; tries < 4 && !expanded; tries++) {
-        const toggles = showMoreToggles()
-        out.debug['smToggles' + tries] = toggles.map(tagId).slice(0, 6)
-        for (const tg of toggles) {
-          try { tg.scrollIntoView({ block: 'center' }) } catch (e) {}
-          click(tg)
-          await sleep(700)
-          if (paidThere()) break
-        }
-        expanded = paidThere()
-        if (!expanded) { try { (document.scrollingElement || document.body).scrollBy(0, 700) } catch (e) {} ; await sleep(600); expanded = paidThere() }
-      }
-      out.debug.expanded = expanded
-      // On failure, record every button label on the page so we can see what
-      // the expander is actually called this layout.
-      if (!expanded) out.debug.allButtons = Array.from(new Set(deepAll().filter(isBtn).map(visText).filter((t) => t && t.length < 30))).slice(0, 40)
-      out.debug.controlsBefore = snapshot()
-
-      // If the form or its disclosures never rendered, this is the cold-load
-      // race — ask the orchestrator to reload and run the whole step again
-      // rather than saving a half-empty Details tab.
-      if (!formReady || !expanded) {
-        out.needsReload = true
-        out.detail = !formReady ? 'Details form didn’t render — retrying' : 'Couldn’t open the “Show more” disclosures — retrying'
-        out.debug.controlsAfter = snapshot()
-        return out
-      }
-
-      // 1) Paid promotion → YES.
-      // Radio layout first (current Studio). Only if no "Yes…" radio exists in
-      // a paid-promotion section do we fall back to the old single checkbox,
-      // which some accounts may still be served.
-      const paidRadio = setRadio(/paid promotion/i, /^yes\b/i, 'paidPromotion')
-      if (!paidRadio) {
-        setCheckbox(/contains paid promotion|product placement|sponsorship|endorsement/i, true, 'paidPromotion')
-      }
-      out.debug.paidLayout = paidRadio ? 'radio' : 'checkbox-fallback'
-      await sleep(300)
-      // 2) Allow embedding ON
-      setCheckbox(/allow embedding/i, true, 'embedding')
-      await sleep(300)
-      // 3) Publish to subscriptions feed & notify subscribers — match the user's
-      //    Yes/No choice (defaults OFF when not supplied).
-      setCheckbox(/publish to subscriptions feed|notify subscribers/i, notifySubscribers === true, 'notify')
-      await sleep(300)
-      // 4) AI use → "No". Its radios are labelled with a bare "Yes" / "No", so
-      // the section text is the only thing that identifies them. Scoped through
-      // the same radio helper so it can never pick the wrong one either.
-      setRadio(/ai use|generate or edit your content|realistic-looking|didn'?t actually occur|altered content/i, /^no$/i, 'aiUse')
-      await sleep(400)
-
-      // Save
-      let save = null, len = 1e9
-      for (const el of deepAll().filter(isBtn)) { const tx = visText(el); if (/^save$/i.test(tx) && tx.length < len) { save = el; len = tx.length } }
-      out.debug.saveText = save ? visText(save) : null
-      if (save) { click(save); await sleep(1500) }
-      out.debug.controlsAfter = snapshot()
-
-      // Success = paid promotion was actually set (the field that matters for a
-      // review) AND we saved. Notify / embedding / AI-use are recorded in detail
-      // but a missing notify control must NOT fail the whole step.
-      const paidHandled = out.actions.paidPromotion === 'set' || out.actions.paidPromotion === 'already-set'
-        || out.actions.paidPromotion === 'turned-on' || out.actions.paidPromotion === 'already-on'
-      out.ok = !!save && !!paidHandled
-      out.detail = `paid:${out.actions.paidPromotion || '?'} · embed:${out.actions.embedding || '?'} · notify:${out.actions.notify || '?'} · AI-use:${out.actions.aiUse || '?'}`
-      if (!save) out.detail += ' · Save not found'
-      return out
-    } catch (e) {
-      out.error = (e && e.message) || 'exception'
-      return out
-    }
-  })()
-}
-
 // Tag the reviewed PRODUCT on the video via Studio's "Tag products" flow (only
 // works for creators enrolled in YouTube Shopping). Opens the Products area,
 // pastes the product URL MVP resolved, adds the first match, and saves. Best-
@@ -8271,7 +8058,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 1
+  const KIT_VERSION = 2
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -8447,11 +8234,28 @@ function studioKitInstallInPage() {
     }
     return null
   }
+  // A checkbox is known by ITS OWN LABEL, never by its section. "Allow
+  // embedding" and "Publish to subscriptions feed and notify subscribers" sit
+  // side by side in one block, so climbing to the section found the notify
+  // text above the embedding box and would have ticked embedding for notify.
+  // The label is the control's own text, or the first ancestor holding a
+  // short run of text (the box's own row).
+  const labelOf = (el) => {
+    const own = ctrlText(el)
+    if (own) return own
+    let e = up(el)
+    for (let i = 0; i < 5 && e; i++) {
+      const t = deepText(e)
+      if (t) return t.length <= 250 ? t : ''
+      e = up(e)
+    }
+    return ''
+  }
   const pickCheckbox = (section, scope) => {
     let fallback = null
     for (const el of all(scope)) {
       if (!isCheckbox(el)) continue
-      if (sectionOf(el) !== section && !SECTIONS[section].test(ctrlText(el))) continue
+      if (!SECTIONS[section].test(labelOf(el))) continue
       // The element that carries aria-checked is the one whose state we can
       // read, so it wins over the host that wraps it.
       if (el.getAttribute && el.getAttribute('aria-checked') != null) return el
@@ -8598,18 +8402,90 @@ function studioKitInstallInPage() {
     return out
   }
 
-  // Details: Show more, paid promotion YES, AI use NO, notify box = toggle.
-  K.steps.details = async (out, o) => {
-    const dlg = mainDialog()
-    if (!dlg || page(dlg) !== 'details') { out.detail = 'The draft’s Details page is not open'; return out }
-    const paidThere = () => pickRadio('paid', /^yes\b/i, dlg) || pickCheckbox('paid', dlg)
+  // Show more, until the paid promotion question is on the page.
+  const expandDisclosures = async (scope, out) => {
+    const paidThere = () => pickRadio('paid', /^yes\b/i, scope) || pickCheckbox('paid', scope)
     if (!paidThere()) {
-      const more = byId('toggle-button', dlg) || findBtn(/^show more$/i, dlg)
+      const more = byId('toggle-button', scope) || findBtn(/^show more$/i, scope)
       out.debug.showMore = more ? (deepText(more) || attrLabel(more)).slice(0, 30) : null
       if (more && /more/i.test(deepText(more) || attrLabel(more))) click(more)
       await waitFor(paidThere, 6000, 300)
     }
-    if (!paidThere()) { out.detail = 'Pressed Show more, but the paid promotion question never appeared'; out.debug.buttons = buttonSample(dlg); return out }
+    return !!paidThere()
+  }
+  // What the three answers say right now, without touching anything.
+  // null = the control was not found, which is not the same as "off".
+  const readDisclosures = (scope) => {
+    const paidYes = pickRadio('paid', /^yes\b/i, scope)
+    const paidBox = paidYes ? null : pickCheckbox('paid', scope)
+    const aiNo = pickRadio('altered', /^no\b/i, scope)
+    const notify = pickCheckbox('notify', scope)
+    return {
+      paidPromotion: paidYes ? isChecked(paidYes) : paidBox ? isChecked(paidBox) : null,
+      aiUseNo: aiNo ? isChecked(aiNo) : null,
+      notifySubscribers: notify ? isChecked(notify) : null,
+    }
+  }
+  const disclosureVerdict = (rb, o) => {
+    const checks = []
+    if (o.paid) checks.push(['Paid promotion: Yes', rb.paidPromotion === true])
+    if (o.aiNo) checks.push(['AI use: No', rb.aiUseNo === true])
+    checks.push([o.notify === true ? 'Notify subscribers: ticked' : 'Notify subscribers: unticked', rb.notifySubscribers === (o.notify === true)])
+    return checks
+  }
+
+  // A VIDEO'S OWN DETAILS PAGE (not a draft): the same three answers, then
+  // Save. The orchestrator then reloads the page and runs readDetails, which
+  // is what decides the tick: Save going grey is Studio saying it saved, the
+  // reload is us checking it kept it.
+  K.steps.videoDetails = async (out, o) => {
+    const ready = await waitFor(() => findBtn(/^show (more|less)$/i, document) || pickRadio('paid', /^yes\b/i, document), 20000, 400)
+    if (!ready) { out.detail = 'The video’s Details page never finished loading'; out.needsReload = true; out.debug.buttons = buttonSample(document); return out }
+    if (!(await expandDisclosures(document, out))) { out.detail = 'Pressed Show more, but the paid promotion question never appeared'; out.debug.buttons = buttonSample(document); return out }
+    if (o.paid) {
+      const r = await answerRadio('paid', /^yes\b/i, document)
+      if (!r.found) await answerCheckbox('paid', true, document)
+    }
+    if (o.aiNo) await answerRadio('altered', /^no\b/i, document)
+    await answerCheckbox('notify', o.notify === true, document)
+    await sleep(500)
+    out.readBack.beforeSave = readDisclosures(document)
+    const save = byId('save', document) || findBtn(/^save$/i, document)
+    if (save && !isDisabled(save)) {
+      click(save)
+      const saved = await waitFor(() => { const b = byId('save', document) || findBtn(/^save$/i, document); return !b || isDisabled(b) ? true : null }, 20000, 500)
+      out.readBack.saved = !!saved
+      if (!saved) { out.detail = 'Pressed Save, and Studio never finished saving'; return out }
+    } else {
+      // Nothing changed: every answer was already what was asked.
+      out.readBack.saved = 'nothing-to-save'
+    }
+    out.ok = true
+    out.detail = 'Answered and saved; checking what Studio kept'
+    return out
+  }
+
+  // The three answers on a freshly loaded Details page. The step that decides
+  // the tick for a video that is not a draft.
+  K.steps.readDetails = async (out, o) => {
+    const ready = await waitFor(() => findBtn(/^show (more|less)$/i, document) || pickRadio('paid', /^yes\b/i, document), 20000, 400)
+    if (!ready || !(await expandDisclosures(document, out))) { out.detail = 'Could not reopen the Details page to check it'; out.needsReload = true; return out }
+    const rb = readDisclosures(document)
+    out.readBack = rb
+    const checks = disclosureVerdict(rb, o)
+    const failed = checks.filter((c) => !c[1]).map((c) => c[0])
+    out.ok = failed.length === 0
+    out.detail = out.ok
+      ? checks.map((c) => c[0]).join(', ') + '. Saved, reloaded and read back from Studio.'
+      : 'After saving and reloading, Studio does not show: ' + failed.join(', ')
+    return out
+  }
+
+  // Details: Show more, paid promotion YES, AI use NO, notify box = toggle.
+  K.steps.details = async (out, o) => {
+    const dlg = mainDialog()
+    if (!dlg || page(dlg) !== 'details') { out.detail = 'The draft’s Details page is not open'; return out }
+    if (!(await expandDisclosures(dlg, out))) { out.detail = 'Pressed Show more, but the paid promotion question never appeared'; out.debug.buttons = buttonSample(dlg); return out }
     const checks = []
     if (o.paid) {
       // Radio layout first (current Studio); the old single checkbox only if
@@ -9151,8 +9027,32 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
       if (!open || !open.ok) return summarise([open || { step: 'open', ok: false, detail: 'Studio did not open' }], 'unknown')
       // A normal video: the panel flow below, as before.
     }
-    if (want.details) {
-      steps.push(await runPanel('edit', studioFinishDetailsInPage, [want.notifySubscribers === true], 'details'))
+    if (want.details !== false || want.notifySubscribers !== undefined) {
+      // THE KIT, NOT THE OLD DETAILS SCRIPT. A video's own Details page (what
+      // a Launch Batch upload is) was driven by an older details script (now
+      // removed), which clicked twice and matched checkboxes by section, so the notify
+      // box and the embedding box beside it were interchangeable. Now: answer,
+      // Save, reload, read back. The read after the reload is the tick.
+      const ask = { paid: want.details !== false, aiNo: want.details !== false, notify: want.notifySubscribers === true }
+      let answered = null
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await goto('edit', attempt > 0)
+        await sleep(1200)
+        answered = await studioDraftExec(tabId, 'videoDetails', ask)
+        if (!answered.needsReload) break
+      }
+      if (!answered || !answered.ok) {
+        steps.push(Object.assign({}, answered || {}, { step: 'details', ok: false }))
+      } else {
+        let check = null
+        for (let attempt = 0; attempt < 2; attempt++) {
+          await goto('edit', true)
+          await sleep(1500)
+          check = await studioDraftExec(tabId, 'readDetails', ask)
+          if (!check.needsReload) break
+        }
+        steps.push(Object.assign({}, check || {}, { step: 'details' }))
+      }
     }
     if (want.tagProduct && want.productUrl) {
       // Product tagging lives on the video's edit page (YouTube Shopping only).

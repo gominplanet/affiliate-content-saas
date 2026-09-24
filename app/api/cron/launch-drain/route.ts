@@ -367,6 +367,16 @@ async function thumbs(sb: Sb): Promise<{ done: number; blocked: number; plain: n
       if (meta?.description) {
         patch.description = meta.description
         if (meta.tags?.length) patch.tags = meta.tags.join(', ')
+        // THE YOUTUBE TITLE CO-PILOT WOULD WRITE. The title above is the 2 to
+        // 3 word thumbnail hook ("CHIA WORTH IT?"), right on the image and
+        // wrong as a YouTube title, and it went to YouTube as one because
+        // nothing replaced it. The same call that writes the description
+        // writes a proper title; it used to be thrown away. Never over a
+        // title the creator typed.
+        if (meta.title && String(it.title_source || 'filename') !== 'creator') {
+          patch.title = meta.title.slice(0, 100)
+          patch.title_source = 'mvp'
+        }
       } else {
         metaMissing++
       }
@@ -460,7 +470,7 @@ async function productTitle(
 
 async function videoMetadata(
   userId: string, title: string, asin: string,
-): Promise<{ description: string; tags: string[] } | null> {
+): Promise<{ description: string; tags: string[]; title: string | null } | null> {
   try {
     const res = await postToSelf({
       path: '/api/youtube/generate-metadata',
@@ -469,10 +479,11 @@ async function videoMetadata(
       body: { videoTitle: title, asin: asin || undefined, skipAsinCheck: !asin },
     })
     if (!res.ok) return null
-    const j = await res.json().catch(() => ({})) as { generated?: { description?: string; tags?: string[] } }
+    const j = await res.json().catch(() => ({})) as { generated?: { title?: string; description?: string; tags?: string[] } }
     const description = String(j.generated?.description || '').trim()
     if (!description) return null
-    return { description, tags: Array.isArray(j.generated?.tags) ? j.generated!.tags! : [] }
+    const t = String(j.generated?.title || '').trim()
+    return { description, tags: Array.isArray(j.generated?.tags) ? j.generated!.tags! : [], title: t || null }
   } catch {
     return null
   }
@@ -1172,6 +1183,52 @@ async function settle(sb: Sb): Promise<number> {
   return moved
 }
 
+/**
+ * Videos already on YouTube whose batch has a playlist they are not in yet.
+ *
+ * A PLAYLIST CHOSEN AFTER LAUNCH still reaches the videos. The uploader adds
+ * each video as it goes up, which misses every video that went up before the
+ * playlist was picked: the first batch to use this launched from a page that
+ * did not have the picker yet, and its videos were never in any playlist.
+ *
+ * Each video is tried once. Added or refused, the answer is written, and a
+ * refused one is not retried every minute; the row shows what YouTube said.
+ * Before migration 367 the first select fails and this does nothing.
+ */
+async function playlistCatchUp(sb: Sb): Promise<{ added: number; failed: number }> {
+  const { data: batches, error: bErr } = await sb.from('launch_batches')
+    .select('id,user_id,playlist_id').not('playlist_id', 'is', null).in('state', ['launching', 'launched'])
+  if (bErr || !batches?.length) return { added: 0, failed: 0 }
+  const byBatch = new Map<string, { user_id: string; playlist_id: string }>()
+  for (const b of batches as Array<{ id: string; user_id: string; playlist_id: string }>) byBatch.set(b.id, b)
+  const { data: rows, error: iErr } = await sb.from('launch_items')
+    .select('id,batch_id,youtube_video_id')
+    .in('batch_id', [...byBatch.keys()])
+    .not('youtube_video_id', 'is', null)
+    .is('playlist_added_at', null).is('playlist_error', null)
+    .limit(10)
+  if (iErr || !rows?.length) return { added: 0, failed: 0 }
+  let added = 0, failed = 0
+  const tokens = new Map<string, string | null>()
+  for (const it of rows as Array<{ id: string; batch_id: string; youtube_video_id: string }>) {
+    const b = byBatch.get(it.batch_id)
+    if (!b) continue
+    if (!tokens.has(b.user_id)) tokens.set(b.user_id, await getChannelOAuthToken(sb, b.user_id, null).catch(() => null))
+    const token = tokens.get(b.user_id)
+    if (!token) continue
+    try {
+      await new YouTubeOAuthService(token).addVideoToPlaylist(b.playlist_id, it.youtube_video_id)
+      await sb.from('launch_items').update({ playlist_added_at: new Date().toISOString(), playlist_error: null }).eq('id', it.id)
+      added++
+    } catch (e) {
+      const said = (e instanceof Error && e.message ? e.message : String(e)).slice(0, 200)
+      await sb.from('launch_items').update({ playlist_error: said }).eq('id', it.id)
+      failed++
+    }
+  }
+  return { added, failed }
+}
+
 export async function GET(request: Request) {
   const auth = request.headers.get('authorization') || ''
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -1188,6 +1245,7 @@ export async function GET(request: Request) {
   const confirmed = await confirms(sb)
   // Videos on YouTube that never reached the Amazon side. Cheap when empty.
   const repaired = await repairs(sb)
+  const playlisted = await playlistCatchUp(sb)
   const settled = await settle(sb)
-  return NextResponse.json({ ok: true, rendered, thumbed, published, confirmed, repaired, settled })
+  return NextResponse.json({ ok: true, rendered, thumbed, published, confirmed, repaired, playlisted, settled })
 }

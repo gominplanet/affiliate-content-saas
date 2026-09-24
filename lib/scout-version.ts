@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.20.0'
+export const SCOUT_LATEST_VERSION = '1.20.1'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Finishes a YouTube draft the way you would by hand: Edit draft, paid promotion Yes, AI use No, monetization, ad rating, product tag, end screen, then your schedule. Each setting is read back before the next step.'
+  'Finishes a video in YouTube Studio the way you would by hand, draft or not: paid promotion Yes, AI use No, the notify box as you chose, then saves, reloads and reads every answer back before it says done.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

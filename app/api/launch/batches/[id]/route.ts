@@ -206,17 +206,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // the uploader may already have sent YouTube the old answer, and a switch
   // that changes on screen but not on the channel is the plan reported as
   // the result.
-  // THE PLAYLIST TOO: the uploader adds each video as it goes up, so a change
-  // after launch would put half the batch in one playlist and half in another
-  // while the screen showed one.
-  if (patch.notify_subscribers !== undefined || patch.playlist_id !== undefined) {
+  // THE PLAYLIST IS NOT LOCKED. A playlist picked after launch still reaches
+  // every video, including the ones already up (playlistCatchUp in the
+  // uploader). Changing it once videos are in one adds the rest to the new one
+  // and leaves the earlier ones where they are, and the rows say which.
+  if (patch.notify_subscribers !== undefined) {
     const { data: cur } = await sb.from('launch_batches')
       .select('state').eq('id', id).eq('user_id', user.id).maybeSingle()
     if (cur && (cur.state === 'launching' || cur.state === 'launched')) {
       return NextResponse.json({
-        error: patch.playlist_id !== undefined
-          ? 'This batch has already been launched, so its playlist is locked in. You can move videos between playlists in YouTube Studio.'
-          : 'This batch has already been launched, so its notification setting is locked in. You can change it per video in YouTube Studio.',
+        error: 'This batch has already been launched, so its notification setting is locked in. You can change it per video in YouTube Studio.',
       }, { status: 409 })
     }
   }

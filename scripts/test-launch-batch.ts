@@ -1596,6 +1596,27 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /amazonTick\.current = \(\) =>/.test(SCREEN) && /uploadToAmazon\(\{ auto: true \}\)/.test(SCREEN)
       && /batch\.state !== 'launched' && batch\.state !== 'launching'\) return/.test(SCREEN),
     'it waited for a press nobody knew was still needed')
+  // THE STUDIO STEPS GO BY THEMSELVES TOO, AND FIRST. A batch only did them
+  // on a press nobody knew about, and its videos sat scheduled with paid
+  // promotion, AI use and the notify box blank.
+  check('the Studio steps run by themselves once launched',
+    /studioTick\.current = \(\) =>/.test(SCREEN) && /void finishInStudio\(next\)/.test(SCREEN)
+      && /studioTried\.current\.add\(next\.id\)/.test(SCREEN),
+    'once per video per visit, so a run that stops is not retried on a timer')
+  check('and Amazon waits for them',
+    /amazonTick\.current = \(\) => \{\s*if \(studioRunning\.current/.test(SCREEN),
+    'the disclosures are what must be in place before a video goes public')
+  check('only with a SCOUT that has the new Studio steps',
+    /const scoutCanStudio = scoutReady === true && !isScoutOutdated\(scoutVersion\)/.test(SCREEN))
+  // A PLAYLIST PICKED AFTER LAUNCH STILL REACHES THE VIDEOS ALREADY UP.
+  check('the uploader adds videos already on YouTube to a later playlist',
+    /async function playlistCatchUp\(/.test(DRAIN) && /await playlistCatchUp\(sb\)/.test(DRAIN)
+      && /\.is\('playlist_added_at', null\)\.is\('playlist_error', null\)/.test(DRAIN),
+    'each tried once; a refusal is written, not retried every minute')
+  // THE YOUTUBE TITLE IS A TITLE, NOT THE THUMBNAIL HOOK.
+  check('a batch video gets the YouTube title Co-Pilot\'s writer returns',
+    /patch\.title = meta\.title\.slice\(0, 100\)/.test(DRAIN) && /!== 'creator'\) \{\s*patch\.title = meta\.title/.test(DRAIN),
+    '"CHIA WORTH IT?" is a thumbnail hook, and it went to YouTube as the title')
   check('and stops on an error, saying so',
     /if \(out\.error\) setAmazonAuto\('stopped'\)/.test(SCREEN) && /Automatic sending stopped:/.test(SCREEN))
 

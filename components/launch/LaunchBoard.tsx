@@ -25,7 +25,8 @@ import { deliverPreparedStorefronts, deliverySummary, type DeliveryOutcome } fro
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
 import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
-import { requestStorefrontPreflight, requestStudioFinish, isExtensionAvailable } from '@/lib/extension-frame'
+import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus } from '@/lib/extension-frame'
+import { isScoutOutdated } from '@/lib/scout-version'
 import {
   DEFAULT_STUDIO_OPTIONS, productLinkFor, storeStudioRun, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
   type StoredStudioRun, type StudioOptions,
@@ -133,6 +134,10 @@ export default function LaunchBoard() {
   const [studioOpts, setStudioOpts] = useState<StudioOptions>(DEFAULT_STUDIO_OPTIONS)
   const [ytOptionsAvailable, setYtOptionsAvailable] = useState(true)
   const [scoutReady, setScoutReady] = useState<boolean | null>(null)
+  const [scoutVersion, setScoutVersion] = useState<string | null>(null)
+  // The Studio steps need SCOUT 1.20.0 or later; an older SCOUT drives the old
+  // Details script, which is exactly what left these boxes blank.
+  const scoutCanStudio = scoutReady === true && !isScoutOutdated(scoutVersion)
   // Which video SCOUT is in Studio for right now, and runs not yet stored
   // (shown until the reload that brings the stored copy back).
   const [studioBusy, setStudioBusy] = useState<string | null>(null)
@@ -158,10 +163,39 @@ export default function LaunchBoard() {
   const amazonRunning = useRef(false)
   const [amazonAuto, setAmazonAuto] = useState<'on' | 'stopped'>('on')
   const [amazonNote, setAmazonNote] = useState<{ at: Date; lines: string[]; error: boolean } | null>(null)
+  // ── AND THE STUDIO STEPS, BY THEMSELVES, FIRST ─────────────────────────
+  // Paid promotion, AI use, the notify box, monetization: YouTube's API sets
+  // none of them, and a batch only did them when somebody found and pressed
+  // Finish in Studio on each row. Nobody did, and the videos sat scheduled
+  // with the boxes blank. Now each video is finished in Studio once, by
+  // itself, as soon as it is on YouTube, while this page is open.
+  //
+  // BEFORE AMAZON, never alongside it: the disclosures are what must be in
+  // place before a video goes public, and both jobs drive SCOUT.
+  //
+  // ONCE PER VIDEO PER VISIT. A run that stops is not retried on a timer; the
+  // row says where it stopped and Run Studio again is one press away.
+  const studioRunning = useRef(false)
+  const studioTried = useRef<Set<string>>(new Set())
+  const studioManual = useRef(false)
+  const studioTick = useRef<() => void>(() => {})
+  studioTick.current = () => {
+    if (!scoutCanStudio || !batch || studioRunning.current || studioManual.current || amazonRunning.current) return
+    if (batch.state !== 'launched' && batch.state !== 'launching') return
+    const next = items.find((i) => !!i.youtube_video_id && !(liveRuns[i.id] ?? i.studio_finish) && !studioTried.current.has(i.id))
+    if (!next) return
+    studioTried.current.add(next.id)
+    void finishInStudio(next)
+  }
+  // Every video that needs the Studio steps and has not had them yet.
+  const studioPending = items.some((i) => !!i.youtube_video_id && !(liveRuns[i.id] ?? i.studio_finish))
+
   // The latest state, read by a timer set once. A closure over the first
   // render would check a batch that has since launched as still a draft.
   const amazonTick = useRef<() => void>(() => {})
   amazonTick.current = () => {
+    // The Studio steps go first; Amazon waits for them to finish.
+    if (studioRunning.current || (scoutCanStudio && studioPending && items.some((i) => !!i.youtube_video_id && !studioTried.current.has(i.id)))) return
     if (amazonAuto !== 'on' || scoutReady !== true || !batch || amazonRunning.current) return
     if (batch.state !== 'launched' && batch.state !== 'launching') return
     if (batch.markets.length === 0 || !items.some((i) => !!i.video_id)) return
@@ -174,14 +208,15 @@ export default function LaunchBoard() {
     })
   }
   useEffect(() => {
-    const first = setTimeout(() => amazonTick.current(), 5_000)
+    const first = setTimeout(() => { studioTick.current(); amazonTick.current() }, 5_000)
+    const studioEvery = setInterval(() => studioTick.current(), 20_000)
     const every = setInterval(() => amazonTick.current(), 120_000)
-    return () => { clearTimeout(first); clearInterval(every) }
+    return () => { clearTimeout(first); clearInterval(studioEvery); clearInterval(every) }
   }, [])
   // And at once when another video reaches YouTube, rather than up to two
   // minutes later.
   const onYouTubeCount = items.filter((i) => !!i.video_id).length
-  useEffect(() => { if (onYouTubeCount > 0) amazonTick.current() }, [onYouTubeCount])
+  useEffect(() => { if (onYouTubeCount > 0) { studioTick.current(); amazonTick.current() } }, [onYouTubeCount])
   const [mainLaunchEl, setMainLaunchEl] = useState<HTMLButtonElement | null>(null)
   const [mainLaunchInView, setMainLaunchInView] = useState(false)
   useEffect(() => {
@@ -296,7 +331,10 @@ export default function LaunchBoard() {
         setPlaylists(Array.isArray(j?.playlists) ? j.playlists : [])
       } catch { setPlaylistsError('Could not read your playlists.') }
     })()
-    void isExtensionAvailable().then(setScoutReady).catch(() => setScoutReady(false))
+    void getScoutStatus().then((st) => {
+      setScoutReady(st.installed)
+      setScoutVersion(st.version)
+    }).catch(() => setScoutReady(false))
   }, [])
 
   /** The switcher's own list, re-read whenever it could have changed. */
@@ -499,7 +537,8 @@ export default function LaunchBoard() {
    * Studio pass can never move a launch.
    */
   async function finishInStudio(it: Item): Promise<StoredStudioRun | null> {
-    if (!it.youtube_video_id) return null
+    if (!it.youtube_video_id || studioRunning.current) return null
+    studioRunning.current = true
     setStudioBusy(it.id)
     try {
       const link = productLinkFor(it.asin)
@@ -530,19 +569,31 @@ export default function LaunchBoard() {
         await load(batchId)
       }
       return run
-    } finally { setStudioBusy(null) }
+    } finally {
+      studioRunning.current = false
+      setStudioBusy(null)
+      // Straight on to the next video that needs it, if any.
+      setTimeout(() => studioTick.current(), 1500)
+    }
   }
 
   /** Every video on YouTube whose Studio steps have not all read back, one
    *  at a time, because each one takes over a Studio tab. */
   async function finishAllInStudio() {
+    if (studioRunning.current) return
     const todo = items.filter((i) => !!i.youtube_video_id && !(liveRuns[i.id] ?? i.studio_finish)?.ok)
     let done = 0
-    for (const it of todo) {
-      const run = await finishInStudio(it)
-      if (run?.ok) done++
-      if (run?.error === 'not-installed') break
-    }
+    // The automatic pass stands aside while this runs, so the two never try
+    // to start the same video.
+    studioManual.current = true
+    try {
+      for (const it of todo) {
+        studioTried.current.add(it.id)
+        const run = await finishInStudio(it)
+        if (run?.ok) done++
+        if (run?.error === 'not-installed') break
+      }
+    } finally { studioManual.current = false }
     if (todo.length > 0) {
       toast(done === todo.length
         ? `Studio steps read back on all ${done}.`
@@ -1130,7 +1181,7 @@ export default function LaunchBoard() {
               Playlist
               <select
                 value={playlistId ?? ''}
-                disabled={!ytOptionsAvailable || scheduleLocked || busy === 'batch' || !playlists}
+                disabled={!ytOptionsAvailable || busy === 'batch' || !playlists}
                 onChange={(e) => void patchBatch({ playlistId: e.target.value || null })}
                 className="block mt-1 w-full px-3 py-2 rounded-lg border text-sm bg-transparent disabled:opacity-60"
                 style={{ borderColor: 'var(--border)', ...text }}
@@ -1147,7 +1198,7 @@ export default function LaunchBoard() {
               <span className="block text-[11px] mt-1" style={playlistsError ? { color: '#d97706' } : muted}>
                 {playlistsError
                   ?? (scheduleLocked
-                    ? 'Locked in: each video joins this playlist as it uploads.'
+                    ? 'Videos already on YouTube are added within a minute or two; the rest as they upload. Each row says whether YouTube took it.'
                     : playlists === null ? 'Reading your playlists…'
                     : playlists.length === 0 ? 'Your channel has no playlists yet.'
                     : 'Every video in this batch is added to it as it uploads.')}
@@ -1177,7 +1228,9 @@ export default function LaunchBoard() {
               </div>
               <p className="text-[11px] mt-1.5" style={muted}>
                 Notify subscribers in Studio follows the switch above ({notifySubs ? 'on' : 'off'}).
-                {scoutReady === false && ' SCOUT is not installed in this browser, so Finish in Studio will not be available.'}
+                {' '}Once launched, SCOUT does these by itself for each video as it reaches YouTube, while this page is open.
+                {scoutReady === false && ' SCOUT is not installed in this browser, so it cannot.'}
+                {scoutReady === true && !scoutCanStudio && ` Your SCOUT is ${scoutVersion ?? 'an older version'}; these steps need the latest SCOUT.`}
               </p>
             </div>
           </div>
@@ -1334,8 +1387,8 @@ export default function LaunchBoard() {
               <p className="text-[12px] font-semibold" style={text}>YouTube: automatic</p>
               <p className="text-[11.5px] mt-1" style={muted}>
                 Each video is uploaded for you and kept private, and YouTube makes it public at the time you picked.
-                The Studio settings its API cannot set (paid promotion, AI use, monetization, product tag, end screen) are done by
-                Finish in Studio on the board below, with SCOUT, ideally before each goes public.
+                The Studio settings its API cannot set (paid promotion, AI use, the notify box, monetization, product tag, end screen)
+                are done by SCOUT by itself as each video reaches YouTube, while this page is open. Each row says what Studio kept.
               </p>
             </div>
             <div className="rounded-lg px-3 py-2.5" style={{ background: 'var(--surface)' }}>
@@ -1440,7 +1493,7 @@ export default function LaunchBoard() {
             <h2 className="text-[13px] font-semibold" style={text}>Where each video is</h2>
             {/* ONE AT A TIME, ON PURPOSE. Each run takes over a Studio tab for
                 a minute or two, and two at once would fight over it. */}
-            {scoutReady && items.some((i) => !!i.youtube_video_id) && (
+            {scoutCanStudio && items.some((i) => !!i.youtube_video_id) && (
               <button onClick={() => void finishAllInStudio()} disabled={!!studioBusy}
                 className="text-[12px] px-3 py-1.5 rounded-lg font-semibold text-white disabled:opacity-50"
                 style={{ background: '#0EA5A4' }}>
@@ -1526,7 +1579,13 @@ export default function LaunchBoard() {
                       return <span className="block text-[11.5px] mt-0.5" style={{ color: '#0EA5A4' }}>SCOUT is in YouTube Studio with this video…</span>
                     }
                     if (!run) {
-                      return <span className="block text-[11.5px] mt-0.5" style={{ color: '#d97706' }}>Studio steps not done yet</span>
+                      return <span className="block text-[11.5px] mt-0.5" style={{ color: '#d97706' }}>
+                        {scoutCanStudio
+                          ? 'Studio steps not done yet. SCOUT does them by itself while this page is open.'
+                          : scoutReady === true
+                            ? `Studio steps not done: they need the latest SCOUT, and this browser has ${scoutVersion ?? 'an older one'}.`
+                            : 'Studio steps not done: SCOUT is not installed in this browser.'}
+                      </span>
                     }
                     const asResult = { ok: run.ok, steps: run.steps, error: run.error ?? undefined, path: run.path ?? undefined }
                     return (
@@ -1584,7 +1643,7 @@ export default function LaunchBoard() {
                     Try again
                   </button>
                 )}
-                {it.youtube_video_id && scoutReady && (
+                {it.youtube_video_id && scoutCanStudio && (
                   <button onClick={() => void finishInStudio(it)} disabled={!!studioBusy}
                     className="text-[11.5px] px-2.5 py-1 rounded-lg border shrink-0 disabled:opacity-50"
                     style={{ borderColor: '#0EA5A4', color: '#0EA5A4' }}>
