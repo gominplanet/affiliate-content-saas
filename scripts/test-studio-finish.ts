@@ -100,10 +100,27 @@ check('the manifest and the app registry agree on the version',
     /let matched = await waitFor\(dateMatches, 6000, 300\)/.test(kitVis) && !/await sleep\(1200\)\n\s*const shownDate/.test(kitVis))
   const kitTag = BG.slice(BG.indexOf('K.steps.tagproduct = '), BG.indexOf('K.steps.endscreen = '))
   check('a product YouTube Shopping does not list is not a red cross',
-    /out\.skipped = true\n\s*out\.detail = 'YouTube Shopping has no listing for this product/.test(kitTag))
+    /const giveUp = \(detail\) => \{[\s\S]{0,160}?out\.skipped = true/.test(kitTag) && /return giveUp\('YouTube Shopping has no listing for this product/.test(kitTag))
   const kitEnd = BG.slice(BG.indexOf('K.steps.endscreen = '), BG.indexOf('K.steps.checks = '))
   check('the end-screen picker is searched in every popup that opened',
     /const pops = dialogsNow\(\)\.filter\(\(x\) => !before\.includes\(x\)\)/.test(kitEnd) && /tagCards\(\)/.test(kitEnd))
+}
+
+// ── second real Co-Pilot run, 1.21.3 ─────────────────────────────────────
+{
+  const kitMon = BG.slice(BG.indexOf('K.steps.monetization = '), BG.indexOf('K.steps.adsuit = '))
+  check('the monetization switch is a visible one, not a hidden copy on another page',
+    /el\.id === 'child-input' && visible\(el\)/.test(kitMon) && !/const byChild = byId\('child-input', dlg\)/.test(kitMon))
+  const kitEnd = BG.slice(BG.indexOf('K.steps.endscreen = '), BG.indexOf('K.steps.checks = '))
+  check('the end screen goes through the editor\'s Import from latest video, and only reports a Save that happened',
+    /\/\^import from latest video\$\/i/.test(kitEnd) && /save = await waitFor\(editorSave, 6000, 400\)/.test(kitEnd) && /if \(!save\) \{/.test(kitEnd))
+  const kitTag = BG.slice(BG.indexOf('K.steps.tagproduct = '), BG.indexOf('K.steps.endscreen = '))
+  check('a product found by name is only tagged when its model number matches',
+    /const models = want\.filter\(\(w\) => \/\\d\/\.test\(w\) && \/\[a-z\]\/\.test\(w\) && w\.length >= 3\)/.test(kitTag)
+    && /if \(models\.some\(\(m\) => !have\.has\(m\)\)\) return false/.test(kitTag)
+    && /if \(viaName && !sameProduct\(viaName, name\)\)/.test(kitTag))
+  check('the Amazon product page is tried first', /const links = \[o\.amazonUrl, o\.productUrl\]/.test(kitTag)
+    && /amazonUrl: productLinkFor\(effectiveAsin\)/.test(readFileSync(join(root, 'app/(dashboard)/co-pilot/page.tsx'), 'utf8')))
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

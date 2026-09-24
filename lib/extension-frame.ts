@@ -1651,6 +1651,9 @@ export interface StudioFinishOpts {
   tagProduct?: boolean
   /** The product link SCOUT pastes into the Tag-products search box. */
   productUrl?: string
+  /** The Amazon product page for the video's ASIN, tried first when tagging:
+   *  YouTube resolves it to the product more often than a short link. */
+  amazonUrl?: string
   /** The product's name. When given, SCOUT only tags a result whose name
    *  shares words with it, and says so when the top result does not. */
   productTitle?: string

@@ -153,7 +153,7 @@ const CP = code(read('app/(dashboard)/co-pilot/page.tsx'))
   check('AI use No rides on a status call that happens anyway, so a draft stays a draft',
     /if \(!sendingStatus\) return/.test(AP) && /\.\.\.\(disclosures\.asked \? \{ containsSyntheticMedia: false \} : \{\}\)/.test(AP))
   check('Co-Pilot asks for the disclosures on the push and on the step after SCOUT',
-    (CPX.match(/disclosures: true,/g) ?? []).length === 2)
+    (CPX.match(/disclosures: true,/g) ?? []).length === 1 && /disclosures: !studioDisclosuresConfirmed\(fin\),/.test(CPX))
   check('there is no Studio opt-in to tick', !/setFinishOptIn|setFinishDo/.test(CPX) && /const finishOptIn = true/.test(CPX))
   check('no by-hand checklist, one See in YouTube Studio button',
     /See in YouTube Studio/.test(CPX) && !/Or do it by hand|Do it by hand \(3 clicks\)|Retry finish in Studio/.test(CPX))

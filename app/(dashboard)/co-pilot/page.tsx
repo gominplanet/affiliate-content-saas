@@ -1507,6 +1507,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         selfCert: finishDoMonetize && finishDoAdRating,
         tagProduct: finishDoTag && !!link,
         productUrl: link ?? undefined,
+        amazonUrl: productLinkFor(effectiveAsin) ?? undefined,
         productTitle: product?.title ?? undefined,
         endScreen: finishDoEndScreen,
         // The creator's own toggle, whichever way it points.
@@ -1578,7 +1579,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           notifySubscribers: proSettings.notifySubscribers,
           publishAt,
           privacyStatus: publishAt ? undefined : proSettings.privacyStatus,
-          disclosures: true,
+          // SCOUT ALREADY READ IT BACK IN STUDIO: the API's answer is not
+          // asked again, since on a draft it keeps saying No and would hold a
+          // schedule Studio already has the disclosure for.
+          disclosures: !studioDisclosuresConfirmed(fin),
         }),
       })
       const d2 = await safeJson(res2)
@@ -3552,16 +3556,27 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">On YouTube now</p>
                         {/* READ BACK FROM YOUTUBE after the push, not what was
                             sent: ? means YouTube did not say. */}
-                        {apiDisclosures?.asked && (
-                          <p className="text-[11px] flex flex-wrap gap-x-3 gap-y-0.5">
-                            <span className={apiDisclosures.paidPromotion === true ? 'text-[#34c759]' : apiDisclosures.paidPromotion === false ? 'text-[#ff3b30]' : 'text-[#86868b]'}>
-                              {apiDisclosures.paidPromotion === true ? '✓' : apiDisclosures.paidPromotion === false ? '✗' : '?'} Paid promotion: Yes
-                            </span>
-                            <span className={apiDisclosures.aiUseNo === true ? 'text-[#34c759]' : 'text-[#86868b]'}>
-                              {apiDisclosures.aiUseNo === true ? '✓' : '?'} AI use: No{apiDisclosures.aiUseNo === true ? '' : ' (SCOUT sets it in Studio)'}
-                            </span>
-                          </p>
-                        )}
+                        {apiDisclosures?.asked && (() => {
+                          // EITHER READ COUNTS. On a draft YouTube's API keeps
+                          // answering No after the push; SCOUT then sets and
+                          // reads the same boxes in Studio. A red cross over a
+                          // box Studio shows ticked was the API's stale answer
+                          // drawn as the result.
+                          const studio = !!finishResult?.steps.find((st) => st.step === 'details' && st.ok)
+                          const paid = apiDisclosures.paidPromotion === true || studio ? true : finishRunning ? null : apiDisclosures.paidPromotion
+                          const ai = apiDisclosures.aiUseNo === true || studio ? true : null
+                          const from = (api: boolean) => (api ? '' : studio ? ' (read back in Studio)' : '')
+                          return (
+                            <p className="text-[11px] flex flex-wrap gap-x-3 gap-y-0.5">
+                              <span className={paid === true ? 'text-[#34c759]' : paid === false ? 'text-[#ff3b30]' : 'text-[#86868b]'}>
+                                {paid === true ? '✓' : paid === false ? '✗' : '?'} Paid promotion: Yes{from(apiDisclosures.paidPromotion === true)}{paid === null && finishRunning ? ' (SCOUT is setting it in Studio)' : ''}
+                              </span>
+                              <span className={ai === true ? 'text-[#34c759]' : 'text-[#86868b]'}>
+                                {ai === true ? '✓' : '?'} AI use: No{from(apiDisclosures.aiUseNo === true)}{ai === true ? '' : ' (SCOUT sets it in Studio)'}
+                              </span>
+                            </p>
+                          )
+                        })()}
                         {!isPro && (
                           <p className="text-[11px] text-[#ff9500] leading-relaxed">
                             Title, description, tags and thumbnail were sent. Paid promotion, AI use, the schedule and the Studio steps were not: those come with the Pro plan&apos;s one click push.

@@ -241,6 +241,7 @@ export function liftoffStudioRequest(
     selfCert: opts.monetize && opts.adRating,
     tagProduct: opts.tagProduct && !!link,
     productUrl: link ?? undefined,
+    amazonUrl: link ?? undefined,
     endScreen: opts.endScreen,
     notifySubscribers,
     visibility: it.state === 'scheduled' && future && it.publish_at

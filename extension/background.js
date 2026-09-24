@@ -8497,7 +8497,10 @@ function studioKitInstallInPage() {
     const dlg = mainDialog()
     if (!dlg) { out.detail = 'The draft window closed'; return out }
     const trigger = () => {
-      const byChild = byId('child-input', dlg)
+      // VISIBLE ONLY. The draft window keeps its other pages in the page, and
+      // a hidden child-input on one of them was clicked instead of this one:
+      // nothing opened, and the step said there was no On choice.
+      const byChild = all(dlg).find((el) => el.id === 'child-input' && visible(el) && /\b(on|off)\b/i.test(deepText(el) || attrLabel(el)))
       if (byChild) return byChild
       for (const el of all(dlg)) {
         if (!visible(el)) continue
@@ -8552,14 +8555,14 @@ function studioKitInstallInPage() {
       if (onOpt) break
     }
     if (!onOpt) {
-      out.detail = 'Opened the monetization menu, but there was no On option'
+      out.detail = 'Clicked the monetization switch, but no On choice appeared'
       out.debug.buttons = buttonSample(document)
       out.debug.radios = all(document).filter((el) => isRadio(el) && visible(el)).map((el) => ctrlText(el).slice(0, 40)).slice(0, 12)
       out.debug.popups = dialogsNow().filter((x) => !before.includes(x)).map((x) => (x.tagName || '').toLowerCase()).slice(0, 6)
       return out
     }
     if (!isChecked(onOpt)) { click(onOpt); await sleep(600) }
-    const done = findBtn(/^done$/i, newDialog(before) || document, { enabled: true })
+    const done = findBtn(/^(done|save)$/i, newDialog(before) || document, { enabled: true })
     if (done) { click(done); await sleep(1200) }
     out.readBack.monetization = state()
     out.ok = out.readBack.monetization === 'on'
@@ -8607,7 +8610,7 @@ function studioKitInstallInPage() {
   K.steps.tagproduct = async (out, o) => {
     const dlg = mainDialog()
     if (!dlg) { out.detail = 'The draft window closed'; return out }
-    if (!o.productUrl) { out.skipped = true; out.detail = 'No product link to tag'; return out }
+    if (!o.productUrl && !o.amazonUrl) { out.skipped = true; out.detail = 'No product link to tag'; return out }
     const addBtns = () => all(dlg).filter((el) => isBtn(el) && visible(el) && /^add$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'products')
     const rowDone = () => all(dlg).some((el) => isBtn(el) && visible(el) && /^edit$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'products')
     if (rowDone() && !addBtns().length) { out.ok = true; out.readBack.tagged = true; out.detail = 'A product was already tagged'; return out }
@@ -8623,41 +8626,83 @@ function studioKitInstallInPage() {
     }, 10000, 400)
     if (!pop) { out.detail = 'Pressed Add, but the product search did not open'; out.debug.buttons = buttonSample(document); return out }
     const { d, input } = pop
-    try {
-      input.focus()
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
-      setter.call(input, o.productUrl)
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      input.dispatchEvent(new Event('change', { bubbles: true }))
-      for (const type of ['keydown', 'keypress', 'keyup']) input.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
-    } catch (e) {}
-    const searchBtn = findBtn(/^search$/i, d)
-    if (searchBtn) click(searchBtn)
+    const type = (q) => {
+      try {
+        input.focus()
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+        setter.call(input, q)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+        for (const t of ['keydown', 'keypress', 'keyup']) input.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+      } catch (e) {}
+      const searchBtn = findBtn(/^search$/i, d)
+      if (searchBtn) click(searchBtn)
+    }
+    const plusBtns = () => all(d).filter((el) => isBtn(el) && visible(el) && (/^\+$/.test(deepText(el)) || /^add\b|add product/i.test(attrLabel(el))))
+    const giveUp = (detail) => {
+      const cancel = findBtn(/^(cancel|close)$/i, d)
+      if (cancel) click(cancel)
+      out.skipped = true
+      out.detail = detail
+      return out
+    }
+    // A MODEL NUMBER MUST MATCH. "70mai A900 Dash Cam" and "70mai Dash Cam
+    // Front and Rear" share three words and are different products, so any
+    // word with a digit in it (A900, 4K, 70mai) that the product's name has,
+    // the result must have too, and most of the other words besides.
+    const toks = (x) => (String(x || '').toLowerCase().match(/[a-z0-9]+/g) || [])
+    const sameProduct = (wantName, gotName) => {
+      const want = Array.from(new Set(toks(wantName))).slice(0, 10)
+      const have = new Set(toks(gotName))
+      const models = want.filter((w) => /\d/.test(w) && /[a-z]/.test(w) && w.length >= 3)
+      if (models.some((m) => !have.has(m))) return false
+      const words = want.filter((w) => w.length >= 4)
+      const shared = words.filter((w) => have.has(w)).length
+      return shared >= Math.min(3, words.length)
+    }
+    // ── THE PRODUCT LINK FIRST ───────────────────────────────────────────
+    // An Amazon product page, or the creator's own link, which YouTube
+    // resolves to the product itself above a "Similar results" list.
+    let viaName = null
+    const links = [o.amazonUrl, o.productUrl].filter((x, i, arr) => x && arr.indexOf(x) === i)
+    let found = false
+    for (const q of links) {
+      type(q)
+      found = !!(await waitFor(() => (plusBtns().length ? true : null), 12000, 500))
+      if (found) break
+    }
+    // ── THEN YOUTUBE'S OWN READING OF IT ─────────────────────────────────
+    // A short link (mvpl.ink) finds nothing, but YouTube offers the product's
+    // name underneath as a search suggestion ("70mai A900 Dash Cam"). That
+    // suggestion is YouTube naming the product, so it is searched, and a
+    // result is only tagged when its name matches it, model number and all.
+    if (!found) {
+      const sugg = all(d).find((el) => {
+        if (!visible(el) || el === input) return false
+        const t = deepText(el)
+        if (!t || t.length > 90 || /^search suggestions$/i.test(t) || /^https?:/i.test(t)) return false
+        const r = el.getAttribute && el.getAttribute('role')
+        const tag = (el.tagName || '').toLowerCase()
+        return (r === 'option' || r === 'menuitem' || /suggestion|autocomplete|list-item|paper-item/.test(tag)) && /[a-z]/i.test(t)
+      })
+      viaName = sugg ? deepText(sugg) : (o.productTitle ? toks(o.productTitle).slice(0, 6).join(' ') : null)
+      out.readBack.searchedFor = viaName
+      if (viaName) {
+        if (sugg) click(sugg); else type(viaName)
+        found = !!(await waitFor(() => (plusBtns().length ? true : null), 12000, 500))
+      }
+    }
+    if (!found) return giveUp('YouTube Shopping has no listing for this product, so there was nothing to tag')
     // THE EXACT MATCH, OR NOTHING. A pasted link returns the product itself
     // first and then a "Similar results" list. Only a result above that
     // heading is the product; tagging a similar one would put somebody else's
     // product on the video.
-    const plusBtns = () => all(d).filter((el) => isBtn(el) && visible(el) && (/^\+$/.test(deepText(el)) || /^add\b|add product/i.test(attrLabel(el))))
-    const found = await waitFor(() => (plusBtns().length ? true : null), 20000, 500)
-    if (!found) {
-      const cancel = findBtn(/^(cancel|close)$/i, d)
-      if (cancel) click(cancel)
-      // NOT A FAILURE OF SCOUT'S: YouTube Shopping has no listing for this
-      // product, so there is nothing anyone could tag. Said as such.
-      out.skipped = true
-      out.detail = 'YouTube Shopping has no listing for this product, so there was nothing to tag'
-      return out
-    }
     const header = all(d).find((el) => visible(el) && /^similar results$/i.test(deepText(el)))
     const limit = header ? header.getBoundingClientRect().top : Infinity
     const exact = plusBtns().filter((b) => b.getBoundingClientRect().top < limit)
       .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
     if (!exact.length) {
-      const cancel = findBtn(/^(cancel|close)$/i, d)
-      if (cancel) click(cancel)
-      out.skipped = true
-      out.detail = 'YouTube Shopping only offered similar products, not this one, so nothing was tagged (tagging a look-alike would put someone else\u2019s product on your video)'
-      return out
+      return giveUp('YouTube Shopping only offered similar products, not this one, so nothing was tagged (tagging a look-alike would put someone else’s product on your video)')
     }
     // The product's name, from the smallest block around the button that has
     // some words in it.
@@ -8665,7 +8710,10 @@ function studioKitInstallInPage() {
     const pick = exact[0]
     const name = nameNear(pick)
     out.readBack.productName = name
-    if (o.productTitle) {
+    if (viaName && !sameProduct(viaName, name)) {
+      return giveUp('YouTube Shopping does not list "' + viaName.slice(0, 60) + '". Its closest result, "' + name.slice(0, 60) + '", is a different product, so nothing was tagged')
+    }
+    if (!viaName && o.productTitle) {
       const words = (s) => (String(s).toLowerCase().match(/[a-z0-9]{4,}/g) || [])
       const want = Array.from(new Set(words(o.productTitle))).slice(0, 8)
       const have = new Set(words(name))
@@ -8697,6 +8745,56 @@ function studioKitInstallInPage() {
     if (!dlg) { out.detail = 'The draft window closed'; return out }
     const importBtn = () => findBtn(/^import from video$/i, dlg, { enabled: true })
     const rowDone = () => all(dlg).some((el) => isBtn(el) && visible(el) && /^edit$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'endscreen')
+    // ── THE EDITOR'S OWN "IMPORT FROM LATEST VIDEO" ───────────────────────
+    // The row's Add button opens the End Screens editor, whose first template
+    // is "Import from latest video": exactly what was asked, one click, and
+    // Save lights up when it has something. The old way (Import from video,
+    // then the first thumbnail in a picker) left the editor empty with Save
+    // greyed out, and reported the Save it never managed to press.
+    const addBtn = () => all(dlg).find((el) => isBtn(el) && visible(el) && /^add$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'endscreen') || null
+    const editorOpen = () => (findBtn(/^discard changes$/i, document) && /import from latest video/i.test(visibleText(document)) ? true : null)
+    const editorSave = () => findBtn(/^save$/i, document, { enabled: true })
+    if (!rowDone() && addBtn()) {
+      click(addBtn())
+      if (await waitFor(editorOpen, 20000, 500)) {
+        const label = all(document).find((el) => visible(el) && /^import from latest video$/i.test(deepText(el)))
+        const targets = []
+        if (label) {
+          let e = label
+          for (let i = 0; i < 5 && e; i++) {
+            if (isBtn(e) || (e.getAttribute && (e.getAttribute('tabindex') === '0' || /^(button|option|listitem|gridcell)$/.test(e.getAttribute('role') || '')))) targets.push(e)
+            e = up(e)
+          }
+          // The card drawn above the label, when the label is its caption.
+          const prev = label.previousElementSibling
+          if (prev) targets.push(prev)
+          targets.push(label)
+        }
+        out.debug.templateTargets = targets.map((t) => (t.tagName || '').toLowerCase()).slice(0, 6)
+        let save = null
+        for (const t of targets) {
+          click(t)
+          save = await waitFor(editorSave, 6000, 400)
+          if (save) break
+        }
+        if (!save) {
+          out.detail = label ? 'Chose Import from latest video, but the editor had nothing to save (does your latest video have an end screen?)' : 'Opened the end-screen editor, but found no Import from latest video'
+          out.debug.buttons = buttonSample(document)
+          const discard = findBtn(/^discard changes$/i, document)
+          if (discard) click(discard)
+          return out
+        }
+        click(save)
+        await waitFor(() => (!editorOpen() ? true : null), 20000, 600)
+        await waitFor(() => (rowDone() ? true : null), 10000, 500)
+        out.readBack.endScreen = rowDone()
+        out.readBack.importedFrom = 'your latest video'
+        out.ok = out.readBack.endScreen
+        out.detail = out.ok ? 'End screen imported from your latest video' : 'Saved the end screen, but the draft does not show one'
+        return out
+      }
+      out.debug.editor = 'did not open'
+    }
     if (!importBtn()) {
       if (rowDone()) { out.ok = true; out.readBack.endScreen = true; out.detail = 'The draft already had an end screen'; return out }
       out.detail = 'Could not find Import from video'
@@ -9021,7 +9119,7 @@ async function runStudioDraft(tabId, videoId, want) {
     if (pg === 'monetization') steps.push(await exec('monetization', { on: !!want.monetize }))
     else if (pg === 'adsuit') steps.push(await exec('adsuit', { submit: !!want.selfCert }))
     else if (pg === 'elements') {
-      if (want.tagProduct && want.productUrl) steps.push(await exec('tagproduct', { productUrl: String(want.productUrl), productTitle: want.productTitle ? String(want.productTitle) : '' }))
+      if (want.tagProduct && want.productUrl) steps.push(await exec('tagproduct', { productUrl: String(want.productUrl), amazonUrl: want.amazonUrl ? String(want.amazonUrl) : '', productTitle: want.productTitle ? String(want.productTitle) : '' }))
       if (want.endScreen) steps.push(await exec('endscreen', { videoId }))
     } else if (pg === 'checks') {
       const ck = await exec('checks', {})
