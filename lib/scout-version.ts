@@ -45,3 +45,24 @@ export function isScoutOutdated(installed: string | null | undefined): boolean {
   }
   return false
 }
+
+/** The oldest SCOUT that drives the Studio steps (the page-by-page kit).
+ *
+ * A FIXED FLOOR, NOT THE LATEST. The Studio gate used to be "not older than
+ * SCOUT_LATEST_VERSION", so every SCOUT release switched the Studio steps off
+ * for every creator until Chrome pulled the new build, which on the Web Store
+ * waits for review first. Raise this only when the page needs something an
+ * older SCOUT cannot do. */
+export const SCOUT_STUDIO_MIN_VERSION = '1.20.0'
+
+/** True when the installed SCOUT is at least `min`. False when unknown. */
+export function scoutAtLeast(installed: string | null | undefined, min: string): boolean {
+  if (!installed) return false
+  const a = String(installed).split('.').map(n => parseInt(n, 10) || 0)
+  const b = min.split('.').map(n => parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0, y = b[i] ?? 0
+    if (x !== y) return x > y
+  }
+  return true
+}

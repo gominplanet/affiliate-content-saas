@@ -27,7 +27,7 @@ import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/l
 import { itemStateLabel, itemStateTone, itemProgressLabel, itemProgressTone, prepEta, batchRecap, stepIsOptional, launchOutcome, type CtaPreset, type StepStatus, type ItemRow, type StepId } from '@/lib/launch-batch'
 import { liftoffPending } from '@/lib/liftoff-pending'
 import { requestStorefrontPreflight, requestStudioFinish, getScoutStatus, setLiftoffAuto, type LiftoffAutoState } from '@/lib/extension-frame'
-import { isScoutOutdated } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION } from '@/lib/scout-version'
 import {
   DEFAULT_STUDIO_OPTIONS, liftoffStudioRequest, storeStudioRun, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone,
   type StoredStudioRun, type StudioOptions,
@@ -167,7 +167,7 @@ export default function LaunchBoard() {
   }
   // The Studio steps need SCOUT 1.20.0 or later; an older SCOUT drives the old
   // Details script, which is exactly what left these boxes blank.
-  const scoutCanStudio = scoutReady === true && !isScoutOutdated(scoutVersion)
+  const scoutCanStudio = scoutReady === true && scoutAtLeast(scoutVersion, SCOUT_STUDIO_MIN_VERSION)
   // Which video SCOUT is in Studio for right now, and runs not yet stored
   // (shown until the reload that brings the stored copy back).
   const [studioBusy, setStudioBusy] = useState<string | null>(null)

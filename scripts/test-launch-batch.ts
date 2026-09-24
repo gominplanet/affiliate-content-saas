@@ -1614,7 +1614,9 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /amazonTick\.current = \(\) => \{\s*if \(studioRunning\.current/.test(SCREEN),
     'the disclosures are what must be in place before a video goes public')
   check('only with a SCOUT that has the new Studio steps',
-    /const scoutCanStudio = scoutReady === true && !isScoutOutdated\(scoutVersion\)/.test(SCREEN))
+    /const scoutCanStudio = scoutReady === true && scoutAtLeast\(scoutVersion, SCOUT_STUDIO_MIN_VERSION\)/.test(SCREEN)
+    && /const studioPossible = st\.installed && scoutAtLeast\(st\.version, SCOUT_STUDIO_MIN_VERSION\)/.test(read('components/launch/LiftoffRunner.tsx'))
+    && !/isScoutOutdated/.test(SCREEN + read('components/launch/LiftoffRunner.tsx')))
   // A PLAYLIST PICKED AFTER LAUNCH STILL REACHES THE VIDEOS ALREADY UP.
   check('the uploader adds videos already on YouTube to a later playlist',
     /async function playlistCatchUp\(/.test(DRAIN) && /await playlistCatchUp\(sb\)/.test(DRAIN)

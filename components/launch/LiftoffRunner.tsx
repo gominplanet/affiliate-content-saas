@@ -19,7 +19,7 @@ import { requestStudioFinish, getScoutStatus, liftoffDone, liftoffAlive } from '
 import { deliverPreparedStorefronts } from '@/lib/storefront-delivery'
 import { liftoffStudioRequest, normalizeStudioOptions, storeStudioRun, type StoredStudioRun } from '@/lib/studio-finish'
 import { liftoffPending, type PendingItem } from '@/lib/liftoff-pending'
-import { isScoutOutdated } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_STUDIO_MIN_VERSION } from '@/lib/scout-version'
 
 interface RunnerItem extends PendingItem {
   position: number
@@ -46,7 +46,7 @@ export default function LiftoffRunner() {
       const sigs: string[] = []
       try {
         const st = await getScoutStatus()
-        const studioPossible = st.installed && !isScoutOutdated(st.version)
+        const studioPossible = st.installed && scoutAtLeast(st.version, SCOUT_STUDIO_MIN_VERSION)
         const r = await fetch('/api/launch/batches')
         const j = await r.json().catch(() => ({}))
         if (!r.ok) { clearInterval(alive); say(`Could not read your batches: ${j?.error || r.status}`); await liftoffDone(true, 'error'); return }
