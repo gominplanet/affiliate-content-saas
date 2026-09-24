@@ -1122,12 +1122,22 @@ export default function LaunchBoard() {
           {/* ── THE PATTERN, NOW THE SHORTCUT ─────────────────────────────────
               Still the quick way to fill ten videos in one go. It only sets
               the videos that have no time of their own, so a hand-picked time
-              is never overwritten by changing it. */}
+              is never overwritten by changing it.
+              NOT SHOWN WHEN THERE IS NO "REST". A creator who timed every
+              video by hand was shown "Daily pattern, for the rest" with 09:00
+              in it, read it as a second schedule, and asked whether Amazon was
+              going out one a day. It governs nothing in that case, so it is not
+              on the page; clear any video's own time and it comes back. */}
+          {items.length > 0 && items.every((i) => !!i.custom_publish_date && !!i.custom_publish_time) ? (
+            <p className="text-[11.5px] rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)', ...muted }}>
+              Every video has its own YouTube date and time, so no daily pattern is used.
+            </p>
+          ) : (
           <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
-            <p className="text-[12.5px] font-medium mb-0.5" style={text}>Daily pattern, for the rest</p>
+            <p className="text-[12.5px] font-medium mb-0.5" style={text}>YouTube daily pattern, for videos without their own time</p>
             <p className="text-[11.5px] mb-2" style={muted}>
-              Videos without their own time go out on this pattern, in batch order: one per time,
-              per day. {slots.length > 0 ? cadenceLabel(slots) + '.' : 'No pattern set.'}
+              Videos without their own time go out on YouTube on this pattern, in batch order: one per time,
+              per day. {slots.length > 0 ? cadenceLabel(slots) + '.' : 'No pattern set.'} Amazon does not follow it.
             </p>
             <SlotEditor
               slots={slots}
@@ -1147,6 +1157,7 @@ export default function LaunchBoard() {
               />
             </label>
           </div>
+          )}
 
           {/* SAID BEFORE THE BUTTON, not after. Going public is the one thing
               on this page that cannot be undone, so a creator about to do it
