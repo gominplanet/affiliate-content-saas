@@ -32,6 +32,7 @@ import { postToSelf } from '@/lib/self-url'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { generateProductTitleOptions } from '@/lib/title-options'
 import { YouTubeOAuthService } from '@/services/youtube'
+import { normalizeStudioOptions } from '@/lib/studio-finish'
 import { coveragePriority } from '@/lib/storefront-coverage'
 import { marketByDomain } from '@/lib/markets'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
@@ -662,13 +663,18 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
   // would do exactly that.
   const playlistByBatch = new Map<string, string>()
   const inPlaylist = new Set<string>()
+  // WHETHER EACH BATCH ANSWERS THE DISCLOSURES (paid promotion Yes, AI use
+  // No). The creator's own tick in the batch's YouTube options, on unless they
+  // turned it off; a batch read before migration 367 answers them too.
+  const discloseByBatch = new Map<string, boolean>()
   {
     const batchIds = [...new Set(items.map((i: { batch_id: string }) => i.batch_id))]
     const { data: pb, error: pbErr } = await sb.from('launch_batches')
-      .select('id,playlist_id').in('id', batchIds)
+      .select('id,playlist_id,studio_options').in('id', batchIds)
     if (!pbErr) {
-      for (const b of (pb ?? []) as Array<{ id: string; playlist_id: string | null }>) {
+      for (const b of (pb ?? []) as Array<{ id: string; playlist_id: string | null; studio_options: unknown }>) {
         if (b.playlist_id) playlistByBatch.set(b.id, b.playlist_id)
+        discloseByBatch.set(b.id, normalizeStudioOptions(b.studio_options).disclosures)
       }
       const { data: pa, error: paErr } = await sb.from('launch_items')
         .select('id').in('id', items.map((i: { id: string }) => i.id)).not('playlist_added_at', 'is', null)
@@ -795,6 +801,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       // again. A retry resumes at the step that broke. That is also why the
       // file is fetched inside this branch: a resumed row has no reason to
       // download half a gigabyte it is not going to send.
+      const disclose = discloseByBatch.get(it.batch_id) !== false
       let videoId = String(it.youtube_video_id || '').trim()
       let channelId: string | null = null
       if (!videoId) {
@@ -816,9 +823,13 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
           // that a lie and the video unpaid.
           description: (it.description || '').slice(0, 4900),
           tags: String(it.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
-          privacyStatus: goNow ? 'public' : 'private',
+          // PRIVATE ALWAYS, even for a video going out now: it becomes public
+          // only once its paid promotion has been set and read back, below.
+          privacyStatus: 'private',
           // The batch's toggle, sent explicitly: left out, YouTube notifies.
           notifySubscribers: notifyByBatch.get(it.batch_id) === true,
+          embeddable: true,
+          ...(disclose ? { containsSyntheticMedia: false } : {}),
           // What is left of this firing, less room to record the id.
           uploadTimeoutMs: left() - 20_000,
         })
@@ -838,6 +849,30 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         missedZone = zb?.timezone ?? null
       }
 
+      // ── THE DISCLOSURES, THROUGH YOUTUBE'S OWN API ──────────────────────
+      //
+      // Paid promotion and the AI-use answer used to be set only by SCOUT in a
+      // browser, after the fact, so a batch video could go public undisclosed.
+      // YouTube's API takes both now (paidProductPlacementDetails and
+      // status.containsSyntheticMedia), so they are set here, the moment the
+      // video exists, and read back below. A failure is written on the row;
+      // it never loses the upload.
+      let discloseError: string | null = null
+      if (disclose) {
+        try { await yt.setPaidPromotion(videoId, true) } catch (pe) {
+          discloseError = (pe instanceof Error && pe.message ? pe.message : String(pe)).slice(0, 200)
+        }
+      }
+      // EVERY STATUS PUT RESENDS EVERYTHING IT MUST KEEP. YouTube erases any
+      // status field a PUT leaves out, and the scheduling call used to send the
+      // time alone: that is what switched "Allow embedding" off and dropped the
+      // made-for-kids answer on every batch video.
+      const keep = {
+        madeForKids: false,
+        embeddable: true,
+        ...(disclose ? { containsSyntheticMedia: false } : {}),
+      }
+
       if (!goNow && !missed) {
         // THE SCHEDULE ITSELF, and its result is what decides whether this row
         // may call itself scheduled. A failure here is now said in the terms
@@ -849,6 +884,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
           await yt.updateVideoStatus(videoId, {
             publishAt: String(it.planned_publish_at),
             notifySubscribers: notifyByBatch.get(it.batch_id) === true,
+            ...keep,
           })
         } catch (se) {
           const said = se instanceof Error && se.message ? se.message : String(se)
@@ -868,6 +904,46 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       // and throwing here would send the row back for a retry that uploads it
       // a second time. What it must not do is fail quietly, so the outcome is
       // written either way and the board reads it.
+      // ── READ BACK WHAT YOUTUBE KEPT, THEN (FOR "NOW") GO PUBLIC ─────────
+      let readBack: Awaited<ReturnType<typeof yt.readDisclosures>> = null
+      try { readBack = await yt.readDisclosures(videoId) } catch (re) {
+        discloseError = discloseError ?? `could not read the video back: ${(re instanceof Error ? re.message : String(re)).slice(0, 160)}`
+      }
+      const paidConfirmed = !disclose || readBack?.paidPromotion === true
+      // NOW, ONLY WITH THE DISCLOSURE IN PLACE. A video the creator agreed to
+      // send now is made public here, after paid promotion reads back; without
+      // it, it stays private and the row says why, rather than going out
+      // undisclosed.
+      let heldBack: string | null = null
+      if (goNow) {
+        if (!paidConfirmed) {
+          heldBack = `Kept private: YouTube did not confirm paid promotion on it${discloseError ? ` (${discloseError})` : ''}, and it should not go public without it. Set it in Studio and make it public there, or press Try again.`
+        } else {
+          try {
+            await yt.updateVideoStatus(videoId, {
+              privacyStatus: 'public',
+              notifySubscribers: notifyByBatch.get(it.batch_id) === true,
+              ...keep,
+            })
+          } catch (ge) {
+            const said = ge instanceof Error && ge.message ? ge.message : String(ge)
+            throw new Error(`the video is on your channel, private, but YouTube would not make it public: ${said}`)
+          }
+        }
+      }
+      // Recorded on its own, so a database without migration 368 loses the
+      // record and nothing else.
+      await sb.from('launch_items').update({
+        api_disclosures: {
+          at: stamp(), asked: disclose,
+          paidPromotion: readBack?.paidPromotion ?? null,
+          aiUseNo: readBack ? readBack.containsSyntheticMedia === false : null,
+          embeddable: readBack?.embeddable ?? null,
+          madeForKids: readBack?.madeForKids ?? null,
+          error: discloseError,
+        },
+      }).eq('id', it.id)
+
       const thumbSrc = String(it.thumbnail_url || '').trim()
       const thumb: { at: string | null; error: string | null } = { at: null, error: null }
       if (/^https:\/\//i.test(thumbSrc)) {
@@ -912,13 +988,13 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
         // A MISSED SLOT IS NOT A SCHEDULE. It is on the channel, private, with
         // no publish time, and the row says so and says what to do. Calling it
         // 'scheduled' would promise a publication nothing has arranged.
-        state: goNow ? 'published' : missed ? 'blocked' : 'scheduled',
+        state: heldBack ? 'blocked' : goNow ? 'published' : missed ? 'blocked' : 'scheduled',
         youtube_video_id: videoId,
         // THE MOMENT IT ACTUALLY WENT, not the slot that had gone by. A row
         // saying it published at nine this morning, written at two in the
         // afternoon, is the plan reported as the result.
-        publish_at: goNow ? stamp() : missed ? null : it.planned_publish_at,
-        reason: missed
+        publish_at: heldBack ? null : goNow ? stamp() : missed ? null : it.planned_publish_at,
+        reason: heldBack ? heldBack : missed
           ? `Kept private. Its time, ${missedWhen(String(it.planned_publish_at), missedZone)}, passed while it was still waiting to upload, so it was not made public. Set a publish time for it in YouTube Studio.`
           : null,
         updated_at: stamp(),

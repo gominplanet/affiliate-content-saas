@@ -32,6 +32,7 @@ import {
   type StoredStudioRun, type StudioOptions,
 } from '@/lib/studio-finish'
 import StepCard from './StepCard'
+import LaunchReport, { type ReportItem } from './LaunchReport'
 import CtaPicker from './CtaPicker'
 import ThumbnailPicker from './ThumbnailPicker'
 import type { ThumbnailPreset } from '@/lib/thumbnail-preset'
@@ -85,6 +86,8 @@ interface Item {
    *  (with SCOUT's reason in detail), 'localized' (ready, or waiting on its
    *  dub) or 'pending'. */
   amazon?: Array<{ domain: string; state: string; detail: string | null; waitingOnDub: boolean }>
+  /** What YouTube confirmed after the uploader set the disclosures (368). */
+  api_disclosures?: ReportItem['api_disclosures']
 }
 interface Market { domain: string; country: string; langName: string | null; needsDub: boolean }
 /** A batch in the switcher: enough to choose between them, nothing more. */
@@ -1608,6 +1611,20 @@ export default function LaunchBoard() {
         </div>
         )
       })()}
+
+      {/* ── WHERE EVERY VIDEO LANDED ─────────────────────────────────────────
+          The one place that answers "did it all go out", read from what came
+          back: YouTube's own read of each video, SCOUT's read of Studio, and
+          each storefront's answer. "All done" only when nothing is working. */}
+      {scheduleLocked && items.length > 0 && (
+        <LaunchReport
+          items={items as unknown as ReportItem[]}
+          markets={batch.markets.map((m) => m.domain)}
+          timezone={batch.timezone}
+          playlistChosen={!!playlistId}
+          studioPossible={scoutCanStudio}
+        />
+      )}
 
       {/* ── EVERY DECISION, IN ONE PLACE, BEFORE THE IRREVERSIBLE BUTTON ────
           The settings are spread over six collapsed steps, and the moment

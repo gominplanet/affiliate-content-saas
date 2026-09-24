@@ -101,7 +101,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
+  // WHAT YOUTUBE CONFIRMED about each video's disclosures (migration 368),
+  // on its own so the batch still loads before that SQL is run.
+  const disclosuresById = new Map<string, unknown>()
+  {
+    const { data: drows, error: derr } = await sb.from('launch_items').select('id,api_disclosures').eq('batch_id', id)
+    if (!derr) for (const r of (drows ?? []) as Array<{ id: string; api_disclosures: unknown }>) disclosuresById.set(r.id, r.api_disclosures ?? null)
+  }
+
   const itemsOut = items.map((i) => ({
+    api_disclosures: disclosuresById.get(i.id) ?? null,
     amazon: (i.video_id && amazonByVideo.get(i.video_id)) || [],
     ...i,
     playlist_added_at: extra.get(i.id)?.playlist_added_at ?? null,

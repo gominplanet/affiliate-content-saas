@@ -793,11 +793,15 @@ export class YouTubeOAuthService {
       /** Allow embedding. Set explicitly so a `part=status` PUT can't silently
        *  reset it to YouTube's default (the omitted-field reset gotcha). */
       embeddable?: boolean
+      /** The "AI use" answer (false = No). Resent on every status PUT for the
+       *  same reason as embedding: a PUT that leaves it out erases it. */
+      containsSyntheticMedia?: boolean
     },
   ): Promise<void> {
     const status: Record<string, unknown> = {}
     if (typeof args.madeForKids === 'boolean') status.selfDeclaredMadeForKids = args.madeForKids
     if (typeof args.embeddable === 'boolean') status.embeddable = args.embeddable
+    if (typeof args.containsSyntheticMedia === 'boolean') status.containsSyntheticMedia = args.containsSyntheticMedia
 
     if (args.publishAt) {
       // YouTube requires privacyStatus=private to schedule.
@@ -839,6 +843,48 @@ export class YouTubeOAuthService {
       throw new Error(`YouTube status update failed ${res.status}: ${body.slice(0, 500)}`)
     }
 
+  }
+
+  /**
+   * Paid promotion, through YouTube's own API (paidProductPlacementDetails).
+   *
+   * THIS USED TO NEED A BROWSER. Paid promotion was only ever set by SCOUT
+   * clicking Studio's radio in the creator's own session, so a batch video
+   * went out undisclosed unless a page happened to be open. The API takes it
+   * now. Only this part is sent, so nothing else on the video is touched.
+   */
+  async setPaidPromotion(videoId: string, has: boolean): Promise<void> {
+    const res = await fetchWithTimeout(`${BASE}/videos?part=paidProductPlacementDetails`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: videoId, paidProductPlacementDetails: { hasPaidProductPlacement: has } }),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      throw new Error(`YouTube would not set paid promotion (${res.status}): ${body.slice(0, 300)}`)
+    }
+  }
+
+  /** What YouTube now says about a video's disclosures and settings: read
+   *  back after they are set, so a tick means YouTube kept it. null = YouTube
+   *  did not say. */
+  async readDisclosures(videoId: string): Promise<{
+    paidPromotion: boolean | null; containsSyntheticMedia: boolean | null
+    embeddable: boolean | null; madeForKids: boolean | null; privacyStatus: string | null; publishAt: string | null
+  } | null> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.get<any>('/videos', { part: 'status,paidProductPlacementDetails', id: videoId })
+    const v = data?.items?.[0]
+    if (!v) return null
+    const b = (x: unknown) => (typeof x === 'boolean' ? x : null)
+    return {
+      paidPromotion: b(v.paidProductPlacementDetails?.hasPaidProductPlacement),
+      containsSyntheticMedia: b(v.status?.containsSyntheticMedia),
+      embeddable: b(v.status?.embeddable),
+      madeForKids: b(v.status?.selfDeclaredMadeForKids ?? v.status?.madeForKids),
+      privacyStatus: typeof v.status?.privacyStatus === 'string' ? v.status.privacyStatus : null,
+      publishAt: typeof v.status?.publishAt === 'string' ? v.status.publishAt : null,
+    }
   }
 
   // Upload a custom thumbnail to YouTube for a video.
@@ -885,6 +931,11 @@ export class YouTubeOAuthService {
        *  default, so any file that took longer to send (most of them, up to the
        *  2 GB allowed) failed every try. */
       uploadTimeoutMs?: number
+      /** YouTube's "AI use" question (status.containsSyntheticMedia). false is
+       *  the answer No; left out, the question is left unanswered. */
+      containsSyntheticMedia?: boolean
+      /** Allow embedding. Sent so the video starts with it on. */
+      embeddable?: boolean
     },
   ): Promise<{ id: string; channelId: string | null }> {
     // YouTube caps combined tag length at ~500 chars — trim defensively.
@@ -906,6 +957,8 @@ export class YouTubeOAuthService {
       status: {
         privacyStatus: opts.privacyStatus || 'public',
         selfDeclaredMadeForKids: false,
+        ...(typeof opts.embeddable === 'boolean' ? { embeddable: opts.embeddable } : {}),
+        ...(typeof opts.containsSyntheticMedia === 'boolean' ? { containsSyntheticMedia: opts.containsSyntheticMedia } : {}),
       },
     }
     // The bytes go out as-is. This used to be

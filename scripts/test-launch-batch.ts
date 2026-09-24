@@ -222,8 +222,8 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
 // form the API accepts.
 {
   check('anything with a time to wait for goes up private',
-    /privacyStatus: goNow \? 'public' : 'private'/.test(DRAIN),
-    'uploading public and scheduling afterwards puts it on the channel in between')
+    /privacyStatus: 'private',\s*\/\/[^\n]*\n\s*notifySubscribers/.test(read('app/api/cron/launch-drain/route.ts')) || /privacyStatus: 'private',\s*notifySubscribers/.test(DRAIN),
+    'uploading public and scheduling afterwards puts it on the channel in between; now even a video going out now goes up private first')
   check('and the schedule is a separate confirmed call',
     /updateVideoStatus\(videoId, \{/.test(DRAIN) && /publishAt: String\(it\.planned_publish_at\)/.test(DRAIN))
   check('which is skipped only for the ones going out now',
@@ -938,10 +938,10 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // PUBLISHED AND SCHEDULED ARE DIFFERENT FACTS, and this row has kept them
   // apart from the start.
   check('a video that went now is published, not scheduled',
-    /state: goNow \? 'published' : missed \? 'blocked' : 'scheduled'/.test(DRAIN),
+    /state: heldBack \? 'blocked' : goNow \? 'published' : missed \? 'blocked' : 'scheduled'/.test(DRAIN),
     'a board promising a future publication for a video already on the channel')
   check('and it records when it actually went',
-    /publish_at: goNow \? stamp\(\) : missed \? null : it\.planned_publish_at/.test(DRAIN),
+    /publish_at: heldBack \? null : goNow \? stamp\(\) : missed \? null : it\.planned_publish_at/.test(DRAIN),
     'writing this morning’s slot at two in the afternoon is the plan reported as the result')
 
   // ── NOTHING GOES PUBLIC THAT NOBODY CHOSE ─────────────────────────────
@@ -969,7 +969,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and the launch reply only promises "now" when it was recorded',
     /goingOutNow: publishNowRecorded \? immediate\.length : 0/.test(LAUNCH), '')
   check('a missed slot stays private and the row says what to do',
-    /reason: missed\s*\n?\s*\? `Kept private\./.test(DRAIN) && /YouTube Studio/.test(DRAIN), '')
+    /reason: heldBack \? heldBack : missed\s*\n?\s*\? `Kept private\./.test(DRAIN) && /YouTube Studio/.test(DRAIN), '')
   check('and it is not offered a Try again that would miss the same slot',
     /it\.state === 'blocked' && !\/\^Kept private\\\.\/\.test/.test(BOARD), '')
   const M365 = read('supabase/migrations/365_launch_item_publish_now.sql')
@@ -1684,6 +1684,22 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('a launched batch offers its latecomers a launch', /Launch \{latecomers\.length === 1/.test(SCREEN))
   check('a locked row shows the time the uploader has, not the pattern',
     /fixedAt=\{it\.publish_at \?\? it\.planned_publish_at \?\? null\}/.test(SCREEN) && /const now = !locked &&/.test(SCREEN))
+  // ── THE DISCLOSURES GO THROUGH YOUTUBE'S API, AND NOTHING IS ERASED ───
+  check('paid promotion is set through the API the moment the video exists',
+    /await yt\.setPaidPromotion\(videoId, true\)/.test(DRAIN))
+  check('AI use: No is sent on the upload and on every status call',
+    /containsSyntheticMedia: false/.test(DRAIN) && /\.\.\.keep,/.test(DRAIN),
+    'a status PUT that leaves a field out erases it')
+  check('every status call resends embedding and made for kids',
+    /const keep = \{\s*madeForKids: false,\s*embeddable: true,/.test(DRAIN),
+    'the scheduling call sent the time alone, which switched embedding off on every batch video')
+  check('a video going out now is uploaded private and made public only once paid promotion reads back',
+    /privacyStatus: 'private',\s*notifySubscribers/.test(DRAIN) && /if \(!paidConfirmed\) \{\s*heldBack = /.test(DRAIN))
+  check('what YouTube kept is recorded', /api_disclosures: \{/.test(DRAIN) && /await yt\.readDisclosures\(videoId\)/.test(DRAIN))
+  const REPORT = live(read('components/launch/LaunchReport.tsx'))
+  check('the report only says All done when nothing is still working',
+    /const allDone = ytLeft === 0 && amzLeft === 0 && studioLeft === 0/.test(REPORT))
+  check('and lists every problem with its reason', /problems\.map\(/.test(REPORT) && /<LaunchReport/.test(SCREEN))
   check('stops on an error, saying so',
     /if \(out\.error\) setAmazonAuto\('stopped'\)/.test(SCREEN) && /Automatic sending stopped:/.test(SCREEN))
 
