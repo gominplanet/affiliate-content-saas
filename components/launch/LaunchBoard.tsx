@@ -1052,7 +1052,7 @@ export default function LaunchBoard() {
                       const cannot = row.byVideo.every((v) => v.verdict === 'cannot_check')
                       const unchecked = row.byVideo.filter((v) => v.verdict === 'not_checked')
                       if (cannot) {
-                        return <span className="block text-[11px]" style={muted}>Cannot be checked ahead of time here; SCOUT checks when it uploads</span>
+                        return <span className="block text-[11px]" style={muted}>Cannot be checked ahead of time here. If Amazon does not sell it, the upload fails and the row says so</span>
                       }
                       return (
                         <span className="block text-[11px]">
