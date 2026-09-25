@@ -126,8 +126,10 @@ check('the label is words, not a guess', saleLabel(saleVerdict({ deal: deal({ di
 }
 
 // ── Amazon Live: the clock always adds up ───────────────────────────────────
-for (const m of [30, 45, 60, 90]) {
-  for (const n of [1, 3, 7, LIVE_MAX_PRODUCTS]) {
+for (const m of [30, 45, 60, 90, 120]) {
+  for (const n of [1, 3, 7, 20, LIVE_MAX_PRODUCTS]) {
+    // Only shows the route accepts: at least a minute a product plus 4.
+    if (m < n + 4) continue
     const c = layoutClock(m, Array.from({ length: n }, (_, i) => ({ saleLabel: i % 2 ? 'x' : null })))
     const sum = c.opening + c.closing + c.segments.reduce((a, s) => a + s.minutes, 0)
     const contiguous = c.segments.every((s, i) => s.startMin === (i === 0 ? c.opening : c.segments[i - 1].startMin + c.segments[i - 1].minutes))
@@ -156,9 +158,21 @@ for (const m of [30, 45, 60, 90]) {
   check('the live script never states a price either', /NEVER state a price, a dollar amount, or a percentage/.test(LIB))
   check('a plan is still returned when it cannot be saved, and says so',
     /saved: !saveErr/.test(PLAN) && /needs migration 373/.test(PLAN) && /j\.saveError/.test(read('components/labs/AmazonLive.tsx')))
-  check('products are capped so each gets real time', /asins\.length > LIVE_MAX_PRODUCTS/.test(PLAN) && /minutes < asins\.length \* 2 \+ 4/.test(PLAN))
-  check('the listings share one 25 second clock, and a cut-off reply is not a plan',
-    /setTimeout\(res, 25_000\)/.test(PLAN) && /msg\.stop_reason === 'max_tokens'/.test(PLAN))
+  check('products are capped so each gets real time', /asins\.length > LIVE_MAX_PRODUCTS/.test(PLAN) && /minutes < asins\.length \+ 4/.test(PLAN))
+  check('a show holds up to 39 products, the size of the Amazon Live carousel', LIVE_MAX_PRODUCTS === 39)
+  check('no giveaways, contests or prizes, whatever the notes say',
+    /NEVER mention a giveaway, contest, sweepstake, raffle, prize/.test(LIB) && !/Giveaway/.test(read('components/labs/AmazonLive.tsx')),
+    'Amazon Live does not allow them')
+  const LP = read('app/api/live/products/route.ts')
+  check('the products come from the storefront, with a video flag and what each earned',
+    /from\('storefront_catalog'\)\.select\('asin,title,image_url,has_video'\)/.test(LP) && /from\('storefront_earnings'\)/.test(LP)
+    && !/idea_lists/.test(LP) && /storefrontSynced/.test(LP),
+    'a live show is products the creator has on hand')
+  check('Suggest a lineup ranks on sale first, then earnings, then a video',
+    /score: \(s \? 1_000_000 : 0\) \+ Math\.min\(earnedCents, 999_000\) \+ \(hasVideo \? 500 : 0\)/.test(LP)
+    && /Suggest a lineup/.test(read('components/labs/AmazonLive.tsx')))
+  check('the listings share one 30 second clock, and a cut-off reply is not a plan',
+    /setTimeout\(res, 30_000\)/.test(PLAN) && /msg\.stop_reason === 'max_tokens'/.test(PLAN))
   check('the teleprompter measures "behind" against the next part\'s start',
     /const behind = started \? Math\.floor\(elapsed \/ 60\) - nextAt : 0/.test(read('components/labs/AmazonLive.tsx')))
   const M = read('supabase/migrations/373_on_sale_and_live_plans.sql')

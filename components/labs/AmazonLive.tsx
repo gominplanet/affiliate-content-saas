@@ -5,17 +5,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Radio, Check, Printer, MonitorPlay, Trash2, ChevronLeft, ChevronRight, X, Tag, MessageCircle, Search } from 'lucide-react'
+import { Loader2, Radio, Check, Printer, MonitorPlay, Trash2, ChevronLeft, ChevronRight, X, Tag, MessageCircle, Search, Wand2 } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import { clockLabel, LIVE_LENGTHS, LIVE_MAX_PRODUCTS, type LivePlan, type LiveSegment } from '@/lib/live-plan'
 
 const ACCENT = '#0E7C86'
 
-interface PoolProduct { asin: string; title: string; image: string | null; videos: number; inStorefront: boolean; saleLabel: string | null }
-interface IdeaList { id: string; title: string; asins: string[] }
+interface PoolProduct { asin: string; title: string; image: string | null; hasVideo: boolean; videos: number; saleLabel: string | null; earnedCents: number; score: number }
 interface SavedPlan { id: string; title: string; minutes: number; products: string[]; updated_at: string }
 
-type Filter = 'all' | 'videos' | 'sale' | string
+type Filter = 'storefront' | 'video' | 'sale'
 
 /** One line of the run of show. */
 function Row({ at, minutes, label, sub }: { at: number; minutes: number; label: string; sub?: string }) {
@@ -163,10 +162,10 @@ function Teleprompter({ plan, onClose }: { plan: LivePlan; onClose: () => void }
 
 export default function AmazonLive() {
   const [pool, setPool] = useState<PoolProduct[] | null>(null)
-  const [lists, setLists] = useState<IdeaList[]>([])
+  const [storefrontSynced, setStorefrontSynced] = useState(true)
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [picked, setPicked] = useState<string[]>([])
-  const [filter, setFilter] = useState<Filter>('all')
+  const [filter, setFilter] = useState<Filter>('storefront')
   const [q, setQ] = useState('')
   const [title, setTitle] = useState('')
   const [minutes, setMinutes] = useState<number>(45)
@@ -192,20 +191,30 @@ export default function AmazonLive() {
       const j = r ? await r.json().catch(() => ({})) : {}
       if (!r || !r.ok) { setLoadErr(j?.error || 'Could not load your products.'); return }
       setPool(j.products ?? [])
-      setLists(j.lists ?? [])
+      setStorefrontSynced(j.storefrontSynced !== false)
     })()
     void loadSaved()
   }, [loadSaved])
 
   const shown = useMemo(() => {
     if (!pool) return []
-    const inList = lists.find((l) => l.id === filter)
     const needle = q.trim().toLowerCase()
     return pool.filter((p) =>
-      (filter === 'all' || (filter === 'videos' && p.videos > 0) || (filter === 'sale' && !!p.saleLabel) || (inList && inList.asins.includes(p.asin)))
+      (filter === 'storefront' || (filter === 'video' && p.hasVideo) || (filter === 'sale' && !!p.saleLabel))
       && (!needle || p.title.toLowerCase().includes(needle) || p.asin.toLowerCase().includes(needle)))
       .sort((a, b) => Number(!!b.saleLabel) - Number(!!a.saleLabel) || b.videos - a.videos)
-  }, [pool, lists, filter, q])
+  }, [pool, filter, q])
+
+  // SUGGEST A LINEUP from the storefront: on sale today first, then what has
+  // earned, then what there is a video of. Sized to the show's length, about
+  // three minutes a product, and never past the cap.
+  function suggest() {
+    if (!pool?.length) return
+    const n = Math.max(3, Math.min(LIVE_MAX_PRODUCTS, Math.round((minutes - 4) / 3)))
+    const top = [...pool].sort((a, b) => b.score - a.score).slice(0, n).map((p) => p.asin)
+    setPicked(top)
+    toast.success(`Picked ${top.length} from your storefront. Change the order or swap any of them.`)
+  }
 
   function toggle(asin: string) {
     if (!picked.includes(asin) && picked.length >= LIVE_MAX_PRODUCTS) {
@@ -283,13 +292,21 @@ export default function AmazonLive() {
         <div className="grid lg:grid-cols-[1fr_320px] gap-4">
           <section className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <div className="flex items-center gap-2 flex-wrap mb-3">
-              {[['all', 'Everything'], ['videos', 'From my videos'], ['sale', 'On sale today']].map(([k, l]) => (
+              {([['storefront', storefrontSynced ? 'All my storefront' : 'All my products'], ['video', 'Only ones I made a video for'], ['sale', 'On sale today']] as Array<[Filter, string]>).map(([k, l]) => (
                 <button key={k} type="button" onClick={() => setFilter(k)} className="px-2.5 py-1 rounded-full text-[12px]" style={chip(filter === k)}>{l}</button>
               ))}
-              {lists.map((l) => (
-                <button key={l.id} type="button" onClick={() => setFilter(l.id)} className="px-2.5 py-1 rounded-full text-[12px] max-w-[180px] truncate" style={chip(filter === l.id)}>{l.title}</button>
-              ))}
+              <button type="button" onClick={suggest} disabled={!pool?.length}
+                className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-semibold text-white disabled:opacity-40"
+                style={{ background: ACCENT }}>
+                <Wand2 size={12} /> Suggest a lineup
+              </button>
             </div>
+            {!storefrontSynced && pool && (
+              <p className="text-[12px] mb-3 rounded-lg px-3 py-2" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
+                Your Amazon storefront is not synced yet, so these are the products from your own videos. Sync it on the
+                AMZ Storefront page and your whole storefront shows here.
+              </p>
+            )}
             <label className="relative block mb-3">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-faint)' }} />
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your products"
@@ -297,12 +314,12 @@ export default function AmazonLive() {
             </label>
             {!pool && !loadErr && (
               <p className="text-[13px] py-8 flex items-center justify-center gap-2" style={{ color: 'var(--text-soft)' }}>
-                <Loader2 size={14} className="animate-spin" /> Loading your videos, storefront and idea lists…
+                <Loader2 size={14} className="animate-spin" /> Loading your storefront…
               </p>
             )}
             {pool && shown.length === 0 && (
               <p className="text-[13px] py-8 text-center" style={{ color: 'var(--text-soft)' }}>
-                {pool.length === 0 ? 'No products yet. Set the product on your videos, sync your storefront, or make an idea list.' : 'Nothing matches that.'}
+                {pool.length === 0 ? 'No products yet. Sync your storefront on the AMZ Storefront page, or set the product on your videos.' : 'Nothing matches that.'}
               </p>
             )}
             <ul className="grid sm:grid-cols-2 gap-2 max-h-[560px] overflow-y-auto pr-1">
@@ -320,7 +337,8 @@ export default function AmazonLive() {
                       <span className="flex-1 min-w-0">
                         <span className="block text-[12.5px] font-medium line-clamp-2" style={{ color: 'var(--text)' }}>{p.title}</span>
                         <span className="block text-[11px]" style={{ color: 'var(--text-faint)' }}>
-                          {p.videos > 0 ? `${p.videos} video${p.videos === 1 ? '' : 's'}` : p.inStorefront ? 'Storefront' : 'Idea list'}
+                          {p.hasVideo ? 'You have a video' : 'No video yet'}
+                          {p.earnedCents > 0 && <> · earned ${(p.earnedCents / 100).toFixed(0)} in 6 months</>}
                           {p.saleLabel && <span style={{ color: '#E4572E' }}> · {p.saleLabel}</span>}
                         </span>
                       </span>
@@ -365,7 +383,7 @@ export default function AmazonLive() {
               </div>
               <label className="block mt-3">
                 <span className="text-[11px] font-semibold" style={{ color: 'var(--text-soft)' }}>Anything to include (optional)</span>
-                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Giveaway at the end, mention my storefront"
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Mention my storefront, answer questions at the end"
                   className="mt-1 w-full rounded-lg border px-2.5 py-1.5 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
               </label>
               <button type="button" onClick={() => void build()} disabled={building || picked.length === 0}

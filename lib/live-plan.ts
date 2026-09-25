@@ -51,10 +51,10 @@ export interface LivePlan {
 }
 
 /** Length choices offered on the page. */
-export const LIVE_LENGTHS = [30, 45, 60, 90] as const
+export const LIVE_LENGTHS = [30, 45, 60, 90, 120] as const
 
-/** Most products a plan takes: past this, each gets too little time to sell. */
-export const LIVE_MAX_PRODUCTS = 12
+/** Most products a show takes: Amazon Live's product carousel holds 39. */
+export const LIVE_MAX_PRODUCTS = 39
 
 /**
  * The clock: an opening, the products, a close. The opening and close scale
@@ -131,6 +131,7 @@ Also write:
 HARD RULES:
 - NEVER state a price, a dollar amount, or a percentage. Prices change during a stream, and the carousel shows them. For a product on sale, say it is on sale right now.
 - NEVER invent features, results, or claims not in the facts given.
+- NEVER mention a giveaway, contest, sweepstake, raffle, prize, or anything free for viewers, even if the creator's notes ask for one. Amazon Live does not allow them.
 - First person, conversational, the creator speaking. No dashes as sentence breaks. No year. Never any form of the word "honest". No "game-changer", "must-have", "insane", "amazing".
 
 Return ONLY JSON:

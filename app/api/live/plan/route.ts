@@ -17,7 +17,7 @@ import { coveredProducts, findSales, saleLabel } from '@/lib/covered-sales'
 import { assemblePlan, buildLivePrompt, LIVE_MAX_PRODUCTS, type LiveProductInput } from '@/lib/live-plan'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 300
 
 const MODEL = 'claude-sonnet-4-6'
 
@@ -40,10 +40,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `A show holds ${LIVE_MAX_PRODUCTS} products at most, so each one gets real time. Pick fewer.` }, { status: 400 })
   }
   const minutes = Math.max(10, Math.min(180, Math.round(Number(body.minutes) || 45)))
-  // TWO MINUTES A PRODUCT AT LEAST, plus the opening and close, or the show
+  // A MINUTE A PRODUCT AT LEAST, plus the opening and close, or the show
   // either overruns what was asked or gives each product seconds.
-  if (minutes < asins.length * 2 + 4) {
-    return NextResponse.json({ error: `${asins.length} products need a show of at least ${asins.length * 2 + 4} minutes. Pick a longer show or fewer products.` }, { status: 400 })
+  if (minutes < asins.length + 4) {
+    return NextResponse.json({ error: `${asins.length} products need a show of at least ${asins.length + 4} minutes. Pick a longer show or fewer products.` }, { status: 400 })
   }
   const title = String(body.title || '').trim().slice(0, 120) || 'Amazon Live'
   const notes = String(body.notes || '').trim().slice(0, 600)
@@ -69,15 +69,20 @@ export async function POST(req: Request) {
   // retry for most of a minute, and three rounds of those left no time for
   // the writer. Whatever has not answered in 25 seconds goes without its
   // listing: the creator's own words and the title still carry it.
+  // Eight at a time: up to 39 product pages at once would look like a flood.
   const listing = new Map<string, { title: string; bullets: string[]; image: string | null }>()
+  const queue = [...asins]
   await Promise.race([
-    Promise.all(asins.map(async (a) => {
-      try {
-        const p = await fetchAmazonProduct(a)
-        listing.set(a, { title: p.title || '', bullets: (p.bullets ?? []).slice(0, 6), image: p.imageUrl || null })
-      } catch { /* the creator's words carry it */ }
+    Promise.all(Array.from({ length: 8 }, async () => {
+      while (queue.length) {
+        const a = queue.shift()!
+        try {
+          const p = await fetchAmazonProduct(a)
+          listing.set(a, { title: p.title || '', bullets: (p.bullets ?? []).slice(0, 6), image: p.imageUrl || null })
+        } catch { /* the creator's words carry it */ }
+      }
     })),
-    new Promise((res) => setTimeout(res, 25_000)),
+    new Promise((res) => setTimeout(res, 30_000)),
   ])
 
   const products: LiveProductInput[] = asins.map((a) => {
@@ -90,7 +95,8 @@ export async function POST(req: Request) {
       title: String(named).slice(0, 200),
       image: c?.image || l?.image || s?.image || null,
       bullets: l?.bullets ?? [],
-      transcript: (transcripts.get(a) || '').slice(0, 1400),
+      // Less of each transcript on a long show, so 39 products still fit.
+      transcript: (transcripts.get(a) || '').slice(0, asins.length > 15 ? 600 : 1400),
       videoTitle: leadVideo.get(a)?.title || null,
       saleLabel: s ? saleLabel(s.verdict) : null,
     }
@@ -106,7 +112,7 @@ export async function POST(req: Request) {
   try {
     const anthropic = createAnthropicClient()
     const msg = await anthropic.messages.create({
-      model: MODEL, max_tokens: 6000,
+      model: MODEL, max_tokens: asins.length > 15 ? 16000 : 8000,
       messages: [{ role: 'user', content: buildLivePrompt({ title, minutes, products, voice, notes }) }],
     })
     recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'amazon_live_plan', model: MODEL })
