@@ -28,7 +28,10 @@ import {
 } from 'lucide-react'
 
 /** Walkthrough shown beside the page title. */
-const WALKTHROUGH_ID = 'nHrSHlrN9pI'
+// THE WALKTHROUGH VIDEO, off until it is re-recorded for the full Studio
+// automation (the old one, nHrSHlrN9pI, predates it). Put the new YouTube id
+// here and it shows on the page again.
+const WALKTHROUGH_ID: string | null = null
 
 interface DraftVideo {
   youtubeVideoId: string
@@ -4223,7 +4226,7 @@ export default function StudioPage() {
         <PageHero
           title="YouTube Co-Pilot"
           subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
-          media={<HeroVideo videoId={WALKTHROUGH_ID} title="YouTube Co-Pilot walkthrough" />}
+          media={WALKTHROUGH_ID ? <HeroVideo videoId={WALKTHROUGH_ID} title="YouTube Co-Pilot walkthrough" /> : undefined}
         />
         <div className="flex items-center justify-center py-20 text-[#86868b] dark:text-[#8e8e93] text-sm">
           <Loader2 size={16} className="animate-spin mr-2" /> Loading your videos…
@@ -4238,7 +4241,7 @@ export default function StudioPage() {
         guide={<CoPilotGuide />}
         title="YouTube Co-Pilot"
         subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
-        media={<HeroVideo videoId={WALKTHROUGH_ID} title="YouTube Co-Pilot walkthrough" />}
+        media={WALKTHROUGH_ID ? <HeroVideo videoId={WALKTHROUGH_ID} title="YouTube Co-Pilot walkthrough" /> : undefined}
       />
 
       {/* ADMIN dev tool: read back the Studio save requests SCOUT captured
