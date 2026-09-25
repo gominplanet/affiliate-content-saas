@@ -16,8 +16,8 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // Encore: open to Pro, and in the Create menu since it left Labs.
   on_sale: 'labs',
   amazon_live: 'admin',
-  // Co-Pilot comparison videos: 2 to 4 products in one video.
-  comparison: 'admin',
+  // Co-Pilot comparison videos: 2 to 4 products in one video. Open to Pro.
+  comparison: 'labs',
 }
 
 export function canUsePreview(feature: PreviewFeature, rawTier: unknown): boolean {

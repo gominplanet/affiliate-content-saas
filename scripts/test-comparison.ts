@@ -45,7 +45,8 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
 }
 
 // ── Labs ────────────────────────────────────────────────────────────────────
-check('comparison videos are admin only while testing', canUsePreview('comparison', 'admin') && !canUsePreview('comparison', 'pro'))
+check('comparison videos are open to Pro and admin, not to other plans',
+  canUsePreview('comparison', 'admin') && canUsePreview('comparison', 'pro') && !canUsePreview('comparison', 'creator') && !canUsePreview('comparison', 'trial'))
 
 // ── the metadata route ──────────────────────────────────────────────────────
 {

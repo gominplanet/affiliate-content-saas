@@ -42,7 +42,7 @@ export default function ComparisonProducts({ on, onToggle, slots, onChange, resu
       <label className="flex items-center gap-2 cursor-pointer select-none">
         <input type="checkbox" checked={on} disabled={disabled} onChange={(e) => onToggle(e.target.checked)} className="accent-[#7C3AED]" />
         <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">This video compares products</span>
-        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED] text-white font-semibold uppercase tracking-wide">Labs</span>
+        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED] text-white font-semibold uppercase tracking-wide">New</span>
       </label>
       {on && (
         <div className="mt-2 flex flex-col gap-1.5">

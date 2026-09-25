@@ -45,6 +45,13 @@ const UPDATES: Update[] = [
   },
   {
     badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'Comparison videos in Co-Pilot',
+    desc: 'Comparing two, three or four products in one video? Tick This video compares products before you generate. The titles are written as a comparison, the description gets its own link for every product, and the thumbnail shows each product from its own Amazon photo. On the Pro plan.',
+    href: '/co-pilot',
+  },
+  {
+    badge: 'NEW',
     tone: '#BE185D',
     title: 'My features: pin what you use most',
     desc: 'Hover any feature in the sidebar and tap its star to pin it to My features at the top. Tap the star again to take it out. Your list follows you to every device.',
