@@ -2193,6 +2193,25 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'a preview drawn one way and a render placed another is how the two disagreed')
 }
 
+// ── WHO'S IN THIS VIDEO, ASKED AT THE UPLOAD ─────────────────────────────────
+// The face was only choosable further down the page, often after the
+// thumbnail had been built. It is asked beside the upload bar now.
+{
+  check('the question sits on the upload bar and in the video list, for two or more faces',
+    /const askFaces = faceAvailable && faces\.length >= 2/.test(BOARD)
+    && /onFace=\{askFaces \? \(v\) => pickUploadFace\(u\.key, v\) : null\}/.test(BOARD)
+    && /Who&apos;s in this video\?/.test(BOARD) && /onPick=\{\(v\) => void patchItem\(it\.id, \{ thumbnailFace: v \}\)\}/.test(BOARD),
+    'a face chosen after the thumbnail is built costs a second build')
+  check('the answer travels with the upload, and a late pick still lands',
+    /thumbnailFace: sentFace/.test(BOARD) && /if \(j\?\.id && !sameFace\(latest, sentFace\)\)/.test(BOARD)
+    && /parseFacePick\(body\.thumbnailFace\)/.test(ITEMS)
+    && /from\('face_models'\)\.select\('id'\)\.eq\('id', face\.faceId\)\.eq\('user_id', user\.id\)/.test(ITEMS),
+    'a pick made while the file was being added was lost, and only your own faces are accepted')
+  check('and a face that could not be saved is said, not dropped',
+    /faceSaved/.test(ITEMS) && /who is in it could not be saved/.test(BOARD),
+    'the video would get the batch face while the bar showed the one picked')
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

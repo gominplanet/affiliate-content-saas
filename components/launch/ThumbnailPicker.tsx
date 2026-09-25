@@ -120,7 +120,7 @@ export default function ThumbnailPicker({ value, chosen, saving, onSave }: {
           </button>
         </div>
         <p className="text-[11px] mt-1" style={muted}>
-          Two presenters? Pick a different face for any one video in its row under Set each product.
+          Two presenters or more? Each video asks &quot;Who&apos;s in this video?&quot; beside its upload, and anything not answered uses the face chosen here.
         </p>
         {!loadingFaces && faces.length === 0 && (
           <p className="text-[11px] mt-1" style={muted}>

@@ -100,6 +100,52 @@ interface Item {
 /** Files sent to storage side by side. */
 const UPLOAD_LANES = 3
 
+/** A video's own face, as stored (migration 371). Null follows the batch. */
+type FaceValue = { kind: string; faceId?: string }
+
+function sameFace(a: FaceValue | null | undefined, b: FaceValue | null | undefined): boolean {
+  if (!a || !b) return !a && !b
+  return a.kind === b.kind && (a.faceId ?? null) === (b.faceId ?? null)
+}
+
+/**
+ * "Who's in this video?", one chip per saved face and one for nobody.
+ *
+ * ASKED WHERE THE VIDEO ARRIVES. A channel with two or more presenters films
+ * each video with one of them, and the thumbnail is built minutes after the
+ * upload. Asking here, beside the bar, gets the answer in before that; asking
+ * further down the page got it after the thumbnail had already been made.
+ */
+function FaceChips({ faces, value, onPick, disabled }: {
+  faces: Array<{ id: string; name: string }>
+  value: FaceValue | null | undefined
+  onPick: (v: FaceValue | null) => void
+  disabled?: boolean
+}) {
+  const choices: Array<{ key: string; label: string; v: FaceValue }> = [
+    ...faces.map((f) => ({ key: f.id, label: f.name, v: { kind: 'face', faceId: f.id } })),
+    { key: 'none', label: 'Nobody', v: { kind: 'none' } },
+  ]
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+      <span className="text-[11px] font-semibold" style={{ color: 'var(--text-2)' }}>Who&apos;s in this video?</span>
+      {choices.map((c) => {
+        const on = sameFace(value, c.v)
+        return (
+          <button key={c.key} type="button" disabled={disabled}
+            onClick={() => onPick(on ? null : c.v)}
+            aria-pressed={on}
+            className="px-2 py-0.5 rounded-full text-[11px] disabled:opacity-40"
+            style={on ? { background: '#0EA5A4', color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+            {c.label}
+          </button>
+        )
+      })}
+      {!value && <span className="text-[11px]" style={{ color: '#d97706' }}>Not picked, so it uses the batch&apos;s face</span>}
+    </div>
+  )
+}
+
 /** One file on its way up, as the page shows it. */
 interface UploadRow {
   key: string
@@ -111,6 +157,9 @@ interface UploadRow {
   lastMoveAt: number
   /** When the last byte left the browser. */
   sentAt?: number
+  /** Who is in it, answered beside the bar. Undefined: not answered, so the
+   *  batch's face is used. */
+  face?: FaceValue | null
   tries: number
   error?: string
 }
@@ -120,7 +169,12 @@ function mb(n: number): string {
 }
 
 /** One upload's line: what it is doing, in numbers, and whether it is moving. */
-function UploadLine({ u, now }: { u: UploadRow; now: number }) {
+function UploadLine({ u, now, faces, onFace }: {
+  u: UploadRow; now: number
+  faces: Array<{ id: string; name: string }>
+  /** Null when there is no face to ask about (fewer than two saved). */
+  onFace: ((v: FaceValue | null) => void) | null
+}) {
   const pct = u.total > 0 ? Math.min(100, Math.round((u.sent / u.total) * 100)) : 0
   const secs = u.startedAt ? Math.max(1, (now - u.startedAt) / 1000) : 1
   const rate = u.sent / secs
@@ -161,6 +215,9 @@ function UploadLine({ u, now }: { u: UploadRow; now: number }) {
           style={{ transform: `scaleX(${(u.state === 'failed' ? 100 : pct) / 100})`, transformOrigin: 'left', background: color }} />
       </div>
       <span className="block text-[11px] mt-1 tabular-nums" style={{ color: stalled || u.state === 'failed' ? color : 'var(--text-2)' }}>{line}</span>
+      {onFace && u.state !== 'failed' && u.state !== 'done' && (
+        <FaceChips faces={faces} value={u.face} onPick={onFace} />
+      )}
     </li>
   )
 }
@@ -437,6 +494,15 @@ export default function LaunchBoard() {
   const [busy, setBusy] = useState<string | null>(null)
   const [uploading, setUploading] = useState(0)
   const [uploads, setUploads] = useState<UploadRow[]>([])
+  // WHO IS IN EACH UPLOAD, kept outside React state too: the upload's own
+  // closure reads this when it adds the video, and a state value captured when
+  // the upload began would miss a pick made while it was running.
+  const uploadFaces = useRef(new Map<string, FaceValue | null>())
+  const askFaces = faceAvailable && faces.length >= 2
+  function pickUploadFace(key: string, v: FaceValue | null) {
+    uploadFaces.current.set(key, v)
+    setUploads((u) => u.map((r) => (r.key === key ? { ...r, face: v } : r)))
+  }
   // A CLOCK FOR THE BARS, so "no progress for 40s" counts up on its own
   // rather than only when a byte arrives. Only while something is uploading.
   const [clock, setClock] = useState(() => Date.now())
@@ -969,6 +1035,7 @@ export default function LaunchBoard() {
       await (i > 0 ? turns[i - 1] : Promise.resolve())
       if (!ok) return
       mark(key, { state: 'adding', sent: file.size })
+      const sentFace = uploadFaces.current.get(key) ?? null
       try {
         const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
         const r = await fetch(`/api/launch/batches/${batchId}/items`, {
@@ -982,10 +1049,22 @@ export default function LaunchBoard() {
             title: file.name.replace(/\.[^.]+$/, ''),
             titleSource: 'filename',
             durationSeconds: durationSec,
+            thumbnailFace: sentFace,
           }),
         })
         const j = await r.json().catch(() => ({}))
         if (!r.ok) throw new Error(j?.error || 'Could not add that video.')
+        if (sentFace && j?.faceSaved === false) {
+          toast.error(`${file.name} was added, but who is in it could not be saved. Pick it again in the list below.`)
+        }
+        // A PICK MADE WHILE IT WAS BEING ADDED lands on the video now.
+        const latest = uploadFaces.current.get(key) ?? null
+        if (j?.id && !sameFace(latest, sentFace)) {
+          await fetch(`/api/launch/items/${j.id}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ thumbnailFace: latest }),
+          }).catch(() => { /* the list below still shows it, and can set it */ })
+        }
         mark(key, { state: 'done' })
         await load(batchId)
       } catch (e) {
@@ -1264,7 +1343,10 @@ export default function LaunchBoard() {
 
           {uploads.length > 0 && (
             <ul className="flex flex-col gap-1.5">
-              {uploads.map((u) => <UploadLine key={u.key} u={u} now={clock} />)}
+              {uploads.map((u) => (
+                <UploadLine key={u.key} u={u} now={clock} faces={faces}
+                  onFace={askFaces ? (v) => pickUploadFace(u.key, v) : null} />
+              ))}
             </ul>
           )}
           {uploading === 0 && uploads.some((u) => u.state === 'done' || u.state === 'failed') && (
@@ -1277,19 +1359,32 @@ export default function LaunchBoard() {
           {items.length > 0 && (
             <ul className="flex flex-col gap-1.5">
               {items.map((it) => (
-                <li key={it.id} className="flex items-center gap-2 rounded-lg border px-3 py-2"
+                <li key={it.id} className="rounded-lg border px-3 py-2"
                   style={{ borderColor: 'var(--border)' }}>
-                  <span className="text-[11px] tabular-nums w-5" style={muted}>{it.position + 1}</span>
-                  <span className="flex-1 min-w-0 truncate text-[12.5px]" style={text}>
-                    {it.title || 'Untitled'}
-                  </span>
-                  <span className="text-[11px]" style={{ color: TONE[itemStateTone(it.state as never)] }}>
-                    {itemStateLabel(it.state as never)}
-                  </span>
-                  <button onClick={() => void removeItem(it.id)} disabled={busy === it.id}
-                    className="p-1 rounded disabled:opacity-50" title="Remove">
-                    <Trash2 size={13} style={muted} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] tabular-nums w-5" style={muted}>{it.position + 1}</span>
+                    <span className="flex-1 min-w-0 truncate text-[12.5px]" style={text}>
+                      {it.title || 'Untitled'}
+                    </span>
+                    <span className="text-[11px]" style={{ color: TONE[itemStateTone(it.state as never)] }}>
+                      {itemStateLabel(it.state as never)}
+                    </span>
+                    <button onClick={() => void removeItem(it.id)} disabled={busy === it.id}
+                      className="p-1 rounded disabled:opacity-50" title="Remove">
+                      <Trash2 size={13} style={muted} />
+                    </button>
+                  </div>
+                  {/* THE SAME QUESTION, for a video already in the batch. Locked
+                      once it is queued for YouTube, since its thumbnail is set. */}
+                  {askFaces && !it.planned_publish_at && !String(it.youtube_video_id || '').trim() && (
+                    <div className="pl-7">
+                      <FaceChips faces={faces} value={it.thumbnail_face ?? null} disabled={busy === it.id}
+                        onPick={(v) => void patchItem(it.id, { thumbnailFace: v })} />
+                      {it.thumbnail_face && it.thumbnail_url && (
+                        <span className="block text-[11px] mt-0.5" style={muted}>Changing it builds this video&apos;s thumbnails again.</span>
+                      )}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

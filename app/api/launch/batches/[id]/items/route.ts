@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { MAX_ITEMS } from '@/lib/launch-batch'
 import { asinInFileName } from '@/lib/asin'
+import { parseFacePick } from '@/lib/thumbnail-preset'
 
 export const runtime = 'nodejs'
 
@@ -26,6 +27,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     /** 'filename' (the default) or 'creator'. */
     titleSource?: string
     durationSeconds?: number
+    /** Who is in this video, answered while it uploaded (migration 371). */
+    thumbnailFace?: unknown
   }
   const sourceUrl = (body.sourceUrl || '').trim()
   if (!/^https:\/\//i.test(sourceUrl)) {
@@ -93,5 +96,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (error || !data) {
     return NextResponse.json({ error: error?.message || 'Could not add that video.' }, { status: 500 })
   }
-  return NextResponse.json({ ok: true, id: data.id, position: data.position, videos: n + 1 })
+
+  // WHO IS IN IT, asked beside the upload bar so it is answered before the
+  // thumbnail is built. Its own write: a database without migration 371 adds
+  // the video anyway, with the batch's face, and says so.
+  let faceSaved: boolean | null = null
+  const face = body.thumbnailFace == null ? null : parseFacePick(body.thumbnailFace)
+  if (face) {
+    let ok = true
+    if (face.kind === 'face') {
+      const { data: mine } = await sb.from('face_models').select('id').eq('id', face.faceId).eq('user_id', user.id).maybeSingle()
+      ok = !!mine
+    }
+    if (ok) {
+      const { error: fErr } = await sb.from('launch_items').update({ thumbnail_face: face }).eq('id', data.id).eq('user_id', user.id)
+      faceSaved = !fErr
+    } else faceSaved = false
+  }
+  return NextResponse.json({ ok: true, id: data.id, position: data.position, videos: n + 1, faceSaved })
 }
