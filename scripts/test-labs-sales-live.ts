@@ -291,7 +291,12 @@ async function saleEndedGuards() {
     /msg\.type === 'MVP_YT_PIN_COMMENT'/.test(BG)
     && /decodeURIComponent\(m\[1\]\) !== commentId/.test(BG)
     && (BG.match(/seen \? \{ ok: true, pinned: true \}/g) ?? []).length === 2
-    && !/return \{ ok: true, pinned: true \}/.test(BG))
+    && !/return \{ ok: true, pinned: true \}/.test(BG)
+    // A swapped tab (installed YouTube app, prerender) is found again by the
+    // comment's own address, not given up on as "No tab with id".
+    && /chrome\.tabs\.onReplaced\.addListener\(onReplaced\)/.test(BG)
+    && /u\.indexOf\(`lc=\$\{commentId\}`\) >= 0/.test(BG)
+    && /No tab with id\|tab was closed/.test(BG))
   const UI = read('components/labs/OnSale.tsx')
   check('the page says Pinned only when SCOUT saw it, and saves what it saw',
     /const pinned = !!\(r\.ok && r\.pinned\)/.test(UI) && /action: 'pin_result'/.test(UI)

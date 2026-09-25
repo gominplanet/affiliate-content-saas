@@ -456,27 +456,63 @@ async function pinYouTubeComment({ youtubeVideoId, commentId, callerTabId }) {
   if (!youtubeVideoId || !/^[a-zA-Z0-9_-]{11}$/.test(youtubeVideoId)) return { ok: false, error: 'bad-video-id' }
   if (!commentId || !/^[a-zA-Z0-9_.-]{10,80}$/.test(commentId)) return { ok: false, error: 'bad-comment-id' }
   const url = `https://www.youtube.com/watch?v=${youtubeVideoId}&lc=${encodeURIComponent(commentId)}`
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   let tabId = null
-  const waitLoaded = () => new Promise((resolve) => {
-    const onUpdated = (id, info) => {
-      if (id === tabId && info.status === 'complete') { chrome.tabs.onUpdated.removeListener(onUpdated); resolve() }
+  // THE TAB CAN CHANGE UNDER US. Chrome swaps a tab for another one when a
+  // page is prerendered, and an installed YouTube app pulls youtube.com links
+  // into its own window: the tab SCOUT opened is then gone ("No tab with
+  // id"). So the tab is found again by what it shows, this comment's own
+  // address, which only the tab SCOUT opened has.
+  const onReplaced = (added, removed) => { if (removed === tabId) tabId = added }
+  try { chrome.tabs.onReplaced.addListener(onReplaced) } catch (e) {}
+  const refind = async () => {
+    try {
+      const all = await chrome.tabs.query({})
+      const t = all.find((x) => {
+        const u = x.url || x.pendingUrl || ''
+        return u.indexOf('youtube.com/watch') >= 0 && u.indexOf(`v=${youtubeVideoId}`) >= 0 && u.indexOf(`lc=${commentId}`) >= 0
+      })
+      if (t) tabId = t.id
+      return !!t
+    } catch (e) { return false }
+  }
+  const waitLoaded = async () => {
+    const end = Date.now() + 20000
+    while (Date.now() < end) {
+      let tab = null
+      try { tab = await chrome.tabs.get(tabId) } catch (e) { await refind() }
+      if (tab && tab.status === 'complete') return true
+      await sleep(400)
     }
-    chrome.tabs.onUpdated.addListener(onUpdated)
-    setTimeout(() => { chrome.tabs.onUpdated.removeListener(onUpdated); resolve() }, 20000)
-  })
+    return false
+  }
+  const run = async (verifyOnly) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const results = await chrome.scripting.executeScript({ target: { tabId }, func: pinCommentInPage, args: [commentId, verifyOnly] })
+        return (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
+      } catch (e) {
+        const msg = e && e.message ? e.message : String(e)
+        if (!/No tab with id|tab was closed|Frame with ID 0 was removed/i.test(msg)) throw e
+        await sleep(1000)
+        if (!(await refind())) {
+          return { ok: false, error: 'The YouTube tab SCOUT opened was closed before it could pin, so nothing was pinned. Leave it open for a few seconds next time, or pin it in Studio.' }
+        }
+        await waitLoaded()
+      }
+    }
+    return { ok: false, error: 'The YouTube tab kept changing while SCOUT tried to pin, so nothing was pinned. Pin it in Studio.' }
+  }
   try {
     const tab = await chrome.tabs.create({ url, active: true })
     tabId = tab.id
     await waitLoaded()
-    const run = async (verifyOnly) => {
-      const results = await chrome.scripting.executeScript({ target: { tabId }, func: pinCommentInPage, args: [commentId, verifyOnly] })
-      return (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
-    }
     let out = await run(false)
     // PRESSED BUT NOT SEEN: YouTube sometimes redraws the comments only on
     // the next load. One reload, and a look, before saying it did not stick.
     if (!out.ok && out.clicked) {
-      try { await chrome.tabs.reload(tabId) } catch (e) {}
+      try { await chrome.tabs.reload(tabId) } catch (e) { await refind() }
+      await sleep(500)
       await waitLoaded()
       const seen = await run(true)
       if (seen.ok) out = seen
@@ -485,8 +521,16 @@ async function pinYouTubeComment({ youtubeVideoId, commentId, callerTabId }) {
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'pin-exception' }
   } finally {
+    try { chrome.tabs.onReplaced.removeListener(onReplaced) } catch (e) {}
+    // Closed by what it shows, so a swapped tab is still the one closed.
+    await refind()
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+    if (callerTabId != null) {
+      try {
+        const t = await chrome.tabs.update(callerTabId, { active: true })
+        if (t && t.windowId != null) await chrome.windows.update(t.windowId, { focused: true })
+      } catch (e) {}
+    }
   }
 }
 
