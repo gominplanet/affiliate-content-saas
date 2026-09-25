@@ -3,7 +3,7 @@
 // Guards for two Labs previews: "On sale now" and "Amazon Live prep".
 
 import { readFileSync } from 'node:fs'
-import { saleVerdict, SALE_MIN_PCT, saleLabel } from '../lib/covered-sales'
+import { saleVerdict, SALE_MIN_PCT, saleLabel, visibilityFromItem, applyVisibility, notPublicMessage, type CoverSource } from '../lib/covered-sales'
 import { layoutClock, assemblePlan, tidyLine, clockLabel, LIVE_MAX_PRODUCTS } from '../lib/live-plan'
 import { canUsePreview } from '../lib/labs-preview'
 import { tidyCopy } from '../lib/copy-rules'
@@ -83,7 +83,8 @@ check('the label is words, not a guess', saleLabel(saleVerdict({ deal: deal({ di
   check('a price that could not be checked is not reported as a sale that ended',
     /if \(!sale && checked === 0\)/.test(PROMO) && inOrderCheck(PROMO, 'if (!sale && checked === 0)', "This one is not on sale any more"))
   check('the comment route asks YouTube whose video it is when the record does not say',
-    /yt\.getVideoChannelId\(videoId\)/.test(read('app/api/on-sale/comment/route.ts')))
+    /yt\.getVideoStatus\(videoId\)/.test(read('app/api/on-sale/comment/route.ts'))
+    && /if \(!\/\^UC\[\\w-\]\{22\}\$\/\.test\(owner\)\) owner = status\.channelId/.test(read('app/api/on-sale/comment/route.ts')))
   check('no promo for a product that is no longer on sale',
     /if \(!sale\) \{\s*return NextResponse\.json\(\{ error: 'This one is not on sale any more/.test(PROMO),
     'a comment saying "on sale right now" would sit on the video saying something untrue')
@@ -179,6 +180,41 @@ for (const m of [30, 45, 60, 90, 120]) {
   check('the tables are twice-runnable',
     /create table if not exists public\.covered_sale_checks/.test(M) && /create table if not exists public\.live_plans/.test(M)
     && /drop policy if exists "live_plans_own"/.test(M))
+}
+
+// ── a comment only where someone will read it ───────────────────────────────
+{
+  check('YouTube leaving a video out means not public, never public',
+    visibilityFromItem({ status: { privacyStatus: 'public' } }) === 'public'
+    && visibilityFromItem({ status: { privacyStatus: 'unlisted' } }) === 'unlisted'
+    && visibilityFromItem(undefined) === 'not_public' && visibilityFromItem({ status: { privacyStatus: 'private' } }) === 'not_public')
+  const v = { onSale: true, pct: 20, nowCents: 1, refCents: 2, basis: 'deal' as const, lightningEndsAt: null, allTimeLow: false }
+  const vid = (id: string): CoverSource => ({ kind: 'video', youtubeVideoId: id })
+  const ranked = applyVisibility([
+    { asin: 'STORE00001', title: 's', image: null, sources: [{ kind: 'storefront' }] as CoverSource[], verdict: { ...v, pct: 60 } },
+    { asin: 'PRIV000001', title: 'p', image: null, sources: [vid('aaaaaaaaaaa')], verdict: { ...v, pct: 50 } },
+    { asin: 'PUBL000001', title: 'u', image: null, sources: [vid('bbbbbbbbbbb')], verdict: { ...v, pct: 10 } },
+  ], new Map([['aaaaaaaaaaa', 'not_public' as const], ['bbbbbbbbbbb', 'public' as const]]))
+  check('a public video comes first, then a private one, then storefront only, whatever the discount',
+    ranked.map((p) => p.asin).join() === 'PUBL000001,PRIV000001,STORE00001', ranked.map((p) => p.asin).join())
+  check('and every video is labelled with what YouTube said, unknown kept as unknown',
+    ranked[1].sources[0].visibility === 'not_public'
+    && applyVisibility([{ asin: 'X', title: 'x', image: null, sources: [vid('ccccccccccc')], verdict: v }], new Map())[0].sources[0].visibility === null)
+  check('the comment route refuses private, unlisted and scheduled videos, in words that say which',
+    notPublicMessage('public', null) === null
+    && /scheduled/.test(notPublicMessage('private', '2030-01-01T00:00:00Z') || '')
+    && /unlisted/.test(notPublicMessage('unlisted', null) || '')
+    && /private/.test(notPublicMessage('private', null) || ''))
+  const C = read('app/api/on-sale/comment/route.ts')
+  check('and it asks YouTube before it posts, not after',
+    inOrderCheck(C, 'notPublicMessage(status.privacy', 'yt.postComment('))
+  const PR = read('app/api/on-sale/promo/route.ts')
+  check('the promo only offers a public video for the comment and the review link',
+    /video: leadPublic && lead \?/.test(PR) && /const videoUrl = leadPublic &&/.test(PR)
+    && /videoNotPublic: lead && leadVis && leadVis !== 'public'/.test(PR))
+  const UI = read('components/labs/OnSale.tsx')
+  check('the page says why there is no comment button',
+    /promo\.videoNotPublic \?/.test(UI) && /no video yet, so there is no video to comment on/.test(UI) && /Private or scheduled/.test(UI))
 }
 
 if (failures.length) {

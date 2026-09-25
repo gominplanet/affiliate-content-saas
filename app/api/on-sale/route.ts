@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
-import { coveredProducts, findSales, type SaleCheckStats } from '@/lib/covered-sales'
+import { coveredProducts, findSales, videoVisibility, applyVisibility, type SaleCheckStats } from '@/lib/covered-sales'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -25,13 +25,22 @@ export async function GET() {
   // WHAT WAS ACTUALLY CHECKED, said beside the result: a product past the
   // Keepa cap is "not checked today", which is not the same as "not on sale".
   let stats: SaleCheckStats = { checked: 0, skipped: 0 }
-  const onSale = await findSales(admin, covered, { keepaCap: 50, onStats: (s) => { stats = s } })
+  const found = await findSales(admin, covered, { keepaCap: 50, onStats: (s) => { stats = s } })
+  // WHO CAN SEE EACH VIDEO, only for the products on sale: those are the
+  // videos a comment would go on. A private or scheduled one is labelled and
+  // gets no comment button, since nobody would read a comment there.
+  const ids = found.flatMap((p) => p.sources.filter((s) => s.kind === 'video').map((s) => s.youtubeVideoId || ''))
+  const vis = await videoVisibility(process.env.YOUTUBE_API_KEY, ids)
+  const onSale = applyVisibility(found, vis)
   return NextResponse.json({
     covered: covered.length,
     checked: stats.checked,
     skipped: stats.skipped,
     videosCovered: covered.filter((p) => p.sources.some((s) => s.kind === 'video')).length,
     onSale,
+    // Said on the page when YouTube could not be asked, so "no label" is
+    // never mistaken for "public".
+    visibilityChecked: ids.length === 0 || vis.size > 0,
     checkedAt: new Date().toISOString(),
   })
 }

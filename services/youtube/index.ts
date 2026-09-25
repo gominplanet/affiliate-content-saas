@@ -505,6 +505,20 @@ export class YouTubeOAuthService {
     return (data?.items?.[0]?.snippet?.channelId as string | undefined) ?? null
   }
 
+  /** A video's channel and who can see it, as this login sees it. Null when
+   *  the login cannot see the video at all. One quota unit. */
+  async getVideoStatus(videoId: string): Promise<{ channelId: string | null; privacy: string; publishAt: string | null } | null> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.get<any>('/videos', { part: 'snippet,status', id: videoId })
+    const v = data?.items?.[0]
+    if (!v) return null
+    return {
+      channelId: (v.snippet?.channelId as string | undefined) ?? null,
+      privacy: String(v.status?.privacyStatus || ''),
+      publishAt: (v.status?.publishAt as string | undefined) ?? null,
+    }
+  }
+
   /** The channel this login actually uploads to, as YouTube itself says.
    *  One quota unit. Null when the login has no channel. */
   async getMyChannel(): Promise<{ id: string; title: string; thumbnail: string | null } | null> {

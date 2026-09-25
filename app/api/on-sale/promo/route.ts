@@ -32,7 +32,7 @@ import { creatorVoiceBlock, CREATOR_VOICE_COLUMNS } from '@/lib/creator-voice'
 import { tidyCopy } from '@/lib/copy-rules'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { resolveCloakedLinkDetailed } from '@/lib/link-cloak'
-import { coveredProducts, findSales, saleLabel } from '@/lib/covered-sales'
+import { coveredProducts, findSales, saleLabel, videoVisibility } from '@/lib/covered-sales'
 
 export const runtime = 'nodejs'
 export const maxDuration = 90
@@ -78,7 +78,17 @@ export async function POST(req: Request) {
   }
 
   const videos = covered.sources.filter((s) => s.kind === 'video')
-  const lead = [...videos].sort((a, b) => (b.views ?? 0) - (a.views ?? 0))[0] ?? null
+  // THE VIDEO THE COMMENT GOES ON IS A PUBLIC ONE. A comment on a private or
+  // scheduled video is read by nobody. The most viewed public video leads;
+  // with none public, the writing still leans on their best video's words,
+  // but there is no video to comment on or link to, and the page says why.
+  const vis = await videoVisibility(process.env.YOUTUBE_API_KEY, videos.map((v) => v.youtubeVideoId || ''))
+  const byViews = [...videos].sort((a, b) => (b.views ?? 0) - (a.views ?? 0))
+  const lead = byViews.find((v) => vis.get(v.youtubeVideoId || '') === 'public') ?? byViews[0] ?? null
+  const leadVis = lead ? (vis.get(lead.youtubeVideoId || '') ?? null) : null
+  // YouTube not answering is unknown, not private: the button stays, and the
+  // comment route asks YouTube again through the channel's own login.
+  const leadPublic = !!lead && (leadVis === 'public' || leadVis === null)
   let transcript = ''
   if (lead?.id) {
     const { data: v } = await admin.from('youtube_videos').select('transcript').eq('id', lead.id).maybeSingle()
@@ -154,7 +164,7 @@ Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"com
     const priceLine = `Check the latest price on Amazon here: ${link}`
     const disclosure = 'As an Amazon Associate I earn from qualifying purchases.'
     const comment = `${strip(j.comment ?? '')}\n\n${priceLine}\n${disclosure}`
-    const videoUrl = lead?.youtubeVideoId ? `https://youtu.be/${lead.youtubeVideoId}` : ''
+    const videoUrl = leadPublic && lead?.youtubeVideoId ? `https://youtu.be/${lead.youtubeVideoId}` : ''
     const community = `${strip(j.community ?? '')}\n\n${videoUrl ? `Watch my review: ${videoUrl}\n` : ''}${priceLine}\n${disclosure}`
     // THE SOCIAL POST, twice: with the link for copying, and without it for
     // the quick-post sheet, which adds each platform's own link (and #ad).
@@ -163,7 +173,10 @@ Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"com
       ok: true,
       asin, title: productTitle, link,
       sale: { label: saleLabel(sale.verdict), ...sale.verdict },
-      video: lead ? { youtubeVideoId: lead.youtubeVideoId, title: lead.title, channelId: lead.channelId } : null,
+      // Only a public video can take the comment. `videoNotPublic` says why
+      // there is none, so the page can tell "private" from "no video at all".
+      video: leadPublic && lead ? { youtubeVideoId: lead.youtubeVideoId, title: lead.title, channelId: lead.channelId } : null,
+      videoNotPublic: lead && leadVis && leadVis !== 'public' ? { title: lead.title, visibility: leadVis } : null,
       promo: {
         short: {
           hook: tidy(j.short?.hook),

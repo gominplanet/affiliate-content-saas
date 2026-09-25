@@ -30,6 +30,76 @@ export interface CoverSource {
   publishedAt?: string | null
   channelId?: string | null
   thumbnail?: string | null
+  /** Who can see the video, asked of YouTube when the page loads. Null when
+   *  YouTube could not be asked, which is not the same as private. */
+  visibility?: VideoVisibility | null
+}
+
+/**
+ * PUBLIC, UNLISTED, OR NOT PUBLIC. MVP's own record does not say which, and a
+ * comment on a private or scheduled video is a comment nobody reads, posted
+ * with a success message. So YouTube is asked, with the public API key: it
+ * returns public and unlisted videos with their status, and leaves private
+ * and scheduled ones (and deleted ones) out entirely.
+ */
+export type VideoVisibility = 'public' | 'unlisted' | 'not_public'
+
+/** The visibility of one video from a public-key videos.list answer. Pure. */
+export function visibilityFromItem(item: { status?: { privacyStatus?: string } } | undefined): VideoVisibility {
+  const p = item?.status?.privacyStatus
+  if (p === 'public') return 'public'
+  if (p === 'unlisted') return 'unlisted'
+  return 'not_public'
+}
+
+/**
+ * Who can see each video. Fifty to a call, one quota unit each. A batch
+ * YouTube did not answer leaves its videos out of the map: unknown, never
+ * guessed as private or public.
+ */
+export async function videoVisibility(apiKey: string | undefined, ids: string[]): Promise<Map<string, VideoVisibility>> {
+  const out = new Map<string, VideoVisibility>()
+  const unique = [...new Set(ids.filter((id) => /^[A-Za-z0-9_-]{11}$/.test(id)))]
+  if (!apiKey || unique.length === 0) return out
+  const batches: string[][] = []
+  for (let i = 0; i < unique.length; i += 50) batches.push(unique.slice(i, i + 50))
+  await Promise.all(batches.map(async (batch) => {
+    try {
+      const url = new URL('https://www.googleapis.com/youtube/v3/videos')
+      url.searchParams.set('key', apiKey)
+      url.searchParams.set('part', 'status')
+      url.searchParams.set('id', batch.join(','))
+      url.searchParams.set('maxResults', '50')
+      const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) })
+      if (!res.ok) return
+      const data = await res.json() as { items?: Array<{ id?: string; status?: { privacyStatus?: string } }> }
+      const byId = new Map((data.items ?? []).filter((v) => v.id).map((v) => [String(v.id), v]))
+      for (const id of batch) out.set(id, visibilityFromItem(byId.get(id)))
+    } catch { /* unknown for this batch */ }
+  }))
+  return out
+}
+
+/** Why a comment would not be seen, or null when the video is public. */
+export function notPublicMessage(privacy: string, publishAt: string | null): string | null {
+  if (privacy === 'public') return null
+  if (privacy === 'private' && publishAt) return 'This video is scheduled and not public yet, so nobody would see a comment on it. Nothing was posted. Post it once the video is live.'
+  if (privacy === 'unlisted') return 'This video is unlisted, so only people with the link would see a comment on it. Nothing was posted.'
+  return 'This video is private, so nobody would see a comment on it. Nothing was posted.'
+}
+
+/** Stamps each video source with who can see it, then puts the products with
+ *  a public video first: those are the ones a comment can bring back. */
+export function applyVisibility<T extends CoveredProduct & { verdict: SaleVerdict }>(products: T[], vis: Map<string, VideoVisibility>): T[] {
+  const stamped = products.map((p) => ({
+    ...p,
+    sources: p.sources.map((s) => (s.kind === 'video' && s.youtubeVideoId
+      ? { ...s, visibility: vis.get(s.youtubeVideoId) ?? null }
+      : s)),
+  }))
+  const rank = (p: T) => (p.sources.some((s) => s.kind === 'video' && s.visibility === 'public') ? 2
+    : p.sources.some((s) => s.kind === 'video') ? 1 : 0)
+  return stamped.sort((a, b) => rank(b) - rank(a) || (b.verdict.pct ?? 0) - (a.verdict.pct ?? 0))
 }
 
 export interface CoveredProduct {

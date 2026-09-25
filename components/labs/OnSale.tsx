@@ -18,6 +18,7 @@ interface Source {
   title?: string
   views?: number | null
   thumbnail?: string | null
+  visibility?: 'public' | 'unlisted' | 'not_public' | null
 }
 interface Verdict {
   pct: number | null
@@ -31,7 +32,15 @@ interface Product { asin: string; title: string; image: string | null; sources: 
 interface Promo {
   link: string
   video: { youtubeVideoId: string; title: string } | null
+  videoNotPublic: { title: string; visibility: 'unlisted' | 'not_public' } | null
   promo: { short: { hook: string; script: string; onScreen: string[] }; community: string; comment: string; social: string; socialForSheet: string }
+}
+
+/** Said beside a video that is not public, so a missing comment button has a reason on screen. */
+function visibilityNote(v: Source['visibility']): string | null {
+  if (v === 'unlisted') return 'Unlisted'
+  if (v === 'not_public') return 'Private or scheduled'
+  return null
 }
 
 const money = (c: number | null) => (c == null ? null : `$${(c / 100).toFixed(2)}`)
@@ -73,6 +82,7 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
   const [posted, setPosted] = useState<{ studioUrl: string; watchUrl: string } | null>(null)
   const [ended, setEnded] = useState(false)
   const videos = p.sources.filter((s) => s.kind === 'video')
+  const publicVideos = videos.filter((v) => v.visibility === 'public' || v.visibility == null).length
   const inStore = p.sources.some((s) => s.kind === 'storefront')
   const left = p.verdict.basis === 'lightning' ? timeLeft(p.verdict.lightningEndsAt) : null
 
@@ -128,8 +138,8 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
           <p className="text-[14px] font-semibold mt-1 line-clamp-2" style={{ color: 'var(--text)' }}>{p.title}</p>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
             {videos.length > 0
-              ? `In ${videos.length} of your videos${inStore ? ' and your storefront' : ''}`
-              : 'In your storefront'}
+              ? `In ${videos.length} of your videos${inStore ? ' and your storefront' : ''}${publicVideos === 0 ? ', none of them public yet' : ''}`
+              : 'In your storefront, no video yet'}
           </p>
           {videos.length > 0 && (
             <ul className="mt-1.5 flex flex-col gap-0.5">
@@ -138,6 +148,11 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
                   <a href={`https://www.youtube.com/watch?v=${v.youtubeVideoId}`} target="_blank" rel="noreferrer"
                     className="underline" style={{ color: 'var(--text)' }}>{v.title || v.youtubeVideoId}</a>
                   {v.views != null && <span style={{ color: 'var(--text-faint)' }}> · {v.views.toLocaleString()} views</span>}
+                  {visibilityNote(v.visibility) && (
+                    <span className="ml-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded" style={{ background: 'rgba(217,119,6,0.12)', color: '#d97706' }}>
+                      {visibilityNote(v.visibility)}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -171,31 +186,47 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
               YouTube has no way for apps to post these: in YouTube Studio press Create, then Post, and paste it. The links in it are clickable there.
             </p>
           </CopyBlock>
-          <CopyBlock title={promo.video ? `Comment for "${promo.video.title}"` : 'Comment'} text={promo.promo.comment}>
-            {promo.video && (
-              <div className="mt-2 flex items-center gap-2 flex-wrap">
-                {!posted ? (
-                  <button type="button" onClick={() => void comment()} disabled={posting}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white disabled:opacity-60"
-                    style={{ background: '#0EA5A4' }}>
-                    {posting ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />}
-                    Post it on the video
-                  </button>
-                ) : (
-                  <>
-                    <span className="text-[12px] font-semibold" style={{ color: '#10B981' }}>Posted.</span>
-                    <a href={posted.studioUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] underline" style={{ color: 'var(--text)' }}>
-                      Pin it in Studio <ExternalLink size={11} />
-                    </a>
-                    <a href={posted.watchUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] underline" style={{ color: 'var(--text-soft)' }}>
-                      See it <ExternalLink size={11} />
-                    </a>
-                  </>
-                )}
-                <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>YouTube does not let apps pin a comment, so pinning is one click in Studio.</span>
-              </div>
-            )}
-          </CopyBlock>
+          {/* THE COMMENT ONLY WHERE SOMEONE WILL READ IT: on a public video.
+              A private or scheduled video, or none at all, says so instead of
+              offering a button whose success would change nothing. */}
+          {promo.video ? (
+            <CopyBlock title={`Comment for "${promo.video.title}"`} text={promo.promo.comment}>
+              {promo.video && (
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  {!posted ? (
+                    <button type="button" onClick={() => void comment()} disabled={posting}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white disabled:opacity-60"
+                      style={{ background: '#0EA5A4' }}>
+                      {posting ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />}
+                      Post it on the video
+                    </button>
+                  ) : (
+                    <>
+                      <span className="text-[12px] font-semibold" style={{ color: '#10B981' }}>Posted.</span>
+                      <a href={posted.studioUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] underline" style={{ color: 'var(--text)' }}>
+                        Pin it in Studio <ExternalLink size={11} />
+                      </a>
+                      <a href={posted.watchUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] underline" style={{ color: 'var(--text-soft)' }}>
+                        See it <ExternalLink size={11} />
+                      </a>
+                    </>
+                  )}
+                  <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>YouTube does not let apps pin a comment, so pinning is one click in Studio.</span>
+                </div>
+              )}
+            </CopyBlock>
+          ) : promo.videoNotPublic ? (
+            <div className="rounded-xl border p-3 text-[12.5px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+              <span className="text-[11px] font-semibold uppercase tracking-wide block mb-1" style={{ color: 'var(--text-soft)' }}>YouTube comment</span>
+              Your video &quot;{promo.videoNotPublic.title}&quot; is {promo.videoNotPublic.visibility === 'unlisted' ? 'unlisted' : 'private or scheduled'},
+              so a comment there would not be seen. Once it is public, press Write it again and the comment button appears.
+            </div>
+          ) : (
+            <div className="rounded-xl border p-3 text-[12.5px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+              <span className="text-[11px] font-semibold uppercase tracking-wide block mb-1" style={{ color: 'var(--text-soft)' }}>YouTube comment</span>
+              This one is in your storefront with no video yet, so there is no video to comment on. The Short script and the social post above and below work without one.
+            </div>
+          )}
           <CopyBlock title="Social post" text={promo.promo.social}>
             <button type="button" onClick={() => onShare({ asin: p.asin, title: p.title, imageUrl: p.image }, promo.promo.socialForSheet)}
               className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white"
@@ -214,7 +245,7 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
 }
 
 export default function OnSale() {
-  const [data, setData] = useState<{ covered: number; checked: number; skipped: number; videosCovered: number; onSale: Product[]; checkedAt: string } | null>(null)
+  const [data, setData] = useState<{ covered: number; checked: number; skipped: number; videosCovered: number; onSale: Product[]; visibilityChecked?: boolean; checkedAt: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [share, setShare] = useState<{ deal: QuickPostDeal; caption: string } | null>(null)
@@ -253,6 +284,9 @@ export default function OnSale() {
               <b style={{ color: 'var(--text)' }}>{data.onSale.length} on sale</b> right now.
               {data.skipped > 0 && (
                 <span style={{ color: '#d97706' }}> {data.skipped} not checked yet. Each <b>Check again</b> checks the next 50, and the daily check works through the rest.</span>
+              )}
+              {data.visibilityChecked === false && (
+                <span style={{ color: '#d97706' }}> YouTube did not say which videos are public just now, so none are labelled. The comment button still checks before it posts.</span>
               )}
             </p>
             <button type="button" onClick={() => void load()}

@@ -13,6 +13,7 @@ import { canUsePreview } from '@/lib/labs-preview'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { wrongChannelMessage } from '@/lib/launch-channel'
+import { notPublicMessage } from '@/lib/covered-sales'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -45,12 +46,24 @@ export async function POST(req: Request) {
   // WHEN MVP'S RECORD DOES NOT SAY WHICH CHANNEL ('unknown', as a Liftoff
   // hand-over can write), YouTube is asked. A video this login cannot see at
   // all is a video on another channel.
+  // WHO CAN SEE IT is asked in the same call. A comment on a private,
+  // unlisted or scheduled video is read by nobody, so "Posted." would report
+  // a success that changes nothing.
+  let status: Awaited<ReturnType<YouTubeOAuthService['getVideoStatus']>> = null
+  let statusFailed = false
+  try { status = await yt.getVideoStatus(videoId) } catch { statusFailed = true }
+  if (statusFailed) {
+    return NextResponse.json({ error: 'YouTube did not say whether this video is public. Nothing was posted. Try again in a minute.' }, { status: 502 })
+  }
+  if (!status) {
+    return NextResponse.json({ error: 'The saved login cannot see this video, so it is on a channel that login is not, or it was deleted. Nothing was posted. Reconnect that channel under Settings.' }, { status: 409 })
+  }
+  const notPublic = notPublicMessage(status.privacy, status.publishAt)
+  if (notPublic) return NextResponse.json({ error: notPublic, notPublic: true }, { status: 409 })
   let owner = String(vid.channel_id || '')
-  if (!/^UC[\w-]{22}$/.test(owner)) {
-    try { owner = (await yt.getVideoChannelId(videoId)) || '' } catch { owner = '' }
-    if (!owner) {
-      return NextResponse.json({ error: 'The saved login cannot see this video, so it is on a channel that login is not. Nothing was posted. Reconnect that channel under Settings.' }, { status: 409 })
-    }
+  if (!/^UC[\w-]{22}$/.test(owner)) owner = status.channelId || ''
+  if (!owner) {
+    return NextResponse.json({ error: 'YouTube did not say which channel this video is on. Nothing was posted.' }, { status: 502 })
   }
   {
     let me: { id: string; title: string } | null = null
