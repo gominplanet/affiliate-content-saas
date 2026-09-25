@@ -20,10 +20,12 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePreview('shorts_mode', intg?.tier)) return NextResponse.json({ shorts: {} })
-  const body = await req.json().catch(() => ({})) as { ids?: unknown }
+  const body = await req.json().catch(() => ({})) as { ids?: unknown; channelId?: string | null }
   const ids = Array.isArray(body.ids) ? body.ids.map(String).slice(0, 200) : []
   let token: string | null = null
-  try { token = await getChannelOAuthToken(supabase, user.id, null) } catch { token = null }
-  const map = await detectShorts(ids, token)
+  // The login of the channel Co-Pilot is showing, not always the default one:
+  // another channel's drafts are invisible to the default login.
+  try { token = await getChannelOAuthToken(supabase, user.id, body.channelId ? String(body.channelId) : null) } catch { token = null }
+  const map = await detectShorts(ids, token, { trustProbeNo: false })
   return NextResponse.json({ shorts: Object.fromEntries(map) })
 }

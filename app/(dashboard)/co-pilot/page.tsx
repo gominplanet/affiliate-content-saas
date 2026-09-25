@@ -871,8 +871,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
   const [overrideProduct, setOverrideProduct] = useState(false)
   // COMPARISON VIDEO (Labs): 2 to 4 products in one video, set before generating.
   const canCompare = canUsePreview('comparison', userTier)
-  // SHORT MODE (Labs): only when YouTube itself says this video is a Short.
-  const shortMode = isShort === true && canUsePreview('shorts_mode', userTier)
+  // SHORT MODE (Labs): when YouTube says this video is a Short, or the
+  // creator says so (their word wins, either way, for this card).
+  const [shortOverride, setShortOverride] = useState<boolean | null>(null)
+  const canShort = canUsePreview('shorts_mode', userTier)
+  const shortMode = canShort && (shortOverride ?? isShort) === true
   const [shortResult, setShortResult] = useState<{ fullReviewUrl: string | null } | null>(null)
   // PINNED FIRST COMMENT (Labs): posted by MVP when the video is public, pinned by SCOUT.
   const canFirstComment = canUsePreview('first_comment', userTier)
@@ -2616,10 +2619,17 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
                 <Lock size={9} className="text-[#ff9500]" /> Private · not scheduled
               </span>
             )}
-            {shortMode && (
-              <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#ff3b30]/10 text-[#ff3b30]" title="YouTube says this is a Short: Co-Pilot writes Short-shaped metadata for it">
-                Short
-              </span>
+            {canShort && (
+              // THE CREATOR CAN ALWAYS SAY. Detection can come back unknown (a
+              // draft still processing, another channel's login), so the pill
+              // doubles as the switch: tap to mark it a Short, or not one.
+              <button type="button" onClick={() => setShortOverride(!shortMode)}
+                className={`flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${shortMode ? 'bg-[#ff3b30]/10 text-[#ff3b30]' : 'border border-dashed border-[#d2d2d7] dark:border-[#3a3a3c] text-[#86868b]'}`}
+                title={shortMode
+                  ? (shortOverride === true ? 'You marked this a Short. Tap if it is not.' : 'YouTube says this is a Short. Tap if it is not.')
+                  : isShort === false ? 'YouTube says this is not a Short. Tap if it is.' : 'MVP could not tell if this is a Short. Tap if it is.'}>
+                {shortMode ? 'Short' : isShort === null ? 'Short?' : 'Not a Short'}
+              </button>
             )}
             {cardAsin && (
               <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500]">
@@ -4133,7 +4143,7 @@ export default function StudioPage() {
     const ids = drafts.map((d) => d.youtubeVideoId).filter((id) => !(id in shortsMap)).slice(0, 200)
     if (ids.length === 0) return
     let alive = true
-    fetch('/api/youtube/shorts-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) })
+    fetch('/api/youtube/shorts-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, channelId: selectedChannelId }) })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         if (!alive) return

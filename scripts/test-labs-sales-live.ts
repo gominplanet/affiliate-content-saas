@@ -377,7 +377,24 @@ await saleEndedGuards()
     /isShort === true && canUsePreview\('shorts_mode', tier\)/.test(M) && /Watch the full review: \$\{fullReviewUrl\}/.test(M)
     && /if \(shortMode && engagementResult\.pinnedComment\)/.test(M) && /shorts\.get\(id\) === false/.test(M))
   const P = read('app/(dashboard)/co-pilot/page.tsx')
-  check('the Co-Pilot card only goes Short when YouTube said so', /const shortMode = isShort === true && canUsePreview\('shorts_mode', userTier\)/.test(P) && /\.\.\.\(shortMode \? \{ isShort: true \} : \{\}\)/.test(P))
+  check('the Co-Pilot card goes Short when YouTube said so or the creator marked it, and the mark is a real toggle',
+    /const shortMode = canShort && \(shortOverride \?\? isShort\) === true/.test(P) && /\.\.\.\(shortMode \? \{ isShort: true \} : \{\}\)/.test(P)
+    && /onClick=\{\(\) => setShortOverride\(!shortMode\)\}/.test(P))
+  check('Co-Pilot asks with the login of the channel it is showing, and does not trust the public page\'s "no" for drafts',
+    /JSON\.stringify\(\{ ids, channelId: selectedChannelId \}\)/.test(P)
+    && /getChannelOAuthToken\(supabase, user\.id, body\.channelId/.test(read('app/api/youtube/shorts-status/route.ts'))
+    && /detectShorts\(ids, token, \{ trustProbeNo: false \}\)/.test(read('app/api/youtube/shorts-status/route.ts')))
+  {
+    const { detectShorts } = await import('../lib/shorts-detect')
+    const realFetch = globalThis.fetch
+    // No API answer, and the public page redirects to /watch (what a private draft looks like from outside).
+    globalThis.fetch = (async () => new Response(null, { status: 303, headers: { location: 'https://www.youtube.com/watch?v=abcdefghijk' } })) as typeof fetch
+    try {
+      const strict = (await detectShorts(['abcdefghijk'], null, { trustProbeNo: false })).get('abcdefghijk')
+      const loose = (await detectShorts(['abcdefghijk'], null)).get('abcdefghijk')
+      check('a draft the public page cannot see stays unknown instead of "not a Short"', strict === null && loose === false, `strict ${strict}, loose ${loose}`)
+    } finally { globalThis.fetch = realFetch }
+  }
   const T = read('app/api/youtube/generate-thumbnail/route.ts')
   check('a Short gets a vertical 9:16 thumbnail, and YouTube receives it vertical',
     /const isShortCover = format === 'short'/.test(T) && /\(isStory \|\| isShortCover\) \? 1920/.test(T)

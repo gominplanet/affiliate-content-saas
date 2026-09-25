@@ -60,7 +60,7 @@ export async function probeShort(id: string): Promise<boolean | null> {
  * answers first; the public probe fills in what it could not. Without a
  * token, the probe alone (public videos only).
  */
-export async function detectShorts(ids: string[], accessToken?: string | null): Promise<Map<string, boolean | null>> {
+export async function detectShorts(ids: string[], accessToken?: string | null, opts?: { trustProbeNo?: boolean }): Promise<Map<string, boolean | null>> {
   const unique = [...new Set(ids.filter((id) => /^[A-Za-z0-9_-]{11}$/.test(id)))].slice(0, 200)
   const out = new Map<string, boolean | null>(unique.map((id) => [id, null]))
   // Videos the API returned at all. One it returned without a frame size is
@@ -92,7 +92,10 @@ export async function detectShorts(ids: string[], accessToken?: string | null): 
   for (let i = 0; i < unknown.length; i += 10) {
     const part = unknown.slice(i, i + 10)
     const got = await Promise.all(part.map((id) => probeShort(id)))
-    part.forEach((id, k) => { if (got[k] !== null) out.set(id, got[k]) })
+    // A "no" from the public page only counts for public videos: a private
+    // draft the API could not read cannot be judged from outside, so for the
+    // creator's own drafts (trustProbeNo false) only a "yes" is taken.
+    part.forEach((id, k) => { if (got[k] === true || (got[k] === false && opts?.trustProbeNo !== false)) out.set(id, got[k]) })
   }
   return out
 }
