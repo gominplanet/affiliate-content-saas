@@ -119,8 +119,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     else for (const r of (arows ?? []) as Array<{ id: string; amazon_title: string | null }>) amazonTitleById.set(r.id, r.amazon_title ?? null)
   }
 
+  // THIS VIDEO'S OWN FACE (migration 371), read on its own for the same reason.
+  const faceById = new Map<string, unknown>()
+  let faceAvailable = true
+  {
+    const { data: frows, error: ferr } = await sb.from('launch_items').select('id,thumbnail_face').eq('batch_id', id)
+    if (ferr) faceAvailable = false
+    else for (const r of (frows ?? []) as Array<{ id: string; thumbnail_face: unknown }>) faceById.set(r.id, r.thumbnail_face ?? null)
+  }
+
   const itemsOut = items.map((i) => ({
     amazon_title: amazonTitleById.get(i.id) ?? null,
+    thumbnail_face: faceById.get(i.id) ?? null,
     api_disclosures: disclosuresById.get(i.id) ?? null,
     amazon: (i.video_id && amazonByVideo.get(i.video_id)) || [],
     ...i,
@@ -163,6 +173,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     youtubeOptionsAvailable,
     youtubeChoiceAvailable,
     amazonTitleAvailable,
+    faceAvailable,
   })
 }
 

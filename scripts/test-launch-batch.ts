@@ -2068,6 +2068,58 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'a column the code writes and the database has not got fails silently')
 }
 
+// ── ONE VIDEO, ITS OWN FACE ──────────────────────────────────────────────────
+// Two presenters on one channel: video 1 is Seb, video 2 is Michelle, video 3
+// has nobody. The batch's face was the only face.
+{
+  const M371 = read('supabase/migrations/371_launch_item_face.sql')
+  const PRESET = read('lib/thumbnail-preset.ts')
+  check('a video can carry its own face, twice-runnable',
+    /alter table public\.launch_items add column if not exists thumbnail_face jsonb;/.test(M371),
+    'a column the code writes and the database has not got fails silently')
+  check('and the worker builds with it, tolerating the column not existing yet',
+    /select\('thumbnail_face'\)\.eq\('id', it\.id\)/.test(DRAIN)
+    && /const own = frErr \? null : parseFacePick\(fr\?\.thumbnail_face\)/.test(DRAIN)
+    && /if \(own\) preset = \{ \.\.\.batchPreset, face: own \}/.test(DRAIN)
+    && inOrder(DRAIN, 'if (own) preset = { ...batchPreset, face: own }', 'await styledThumbnail(it.user_id, title, asin, preset)'),
+    'a face chosen and never used is the plan, not the result')
+  check('an unknown face follows the batch rather than guessing',
+    /export function parseFacePick/.test(PRESET) && /return id \? \{ kind: 'face', faceId: id \} : null/.test(PRESET),
+    'the wrong person on a thumbnail is worse than the batch face')
+  check('a new face rebuilds that video\'s thumbnails, and only one of your own faces is accepted',
+    /'thumbnailFace' in body/.test(ITEM) && /from\('face_models'\)\.select\('id'\)\.eq\('id', face\.faceId\)\.eq\('user_id', user\.id\)/.test(ITEM)
+    && /thumbnail_face: face,[\s\S]{0,200}thumbnail_url: null, thumbnail_clean_url: null/.test(ITEM)
+    && /needs migration 371/.test(ITEM),
+    'otherwise the old face stays on the thumbnail while the row says the new one')
+  check('and it is locked once the uploader has the thumbnail',
+    /if \('thumbnailFace' in body\) \{\s*if \(onYouTube \|\| item\.planned_publish_at\)/.test(ITEM),
+    'a face changed after the upload would show on the row and never on YouTube')
+  check('the row offers the batch, each saved face and no face',
+    /Face on this thumbnail/.test(BOARD) && /'Same as the batch'/.test(BOARD) && /'No face'/.test(BOARD)
+    && /thumbnailFace: c\.value/.test(BOARD),
+    'a choice the screen does not offer is a choice nobody can make')
+}
+
+// ── AN UPLOAD YOU CAN WATCH ──────────────────────────────────────────────────
+// "Uploading 3..." read the same for ten minutes at 90% and at a stall.
+{
+  const UP = read('lib/upload-progress.ts')
+  check('each file reports its own progress',
+    /xhr\.upload\.onprogress/.test(UP) && /uploadWithProgress\(\{/.test(BOARD)
+    && !/\.upload\(path, file/.test(BOARD),
+    'one fetch has nothing to say until it ends')
+  check('a stall is named and retried rather than waited on',
+    /Date\.now\(\) - last > STALL_MS/.test(UP) && /attempt <= 3/.test(BOARD) && /No progress for \$\{still\}s/.test(BOARD),
+    'a stuck connection does not start moving by being waited on')
+  check('files go up side by side but join the batch in the order picked',
+    /const UPLOAD_LANES = 3/.test(BOARD) && /await \(i > 0 \? turns\[i - 1\] : Promise\.resolve\(\)\)/.test(BOARD)
+    && inOrder(BOARD, 'await (i > 0 ? turns[i - 1]', "fetch(`/api/launch/batches/${batchId}/items`"),
+    'the batch order is the publishing order, and the fastest upload is not the first video')
+  check('the tab warns before it is closed mid-upload',
+    /addEventListener\('beforeunload', warn\)/.test(BOARD),
+    'the upload is the one part of Liftoff that dies with the tab')
+}
+
 if (failures.length) {
   console.error(`\n❌ launch-batch: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

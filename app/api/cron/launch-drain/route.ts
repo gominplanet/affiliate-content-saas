@@ -27,7 +27,7 @@ import { buildProductThumbnail } from '@/lib/product-thumbnail'
 import { renderCta } from '@/lib/youtube-ingest'
 import { normalizeTier } from '@/lib/tier'
 import { ctaStickerAllowed, type CtaPreset } from '@/lib/launch-batch'
-import { validateThumbnailPreset, presetToRequestFields, type ThumbnailPreset } from '@/lib/thumbnail-preset'
+import { validateThumbnailPreset, presetToRequestFields, parseFacePick, type ThumbnailPreset } from '@/lib/thumbnail-preset'
 import { postToSelf } from '@/lib/self-url'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { generateProductTitleOptions } from '@/lib/title-options'
@@ -442,7 +442,16 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', it.user_id).maybeSingle()
     const tier = normalizeTier(integ?.tier)
     const patch: Record<string, unknown> = { updated_at: now() }
-    const preset = await loadPreset(it.batch_id)
+    // THIS VIDEO'S OWN FACE, when it has one: one presenter on this video,
+    // the other on the next, nobody on the one after. Read on its own, so a
+    // database without migration 371 builds every video with the batch's face.
+    const batchPreset = await loadPreset(it.batch_id)
+    let preset = batchPreset
+    {
+      const { data: fr, error: frErr } = await sb.from('launch_items').select('thumbnail_face').eq('id', it.id).maybeSingle()
+      const own = frErr ? null : parseFacePick(fr?.thumbnail_face)
+      if (own) preset = { ...batchPreset, face: own }
+    }
     let usedPlain = false
     // WHY it fell back, kept so the row can say it. "Could not be applied" is
     // true of a timeout, a missing face and a spend cap alike, and none of
