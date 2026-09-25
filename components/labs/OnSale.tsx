@@ -484,7 +484,7 @@ export default function OnSale() {
       {/* HOW IT WORKS, in the order it happens: a real sequence, so numbered. */}
       <ol className="grid gap-2 sm:grid-cols-3 mb-6">
         {[
-          { h: 'MVP watches your products', p: 'Every product in your videos and your storefront is checked for a real sale every day. The ones on sale today are listed below.' },
+          { h: 'MVP watches your products', p: 'The products in your YouTube videos, and the ones in your Amazon storefront, are checked for a real sale, your videos first. The ones on sale now are listed below.' },
           { h: 'You post the comment', p: 'Press Write the promo, then Post it on the video. It is written in your voice with your link and the Amazon disclosure. With SCOUT installed, it is pinned to the top for you.' },
           { h: 'MVP cleans it up', p: 'When the sale ends, the comment is edited so it no longer mentions a sale. It stays on the video, pinned, with your link.' },
         ].map((step, i) => (
