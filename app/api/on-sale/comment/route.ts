@@ -118,6 +118,47 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: wrongChannelMessage(String(named?.channel_title || owner), me.title).replace('Nothing was uploaded.', 'Nothing was posted.') }, { status: 409 })
     }
   }
+  // THE VIDEO ALREADY HAS ITS PINNED FIRST COMMENT (from Co-Pilot): the sale
+  // goes on top of THAT comment instead of a second one, because a video has
+  // one pin and a second comment would take it. When the sale ends, the
+  // comment is put back exactly as it was (lasting_text is the original).
+  {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: first, error: firstErr } = await (admin as any).from('video_first_comments')
+      .select('id,comment_id,text,pinned').eq('user_id', user.id).eq('youtube_video_id', videoId).eq('state', 'posted').maybeSingle()
+    if (!firstErr && first?.comment_id) {
+      const combined = `${text}\n\n${first.text}`.slice(0, 9000)
+      let edited = false
+      try { await yt.updateComment(first.comment_id, combined); edited = true } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        if (/YouTube API error 404/.test(msg)) {
+          // It was deleted on YouTube: say so on its row, and post a new comment below.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (admin as any).from('video_first_comments').update({ state: 'failed', last_error: 'The first comment is no longer on the video.' }).eq('id', first.id)
+        } else {
+          return NextResponse.json({ error: `YouTube did not take the edit to your pinned first comment: ${msg.slice(0, 160)}. Nothing was changed.` }, { status: 502 })
+        }
+      }
+      if (edited) {
+        let tracked: { id: string } | null = null
+        let trackError: string | null = null
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: row, error } = await (admin as any).from('sale_comments').insert({
+          user_id: user.id, asin, youtube_video_id: videoId, video_title: vid.title ?? null, channel_id: owner,
+          comment_id: first.comment_id, sale_text: combined, lasting_text: first.text,
+          sale_label: String(body.saleLabel || '').slice(0, 80) || null, pinned: first.pinned ?? null,
+        }).select('id').single()
+        if (error || !row) trackError = error?.message || 'not saved'
+        else tracked = row
+        return NextResponse.json({
+          ok: true, commentId: first.comment_id, saleCommentId: tracked?.id ?? null, trackError,
+          editedFirstComment: true, pinned: first.pinned === true,
+          studioUrl: `https://studio.youtube.com/video/${videoId}/comments`,
+          watchUrl: `https://www.youtube.com/watch?v=${videoId}&lc=${encodeURIComponent(first.comment_id)}`,
+        })
+      }
+    }
+  }
   try {
     const id = await yt.postComment(videoId, text)
     // REMEMBERED, SO THE SALE CAN BE TAKEN OUT LATER. If this cannot be

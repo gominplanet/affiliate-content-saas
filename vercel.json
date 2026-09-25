@@ -123,6 +123,10 @@
     {
       "path": "/api/cron/sale-comments",
       "schedule": "41 */3 * * *"
+    },
+    {
+      "path": "/api/cron/first-comments",
+      "schedule": "*/10 * * * *"
     }
   ],
   "git": {

@@ -222,8 +222,15 @@ function ProductCard({ p, onShare, onPosted, lastComment, lastShare }: {
       if (!r.ok) { toast.error(j?.error || 'YouTube did not take the comment.'); return }
       setPosted({ studioUrl: j.studioUrl, watchUrl: j.watchUrl, commentId: j.commentId, saleCommentId: j.saleCommentId ?? null, trackError: j.trackError ?? null })
       setPin(null)
-      toast.success('Comment posted on your video')
       onPosted()
+      // ADDED TO THE PINNED FIRST COMMENT: that comment already holds the
+      // pin, so there is nothing more to pin; otherwise it is pinned now.
+      if (j.editedFirstComment) {
+        toast.success('The sale was added to the top of your pinned first comment')
+        if (j.pinned) { setPin({ pinned: true }); return }
+      } else {
+        toast.success('Comment posted on your video')
+      }
       // PINNED BY ITSELF, straight after posting, when SCOUT can. What SCOUT
       // saw is what the card then says; the button stays for a retry.
       if (j.commentId) void pinIt({ videoId: promo.video.youtubeVideoId, commentId: j.commentId, saleCommentId: j.saleCommentId ?? null })

@@ -273,7 +273,9 @@ async function saleEndedGuards() {
   check('one sale comment per video per sale',
     inOrderCheck(C, ".eq('state', 'on_sale').limit(1)", 'yt.postComment('))
   check('a posted comment is remembered, and a failure to remember is said',
-    inOrderCheck(C, 'yt.postComment(', "from('sale_comments').insert(") && /trackError/.test(C))
+    // The new-comment path saves after posting (the first-comment path has its own insert, after its edit).
+    C.lastIndexOf("from('sale_comments').insert(") > C.indexOf('const id = await yt.postComment(videoId, text)')
+    && C.indexOf("from('sale_comments').insert(") > C.indexOf('await yt.updateComment(first.comment_id, combined)') && /trackError/.test(C))
   check('twenty sale comments per creator per day, counted before posting and said on the page',
     SALE_COMMENTS_PER_DAY === 20
     && inOrderCheck(C, '>= SALE_COMMENTS_PER_DAY', 'yt.postComment(')

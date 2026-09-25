@@ -16,8 +16,8 @@ import { walkthroughId } from '@/lib/tutorial-videos'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, requestStudioFinish, type StudioFinishResult, type YtSaveRecipe } from '@/lib/extension-frame'
-import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, requestStudioFinish, type StudioFinishResult, type YtSaveRecipe, getScoutStatus, requestPinComment } from '@/lib/extension-frame'
+import { SCOUT_STORE_LISTING_URL, SCOUT_PIN_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 import { draftVisibility, productLinkFor, studioDisclosuresConfirmed, studioSetVisibility, studioRunHeadline, studioPathNote, studioStepLabel, studioStepText, studioStepTone } from '@/lib/studio-finish'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
@@ -559,6 +559,94 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   )
 }
 
+/**
+ * PIN A FIRST COMMENT THROUGH SCOUT, AND SAY WHAT HAPPENED. YouTube has no
+ * pin API, so SCOUT pins it in the creator's own signed-in YouTube and
+ * reports whether the pinned badge showed; that report is saved.
+ */
+async function pinFirstComment(rowId: string, youtubeVideoId: string, commentId: string): Promise<{ pinned: boolean; error?: string }> {
+  const scout = await getScoutStatus()
+  const fail = (error: string) => ({ pinned: false, error })
+  let r: { pinned: boolean; error?: string }
+  if (!scout.installed) r = fail('SCOUT is not installed in this browser, so it is not pinned. Pin it in YouTube Studio.')
+  else if (!scoutAtLeast(scout.version, SCOUT_PIN_MIN_VERSION)) r = fail(`SCOUT ${scout.version ?? ''} cannot pin yet; Chrome updates it by itself soon.`)
+  else {
+    const res = await requestPinComment(youtubeVideoId, commentId)
+    r = res.ok && res.pinned ? { pinned: true } : fail(`${res.error || 'SCOUT could not pin it.'}${res.steps ? ` What SCOUT saw: ${res.steps}.` : ''}`)
+  }
+  await fetch(`/api/youtube/first-comment/${rowId}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'pin_result', pinned: r.pinned, error: r.error }),
+  }).catch(() => {})
+  return r
+}
+
+/**
+ * FIRST COMMENTS WAITING FOR THEIR PIN. A scheduled video gets its first
+ * comment posted by the job while nobody is on the page, and only SCOUT, in
+ * the creator's browser, can pin it. So Co-Pilot lists the posted ones not
+ * yet pinned and pins them in one press, one video at a time, saying what
+ * happened to each. Hidden when there is nothing to pin.
+ */
+function FirstCommentsToPin() {
+  type Row = { id: string; youtube_video_id: string; video_title: string | null; state: string; comment_id: string | null; pinned: boolean | null; pin_error: string | null; last_error: string | null }
+  const [rows, setRows] = useState<Row[]>([])
+  const [running, setRunning] = useState(false)
+  const [done, setDone] = useState<Record<string, { pinned: boolean; error?: string }>>({})
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch('/api/youtube/first-comment')
+      const j = await r.json().catch(() => ({}))
+      if (r.ok) setRows((j.comments ?? []) as Row[])
+    } catch { /* the banner is extra */ }
+  }, [])
+  useEffect(() => { void load() }, [load])
+  const toPin = rows.filter((r) => r.state === 'posted' && r.comment_id && r.pinned !== true)
+  const failed = rows.filter((r) => r.state === 'failed').slice(0, 3)
+  if (toPin.length === 0 && failed.length === 0) return null
+  async function pinAll() {
+    setRunning(true)
+    for (const r of toPin) {
+      const res = await pinFirstComment(r.id, r.youtube_video_id, r.comment_id as string)
+      setDone((d) => ({ ...d, [r.id]: res }))
+    }
+    setRunning(false)
+    void load()
+  }
+  return (
+    <div className="mb-4 rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 px-4 py-3 text-[12.5px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+      {toPin.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <span><b>{toPin.length} first {toPin.length === 1 ? 'comment is' : 'comments are'} on your videos but not pinned yet.</b> SCOUT opens each video for a few seconds and pins it.</span>
+          <button type="button" onClick={() => void pinAll()} disabled={running}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-60" style={{ background: '#ff9500' }}>
+            {running ? <Loader2 size={12} className="animate-spin" /> : null} {running ? 'Pinning…' : 'Pin them with SCOUT'}
+          </button>
+        </div>
+      )}
+      {toPin.some((r) => done[r.id] || r.pinned === false) && (
+        <ul className="mt-2 flex flex-col gap-0.5 text-[11.5px]">
+          {toPin.map((r) => {
+            const res = done[r.id]
+            const err = res ? (res.pinned ? null : res.error) : r.pin_error
+            if (!res && r.pinned !== false) return null
+            return (
+              <li key={r.id} style={{ color: res?.pinned ? '#34c759' : '#ff9500' }}>
+                {r.video_title || r.youtube_video_id}: {res?.pinned ? 'pinned' : `not pinned (${err || 'no reason given'})`}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {failed.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-0.5 text-[11.5px] text-[#ff3b30]">
+          {failed.map((r) => <li key={r.id}>First comment not posted on {r.video_title || r.youtube_video_id}: {r.last_error}</li>)}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null }: {
   video: DraftVideo
   userTier: Tier
@@ -786,6 +874,38 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
   // SHORT MODE (Labs): only when YouTube itself says this video is a Short.
   const shortMode = isShort === true && canUsePreview('shorts_mode', userTier)
   const [shortResult, setShortResult] = useState<{ fullReviewUrl: string | null } | null>(null)
+  // PINNED FIRST COMMENT (Labs): posted by MVP when the video is public, pinned by SCOUT.
+  const canFirstComment = canUsePreview('first_comment', userTier)
+  const [firstCommentOn, setFirstCommentOn] = useState(true)
+  const [firstComment, setFirstComment] = useState<
+    | { state: 'sending' }
+    | { state: 'waiting'; publishAt: string | null }
+    | { state: 'posted'; pinned: boolean | null; pinError?: string; already?: boolean }
+    | { state: 'failed'; error: string }
+    | null
+  >(null)
+  async function queueFirstComment() {
+    const text = (generated?.pinnedComment || '').trim()
+    if (!canFirstComment || !firstCommentOn || !text) return
+    setFirstComment({ state: 'sending' })
+    try {
+      const r = await fetch('/api/youtube/first-comment', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ youtubeVideoId: video.youtubeVideoId, text, videoTitle: editTitle || video.title }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (j.state === 'posted' && j.commentId) {
+        if (j.already) { setFirstComment({ state: 'posted', pinned: null, already: true }); return }
+        setFirstComment({ state: 'posted', pinned: null })
+        const pin = await pinFirstComment(String(j.id), video.youtubeVideoId, String(j.commentId))
+        setFirstComment({ state: 'posted', pinned: pin.pinned, pinError: pin.error })
+      } else if (j.state === 'waiting') {
+        setFirstComment({ state: 'waiting', publishAt: (j.publishAt ?? null) as string | null })
+      } else {
+        setFirstComment({ state: 'failed', error: String(j.error || 'The first comment could not be queued.') })
+      }
+    } catch { setFirstComment({ state: 'failed', error: 'Could not reach the server. Nothing was queued.' }) }
+  }
   const [compareOn, setCompareOn] = useState(false)
   const [compareSlots, setCompareSlots] = useState<ComparisonSlotInput[]>([])
   const [compareResult, setCompareResult] = useState<ComparisonResultItem[] | null>(null)
@@ -1414,6 +1534,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
           return
         }
         setApplied(true)
+        void queueFirstComment()
         const disc = (data.disclosures && typeof data.disclosures === 'object') ? data.disclosures as NonNullable<typeof apiDisclosures> : null
         apiDisclosuresRef.current = disc
         setApiDisclosures(disc)
@@ -1466,6 +1587,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
       const data = await safeJson(res)
       if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status} — update failed`)
       setApplied(true)
+      void queueFirstComment()
       if (data.thumbnailWarning) {
         setApplyError(`Metadata applied ✓ — thumbnail not uploaded: ${data.thumbnailWarning}`)
       }
@@ -3457,9 +3579,37 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
                   <span className="w-7 h-7 rounded-full bg-[#ff9500]/15 border border-[#ff9500]/40 text-[#ff9500] text-sm font-bold flex items-center justify-center flex-shrink-0">3</span>
                   <div>
                     <p className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinned Comment <span className="text-[11px] font-normal text-[#86868b]">— optional</span></p>
-                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">YouTube's API can't pin — copy & paste this after your video goes live</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                      {canFirstComment
+                        ? 'MVP posts this as the first comment the moment the video is public, and SCOUT pins it for you.'
+                        : "YouTube's API can't pin — copy & paste this after your video goes live"}
+                    </p>
                   </div>
                 </div>
+                {canFirstComment && (
+                  <div className="rounded-xl border border-[#ff9500]/30 bg-white dark:bg-[#1c1c1e] px-4 py-3 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    {!firstComment ? (
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" checked={firstCommentOn} onChange={(e) => setFirstCommentOn(e.target.checked)} className="accent-[#ff9500]" />
+                        <span><b>Post and pin it for me</b> when I push to YouTube. A scheduled or private video gets it the moment it goes public.</span>
+                      </label>
+                    ) : firstComment.state === 'sending' ? (
+                      <span className="flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Queuing the first comment…</span>
+                    ) : firstComment.state === 'waiting' ? (
+                      <span>Queued. The video is not public yet, so MVP posts the comment {firstComment.publishAt ? `when it goes live (${new Date(firstComment.publishAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })})` : 'the moment it goes public'}. Open Co-Pilot afterwards and SCOUT pins it.</span>
+                    ) : firstComment.state === 'posted' ? (
+                      firstComment.already
+                        ? <span className="text-[#34c759] font-semibold">This video already has its first comment from MVP, so no second one was posted.</span>
+                        : firstComment.pinned === true
+                          ? <span className="text-[#34c759] font-semibold">Posted and pinned. SCOUT saw it pinned on the video.</span>
+                          : firstComment.pinned === false
+                            ? <span><span className="text-[#34c759] font-semibold">Posted.</span> <span className="text-[#ff9500]">Not pinned: {firstComment.pinError}</span></span>
+                            : <span className="flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Posted. SCOUT is pinning it…</span>
+                    ) : (
+                      <span className="text-[#ff3b30]">Not posted: {firstComment.error}</span>
+                    )}
+                  </div>
+                )}
                 {/* Collapsed by default — expand only if you want to use it. */}
                 <details className="rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 group">
                   <summary className="flex items-center gap-2 cursor-pointer list-none p-4 text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
@@ -4361,6 +4511,8 @@ export default function StudioPage() {
         subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
         media={walkthroughId(WALKTHROUGH_ID) ? <HeroVideo videoId={WALKTHROUGH_ID!} title="YouTube Co-Pilot walkthrough" /> : undefined}
       />
+
+      {canUsePreview('first_comment', userTier) && <FirstCommentsToPin />}
 
       {/* ADMIN dev tool: read back the Studio save requests SCOUT captured
           (yt-hook), so the real InnerTube request shape can be handed over to
