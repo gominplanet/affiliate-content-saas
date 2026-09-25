@@ -140,6 +140,8 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 .upd .said.ok{color:var(--ok)}
 .upd .said.bad{color:var(--myth)}
 .upd .fine{margin-top:9px;font-size:12.5px;color:var(--muted)}
+.upd-end{margin:0 0 28px;padding:28px clamp(20px,4vw,40px);background:var(--surface);scroll-margin-top:16px}
+.upd-end h2{font-size:20px}
 @media (max-width:900px){.upd{margin-top:18px}}
 .lede{max-width:40em;font-size:clamp(17px,2vw,20px);margin:22px 0 20px;color:var(--ink)}
 .meta{display:flex;flex-wrap:wrap;gap:8px 18px;font:500 13px/1.3 var(--mono);color:var(--muted)}
@@ -364,7 +366,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
   <div class="meta"><span>12 modules</span><span>~95 min read</span><span>Presented by <a href="#mvp"><b>MVP Affiliate</b></a></span></div>
   <div class="prog" aria-live="polite"><div class="bar"><i id="progbar"></i></div><span id="progtxt">0 of 12 modules done</span></div>
   <div class="new" id="whatsnew">
-    <p><b>Last updated September 25.</b> What's new:</p>
+    <p><b>Last updated September 25.</b> What's new (and <a href="#updates">get an email when it changes</a>):</p>
     <ul>
       <li><a href="#confetti">You got the confetti. Now what?</a> Step by step, with screenshots</li>
       <li><a href="#creator-rewards">Creator Rewards</a>, the bonus most people never turn on</li>
@@ -374,21 +376,6 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
       <li><a href="#troubleshooting">When something looks wrong</a>: fixes for the problems we see every week</li>
     </ul>
   </div>
-  <section class="upd" aria-labelledby="updh">
-    <h2 id="updh">This guide keeps changing, because the program does.</h2>
-    <p>Amazon moved the commission rules twice this year and changed what counts as a qualifying sale. Every time that happens we rewrite the part of this guide it broke, rather than leaving last year's advice up. Worth coming back to.</p>
-    <p class="free">Free to read. No email needed.</p>
-    <form id="updf" novalidate>
-      <label class="hp" for="updhp">Leave this empty</label>
-      <input class="hp" id="updhp" name="hp" type="text" tabindex="-1" autocomplete="off">
-      <label class="hp" for="upde">Your email address</label>
-      <input id="upde" name="email" type="email" required autocomplete="email"
-             placeholder="you@example.com" inputmode="email">
-      <button type="submit">Tell me when it changes</button>
-    </form>
-    <p class="said" id="upds" role="status" aria-live="polite"></p>
-    <p class="fine">Updates to this guide and what is changing in the program. Nothing else, and one click to stop.</p>
-  </section>
   </div>
   <figure class="hero-fig">
     <img src="/freeguide/hero.jpg" width="790" height="880" decoding="async"
@@ -2131,6 +2118,21 @@ is where Amazon Influencers compare what is working right now, and where we answ
 questions in public so everyone gets the answer.</p>
 <p><small>Built by Seb &amp; Michelle of Gominplanet. We use it every day.</small></p>
 </div></div></section>
+<section class="upd upd-end" id="updates" aria-labelledby="updh">
+    <h2 id="updh">This guide keeps changing, because the program does.</h2>
+    <p>Amazon moved the commission rules twice this year and changed what counts as a qualifying sale. Every time that happens we rewrite the part of this guide it broke, rather than leaving last year's advice up. Worth coming back to.</p>
+    <p class="free">Free to read. No email needed.</p>
+    <form id="updf" novalidate>
+      <label class="hp" for="updhp">Leave this empty</label>
+      <input class="hp" id="updhp" name="hp" type="text" tabindex="-1" autocomplete="off">
+      <label class="hp" for="upde">Your email address</label>
+      <input id="upde" name="email" type="email" required autocomplete="email"
+             placeholder="you@example.com" inputmode="email">
+      <button type="submit">Tell me when it changes</button>
+    </form>
+    <p class="said" id="upds" role="status" aria-live="polite"></p>
+    <p class="fine">Updates to this guide and what is changing in the program. Nothing else, and one click to stop.</p>
+  </section>
 <footer class="foot"><p>© Gominplanet · Seb &amp; Michelle. This guide is independent and not affiliated with or endorsed by Amazon. As an Amazon Associate we earn from qualifying purchases. Nothing here is legal, tax, or financial advice.</p><p>Presented by <a href="https://mvpaffiliate.io"><b>MVP Affiliate</b></a> (our software). Links marked "paid link" are affiliate links.</p></footer>
 </main>
 </div>
