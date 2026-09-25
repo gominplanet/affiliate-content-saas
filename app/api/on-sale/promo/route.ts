@@ -55,7 +55,7 @@ export async function POST(req: Request) {
   const { data: intg } = await supabase.from('integrations').select('tier,amazon_associates_tag').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(intg?.tier)
   if (!canUsePreview('on_sale', tier)) {
-    return NextResponse.json({ error: 'On sale now is in Labs testing and not open yet.', code: 'tier_not_allowed' }, { status: 403 })
+    return NextResponse.json({ error: 'Encore is in Labs testing and not open yet.', code: 'tier_not_allowed' }, { status: 403 })
   }
   const blocked = await spendGate(user.id, tier)
   if (blocked) return blocked

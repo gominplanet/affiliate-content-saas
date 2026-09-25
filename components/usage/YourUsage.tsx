@@ -42,7 +42,7 @@ const WHAT: Record<string, string> = {
   newsletter: 'Newsletter emails sent to your list.',
   cascade: 'Posts scheduled out to your socials.',
   articles: 'Articles.',
-  sale_comments: 'Comments posted on your videos from On sale now. YouTube gives all of MVP one shared daily allowance, so each creator gets a share.',
+  sale_comments: 'Comments posted on your videos from Encore. YouTube gives all of MVP one shared daily allowance, so each creator gets a share.',
   index_nudges: 'Asking Google to index a page now. Google gives all of MVP one small shared allowance; your pages still get indexed through your sitemap without these.',
 }
 

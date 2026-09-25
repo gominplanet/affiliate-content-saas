@@ -36,7 +36,7 @@ check('On sale now is open to Pro (and admin) only, and Amazon Live prep is stil
 {
   const SHELL = read('components/layout/DashboardShellV2.tsx')
   check('and the nav follows the same switch',
-    /href: '\/on-sale'[^\n]*gate: previewOpenToPro\('on_sale'\) \? isPro : isAdmin/.test(SHELL)
+    /href: '\/encore'[^\n]*label: 'Encore', gate: previewOpenToPro\('on_sale'\) \? isPro : isAdmin/.test(SHELL)
     && /href: '\/amazon-live'[^\n]*gate: previewOpenToPro\('amazon_live'\) \? isPro : isAdmin/.test(SHELL),
     'a nav gated on Pro shows a page whose routes refuse')
   for (const f of ['app/api/on-sale/route.ts', 'app/api/on-sale/promo/route.ts', 'app/api/on-sale/comment/route.ts']) {
@@ -122,7 +122,7 @@ check('the label is words, not a guess', saleLabel(saleVerdict({ deal: deal({ di
   check('the page says how many were actually checked',
     /checked: stats\.checked/.test(read('app/api/on-sale/route.ts')) && /not checked yet\. Each <b>Check again<\/b> checks the next 50/.test(read('components/labs/OnSale.tsx')))
   check('rewriting the promo clears "Posted."', /setPosted\(null\)\s*\n\s*setPromo\(j as Promo\)/.test(read('components/labs/OnSale.tsx')))
-  for (const [pg, feat] of [['app/(dashboard)/on-sale/page.tsx', 'on_sale'], ['app/(dashboard)/amazon-live/page.tsx', 'amazon_live']] as const) {
+  for (const [pg, feat] of [['app/(dashboard)/encore/page.tsx', 'on_sale'], ['app/(dashboard)/amazon-live/page.tsx', 'amazon_live']] as const) {
     check(`${pg} follows the preview switch`, new RegExp(`canUsePreview\\('${feat}', tier\\)`).test(read(pg)) && !/canSeeNav/.test(read(pg)))
   }
   check('the job is on the schedule', /"\/api\/cron\/covered-sales"/.test(read('vercel.json')))
@@ -326,6 +326,15 @@ async function saleEndedGuards() {
 
 async function finish() {
 await saleEndedGuards()
+// ── the name: Encore, at /encore, and the old address still lands there ────
+check('Encore lives at /encore and /on-sale redirects to it',
+  /redirect\('\/encore'\)/.test(read('app/(dashboard)/on-sale/page.tsx'))
+  && /title="Encore"/.test(read('components/labs/OnSale.tsx'))
+  && /href="\/encore"/.test(read('components/dashboard/PriceAlertsPanel.tsx')))
+check('no user-facing "On sale now" is left',
+  !['components/labs/OnSale.tsx', 'components/usage/YourUsage.tsx', 'components/co-pilot/ComparisonProducts.tsx', 'app/api/on-sale/route.ts', 'app/api/on-sale/promo/route.ts', 'app/api/on-sale/comment/route.ts']
+    .some((f) => /'On sale now|"On sale now|>On sale now|from On sale now|so On sale now/.test(read(f).replace(/^\s*(\/\/|\*).*$/gm, ''))))
+
 if (failures.length) {
   console.error(`\n❌ labs-sales-live: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

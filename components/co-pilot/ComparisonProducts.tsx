@@ -101,7 +101,7 @@ export default function ComparisonProducts({ on, onToggle, slots, onChange, resu
               {saved && saved !== 'saved' && (
                 <p className="mt-1 text-[10px] text-[#ff9500]">
                   {saved === 'missing_column'
-                    ? 'The product list could not be saved on the video (migration 375 has not been run), so On sale now will only watch the first product.'
+                    ? 'The product list could not be saved on the video (migration 375 has not been run), so Encore will only watch the first product.'
                     : saved === 'no_row'
                       ? 'This video is not in your synced videos yet, so the product list was not saved on it. The description still has every link.'
                       : 'The product list could not be saved on the video. The description still has every link.'}

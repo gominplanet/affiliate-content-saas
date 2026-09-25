@@ -42,7 +42,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench, ImageOff,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe, Tag, Radio, Gauge } from 'lucide-react'
+  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat } from 'lucide-react'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
 // Deal Days, Black Friday and so on) and is deliberately off between them. The
@@ -651,9 +651,9 @@ export default function DashboardShellV2({
         // scanned (it is an in-app mini program with no web page), so this is
         // deliberately one product at a time and the page says so.
         { href: '/tiktok-shop', icon: <ShoppingBag size={15} />, label: 'TikTok Shop', gate: isPro, badge: 'New' },
-        // On sale now — products the creator already covered that are on sale
+        // Encore (formerly On sale now) — products the creator already covered that are on sale
         // today, and the promo for each (Short, Community post, comment, social).
-        { href: '/on-sale', icon: <Tag size={15} />, label: 'On sale now', gate: previewOpenToPro('on_sale') ? isPro : isAdmin, badge: previewOpenToPro('on_sale') ? 'New' : 'Test' },
+        { href: '/encore', icon: <Repeat size={15} />, label: 'Encore', gate: previewOpenToPro('on_sale') ? isPro : isAdmin, badge: previewOpenToPro('on_sale') ? 'New' : 'Test' },
         // Amazon Live prep — pick products, get the show: lineup, timings,
         // talking points from the creator's own reviews, and a teleprompter.
         { href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live prep', gate: previewOpenToPro('amazon_live') ? isPro : isAdmin, badge: 'Test' },

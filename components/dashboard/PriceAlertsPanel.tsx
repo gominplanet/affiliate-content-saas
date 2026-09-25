@@ -129,6 +129,11 @@ export default function PriceAlertsPanel() {
                     <Send size={12} /> Post the drop
                   </button>
                 )}
+                {a.kind === 'covered_sale' && (
+                  <a href="/encore" className="inline-flex items-center gap-1 text-xs font-semibold rounded-full border px-3 py-1.5 hover:bg-accent">
+                    Open in Encore
+                  </a>
+                )}
                 {a.kind === 'stale_price' ? (
                   <button onClick={() => refreshPrice(a)} disabled={refreshingId === a.id}
                     title="Auto-update the pricing language in your post to match the current price"

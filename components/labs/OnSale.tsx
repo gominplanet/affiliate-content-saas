@@ -1,6 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// On sale now: the creator's own covered products that are on sale today,
+// Encore (formerly "On sale now"): the creator's own covered products that are on sale today,
 // and the promo for each, one press away.
 'use client'
 
@@ -477,8 +477,8 @@ export default function OnSale() {
     <div className="max-w-4xl mx-auto">
       <PageHero
         accent={ACCENT}
-        title="On sale now"
-        subtitle="Products you already made videos about, on sale today. Your audience trusts you on these, so this is when those videos sell best."
+        title="Encore"
+        subtitle="Your old reviews, back in the spotlight when the price drops. These are products you already made videos about that are on sale today, when those videos sell best."
       />
 
       {loading && (
