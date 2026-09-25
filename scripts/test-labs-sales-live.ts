@@ -3,7 +3,7 @@
 // Guards for two Labs previews: "On sale now" and "Amazon Live prep".
 
 import { readFileSync } from 'node:fs'
-import { saleVerdict, SALE_MIN_PCT, saleLabel, visibilityFromItem, applyVisibility, notPublicMessage, type CoverSource } from '../lib/covered-sales'
+import { saleVerdict, SALE_MIN_PCT, saleLabel, visibilityFromItem, applyVisibility, notPublicMessage, pickLookups, type CoverSource } from '../lib/covered-sales'
 import { layoutClock, assemblePlan, tidyLine, clockLabel, LIVE_MAX_PRODUCTS } from '../lib/live-plan'
 import { canUsePreview } from '../lib/labs-preview'
 import { lastingBody, commentWithLink, SALE_WORDING, salesNow, DISCLOSURE, PRICE_LINE_LEAD, SALE_COMMENTS_PER_DAY } from '../lib/sale-comments'
@@ -74,10 +74,10 @@ check('the label is words, not a guess', saleLabel(saleVerdict({ deal: deal({ di
   const LIB = read('lib/covered-sales.ts')
   check('the free shared cache is read before any Keepa token is spent',
     LIB.indexOf("from('deal_radar_cache')") > -1 && LIB.indexOf("from('deal_radar_cache')") < LIB.indexOf('fetchKeepaBasicsCached(admin, rest')
-    && /\.filter\(\(p\) => !deals\.has\(p\.asin\)\)/.test(LIB) && /videoFirst\.filter\(\(a\) => !fresh\.has\(a\)\)\.slice\(0, opts\?\.keepaCap \?\? 50\)/.test(LIB)
+    && /\.filter\(\(p\) => !deals\.has\(p\.asin\)\)/.test(LIB) && /const rest = pickLookups\(videoFirst, inVideo, fresh, \{ cap: opts\?\.keepaCap \?\? 50, videoCap: opts\?\.videoKeepaCap \}\)/.test(LIB)
     // Products already in the day-old cache are free and always included, so
     // each check reaches 50 NEW products instead of re-reading the first 50.
-    && /const rest = \[\.\.\.cached, \.\.\.unseen\]/.test(LIB),
+    && /return \[\.\.\.cached, \.\.\.unseen\.slice\(0, caps\.cap\)\]/.test(LIB) && /return \[\.\.\.cached, \.\.\.videos, \.\.\.store\]/.test(LIB),
     'a creator with a big catalogue would spend the day\'s Keepa budget on products the cache already knew')
   const PROMO = read('app/api/on-sale/promo/route.ts')
   check('the promo never states a price or a percentage, and never names a sale event',
@@ -328,6 +328,27 @@ async function saleEndedGuards() {
 
 async function finish() {
 await saleEndedGuards()
+// ── every video product, every day; the storefront on a rolling allowance ──
+{
+  const vids = Array.from({ length: 150 }, (_, i) => `V${String(i).padStart(9, '0')}`)
+  const store = Array.from({ length: 300 }, (_, i) => `S${String(i).padStart(9, '0')}`)
+  const inVideo = new Set(vids)
+  const fresh = new Set([store[0], vids[0]])
+  const split = pickLookups([...vids, ...store], inVideo, fresh, { cap: 100, videoCap: 500 })
+  check('with a video allowance, every video product is looked up and the storefront keeps its own 100',
+    vids.every((v) => split.includes(v)) && split.filter((a) => a.startsWith('S')).length === 101 && split.includes(store[0]),
+    `${split.filter((a) => a.startsWith('V')).length} videos, ${split.filter((a) => a.startsWith('S')).length} storefront`)
+  const shared = pickLookups([...vids, ...store], inVideo, fresh, { cap: 50 })
+  check('without one (the page, Amazon Live), everything still shares one allowance, videos first',
+    shared.length === 52 && shared.slice(2).every((a) => a.startsWith('V')))
+  const CRON = read('app/api/cron/covered-sales/route.ts')
+  check('the daily job gives video products their own allowance, and runs four times a day so a skipped creator is picked up the same day',
+    /findSales\(sb, covered, \{ keepaCap: 100, videoKeepaCap: VIDEO_DAILY_MAX \}\)/.test(CRON)
+    && /const RECHECK_HOURS = 20/.test(CRON) && /\(lastChecked\.get\(u\) as string\) < dueBefore/.test(CRON)
+    && /"schedule": "23 \*\/6 \* \* \*"/.test(read('vercel.json').replace(/"schedule":"/g, '"schedule": "')))
+  check('the page says what is checked daily and what goes round', /The products in your YouTube videos are checked for a real sale every day/.test(read('components/labs/OnSale.tsx')))
+}
+
 // ── the name: Encore, at /encore, and the old address still lands there ────
 check('Encore lives at /encore and /on-sale redirects to it',
   /redirect\('\/encore'\)/.test(read('app/(dashboard)/on-sale/page.tsx'))

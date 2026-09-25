@@ -1,6 +1,9 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// GET /api/cron/covered-sales — once a day, every creator with the feature
+// GET /api/cron/covered-sales — every six hours, each creator due (not checked
+// in the last 20 hours) with the feature
+// (every product in their videos is checked daily; storefront-only ones on a
+// rolling allowance)
 // (admin only while it is in Labs testing, lib/labs-preview) has their covered
 // products checked, and a product that has gone on sale raises an alert
 // in the dashboard's Price Alerts box (price_alerts, kind 'covered_sale').
@@ -23,6 +26,11 @@ export const runtime = 'nodejs'
 export const maxDuration = 300
 
 const REALERT_DAYS = 7
+/** New Keepa lookups a day for one creator's video products: all of them, up
+ *  to a bound so one enormous channel cannot spend the day's shared tokens. */
+const VIDEO_DAILY_MAX = 500
+/** A creator checked this recently is not checked again until the next day. */
+const RECHECK_HOURS = 20
 const DEEPER_BY = 10
 
 export async function GET(req: Request) {
@@ -45,7 +53,13 @@ export async function GET(req: Request) {
   const lastChecked = new Map<string, string>()
   const { data: checks, error: chkErr } = await sb.from('covered_sale_checks').select('user_id,checked_at').in('user_id', labs)
   if (!chkErr) for (const c of (checks ?? []) as Array<{ user_id: string; checked_at: string }>) lastChecked.set(c.user_id, c.checked_at)
-  const order = [...labs].sort((a, b) => (lastChecked.get(a) ?? '').localeCompare(lastChecked.get(b) ?? ''))
+  // RUNS EVERY SIX HOURS, CHECKS EACH CREATOR ONCE A DAY. A run that stops
+  // early (Keepa low on tokens, out of time) leaves the rest for the next run
+  // the same day, instead of making them wait a whole day for their turn.
+  const dueBefore = new Date(Date.now() - RECHECK_HOURS * 3_600_000).toISOString()
+  const order = [...labs]
+    .filter((u) => !lastChecked.get(u) || (lastChecked.get(u) as string) < dueBefore)
+    .sort((a, b) => (lastChecked.get(a) ?? '').localeCompare(lastChecked.get(b) ?? ''))
 
   let users = 0, alerts = 0
   for (const userId of order) {
@@ -55,7 +69,10 @@ export async function GET(req: Request) {
     const tokens = await fetchKeepaTokenStatus()
     if (tokens.tokensLeft != null && tokens.tokensLeft < 150) break
     const covered = await coveredProducts(sb, userId)
-    const onSale = covered.length ? await findSales(sb, covered, { keepaCap: 100 }) : []
+    // EVERY VIDEO PRODUCT, EVERY DAY: those are the products Encore can put
+    // a comment on, so a sale on one must not wait days for its turn. The
+    // storefront-only products keep the rolling allowance of 100 new lookups.
+    const onSale = covered.length ? await findSales(sb, covered, { keepaCap: 100, videoKeepaCap: VIDEO_DAILY_MAX }) : []
 
     if (onSale.length) {
       const since = new Date(Date.now() - REALERT_DAYS * 86_400_000).toISOString()

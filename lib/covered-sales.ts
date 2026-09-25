@@ -230,9 +230,36 @@ export interface SaleCheckStats {
   checkedAsins: string[]
 }
 
+/**
+ * Which products to ask Keepa about this time. Pure, so the rule is tested.
+ *
+ * Fresh ones (already in the shared cache) always, since they cost nothing.
+ * New lookups: with a videoCap, video products up to it and storefront-only
+ * ones up to cap, each on its own allowance; without one, videos first and
+ * everything sharing cap, as before.
+ */
+export function pickLookups(
+  videoFirst: string[], inVideo: Set<string>, fresh: Set<string>,
+  caps: { cap: number; videoCap?: number },
+): string[] {
+  const cached = videoFirst.filter((a) => fresh.has(a))
+  const unseen = videoFirst.filter((a) => !fresh.has(a))
+  if (caps.videoCap == null) return [...cached, ...unseen.slice(0, caps.cap)]
+  const videos = unseen.filter((a) => inVideo.has(a)).slice(0, caps.videoCap)
+  const store = unseen.filter((a) => !inVideo.has(a)).slice(0, caps.cap)
+  return [...cached, ...videos, ...store]
+}
+
 export async function findSales(
   admin: Sb, products: CoveredProduct[],
-  opts?: { keepaCap?: number; keepaMaxAgeDays?: number; dealMaxAgeHours?: number; onStats?: (s: SaleCheckStats) => void },
+  opts?: {
+    keepaCap?: number
+    /** New lookups allowed for products that are in the creator's videos. When
+     *  set, these no longer share keepaCap with storefront-only products, so
+     *  the videos (the only products Encore can comment on) can all be checked
+     *  every day while the storefront goes round on the rolling cap. */
+    videoKeepaCap?: number
+    keepaMaxAgeDays?: number; dealMaxAgeHours?: number; onStats?: (s: SaleCheckStats) => void },
 ): Promise<OnSaleProduct[]> {
   if (products.length === 0) { opts?.onStats?.({ checked: 0, skipped: 0, checkedAsins: [] }); return [] }
   const asins = products.map((p) => p.asin)
@@ -259,6 +286,7 @@ export async function findSales(
     .filter((p) => !deals.has(p.asin))
     .sort((a, b) => Number(b.sources.some((s) => s.kind === 'video')) - Number(a.sources.some((s) => s.kind === 'video')))
     .map((p) => p.asin)
+  const inVideo = new Set(products.filter((p) => p.sources.some((s) => s.kind === 'video')).map((p) => p.asin))
   // THE CAP IS ON NEW LOOKUPS, NOT ON PRODUCTS. A product Keepa answered in
   // the last day is already in the shared cache and costs nothing, so it is
   // always included; only products never looked up count against the cap.
@@ -272,9 +300,7 @@ export async function findSales(
     if (error) break
     for (const r of (data ?? []) as Array<{ asin: string }>) fresh.add(String(r.asin).toUpperCase())
   }
-  const cached = videoFirst.filter((a) => fresh.has(a))
-  const unseen = videoFirst.filter((a) => !fresh.has(a)).slice(0, opts?.keepaCap ?? 50)
-  const rest = [...cached, ...unseen]
+  const rest = pickLookups(videoFirst, inVideo, fresh, { cap: opts?.keepaCap ?? 50, videoCap: opts?.videoKeepaCap })
   const keepa = rest.length ? await fetchKeepaBasicsCached(admin, rest, { maxAgeDays: opts?.keepaMaxAgeDays ?? 1 }) : new Map()
   const checkedAsins = [...deals.keys(), ...rest.filter((a) => keepa.has(a))]
   const checked = checkedAsins.length

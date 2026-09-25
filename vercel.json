@@ -118,7 +118,7 @@
     },
     {
       "path": "/api/cron/covered-sales",
-      "schedule": "23 12 * * *"
+      "schedule": "23 */6 * * *"
     },
     {
       "path": "/api/cron/sale-comments",
