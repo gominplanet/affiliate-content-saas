@@ -30,6 +30,7 @@ import { ctaStickerAllowed, type CtaPreset } from '@/lib/launch-batch'
 import { validateThumbnailPreset, presetToRequestFields, parseFacePick, type ThumbnailPreset } from '@/lib/thumbnail-preset'
 import { postToSelf } from '@/lib/self-url'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
+import { wrongChannelMessage } from '@/lib/launch-channel'
 import { generateProductTitleOptions } from '@/lib/title-options'
 import { generateAmazonTitleOptions } from '@/lib/amazon-title'
 import { asinInFileName } from '@/lib/asin'
@@ -104,6 +105,23 @@ type Left = () => number
  * A batch whose creator chose NO CTA skips straight to prepared: the upload is
  * already the finished video, and it is also what Amazon should receive.
  */
+/**
+ * Each batch's confirmed YouTube channel (migration 372), read on its own so
+ * a database without the column uploads through the default channel, as it
+ * always did. A batch with no confirmed channel also uses the default: only a
+ * batch launched before the check existed can be in that state.
+ */
+async function channelsForBatches(sb: Sb, batchIds: string[]): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>()
+  if (batchIds.length === 0) return out
+  const { data, error } = await sb.from('launch_batches').select('id,youtube_channel_id').in('id', batchIds)
+  if (error) return out
+  for (const b of (data ?? []) as Array<{ id: string; youtube_channel_id: string | null }>) {
+    out.set(b.id, String(b.youtube_channel_id || '').trim() || null)
+  }
+  return out
+}
+
 async function renders(sb: Sb, left: Left): Promise<{ done: number; skipped: number; failed: number; recovered: number }> {
   const now = () => new Date().toISOString()
 
@@ -755,6 +773,11 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     if (!nowErr) for (const r of (nowRows ?? []) as Array<{ id: string }>) agreedNow.add(r.id)
   }
 
+  // EACH BATCH'S CHANNEL, the one the creator confirmed with YouTube.
+  const channelByBatch = await channelsForBatches(sb, Array.from(new Set<string>(items.map((i: { batch_id: string }) => String(i.batch_id)))))
+  // What YouTube said each login uploads to, asked once per firing per batch.
+  const liveByBatch = new Map<string, { id: string; title: string } | null>()
+
   // EACH BATCH'S NOTIFY TOGGLE (migration 366), read on its own so a missing
   // column cannot stop every upload. On any error the map is empty and every
   // batch reads as No. YouTube's default is to notify, so the value is always
@@ -921,10 +944,39 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
     budget--
 
     try {
-      const token = await getChannelOAuthToken(sb, it.user_id as string, null)
+      const expected = channelByBatch.get(it.batch_id) ?? null
+      const token = await getChannelOAuthToken(sb, it.user_id as string, expected)
       if (!token) throw new Error('your YouTube channel is not connected for publishing')
 
       const yt = new YouTubeOAuthService(token)
+
+      // ── THE RIGHT CHANNEL, ASKED OF YOUTUBE, BEFORE ANY UPLOAD ───────────
+      //
+      // The creator confirmed a channel before launch. A login can change
+      // since (reconnected on another account, a Brand Account picked
+      // differently), so the login is asked again which channel it uploads to
+      // before a single byte goes up. A mismatch stops this video with both
+      // channel names on it; nothing is uploaded to the wrong channel.
+      if (expected && !String(it.youtube_video_id || '').trim()) {
+        if (!liveByBatch.has(it.batch_id)) {
+          const me = await yt.getMyChannel()
+          liveByBatch.set(it.batch_id, me ? { id: me.id, title: me.title } : null)
+        }
+        const live = liveByBatch.get(it.batch_id)
+        if (!live || live.id !== expected) {
+          const { data: named } = await sb.from('youtube_channels')
+            .select('channel_title').eq('user_id', it.user_id).eq('channel_id', expected).maybeSingle()
+          await sb.from('launch_items').update({
+            state: 'blocked',
+            reason: live
+              ? wrongChannelMessage(String(named?.channel_title || expected), live.title)
+              : 'YouTube says this login has no channel. Nothing was uploaded. Reconnect your channel under Settings.',
+            updated_at: stamp(),
+          }).eq('id', it.id)
+          failed++
+          continue
+        }
+      }
 
       // ── NOW, AT ITS MOMENT, OR NOT AT ALL ────────────────────────────────
       //
@@ -1429,7 +1481,7 @@ async function confirms(sb: Sb): Promise<{ published: number; late: number }> {
   // once an hour, and the line rotates on when each was last looked at.
   const hourAgo = new Date(Date.now() - 60 * 60_000).toISOString()
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,title,youtube_video_id,publish_at,confirm_tries')
+    .select('id,user_id,batch_id,title,youtube_video_id,publish_at,confirm_tries')
     .eq('state', 'scheduled')
     .not('youtube_video_id', 'is', null)
     .lte('publish_at', cutoff)
@@ -1440,20 +1492,26 @@ async function confirms(sb: Sb): Promise<{ published: number; late: number }> {
 
   // GROUPED BY CREATOR, because the token is per account and one call takes
   // fifty ids. Checking forty videos costs at most a handful of requests.
+  // AND BY CHANNEL: a private video is only visible to the channel it is on,
+  // so asking with the default channel's login about a video on another of
+  // the creator's channels would read as "YouTube no longer has this video".
+  const confirmChannel = await channelsForBatches(sb, Array.from(new Set<string>(items.map((i: { batch_id: string }) => String(i.batch_id)))))
   const byUser = new Map<string, typeof items>()
   for (const it of items) {
-    const list = byUser.get(it.user_id) ?? []
+    const k = `${it.user_id}|${confirmChannel.get(it.batch_id) ?? ''}`
+    const list = byUser.get(k) ?? []
     list.push(it)
-    byUser.set(it.user_id, list)
+    byUser.set(k, list)
   }
 
   let published = 0, late = 0
   const stamp = () => new Date().toISOString()
 
-  for (const [userId, list] of byUser) {
+  for (const [groupKey, list] of byUser) {
+    const [userId, groupChannel] = groupKey.split('|')
     let meta: Record<string, { status: string; publishAt: string | null }> = {}
     try {
-      const token = await getChannelOAuthToken(sb, userId, null)
+      const token = await getChannelOAuthToken(sb, userId, groupChannel || null)
       if (!token) {
         // Moved to the back of the line, so a disconnected channel does not
         // hold every other creator's confirmations up.
@@ -1579,11 +1637,15 @@ async function playlistCatchUp(sb: Sb): Promise<{ added: number; failed: number 
   if (iErr || !rows?.length) return { added: 0, failed: 0 }
   let added = 0, failed = 0
   const tokens = new Map<string, string | null>()
+  // The batch's own channel: the playlist lives there, not on the default.
+  const playlistChannel = await channelsForBatches(sb, [...byBatch.keys()])
   for (const it of rows as Array<{ id: string; batch_id: string; youtube_video_id: string }>) {
     const b = byBatch.get(it.batch_id)
     if (!b) continue
-    if (!tokens.has(b.user_id)) tokens.set(b.user_id, await getChannelOAuthToken(sb, b.user_id, null).catch(() => null))
-    const token = tokens.get(b.user_id)
+    const bch = playlistChannel.get(it.batch_id) ?? null
+    const tk = `${b.user_id}|${bch ?? ''}`
+    if (!tokens.has(tk)) tokens.set(tk, await getChannelOAuthToken(sb, b.user_id, bch).catch(() => null))
+    const token = tokens.get(tk)
     if (!token) {
       // SAID, not skipped: a skipped row came back every firing and took a
       // slot another creator's video needed.

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { uploadWithProgress, STALL_MS, FINISH_MS } from '@/lib/upload-progress'
+import ChannelCheck from '@/components/launch/ChannelCheck'
 import { deliverPreparedStorefronts, deliverySummary, type DeliveryOutcome } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
@@ -215,6 +216,9 @@ export default function LaunchBoard() {
   const [playlistId, setPlaylistId] = useState<string | null>(null)
   const [playlists, setPlaylists] = useState<Array<{ id: string; title: string }> | null>(null)
   const [playlistsError, setPlaylistsError] = useState<string | null>(null)
+  // THE BATCH'S CONFIRMED CHANNEL, reported by the channel check. Playlists are
+  // read through that channel's login, since that is where the videos go.
+  const [uploadChannel, setUploadChannel] = useState<string | null>(null)
   const [studioOpts, setStudioOpts] = useState<StudioOptions>(DEFAULT_STUDIO_OPTIONS)
   const [ytOptionsAvailable, setYtOptionsAvailable] = useState(true)
   const [youtubeChoiceAvailable, setYoutubeChoiceAvailable] = useState(true)
@@ -496,6 +500,13 @@ export default function LaunchBoard() {
     } finally { setLoading(false) }
   }, [])
 
+  // The channel check reports the batch's confirmed channel; the board is read
+  // again so the Launch button's reason follows the answer at once.
+  const onChannelChanged = useCallback((ch: string | null) => {
+    setUploadChannel(ch)
+    if (batchId) void load(batchId, true)
+  }, [batchId, load])
+
   // ── A DIFFERENT BATCH STARTS CLEAN ───────────────────────────────────────
   // What the last batch's launch, Amazon runs and Studio runs said used to
   // stay on screen for the next one: a new draft showed "Launched" and the
@@ -547,12 +558,16 @@ export default function LaunchBoard() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch('/api/youtube/playlists')
+        const r = await fetch(`/api/youtube/playlists?channel=${encodeURIComponent(uploadChannel || 'default')}`)
         const j = await r.json().catch(() => ({}))
         if (!r.ok) { setPlaylistsError(j?.error || 'Could not read your playlists.'); return }
+        setPlaylistsError(null)
         setPlaylists(Array.isArray(j?.playlists) ? j.playlists : [])
       } catch { setPlaylistsError('Could not read your playlists.') }
     })()
+  }, [uploadChannel])
+
+  useEffect(() => {
     void getScoutStatus().then((st) => {
       setScoutReady(st.installed)
       setScoutVersion(st.version)
@@ -1750,6 +1765,11 @@ export default function LaunchBoard() {
               dead end this codebase keeps producing. */}
           {/* Not after launch: "nothing is ready to launch" printed over a
               batch that had just launched read as something going wrong. */}
+          {/* THE CHANNEL, CHECKED WITH YOUTUBE, right above the button that
+              sends ten videos to it. */}
+          {batch.send_to_youtube !== false && (
+            <ChannelCheck batchId={batch.id} onChanged={onChannelChanged} />
+          )}
           {blocker && !scheduleLocked && (
             <p className="text-[12.5px] px-3 py-2 rounded-lg" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
               {blocker}

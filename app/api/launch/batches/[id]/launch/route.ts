@@ -22,6 +22,7 @@
 // a video falls back to, not the only way one can be scheduled.
 
 import { launchReadiness } from '@/lib/launch-readiness'
+import { liveUploadChannel, wrongChannelMessage } from '@/lib/launch-channel'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
@@ -79,6 +80,20 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // creator cannot be told ready by one screen and refused by this route.
   const blocker = await launchReadiness(sb, user.id, batch as BatchRow, items)
   if (blocker) return NextResponse.json({ error: blocker }, { status: 409 })
+
+  // ── ASKED AGAIN AT THE BUTTON ─────────────────────────────────────────────
+  // The channel was confirmed when the creator pressed "Yes, upload here",
+  // possibly hours ago. One more question to YouTube, with the login the
+  // uploader will use, costs one quota unit and cannot be skipped.
+  if (!amazonOnly && batch.youtube_channel_id) {
+    const { live, error: liveErr } = await liveUploadChannel(sb, user.id, batch.youtube_channel_id)
+    if (!live) return NextResponse.json({ error: liveErr || 'YouTube did not say which channel this login uploads to.' }, { status: 409 })
+    if (live.id !== batch.youtube_channel_id) {
+      const { data: named } = await sb.from('youtube_channels').select('channel_title')
+        .eq('user_id', user.id).eq('channel_id', batch.youtube_channel_id).maybeSingle()
+      return NextResponse.json({ error: wrongChannelMessage(String(named?.channel_title || batch.youtube_channel_id), live.title) }, { status: 409 })
+    }
+  }
 
   // Only the ones that actually finished preparing, and on a second press
   // only the ones the uploader does not already have. A blocked video is left

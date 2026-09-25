@@ -133,6 +133,10 @@ export interface BatchRow {
   /** False when the creator chose Amazon only (migration 369). Absent reads
    *  as true: YouTube and Amazon, as every batch did before. */
   send_to_youtube?: boolean
+  /** The YouTube channel (UC...) the creator confirmed with YouTube for this
+   *  batch (migration 372). Null: not confirmed. Undefined: the column does
+   *  not exist yet. */
+  youtube_channel_id?: string | null
 }
 
 /**
@@ -147,8 +151,11 @@ export async function withYouTubeChoice<B extends BatchRow>(
   sb: any, batch: B,
 ): Promise<{ batch: B; available: boolean }> {
   const { data, error } = await sb.from('launch_batches').select('send_to_youtube').eq('id', batch.id).maybeSingle()
-  if (error) return { batch: { ...batch, send_to_youtube: true }, available: false }
-  return { batch: { ...batch, send_to_youtube: data?.send_to_youtube !== false }, available: true }
+  // THE CONFIRMED CHANNEL (migration 372), its own read for the same reason.
+  const { data: ch, error: chErr } = await sb.from('launch_batches').select('youtube_channel_id').eq('id', batch.id).maybeSingle()
+  const youtube_channel_id = chErr ? undefined : (String(ch?.youtube_channel_id || '').trim() || null)
+  if (error) return { batch: { ...batch, send_to_youtube: true, youtube_channel_id }, available: false }
+  return { batch: { ...batch, send_to_youtube: data?.send_to_youtube !== false, youtube_channel_id }, available: true }
 }
 
 /**

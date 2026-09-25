@@ -82,5 +82,18 @@ export async function launchReadiness(
   if (batch.send_to_youtube === false) return null
   const dates = pastDates(batch, items)
   if (dates) return dates
-  return channelBlocker(await hasPushChannel(sb, userId))
+  const noChannel = channelBlocker(await hasPushChannel(sb, userId))
+  if (noChannel) return noChannel
+  // ── THE RIGHT CHANNEL, CONFIRMED FIRST ─────────────────────────────────
+  // Ten videos on the wrong channel cannot be taken back quietly. A batch
+  // launched before this check existed has no confirmed channel and keeps
+  // going where it was going; every new launch confirms one first.
+  const late = batch.state === 'launching' || batch.state === 'launched'
+  if (!late && batch.youtube_channel_id === undefined) {
+    return 'Confirming the YouTube channel needs migration 372 in the database first.'
+  }
+  if (!late && !batch.youtube_channel_id) {
+    return 'Confirm your YouTube channel: check the channel these will upload to, then press "Yes, upload here".'
+  }
+  return null
 }
