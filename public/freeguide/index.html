@@ -142,6 +142,8 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 .upd .fine{margin-top:9px;font-size:12.5px;color:var(--muted)}
 .upd-end{margin:0 0 28px;padding:28px clamp(20px,4vw,40px);background:var(--surface);scroll-margin-top:16px}
 .upd-end h2{font-size:20px}
+.upd .nudge{margin-top:12px;font-size:15px}
+.upd .nudge b{color:var(--ink)}
 @media (max-width:900px){.upd{margin-top:18px}}
 .lede{max-width:40em;font-size:clamp(17px,2vw,20px);margin:22px 0 20px;color:var(--ink)}
 .meta{display:flex;flex-wrap:wrap;gap:8px 18px;font:500 13px/1.3 var(--mono);color:var(--muted)}
@@ -186,6 +188,7 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 .new{margin-top:18px;font-size:14px;color:var(--muted)}
 .new p{margin:0 0 6px}
 .new b{color:var(--ink)}
+.new .free{margin:0 0 10px;font:700 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ok)}
 .new ul{margin:0;padding-left:18px;display:grid;gap:3px}
 .new a{color:var(--accent)}
 /* Search, at the top of the module list */
@@ -366,6 +369,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
   <div class="meta"><span>12 modules</span><span>~95 min read</span><span>Presented by <a href="#mvp"><b>MVP Affiliate</b></a></span></div>
   <div class="prog" aria-live="polite"><div class="bar"><i id="progbar"></i></div><span id="progtxt">0 of 12 modules done</span></div>
   <div class="new" id="whatsnew">
+    <p class="free">Free to read. No email needed.</p>
     <p><b>Last updated September 25.</b> What's new (and <a href="#updates">get an email when it changes</a>):</p>
     <ul>
       <li><a href="#confetti">You got the confetti. Now what?</a> Step by step, with screenshots</li>
@@ -2121,7 +2125,7 @@ questions in public so everyone gets the answer.</p>
 <section class="upd upd-end" id="updates" aria-labelledby="updh">
     <h2 id="updh">This guide keeps changing, because the program does.</h2>
     <p>Amazon moved the commission rules twice this year and changed what counts as a qualifying sale. Every time that happens we rewrite the part of this guide it broke, rather than leaving last year's advice up. Worth coming back to.</p>
-    <p class="free">Free to read. No email needed.</p>
+    <p class="nudge"><b>Liked the guide?</b> Get the next update in your inbox.</p>
     <form id="updf" novalidate>
       <label class="hp" for="updhp">Leave this empty</label>
       <input class="hp" id="updhp" name="hp" type="text" tabindex="-1" autocomplete="off">
