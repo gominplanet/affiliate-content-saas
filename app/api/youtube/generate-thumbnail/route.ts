@@ -26,7 +26,8 @@ import { detectWearable, wearDirective } from '@/lib/wear-product'
 import { normalizeExpression, expressionDirective, expressionDescription, EXPRESSION_LABEL, politeSmileIsWrong } from '@/lib/face-expression'
 import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt, type GarmentVerdict } from '@/lib/garment-match'
 import { resolvePreset, presetToBriefRules, parsePresetIds, pickPresetId } from '@/lib/visual-presets'
-import { buildGraphicThumbnailPrompt } from '@/lib/thumbnail-prompt'
+import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout } from '@/lib/thumbnail-prompt'
+import { canUsePreview } from '@/lib/labs-preview'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
 import { FACE_BOX_PROMPT, parseFaceBox, headCropRect, headCropNote } from '@/lib/head-crop'
 import {
@@ -389,6 +390,8 @@ async function designThumbnailBriefs(input: {
   lockedHeadline?: string | null
   noHuman?: boolean
   headlineStyle?: 'statement' | 'question'
+  /** COMPARISON VIDEO: the compared products' names, in order. */
+  comparison?: string[] | null
   /** Where the product is worn, when the creator asked to be shown in it. The
    *  art director has to know, or it writes a concept that stages the garment
    *  on a hanger beside them and the render dutifully obeys the concept. */
@@ -447,6 +450,7 @@ async function designThumbnailBriefs(input: {
     input.lockedHeadline ? `REQUIRED HEADLINE (use these exact words for every brief's line1+line2, just split + style them): "${input.lockedHeadline}"` : '',
     input.noHuman ? 'PRODUCT-ONLY (hard rule): these designs must contain NO people at all. Do NOT reference a person, model, hands, or anyone using the product in the concept, callouts or banner. The concept centers on the PRODUCT itself. Leave expression and pose empty.' : '',
     input.fixedExpression ? `EXPRESSION IS FIXED (hard rule, overrides every other instruction about reactions, including the headline-style guidance): the creator chose ${input.fixedExpression}. Set every brief's "expression" field to exactly that, and make sure NOTHING in the concept, banner or callouts describes them reacting any other way. Do not write a doubtful or skeptical face into the concept unless that IS the chosen expression.` : '',
+    input.comparison && input.comparison.length > 1 ? `COMPARISON (hard rule): this video compares ${input.comparison.length} products: ${input.comparison.join('; ')}. Every concept shows ALL of them as equals, ${comparisonLayout(input.comparison.length)}. The headline frames the comparison (for example "WHICH ONE?", "A VS B", "DON'T BUY THE WRONG ONE") and NEVER names a winner or says one is the best. No prices, dollar amounts or percentages anywhere: prices change and a thumbnail stays up for years.` : '',
     input.wornOn ? `WORN (hard rule): the creator is WEARING this product — it is ${input.wornOn}. Every concept shows it on them. Never describe it held up, presented in a hand, laid out, floating, on a hanger, on a mannequin or on a stand, and never put a second copy of it anywhere in the design. Write "pose" as how they stand or move while wearing it, never as a gesture holding it.` : '',
     '',
     `Design ${n} distinct briefs now. Output the JSON array only.`,
@@ -1068,6 +1072,9 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       // one thumbnail (comparison videos), or multiple angles of one product.
       customProductImageUrls,
       productCompositionNote,
+      // COMPARISON VIDEO (Labs): the 2 to 4 ASINs the video compares, in order.
+      // Each one's own Amazon photo becomes a product reference.
+      comparisonAsins,
       // Optional creator-pasted product link (Amazon / geni.us / store URL). When
       // present it's the AUTHORITATIVE product source — guarantees MVP renders the
       // exact product even when the title/description has no resolvable ASIN.
@@ -1195,6 +1202,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
        *  - Custom product when no Amazon ASIN exists
        *  Public Supabase URLs. Clamped to 5 server-side. */
       customProductImageUrls?: string[]
+      /** COMPARISON VIDEO (Labs): 2 to 4 ASINs, in the creator's order. */
+      comparisonAsins?: string[]
       /** Optional creator-pasted product link (Amazon/geni.us/store URL). */
       productUrl?: string
       /** Optional free-text composition direction explaining how to arrange the
@@ -1322,7 +1331,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     const sharedBriefKey = typeof briefKey === 'string' && briefKey.trim()
       // The wear toggle changes what the art director is asked for, so a brief
       // written before it was ticked must not be handed back after.
-      ? `${briefKey.trim().slice(0, 196)}${wantQuestion ? ':q' : ''}${wearProduct === true ? ':w' : ''}${typeof expressionChoice === 'string' && expressionChoice && expressionChoice !== 'auto' ? `:x${expressionChoice}` : ''}`
+      ? `${briefKey.trim().slice(0, 196)}${wantQuestion ? ':q' : ''}${wearProduct === true ? ':w' : ''}${typeof expressionChoice === 'string' && expressionChoice && expressionChoice !== 'auto' ? `:x${expressionChoice}` : ''}${Array.isArray(comparisonAsins) && comparisonAsins.length > 1 ? `:cmp${comparisonAsins.length}` : ''}`
       : undefined
 
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
@@ -1695,6 +1704,47 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       productImageUrl = customProductRefs[0]
     }
 
+    // ── COMPARISON VIDEO (Labs) ────────────────────────────────────────────────
+    // Each compared product's own Amazon photo, through the same resolver
+    // (and vision pick) as the single product, becomes a product reference, in
+    // the creator's order. Photos the creator uploaded win: they chose them.
+    // A product whose photo could not be found is left out and COUNTED, so the
+    // response can say "2 of 3 products shown" instead of a thumbnail that
+    // quietly dropped one.
+    let comparisonNames: string[] = []
+    let comparisonAsked = 0
+    const isComparison = Array.isArray(comparisonAsins) && comparisonAsins.length >= 2 && canUsePreview('comparison', tier)
+    if (isComparison && customProductRefs.length === 0) {
+      const list = [...new Set((comparisonAsins as string[]).map((a) => String(a || '').trim().toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))].slice(0, 4)
+      comparisonAsked = list.length
+      const found = await Promise.all(list.map((a) => resolveProductReference({
+        title: null, description: null, asin: a,
+        traceTag: `[thumbnail-cmp:${a}]`, userId: user.id, tier: null, fastImage: false,
+      }).catch(() => null)))
+      const got = list.map((a, i) => ({ asin: a, url: found[i]?.productImageUrl ?? null, title: found[i]?.productTitle ?? a }))
+        .filter((g): g is { asin: string; url: string; title: string } => !!g.url)
+      if (got.length >= 2) {
+        customProductRefs.push(...got.map((g) => g.url))
+        productImageUrl = got[0].url
+        comparisonNames = got.map((g) => g.title.split(/[,|(\[]/)[0].trim().slice(0, 60))
+      }
+    } else if (isComparison) {
+      comparisonAsked = customProductRefs.length
+    }
+    // Several product photos, from a comparison or the creator's own uploads.
+    // Every render below now sends ALL of them; before, only the first ever
+    // reached the model, and the creator's arrangement note was dropped.
+    const productRefUrls: string[] = customProductRefs.length > 1 ? customProductRefs : (productImageUrl ? [productImageUrl] : [])
+    const comparisonShown = isComparison && productRefUrls.length > 1
+    const loadProductPngs = async (): Promise<Uint8Array[]> => {
+      const out = await Promise.all(productRefUrls.map(async (u) => {
+        const ab = await fetch(u, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
+          .then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
+        return ab ? await normalizeToPng(new Uint8Array(ab)).catch(() => null) : null
+      }))
+      return out.filter((b): b is NonNullable<typeof b> => !!b) as Uint8Array[]
+    }
+
     // ── "Make me wear it" ────────────────────────────────────────────────────
     // Resolved here, after every source of the product's NAME has been tried,
     // because the name is what decides this. A jacket goes on the torso and a
@@ -1784,13 +1834,11 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             lockedHeadline: lockedHeadline || undefined,
             noHuman: true,
             headlineStyle: wantQuestion ? 'question' : 'statement',
+            comparison: comparisonShown ? (comparisonNames.length ? comparisonNames : productRefUrls.map((_, i) => `product ${i + 1}`)) : null,
           }),
         })
-        const productAbP = productImageUrl
-          ? await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
-              .then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
-          : null
-        const productBytesP = productAbP ? await normalizeToPng(new Uint8Array(productAbP)).catch(() => null) : null
+        const productPngsP = await loadProductPngs()
+        const productBytesP = productPngsP[0] ?? null
         if (!productBytesP) throw new Error('no product image for product-only graphic')
         const gfxModelP = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
         const gfxRawUrlsP = await Promise.all(
@@ -1825,14 +1873,16 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                 pinDirective,
                 ...headP,
                 '',
-                `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura around it.`,
+                productPngsP.length > 1
+                  ? multiProductLine({ firstImage: 1, count: productPngsP.length, comparison: comparisonShown, arrangement: compositionNote })
+                  : `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura around it.`,
                 'ABSOLUTELY NO PEOPLE — HARD RULE: this is a PRODUCT-ONLY design. There must be ZERO humans anywhere in the image: no person, no face, no head, no hands, no fingers, no arms, no body parts, no silhouettes, and no reflections or shadows of a person, not even small, partial, blurred, or at the edges/background. If Image 1 (the reference) shows a model, hands, or any person holding or using the product, keep ONLY the product itself and OMIT every human element entirely.',
                 '',
                 `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes (mixed colour/size/weight, banner for a key phrase) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
                 `REAL COPY ONLY — every word on the design must be the headline above or a SPECIFIC, true detail about THIS product (its category, a real feature, a spec, a benefit). Do NOT add generic showcase or photography-direction labels such as "HERO SHOT", "FULL DETAILS", "CLOSE-UP REVEAL", "FEATURED PICK", "SPOTLIGHT", "THE PRODUCT", "PRODUCT REVIEW" — those are placeholder filler and must never appear.`,
                 `FRAMING: the canvas is a full ${isPortrait ? 'tall vertical portrait' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
               ].filter(Boolean).join('\n')
-              const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
+              const refs = productPngsP.map((b, i) => ({ data: b, filename: productPngsP.length > 1 ? `product_${i + 1}.png` : 'product.png', mime: 'image/png' as const }))
               const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
               recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxRecordOverride ?? gfxModelP, images: 1 })
               const copyDec = (copy as { decoration?: ThumbDecoration }).decoration
@@ -1861,6 +1911,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           ok: true,
           thumbnailUrl: gfxUrlsP[0],
           thumbnailUrls: gfxUrlsP,
+          // How many compared products actually made it in, of how many asked.
+          comparison: isComparison ? { asked: comparisonAsked, shown: productPngsP.length } : null,
           thumbnailScores: gfxUrlsP.map(() => 0),
           thumbnailScore: 0,
           belowThreshold: false,
@@ -1974,6 +2026,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             headlineStyle: wantQuestion ? 'question' : 'statement',
             wornOn: wearLine ? wearable.on : null,
             fixedExpression: expressionLine ? EXPRESSION_LABEL[expressionKey] : null,
+            comparison: comparisonShown ? (comparisonNames.length ? comparisonNames : productRefUrls.map((_, i) => `product ${i + 1}`)) : null,
           }),
         })
 
@@ -2265,14 +2318,9 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           if (!refsAreHeadOnly) console.warn('[head-crop] a creator reference kept its clothing; the wrong garment is likely')
         }
 
-        // Product image (unchanged — fetched separately).
-        const productAb = productImageUrl
-          ? await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
-              .then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
-          : null
-        const productBytes = productAb
-          ? await normalizeToPng(new Uint8Array(productAb)).catch(() => null)
-          : null
+        // Product photos: every one (a comparison, or the creator's uploads).
+        const productPngs = await loadProductPngs()
+        const productBytes = productPngs[0] ?? null
 
         const gfxModel = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
         const productLabel = productTitle || 'the product'
@@ -2435,6 +2483,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                 '',
                 wearLine
                   ? `PRODUCT: the product is worn, exactly as the WORN, NOT HELD rule above says. It appears in the frame only on the person${productRefNum ? `, and it is the item in Image ${productRefNum}` : ''} — no second copy of it anywhere, held or beside them or on a stand. Keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or marketing text.`
+                  : productRefNum && productPngs.length > 1
+                  ? multiProductLine({ firstImage: productRefNum, count: productPngs.length, comparison: comparisonShown, arrangement: compositionNote })
                   : productRefNum
                   ? `PRODUCT: feature ${productLabel} (from Image ${productRefNum}) clearly and recognisably in the scene exactly as the direction implies (held, beside them, in use…). Keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or marketing text.`
                   : `PRODUCT: feature ${productLabel} clearly and recognisably in the scene as the direction implies.`,
@@ -2483,6 +2533,9 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                 creatorRefLabel,
                 identityInstruction,
                 productRefNum,
+                productRefCount: productPngs.length,
+                comparison: comparisonShown,
+                productArrangement: compositionNote,
                 productLabel,
                 productFacts: gfxFeatures,
                 formatDirective: pinDirective,
@@ -2497,7 +2550,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                 return { data: b, filename: isLastAndFrame ? 'creator_video_frame.png' : `creator_${i + 2}.png`, mime: 'image/png' as const }
               }),
             ]
-            if (productBytes) refs.push({ data: productBytes, filename: 'product.png', mime: 'image/png' })
+            productPngs.forEach((b, i) => refs.push({ data: b, filename: productPngs.length > 1 ? `product_${i + 1}.png` : 'product.png', mime: 'image/png' }))
 
             // Tier-gated quality (gfxQuality): Pro/admin get HIGH for the crispest
             // ChatGPT-grade render; other paid tiers get MEDIUM. Co-Pilot generates
@@ -2665,6 +2718,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           // to a render of the real one.
           productRefSource,
           productRefFound: !!productImageUrl,
+          comparison: isComparison ? { asked: comparisonAsked, shown: productPngs.length } : null,
           expressionUsed: expressionKey,
           expressionViaPortrait: expressionInReference,
           expressionVerified,

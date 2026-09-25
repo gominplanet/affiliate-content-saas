@@ -27,6 +27,10 @@ import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { scoreTitle } from '@/lib/thumbnail-score'
 import { deriveProductName } from '@/lib/product-name'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { canUsePreview } from '@/lib/labs-preview'
+import { readComparisonSlots, shortProductName, comparisonLinkLines } from '@/lib/comparison-products'
+import { resolveFinalUrl } from '@/lib/product-link'
+import { asinFromAmazonUrl } from '@/lib/asin'
 
 export const maxDuration = 120
 
@@ -423,6 +427,9 @@ async function contentWriterAgent(
   /** The user's most recent generated descriptions — voice anchors
    *  so each new description sounds more like their channel's. */
   priorDescriptions?: string[] | null,
+  /** COMPARISON VIDEO: the products' short names, in order. The description
+   *  then compares them instead of describing one product. */
+  comparisonNames?: string[] | null,
 ): Promise<{ productDescription: string }> {
   const voiceAnchor = (priorDescriptions && priorDescriptions.length > 0)
     ? `\n\nUSER'S RECENT DESCRIPTIONS (match the cadence + voice, do NOT copy):\n${priorDescriptions.map((d, i) => `── EXAMPLE ${i + 1} ──\n${d.slice(0, 400)}`).join('\n\n')}\n`
@@ -443,7 +450,9 @@ NICHE: ${niches}
 
 RULES:
 - 3-4 sentences maximum
-- ${isProduct
+- ${comparisonNames && comparisonNames.length > 1
+    ? `This video COMPARES ${comparisonNames.join(', ')}. Answer: What is being compared? Who is each one for? How do they differ? Name every product. Never say one wins or is the best unless the title says so.`
+    : isProduct
     ? 'Answer: What is it? Who is it for? What is the #1 benefit? Is it worth buying?'
     : 'Answer: What is this video about? Who is it for? What will viewers learn or experience? Why should they keep watching?'}
 - Use natural search language — write how people TALK, not how brands write
@@ -544,8 +553,12 @@ export async function POST(request: Request) {
       ownerId = auth.ownerId
     }
 
-    const { asin, videoTitle, videoDescription, youtubeVideoId, skipAsinCheck = false, productOverride = null, transcript: bodyTranscript = null } = await request.json() as {
+    const { asin, videoTitle, videoDescription, youtubeVideoId, skipAsinCheck = false, productOverride = null, transcript: bodyTranscript = null, comparisonProducts = null } = await request.json() as {
       asin?: string | null
+      /** COMPARISON VIDEO (Labs): the 2 to 4 products the video compares, each
+       *  an ASIN or a product link, in the creator's order. The first is the
+       *  video's main product. Ignored for accounts without the preview. */
+      comparisonProducts?: Array<{ input: string; label?: string }> | null
       videoTitle: string
       videoDescription?: string
       /** Optional transcript the client already has (e.g. SCOUT fetched it from
@@ -710,6 +723,46 @@ export async function POST(request: Request) {
     //   3. Nothing usable → last-resort Amazon discovery by product name.
     let storeUrl: string | null = null          // a non-Amazon product link to promote
     let storeAlreadyGenius = false               // already a geni.us link → keep as-is
+
+    // ── COMPARISON VIDEO (Labs) ────────────────────────────────────────────────
+    // The creator said, before generating, that this video compares 2 to 4
+    // products. Every one is resolved to an Amazon ASIN here, up front: a
+    // comparison that silently lost a product would publish a description
+    // with a link missing and titles about the wrong set. The first product
+    // becomes the video's main product, so everything built for one product
+    // (the product_url, the main link, the thumbnail memory) keeps working.
+    type ComparisonItem = {
+      asin: string; label: string; title: string; bullets: string[]
+      price: string | null; rating: string | null; imageUrl: string | null
+      link: string; linkNote: string | null
+    }
+    let comparison: ComparisonItem[] | null = null
+    if (Array.isArray(comparisonProducts) && comparisonProducts.length > 0 && canUsePreview('comparison', tier)) {
+      const { slots, error } = readComparisonSlots(comparisonProducts)
+      if (error) return NextResponse.json({ error, comparisonError: true }, { status: 400 })
+      const resolved: Array<{ asin: string; label: string }> = []
+      for (const sl of slots) {
+        let a = sl.asin
+        if (!a && sl.url) {
+          try { a = asinFromAmazonUrl(await resolveFinalUrl(sl.url)) } catch { a = null }
+        }
+        if (!a) {
+          return NextResponse.json({
+            error: `Could not find the Amazon product behind ${sl.url}. Paste that product's ASIN or its amazon.com link instead. Nothing was generated.`,
+            comparisonError: true,
+          }, { status: 400 })
+        }
+        if (!resolved.some((r) => r.asin === a)) resolved.push({ asin: a, label: sl.label })
+      }
+      if (resolved.length < 2) {
+        return NextResponse.json({ error: 'Two of those links are the same product. A comparison needs at least 2 different products. Nothing was generated.', comparisonError: true }, { status: 400 })
+      }
+      comparison = resolved.map((r) => ({ asin: r.asin, label: r.label, title: '', bullets: [], price: null, rating: null, imageUrl: null, link: '', linkNote: null }))
+      trimmedAsin = resolved[0].asin
+      isProduct = true
+      productDiscoverySource = 'caller'
+    }
+
     if (!isProduct) {
       // Append the reused product link (from product_url or the blog post) so a
       // REVIEW keeps product mode (affiliate link + disclaimer) even when the
@@ -782,6 +835,8 @@ export async function POST(request: Request) {
       // ASINs (via title search) trust the discovery's match score.
       if (
         !skipAsinCheck
+        // A comparison's title names several products, so no single one matches it.
+        && !comparison
         && productDiscoverySource === 'caller'
         && product.title
         && product.title !== videoTitle
@@ -839,6 +894,9 @@ export async function POST(request: Request) {
             `thing, we stopped. Hit Regenerate in a moment — it usually goes through on a retry. ` +
             `If it keeps failing, double-check the ASIN in your title.`,
           scrapeFailed: true,
+          // Which product failed, so the page's SCOUT retry fetches THAT one:
+          // in a comparison it is the first compared product, not the card's.
+          asin: trimmedAsin,
         }, { status: 422 })
       }
 
@@ -997,6 +1055,59 @@ export async function POST(request: Request) {
       }
     }
 
+    // ── COMPARISON: every product's details and its own link ──────────────────
+    // The first product went through the normal path above. The others get
+    // the same link style the first one actually got (Passport, Geniuslink,
+    // Bitly or the tagged Amazon link), each with its own ASIN and the video
+    // id, so every product earns and each click says which product it was.
+    // A product whose link fell back to another style says so in linkNote.
+    if (comparison) {
+      comparison[0] = { ...comparison[0], title: product.title, bullets: product.bullets, price: product.price, rating: product.rating, imageUrl: product.imageUrl, link: affiliateUrl }
+      const tag = String(intRow?.amazon_associates_tag || '').trim()
+      const linkForAsin = async (a: string, label: string): Promise<{ link: string; note: string | null }> => {
+        const dest = appendAmazonSubtag(tag ? `https://www.amazon.com/dp/${a}?tag=${tag}` : `https://www.amazon.com/dp/${a}`, youtubeVideoId)
+        if (passportUsed) {
+          try {
+            const site = await getDefaultSite(supabase, ownerId)
+            const code = await getOrCreatePassportLink(createAdminClient(), ownerId, site && site.id !== 'legacy' ? site.id : null, { asin: a, label, source: youtubeVideoId || null })
+            if (code) return { link: passportLinkUrl(code), note: null }
+          } catch { /* said below */ }
+          return { link: dest, note: 'The Passport link could not be made, so this one is your tagged Amazon link.' }
+        }
+        if (geniuslinkUsed) {
+          const gk = (intRow?.geniuslink_api_key as string | null) || ytStyle.geniuslinkKey
+          const gs = (intRow?.geniuslink_api_secret as string | null) || ytStyle.geniuslinkSecret
+          if (gk && gs) {
+            try {
+              const groupId = await resolveGeniuslinkYouTubeGroupId({ supabase, userId: ownerId, apiKey: gk, apiSecret: gs })
+              const { url } = await getOrCreateAmazonGeniuslink({
+                userId: ownerId, asin: a, destination: dest, service: createGeniuslinkService(gk, gs),
+                groupId: groupId ?? undefined, note: youtubeVideoId ? `${youtubeVideoId} | ${YOUTUBE_COPILOT_GROUP_NAME}` : label,
+              })
+              return { link: url, note: null }
+            } catch { /* said below */ }
+          }
+          return { link: dest, note: 'The geni.us link could not be made, so this one is your tagged Amazon link.' }
+        }
+        if (bitlyUsed && ytStyle.bitlyToken) {
+          const short = await shortenBitly(ytStyle.bitlyToken, dest)
+          return short ? { link: short, note: null } : { link: dest, note: 'Bitly did not shorten this one, so it is your tagged Amazon link.' }
+        }
+        return { link: dest, note: null }
+      }
+      const rest = await Promise.all(comparison.slice(1).map(async (c) => {
+        let p: { title: string; bullets: string[]; price: string | null; rating: string | null; imageUrl: string | null } =
+          { title: c.asin, bullets: [], price: null, rating: null, imageUrl: null }
+        try {
+          const got = await fetchAmazonProduct(c.asin)
+          p = { title: got.title || c.asin, bullets: got.bullets ?? [], price: got.price ?? null, rating: got.rating ?? null, imageUrl: got.imageUrl ?? null }
+        } catch { /* the ASIN still gets its link; its title stays the ASIN, and the page shows that */ }
+        const l = await linkForAsin(c.asin, p.title)
+        return { ...c, ...p, link: l.link, linkNote: l.note }
+      }))
+      comparison = [comparison[0], ...rest]
+    }
+
     // WHAT THE CREATOR CHOSE vs WHAT THIS DESCRIPTION GOT.
     //
     // Every style can fall back quietly: a Passport mint returns null, a
@@ -1090,7 +1201,19 @@ export async function POST(request: Request) {
       ? `WHAT ACTUALLY HAPPENS IN THIS VIDEO — from its transcript. Treat this as GROUND TRUTH: the title and description MUST reflect THIS. If the original title disagrees with it (e.g. it's a placeholder or filename), trust the transcript.\n${videoBrief}`
       : ''
 
-    const productContext = isProduct
+    const productContext = comparison
+      ? [
+          briefBlock,
+          `COMPARISON VIDEO: this video compares ${comparison.length} products, in this order. Name them, compare them, and treat them as equals. NEVER say one is the winner, the best or the one to buy unless WHAT ACTUALLY HAPPENS IN THIS VIDEO says the creator picked it. Titles should be comparison titles that name at least two of the products ("Brand A vs Brand B").`,
+          ...comparison.map((c, i) => [
+            `PRODUCT ${i + 1}${c.label ? ` (${c.label})` : ''}: ${c.title}`,
+            c.price ? `Price: ${c.price}` : '',
+            c.rating ? `Rating: ${c.rating}/5` : '',
+            c.bullets.length ? `Features:\n${c.bullets.slice(0, 4).map(b => `- ${b.slice(0, 180)}`).join('\n')}` : '',
+          ].filter(Boolean).join('\n')),
+          videoDescription ? `Video context: "${videoDescription.slice(0, 200)}"` : '',
+        ].filter(Boolean).join('\n\n')
+      : isProduct
       ? [
           briefBlock,
           product.title ? `Product: ${product.title}` : '',
@@ -1140,7 +1263,14 @@ export async function POST(request: Request) {
     // strips storefront scaffolding ("Xprite Store" → "Xprite"), cuts at the
     // first use-case/connector word, and caps the length — so a YouTube title
     // and its matching blog post name the product identically.
-    const seoProductName: string | null = isProduct && product.title
+    // A comparison is searched as "A vs B": the names of the products joined,
+    // the first two when all of them would make the title too long.
+    const comparisonNames = comparison
+      ? comparison.map((c) => deriveProductName(c.title).canonical || shortProductName(c.title, 30))
+      : null
+    const seoProductName: string | null = comparisonNames
+      ? (comparisonNames.join(' vs ').length <= 60 ? comparisonNames.join(' vs ') : comparisonNames.slice(0, 2).join(' vs '))
+      : isProduct && product.title
       ? (deriveProductName(product.title).canonical || null)
       : null
 
@@ -1187,13 +1317,20 @@ export async function POST(request: Request) {
     }
 
     const [contentResult, engagementResult] = await Promise.all([
-      contentWriterAgent(anthropic, productAnalysis, titleResult.best, tone, niches, isProduct, priorDescriptions),
+      contentWriterAgent(anthropic, productAnalysis, titleResult.best, tone, niches, isProduct, priorDescriptions, comparisonNames),
       engagementAgent(anthropic, titleResult.best, productAnalysis, affiliateUrl, tone, priorPinnedComments),
     ])
 
     // ── Guarantee the affiliate URL is verbatim in the pinned comment ─────────
     // (Product mode only — general videos don't have a URL to enforce.)
-    if (affiliateUrl && engagementResult.pinnedComment && !engagementResult.pinnedComment.includes(affiliateUrl)) {
+    if (comparison && engagementResult.pinnedComment) {
+      // Every product's link, each named, so the pinned comment covers the whole comparison.
+      const missing = comparison.filter((c) => c.link && !engagementResult.pinnedComment.includes(c.link))
+      if (missing.length) {
+        engagementResult.pinnedComment = engagementResult.pinnedComment.trimEnd() + '\n\n'
+          + missing.map((c) => `${comparisonNames?.[comparison!.indexOf(c)] ?? shortProductName(c.title)}: ${c.link}`).join('\n')
+      }
+    } else if (affiliateUrl && engagementResult.pinnedComment && !engagementResult.pinnedComment.includes(affiliateUrl)) {
       engagementResult.pinnedComment = engagementResult.pinnedComment.trimEnd() + '\n' + affiliateUrl
     }
 
@@ -1263,12 +1400,22 @@ export async function POST(request: Request) {
     // mode (no link at all) opens straight with the video summary.
     const descParts: string[] = []
     if (affiliateUrl) {
-      descParts.push(
-        LINES.affiliateCta,
-        LINES.affiliateLabel,
-        `----------`,
-        isProduct ? LINES.disclosureProduct : LINES.disclosureGeneral,
-      )
+      if (comparison) {
+        // ONE LINE PER PRODUCT, each with its own link, in the creator's order.
+        descParts.push(
+          `The products in this video (affiliate links):`,
+          ...comparisonLinkLines(comparison.map((c, i) => ({ name: comparisonNames?.[i] ?? shortProductName(c.title), label: c.label, link: c.link }))),
+          `----------`,
+          LINES.disclosureProduct,
+        )
+      } else {
+        descParts.push(
+          LINES.affiliateCta,
+          LINES.affiliateLabel,
+          `----------`,
+          isProduct ? LINES.disclosureProduct : LINES.disclosureGeneral,
+        )
+      }
       // Blog backlink, promoted HIGH — right under the disclosure, above the
       // hashtags — with an arrow so it lands above YouTube's "...more" fold
       // where viewers actually see it.
@@ -1303,7 +1450,9 @@ export async function POST(request: Request) {
       descParts.push(`----------`, footer.blogLine)
     }
     if (collabLine) descParts.push(`----------`, collabLine)
-    if (isProduct) {
+    if (comparison) {
+      descParts.push(`----------`, `Product ASINs: ${comparison.map((c) => c.asin).join(', ')}`, `----------`, `About these products:`, contentResult.productDescription)
+    } else if (isProduct) {
       descParts.push(`----------`, `Product ASIN: ${trimmedAsin}`, `----------`, `Product Description:`, contentResult.productDescription)
     }
     if (gearBlock) descParts.push(`----------`, gearBlock)
@@ -1349,6 +1498,7 @@ export async function POST(request: Request) {
     // /analytics page can attribute YouTube-description clicks to the
     // MVP-YOUTUBE group. Falls back to null when the user has no
     // Geniuslink keys (affiliateUrl is the raw Amazon URL in that case).
+    let comparisonSaved: 'saved' | 'missing_column' | 'no_row' | 'failed' | null = null
     const ytGeniuslinkCode = affiliateUrl.match(/https?:\/\/(?:www\.)?geni\.us\/([A-Za-z0-9]+)/)?.[1] ?? null
 
     if (youtubeVideoId) {
@@ -1389,6 +1539,19 @@ export async function POST(request: Request) {
         console.warn('[generate-metadata] persist threw:', err instanceof Error ? err.message : String(err))
       }
 
+      // A COMPARISON REMEMBERS ALL ITS PRODUCTS (migration 375), in its own
+      // write so a database without the column loses only this, and the page
+      // is told, rather than the whole metadata save failing.
+      if (comparison) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: upd, error: aErr } = await (supabase as any).from('youtube_videos')
+            .update({ asins: comparison.map((c) => c.asin) })
+            .eq('user_id', ownerId).eq('youtube_video_id', youtubeVideoId).select('id')
+          comparisonSaved = aErr ? (aErr.code === '42703' ? 'missing_column' : 'failed') : (upd?.length ? 'saved' : 'no_row')
+        } catch { comparisonSaved = 'failed' }
+      }
+
       // Co-Pilot handled this video → record a GENERATED marker (migration 150)
       // so the drafts list moves it out of "Needs metadata" into "Metadata sent"
       // the moment it's generated — even if the creator finishes it in YouTube
@@ -1418,6 +1581,13 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       asin: trimmedAsin || null,
+      // What the comparison actually got: each product's title, photo and the
+      // link that went in the description, a note where a link fell back,
+      // and whether the product list was saved on the video.
+      comparison: comparison
+        ? comparison.map((c) => ({ asin: c.asin, label: c.label, title: c.title, imageUrl: c.imageUrl, link: c.link, linkNote: c.linkNote }))
+        : null,
+      comparisonSaved,
       isProduct,
       productDiscoverySource,
       affiliateUrl,

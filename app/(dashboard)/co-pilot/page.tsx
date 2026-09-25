@@ -22,6 +22,9 @@ import { draftVisibility, productLinkFor, studioDisclosuresConfirmed, studioSetV
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
 import BrandStylePanel from '@/components/co-pilot/BrandStylePanel'
+import ComparisonProducts, { type ComparisonResultItem } from '@/components/co-pilot/ComparisonProducts'
+import { canUsePreview } from '@/lib/labs-preview'
+import { readComparisonSlots, productLinksInText, type ComparisonSlotInput } from '@/lib/comparison-products'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, RefreshCw, Link2, Tag, Lock, Eye, Globe,
@@ -774,6 +777,23 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   /** When a product is already detected for the video, the paste box is hidden
    *  behind this toggle — the creator only reveals it to override the detection. */
   const [overrideProduct, setOverrideProduct] = useState(false)
+  // COMPARISON VIDEO (Labs): 2 to 4 products in one video, set before generating.
+  const canCompare = canUsePreview('comparison', userTier)
+  const [compareOn, setCompareOn] = useState(false)
+  const [compareSlots, setCompareSlots] = useState<ComparisonSlotInput[]>([])
+  const [compareResult, setCompareResult] = useState<ComparisonResultItem[] | null>(null)
+  const [compareSaved, setCompareSaved] = useState<'saved' | 'missing_column' | 'no_row' | 'failed' | null>(null)
+  const toggleCompare = (on: boolean) => {
+    setCompareOn(on)
+    if (on && compareSlots.length === 0) {
+      // Filled in from what MVP can already see: the card's product first,
+      // then product links in the video's description.
+      const seen: string[] = []
+      for (const v of [cardAsin ?? '', ...productLinksInText(video.description)]) if (v && !seen.includes(v)) seen.push(v)
+      while (seen.length < 2) seen.push('')
+      setCompareSlots(seen.slice(0, 4).map((input) => ({ input, label: '' })))
+    }
+  }
   /** User's READY face models — pulled from /api/face-models on mount.
    *  When the user picks one, faceModelId gets passed to the generate
    *  request and the server routes through the LoRA-capable Flux endpoint. */
@@ -1144,6 +1164,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   }
 
   async function generate(skipAsinCheck = false) {
+    // A comparison that is not complete is said before anything is spent.
+    const comparing = canCompare && compareOn
+    if (comparing) {
+      const { error: cmpErr } = readComparisonSlots(compareSlots)
+      if (cmpErr) { toast.error(cmpErr); return }
+    }
+    setCompareResult(null)
+    setCompareSaved(null)
     setGenerating(true)
     setError(null)
     setProgress(null)
@@ -1189,6 +1217,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           ...(scoutTranscript ? { transcript: scoutTranscript } : {}),
           // SCOUT-scraped product (only on the fallback retry below).
           ...(productOverride ? { productOverride } : {}),
+          ...(comparing ? { comparisonProducts: compareSlots } : {}),
         }),
       })
 
@@ -1206,11 +1235,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       // Amazon blocked the SERVER scrape (datacenter IP). Fetch the product
       // through SCOUT — it runs in the user's own browser / logged-in Amazon
       // session, which Amazon doesn't block — and retry once with that data.
-      if (!res.ok && data.scrapeFailed && cardAsin) {
+      // In a comparison the product that failed is the first compared one,
+      // which the server names; otherwise it is the card's own product.
+      const blockedAsin = comparing ? ((data.asin as string | undefined) ?? null) : cardAsin
+      if (!res.ok && data.scrapeFailed && blockedAsin) {
         try {
           if (await isExtensionAvailable()) {
             setProgress('Amazon blocked our server, so SCOUT is fetching the product from your browser…')
-            const prod = await requestAmazonProduct(cardAsin)
+            const prod = await requestAmazonProduct(blockedAsin)
             if (prod.ok && prod.product?.title) {
               res = await callOnce(prod.product)
               data = await safeJson(res)
@@ -1270,6 +1302,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       setLinkStyleHonoured((data.linkStyleHonoured ?? false) as boolean)
       setDescOverrides((data.descriptionLineOverrides ?? null) as Record<string, unknown> | null)
       setGeniuslinkVerified((data.geniuslinkVerified ?? true) as boolean)
+      setCompareResult((data.comparison ?? null) as ComparisonResultItem[] | null)
+      setCompareSaved((data.comparisonSaved ?? null) as typeof compareSaved)
+      if (comparing && !data.comparison) toast.error('The comparison was not applied: this metadata covers one product. Try again, or tell support.')
 
       // ── Thumbnail no longer auto-fires after metadata generation ─────────
       // The thumbnail flow now opens a modal asking the user about the
@@ -1997,6 +2032,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // tells the model how to arrange them. A SCOUT-fetched image (from the
           // blocked-server rescue below) wins over the state-held uploads.
           customProductImageUrls: opts?.productImageUrlsOverride?.length ? opts.productImageUrlsOverride : (productImageUrls.length > 0 ? productImageUrls : undefined),
+          // COMPARISON (Labs): the products the metadata was generated for, so
+          // the thumbnail shows each one from its own Amazon photo.
+          // Not on the SCOUT retry: those photos are all of ONE product, and
+          // calling them a comparison would tell the model they are different.
+          ...(canCompare && compareOn && compareResult && compareResult.length > 1 && !opts?.productImageUrlsOverride?.length
+            ? { comparisonAsins: compareResult.map((r) => r.asin) } : {}),
           productCompositionNote: productCompositionNote.trim() || undefined,
           // Creator's free-text "describe your thumbnail" direction.
           scenePrompt: scenePrompt.trim() || undefined,
@@ -2053,6 +2094,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         try {
           if (await isExtensionAvailable()) {
             setThumbnailStatus('Amazon blocked our server — grabbing the product through SCOUT…')
+            if (canCompare && compareOn && compareResult && compareResult.length > 1) {
+              toast.warning('Amazon blocked the product photos, so this thumbnail shows one product, not the comparison. Try again later for all of them.')
+            }
             const prod = await requestAmazonProduct(cardAsin)
             const imgs = prod.ok && prod.product
               ? [prod.product.imageUrl, ...(prod.product.images || [])].filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u))
@@ -2075,6 +2119,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       }
       setCapError(null)
       await applyThumbnailResult(data)
+      // A COMPARISON THAT LOST A PRODUCT says so: a thumbnail showing two of
+      // three products looks finished, and nothing else would tell.
+      const cmp = data.comparison as { asked: number; shown: number } | null | undefined
+      if (cmp && cmp.shown < cmp.asked) {
+        toast.warning(cmp.shown > 1
+          ? `Only ${cmp.shown} of the ${cmp.asked} products are in this thumbnail: Amazon did not give MVP a photo of the rest.`
+          : `The comparison could not be drawn: Amazon did not give MVP photos of the products, so this shows one product.`)
+      }
     } catch (err) {
       setThumbnailError(err instanceof Error ? err.message : 'Failed to generate thumbnail')
     } finally {
@@ -2444,6 +2496,17 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             onFixed={(a) => setFixedAsin(a)}
             onRewrite={() => { if (!generating) void generate() }}
           />
+          {canCompare && (
+            <ComparisonProducts
+              on={compareOn}
+              onToggle={toggleCompare}
+              slots={compareSlots}
+              onChange={setCompareSlots}
+              result={compareResult}
+              saved={compareSaved}
+              disabled={generating}
+            />
+          )}
           <div className="flex items-center gap-2 flex-wrap">
             {generating ? (
               <div className="flex flex-col gap-1">

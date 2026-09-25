@@ -177,20 +177,30 @@ export async function coveredProducts(sb: Sb, userId: string, limit = 400, onlyA
     byAsin.set(a, cur)
   }
 
-  let vq = sb.from('youtube_videos')
-    .select('id,asin,title,youtube_video_id,view_count,published_at,channel_id,thumbnail_url')
-    .eq('user_id', userId).not('asin', 'is', null)
-  if (only?.length) vq = vq.in('asin', only)
-  const { data: vids } = await vq.order('published_at', { ascending: false, nullsFirst: false }).limit(limit)
-  for (const v of (vids ?? []) as Array<Record<string, unknown>>) {
+  // A COMPARISON VIDEO covers every product in `asins` (migration 375), not
+  // only its first. Read with the column when it exists, without it when not.
+  const readVideos = async (withAsins: boolean) => {
+    const cols = `id,asin,title,youtube_video_id,view_count,published_at,channel_id,thumbnail_url${withAsins ? ',asins' : ''}`
+    let q = sb.from('youtube_videos').select(cols).eq('user_id', userId).not('asin', 'is', null)
+    if (only?.length) q = withAsins ? q.or(`asin.in.(${only.join(',')}),asins.ov.{${only.join(',')}}`) : q.in('asin', only)
+    return q.order('published_at', { ascending: false, nullsFirst: false }).limit(limit)
+  }
+  let vres = await readVideos(true)
+  if (vres.error) vres = await readVideos(false)
+  for (const v of (vres.data ?? []) as Array<Record<string, unknown>>) {
     const yt = String(v.youtube_video_id || '')
     // A video still being uploaded has a placeholder id, and nothing to promote.
     if (!/^[A-Za-z0-9_-]{11}$/.test(yt)) continue
-    add(String(v.asin), '', null, {
+    const src: CoverSource = {
       kind: 'video', id: String(v.id), youtubeVideoId: yt, title: String(v.title || ''),
       views: (v.view_count as number | null) ?? null, publishedAt: (v.published_at as string | null) ?? null,
       channelId: (v.channel_id as string | null) ?? null, thumbnail: (v.thumbnail_url as string | null) ?? null,
-    })
+    }
+    const all = [String(v.asin), ...(Array.isArray(v.asins) ? (v.asins as unknown[]).map(String) : [])]
+    for (const a of [...new Set(all.map((x) => x.trim().toUpperCase()))]) {
+      if (only?.length && !only.includes(a)) continue
+      add(a, '', null, src)
+    }
   }
 
   let sq = sb.from('storefront_catalog').select('asin,title,image_url').eq('user_id', userId)

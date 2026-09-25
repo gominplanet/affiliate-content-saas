@@ -75,6 +75,14 @@ export interface ThumbnailPromptInput {
   identityInstruction: string
   /** 1-based index of the product photo among the references, if there is one. */
   productRefNum?: number | null
+  /** How many product photos there are, starting at productRefNum. More than
+   *  one is several products (a comparison) or several of the creator's own
+   *  photos, and the product paragraph then says to show each one. */
+  productRefCount?: number
+  /** A comparison video: the photos are different products shown as equals. */
+  comparison?: boolean
+  /** The creator's own note on how the products sit in the frame. */
+  productArrangement?: string
   productLabel: string
   /** Real product details the design may turn into callouts. */
   productFacts?: string
@@ -161,10 +169,38 @@ export function productLine(input: ThumbnailPromptInput): string {
   if (input.wearLine) {
     return `PRODUCT: the product is worn, exactly as the WORN, NOT HELD rule above says${input.productRefNum ? `, and it is the item in Image ${input.productRefNum}` : ''}. It is ${input.wearOn || 'worn by the person'}, lit naturally so it reads clearly at thumbnail size, and it appears NOWHERE else in the design: no hero shot of it beside them, no copy on a hanger, a mannequin, a stand or a surface, none held in a hand. Keep its true shape, colours and its own printed branding; never invent packaging or fake logos.`
   }
+  if (input.productRefNum && (input.productRefCount ?? 1) > 1) {
+    return multiProductLine({ firstImage: input.productRefNum, count: input.productRefCount ?? 1, comparison: !!input.comparison, arrangement: input.productArrangement })
+  }
   if (input.productRefNum) {
     return `PRODUCT: feature the product from Image ${input.productRefNum} accurately as the hero — its true shape, colours and its own printed branding (never invent packaging or fake logos). Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura behind it. Show it however fits the design: hero shot, in-use, or lifestyle.`
   }
   return `PRODUCT: feature ${input.productLabel} accurately and prominently, true to life.`
+}
+
+/** Where the products go, by how many there are. */
+export function comparisonLayout(count: number): string {
+  if (count <= 2) return 'side by side, one on the left and one on the right, the same size, with a bold "VS" between them'
+  if (count === 3) return 'three across in a row, evenly spaced and the same size'
+  return 'a 2 by 2 grid, all four the same size'
+}
+
+/**
+ * The product paragraph for SEVERAL product photos. A comparison shows every
+ * product as an equal, each from its own photo; several photos without a
+ * comparison may be angles of one product, so the model is told how to tell.
+ * Before this, only the first photo ever reached the model and the rest,
+ * and the creator's arrangement note, were silently dropped.
+ */
+export function multiProductLine(opts: { firstImage: number; count: number; comparison: boolean; arrangement?: string }): string {
+  const last = opts.firstImage + opts.count - 1
+  const range = `Images ${opts.firstImage} to ${last}`
+  const faithful = 'each recreated accurately from its own photo: its true shape, colours and its own printed branding (never invent packaging or fake logos), lit naturally with a grounded shadow'
+  const arrange = (opts.arrangement || '').trim()
+  if (opts.comparison) {
+    return `PRODUCTS: this is a COMPARISON. ${range} are ${opts.count} DIFFERENT products. Show EVERY one of them, ${faithful}. Arrange them ${arrange ? `as the creator asked: "${arrange.slice(0, 300)}"` : comparisonLayout(opts.count)}. None may be hidden, cropped, merged with another or left out, and no product may look bigger or better lit than the others: they are compared as equals. No extra products that are not in the photos.`
+  }
+  return `PRODUCTS: ${range} are the creator's product photos. If they show DIFFERENT products, show every one, ${faithful}. If they are angles of the SAME product, show that one product once, using the photos together to get it exactly right.${arrange ? ` Arrange them as the creator asked: "${arrange.slice(0, 300)}".` : ''}`
 }
 
 /** The palette, which owns the design and never the product. Without the second
