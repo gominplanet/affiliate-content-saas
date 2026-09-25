@@ -497,6 +497,20 @@ export class YouTubeOAuthService {
     return out
   }
 
+  /** The channel this login actually uploads to, as YouTube itself says.
+   *  One quota unit. Null when the login has no channel. */
+  async getMyChannel(): Promise<{ id: string; title: string; thumbnail: string | null } | null> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.get<any>('/channels', { part: 'snippet', mine: 'true' })
+    const c = data?.items?.[0]
+    if (!c?.id) return null
+    return {
+      id: String(c.id),
+      title: String(c.snippet?.title || c.id),
+      thumbnail: (c.snippet?.thumbnails?.default?.url as string | undefined) ?? null,
+    }
+  }
+
   // Resolve the uploads playlist ID for the authenticated user.
   // Costs 1 quota unit — callers should cache the result.
   async getUploadsPlaylistId(): Promise<string> {

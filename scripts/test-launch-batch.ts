@@ -1986,7 +1986,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'one means check the channel, the other means wait or fix a claim')
 
   check('the worker can see what it needs',
-    /select\('id,user_id,title,youtube_video_id,publish_at,confirm_tries'\)/.test(DRAIN),
+    /select\('id,user_id,batch_id,title,youtube_video_id,publish_at,confirm_tries'\)/.test(DRAIN),
     'a column the query does not select is a decision made on undefined')
   check('and the columns exist, twice-runnable',
     // ON launch_items, NOT just anywhere in the file. storefront_coverage gains
@@ -2122,6 +2122,48 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the tab warns before it is closed mid-upload',
     /addEventListener\('beforeunload', warn\)/.test(BOARD),
     'the upload is the one part of Liftoff that dies with the tab')
+}
+
+// ── THE RIGHT CHANNEL, CHECKED FIRST ─────────────────────────────────────────
+// Liftoff uploaded to whichever channel was marked default, and nothing asked
+// YouTube which channel that login really uploads to before ten videos went.
+{
+  const M372 = read('supabase/migrations/372_launch_batch_channel.sql')
+  const CH = read('lib/launch-channel.ts')
+  const ROUTE = live(read('app/api/launch/batches/[id]/channel/route.ts'))
+  const READY = live(read('lib/launch-readiness.ts'))
+  const LAUNCHR = live(read('app/api/launch/batches/[id]/launch/route.ts'))
+  const PL = live(read('app/api/youtube/playlists/route.ts'))
+  const CARD = read('components/launch/ChannelCheck.tsx')
+  check('the batch keeps the channel it confirmed, twice-runnable',
+    /alter table public\.launch_batches add column if not exists youtube_channel_id text;/.test(M372),
+    'a column the code writes and the database has not got fails silently')
+  check('the answer is YouTube\'s, asked with the uploader\'s own login',
+    /getChannelOAuthToken\(sb, userId, channelId\)/.test(CH) && /getMyChannel\(\)/.test(CH)
+    && /part: 'snippet', mine: 'true'/.test(read('services/youtube/index.ts')),
+    'a name MVP wrote down when the channel was connected proves nothing about where a login uploads')
+  check('a channel is saved only when YouTube agrees',
+    /if \(live\.id !== channelId\)/.test(ROUTE) && inOrder(ROUTE, 'if (live.id !== channelId)', "update({ youtube_channel_id: channelId })"),
+    'confirming a channel the login does not upload to is the mistake this exists to stop')
+  check('no new launch without a confirmed channel',
+    /if \(!late && !batch\.youtube_channel_id\) \{\s*return 'Confirm your YouTube channel/.test(READY) && /batch\.youtube_channel_id === undefined/.test(READY),
+    'the button must not be pressable before the question is answered')
+  check('and it is asked again at the button',
+    /liveUploadChannel\(sb, user\.id, batch\.youtube_channel_id\)/.test(LAUNCHR) && /live\.id !== batch\.youtube_channel_id/.test(LAUNCHR),
+    'a login can change between confirming and launching')
+  check('and again before every upload, stopping on a mismatch with nothing uploaded',
+    /getChannelOAuthToken\(sb, it\.user_id as string, expected\)/.test(DRAIN)
+    && /if \(!live \|\| live\.id !== expected\)/.test(DRAIN)
+    && inOrder(DRAIN, 'if (!live || live.id !== expected)', 'await yt.uploadShort(bytes'),
+    'the upload is the step that cannot be taken back')
+  check('publish checks and playlists use the same channel',
+    /getChannelOAuthToken\(sb, userId, groupChannel \|\| null\)/.test(DRAIN)
+    && /getChannelOAuthToken\(sb, b\.user_id, bch\)/.test(DRAIN)
+    && /searchParams\.get\('channel'\)/.test(PL) && /playlists\?channel=/.test(BOARD),
+    'a private video is invisible to another channel\'s login, and a playlist belongs to one channel')
+  check('the check sits above the Launch button and shows a mismatch as one',
+    /<ChannelCheck batchId=\{batch\.id\}/.test(BOARD) && /Yes, upload here/.test(CARD) && /uploads to &quot;\{st\.live\?\.title\}&quot; instead/.test(CARD),
+    'a check whose failure looks like its success is not a check')
 }
 
 if (failures.length) {
