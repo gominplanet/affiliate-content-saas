@@ -273,8 +273,15 @@ async function saleEndedGuards() {
     inOrderCheck(C, 'yt.postComment(', "from('sale_comments').insert(") && /trackError/.test(C))
   const CRON = read('app/api/cron/sale-comments/route.ts')
   check('the job leaves an unchecked price alone and only edits an ended sale',
-    inOrderCheck(CRON, "if (verdict === 'unknown') { unknown++; continue }", 'takeSaleOut(sb, r)')
-    && /"path": "\/api\/cron\/sale-comments"/.test(read('vercel.json')))
+    inOrderCheck(CRON, "if (verdict === 'unknown') { unknown++; continue }", 'takeSaleOut(sb, r)'))
+  // Matched the way the covered-sales check is, which passes on Vercel.
+  // Vercel's copy of vercel.json is not spaced like the repo's, and a match
+  // on '"path": "..."' failed only there. The detail says what it saw.
+  {
+    const V = read('vercel.json')
+    check('the sale comments job is on the schedule', /"\/api\/cron\/sale-comments"/.test(V),
+      `vercel.json here is ${V.length} bytes; its cron paths: ${(V.match(/\/api\/cron\/[a-z-]+/g) ?? []).slice(-4).join(', ')}`)
+  }
   const M = read('supabase/migrations/374_sale_comments.sql')
   check('migration 374 is twice-runnable',
     /create table if not exists public\.sale_comments/.test(M) && /drop policy if exists "sale_comments_own_read"/.test(M))
