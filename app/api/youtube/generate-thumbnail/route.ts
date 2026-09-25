@@ -1228,7 +1228,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
        *  neon border ("break the frame" effect). Off by default because rembg
        *  adds ~15-20s per generation. */
       breakFrame?: boolean
-      format?: 'landscape' | 'pin' | 'ig' | 'fb' | 'story'
+      format?: 'landscape' | 'pin' | 'ig' | 'fb' | 'story' | 'short'
       briefKey?: string
       ctaLinkInBio?: boolean
       headlineStyle?: 'statement' | 'question'
@@ -1342,15 +1342,18 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     const isIg = format === 'ig'
     const isFb = format === 'fb'
     const isStory = format === 'story'
-    const isPortrait = isPin || isIg || isStory
+    // A YouTube SHORT's own thumbnail: 9:16, like the Short itself. Still the
+    // hero YouTube render (its model, quality and thumbnail cap), only taller.
+    const isShortCover = format === 'short'
+    const isPortrait = isPin || isIg || isStory || isShortCover
     // gpt-image-2 only renders two native sizes: portrait 2:3 (1024×1536) and
     // landscape 16:9 (1536×864). We render at the closest one, then downscale/crop
     // to the exact platform dimensions below.
     const gfxSize: '1536x864' | '1024x1536' = isPortrait ? '1024x1536' : '1536x864'
     // Final delivered dimensions per platform. IG feed is 4:5 (1080×1350, the max
     // the feed allows); IG story is 9:16 full-screen (1080×1920).
-    const outW = isPin ? 1000 : isIg ? 1080 : isStory ? 1080 : isFb ? 1200 : 1280
-    const outH = isPin ? 1500 : isIg ? 1350 : isStory ? 1920 : isFb ? 630 : 720
+    const outW = isPin ? 1000 : isIg ? 1080 : (isStory || isShortCover) ? 1080 : isFb ? 1200 : 1280
+    const outH = isPin ? 1500 : isIg ? 1350 : (isStory || isShortCover) ? 1920 : isFb ? 630 : 720
     // Authoritative first prompt line that reframes the design for the target
     // format (overrides any 16:9 wording further down). Landscape/FB keep the
     // default thumbnail styling, so no directive.
@@ -1358,6 +1361,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
       ? 'FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. It is a SHOPPING pin whose only job is to earn the click to buy, so use MORE text than a thumbnail: a big bold headline across the TOP, then a STACKED vertical list of 3–5 short benefit/feature callouts (checkmarks, chips or spec badges) down the middle, and a strong shop-style call-to-action near the BOTTOM (e.g. "TAP TO SHOP" or "SEE THE DEAL"). NEVER the word "Amazon". Product large and central; fill the tall frame top-to-bottom with no empty dead space. Person (if any) smaller, to one side.'
       : isIg
       ? `FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 4:5 VERTICAL INSTAGRAM FEED POST (1080×1350, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. A scroll-stopping shopping post: a big bold headline near the TOP, a short STACKED list of 2–4 benefit/feature callouts in the middle, product large and central. NEVER the word "Amazon". Fill the frame, but SAFE AREA: the TOP and BOTTOM ~10% get cropped — keep every word, badge, logo and the product edge inside a safe margin, never touching the top or bottom edge.${ctaLinkInBio === false ? ' Do NOT put any "LINK IN BIO", link, URL or call-to-action text in the design — keep it clean.' : ' MANDATORY: prominently design a bold "LINK IN BIO" call-to-action into the image (a pill, ribbon or badge, e.g. "🔗 LINK IN BIO TO SHOP") near the bottom (inside the safe area).'}`
+      : isShortCover
+      ? 'FORMAT, READ FIRST, OVERRIDES EVERYTHING BELOW: this is a TALL 9:16 VERTICAL YOUTUBE SHORTS THUMBNAIL (portrait, like the Short itself), NOT a 16:9 thumbnail. Ignore any "16:9" or "landscape" wording that follows. The headline goes large in the upper third; the person and the product fill the middle. The image will be trimmed a little on the left and right, so keep every word and the whole product in the central 80% of the width. Keep the bottom 20% free of text, because YouTube covers it with the title and buttons. No "link in bio", no URL, never the word "Amazon".'
       : isStory
       ? `FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a TALL VERTICAL INSTAGRAM STORY design (portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. A bold headline high up, the product large and central, 1–3 short punchy callouts. Fill the whole tall frame edge to edge, no empty dead space. Keep the headline a little below the very top and the call-to-action a little above the very bottom so the phone's story UI never covers them. NEVER the word "Amazon".${ctaLinkInBio === false ? ' Do NOT put any "LINK IN BIO", link, URL or call-to-action text in the design — keep it clean.' : ' MANDATORY: prominently design a bold "LINK IN BIO" call-to-action into the image (a pill, ribbon or badge, e.g. "🔗 LINK IN BIO TO SHOP") in the lower third.'}`
       : ''

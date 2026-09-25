@@ -376,6 +376,14 @@ await saleEndedGuards()
     && /if \(shortMode && engagementResult\.pinnedComment\)/.test(M) && /shorts\.get\(id\) === false/.test(M))
   const P = read('app/(dashboard)/co-pilot/page.tsx')
   check('the Co-Pilot card only goes Short when YouTube said so', /const shortMode = isShort === true && canUsePreview\('shorts_mode', userTier\)/.test(P) && /\.\.\.\(shortMode \? \{ isShort: true \} : \{\}\)/.test(P))
+  const T = read('app/api/youtube/generate-thumbnail/route.ts')
+  check('a Short gets a vertical 9:16 thumbnail, and YouTube receives it vertical',
+    /const isShortCover = format === 'short'/.test(T) && /\(isStory \|\| isShortCover\) \? 1920/.test(T)
+    && /\.\.\.\(shortMode \? \{ format: 'short' \} : \{\}\)/.test(P)
+    && /resize\(tall \? 1080 : 1280, tall \? 1920 : 720/.test(read('lib/youtube-thumbnail-input.ts')))
+  check('with no product and no transcript, Co-Pilot stops and asks instead of guessing from the title',
+    /if \(!isProduct && !videoTranscript\.trim\(\) && !skipAsinCheck\)/.test(M) && inOrderCheck(M, 'needsProduct: true', 'await distillVideoBrief(')
+    && /needsProduct \? 'Generate without a product' : 'Generate anyway'/.test(P))
   check('Short mode is admin only while testing', !canUsePreview('shorts_mode', 'pro') && canUsePreview('shorts_mode', 'admin'))
 }
 

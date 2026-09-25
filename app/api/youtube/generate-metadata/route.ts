@@ -1202,6 +1202,17 @@ export async function POST(request: Request) {
         }
       } catch { /* scraper blocked / no captions — degrade to title+description */ }
     }
+    // NO PRODUCT AND NOTHING TO GO ON: stop and ask, never guess. With no
+    // product found and no transcript, the only thing left to write from is
+    // the title, and a product name like "EZbomb" (a spice) came back as a
+    // video about explosives. The creator is asked which product it is, or
+    // can say it is not about one ("Generate without a product").
+    if (!isProduct && !videoTranscript.trim() && !skipAsinCheck) {
+      return NextResponse.json({
+        error: 'MVP could not tell which product this video is about, and it has no transcript to go on, so it stopped rather than guess from the title. Set the product above (paste its ASIN or Amazon link), or press Generate without a product if this video is not about one.',
+        needsProduct: true,
+      }, { status: 422 })
+    }
     const videoBrief = await distillVideoBrief(anthropic, videoTranscript, videoTitle, niches)
     const briefBlock = videoBrief
       ? `WHAT ACTUALLY HAPPENS IN THIS VIDEO — from its transcript. Treat this as GROUND TRUTH: the title and description MUST reflect THIS. If the original title disagrees with it (e.g. it's a placeholder or filename), trust the transcript.\n${videoBrief}`

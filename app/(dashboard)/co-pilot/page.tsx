@@ -649,6 +649,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
   const [progress, setProgress] = useState<string | null>(null)
   // True when the last generate failed the ASIN-mismatch tripwire → show "Generate anyway".
   const [asinMismatch, setAsinMismatch] = useState(false)
+  // The server stopped because it could not tell the product and had nothing to go on.
+  const [needsProduct, setNeedsProduct] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
   const [applied, setApplied] = useState(false)
   // WHAT HAPPENED TO THE TIME, not what was asked. With SCOUT finishing, the
@@ -1181,6 +1183,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
     setError(null)
     setProgress(null)
     setAsinMismatch(false)
+    setNeedsProduct(false)
     setGenerated(null)
     setApplied(false)
     setThumbnailUrl(null)
@@ -1273,6 +1276,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
       if (!res.ok) {
         // ASIN-mismatch tripwire (422) → flag so the UI can offer "Generate anyway".
         setAsinMismatch(!!data.asinMismatch)
+        setNeedsProduct(!!data.needsProduct)
         // data.error can come back as a string OR an object with .message
         // (depends on which error path fired server-side). Without this
         // normalization, an object error makes new Error(obj) render as
@@ -2043,6 +2047,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
           // the thumbnail shows each one from its own Amazon photo.
           // Not on the SCOUT retry: those photos are all of ONE product, and
           // calling them a comparison would tell the model they are different.
+          // A Short gets a vertical 9:16 thumbnail, the shape of the Short itself.
+          ...(shortMode ? { format: 'short' } : {}),
           ...(canCompare && compareOn && compareResult && compareResult.length > 1 && !opts?.productImageUrlsOverride?.length
             ? { comparisonAsins: compareResult.map((r) => r.asin) } : {}),
           productCompositionNote: productCompositionNote.trim() || undefined,
@@ -2505,7 +2511,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
           <ProductConfirm
             youtubeVideoId={video.youtubeVideoId}
             detectedAsin={cardAsin}
-            onFixed={(a) => setFixedAsin(a)}
+            onFixed={(a) => { setFixedAsin(a); setNeedsProduct(false) }}
             onRewrite={() => { if (!generating) void generate() }}
           />
           {shortMode && (
@@ -2579,13 +2585,13 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
             </p>
           )}
           {error && <p className="text-xs text-[#ff3b30] mt-2">{typeof error === 'string' ? error : 'Something went wrong'}</p>}
-          {asinMismatch && !generating && (
+          {(asinMismatch || needsProduct) && !generating && (
             <button
               onClick={() => generate(true)}
               className="mt-2 text-[11px] px-3 h-7 rounded-md border border-[#ff9500] text-[#ff9500] font-semibold hover:bg-[#ff9500] hover:text-white transition"
-              title="The product is right? Generate metadata anyway, skipping the ASIN match check."
+              title={needsProduct ? 'This video is not about a product? Generate general metadata from the title.' : 'The product is right? Generate metadata anyway, skipping the ASIN match check.'}
             >
-              Generate anyway
+              {needsProduct ? 'Generate without a product' : 'Generate anyway'}
             </button>
           )}
           {capError && (
@@ -2824,14 +2830,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">MVP Art Director</p>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">1280×720</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">{shortMode ? '1080×1920' : '1280×720'}</span>
                       </div>
                       <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Designs a unique, viral thumbnail from your product & face</p>
                     </div>
                   </div>
                   {shortMode && (
                     <p className="rounded-lg border border-[#ff3b30]/20 bg-[#ff3b30]/[0.04] px-3 py-2 text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      This is a Short. The Shorts feed shows the Short itself, vertical, so a 16:9 thumbnail is mostly not seen. You can skip this step; pick the Short&apos;s frame in the YouTube app instead.
+                      This is a Short, so MVP makes its thumbnail vertical (9:16, 1080×1920), the same shape as the Short. Text stays clear of the bottom, where YouTube puts the title and buttons.
                     </p>
                   )}
 

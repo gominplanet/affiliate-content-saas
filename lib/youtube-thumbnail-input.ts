@@ -40,8 +40,12 @@ const YT_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
  * recommended size) and compress to JPEG 90%.
  */
 async function compressForYouTube(buffer: Buffer): Promise<{ buffer: Buffer<ArrayBuffer>; mimeType: string }> {
+  // A vertical thumbnail (a Short's) keeps its shape: fitted inside 1080x1920
+  // rather than inside 1280x720, which would shrink it to a sliver.
+  const meta = await sharp(buffer).metadata().catch(() => null)
+  const tall = !!meta?.width && !!meta?.height && meta.height > meta.width
   const compressed = await sharp(buffer)
-    .resize(1280, 720, { fit: 'inside', withoutEnlargement: true })
+    .resize(tall ? 1080 : 1280, tall ? 1920 : 720, { fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 90 })
     .toBuffer() as Buffer<ArrayBuffer>
   return { buffer: compressed, mimeType: 'image/jpeg' }
