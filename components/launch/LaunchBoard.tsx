@@ -49,6 +49,9 @@ interface Item {
   asin: string | null
   title: string | null
   description: string | null
+  /** The storefront title, separate from YouTube's (migration 370). Empty
+   *  means MVP writes one before the video goes to Amazon. */
+  amazon_title?: string | null
   thumbnail_url: string | null
   /** 'styled' (the batch look applied) or 'plain' (it did not). */
   thumbnail_source: string | null
@@ -1878,8 +1881,11 @@ export default function LaunchBoard() {
                         codebase keeps producing in new shapes. The attempt
                         count and the time since anything last happened are the
                         two facts that separate them. */}
-                    {(it.state === 'rendering' || it.state === 'preparing') && (
+                    {(it.state === 'rendering' || (it.state === 'preparing' && !!it.asin)) && (
                       <> · {progressNote(it)}</>
+                    )}
+                    {it.state === 'preparing' && !it.asin && (
+                      <> · paste the ASIN in its row below</>
                     )}
                     {/* THE THUMBNAIL ON THE CHANNEL, not the one in this row.
                         The image to the left is the file we designed, and it
@@ -2087,6 +2093,13 @@ function ItemRowEditor({
   // reaches YouTube. Collapsed, because most people will never touch it.
   const [showDesc, setShowDesc] = useState(false)
   const [desc, setDesc] = useState(item.description ?? '')
+  // THE AMAZON TITLE IS ITS OWN LINE. YouTube wants a longer search-shaped
+  // title; a storefront video sits beside the product and needs a short hook in
+  // the creator's storefront voice. Left empty, MVP writes one before the
+  // video goes to Amazon, so nobody has to touch this box.
+  const [amazonTitle, setAmazonTitle] = useState(item.amazon_title ?? '')
+  const [amzOptions, setAmzOptions] = useState<string[]>([])
+  const [writingAmz, setWritingAmz] = useState(false)
 
   // THE TITLE MVP WROTE IS OFFERED, NOT APPLIED. This is the line that goes on
   // YouTube and gets translated into every other country, so it is the last
@@ -2117,6 +2130,24 @@ function ItemRowEditor({
     } finally { setWriting(false) }
   }
 
+  async function writeAmazonTitle() {
+    setWritingAmz(true)
+    try {
+      const unsaved = product.trim() && product !== (item.asin ?? '')
+      if (unsaved) {
+        dirty.current = false
+        await onSave(item.id, { product })
+      }
+      const r = await fetch(`/api/launch/items/${item.id}/title?for=amazon`, { method: 'POST' })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !Array.isArray(j?.titles) || j.titles.length === 0) {
+        toast.error(j?.error || 'Could not write an Amazon title. Try again, or type one.')
+        return
+      }
+      setAmzOptions(j.titles as string[])
+    } finally { setWritingAmz(false) }
+  }
+
   // AN ASIN IS NOT A TITLE, and nothing used to stop one becoming the YouTube
   // title of ten videos and the source text for every translation.
   const titleIsAsin = !!title.trim() && !!product.trim()
@@ -2129,11 +2160,13 @@ function ItemRowEditor({
     setTitle(item.title ?? '')
     setProduct(item.asin ?? '')
     setDesc(item.description ?? '')
-  }, [item.title, item.asin, item.description])
+    setAmazonTitle(item.amazon_title ?? '')
+  }, [item.title, item.asin, item.description, item.amazon_title])
 
   const changed = title !== (item.title ?? '')
     || product !== (item.asin ?? '')
     || desc !== (item.description ?? '')
+    || amazonTitle !== (item.amazon_title ?? '')
   // ONE FIELD'S SAVE MUST NOT WIPE THE OTHER. Both were always sent together,
   // so emptying one box and pressing Save deleted whatever was in it even when
   // the creator was only editing its neighbour. An empty product field is sent
@@ -2143,6 +2176,7 @@ function ItemRowEditor({
     if (title !== (item.title ?? '')) body.title = title
     if (product !== (item.asin ?? '')) body.product = product
     if (desc !== (item.description ?? '')) body.description = desc
+    if (amazonTitle !== (item.amazon_title ?? '')) body.amazonTitle = amazonTitle
     dirty.current = false
     void onSave(item.id, body)
   }
@@ -2209,7 +2243,7 @@ function ItemRowEditor({
           </button>
         </span>
         <label className="flex-1 min-w-0">
-          <span className="block mb-1" style={lab}>Title, for YouTube and the English stores</span>
+          <span className="block mb-1" style={lab}>Title for YouTube</span>
           <input
             value={title}
             onChange={(e) => { dirty.current = true; setTitle(e.target.value) }}
@@ -2232,6 +2266,48 @@ function ItemRowEditor({
             {writing ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
             Write it for me
           </button>
+        </label>
+      </div>
+
+      {/* ── the Amazon title, short and in the storefront's voice ────────── */}
+      <div className="flex items-start gap-2">
+        <span className="w-5" />
+        <label className="flex-1 min-w-0">
+          <span className="block mb-1" style={lab}>Title for Amazon</span>
+          <input
+            value={amazonTitle}
+            onChange={(e) => { dirty.current = true; setAmazonTitle(e.target.value) }}
+            placeholder="Leave empty and MVP writes one before it goes to Amazon"
+            className="w-full px-2.5 py-1.5 rounded-lg border text-[12.5px] bg-transparent"
+            style={{ borderColor: 'var(--border)', ...text }}
+          />
+          <span className="block text-[11px] mt-1" style={muted}>
+            A short hook for your storefront, like &quot;Must See TEXTURE Up Close!&quot;. Other countries get it translated.
+          </span>
+          <button type="button" onClick={() => void writeAmazonTitle()} disabled={writingAmz || !product.trim()}
+            title={!product.trim()
+              ? 'Paste the ASIN or the Amazon link first. The title is written from what the product is.'
+              : 'Writes storefront titles in the style of your own storefront.'}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 mt-1.5 rounded-lg border text-[11.5px] disabled:opacity-40"
+            style={{ borderColor: 'var(--border)', ...text }}>
+            {writingAmz ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+            Write it for me
+          </button>
+          {amzOptions.length > 0 && (
+            <span className="block mt-1.5">
+              <span className="block text-[11px] mb-1" style={muted}>Pick one, then Save.</span>
+              <span className="flex flex-col gap-1">
+                {amzOptions.map((o) => (
+                  <button key={o} type="button"
+                    onClick={() => { dirty.current = true; setAmazonTitle(o); setAmzOptions([]) }}
+                    className="text-left px-2.5 py-1 rounded-lg border text-[12px]"
+                    style={{ borderColor: 'var(--border)', ...text }}>
+                    {o}
+                  </button>
+                ))}
+              </span>
+            </span>
+          )}
         </label>
       </div>
 

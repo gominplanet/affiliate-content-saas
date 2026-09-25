@@ -31,6 +31,8 @@ import { validateThumbnailPreset, presetToRequestFields, type ThumbnailPreset } 
 import { postToSelf } from '@/lib/self-url'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { generateProductTitleOptions } from '@/lib/title-options'
+import { generateAmazonTitleOptions } from '@/lib/amazon-title'
+import { asinInFileName } from '@/lib/asin'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { normalizeStudioOptions } from '@/lib/studio-finish'
 import { coveragePriority } from '@/lib/storefront-coverage'
@@ -59,7 +61,11 @@ const RENDERS = 1
  *  Counting IMAGES gives whichever one runs the whole function. This route
  *  fires every minute, so ten videos take about twenty firings, which is
  *  twenty minutes and still nothing against walking away from the computer. */
-const IMAGES = 1
+const IMAGES = 6
+/** Videos worked on side by side in one firing. Each video's two images run
+ *  together, so a firing holds at most THUMB_POOL * 2 image calls in flight,
+ *  every one of them started only with THUMB_CALL_MS still left on the clock. */
+const THUMB_POOL = 3
 /** Tries before a video stops asking and says why. */
 const TRIES = 3
 /** Tries for the thumbnail step, which is TWO images and so needs its own
@@ -284,23 +290,42 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     return preset
   }
 
-  for (const it of items) {
-    if (budget <= 0) break
+  // ── SEVERAL VIDEOS AT ONCE ───────────────────────────────────────────────
+  //
+  // One video at a time, one image per firing, and preparing only every other
+  // minute: three videos needed six firings end to end, and the creator
+  // watched them sit for half an hour. Each image is a network call that
+  // spends its time waiting, so THUMB_POOL videos are worked on side by side,
+  // each against the same claim, the same budget and the same clock checks it
+  // always had. Nothing below starts without time to finish.
+  const one = async (it: (typeof items)[number]): Promise<'stop' | void> => {
+    if (budget <= 0) return 'stop'
     // Nothing starts without time to finish it: the write at the end is what
     // makes the work count, and a firing killed before it throws the work away.
-    if (left() < 60_000) break
-    const asin = (it.asin || '').trim()
+    if (left() < 60_000) return 'stop'
+    let asin = (it.asin || '').trim()
     let title = (it.title || '').trim()
+    // THE PRODUCT IN THE FILE NAME, for a video added before the page read it.
+    // Only into an empty product and only while the title is still the file
+    // name, so nothing the creator set is second-guessed.
+    if (!asin && (it.title_source ?? 'filename') === 'filename') {
+      const fromName = asinInFileName(title)
+      if (fromName) {
+        const { data: set } = await sb.from('launch_items')
+          .update({ asin: fromName, updated_at: now() }).eq('id', it.id).is('asin', null).select('id')
+        if ((set ?? []).length > 0) asin = fromName
+      }
+    }
     // NOT BLOCKED, WAITING. The creator sets the product in their own time and
     // this is the one step that genuinely needs them.
-    if (!asin || !title) continue
+    if (!asin || !title) return
 
     // ANOTHER FIRING HAS THIS ONE. Firings overlap (one a minute, up to five
     // minutes each), and a row touched in the last five and a half minutes
     // with a try already counted is being built right now. Building it twice
     // spends two images and two of its tries on one thumbnail.
     const tries = Number(it.thumb_tries ?? 0)
-    if (tries > 0 && it.updated_at && Date.now() - new Date(it.updated_at).getTime() < 330_000) continue
+    if (tries > 0 && it.updated_at && Date.now() - new Date(it.updated_at).getTime() < 330_000) return
 
     // ── THE TITLE MVP WRITES, NOT THE NAME OF THE FILE ───────────────────
     //
@@ -357,6 +382,11 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       }
     }
 
+    // ── THE AMAZON TITLE, WRITTEN WHILE THERE IS STILL TIME TO READ IT ───
+    // Written here, during prepare, so it is in the row's "Title for Amazon"
+    // box before launch. The hand-over writes one too if this never ran.
+    if (left() > 90_000) await ensureAmazonTitle(sb, it.id, it.user_id, asin, title)
+
     // Already has both images: ready, once it also has its description.
     if (it.thumbnail_url && it.thumbnail_clean_url) {
       if (haveDescription) {
@@ -377,7 +407,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
           .update({ thumb_tries: tries + 1, reason: 'Writing the description, where the affiliate link goes. Trying again.', updated_at: now() })
           .eq('id', it.id)
       }
-      continue
+      return
     }
 
     if (tries >= THUMB_TRIES) {
@@ -393,12 +423,12 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
         updated_at: now(),
       }).eq('id', it.id).eq('state', 'preparing')
       blocked++
-      continue
+      return
     }
 
     // AN IMAGE ONLY WITH TIME FOR IT. The styled call is allowed four minutes;
     // started with less left, the platform kills it and the image is lost.
-    if (left() < THUMB_CALL_MS + 30_000) break
+    if (left() < THUMB_CALL_MS + 30_000) return 'stop'
 
     // CLAIMED on the try count it was read with, so two firings reaching the
     // same row at the same moment cannot both build it.
@@ -407,7 +437,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     const thumbClaim = now()
     const claim = sb.from('launch_items').update({ thumb_tries: tries + 1, updated_at: thumbClaim }).eq('id', it.id)
     const { data: claimed } = await (it.thumb_tries == null ? claim.is('thumb_tries', null) : claim.eq('thumb_tries', tries)).select('id')
-    if (!claimed || claimed.length === 0) continue
+    if (!claimed || claimed.length === 0) return
 
     const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', it.user_id).maybeSingle()
     const tier = normalizeTier(integ?.tier)
@@ -418,35 +448,46 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // true of a timeout, a missing face and a spend cap alike, and none of
     // those has the same answer.
     let plainWhy = ''
-    try {
+    // BOTH IMAGES AT ONCE when both are missing. They do not depend on each
+    // other (the clean copy is built from the product, not from the styled
+    // image), and one after the other was two firings per video.
+    const styledJob = async () => {
       if (!it.thumbnail_url && budget > 0) {
         budget--
-        // THE SAME GENERATOR VIDEO LAUNCHPAD USES, with the batch's chosen
-        // look.
-        const branded = await styledThumbnail(it.user_id, title, asin, preset)
-        if (branded.url) patch.thumbnail_url = branded.url
-        else {
-          plainWhy = branded.why
-          // THE FALLBACK IS RECORDED, NOT HIDDEN, and only attempted with time
-          // left to save it; otherwise the next firing tries the look again.
-          if (left() > 75_000) {
-            const basic = await buildProductThumbnail(sb, { userId: it.user_id, tier, title, asin, withText: true })
-            if (basic) { patch.thumbnail_url = basic; usedPlain = true }
+        try {
+          // THE SAME GENERATOR VIDEO LAUNCHPAD USES, with the batch's chosen
+          // look.
+          const branded = await styledThumbnail(it.user_id, title, asin, preset)
+          if (branded.url) patch.thumbnail_url = branded.url
+          else {
+            plainWhy = branded.why
+            // THE FALLBACK IS RECORDED, NOT HIDDEN, and only attempted with time
+            // left to save it; otherwise the next firing tries the look again.
+            if (left() > 75_000) {
+              const basic = await buildProductThumbnail(sb, { userId: it.user_id, tier, title, asin, withText: true })
+              if (basic) { patch.thumbnail_url = basic; usedPlain = true }
+            }
           }
-        }
-      } else if (!it.thumbnail_clean_url && budget > 0) {
-        budget--
-        // The wordless copy for non-English storefronts. The styled route bakes
-        // a headline in by design, so the clean variant stays with the builder
-        // that can be told to write nothing at all.
-        const clean = await buildProductThumbnail(sb, {
-          userId: it.user_id, tier, title, asin, withText: false,
-          faceId: preset.face.kind === 'face' ? preset.face.faceId : null,
-          noHuman: preset.face.kind === 'none',
-        })
-        if (clean) patch.thumbnail_clean_url = clean
+        } catch { /* the try is already counted; the next firing has another go */ }
       }
-    } catch { /* the try is already counted; the next firing has another go */ }
+    }
+    const cleanJob = async () => {
+      if (!it.thumbnail_clean_url && budget > 0) {
+        budget--
+        try {
+          // The wordless copy for non-English storefronts. The styled route bakes
+          // a headline in by design, so the clean variant stays with the builder
+          // that can be told to write nothing at all.
+          const clean = await buildProductThumbnail(sb, {
+            userId: it.user_id, tier, title, asin, withText: false,
+            faceId: preset.face.kind === 'face' ? preset.face.faceId : null,
+            noHuman: preset.face.kind === 'none',
+          })
+          if (clean) patch.thumbnail_clean_url = clean
+        } catch { /* the try is already counted; the next firing has another go */ }
+      }
+    }
+    await Promise.all([styledJob(), cleanJob()])
 
     if (patch.thumbnail_url) {
       patch.thumbnail_source = usedPlain ? 'plain' : 'styled'
@@ -483,6 +524,15 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       }).eq('id', it.id)
     }
   }
+  const queue = [...items]
+  let stopped = false
+  await Promise.all(Array.from({ length: THUMB_POOL }, async () => {
+    while (!stopped) {
+      const it = queue.shift()
+      if (!it) return
+      if ((await one(it)) === 'stop') stopped = true
+    }
+  }))
   return { done, blocked, plain, failed, metaMissing }
 }
 
@@ -527,6 +577,43 @@ async function productTitle(
     // there, writing it would spend a call and change nothing.
     if (!first || first.toLowerCase() === current.trim().toLowerCase()) return null
     return first.slice(0, 100)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The storefront title for one video: the one the creator typed, the one MVP
+ * wrote before, or a new one written now in their storefront's style.
+ *
+ * ONLY INTO AN EMPTY BOX. The write is conditional on amazon_title still being
+ * null, so a title typed while this was writing is never replaced.
+ *
+ * TOLERANT OF MIGRATION 370 NOT BEING RUN: the column is read on its own, and a
+ * database without it returns null here, which leaves every listing on the
+ * YouTube title exactly as before.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function ensureAmazonTitle(sb: any, itemId: string, userId: string, asin: string | null, youtubeTitle: string): Promise<string | null> {
+  try {
+    const { data: row, error } = await sb.from('launch_items').select('amazon_title').eq('id', itemId).maybeSingle()
+    if (error) return null
+    const have = String(row?.amazon_title || '').trim()
+    if (have) return have
+    if (!asin) return null
+    const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', userId).maybeSingle()
+    const options = await generateAmazonTitleOptions({
+      asin, videoTitle: youtubeTitle, count: 3,
+      ctx: { userId, tier: normalizeTier(integ?.tier) },
+    })
+    const first = options[0]
+    if (!first) return null
+    const { data: wrote } = await sb.from('launch_items')
+      .update({ amazon_title: first }).eq('id', itemId).is('amazon_title', null).select('id')
+    if ((wrote ?? []).length > 0) return first
+    // Somebody typed one meanwhile: theirs is the title.
+    const { data: again } = await sb.from('launch_items').select('amazon_title').eq('id', itemId).maybeSingle()
+    return String(again?.amazon_title || '').trim() || null
   } catch {
     return null
   }
@@ -1190,6 +1277,14 @@ async function handOverToAmazon(sb: Sb, it: any, videoId: string, channelId: str
       return { ok: false, error: upsertErr?.message || 'the video record came back empty' }
     }
 
+    // THE STOREFRONT'S OWN TITLE rides with the video to the Amazon side,
+    // where the localizing step prefers it over the YouTube title. Its own
+    // write, so a database without migration 370 hands over as it always did.
+    const amazonTitle = await ensureAmazonTitle(sb, it.id, it.user_id, it.asin ?? null, String(it.title || ''))
+    if (amazonTitle) {
+      await sb.from('youtube_videos').update({ amazon_title: amazonTitle }).eq('id', video.id)
+    }
+
     // THE COUNTRIES FIRST, THEN THE LINK. The link (video_id) used to be
     // written first, and the retry pass only picks rows with no video_id, so
     // a video whose country rows then failed to write was never tried again,
@@ -1526,8 +1621,11 @@ export async function GET(request: Request) {
     : (new Date().getUTCMinutes() % 2 === 0 ? 'prepare' : 'publish')
 
   if (pass === 'prepare') {
-    const rendered = await renders(sb, left)
-    const thumbed = await thumbs(sb, left)
+    // SIDE BY SIDE. Renders ran first and took most of the firing, so no
+    // thumbnail started while any video was still waiting for its CTA. They
+    // work on different rows (draft against preparing), so neither can touch
+    // the other's.
+    const [rendered, thumbed] = await Promise.all([renders(sb, left), thumbs(sb, left)])
     const settled = await settle(sb)
     return NextResponse.json({ ok: true, pass, rendered, thumbed, settled })
   }

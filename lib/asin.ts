@@ -93,6 +93,16 @@ export function asinFromAmazonUrl(url: string): string | null {
 /** Accept a bare ASIN or any Amazon product link and return the clean 10-char
  *  code, or null. The shared normalizer for every "paste an ASIN or a link"
  *  field, so they all behave identically. */
+/** The ASIN inside a file name such as "Ninja Crispi - B0DDDD8WD6.mp4", or
+ *  null. B0-prefixed only, standing on its own (not inside a longer run of
+ *  letters and digits), and only when exactly one is there: two ASINs in one
+ *  name is a question for the creator, not a guess for us. */
+export function asinInFileName(name: string | null | undefined): string | null {
+  const hits = String(name || '').toUpperCase().match(/(?<![A-Z0-9])B0[A-Z0-9]{8}(?![A-Z0-9])/g) ?? []
+  const unique = Array.from(new Set(hits))
+  return unique.length === 1 ? unique[0] : null
+}
+
 export function normalizeAsinInput(v: string): string | null {
   const s = (v || '').trim()
   if (/^[A-Z0-9]{10}$/i.test(s)) return s.toUpperCase()

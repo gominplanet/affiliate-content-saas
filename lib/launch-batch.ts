@@ -600,7 +600,12 @@ export function itemStateLabel(state: ItemState): string {
  */
 export function itemProgressLabel(i: {
   state: ItemState; planned_publish_at?: string | null; publish_tries?: number | null; reason?: string | null
+  asin?: string | null
 }): string {
+  // WAITING IS NOT WORKING. The worker skips a video with no product, and the
+  // row still read "Building the thumbnail · first try, nothing for 26
+  // minutes", which looks like the worker is stuck rather than waiting on you.
+  if (i.state === 'preparing' && !String(i.asin ?? '').trim()) return 'Waiting for its product'
   // ON THE CHANNEL, PRIVATE, WAITING FOR A TIME. Not "Cannot go": it went,
   // and the uploader deliberately did not make it public because its slot
   // passed before it was ready.
@@ -617,7 +622,9 @@ export function itemProgressLabel(i: {
  *  they are not green: green is only for states that really are finished. */
 export function itemProgressTone(i: {
   state: ItemState; planned_publish_at?: string | null; publish_tries?: number | null
+  asin?: string | null
 }): 'good' | 'busy' | 'warn' | 'idle' {
+  if (i.state === 'preparing' && !String(i.asin ?? '').trim()) return 'warn'
   if (i.state === 'prepared' && i.planned_publish_at) {
     return Number(i.publish_tries ?? 0) > 0 ? 'warn' : 'busy'
   }

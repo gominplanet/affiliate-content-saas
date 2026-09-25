@@ -109,7 +109,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!derr) for (const r of (drows ?? []) as Array<{ id: string; api_disclosures: unknown }>) disclosuresById.set(r.id, r.api_disclosures ?? null)
   }
 
+  // THE AMAZON TITLE (migration 370), read on its own: before the SQL runs the
+  // column does not exist, the box reads as empty, and saving says so.
+  const amazonTitleById = new Map<string, string | null>()
+  let amazonTitleAvailable = true
+  {
+    const { data: arows, error: aerr } = await sb.from('launch_items').select('id,amazon_title').eq('batch_id', id)
+    if (aerr) amazonTitleAvailable = false
+    else for (const r of (arows ?? []) as Array<{ id: string; amazon_title: string | null }>) amazonTitleById.set(r.id, r.amazon_title ?? null)
+  }
+
   const itemsOut = items.map((i) => ({
+    amazon_title: amazonTitleById.get(i.id) ?? null,
     api_disclosures: disclosuresById.get(i.id) ?? null,
     amazon: (i.video_id && amazonByVideo.get(i.video_id)) || [],
     ...i,
@@ -151,6 +162,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     studioOptions: normalizeStudioOptions(!yerr ? yrow?.studio_options : null),
     youtubeOptionsAvailable,
     youtubeChoiceAvailable,
+    amazonTitleAvailable,
   })
 }
 

@@ -124,7 +124,17 @@ export async function GET(request: Request) {
       const { data: integ } = await admin
         .from('integrations').select('tier').eq('user_id', job.user_id).maybeSingle()
 
-      const masterTitle = ((video?.generated_title as string) || (video?.title as string) || '').trim()
+      // THE STOREFRONT TITLE FIRST (migration 370). Liftoff writes a short hook
+      // for Amazon beside the longer YouTube title, and the storefront is where
+      // this title goes. Read on its own so a database without the column still
+      // localizes from the YouTube title, as it always did.
+      let amazonTitle = ''
+      {
+        const { data: at, error: atErr } = await admin
+          .from('youtube_videos').select('amazon_title').eq('id', job.video_id).maybeSingle()
+        if (!atErr) amazonTitle = String((at as { amazon_title?: string | null } | null)?.amazon_title || '').trim()
+      }
+      const masterTitle = (amazonTitle || (video?.generated_title as string) || (video?.title as string) || '').trim()
       const masterDesc = ((video?.generated_description as string) || (video?.description as string) || '').trim()
 
       let done = 0
