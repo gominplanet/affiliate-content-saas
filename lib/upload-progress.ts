@@ -14,6 +14,15 @@
 // dropped and started again, and the caller is told so it can say it.
 
 export const STALL_MS = 60_000
+/** How long, after the last byte leaves the browser, storage has to say it
+ *  arrived.
+ *
+ *  100% IS NOT ARRIVED. The browser counts a byte as sent when it hands it to
+ *  the computer's network stack, which holds several MB of its own. On a slow
+ *  line that tail takes a minute or more to actually leave, and nothing
+ *  reports progress while it does, so treating the quiet after 100% as a stall
+ *  flagged, and could have restarted, an upload that was about to finish. */
+export const FINISH_MS = 6 * 60_000
 
 export interface UploadProgress {
   sent: number
@@ -33,6 +42,8 @@ export function uploadWithProgress(opts: {
   file: File
   contentType: string
   onProgress: (p: UploadProgress) => void
+  /** Every byte has left the browser; storage has not answered yet. */
+  onSent?: () => void
 }): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -43,18 +54,31 @@ export function uploadWithProgress(opts: {
     xhr.setRequestHeader('x-upsert', 'false')
 
     let last = Date.now()
+    let sentAt = 0
+    const markSent = () => {
+      if (sentAt) return
+      sentAt = Date.now()
+      opts.onSent?.()
+    }
     const watchdog = setInterval(() => {
-      if (Date.now() - last > STALL_MS) {
+      if (!sentAt && Date.now() - last > STALL_MS) {
         clearInterval(watchdog)
         xhr.abort()
         reject(new UploadStalled())
+      } else if (sentAt && Date.now() - sentAt > FINISH_MS) {
+        clearInterval(watchdog)
+        xhr.abort()
+        reject(new Error('Every byte was sent, but storage never confirmed it arrived.'))
       }
     }, 2_000)
 
     xhr.upload.onprogress = (e) => {
       last = Date.now()
-      opts.onProgress({ sent: e.loaded, total: e.lengthComputable ? e.total : opts.file.size })
+      const total = e.lengthComputable ? e.total : opts.file.size
+      opts.onProgress({ sent: e.loaded, total })
+      if (total > 0 && e.loaded >= total) markSent()
     }
+    xhr.upload.onload = () => markSent()
     xhr.onload = () => {
       clearInterval(watchdog)
       if (xhr.status >= 200 && xhr.status < 300) { resolve(); return }

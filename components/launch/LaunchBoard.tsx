@@ -21,7 +21,7 @@ import {
   Loader2, Plus, Trash2, Upload, Rocket, Clock, X, Check, AlertTriangle, LogIn, Wand2, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { uploadWithProgress, STALL_MS } from '@/lib/upload-progress'
+import { uploadWithProgress, STALL_MS, FINISH_MS } from '@/lib/upload-progress'
 import { deliverPreparedStorefronts, deliverySummary, type DeliveryOutcome } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
@@ -105,9 +105,11 @@ interface UploadRow {
   name: string
   total: number
   sent: number
-  state: 'waiting' | 'uploading' | 'retrying' | 'adding' | 'done' | 'failed'
+  state: 'waiting' | 'uploading' | 'finishing' | 'retrying' | 'adding' | 'done' | 'failed'
   startedAt: number
   lastMoveAt: number
+  /** When the last byte left the browser. */
+  sentAt?: number
   tries: number
   error?: string
 }
@@ -123,16 +125,24 @@ function UploadLine({ u, now }: { u: UploadRow; now: number }) {
   const rate = u.sent / secs
   const still = u.state === 'uploading' && u.lastMoveAt ? Math.floor((now - u.lastMoveAt) / 1000) : 0
   const stalled = still >= 15
+  // THE QUIET AFTER 100% IS THE LAST BYTES LEAVING, not a stall. Amber only
+  // if storage is slow to confirm for a long while.
+  const finishingFor = u.state === 'finishing' && u.sentAt ? Math.floor((now - u.sentAt) / 1000) : 0
+  const slowFinish = finishingFor >= 180
   const leftSecs = rate > 0 ? Math.round((u.total - u.sent) / rate) : 0
   const leftTxt = leftSecs >= 60 ? `about ${Math.round(leftSecs / 60)} min left` : `${leftSecs}s left`
   const color = u.state === 'failed' ? '#ef4444'
     : u.state === 'done' ? '#10B981'
-      : stalled || u.state === 'retrying' ? '#d97706' : '#0EA5A4'
+      : stalled || slowFinish || u.state === 'retrying' ? '#d97706' : '#0EA5A4'
   const line = u.state === 'waiting' ? 'Waiting for a free lane'
     : u.state === 'uploading'
       ? stalled
         ? `No progress for ${still}s. If it is still stuck at ${STALL_MS / 1000}s it starts again on its own.`
         : `${mb(u.sent)} of ${mb(u.total)} · ${mb(rate)}/s · ${u.sent > 0 ? leftTxt : 'starting'}${u.tries > 1 ? ` · try ${u.tries} of 3` : ''}`
+      : u.state === 'finishing'
+        ? slowFinish
+          ? `All sent ${finishingFor}s ago and storage has not confirmed yet. It keeps waiting up to ${FINISH_MS / 60_000} min.`
+          : `All sent from your browser. The last bytes are still travelling and storage is confirming (${finishingFor}s).`
       : u.state === 'retrying' ? `${u.error ?? 'It stopped.'} Starting it again.`
         : u.state === 'adding' ? 'Uploaded. Adding it to the batch.'
           : u.state === 'done' ? `Uploaded, ${mb(u.total)}`
@@ -142,7 +152,7 @@ function UploadLine({ u, now }: { u: UploadRow; now: number }) {
       <div className="flex items-baseline justify-between gap-2">
         <span className="truncate text-[12.5px]" style={text}>{u.name}</span>
         <span className="text-[11.5px] tabular-nums shrink-0" style={{ color }}>
-          {u.state === 'done' ? 'Done' : u.state === 'failed' ? 'Failed' : `${pct}%`}
+          {u.state === 'done' ? 'Done' : u.state === 'failed' ? 'Failed' : u.state === 'finishing' ? 'Finishing' : `${pct}%`}
         </span>
       </div>
       <div className="h-1.5 rounded-full mt-1.5 overflow-hidden" style={{ background: 'var(--surface-hover)' }}>
@@ -924,6 +934,7 @@ export default function LaunchBoard() {
               accessToken: session.access_token,
               bucket: 'instagram-videos', path, file, contentType: file.type || 'video/mp4',
               onProgress: ({ sent }) => mark(key, { sent, lastMoveAt: Date.now() }),
+              onSent: () => mark(key, { state: 'finishing', sentAt: Date.now() }),
             })
             break
           } catch (e) {
