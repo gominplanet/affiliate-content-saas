@@ -15,6 +15,7 @@ import {
   Rocket, Sparkles, Copy, Check, Download, ExternalLink, ListChecks, Image as ImageIcon, Lock, Upload, X,
 } from 'lucide-react'
 import HeroVideo from '@/components/layout/HeroVideo'
+import { walkthroughId } from '@/lib/tutorial-videos'
 import { LAUNCH_PLATFORM_LIST, type LaunchPlatform, type PlatformSpec, type SocialKit } from '@/lib/social-launch-kit'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
@@ -165,7 +166,7 @@ export default function SocialLaunchKitPage() {
         guide={<SocialLaunchKitGuide />}
         title="Social Launch Kit"
         subtitle="No time to figure out Facebook, Pinterest, X, Threads, Bluesky or LinkedIn? Pick a platform and MVP hands you everything — name, bio, banner, avatar, and a step-by-step setup, ready to paste."
-        media={<HeroVideo videoId={WALKTHROUGH_ID} title="Social Launch Kit walkthrough" />}
+        media={walkthroughId(WALKTHROUGH_ID) ? <HeroVideo videoId={WALKTHROUGH_ID} title="Social Launch Kit walkthrough" /> : undefined}
       />
 
       {locked && (

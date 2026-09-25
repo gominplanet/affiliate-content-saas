@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { BookOpen, Youtube } from 'lucide-react'
+import { BookOpen, Youtube, Clapperboard } from 'lucide-react'
+import { TUTORIAL_VIDEOS_PAUSED } from '@/lib/tutorial-videos'
 
 export const metadata: Metadata = { title: 'Tutorials' }
 
@@ -92,7 +93,7 @@ export default function TutorialsPage() {
             Subscribe to MVP Affiliate on YouTube
           </p>
           <p className="text-[13px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-            Fresh tips &amp; tricks for Amazon Influencers, Amazon Associates, and affiliate marketing in general — plus deep-dives on every MVP feature. New videos regularly.
+            Fresh tips &amp; tricks for Amazon Influencers, Amazon Associates, and affiliate marketing in general, plus deep dives on every MVP feature. New videos regularly.
           </p>
         </div>
         <span
@@ -103,7 +104,36 @@ export default function TutorialsPage() {
         </span>
       </a>
 
+      {/* NEW TUTORIALS ON THE WAY. The old videos predate most of what MVP
+          does now, so they are hidden (lib/tutorial-videos) rather than left
+          up showing screens that no longer look like this. */}
+      {TUTORIAL_VIDEOS_PAUSED && (
+        <div
+          className="rounded-2xl border p-6 sm:p-8 flex flex-col sm:flex-row gap-5 sm:items-center"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+        >
+          <span
+            className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #DB2777 100%)' }}
+          >
+            <Clapperboard size={26} className="text-white" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[17px] font-semibold" style={{ color: 'var(--text)' }}>
+              New tutorials are on the way
+            </p>
+            <p className="text-[13.5px] mt-1 leading-relaxed max-w-2xl" style={{ color: 'var(--text-soft)' }}>
+              MVP has grown a lot, so I am recording brand new tutorials that show off the latest features from start to finish.
+              They will appear right here as soon as they are ready. In the meantime, subscribe above to be the first to see them,
+              or open <a href="/assistant" className="underline font-medium" style={{ color: 'var(--text)' }}>MVP Help Desk</a> if you get stuck on anything.
+            </p>
+            <p className="text-[12.5px] mt-3 font-medium" style={{ color: 'var(--text-faint)' }}>Seb</p>
+          </div>
+        </div>
+      )}
+
       {/* Video grid */}
+      {!TUTORIAL_VIDEOS_PAUSED && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {TUTORIALS.map((t) => (
           <article
@@ -140,8 +170,10 @@ export default function TutorialsPage() {
           </article>
         ))}
       </div>
+      )}
 
       {/* More coming soon */}
+      {!TUTORIAL_VIDEOS_PAUSED && (
       <div
         className="mt-8 rounded-2xl border border-dashed flex items-center justify-center py-10"
         style={{ borderColor: 'var(--border)' }}
@@ -150,6 +182,7 @@ export default function TutorialsPage() {
           More tutorials coming soon
         </p>
       </div>
+      )}
     </div>
   )
 }

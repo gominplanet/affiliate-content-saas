@@ -12,6 +12,7 @@ import { detectLineEdit, LINE_META, type LineKey } from '@/lib/yt-description-li
 import PageHero from '@/components/layout/PageHero'
 import { CoPilotGuide } from '@/components/guide/tool-guides'
 import HeroVideo from '@/components/layout/HeroVideo'
+import { walkthroughId } from '@/lib/tutorial-videos'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
@@ -4226,7 +4227,7 @@ export default function StudioPage() {
         <PageHero
           title="YouTube Co-Pilot"
           subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
-          media={WALKTHROUGH_ID ? <HeroVideo videoId={WALKTHROUGH_ID} title="YouTube Co-Pilot walkthrough" /> : undefined}
+          media={walkthroughId(WALKTHROUGH_ID) ? <HeroVideo videoId={WALKTHROUGH_ID!} title="YouTube Co-Pilot walkthrough" /> : undefined}
         />
         <div className="flex items-center justify-center py-20 text-[#86868b] dark:text-[#8e8e93] text-sm">
           <Loader2 size={16} className="animate-spin mr-2" /> Loading your videos…
@@ -4241,7 +4242,7 @@ export default function StudioPage() {
         guide={<CoPilotGuide />}
         title="YouTube Co-Pilot"
         subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
-        media={WALKTHROUGH_ID ? <HeroVideo videoId={WALKTHROUGH_ID} title="YouTube Co-Pilot walkthrough" /> : undefined}
+        media={walkthroughId(WALKTHROUGH_ID) ? <HeroVideo videoId={WALKTHROUGH_ID!} title="YouTube Co-Pilot walkthrough" /> : undefined}
       />
 
       {/* ADMIN dev tool: read back the Studio save requests SCOUT captured
