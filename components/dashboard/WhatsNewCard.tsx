@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-08-30'
+const RELEASE_ID = '2026-09-25'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -31,66 +31,57 @@ interface Update {
 const UPDATES: Update[] = [
   {
     badge: 'NEW',
+    tone: '#E4572E',
+    title: 'Liftoff: launch up to ten videos at once',
+    desc: 'One press sends up to ten videos to YouTube and to every Amazon storefront country you pick. Each video gets its own date and time, its own thumbnail with the right face ("Who is in this video?"), its own Amazon title, and your CTA exactly where you placed it. MVP checks the YouTube channel before anything uploads, and with SCOUT it keeps going even after you close the page. On the Pro plan, in Labs.',
+    href: '/liftoff',
+  },
+  {
+    badge: 'NEW',
+    tone: '#E4572E',
+    title: 'Encore: timely sale comments on your videos',
+    desc: 'When a product you already reviewed goes on sale, Encore writes a comment for that video in your voice, with your link and the Amazon disclosure, posts it and pins it with SCOUT. When the sale ends it edits the comment so it no longer mentions a sale. Each promo also comes with a Short script, a Community post and a social post. On the Pro plan, under Create.',
+    href: '/encore',
+  },
+  {
+    badge: 'NEW',
+    tone: '#BE185D',
+    title: 'My features: pin what you use most',
+    desc: 'Hover any feature in the sidebar and tap its star to pin it to My features at the top. Tap the star again to take it out. Your list follows you to every device.',
+  },
+  {
+    badge: 'NEW',
     tone: '#7C3AED',
-    title: 'MVP writes in your real voice now',
-    desc: 'MVP learns how you actually sound from your own YouTube videos and keeps getting sharper the more you publish. Blog posts, articles, and your TikTok and Instagram captions are all written in your voice, not a generic AI tone. It also folds in the edits you make to drafts, so it keeps learning your taste.',
-    href: '/learn',
-  },
-  {
-    badge: 'NEW',
-    tone: '#6d28d9',
-    title: 'See and train your voice',
-    desc: 'The Voice Training page now shows what MVP has learned about how you sound, with a Scan my recent videos button that reads your videos on the spot so your first post already sounds like you. If you run more than one channel, each channel gets its own learned voice.',
-    href: '/learn',
-  },
-  {
-    badge: 'NEW',
-    tone: '#bc1888',
-    title: 'Articles that sound like you',
-    desc: 'Articles has a Write in my trained voice toggle and a Why this sounds like you panel so you can see exactly what shaped each draft. Plus bulk writing from a list of topics, one tap refresh to update an old article, and a topic coverage score against the pages already ranking.',
-    href: '/articles',
-  },
-  {
-    badge: 'NEW',
-    tone: '#7C3AED',
-    title: 'Post your Shorts to TikTok and Instagram',
-    desc: 'Clip Factory now has three clear ways to start: cut a Short from a regular video, pick one of your YouTube Shorts, or upload your own. Upload a horizontal video and MVP reframes it to vertical for you (center crop or split screen) before you post.',
-    href: '/clip-factory',
+    title: 'See every limit on your plan',
+    desc: 'Your usage, under Account, shows each limit on your plan in plain words: what it counts, how much you have used, how much is left and when it resets. Anything used up or nearly used up is at the top.',
+    href: '/usage',
   },
   {
     badge: 'IMPROVED',
     tone: '#C2410C',
-    title: 'Sharper Reels and Shorts',
-    desc: 'Reels and Shorts now render at full 1080x1920 with a higher bitrate, so they stay crisp after TikTok and Instagram re-compress them. No more soft, out of focus posts.',
-    href: '/clip-factory',
+    title: 'Co-Pilot finishes the job in YouTube Studio',
+    desc: 'With SCOUT, Co-Pilot now sets the product tag, monetization and the paid promotion disclosure in Studio the way you would by hand, and tells you what Studio kept. Notify subscribers is a real switch, off by default. Videos that already went live leave the Needs metadata list.',
+    href: '/co-pilot',
   },
   {
-    badge: 'FIXED',
-    tone: '#34c759',
-    title: 'Your storefront numbers now match Amazon',
-    desc: 'Clicks and earnings were being double counted across income sources. The storefront now shows the same totals as your Amazon report, and it is split into Performance, Optimize and Brands tabs so it is easier to scan.',
-    href: '/storefront',
-  },
-  {
-    badge: 'NEW',
+    badge: 'IMPROVED',
     tone: '#0a84ff',
-    title: 'Message the brands you already feature',
-    desc: 'Brands you have featured now shows the products under each brand and, for the ones on Creator Connections, a one tap Message the brand button. There is also a cross check against TRYBE so you can see which of their brands you already promote.',
-    href: '/storefront',
+    title: 'Set the product on any video',
+    desc: 'Every video in Co-Pilot has a Set the product link, even when its title has no ASIN, and a thumbnail you already made for that product can be reused instead of made again.',
+    href: '/co-pilot',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#6d28d9',
+    title: 'Every Full guide rewritten',
+    desc: 'The Full guide on each page now explains what that page does today, including a new one for Liftoff. New tutorial videos are being recorded for the latest features.',
   },
   {
     badge: 'NEW',
-    tone: '#E60023',
-    title: 'Your shop page can fill itself',
-    desc: 'Link in Bio pulls in the products from Shorts you posted to TikTok and Instagram, and there is an opt in so each new post adds its product to your page automatically.',
-    href: '/link-in-bio',
-  },
-  {
-    badge: 'NEW',
-    tone: '#1877F2',
-    title: 'Keep your own blog design',
-    desc: 'A new Connection only switch in Customize Blog lets you keep MVP posting and connecting with zero changes to your blog layout. Nothing on your homepage or posts is touched.',
-    href: '/customize',
+    tone: '#34c759',
+    title: 'More in the free Amazon guide',
+    desc: 'The free guide now has a full Amazon Live module, what to do when Amazon sends a warning email, tracking IDs per platform, a troubleshooting section, and a search box.',
+    href: '/freeguide',
   },
 ]
 
@@ -224,7 +215,11 @@ export default function WhatsNewCard() {
                 return (
                   <li key={i} className="group">
                     {u.href
-                      ? <Link href={u.href} onClick={close} className="block h-full">{inner}</Link>
+                      // The free guide is a static page behind a rewrite, which
+                      // an in-app Link can fail to reach: a plain link loads it.
+                      ? u.href.startsWith('/freeguide')
+                        ? <a href={u.href} onClick={close} className="block h-full">{inner}</a>
+                        : <Link href={u.href} onClick={close} className="block h-full">{inner}</Link>
                       : inner}
                   </li>
                 )
