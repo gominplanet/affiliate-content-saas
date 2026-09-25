@@ -693,8 +693,8 @@ export default function DealsHubPage() {
             </p>
             <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
               Amazon allows a deal to be published only once it is live on amazon.com, and an event&rsquo;s dates only once Amazon has announced them.
-              Write these posts early by all means: if a deal has not started, MVP generates the article now and <b>schedules</b> it to publish the
-              moment the deal opens, rather than putting it out ahead of time.
+              For an event whose dates are not announced yet, MVP writes the post now and <b>schedules</b> it for the moment they can be named.
+              For a deal that starts later, set <b>Schedule publish</b> to its start time, so it does not go out before the deal is live.
             </p>
           </div>
         </div>

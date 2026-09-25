@@ -64,7 +64,7 @@ export default function MvpPicksInfo() {
               digging through everything.
             </p>
             <p>
-              One honest note: this is a filter, not a promise. We can't guarantee income or results.
+              A plain note: this is a filter, not a promise. We can't guarantee income or results.
               What you earn comes down to the product, your content, your audience, and plenty of
               factors no tool controls. MVP Picks tilts the odds in your favor.
             </p>

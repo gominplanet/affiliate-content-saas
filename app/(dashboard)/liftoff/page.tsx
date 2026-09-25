@@ -19,6 +19,7 @@
 import PageHero from '@/components/layout/PageHero'
 import LaunchBoard from '@/components/launch/LaunchBoard'
 import LiftoffRunner from '@/components/launch/LiftoffRunner'
+import { LiftoffGuide } from '@/components/guide/tool-guides'
 
 // ?background=1 is the tab SCOUT opens, pinned and behind, to finish launched
 // batches while this page is closed. It shows the runner, not the board.
@@ -28,6 +29,7 @@ export default async function LiftoffPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHero
+        guide={<LiftoffGuide />}
         title="Liftoff"
         subtitle="Up to ten videos, one press. Choose your CTA, thumbnail look and Amazon countries once, give each video its product, then press Launch. MVP burns the CTA, builds every thumbnail, schedules YouTube with paid promotion and AI use set, then translates, dubs and sends each video to every Amazon country, and shows you where each one landed."
       />

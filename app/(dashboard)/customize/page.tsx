@@ -517,7 +517,7 @@ export default function CustomizePage() {
   if (loading) {
     return (
       <>
-        <PageHero title="Customize Blog" subtitle="Edit the bits of your site that aren't covered by Brand Profile — Pick of the Day, in-content ad slots, footer links." />
+        <PageHero title="Customize Blog" subtitle="Edit the bits of your site that Brand Profile does not cover: featured posts, Pick of the Day, the reviewer box, footer links and tracking." />
         <div className="flex items-center gap-2 text-sm text-[var(--text-3)] py-8">
           <Loader2 size={16} className="animate-spin" /> Loading…
         </div>
@@ -530,7 +530,7 @@ export default function CustomizePage() {
       <PageHero
         guide={<CustomizeGuide />}
         title="Customize Blog"
-        subtitle="Edit the bits of your site that aren't covered by Brand Profile — Pick of the Day, in-content ad slots, footer links."
+        subtitle="Edit the bits of your site that Brand Profile does not cover: featured posts, Pick of the Day, the reviewer box, footer links and tracking."
         actions={
           <div className="flex items-center gap-2">
             <button onClick={purgeCache} disabled={purging || saving} className="btn-secondary flex items-center gap-2"

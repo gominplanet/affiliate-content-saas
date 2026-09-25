@@ -534,8 +534,8 @@ export default function BuyingGuidesPage() {
                 <p className="text-sm mt-1.5" style={{ color: 'var(--text-2)' }}>
                   {source === 'catalogue' ? (
                     <>
-                      Generate a long-form &ldquo;Best [topic] for {new Date().getUTCFullYear()}&rdquo; round-up from your published reviews.
-                      The AI picks 5–7 best-fit reviews, slots them as Best Overall / Best Budget / Best for X, writes the guide, and publishes to your blog tagged{' '}
+                      Generate a long-form &ldquo;Best [topic]&rdquo; round-up from your published reviews.
+                      The AI picks 5 to 7 best-fit reviews, slots them as Best Overall, Best Budget or Best for a use, writes the guide, and publishes to your blog tagged{' '}
                       <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--text)' }}>buying-guide</span>.
                     </>
                   ) : (
