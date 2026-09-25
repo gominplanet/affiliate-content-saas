@@ -1,4 +1,5 @@
--- Migration 374: the sale comments MVP posted, so it can take the sale out.
+-- Migration 374: the sale comments MVP posted, so it can take the sale out,
+-- and what was shared to socials from "On sale now".
 --
 -- A comment that says "on sale right now" stays on the video after the sale
 -- ends, and then it says something untrue. Every comment MVP posts is kept
@@ -40,4 +41,23 @@ create index if not exists sale_comments_live_idx on public.sale_comments (state
 alter table public.sale_comments enable row level security;
 drop policy if exists "sale_comments_own_read" on public.sale_comments;
 create policy "sale_comments_own_read" on public.sale_comments
+  for select to authenticated using (user_id = auth.uid());
+
+-- WHAT WAS SHARED FROM "ON SALE NOW", so each product can say it was already
+-- posted to socials. Written by the posting route itself from what the
+-- platforms actually answered: ok_platforms lists only the ones that took
+-- the post. A scheduled post is recorded as scheduled, with its time.
+create table if not exists public.on_sale_shares (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users(id) on delete cascade,
+  asin          text not null,
+  ok_platforms  text[] not null default '{}',
+  failed_platforms text[] not null default '{}',
+  scheduled_for timestamptz,
+  created_at    timestamptz not null default now()
+);
+create index if not exists on_sale_shares_user_idx on public.on_sale_shares (user_id, asin, created_at desc);
+alter table public.on_sale_shares enable row level security;
+drop policy if exists "on_sale_shares_own_read" on public.on_sale_shares;
+create policy "on_sale_shares_own_read" on public.on_sale_shares
   for select to authenticated using (user_id = auth.uid());

@@ -2,7 +2,8 @@
 //
 // GET /api/on-sale/comments — the sale comments MVP posted for this creator,
 // newest first, each with what actually happened to it: still on sale,
-// updated after the sale ended, gone from YouTube, or failed and why. LABS.
+// updated after the sale ended, gone from YouTube, or failed and why. Plus
+// what was posted to socials from the page. LABS.
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -26,5 +27,12 @@ export async function GET() {
     // Said, not hidden: without the table nothing is remembered or updated.
     return NextResponse.json({ comments: [], missingTable: error.code === '42P01', error: error.code === '42P01' ? null : error.message })
   }
-  return NextResponse.json({ comments: data ?? [] })
+  // WHAT WAS SHARED TO SOCIALS from this page, for the "Posted to" tag on
+  // each product. The last 60 days: an older share is not this sale's.
+  const since = new Date(Date.now() - 60 * 86_400_000).toISOString()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: shares } = await (supabase as any).from('on_sale_shares')
+    .select('asin,ok_platforms,scheduled_for,created_at').eq('user_id', user.id).gte('created_at', since)
+    .order('created_at', { ascending: false }).limit(300)
+  return NextResponse.json({ comments: data ?? [], shares: shares ?? [] })
 }

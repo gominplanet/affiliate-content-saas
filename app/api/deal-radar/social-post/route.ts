@@ -33,6 +33,22 @@ import { spendGate } from '@/lib/ai-spend'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { recallProductImage } from '@/lib/product-image-memory'
 import { resolvePostDestination } from '@/lib/post-destination'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+/**
+ * ON SALE NOW REMEMBERS WHAT WAS SHARED, from what the platforms answered:
+ * only the ones that took the post count as posted. Best effort: a missing
+ * table (migration 374) never blocks the post itself.
+ */
+async function recordOnSaleShare(userId: string, asin: string, ok: string[], failed: string[], scheduledFor: string | null) {
+  if (!ok.length && !scheduledFor) return
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (createAdminClient() as any).from('on_sale_shares').insert({
+      user_id: userId, asin, ok_platforms: ok, failed_platforms: failed, scheduled_for: scheduledFor,
+    })
+  } catch { /* the post went out either way */ }
+}
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -66,7 +82,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Amazon Deal Radar is available on paid plans.', currentTier: tier }, { status: 403 })
     }
 
-    const body = await request.json().catch(() => ({})) as { asin?: string; platforms?: unknown; caption?: string; title?: string; imageUrl?: string; story?: boolean; scheduledFor?: string; useSavedImage?: boolean; useShowcase?: boolean; showcaseUrl?: string }
+    const body = await request.json().catch(() => ({})) as { asin?: string; platforms?: unknown; caption?: string; title?: string; imageUrl?: string; story?: boolean; scheduledFor?: string; useSavedImage?: boolean; useShowcase?: boolean; showcaseUrl?: string; source?: string }
     const asin = (body.asin || '').trim().toUpperCase()
     if (!/^[A-Z0-9]{10}$/.test(asin)) return NextResponse.json({ error: 'A valid ASIN is required.' }, { status: 400 })
     const rawPlatforms = (Array.isArray(body.platforms) ? body.platforms : []).map((p) => String(p))
@@ -162,6 +178,7 @@ export async function POST(request: Request) {
         console.error('[deal-radar/social-post schedule]', insErr.message)
         return NextResponse.json({ error: toUserMessage(insErr, 'Could not schedule that post. Please try again.') }, { status: 500 })
       }
+      if (body.source === 'on_sale') await recordOnSaleShare(user.id, asin, [], [], when.toISOString())
       // Say which image was queued, not which was requested — useSavedImage
       // with nothing saved (or an unapplied migration 331) silently falls back
       // to the product photo, and the caller should be able to tell.
@@ -188,6 +205,11 @@ export async function POST(request: Request) {
     if (out.missingTag) return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
     if (out.dealEnded && out.results.length === 0) return NextResponse.json({ error: 'That deal is no longer on the radar.' }, { status: 404 })
     const anyOk = out.results.some((r) => r.ok)
+    if (body.source === 'on_sale') {
+      await recordOnSaleShare(user.id, asin,
+        out.results.filter((r) => r.ok).map((r) => String(r.platform)),
+        out.results.filter((r) => !r.ok).map((r) => String(r.platform)), null)
+    }
     return NextResponse.json({
       ok: anyOk, results: out.results, caption: out.caption, geniuslinkNote: out.geniuslinkNote,
       usedSavedImage: !!imageOverride,

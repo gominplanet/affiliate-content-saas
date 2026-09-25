@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Tag, Copy, Wand2, MessageSquare, Send, ExternalLink, Zap, RefreshCw, Pin, Eraser } from 'lucide-react'
+import { Loader2, Tag, Copy, Wand2, MessageSquare, Send, ExternalLink, Zap, RefreshCw, Pin, Eraser, Check } from 'lucide-react'
 import { getScoutStatus, requestPinComment } from '@/lib/extension-frame'
 import { scoutAtLeast, SCOUT_PIN_MIN_VERSION } from '@/lib/scout-version'
 import PageHero from '@/components/layout/PageHero'
@@ -52,6 +52,46 @@ interface SaleComment {
   last_error: string | null
   posted_at: string
   updated_at: string
+}
+
+interface Share { asin: string; ok_platforms: string[]; scheduled_for: string | null; created_at: string }
+
+const PLATFORM_NAMES: Record<string, string> = {
+  facebook: 'Facebook', x: 'X', twitter: 'X', threads: 'Threads', bluesky: 'Bluesky', linkedin: 'LinkedIn',
+  instagram: 'Instagram', instagram_story: 'Instagram Story', pinterest: 'Pinterest', tiktok: 'TikTok', telegram: 'Telegram',
+}
+const platformName = (p: string) => PLATFORM_NAMES[p] ?? p.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+const shortDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+
+/**
+ * DONE ALREADY, AT A GLANCE: whether this product has a sale comment on
+ * YouTube and whether it went to socials, from what MVP recorded actually
+ * happening. A comment whose sale was taken out reads as an earlier sale, so
+ * a new sale does not look covered when it is not.
+ */
+function DoneTags({ comment, share }: { comment: SaleComment | null; share: Share | null }) {
+  const tags: Array<{ text: string; done: boolean }> = []
+  if (comment && (comment.state === 'on_sale' || comment.state === 'failed')) {
+    tags.push({ text: `Commented on YouTube${comment.pinned ? ' and pinned' : ''}, ${shortDate(comment.posted_at)}`, done: true })
+  } else if (comment && comment.state === 'updated') {
+    tags.push({ text: `Commented in an earlier sale, ${shortDate(comment.posted_at)}`, done: false })
+  }
+  if (share && share.ok_platforms.length) {
+    tags.push({ text: `Posted to ${share.ok_platforms.map(platformName).join(', ')}, ${shortDate(share.created_at)}`, done: true })
+  } else if (share && share.scheduled_for) {
+    tags.push({ text: `Scheduled to socials for ${shortDate(share.scheduled_for)}`, done: true })
+  }
+  if (!tags.length) return null
+  return (
+    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+      {tags.map((t) => (
+        <span key={t.text} className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded"
+          style={t.done ? { background: 'rgba(16,185,129,0.12)', color: '#10B981' } : { border: '1px solid var(--border)', color: 'var(--text-soft)' }}>
+          {t.done ? <Check size={11} /> : null}{t.text}
+        </span>
+      ))}
+    </div>
+  )
 }
 
 /**
@@ -116,7 +156,10 @@ function CopyBlock({ title, text, children }: { title: string; text: string; chi
   )
 }
 
-function ProductCard({ p, onShare, onPosted }: { p: Product; onShare: (d: QuickPostDeal, caption: string) => void; onPosted: () => void }) {
+function ProductCard({ p, onShare, onPosted, lastComment, lastShare }: {
+  p: Product; onShare: (d: QuickPostDeal, caption: string) => void; onPosted: () => void
+  lastComment: SaleComment | null; lastShare: Share | null
+}) {
   const [promo, setPromo] = useState<Promo | null>(null)
   const [writing, setWriting] = useState(false)
   const [posting, setPosting] = useState(false)
@@ -144,11 +187,14 @@ function ProductCard({ p, onShare, onPosted }: { p: Product; onShare: (d: QuickP
     } catch { toast.error('Could not reach the server.') } finally { setWriting(false) }
   }
 
-  async function pinIt() {
-    if (!promo?.video || !posted?.commentId) return
+  async function pinIt(target?: { videoId: string; commentId: string; saleCommentId: string | null }) {
+    const t = target ?? (promo?.video && posted?.commentId
+      ? { videoId: promo.video.youtubeVideoId, commentId: posted.commentId, saleCommentId: posted.saleCommentId }
+      : null)
+    if (!t) return
     setPinning(true)
     try {
-      const r = await pinViaScout(promo.video.youtubeVideoId, posted.commentId, posted.saleCommentId)
+      const r = await pinViaScout(t.videoId, t.commentId, t.saleCommentId)
       setPin(r)
       if (r.pinned) toast.success('Pinned. SCOUT saw it pinned on the video.')
       else toast.error(r.error || 'Not pinned.')
@@ -173,6 +219,9 @@ function ProductCard({ p, onShare, onPosted }: { p: Product; onShare: (d: QuickP
       setPin(null)
       toast.success('Comment posted on your video')
       onPosted()
+      // PINNED BY ITSELF, straight after posting, when SCOUT can. What SCOUT
+      // saw is what the card then says; the button stays for a retry.
+      if (j.commentId) void pinIt({ videoId: promo.video.youtubeVideoId, commentId: j.commentId, saleCommentId: j.saleCommentId ?? null })
     } catch { toast.error('Could not reach the server. Nothing was posted.') } finally { setPosting(false) }
   }
 
@@ -196,6 +245,7 @@ function ProductCard({ p, onShare, onPosted }: { p: Product; onShare: (d: QuickP
             {left && <span className="text-[12px] font-semibold" style={{ color: ACCENT }}>{left}</span>}
           </div>
           <p className="text-[14px] font-semibold mt-1 line-clamp-2" style={{ color: 'var(--text)' }}>{p.title}</p>
+          <DoneTags comment={lastComment} share={lastShare} />
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
             {videos.length > 0
               ? `In ${videos.length} of your videos${inStore ? ' and your storefront' : ''}${publicVideos === 0 ? ', none of them public yet' : ''}`
@@ -288,7 +338,7 @@ function ProductCard({ p, onShare, onPosted }: { p: Product; onShare: (d: QuickP
               )}
               {posted && !posted.trackError && (
                 <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
-                  YouTube has no pin option for apps, so SCOUT opens the video for a few seconds and pins it for you. Pinning replaces the comment you have pinned on this video now, if any.
+                  YouTube has no pin option for apps, so right after posting SCOUT opens the video for a few seconds and pins it for you. Pinning replaces the comment you have pinned on this video now, if any.
                 </p>
               )}
               {posted?.trackError && (
@@ -410,12 +460,12 @@ export default function OnSale() {
   }, [])
   useEffect(() => { void load() }, [load])
 
-  const [comments, setComments] = useState<{ list: SaleComment[]; missingTable: boolean } | null>(null)
+  const [comments, setComments] = useState<{ list: SaleComment[]; shares: Share[]; missingTable: boolean } | null>(null)
   const loadComments = useCallback(async () => {
     try {
       const r = await fetch('/api/on-sale/comments')
       const j = await r.json().catch(() => ({}))
-      if (r.ok) setComments({ list: j.comments ?? [], missingTable: !!j.missingTable })
+      if (r.ok) setComments({ list: j.comments ?? [], shares: j.shares ?? [], missingTable: !!j.missingTable })
     } catch { /* the list is extra; the page works without it */ }
   }, [])
   useEffect(() => { void loadComments() }, [loadComments])
@@ -467,7 +517,9 @@ export default function OnSale() {
           )}
           <ul className="grid gap-3">
             {data.onSale.map((p) => (
-              <ProductCard key={p.asin} p={p} onShare={(deal, caption) => setShare({ deal, caption })} onPosted={() => void loadComments()} />
+              <ProductCard key={p.asin} p={p} onShare={(deal, caption) => setShare({ deal, caption })} onPosted={() => void loadComments()}
+                lastComment={comments?.list.find((c) => c.asin === p.asin && c.state !== 'gone') ?? null}
+                lastShare={comments?.shares.find((s) => s.asin === p.asin) ?? null} />
             ))}
           </ul>
           {comments && (comments.missingTable || comments.list.length > 0) && (
@@ -495,7 +547,8 @@ export default function OnSale() {
         </>
       )}
 
-      {share && <QuickPostModal deal={share.deal} initialCaption={share.caption} onClose={() => setShare(null)} />}
+      {share && <QuickPostModal deal={share.deal} initialCaption={share.caption} onClose={() => setShare(null)}
+        source="on_sale" onDone={() => void loadComments()} />}
     </div>
   )
 }

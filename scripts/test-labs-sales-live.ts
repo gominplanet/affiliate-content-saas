@@ -291,6 +291,18 @@ async function saleEndedGuards() {
     && /scoutAtLeast\(scout\.version, SCOUT_PIN_MIN_VERSION\)/.test(UI))
 }
 
+// ── done already, at a glance ───────────────────────────────────────────────
+{
+  const SP = read('app/api/deal-radar/social-post/route.ts')
+  check('a share from On sale now is recorded from what the platforms answered',
+    /out\.results\.filter\(\(r\) => r\.ok\)\.map/.test(SP) && /if \(body\.source === 'on_sale'\)/.test(SP)
+    && /if \(!ok\.length && !scheduledFor\) return/.test(SP))
+  const UI = read('components/labs/OnSale.tsx')
+  check('the page tags products already commented on and shared, and a taken-out comment reads as an earlier sale',
+    /<DoneTags comment=\{lastComment\} share=\{lastShare\} \/>/.test(UI) && /Commented in an earlier sale/.test(UI)
+    && /source="on_sale" onDone=/.test(UI) && inOrderCheck(UI, "toast.success('Comment posted on your video')", 'if (j.commentId) void pinIt({') && /create table if not exists public\.on_sale_shares/.test(read('supabase/migrations/374_sale_comments.sql')))
+}
+
 async function finish() {
 await saleEndedGuards()
 if (failures.length) {

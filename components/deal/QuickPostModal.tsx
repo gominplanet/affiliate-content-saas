@@ -80,8 +80,14 @@ export const QUICK_PLATFORMS: { key: string; label: string }[] = [
 ]
 
 export default function QuickPostModal({
-  deal, onClose, initialCaption = '', pinterestEnabled = false, instagramEnabled = false,
-}: { deal: QuickPostDeal; onClose: () => void; initialCaption?: string; pinterestEnabled?: boolean; instagramEnabled?: boolean }) {
+  deal, onClose, initialCaption = '', pinterestEnabled = false, instagramEnabled = false, source, onDone,
+}: {
+  deal: QuickPostDeal; onClose: () => void; initialCaption?: string; pinterestEnabled?: boolean; instagramEnabled?: boolean
+  /** Where the post comes from, so that page can remember what was shared (On sale now: 'on_sale'). */
+  source?: 'on_sale'
+  /** Called once a post went out or was scheduled, so the page can refresh what it shows. */
+  onDone?: () => void
+}) {
   // Pinterest is a separate pipeline (a designed pin linking to the affiliate
   // link), shown only when the plan allows Pinterest. It flows through the same
   // `platforms` array; the API routes it to the pin path.
@@ -170,10 +176,12 @@ export default function QuickPostModal({
           useSavedImage,
           useShowcase: useShowcaseOn,
           showcaseUrl: showcaseUrl.trim() || undefined,
+          source,
         }),
       })
       const data = await res.json()
       if (!res.ok || !data.scheduled) { toast.error(data.error || 'Could not schedule that post.'); return }
+      onDone?.()
       toast.success(`Scheduled for ${when.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`, {
         // Say where the queued post will send people. A scheduled post that
         // quietly fell back to Amazon is otherwise only discovered after it fires.
@@ -201,6 +209,7 @@ export default function QuickPostModal({
           asin: deal.asin, platforms: [...selected], story, caption: caption.trim() || undefined,
           title: deal.title, imageUrl: deal.imageUrl, useSavedImage,
           useShowcase: useShowcaseOn, showcaseUrl: showcaseUrl.trim() || undefined,
+          source,
         }),
       })
       const data = await res.json()
@@ -222,6 +231,7 @@ export default function QuickPostModal({
       const okCount = posted.filter((r) => r.ok).length
       const failCount = posted.length - okCount
       if (okCount > 0) toast.success(`Posted to ${okCount} platform${okCount > 1 ? 's' : ''}.`)
+      if (okCount > 0) onDone?.()
       if (data.caption && !caption) setCaption(data.caption)
       // Auto-close only when there is nothing left to read. A per-platform note
       // (an X post with no image) is on screen in the results list, and closing
