@@ -135,7 +135,7 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
   background:var(--accent);color:#fff;cursor:pointer;transition:filter .15s ease}
 .upd button:hover{filter:brightness(1.08)}
 .upd button:disabled{opacity:.6;cursor:default}
-.upd .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.upd .hp,.gs .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .upd .said{margin-top:10px;font-size:13.5px;line-height:1.45}
 .upd .said.ok{color:var(--ok)}
 .upd .said.bad{color:var(--myth)}
@@ -178,6 +178,32 @@ a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(
 .toc a.is-done .tick{background:var(--ok);border-color:var(--ok);box-shadow:inset 0 0 0 3px var(--surface)}
 .toc a:hover{background:var(--surface)}
 .toc a.is-active{background:var(--surface);border-left-color:var(--accent)}
+
+
+/* What's new, under the progress bar */
+.new{margin-top:18px;font-size:14px;color:var(--muted)}
+.new p{margin:0 0 6px}
+.new b{color:var(--ink)}
+.new ul{margin:0;padding-left:18px;display:grid;gap:3px}
+.new a{color:var(--accent)}
+/* Search, at the top of the module list */
+.gs{position:sticky;top:30px;z-index:1;background:var(--bg);padding:4px 0 8px}
+.gs input{width:100%;box-sizing:border-box;font:400 15px var(--body);color:var(--ink);background:var(--surface);
+  border:1px solid var(--line);border-radius:9px;padding:9px 12px}
+.gs input:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+.gs-r{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:2px}
+.gs-r button{display:block;width:100%;text-align:left;background:none;border:0;border-left:3px solid transparent;border-radius:8px;
+  padding:8px 10px;cursor:pointer;color:var(--ink);font:inherit}
+.gs-r button:hover,.gs-r button:focus-visible{background:var(--surface);border-left-color:var(--accent);outline:none}
+.gs-r .k{display:block;font:500 11px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.gs-r .t{display:block;font-weight:700;font-size:14.5px;line-height:1.3}
+.gs-r .x{display:block;font-size:13px;line-height:1.4;color:var(--muted);margin-top:2px}
+.gs-r mark,.gs-n mark{background:var(--marker-soft);color:inherit;border-radius:3px;padding:0 1px}
+.gs-n{font-size:13.5px;color:var(--muted);margin:8px 2px 0}
+.prose h2[id],.prose h3,.prose h2{scroll-margin-top:16px}
+.gs-hit{animation:gsflash 2s ease-out}
+@keyframes gsflash{0%,40%{background:var(--marker-soft)}100%{background:transparent}}
+::highlight(gs){background-color:#FFE27A;color:#111}
 
 main{min-width:0}
 .mod{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:40px clamp(20px,4vw,56px);margin-bottom:28px;scroll-margin-top:16px}
@@ -337,6 +363,17 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
   <p class="lede">The Amazon Influencer playbook from Seb &amp; Michelle of Gominplanet: how we built a multiple six-figure business from product reviews, and exactly what works now, after Amazon's latest rule changes.</p>
   <div class="meta"><span>12 modules</span><span>~95 min read</span><span>Presented by <a href="#mvp"><b>MVP Affiliate</b></a></span></div>
   <div class="prog" aria-live="polite"><div class="bar"><i id="progbar"></i></div><span id="progtxt">0 of 12 modules done</span></div>
+  <div class="new" id="whatsnew">
+    <p><b>Last updated September 25.</b> What's new:</p>
+    <ul>
+      <li><a href="#confetti">You got the confetti. Now what?</a> Step by step, with screenshots</li>
+      <li><a href="#creator-rewards">Creator Rewards</a>, the bonus most people never turn on</li>
+      <li><a href="#tracking-ids">One tracking ID per platform</a></li>
+      <li><a href="#deals-hub">The Deals Hub</a>, now that the promo code page is gone</li>
+      <li><a href="#live">Amazon Live</a>, a whole new module</li>
+      <li><a href="#troubleshooting">When something looks wrong</a>: fixes for the problems we see every week</li>
+    </ul>
+  </div>
   <section class="upd" aria-labelledby="updh">
     <h2 id="updh">This guide keeps changing, because the program does.</h2>
     <p>Amazon moved the commission rules twice this year and changed what counts as a qualifying sale. Every time that happens we rewrite the part of this guide it broke, rather than leaving last year's advice up. Worth coming back to.</p>
@@ -362,7 +399,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </header>
 <div class="layout">
 <nav class="toc" aria-label="Guide modules">
-  <details id="tocd" open><summary>Guide modules</summary><ol><li><a href="#start" data-id="start"><span class="k">Module 0</span><span class="t">Start here</span><span class="tick" aria-hidden="true"></span></a></li>
+  <details id="tocd" open><summary>Search and guide modules</summary><div class="gs" role="search"><label class="hp" for="gsq">Search the guide</label><input id="gsq" type="search" placeholder="Search the guide" autocomplete="off" spellcheck="false"><p class="gs-n" id="gsn" aria-live="polite" hidden></p><ol class="gs-r" id="gsr" hidden></ol></div><ol id="toclist"><li><a href="#start" data-id="start"><span class="k">Module 0</span><span class="t">Start here</span><span class="tick" aria-hidden="true"></span></a></li>
 <li><a href="#money" data-id="money"><span class="k">Module 1</span><span class="t">How the money actually works</span><span class="tick" aria-hidden="true"></span></a></li>
 <li><a href="#approved" data-id="approved"><span class="k">Module 2</span><span class="t">Getting approved and unlocked</span><span class="tick" aria-hidden="true"></span></a></li>
 <li><a href="#videos" data-id="videos"><span class="k">Module 3</span><span class="t">Videos that get approved and sell</span><span class="tick" aria-hidden="true"></span></a></li>
@@ -526,7 +563,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 </tbody>
 </table></div>
 <p>The pros stack all six. Beginners usually only think about the first one.</p>
-<h2>Creator Rewards: the bonus most people never turn on</h2>
+<h2 id="creator-rewards">Creator Rewards: the bonus most people never turn on</h2>
 <p>Almost nobody talks about this one, and it's free money for sales you're already making. Amazon runs Creator Rewards in periods (usually a month or two). For each month in the period, you get a ladder of <strong>shipped revenue</strong> targets. Reach a rung and Amazon pays you a flat bonus on top of your normal commissions.</p>
 <p><strong>Shipped revenue means the total value of what shipped through your links, not your commission.</strong> So the targets look big, but they're counting sales, not your cut.</p>
 <p>Here's how a ladder works, with made-up round numbers (your real targets are private to your account, and so are ours):</p>
@@ -722,7 +759,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <div class="seb">
 <p><strong>Followers aren't the point.</strong> Our Instagram peaked around 20–25K followers when we got in. But followers aren't why you get invited or accepted. It's engagement. Focus on making content people actually react to, on whatever platform you use. A small account with real comments and saves beats a big account nobody talks to.</p>
 </div>
-<h2>You got the confetti. Now what?</h2>
+<h2 id="confetti">You got the confetti. Now what?</h2>
 <p>The confetti screen is a great moment, and then it drops you on a dashboard with no instructions. Here's exactly where to go, in order. Do it on a computer, not your phone: uploading, tagging, checking earnings and messaging brands are all faster and more reliable there. Amazon's phone app (Creator Central) is fine for a quick check later.</p>
 <div class="myth">
 <p><strong>What the confetti does and doesn't mean.</strong> It means you're in the Influencer Program. It does <em>not</em> mean your videos will show on product pages yet (that's the 3-video review above), and it does <em>not</em> mean Amazon can pay you yet. If you're still inside your first 180 days as an Associate, the 3-sales clock is also still running.</p>
@@ -1566,7 +1603,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <p>So when we post an Instagram story with a "link in bio" call to action, the link on our Instagram profile is our MVP link-in-bio page. Every link we create or share through MVP shows up there automatically as a product card with our affiliate link, so people land on the dozen or more products we're promoting right now.</p>
 <p>It works really well. Since we started using it, we've had a nice bump in traffic.</p>
 </div>
-<h2>One tracking ID per platform</h2>
+<h2 id="tracking-ids">One tracking ID per platform</h2>
 <p>Out of the box, every link you make carries the same tracking ID. That means a sale from YouTube, a sale from Pinterest and a sale from your Facebook group all land in one bucket, and you can't tell which platform is actually paying you. You end up spending your time on the one that feels busy instead of the one that earns.</p>
 <p>The fix takes five minutes: make a separate tracking ID for each place you post links.</p>
 <ol>
@@ -1590,7 +1627,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <p><strong>We treat YouTube and our blog as search engines, not follower machines.</strong> Pretty much everything on our storefront is on our YouTube channel, or will be. We're not trying to build a huge following around one niche. We want views from people <em>searching</em> for the products we've reviewed, and a big catalog means a lot of searches we can show up for.</p>
 <p>If you want to build an audience offsite, niching down works well there (see Module 4). If you want search traffic, volume and good titles win.</p>
 </div>
-<h2>The Deals Hub: see deals before they go live</h2>
+<h2 id="deals-hub">The Deals Hub: see deals before they go live</h2>
 <p>The Deals Hub replaced the old promo code page. If you have access, you'll find it in the three-line menu under <strong>Promotions</strong>. It lists thousands of products that are about to go on deal, and you can promote them. <span class="verify">Check your dashboard</span></p>
 <p>The big advantage: <strong>you see the deals in advance,</strong> so you have time to make your content before the deal starts.</p>
 <div class="seb">
@@ -1855,7 +1892,7 @@ td:first-child{font-variant-numeric:tabular-nums;font-weight:700;min-width:7em}
 <div class="seb">
 <p>We set up a company to run the business and its bank accounts through. What's right for you depends on where you live and how much you're making. Sit down with a CPA early, not when your first big month lands.</p>
 </div>
-<h2>When something looks wrong</h2>
+<h2 id="troubleshooting">When something looks wrong</h2>
 <p>These are the problems we see asked about every week. Each one has a usual cause and a first thing to check. Work through them in order before you change anything.</p>
 <h3>"I have onsite sales but no money"</h3>
 <p>There are two usual causes:</p>
@@ -2233,4 +2270,90 @@ questions in public so everyone gets the answer.</p>
   }
 })();
 </script>
+<script>(function(){
+  // SEARCH THE GUIDE. Built from the page itself on load, so it can never
+  // disagree with what the reader sees. Each entry is one heading and the
+  // text under it, up to the next heading.
+  var q=document.getElementById('gsq'), out=document.getElementById('gsr'),
+      note=document.getElementById('gsn'), list=document.getElementById('toclist');
+  if(!q||!out||!list) return;
+  var idx=[];
+  [].forEach.call(document.querySelectorAll('section.mod'),function(m){
+    var kick=(m.querySelector('.mod-h .kicker')||{}).textContent||'';
+    var title=(m.querySelector('.mod-h h2')||{}).textContent||'';
+    var prose=m.querySelector('.prose'); if(!prose) return;
+    var cur={mod:kick+': '+title, head:title, el:m, nodes:[]};
+    idx.push(cur);
+    [].forEach.call(prose.children,function(c){
+      if(/^H[23]$/.test(c.tagName) && !c.closest('.doit')){
+        cur={mod:kick+': '+title, head:c.textContent, el:c, nodes:[c]}; idx.push(cur);
+      } else cur.nodes.push(c);
+    });
+  });
+  idx.forEach(function(e){
+    e.text=e.nodes.map(function(n){return n.textContent}).join(' ').replace(/\s+/g,' ').trim();
+    e.lc=e.text.toLowerCase(); e.hl=e.head.toLowerCase();
+  });
+  function esc(t){return t.replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+  function mark(t,terms){
+    var h=esc(t);
+    terms.forEach(function(w){
+      var re=new RegExp('('+esc(w).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+      h=h.replace(re,'<mark>$1</mark>');
+    });
+    return h;
+  }
+  function snippet(e,w){
+    var i=e.lc.indexOf(w); if(i<0) return e.text.slice(0,110)+'...';
+    var a=Math.max(0,i-50), b=Math.min(e.text.length,i+w.length+70);
+    return (a?'...':'')+e.text.slice(a,b)+(b<e.text.length?'...':'');
+  }
+  function paint(e,terms){
+    if(!window.CSS||!CSS.highlights||typeof Highlight==='undefined') return;
+    var ranges=[];
+    e.nodes.forEach(function(n){
+      var tw=document.createTreeWalker(n,NodeFilter.SHOW_TEXT), t;
+      while((t=tw.nextNode())){
+        var s=t.data.toLowerCase();
+        terms.forEach(function(w){
+          var i=s.indexOf(w);
+          while(i>-1){var r=new Range(); r.setStart(t,i); r.setEnd(t,i+w.length); ranges.push(r); i=s.indexOf(w,i+w.length);}
+        });
+      }
+    });
+    CSS.highlights.set('gs',new Highlight(...ranges));
+  }
+  var shown=[];
+  function run(){
+    var v=q.value.trim().toLowerCase();
+    if(v.length<2){out.hidden=true; note.hidden=true; list.hidden=false; if(window.CSS&&CSS.highlights) CSS.highlights.delete('gs'); return;}
+    var terms=v.split(/\s+/).filter(Boolean);
+    shown=idx.filter(function(e){return terms.every(function(w){return e.lc.indexOf(w)>-1||e.hl.indexOf(w)>-1})})
+      .map(function(e){
+        var sc=0; terms.forEach(function(w){ if(e.hl.indexOf(w)>-1) sc+=10; sc+=Math.min(5,e.lc.split(w).length-1); });
+        return {e:e,sc:sc};
+      }).sort(function(a,b){return b.sc-a.sc}).slice(0,15);
+    list.hidden=true; out.hidden=false; note.hidden=false;
+    note.innerHTML=shown.length? shown.length+(shown.length===15?'+':'')+' result'+(shown.length===1?'':'s')+' for <mark>'+esc(q.value.trim())+'</mark>'
+      : 'Nothing found for <mark>'+esc(q.value.trim())+'</mark>. Try a shorter word.';
+    out.innerHTML=shown.map(function(r,i){
+      return '<li><button type="button" data-i="'+i+'"><span class="k">'+esc(r.e.mod)+'</span><span class="t">'+mark(r.e.head,terms)+'</span><span class="x">'+mark(snippet(r.e,terms[0]),terms)+'</span></button></li>';
+    }).join('');
+  }
+  q.addEventListener('input',run);
+  q.addEventListener('keydown',function(ev){
+    if(ev.key==='Escape'){q.value=''; run();}
+    if(ev.key==='Enter'){ev.preventDefault(); var b=out.querySelector('button'); if(b) b.click();}
+  });
+  out.addEventListener('click',function(ev){
+    var b=ev.target.closest('button'); if(!b) return;
+    var r=shown[+b.dataset.i]; if(!r) return;
+    var terms=q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    paint(r.e,terms);
+    r.e.el.scrollIntoView({behavior:'smooth',block:'start'});
+    r.e.el.classList.remove('gs-hit'); void r.e.el.offsetWidth; r.e.el.classList.add('gs-hit');
+    var d=document.getElementById('tocd');
+    if(d && window.matchMedia('(max-width:900px)').matches) d.open=false;
+  });
+})();</script>
 </body></html>
