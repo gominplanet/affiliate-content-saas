@@ -653,7 +653,7 @@ export default function DashboardShellV2({
         { href: '/tiktok-shop', icon: <ShoppingBag size={15} />, label: 'TikTok Shop', gate: isPro, badge: 'New' },
         // On sale now — products the creator already covered that are on sale
         // today, and the promo for each (Short, Community post, comment, social).
-        { href: '/on-sale', icon: <Tag size={15} />, label: 'On sale now', gate: previewOpenToPro('on_sale') ? isPro : isAdmin, badge: 'Test' },
+        { href: '/on-sale', icon: <Tag size={15} />, label: 'On sale now', gate: previewOpenToPro('on_sale') ? isPro : isAdmin, badge: previewOpenToPro('on_sale') ? 'New' : 'Test' },
         // Amazon Live prep — pick products, get the show: lineup, timings,
         // talking points from the creator's own reviews, and a teleprompter.
         { href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live prep', gate: previewOpenToPro('amazon_live') ? isPro : isAdmin, badge: 'Test' },

@@ -13,7 +13,7 @@ export type PreviewFeature = 'on_sale' | 'amazon_live'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
-  on_sale: 'admin',
+  on_sale: 'labs',
   amazon_live: 'admin',
 }
 

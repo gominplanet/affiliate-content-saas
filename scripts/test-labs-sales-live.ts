@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { saleVerdict, SALE_MIN_PCT, saleLabel, visibilityFromItem, applyVisibility, notPublicMessage, type CoverSource } from '../lib/covered-sales'
 import { layoutClock, assemblePlan, tidyLine, clockLabel, LIVE_MAX_PRODUCTS } from '../lib/live-plan'
 import { canUsePreview } from '../lib/labs-preview'
-import { lastingBody, commentWithLink, SALE_WORDING, salesNow, DISCLOSURE, PRICE_LINE_LEAD } from '../lib/sale-comments'
+import { lastingBody, commentWithLink, SALE_WORDING, salesNow, DISCLOSURE, PRICE_LINE_LEAD, SALE_COMMENTS_PER_DAY } from '../lib/sale-comments'
 import { tidyCopy } from '../lib/copy-rules'
 
 const failures: string[] = []
@@ -28,10 +28,11 @@ const inOrderCheck = (src: string, a: string, b: string) => { const i = src.inde
 }
 
 // ── preview gate: only the owner sees these until they are opened ───────────
-check('both previews are admin only while testing',
-  canUsePreview('on_sale', 'admin') && !canUsePreview('on_sale', 'pro') && !canUsePreview('on_sale', 'trial')
+check('On sale now is open to Pro (and admin) only, and Amazon Live prep is still admin only',
+  canUsePreview('on_sale', 'admin') && canUsePreview('on_sale', 'pro') && !canUsePreview('on_sale', 'trial')
+  && !canUsePreview('on_sale', 'creator') && !canUsePreview('on_sale', 'agency')
   && canUsePreview('amazon_live', 'admin') && !canUsePreview('amazon_live', 'pro'),
-  'a Pro user would see a feature the owner has not tested yet')
+  'the wrong tiers would see a feature')
 {
   const SHELL = read('components/layout/DashboardShellV2.tsx')
   check('and the nav follows the same switch',
@@ -271,6 +272,11 @@ async function saleEndedGuards() {
     inOrderCheck(C, ".eq('state', 'on_sale').limit(1)", 'yt.postComment('))
   check('a posted comment is remembered, and a failure to remember is said',
     inOrderCheck(C, 'yt.postComment(', "from('sale_comments').insert(") && /trackError/.test(C))
+  check('twenty sale comments per creator per day, counted before posting and said on the page',
+    SALE_COMMENTS_PER_DAY === 20
+    && inOrderCheck(C, '>= SALE_COMMENTS_PER_DAY', 'yt.postComment(')
+    && /\.gte\('posted_at', since\)/.test(C)
+    && /YouTube sale comments left in the last 24 hours/.test(read('components/labs/OnSale.tsx')))
   const CRON = read('app/api/cron/sale-comments/route.ts')
   check('the job leaves an unchecked price alone and only edits an ended sale',
     inOrderCheck(CRON, "if (verdict === 'unknown') { unknown++; continue }", 'takeSaleOut(sb, r)'))

@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
+import { SALE_COMMENTS_PER_DAY } from '@/lib/sale-comments'
 
 export const runtime = 'nodejs'
 
@@ -34,5 +35,8 @@ export async function GET() {
   const { data: shares } = await (supabase as any).from('on_sale_shares')
     .select('asin,ok_platforms,scheduled_for,created_at').eq('user_id', user.id).gte('created_at', since)
     .order('created_at', { ascending: false }).limit(300)
-  return NextResponse.json({ comments: data ?? [], shares: shares ?? [] })
+  // HOW MANY ARE LEFT TODAY, from the same rolling 24 hours the post route counts.
+  const dayAgo = Date.now() - 86_400_000
+  const postedToday = ((data ?? []) as Array<{ posted_at: string }>).filter((c) => Date.parse(c.posted_at) >= dayAgo).length
+  return NextResponse.json({ comments: data ?? [], shares: shares ?? [], postedToday, perDay: SALE_COMMENTS_PER_DAY })
 }

@@ -15,7 +15,7 @@ import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { wrongChannelMessage } from '@/lib/launch-channel'
 import { notPublicMessage } from '@/lib/covered-sales'
-import { SALE_WORDING, PRICE_LINE_LEAD, DISCLOSURE } from '@/lib/sale-comments'
+import { SALE_WORDING, PRICE_LINE_LEAD, DISCLOSURE, SALE_COMMENTS_PER_DAY } from '@/lib/sale-comments'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -54,6 +54,19 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: live, error: liveErr } = await (admin as any).from('sale_comments').select('id,comment_id')
     .eq('user_id', user.id).eq('youtube_video_id', videoId).eq('asin', asin).eq('state', 'on_sale').limit(1)
+  // THE DAILY CAP, counted from what was actually posted (lib/sale-comments).
+  {
+    const since = new Date(Date.now() - 86_400_000).toISOString()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count } = await (admin as any).from('sale_comments').select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id).gte('posted_at', since)
+    if ((count ?? 0) >= SALE_COMMENTS_PER_DAY) {
+      return NextResponse.json({
+        error: `You have posted ${SALE_COMMENTS_PER_DAY} sale comments in the last 24 hours, the most per day. Nothing was posted. The oldest one frees a slot 24 hours after it went up.`,
+        capped: true,
+      }, { status: 429 })
+    }
+  }
   if (!liveErr && live?.length) {
     return NextResponse.json({
       error: 'There is already a sale comment for this product on this video. It gets edited when the sale ends. Nothing new was posted.',

@@ -20,6 +20,14 @@ import { YouTubeOAuthService } from '@/services/youtube'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
 
+/**
+ * SALE COMMENTS PER CREATOR PER DAY (a rolling 24 hours). Each one costs
+ * about 100 units of MVP's YouTube quota over its life (50 to post, 50 to
+ * take the sale out), and that quota is shared by every creator and by
+ * Liftoff's uploads, so one busy sale day cannot spend everyone's.
+ */
+export const SALE_COMMENTS_PER_DAY = 20
+
 export const PRICE_LINE_LEAD = 'Check the latest price on Amazon here:'
 export const DISCLOSURE = 'As an Amazon Associate I earn from qualifying purchases.'
 

@@ -463,12 +463,12 @@ export default function OnSale() {
   }, [])
   useEffect(() => { void load() }, [load])
 
-  const [comments, setComments] = useState<{ list: SaleComment[]; shares: Share[]; missingTable: boolean } | null>(null)
+  const [comments, setComments] = useState<{ list: SaleComment[]; shares: Share[]; missingTable: boolean; postedToday: number; perDay: number } | null>(null)
   const loadComments = useCallback(async () => {
     try {
       const r = await fetch('/api/on-sale/comments')
       const j = await r.json().catch(() => ({}))
-      if (r.ok) setComments({ list: j.comments ?? [], shares: j.shares ?? [], missingTable: !!j.missingTable })
+      if (r.ok) setComments({ list: j.comments ?? [], shares: j.shares ?? [], missingTable: !!j.missingTable, postedToday: Number(j.postedToday ?? 0), perDay: Number(j.perDay ?? 20) })
     } catch { /* the list is extra; the page works without it */ }
   }, [])
   useEffect(() => { void loadComments() }, [loadComments])
@@ -496,6 +496,9 @@ export default function OnSale() {
               <b style={{ color: 'var(--text)' }}>{data.onSale.length} on sale</b> right now.
               {data.skipped > 0 && (
                 <span style={{ color: '#d97706' }}> {data.skipped} not checked yet. Each <b>Check again</b> checks the next 50, and the daily check works through the rest.</span>
+              )}
+              {comments && !comments.missingTable && (
+                <span> {Math.max(0, comments.perDay - comments.postedToday)} of {comments.perDay} YouTube sale comments left in the last 24 hours.</span>
               )}
               {data.visibilityChecked === false && (
                 <span style={{ color: '#d97706' }}> YouTube did not say which videos are public just now, so none are labelled. The comment button still checks before it posts.</span>
