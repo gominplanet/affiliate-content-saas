@@ -33,7 +33,7 @@ const UPDATES: Update[] = [
     badge: 'NEW',
     tone: '#E4572E',
     title: 'Liftoff: launch up to ten videos at once',
-    desc: 'One press sends up to ten videos to YouTube and to every Amazon storefront country you pick. Each video gets its own date and time, its own thumbnail with the right face ("Who is in this video?"), its own Amazon title, and your CTA exactly where you placed it. MVP checks the YouTube channel before anything uploads, and with SCOUT it keeps going even after you close the page. On the Pro plan, in Labs.',
+    desc: 'One press sends up to ten videos to YouTube and to every Amazon storefront country you pick. Each video gets its own date and time, its own thumbnail with the right face ("Who is in this video?"), its own Amazon title, and your CTA exactly where you placed it. MVP checks the YouTube channel before anything uploads, and with SCOUT it keeps going even after you close the page. On the Pro plan, at the top of Create.',
     href: '/liftoff',
   },
   {

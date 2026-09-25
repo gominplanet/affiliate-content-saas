@@ -494,6 +494,10 @@ export default function DashboardShellV2({
       items: [
         // Launchpad lives in LABS while under test (moved 2026-08-30). It will
         // graduate here and lead this group once the full pipeline is verified.
+        // Liftoff graduated out of Labs 2026-09: up to ten videos to YouTube and
+        // every chosen Amazon country from one press. Leads Create, as planned
+        // when it went into Labs. Pro and admin.
+        { href: '/liftoff', icon: <Rocket size={15} />, label: 'Liftoff', gate: isPro, badge: 'New' },
         { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot' },
         // Encore (formerly On sale now) graduated out of Labs 2026-09: timely
         // sale comments on the creator's own YouTube videos, pinned, and edited
@@ -643,8 +647,7 @@ export default function DashboardShellV2({
         // country from one press. Video Launchpad was the one-video version and
         // is retired into it (/launchpad and /launch forward here; see
         // next.config.ts); its Amazon-only path is a choice in Liftoff.
-        // In LABS until a full ten-video run has been through it end to end.
-        { href: '/liftoff', icon: <Rocket size={15} />, label: 'Liftoff', gate: isPro, badge: 'New' },
+        // Graduated to the top of Create 2026-09.
         // Back catalogue — the videos YouTube has ALREADY dubbed, sent to one
         // Amazon storefront through the normal sync pipeline. In LABS while the
         // trickle scan is proven against a real channel. Deliberately not a

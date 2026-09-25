@@ -404,9 +404,10 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'a cron nobody calls is a feature that works only in the repository')
   check('the page is in the nav',
     /href: '\/liftoff'/.test(NAV) && /label: 'Liftoff'/.test(NAV))
-  check('and it is behind Labs while it is unproven',
-    inOrder(NAV, "label: 'Labs'", "href: '/liftoff'"),
-    'anything risky lives in Labs, which is the agreement that makes shipping straight to main safe')
+  check('and it has left Labs for the top of Create, still Pro only',
+    inOrder(NAV, "label: 'Create'", "href: '/liftoff'") && inOrder(NAV, "href: '/liftoff'", "label: 'Labs'")
+    && /href: '\/liftoff'[^\n]*gate: isPro/.test(NAV),
+    'Liftoff graduated: it belongs in Create, and it is a Pro feature')
 }
 
 // ── the migrations ──────────────────────────────────────────────────────────
