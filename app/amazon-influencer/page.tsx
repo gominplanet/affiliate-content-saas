@@ -154,6 +154,36 @@ export default function AmazonInfluencerPage() {
         </div>
       </section>
 
+      {/* WHAT IS WORKING NOW: the shifts in the Amazon Influencer program, in
+          general terms, each paired with what MVP does about it. No figures
+          and no one else's words: this is the argument, not a citation. */}
+      <section className="border-b border-gray-200 dark:border-white/10 bg-[#fafafa] dark:bg-[#111113]">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14">
+          <div className="text-center mb-9">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] mb-2" style={{ color: ACCENT }}>What is working now</p>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">The program got harder. The creators pulling ahead changed how they work.</h2>
+            <p className="mt-3 text-[15px] text-[#6e6e73] dark:text-[#ebebf0] max-w-2xl mx-auto">
+              Commissions are tighter, the carousels are more crowded and good videos take longer to find their buyers.
+              The influencers still growing are not working more hours. They put tools to work on everything except the filming.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {[
+              { h: 'Software is no longer optional', p: 'The top earners let tools do the product research, the brand matching and the busywork, so their time goes into videos. Starting without them has never been harder.', mvp: 'MVP finds the products, matches you to paid brand deals and handles the posting.' },
+              { h: 'The thumbnail decides the click', p: 'With more videos on every product, a bright, clean thumbnail of you with the product stands out from the plain stills around it, and the extra clicks turn into sales.', mvp: 'One click makes a thumbnail with your own face that still looks like you.' },
+              { h: 'Minutes per video, not hours', p: 'Extra hours of editing and planning do not earn extra money. Getting more good videos out, consistently, is what grows a storefront.', mvp: 'MVP writes the titles and copy and designs every post, so a product goes from idea to live in minutes.' },
+              { h: 'One review, many places', p: 'The same product earns again on Pinterest, Instagram and Facebook, and a body of work across platforms is what gets brands to reach out.', mvp: 'Turn any product into pins, Reels and Facebook designs and publish them all at once.' },
+            ].map((c) => (
+              <div key={c.h} className="rounded-2xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 p-5 flex flex-col">
+                <p className="font-semibold text-[16px] mb-1.5">{c.h}</p>
+                <p className="text-[13.5px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">{c.p}</p>
+                <p className="mt-3 pt-3 border-t border-gray-100 dark:border-white/10 text-[13px] font-semibold" style={{ color: ACCENT }}>{c.mvp}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Feature grid — everything it comes with */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-14">
         <div className="text-center mb-9">

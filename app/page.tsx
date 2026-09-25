@@ -771,6 +771,18 @@ function OldWayNewWay() {
       mvp: 'One video becomes an article, a description, tags, a thumbnail, social posts and vertical clips.',
     },
     {
+      old: 'Hours go into editing and planning each video, and the extra time never shows up in what you earn.',
+      mvp: 'Co-Pilot writes the title, description and tags in minutes, and Liftoff launches up to ten videos to YouTube and your Amazon storefronts in one press.',
+    },
+    {
+      old: 'Your thumbnail is a plain still that disappears on a crowded carousel.',
+      mvp: 'One click makes a bright, clean thumbnail of you with the product that still looks like you.',
+    },
+    {
+      old: 'A product you reviewed goes on sale and nobody watching your old video ever hears about it.',
+      mvp: 'Encore spots the sale, pins a comment with your link on that video, and takes the sale out when it ends.',
+    },
+    {
       old: 'Writing the review is the evening you did not want to spend.',
       mvp: 'It is written from your own transcript, in your voice, from what you actually said on camera.',
     },
