@@ -70,7 +70,10 @@ check('the label is words, not a guess', saleLabel(saleVerdict({ deal: deal({ di
   const LIB = read('lib/covered-sales.ts')
   check('the free shared cache is read before any Keepa token is spent',
     LIB.indexOf("from('deal_radar_cache')") > -1 && LIB.indexOf("from('deal_radar_cache')") < LIB.indexOf('fetchKeepaBasicsCached(admin, rest')
-    && /\.filter\(\(p\) => !deals\.has\(p\.asin\)\)/.test(LIB) && /videoFirst\.slice\(0, opts\?\.keepaCap \?\? 50\)/.test(LIB),
+    && /\.filter\(\(p\) => !deals\.has\(p\.asin\)\)/.test(LIB) && /videoFirst\.filter\(\(a\) => !fresh\.has\(a\)\)\.slice\(0, opts\?\.keepaCap \?\? 50\)/.test(LIB)
+    // Products already in the day-old cache are free and always included, so
+    // each check reaches 50 NEW products instead of re-reading the first 50.
+    && /const rest = \[\.\.\.cached, \.\.\.unseen\]/.test(LIB),
     'a creator with a big catalogue would spend the day\'s Keepa budget on products the cache already knew')
   const PROMO = read('app/api/on-sale/promo/route.ts')
   check('the promo never states a price or a percentage, and never names a sale event',
@@ -88,8 +91,11 @@ check('the label is words, not a guess', saleLabel(saleVerdict({ deal: deal({ di
     /const tidy = \(s: unknown\) => tidyCopy\(s\)/.test(PROMO) && /return tidyCopy\(s\)/.test(read('lib/live-plan.ts')))
   check('the creator\'s banned words reach the prompt (the column is text, not an array)',
     /String\(raw \?\? ''\)\.split\(/.test(PROMO) && /const avoid = avoidList\(brand\?\.words_to_avoid\)/.test(PROMO))
-  check('the comment always carries the link, and the social sheet gets the post without a second link',
-    /if \(comment && !comment\.includes\(link\)\) comment = /.test(PROMO) && /socialForSheet:/.test(PROMO)
+  check('the comment and Community post always end with the price line and the Associates disclosure, written by code; the social sheet gets the post without a second link',
+    /const priceLine = `Check the latest price on Amazon here: \$\{link\}`/.test(PROMO)
+    && /const disclosure = 'As an Amazon Associate I earn from qualifying purchases\.'/.test(PROMO)
+    && /const comment = `\$\{strip\(j\.comment \?\? ''\)\}\\n\\n\$\{priceLine\}\\n\$\{disclosure\}`/.test(PROMO)
+    && /\$\{priceLine\}\\n\$\{disclosure\}`/.test(PROMO.slice(PROMO.indexOf('const community ='))) && /socialForSheet:/.test(PROMO)
     && /promo\.promo\.socialForSheet/.test(read('components/labs/OnSale.tsx')))
   const CMT = read('app/api/on-sale/comment/route.ts')
   check('the comment is posted only as the video\'s own channel, asked of YouTube',
@@ -110,7 +116,7 @@ check('the label is words, not a guess', saleLabel(saleVerdict({ deal: deal({ di
     /missing\.filter\(\(a\) => fetched\.has\(a\)\)/.test(KC) && !/empty: true, fetched_at: at/.test(KC),
     'one token-starved minute blanked a day of prices for every feature reading the shared cache')
   check('the page says how many were actually checked',
-    /checked: stats\.checked/.test(read('app/api/on-sale/route.ts')) && /not checked this time/.test(read('components/labs/OnSale.tsx')))
+    /checked: stats\.checked/.test(read('app/api/on-sale/route.ts')) && /not checked yet\. Each <b>Check again<\/b> checks the next 50/.test(read('components/labs/OnSale.tsx')))
   check('rewriting the promo clears "Posted."', /setPosted\(null\)\s*\n\s*setPromo\(j as Promo\)/.test(read('components/labs/OnSale.tsx')))
   for (const [pg, feat] of [['app/(dashboard)/on-sale/page.tsx', 'on_sale'], ['app/(dashboard)/amazon-live/page.tsx', 'amazon_live']] as const) {
     check(`${pg} follows the preview switch`, new RegExp(`canUsePreview\\('${feat}', tier\\)`).test(read(pg)) && !/canSeeNav/.test(read(pg)))

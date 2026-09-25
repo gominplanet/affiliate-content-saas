@@ -158,11 +158,17 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
 
       {promo && (
         <div className="mt-3 grid gap-2">
-          <CopyBlock title="Short or story (15 to 30 seconds)"
-            text={`${promo.promo.short.hook}\n\n${promo.promo.short.script}${promo.promo.short.onScreen.length ? `\n\nOn screen:\n${promo.promo.short.onScreen.map((l) => `• ${l}`).join('\n')}` : ''}`} />
+          <CopyBlock title="Script for a new Short, Reel or Story (15 to 30 seconds)"
+            text={`${promo.promo.short.hook}\n\n${promo.promo.short.script}${promo.promo.short.onScreen.length ? `\n\nOn screen:\n${promo.promo.short.onScreen.map((l) => `• ${l}`).join('\n')}` : ''}`}>
+            <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
+              Film yourself saying this with the product in hand, vertical, and add the on-screen lines as text. Post it as a YouTube Short
+              with the link in its description, a TikTok, or an Instagram or Facebook Story with a link sticker. It sends people back to a
+              product they already trust you on while the price is down.
+            </p>
+          </CopyBlock>
           <CopyBlock title="YouTube Community post" text={promo.promo.community}>
             <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
-              YouTube has no way for apps to post these, so paste it into Studio under Create, then Post.
+              YouTube has no way for apps to post these: in YouTube Studio press Create, then Post, and paste it. The links in it are clickable there.
             </p>
           </CopyBlock>
           <CopyBlock title={promo.video ? `Comment for "${promo.video.title}"` : 'Comment'} text={promo.promo.comment}>
@@ -246,7 +252,7 @@ export default function OnSale() {
               {data.videosCovered} products from your videos, {data.covered} in all. Prices known for {data.checked}.{' '}
               <b style={{ color: 'var(--text)' }}>{data.onSale.length} on sale</b> right now.
               {data.skipped > 0 && (
-                <span style={{ color: '#d97706' }}> {data.skipped} not checked this time (past today&apos;s price-check limit), so they may be on sale too.</span>
+                <span style={{ color: '#d97706' }}> {data.skipped} not checked yet. Each <b>Check again</b> checks the next 50, and the daily check works through the rest.</span>
               )}
             </p>
             <button type="button" onClick={() => void load()}

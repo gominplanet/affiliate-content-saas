@@ -123,9 +123,9 @@ ${voice ? `\nWRITE IN THIS CREATOR'S VOICE:\n${voice}` : ''}
 ${avoid.length ? `\nNEVER USE THESE WORDS: ${avoid.join(', ')}` : ''}
 
 Write four pieces. First person, the creator talking, warm and specific, like telling a friend.
-1. "short": a vertical Short or story, 15 to 30 seconds. {"hook": the first line spoken, under 12 words, "script": the full spoken script, "onScreen": 2 to 4 short on-screen text lines}.
-2. "community": a YouTube Community post, 2 to 4 sentences, ends by pointing to the video or the link.
-3. "comment": a comment for the original video, 1 to 3 sentences, telling viewers it is on sale right now, ending with the link placeholder {link}.
+1. "short": a script the creator films as a new 15 to 30 second vertical video (YouTube Short, Reel, TikTok or Story), holding or showing the product. {"hook": the first line spoken, under 12 words, "script": the full spoken script, "onScreen": 2 to 4 short on-screen text lines}. End by saying the link is in the description or pinned comment. Do not put a URL in it.
+2. "community": a YouTube Community post, 2 to 4 sentences. Do not put any URL or link placeholder in it: MVP adds the links itself on their own lines.
+3. "comment": a comment for the original video, 1 to 3 sentences, telling viewers it is on sale right now. Do not put any URL or link placeholder in it: MVP adds the price line and the disclosure itself.
 4. "social": a post for X, Threads or Facebook, under 240 characters, including {link}.
 
 HARD RULES for every piece:
@@ -146,9 +146,16 @@ Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"com
     if (!m) return NextResponse.json({ error: 'The writer did not return a promo. Try again.' }, { status: 502 })
     const j = JSON.parse(m[0]) as { short?: { hook?: string; script?: string; onScreen?: string[] }; community?: string; comment?: string; social?: string }
     const fill = (s: string) => tidy(s).replace(/\{link\}/g, link)
-    // THE COMMENT ALWAYS CARRIES THE LINK: it is the whole point of it.
-    let comment = fill(j.comment ?? '')
-    if (comment && !comment.includes(link)) comment = `${comment} ${link}`
+    // THE LINK AND THE DISCLOSURE ARE MVP'S, NOT THE WRITER'S. Written by
+    // code, they are always there, always the same, and always say where the
+    // link goes: "Check the latest price on Amazon here", then the Associates
+    // statement, which Amazon requires wherever an Associates link is shared.
+    const strip = (t: string) => fill(t).replace(/https?:\/\/\S+/g, '').replace(/\{link\}/g, '').replace(/[ \t]{2,}/g, ' ').trim()
+    const priceLine = `Check the latest price on Amazon here: ${link}`
+    const disclosure = 'As an Amazon Associate I earn from qualifying purchases.'
+    const comment = `${strip(j.comment ?? '')}\n\n${priceLine}\n${disclosure}`
+    const videoUrl = lead?.youtubeVideoId ? `https://youtu.be/${lead.youtubeVideoId}` : ''
+    const community = `${strip(j.community ?? '')}\n\n${videoUrl ? `Watch my review: ${videoUrl}\n` : ''}${priceLine}\n${disclosure}`
     // THE SOCIAL POST, twice: with the link for copying, and without it for
     // the quick-post sheet, which adds each platform's own link (and #ad).
     const socialRaw = tidy(j.social ?? '')
@@ -163,7 +170,7 @@ Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"com
           script: tidy(j.short?.script),
           onScreen: (j.short?.onScreen ?? []).map(tidy).filter(Boolean).slice(0, 4),
         },
-        community: fill(j.community ?? ''),
+        community,
         comment,
         social: socialRaw.replace(/\{link\}/g, link),
         socialForSheet: socialRaw.replace(/\s*\{link\}\s*/g, ' ').replace(/\s{2,}/g, ' ').trim(),

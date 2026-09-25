@@ -168,7 +168,22 @@ export async function findSales(
     .filter((p) => !deals.has(p.asin))
     .sort((a, b) => Number(b.sources.some((s) => s.kind === 'video')) - Number(a.sources.some((s) => s.kind === 'video')))
     .map((p) => p.asin)
-  const rest = videoFirst.slice(0, opts?.keepaCap ?? 50)
+  // THE CAP IS ON NEW LOOKUPS, NOT ON PRODUCTS. A product Keepa answered in
+  // the last day is already in the shared cache and costs nothing, so it is
+  // always included; only products never looked up count against the cap.
+  // Counting the cached ones too meant every check re-read the same first 50
+  // and the rest of a big catalogue was never reached.
+  const fresh = new Set<string>()
+  const since = new Date(Date.now() - 86_400_000).toISOString()
+  for (let i = 0; i < videoFirst.length; i += 200) {
+    const { data, error } = await admin.from('keepa_product_cache').select('asin')
+      .in('asin', videoFirst.slice(i, i + 200)).gte('fetched_at', since)
+    if (error) break
+    for (const r of (data ?? []) as Array<{ asin: string }>) fresh.add(String(r.asin).toUpperCase())
+  }
+  const cached = videoFirst.filter((a) => fresh.has(a))
+  const unseen = videoFirst.filter((a) => !fresh.has(a)).slice(0, opts?.keepaCap ?? 50)
+  const rest = [...cached, ...unseen]
   const keepa = rest.length ? await fetchKeepaBasicsCached(admin, rest, { maxAgeDays: 1 }) : new Map()
   const checked = deals.size + rest.filter((a) => keepa.has(a)).length
   opts?.onStats?.({ checked, skipped: Math.max(0, asins.length - checked) })
