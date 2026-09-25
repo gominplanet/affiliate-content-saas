@@ -62,7 +62,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (batch.state === 'launching' || batch.state === 'launched') {
     return NextResponse.json({ error: 'This batch has already launched, so its channel is set. Start a new batch for another channel.' }, { status: 409 })
   }
-  const known = (await pushChannels(sb, user.id)).find((c) => c.channelId === channelId)
+  const all = await pushChannels(sb, user.id)
+  const known = all.find((c) => c.channelId === channelId)
   if (!known) return NextResponse.json({ error: 'That channel is not one of yours with a login saved. Connect it under Settings.' }, { status: 400 })
 
   const { live, error } = await liveUploadChannel(sb, user.id, channelId)
@@ -77,9 +78,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const { error: wErr } = await sb.from('launch_batches').update({ youtube_channel_id: channelId }).eq('id', id).eq('user_id', user.id)
   if (wErr) return NextResponse.json({ error: wErr.message }, { status: 500 })
-  // A PLAYLIST BELONGS TO ONE CHANNEL. One chosen on the old channel would be
-  // refused by the new one, so it is cleared when the channel changes.
-  if (current && current !== channelId) {
+  // A PLAYLIST BELONGS TO ONE CHANNEL. The playlist list on the page is read
+  // through the confirmed channel's login, or the default's before one is
+  // confirmed, so a playlist picked through any other login would be refused
+  // by this channel on every video. It is cleared whenever the login that
+  // listed it is not the one now confirmed.
+  const listedBy = current || all.find((c) => c.isDefault)?.channelId || null
+  if (listedBy !== channelId) {
     await sb.from('launch_batches').update({ playlist_id: null }).eq('id', id).eq('user_id', user.id)
   }
   return NextResponse.json({ ok: true, live })

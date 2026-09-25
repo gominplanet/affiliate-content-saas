@@ -753,7 +753,6 @@ export class YouTubeOAuthService {
     return all
   }
 
-  /** Add a video to a playlist. No-op if it's already there. */
   /** Post a top-level comment on a video, as the channel. Returns the new
    *  comment's id. Fifty quota units. (YouTube has no API to PIN a comment;
    *  that stays a click in Studio.) */
@@ -772,6 +771,7 @@ export class YouTubeOAuthService {
     return String(j?.id || '')
   }
 
+  /** Add a video to a playlist. No-op if it's already there. */
   async addVideoToPlaylist(playlistId: string, videoId: string): Promise<void> {
     const res = await fetchWithTimeout(`${BASE}/playlistItems?part=snippet`, {
       method: 'POST',

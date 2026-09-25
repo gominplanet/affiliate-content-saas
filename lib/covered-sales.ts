@@ -92,7 +92,10 @@ export function saleVerdict(input: {
  * Every product this creator has covered, with where. Videos first, since a
  * video is what a sale can bring back to life; the storefront second.
  */
-export async function coveredProducts(sb: Sb, userId: string, limit = 400): Promise<CoveredProduct[]> {
+export async function coveredProducts(sb: Sb, userId: string, limit = 400, onlyAsins?: string[]): Promise<CoveredProduct[]> {
+  // ONE PRODUCT, looked up directly: its videos can be older than the newest
+  // `limit`, and the promo for an old review is exactly the point.
+  const only = onlyAsins?.map((a) => String(a || '').trim().toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a))
   const byAsin = new Map<string, CoveredProduct>()
   const add = (asin: string, title: string, image: string | null, src: CoverSource) => {
     const a = String(asin || '').trim().toUpperCase()
@@ -104,10 +107,11 @@ export async function coveredProducts(sb: Sb, userId: string, limit = 400): Prom
     byAsin.set(a, cur)
   }
 
-  const { data: vids } = await sb.from('youtube_videos')
+  let vq = sb.from('youtube_videos')
     .select('id,asin,title,youtube_video_id,view_count,published_at,channel_id,thumbnail_url')
     .eq('user_id', userId).not('asin', 'is', null)
-    .order('published_at', { ascending: false, nullsFirst: false }).limit(limit)
+  if (only?.length) vq = vq.in('asin', only)
+  const { data: vids } = await vq.order('published_at', { ascending: false, nullsFirst: false }).limit(limit)
   for (const v of (vids ?? []) as Array<Record<string, unknown>>) {
     const yt = String(v.youtube_video_id || '')
     // A video still being uploaded has a placeholder id, and nothing to promote.
@@ -119,8 +123,9 @@ export async function coveredProducts(sb: Sb, userId: string, limit = 400): Prom
     })
   }
 
-  const { data: store, error: storeErr } = await sb.from('storefront_catalog')
-    .select('asin,title,image_url').eq('user_id', userId).limit(limit)
+  let sq = sb.from('storefront_catalog').select('asin,title,image_url').eq('user_id', userId)
+  if (only?.length) sq = sq.in('asin', only)
+  const { data: store, error: storeErr } = await sq.limit(limit)
   if (!storeErr) {
     for (const s of (store ?? []) as Array<{ asin: string; title: string | null; image_url: string | null }>) {
       add(s.asin, s.title || '', s.image_url, { kind: 'storefront' })
@@ -136,8 +141,18 @@ export interface OnSaleProduct extends CoveredProduct { verdict: SaleVerdict }
  * Keepa cache is admin-read only. Sorted biggest sale first, with a video
  * behind it before one only in the storefront.
  */
-export async function findSales(admin: Sb, products: CoveredProduct[], opts?: { keepaCap?: number }): Promise<OnSaleProduct[]> {
-  if (products.length === 0) return []
+export interface SaleCheckStats {
+  /** Products whose price was actually known: in the deal cache or answered by Keepa. */
+  checked: number
+  /** Products not checked this time: past the Keepa cap, or Keepa did not answer. */
+  skipped: number
+}
+
+export async function findSales(
+  admin: Sb, products: CoveredProduct[],
+  opts?: { keepaCap?: number; onStats?: (s: SaleCheckStats) => void },
+): Promise<OnSaleProduct[]> {
+  if (products.length === 0) { opts?.onStats?.({ checked: 0, skipped: 0 }); return [] }
   const asins = products.map((p) => p.asin)
   const deals = new Map<string, NonNullable<Parameters<typeof saleVerdict>[0]['deal']> & { title?: string; image_url?: string | null }>()
   for (let i = 0; i < asins.length; i += 200) {
@@ -148,8 +163,15 @@ export async function findSales(admin: Sb, products: CoveredProduct[], opts?: { 
   }
   // Keepa only for what the shared cache did not already answer, capped so
   // one creator with a huge catalogue cannot spend the day's tokens.
-  const rest = asins.filter((a) => !deals.has(a)).slice(0, opts?.keepaCap ?? 300)
+  // Videos before storefront-only products, so the cap cuts the least useful.
+  const videoFirst = products
+    .filter((p) => !deals.has(p.asin))
+    .sort((a, b) => Number(b.sources.some((s) => s.kind === 'video')) - Number(a.sources.some((s) => s.kind === 'video')))
+    .map((p) => p.asin)
+  const rest = videoFirst.slice(0, opts?.keepaCap ?? 50)
   const keepa = rest.length ? await fetchKeepaBasicsCached(admin, rest, { maxAgeDays: 1 }) : new Map()
+  const checked = deals.size + rest.filter((a) => keepa.has(a)).length
+  opts?.onStats?.({ checked, skipped: Math.max(0, asins.length - checked) })
 
   const out: OnSaleProduct[] = []
   for (const p of products) {

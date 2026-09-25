@@ -12,6 +12,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
+import { wrongChannelMessage } from '@/lib/launch-channel'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -37,8 +38,23 @@ export async function POST(req: Request) {
 
   const token = await getChannelOAuthToken(supabase, user.id, vid.channel_id ?? null)
   if (!token) return NextResponse.json({ error: 'The channel this video is on is not connected for publishing. Connect it under Settings.' }, { status: 400 })
+  const yt = new YouTubeOAuthService(token)
+  // THE COMMENTER IS THE VIDEO'S OWN CHANNEL, asked of YouTube. A login can
+  // fall back to the default channel when the video's own is not connected,
+  // and the comment would then be posted as a different channel.
+  const owner = String(vid.channel_id || '')
+  if (/^UC[\w-]{22}$/.test(owner)) {
+    let me: { id: string; title: string } | null = null
+    try { me = await yt.getMyChannel() } catch { /* said below */ }
+    if (!me) return NextResponse.json({ error: 'YouTube did not say which channel this login is. Nothing was posted.' }, { status: 502 })
+    if (me.id !== owner) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: named } = await (supabase as any).from('youtube_channels').select('channel_title').eq('user_id', user.id).eq('channel_id', owner).maybeSingle()
+      return NextResponse.json({ error: wrongChannelMessage(String(named?.channel_title || owner), me.title).replace('Nothing was uploaded.', 'Nothing was posted.') }, { status: 409 })
+    }
+  }
   try {
-    const id = await new YouTubeOAuthService(token).postComment(videoId, text)
+    const id = await yt.postComment(videoId, text)
     return NextResponse.json({
       ok: true, commentId: id,
       // PINNING IS A CLICK IN STUDIO: YouTube offers no way to do it by API.

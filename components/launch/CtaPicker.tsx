@@ -176,7 +176,7 @@ export default function CtaPicker({
           <label className="text-[12px] font-medium" style={text}>
             Size
             <input
-              type="range" min={10} max={100} value={Math.round(width * 100)}
+              type="range" min={10} max={95} value={Math.round(width * 100)}
               onChange={(e) => setWidth(Number(e.target.value) / 100)}
               className="w-full mt-1"
             />

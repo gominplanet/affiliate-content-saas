@@ -32,7 +32,7 @@ interface Promo {
   link: string
   event: string | null
   video: { youtubeVideoId: string; title: string } | null
-  promo: { short: { hook: string; script: string; onScreen: string[] }; community: string; comment: string; social: string }
+  promo: { short: { hook: string; script: string; onScreen: string[] }; community: string; comment: string; social: string; socialForSheet: string }
 }
 
 const money = (c: number | null) => (c == null ? null : `$${(c / 100).toFixed(2)}`)
@@ -72,6 +72,7 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
   const [writing, setWriting] = useState(false)
   const [posting, setPosting] = useState(false)
   const [posted, setPosted] = useState<{ studioUrl: string; watchUrl: string } | null>(null)
+  const [ended, setEnded] = useState(false)
   const videos = p.sources.filter((s) => s.kind === 'video')
   const inStore = p.sources.some((s) => s.kind === 'storefront')
   const left = p.verdict.basis === 'lightning' ? timeLeft(p.verdict.lightningEndsAt) : null
@@ -83,9 +84,12 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asin: p.asin }),
       })
       const j = await r.json().catch(() => ({}))
-      if (!r.ok) { toast.error(j?.error || 'Could not write the promo.'); return }
+      if (!r.ok) { toast.error(j?.error || 'Could not write the promo.'); if (j?.ended) setEnded(true); return }
+      // A NEW COMMENT HAS NOT BEEN POSTED. "Posted." beside rewritten text
+      // would say something that is not true of it.
+      setPosted(null)
       setPromo(j as Promo)
-    } finally { setWriting(false) }
+    } catch { toast.error('Could not reach the server.') } finally { setWriting(false) }
   }
 
   async function comment() {
@@ -100,7 +104,7 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
       if (!r.ok) { toast.error(j?.error || 'YouTube did not take the comment.'); return }
       setPosted({ studioUrl: j.studioUrl, watchUrl: j.watchUrl })
       toast.success('Comment posted on your video')
-    } finally { setPosting(false) }
+    } catch { toast.error('Could not reach the server. Nothing was posted.') } finally { setPosting(false) }
   }
 
   return (
@@ -140,7 +144,10 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
             </ul>
           )}
         </div>
-        {!promo && (
+        {ended && !promo && (
+          <span className="shrink-0 text-[12px] font-semibold" style={{ color: 'var(--text-soft)' }}>Sale ended</span>
+        )}
+        {!promo && !ended && (
           <button type="button" onClick={() => void write()} disabled={writing}
             className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12.5px] font-semibold text-white disabled:opacity-60"
             style={{ background: ACCENT }}>
@@ -152,9 +159,6 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
 
       {promo && (
         <div className="mt-3 grid gap-2">
-          {promo.event && (
-            <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>Written for {promo.event}.</p>
-          )}
           <CopyBlock title="Short or story (15 to 30 seconds)"
             text={`${promo.promo.short.hook}\n\n${promo.promo.short.script}${promo.promo.short.onScreen.length ? `\n\nOn screen:\n${promo.promo.short.onScreen.map((l) => `• ${l}`).join('\n')}` : ''}`} />
           <CopyBlock title="YouTube Community post" text={promo.promo.community}>
@@ -188,7 +192,7 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
             )}
           </CopyBlock>
           <CopyBlock title="Social post" text={promo.promo.social}>
-            <button type="button" onClick={() => onShare({ asin: p.asin, title: p.title, imageUrl: p.image }, promo.promo.social)}
+            <button type="button" onClick={() => onShare({ asin: p.asin, title: p.title, imageUrl: p.image }, promo.promo.socialForSheet)}
               className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white"
               style={{ background: ACCENT }}>
               <Send size={12} /> Post to my socials
@@ -205,7 +209,7 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
 }
 
 export default function OnSale() {
-  const [data, setData] = useState<{ covered: number; videosCovered: number; onSale: Product[]; checkedAt: string } | null>(null)
+  const [data, setData] = useState<{ covered: number; checked: number; skipped: number; videosCovered: number; onSale: Product[]; checkedAt: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [share, setShare] = useState<{ deal: QuickPostDeal; caption: string } | null>(null)
@@ -240,8 +244,11 @@ export default function OnSale() {
         <>
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <p className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
-              Checked {data.covered} products ({data.videosCovered} from your videos).{' '}
+              {data.videosCovered} products from your videos, {data.covered} in all. Prices known for {data.checked}.{' '}
               <b style={{ color: 'var(--text)' }}>{data.onSale.length} on sale</b> right now.
+              {data.skipped > 0 && (
+                <span style={{ color: '#d97706' }}> {data.skipped} not checked this time (past today&apos;s price-check limit), so they may be on sale too.</span>
+              )}
             </p>
             <button type="button" onClick={() => void load()}
               className="inline-flex items-center gap-1 text-[12px] px-2.5 py-1 rounded-lg border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>

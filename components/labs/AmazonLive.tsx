@@ -58,14 +58,14 @@ function SegmentCard({ s, n }: { s: LiveSegment; n: number }) {
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--text-soft)' }}>Say</p>
           <ul className="list-disc pl-4 text-[13px] flex flex-col gap-1" style={{ color: 'var(--text)' }}>
-            {s.talkingPoints.map((t) => <li key={t}>{t}</li>)}
+            {s.talkingPoints.map((t, k) => <li key={k}>{t}</li>)}
           </ul>
         </div>
         {s.show.length > 0 && (
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--text-soft)' }}>Show on camera</p>
             <ul className="list-disc pl-4 text-[13px] flex flex-col gap-1" style={{ color: 'var(--text)' }}>
-              {s.show.map((t) => <li key={t}>{t}</li>)}
+              {s.show.map((t, k) => <li key={k}>{t}</li>)}
             </ul>
           </div>
         )}
@@ -74,8 +74,8 @@ function SegmentCard({ s, n }: { s: LiveSegment; n: number }) {
         <div className="mt-3">
           <p className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--text-soft)' }}>Likely in chat</p>
           <dl className="flex flex-col gap-1.5 text-[12.5px]">
-            {s.questions.map((q) => (
-              <div key={q.q}>
+            {s.questions.map((q, k) => (
+              <div key={k}>
                 <dt className="font-medium" style={{ color: 'var(--text)' }}>{q.q}</dt>
                 <dd style={{ color: 'var(--text-soft)' }}>{q.a}</dd>
               </div>
@@ -113,7 +113,10 @@ function Teleprompter({ plan, onClose }: { plan: LivePlan; onClose: () => void }
   }, [cards.length, onClose])
   const c = cards[i]
   const elapsed = started ? Math.floor((now - started) / 1000) : 0
-  const behind = started ? Math.floor(elapsed / 60) - c.at : 0
+  // BEHIND means past the time the NEXT part was due to start, not past the
+  // start of this one: two minutes into a four minute slot is on time.
+  const nextAt = cards[i + 1]?.at ?? plan.minutes
+  const behind = started ? Math.floor(elapsed / 60) - nextAt : 0
   const prompts = plan.chatPrompts.filter((p) => p.atMin >= c.at && p.atMin < (cards[i + 1]?.at ?? Infinity))
   return (
     <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: '#0b0d0f', color: '#f4f4f5' }} role="dialog" aria-label="Teleprompter">
@@ -130,15 +133,15 @@ function Teleprompter({ plan, onClose }: { plan: LivePlan; onClose: () => void }
       <div className="flex-1 overflow-y-auto px-6 sm:px-16 py-10">
         <p className="text-[18px] mb-4" style={{ color: '#9ca3af' }}>{c.title}</p>
         <div className="flex flex-col gap-6">
-          {c.lines.filter(Boolean).map((l) => <p key={l} className="text-[34px] sm:text-[44px] leading-tight font-semibold">{l}</p>)}
+          {c.lines.filter(Boolean).map((l, k) => <p key={k} className="text-[34px] sm:text-[44px] leading-tight font-semibold">{l}</p>)}
         </div>
         {c.extra.length > 0 && (
           <ul className="mt-8 flex flex-col gap-2 text-[22px]" style={{ color: '#7dd3fc' }}>
-            {c.extra.map((x) => <li key={x}>{x}</li>)}
+            {c.extra.map((x, k) => <li key={k}>{x}</li>)}
           </ul>
         )}
-        {prompts.map((p) => (
-          <p key={p.text} className="mt-8 text-[22px] inline-flex items-center gap-2" style={{ color: '#fbbf24' }}>
+        {prompts.map((p, k) => (
+          <p key={k} className="mt-8 text-[22px] inline-flex items-center gap-2" style={{ color: '#fbbf24' }}>
             <MessageCircle size={20} /> Ask the chat: {p.text}
           </p>
         ))}
@@ -202,8 +205,11 @@ export default function AmazonLive() {
   }, [pool, lists, filter, q])
 
   function toggle(asin: string) {
-    setPicked((cur) => cur.includes(asin) ? cur.filter((a) => a !== asin)
-      : cur.length >= LIVE_MAX_PRODUCTS ? (toast.error(`A show holds ${LIVE_MAX_PRODUCTS} products at most.`), cur) : [...cur, asin])
+    if (!picked.includes(asin) && picked.length >= LIVE_MAX_PRODUCTS) {
+      toast.error(`A show holds ${LIVE_MAX_PRODUCTS} products at most.`)
+      return
+    }
+    setPicked((cur) => cur.includes(asin) ? cur.filter((a) => a !== asin) : [...cur, asin])
   }
   function move(asin: string, d: -1 | 1) {
     setPicked((cur) => {
@@ -216,29 +222,33 @@ export default function AmazonLive() {
   async function build() {
     setBuilding(true)
     try {
-      const titles: Record<string, string> = {}
-      for (const a of picked) { const p = pool?.find((x) => x.asin === a); if (p) titles[a] = p.title }
-      const r = await fetch('/api/live/plan', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title || 'Amazon Live', minutes, asins: picked, notes, titles }),
-      })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) { toast.error(j?.error || 'Could not build the show.'); return }
-      setPlan(j.plan); setPlanId(j.id ?? null)
-      if (!j.saved) toast.error(j.saveError || 'The plan was built but not saved.')
-      else { toast.success('Show ready and saved'); void loadSaved() }
-    } finally { setBuilding(false) }
+      await buildInner()
+    } catch { toast.error('Could not reach the server.') } finally { setBuilding(false) }
+  }
+  async function buildInner() {
+    const titles: Record<string, string> = {}
+    for (const a of picked) { const p = pool?.find((x) => x.asin === a); if (p) titles[a] = p.title }
+    const r = await fetch('/api/live/plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title || 'Amazon Live', minutes, asins: picked, notes, titles }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { toast.error(j?.error || 'Could not build the show.'); return }
+    setPlan(j.plan); setPlanId(j.id ?? null)
+    if (!j.saved) toast.error(j.saveError || 'The plan was built but not saved.')
+    else { toast.success('Show ready and saved'); void loadSaved() }
   }
 
   async function openSaved(id: string) {
-    const r = await fetch(`/api/live/plans/${id}`)
+    const r = await fetch(`/api/live/plans/${id}`).catch(() => null)
+    if (!r) { toast.error('Could not reach the server.'); return }
     const j = await r.json().catch(() => ({}))
     if (!r.ok) { toast.error(j?.error || 'Could not open that plan.'); return }
     setPlan(j.plan); setPlanId(id)
   }
   async function removeSaved(id: string) {
-    const r = await fetch(`/api/live/plans/${id}`, { method: 'DELETE' })
-    if (!r.ok) { toast.error('Could not delete it.'); return }
+    const r = await fetch(`/api/live/plans/${id}`, { method: 'DELETE' }).catch(() => null)
+    if (!r || !r.ok) { toast.error('Could not delete it.'); return }
     if (planId === id) { setPlan(null); setPlanId(null) }
     void loadSaved()
   }
@@ -251,7 +261,13 @@ export default function AmazonLive() {
   return (
     <div className="max-w-5xl mx-auto">
       {/* Print only the plan. */}
-      <style>{`@media print { body * { visibility: hidden !important; } .live-print, .live-print * { visibility: visible !important; } .live-print { position: absolute; left: 0; top: 0; width: 100%; } .no-print { display: none !important; } }`}</style>
+      <style>{`@media print {
+        html, body, body * { overflow: visible !important; height: auto !important; max-height: none !important; }
+        body * { visibility: hidden !important; }
+        .live-print, .live-print * { visibility: visible !important; color: #111 !important; background: #fff !important; border-color: #ccc !important; }
+        .live-print { position: absolute; left: 0; top: 0; width: 100%; }
+        .no-print { display: none !important; }
+      }`}</style>
       <PageHero
         accent={ACCENT}
         title="Amazon Live prep"
@@ -427,8 +443,8 @@ export default function AmazonLive() {
             <section className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
               <p className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--text-soft)' }}>Ask the chat</p>
               <ul className="flex flex-col gap-1 text-[13px]">
-                {plan.chatPrompts.map((p) => (
-                  <li key={p.text}><span className="font-mono tabular-nums mr-2" style={{ color: ACCENT }}>{clockLabel(p.atMin)}</span><span style={{ color: 'var(--text)' }}>{p.text}</span></li>
+                {plan.chatPrompts.map((p, k) => (
+                  <li key={k}><span className="font-mono tabular-nums mr-2" style={{ color: ACCENT }}>{clockLabel(p.atMin)}</span><span style={{ color: 'var(--text)' }}>{p.text}</span></li>
                 ))}
               </ul>
             </section>

@@ -45,7 +45,7 @@ export async function GET() {
   }
 
   const all = [...byAsin.values()]
-  const sales = new Map((await findSales(admin, all, { keepaCap: 150 })).map((s) => [s.asin, s]))
+  const sales = new Map((await findSales(admin, all, { keepaCap: 50 })).map((s) => [s.asin, s]))
   const products = all.map((p) => {
     const s = sales.get(p.asin)
     const video = p.sources.find((x) => x.kind === 'video')

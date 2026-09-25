@@ -946,7 +946,8 @@ export default function LaunchBoard() {
   // ── videos ────────────────────────────────────────────────────────────────
   async function addFiles(files: FileList | null) {
     if (!files || !batchId) return
-    const room = maxItems - items.length
+    // Files still uploading count against the cap too.
+    const room = maxItems - items.length - uploading
     const picked = Array.from(files).slice(0, Math.max(0, room))
     if (picked.length === 0) {
       toast.error(`A batch holds ${maxItems} videos. Launch this one, or start another.`)
@@ -971,7 +972,9 @@ export default function LaunchBoard() {
     // ADDED IN THE ORDER PICKED. The batch's order is the publishing order,
     // so a small file that finishes first still waits for the file before it
     // to be added, and only the adding waits: the bytes go up together.
-    setUploading(picked.length)
+    // ADDED TO, not set: files picked while others are still going up must not
+    // reset the count, or it reaches zero early and drops the close-tab warning.
+    setUploading((n) => n + picked.length)
     const rows: UploadRow[] = picked.map((f, i) => ({
       key: `${Date.now()}-${i}-${f.name}`, name: f.name, total: f.size, sent: 0,
       state: 'waiting', startedAt: 0, lastMoveAt: 0, tries: 0,

@@ -6,10 +6,23 @@ import { readFileSync } from 'node:fs'
 import { saleVerdict, SALE_MIN_PCT, saleLabel } from '../lib/covered-sales'
 import { layoutClock, assemblePlan, tidyLine, clockLabel, LIVE_MAX_PRODUCTS } from '../lib/live-plan'
 import { canUsePreview } from '../lib/labs-preview'
+import { tidyCopy } from '../lib/copy-rules'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => { if (!cond) failures.push(`${name}${detail ? `: ${detail}` : ''}`) }
 const read = (p: string) => readFileSync(p, 'utf8')
+const inOrderCheck = (src: string, a: string, b: string) => { const i = src.indexOf(a), j = src.indexOf(b); return i > -1 && j > -1 && i < j }
+
+// ── the house rules for copy ────────────────────────────────────────────────
+{
+  const now = new Date('2026-09-25T00:00:00Z')
+  check('a range stays a range, and a spec number survives',
+    tidyCopy('Runs 3–5 hours on 2000 mAh', now) === 'Runs 3 to 5 hours on 2000 mAh', tidyCopy('Runs 3–5 hours on 2000 mAh', now))
+  check('this year and next are removed, dashes become commas, "honest" goes',
+    !/2026|2027/.test(tidyCopy('Best of 2026, and the 2027 model', now))
+    && tidyCopy('Look at this - wow', now) === 'Look at this, wow'
+    && !/honest/i.test(tidyCopy('I am honestly impressed', now)))
+}
 
 // ── preview gate: only the owner sees these until they are opened ───────────
 check('both previews are admin only while testing',
@@ -55,23 +68,47 @@ check('the label is words, not a guess', saleLabel(saleVerdict({ deal: deal({ di
   const LIB = read('lib/covered-sales.ts')
   check('the free shared cache is read before any Keepa token is spent',
     LIB.indexOf("from('deal_radar_cache')") > -1 && LIB.indexOf("from('deal_radar_cache')") < LIB.indexOf('fetchKeepaBasicsCached(admin, rest')
-    && /asins\.filter\(\(a\) => !deals\.has\(a\)\)\.slice\(0, opts\?\.keepaCap/.test(LIB),
+    && /\.filter\(\(p\) => !deals\.has\(p\.asin\)\)/.test(LIB) && /videoFirst\.slice\(0, opts\?\.keepaCap \?\? 50\)/.test(LIB),
     'a creator with a big catalogue would spend the day\'s Keepa budget on products the cache already knew')
   const PROMO = read('app/api/on-sale/promo/route.ts')
-  check('the promo never states a price or a percentage, and names an event only when allowed',
-    /NEVER state a price, a dollar amount, or a percentage/.test(PROMO) && /canNameEvent\(occasion\)/.test(PROMO)
-    && /Do NOT name any Amazon sale event/.test(PROMO),
-    'a sale price is true for hours and a post stays up for months')
-  check('and its copy follows the house rules: no dashes, no year',
-    /replace\(\/\\s\+\[-–—\]\+\\s\+\/g, ', '\)/.test(PROMO) && /\\b\(19\|20\)\\d\{2\}\\b\/g, ''\)/.test(PROMO))
+  check('the promo never states a price or a percentage, and never names a sale event',
+    /NEVER state a price, a dollar amount, or a percentage/.test(PROMO) && /Do NOT name any Amazon sale event/.test(PROMO)
+    && !/detectOccasion|canNameEvent/.test(PROMO),
+    'a sale price is true for hours, and "it is October so it is Prime" is a false claim on a real video')
+  check('no promo for a product that is no longer on sale',
+    /if \(!sale\) \{\s*return NextResponse\.json\(\{ error: 'This one is not on sale any more/.test(PROMO),
+    'a comment saying "on sale right now" would sit on the video saying something untrue')
+  check('and its copy goes through the shared house rules',
+    /const tidy = \(s: unknown\) => tidyCopy\(s\)/.test(PROMO) && /return tidyCopy\(s\)/.test(read('lib/live-plan.ts')))
+  check('the creator\'s banned words reach the prompt (the column is text, not an array)',
+    /String\(raw \?\? ''\)\.split\(/.test(PROMO) && /const avoid = avoidList\(brand\?\.words_to_avoid\)/.test(PROMO))
+  check('the comment always carries the link, and the social sheet gets the post without a second link',
+    /if \(comment && !comment\.includes\(link\)\) comment = /.test(PROMO) && /socialForSheet:/.test(PROMO)
+    && /promo\.promo\.socialForSheet/.test(read('components/labs/OnSale.tsx')))
   const CMT = read('app/api/on-sale/comment/route.ts')
+  check('the comment is posted only as the video\'s own channel, asked of YouTube',
+    /me\.id !== owner/.test(CMT) && inOrderCheck(CMT, 'me.id !== owner', 'yt.postComment('),
+    'a login can fall back to the default channel, and the comment would come from somebody else')
   check('a comment only ever goes on the creator\'s own video, through that video\'s channel',
     /from\('youtube_videos'\)\s*\.select\('id,channel_id'\)\.eq\('user_id', user\.id\)\.eq\('youtube_video_id', videoId\)/.test(CMT)
     && /getChannelOAuthToken\(supabase, user\.id, vid\.channel_id \?\? null\)/.test(CMT),
     'a comment on somebody else\'s video, or from the wrong channel, cannot be taken back quietly')
   const CRON = read('app/api/cron/covered-sales/route.ts')
   check('one alert per product per week unless the sale gets deeper',
-    /const REALERT_DAYS = 7/.test(CRON) && /\(p\.verdict\.pct \?\? 0\) >= was \+ DEEPER_BY/.test(CRON))
+    /const REALERT_DAYS = 7/.test(CRON) && /\(p\.verdict\.pct \?\? 0\) >= was \+ DEEPER_BY/.test(CRON)
+    && /m \? Number\(m\[1\]\) : 100/.test(CRON))
+  check('the job stops before Keepa runs dry for everyone else',
+    /tokens\.tokensLeft != null && tokens\.tokensLeft < 150\) break/.test(CRON))
+  const KC = read('lib/keepa-cache.ts')
+  check('a Keepa batch that never answered is not cached as "no data"',
+    /missing\.filter\(\(a\) => fetched\.has\(a\)\)/.test(KC) && !/empty: true, fetched_at: at/.test(KC),
+    'one token-starved minute blanked a day of prices for every feature reading the shared cache')
+  check('the page says how many were actually checked',
+    /checked: stats\.checked/.test(read('app/api/on-sale/route.ts')) && /not checked this time/.test(read('components/labs/OnSale.tsx')))
+  check('rewriting the promo clears "Posted."', /setPosted\(null\)\s*\n\s*setPromo\(j as Promo\)/.test(read('components/labs/OnSale.tsx')))
+  for (const [pg, feat] of [['app/(dashboard)/on-sale/page.tsx', 'on_sale'], ['app/(dashboard)/amazon-live/page.tsx', 'amazon_live']] as const) {
+    check(`${pg} follows the preview switch`, new RegExp(`canUsePreview\\('${feat}', tier\\)`).test(read(pg)) && !/canSeeNav/.test(read(pg)))
+  }
   check('the job is on the schedule', /"\/api\/cron\/covered-sales"/.test(read('vercel.json')))
   check('alerts show in the dashboard box', /a\.kind === 'covered_sale'/.test(read('components/dashboard/PriceAlertsPanel.tsx')))
 }
@@ -107,7 +144,11 @@ for (const m of [30, 45, 60, 90]) {
   check('the live script never states a price either', /NEVER state a price, a dollar amount, or a percentage/.test(LIB))
   check('a plan is still returned when it cannot be saved, and says so',
     /saved: !saveErr/.test(PLAN) && /needs migration 373/.test(PLAN) && /j\.saveError/.test(read('components/labs/AmazonLive.tsx')))
-  check('products are capped so each gets real time', /asins\.length > LIVE_MAX_PRODUCTS/.test(PLAN))
+  check('products are capped so each gets real time', /asins\.length > LIVE_MAX_PRODUCTS/.test(PLAN) && /minutes < asins\.length \* 2 \+ 4/.test(PLAN))
+  check('the listings share one 25 second clock, and a cut-off reply is not a plan',
+    /setTimeout\(res, 25_000\)/.test(PLAN) && /msg\.stop_reason === 'max_tokens'/.test(PLAN))
+  check('the teleprompter measures "behind" against the next part\'s start',
+    /const behind = started \? Math\.floor\(elapsed \/ 60\) - nextAt : 0/.test(read('components/labs/AmazonLive.tsx')))
   const M = read('supabase/migrations/373_on_sale_and_live_plans.sql')
   check('the tables are twice-runnable',
     /create table if not exists public\.covered_sale_checks/.test(M) && /create table if not exists public\.live_plans/.test(M)

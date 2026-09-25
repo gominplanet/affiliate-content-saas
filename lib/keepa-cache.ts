@@ -107,12 +107,17 @@ export async function fetchKeepaBasicsCached(
   const fetched = await fetchKeepaBasics(missing)
   const at = new Date().toISOString()
 
-  // 3. Write every miss back to the cache (data row, or an empty tombstone).
-  const rows = missing.map((a) => {
-    const b = fetched.get(a)
-    return b ? basicToRow(b, at) : { asin: a, empty: true, fetched_at: at }
-  })
-  try {
+  // 3. Write back what Keepa ANSWERED, and nothing else.
+  //
+  // A FAILED BATCH IS NOT AN ANSWER. Keepa returns a product object for every
+  // ASIN it was asked about (an empty one when it has no data), so an ASIN
+  // missing from `fetched` means its batch never came back: out of tokens, a
+  // timeout, a network error. Those used to be written as empty tombstones, so
+  // one token-starved minute blanked a day of prices for every feature that
+  // reads this shared cache. Now only answered ASINs are written; the rest are
+  // simply asked again next time.
+  const rows = missing.filter((a) => fetched.has(a)).map((a) => basicToRow(fetched.get(a)!, at))
+  if (rows.length) try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (admin as any).from('keepa_product_cache').upsert(rows, { onConflict: 'asin' })
   } catch { /* caching is best-effort — the data still flows through below */ }

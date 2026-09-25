@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
 import { coveredProducts, findSales, saleLabel } from '@/lib/covered-sales'
+import { fetchKeepaTokenStatus } from '@/services/keepa'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -48,9 +49,13 @@ export async function GET(req: Request) {
 
   let users = 0, alerts = 0
   for (const userId of order) {
-    if (left() < 45_000) break
+    if (left() < 90_000) break
+    // KEEPA IS SHARED with every other feature. Below a floor, stop and let
+    // tomorrow's run carry on from the creators not reached today.
+    const tokens = await fetchKeepaTokenStatus()
+    if (tokens.tokensLeft != null && tokens.tokensLeft < 150) break
     const covered = await coveredProducts(sb, userId)
-    const onSale = covered.length ? await findSales(sb, covered, { keepaCap: 200 }) : []
+    const onSale = covered.length ? await findSales(sb, covered, { keepaCap: 100 }) : []
 
     if (onSale.length) {
       const since = new Date(Date.now() - REALERT_DAYS * 86_400_000).toISOString()
@@ -58,8 +63,10 @@ export async function GET(req: Request) {
         .eq('user_id', userId).eq('kind', 'covered_sale').gte('created_at', since)
       const recentPct = new Map<string, number>()
       for (const r of (recent ?? []) as Array<{ asin: string; label: string | null }>) {
+        // No percentage in the label (a lightning deal, a new low) counts as
+        // the deepest, so the same sale is not raised again within the week.
         const m = /(\d+)%/.exec(r.label || '')
-        recentPct.set(r.asin, Math.max(recentPct.get(r.asin) ?? 0, m ? Number(m[1]) : 0))
+        recentPct.set(r.asin, Math.max(recentPct.get(r.asin) ?? 0, m ? Number(m[1]) : 100))
       }
       const rows = onSale.filter((p) => {
         const was = recentPct.get(p.asin)

@@ -160,7 +160,9 @@ export function ctaTopLeft(
   frameAspect = 16 / 9,
 ): { x: number; y: number; h: number } {
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
-  const w = clamp(Number(p.widthPct) || 0.4, 0.05, 1)
+  // The render service's own limits for the width (0.1 to 0.95), so the
+  // corner is worked out for the size it will really draw.
+  const w = clamp(Number(p.widthPct) || 0.4, 0.1, 0.95)
   const aspect = Number.isFinite(stickerAspect) && stickerAspect > 0 ? stickerAspect : 1
   const h = clamp(w * aspect * frameAspect, 0, 1)
   return {

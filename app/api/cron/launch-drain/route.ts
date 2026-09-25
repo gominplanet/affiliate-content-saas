@@ -111,15 +111,21 @@ type Left = () => number
  * always did. A batch with no confirmed channel also uses the default: only a
  * batch launched before the check existed can be in that state.
  */
-async function channelsForBatches(sb: Sb, batchIds: string[]): Promise<Map<string, string | null>> {
-  const out = new Map<string, string | null>()
-  if (batchIds.length === 0) return out
+async function channelsForBatches(sb: Sb, batchIds: string[]): Promise<{ map: Map<string, string | null>; failed: boolean }> {
+  const map = new Map<string, string | null>()
+  if (batchIds.length === 0) return { map, failed: false }
   const { data, error } = await sb.from('launch_batches').select('id,youtube_channel_id').in('id', batchIds)
-  if (error) return out
-  for (const b of (data ?? []) as Array<{ id: string; youtube_channel_id: string | null }>) {
-    out.set(b.id, String(b.youtube_channel_id || '').trim() || null)
+  if (error) {
+    // ONLY A MISSING COLUMN MEANS "NO CHANNEL". Any other failure (a timeout,
+    // a dropped connection) is not an answer, and reading it as one sent a
+    // batch confirmed to another channel through the default login, unchecked.
+    const missing = error.code === '42703' || /youtube_channel_id/.test(String(error.message || ''))
+    return { map, failed: !missing }
   }
-  return out
+  for (const b of (data ?? []) as Array<{ id: string; youtube_channel_id: string | null }>) {
+    map.set(b.id, String(b.youtube_channel_id || '').trim() || null)
+  }
+  return { map, failed: false }
 }
 
 /**
@@ -131,18 +137,20 @@ const stickerAspects = new Map<string, number>()
 async function stickerAspect(url: string): Promise<number> {
   const known = stickerAspects.get(url)
   if (known) return known
-  let aspect = 1
   try {
     const res = await fetchWithTimeout(url, { timeoutMs: 10_000, headers: { Range: 'bytes=0-63' } })
-    const buf = Buffer.from(await res.arrayBuffer())
-    // PNG: an 8-byte signature, then IHDR with width and height big-endian.
-    if (buf.length >= 24 && buf.readUInt32BE(0) === 0x89504e47) {
-      const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20)
-      if (w > 0 && h > 0) aspect = h / w
+    if (res.ok) {
+      const buf = Buffer.from(await res.arrayBuffer())
+      // PNG: an 8-byte signature, then IHDR with width and height big-endian.
+      if (buf.length >= 24 && buf.readUInt32BE(0) === 0x89504e47) {
+        const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20)
+        // REMEMBERED ONLY WHEN READ. A failed fetch guesses square for this
+        // render and asks again next time, rather than for the life of the server.
+        if (w > 0 && h > 0) { stickerAspects.set(url, h / w); return h / w }
+      }
     }
   } catch { /* a square guess, still centred */ }
-  stickerAspects.set(url, aspect)
-  return aspect
+  return 1
 }
 
 async function renders(sb: Sb, left: Left): Promise<{ done: number; skipped: number; failed: number; recovered: number }> {
@@ -403,6 +411,9 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // is replaced by it.
     let haveDescription = !!String(it.description || '').trim()
     let metaTried = false
+    // The YouTube title, as a hint for the Amazon title writer. `title` stays
+    // the hook the thumbnail is built from.
+    let ytTitle = title
     if (!haveDescription && left() > 90_000) {
       metaTried = true
       const meta = await videoMetadata(it.user_id, title, asin)
@@ -419,6 +430,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
           await sb.from('launch_items')
             .update({ title: meta.title.slice(0, 100), title_source: 'mvp', updated_at: now() })
             .eq('id', it.id).or('title_source.is.null,title_source.neq.creator')
+          ytTitle = meta.title.slice(0, 100)
         }
       } else {
         metaMissing++
@@ -426,12 +438,15 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     }
 
     // ── THE AMAZON TITLE, WRITTEN WHILE THERE IS STILL TIME TO READ IT ───
-    // Written here, during prepare, so it is in the row's "Title for Amazon"
-    // box before launch. The hand-over writes one too if this never ran.
-    if (left() > 90_000) await ensureAmazonTitle(sb, it.id, it.user_id, asin, title)
+    // Written during prepare, so it is in the row's "Title for Amazon" box
+    // before launch (the hand-over writes one too if this never ran). NOT
+    // HERE, before the images: a thumbnail may only start in the first
+    // seconds of a firing, and a slow title writer used to spend them. It is
+    // written beside the images below, or here once the images are done.
 
     // Already has both images: ready, once it also has its description.
     if (it.thumbnail_url && it.thumbnail_clean_url) {
+      if (left() > 60_000) await ensureAmazonTitle(sb, it.id, it.user_id, asin, ytTitle)
       if (haveDescription) {
         await sb.from('launch_items')
           .update({ state: 'prepared', reason: null, updated_at: now() }).eq('id', it.id).eq('state', 'preparing')
@@ -477,10 +492,20 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // same row at the same moment cannot both build it.
     // Stamped, for the same reason as the render claim: the final write
     // matches this claim, not a try count a product change can reset.
+    // THE IMAGES ARE RESERVED BEFORE THE CLAIM, not taken after it. With
+    // several videos in flight, two could both pass a "budget left" check,
+    // both claim, and the second get no image at all: a try spent on nothing,
+    // and after six of those the row said no thumbnail could be built.
+    const need = (it.thumbnail_url ? 0 : 1) + (it.thumbnail_clean_url ? 0 : 1)
+    const reserved = Math.min(need, budget)
+    if (reserved === 0) return 'stop'
+    budget -= reserved
+    let mine = reserved
+
     const thumbClaim = now()
     const claim = sb.from('launch_items').update({ thumb_tries: tries + 1, updated_at: thumbClaim }).eq('id', it.id)
     const { data: claimed } = await (it.thumb_tries == null ? claim.is('thumb_tries', null) : claim.eq('thumb_tries', tries)).select('id')
-    if (!claimed || claimed.length === 0) return
+    if (!claimed || claimed.length === 0) { budget += reserved; return }
 
     const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', it.user_id).maybeSingle()
     const tier = normalizeTier(integ?.tier)
@@ -504,8 +529,8 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // other (the clean copy is built from the product, not from the styled
     // image), and one after the other was two firings per video.
     const styledJob = async () => {
-      if (!it.thumbnail_url && budget > 0) {
-        budget--
+      if (!it.thumbnail_url && mine > 0) {
+        mine--
         try {
           // THE SAME GENERATOR VIDEO LAUNCHPAD USES, with the batch's chosen
           // look.
@@ -524,8 +549,8 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       }
     }
     const cleanJob = async () => {
-      if (!it.thumbnail_clean_url && budget > 0) {
-        budget--
+      if (!it.thumbnail_clean_url && mine > 0) {
+        mine--
         try {
           // The wordless copy for non-English storefronts. The styled route bakes
           // a headline in by design, so the clean variant stays with the builder
@@ -539,7 +564,8 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
         } catch { /* the try is already counted; the next firing has another go */ }
       }
     }
-    await Promise.all([styledJob(), cleanJob()])
+    // The Amazon title beside the images: seconds against their minutes.
+    await Promise.all([styledJob(), cleanJob(), ensureAmazonTitle(sb, it.id, it.user_id, asin, ytTitle)])
 
     if (patch.thumbnail_url) {
       patch.thumbnail_source = usedPlain ? 'plain' : 'styled'
@@ -660,8 +686,10 @@ async function ensureAmazonTitle(sb: any, itemId: string, userId: string, asin: 
     })
     const first = options[0]
     if (!first) return null
+    // STILL THE SAME PRODUCT: a product changed while this was writing clears
+    // the title, and a title for the old product must not fill it again.
     const { data: wrote } = await sb.from('launch_items')
-      .update({ amazon_title: first }).eq('id', itemId).is('amazon_title', null).select('id')
+      .update({ amazon_title: first }).eq('id', itemId).is('amazon_title', null).eq('asin', asin).select('id')
     if ((wrote ?? []).length > 0) return first
     // Somebody typed one meanwhile: theirs is the title.
     const { data: again } = await sb.from('launch_items').select('amazon_title').eq('id', itemId).maybeSingle()
@@ -799,7 +827,10 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
   }
 
   // EACH BATCH'S CHANNEL, the one the creator confirmed with YouTube.
-  const channelByBatch = await channelsForBatches(sb, Array.from(new Set<string>(items.map((i: { batch_id: string }) => String(i.batch_id)))))
+  const chRead = await channelsForBatches(sb, Array.from(new Set<string>(items.map((i: { batch_id: string }) => String(i.batch_id)))))
+  // NOTHING UPLOADS ON A GUESS about which channel it goes to: next firing.
+  if (chRead.failed) return { scheduled: 0, failed: 0 }
+  const channelByBatch = chRead.map
   // What YouTube said each login uploads to, asked once per firing per batch.
   const liveByBatch = new Map<string, { id: string; title: string } | null>()
 
@@ -1520,7 +1551,10 @@ async function confirms(sb: Sb): Promise<{ published: number; late: number }> {
   // AND BY CHANNEL: a private video is only visible to the channel it is on,
   // so asking with the default channel's login about a video on another of
   // the creator's channels would read as "YouTube no longer has this video".
-  const confirmChannel = await channelsForBatches(sb, Array.from(new Set<string>(items.map((i: { batch_id: string }) => String(i.batch_id)))))
+  const confirmRead = await channelsForBatches(sb, Array.from(new Set<string>(items.map((i: { batch_id: string }) => String(i.batch_id)))))
+  // A wrong login would read every private video as gone: wait instead.
+  if (confirmRead.failed) return { published: 0, late: 0 }
+  const confirmChannel = confirmRead.map
   const byUser = new Map<string, typeof items>()
   for (const it of items) {
     const k = `${it.user_id}|${confirmChannel.get(it.batch_id) ?? ''}`
@@ -1663,7 +1697,10 @@ async function playlistCatchUp(sb: Sb): Promise<{ added: number; failed: number 
   let added = 0, failed = 0
   const tokens = new Map<string, string | null>()
   // The batch's own channel: the playlist lives there, not on the default.
-  const playlistChannel = await channelsForBatches(sb, [...byBatch.keys()])
+  // Only the batches these rows belong to, not every launched batch.
+  const plRead = await channelsForBatches(sb, [...new Set((rows as Array<{ batch_id: string }>).map((r) => r.batch_id))])
+  if (plRead.failed) return { added: 0, failed: 0 }
+  const playlistChannel = plRead.map
   for (const it of rows as Array<{ id: string; batch_id: string; youtube_video_id: string }>) {
     const b = byBatch.get(it.batch_id)
     if (!b) continue

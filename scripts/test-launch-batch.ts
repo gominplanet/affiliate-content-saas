@@ -725,7 +725,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     check('and a firing cannot outlive the function',
       callMs <= capMs - 30_000 && /if \(left\(\) < THUMB_CALL_MS \+ 30_000\) return 'stop'/.test(DRAIN)
       && Number.isFinite(pool) && pool >= 1 && images <= pool * 2
-      && /Array\.from\(\{ length: THUMB_POOL \}/.test(DRAIN) && /await Promise\.all\(\[styledJob\(\), cleanJob\(\)\]\)/.test(DRAIN),
+      && /Array\.from\(\{ length: THUMB_POOL \}/.test(DRAIN) && /await Promise\.all\(\[styledJob\(\), cleanJob\(\), ensureAmazonTitle\(/.test(DRAIN),
       `IMAGES=${images} THUMB_POOL=${pool} THUMB_CALL_MS=${callMs / 1000}s cap=${capMs / 1000}s`)
     check('the ASIN is read out of a file name, and only when there is exactly one',
       asinInFileName('Ninja Crispi - B0DDDD8WD6') === 'B0DDDD8WD6'
@@ -745,8 +745,12 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     // designed path does not reliably finish in two minutes: the first real
     // batch fell back to the plain builder with the look never applied.
     check('the budget is spent per image, not per video',
-      /if \(!it\.thumbnail_url && budget > 0\)/.test(DRAIN)
-      && /if \(!it\.thumbnail_clean_url && budget > 0\)/.test(DRAIN),
+      /if \(!it\.thumbnail_url && mine > 0\)/.test(DRAIN)
+      && /if \(!it\.thumbnail_clean_url && mine > 0\)/.test(DRAIN)
+      // RESERVED BEFORE THE CLAIM, handed back if the claim is lost.
+      && /const reserved = Math\.min\(need, budget\)/.test(DRAIN)
+      && inOrder(DRAIN, 'budget -= reserved', "const claim = sb.from('launch_items').update({ thumb_tries: tries + 1")
+      && /\{ budget \+= reserved; return \}/.test(DRAIN),
       'one budget for both images is what starved the styled call')
     // TWO IMAGES NEED TWO ALLOWANCES. Sharing one budget of three would leave
     // a video that spent two firings succeeding with a single retry left.
@@ -2049,7 +2053,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the worker writes one when the box is empty, and never over a typed one',
     /async function ensureAmazonTitle/.test(DRAIN)
     && /update\(\{ amazon_title: first \}\)\.eq\('id', itemId\)\.is\('amazon_title', null\)/.test(DRAIN)
-    && /await ensureAmazonTitle\(sb, it\.id, it\.user_id, asin, title\)/.test(DRAIN),
+    && /\.is\('amazon_title', null\)\.eq\('asin', asin\)/.test(DRAIN) && /ensureAmazonTitle\(sb, it\.id, it\.user_id, asin, ytTitle\)/.test(DRAIN),
     'nobody should have to touch the box, and anybody who did must win')
   check('it rides with the video to the Amazon side',
     inOrder(DRAIN, "from('youtube_videos').upsert({", "from('youtube_videos').update({ amazon_title: amazonTitle })")
@@ -2093,7 +2097,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     && /needs migration 371/.test(ITEM),
     'otherwise the old face stays on the thumbnail while the row says the new one')
   check('and it is locked once the uploader has the thumbnail',
-    /if \('thumbnailFace' in body\) \{\s*if \(onYouTube \|\| item\.planned_publish_at\)/.test(ITEM),
+    /if \('thumbnailFace' in body\) \{\s*if \(onYouTube \|\| item\.planned_publish_at \|\| item\.state === 'amazon_only'\)/.test(ITEM),
     'a face changed after the upload would show on the row and never on YouTube')
   check('the row offers the batch, each saved face and no face',
     /Face on this thumbnail/.test(BOARD) && /'Same as the batch'/.test(BOARD) && /'No face'/.test(BOARD)
@@ -2210,6 +2214,29 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('and a face that could not be saved is said, not dropped',
     /faceSaved/.test(ITEMS) && /who is in it could not be saved/.test(BOARD),
     'the video would get the batch face while the bar showed the one picked')
+}
+
+// ── WHAT THE LIFTOFF REVIEW FOUND ────────────────────────────────────────────
+{
+  check('an edit does not throw away a render or thumbnail in progress',
+    /const patch: Record<string, unknown> = \{\}/.test(ITEM) && /if \(patch\.state !== undefined\) patch\.updated_at = /.test(ITEM)
+    && /\.update\(\{ amazon_title: value \}\)\.eq\('id', id\)/.test(ITEM),
+    'the worker only lands a render while updated_at is still its own claim stamp, and typing a title changed it')
+  check('an Amazon title edited after the hand-over reaches the storefronts',
+    /from\('youtube_videos'\)\.update\(\{ amazon_title: value \}\)/.test(ITEM))
+  check('a failed channel read uploads nothing, rather than using the default login',
+    /if \(chRead\.failed\) return \{ scheduled: 0, failed: 0 \}/.test(DRAIN)
+    && /if \(confirmRead\.failed\) return/.test(DRAIN) && /if \(plRead\.failed\) return/.test(DRAIN)
+    && /error\.code === '42703'/.test(DRAIN),
+    'a timeout read as "no channel" sent a batch confirmed to another channel through the default one')
+  check('the Amazon title no longer runs before the images can start',
+    !/if \(left\(\) > 90_000\) await ensureAmazonTitle/.test(DRAIN),
+    'a thumbnail may only start in the first seconds of a firing, and a slow title writer spent them')
+  const CHR = live(read('app/api/launch/batches/[id]/channel/route.ts'))
+  check('confirming a channel clears a playlist listed through a different login',
+    /listedBy !== channelId/.test(CHR))
+  check('picking more files mid-upload adds to the count, not resets it',
+    /setUploading\(\(n\) => n \+ picked\.length\)/.test(BOARD))
 }
 
 if (failures.length) {

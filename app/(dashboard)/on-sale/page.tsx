@@ -9,7 +9,7 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
-import { canSeeNav } from '@/lib/feature-access'
+import { canUsePreview } from '@/lib/labs-preview'
 import OnSale from '@/components/labs/OnSale'
 
 export default function OnSalePage() {
@@ -17,10 +17,10 @@ export default function OnSalePage() {
   const router = useRouter()
 
   useEffect(() => {
-    if (tier !== null && !canSeeNav('labs', tier)) router.replace('/dashboard')
+    if (tier !== null && !canUsePreview('on_sale', tier)) router.replace('/dashboard')
   }, [tier, router])
 
-  if (tier !== null && canSeeNav('labs', tier)) return <OnSale />
+  if (tier !== null && canUsePreview('on_sale', tier)) return <OnSale />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

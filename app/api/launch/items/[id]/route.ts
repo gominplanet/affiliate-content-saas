@@ -70,20 +70,39 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // Separate so a database without the column refuses only this, by name. It
   // can change after the video is on YouTube: it is not YouTube's title, and
   // the storefront listings are made later.
-  if (typeof body.amazonTitle === 'string') {
+  //
+  // NO updated_at. The worker's render and thumbnail writes only land while
+  // updated_at still equals the moment it took the job, so stamping it here
+  // threw away a render or two paid-for images whenever somebody typed a title.
+  //
+  // AFTER THE HAND-OVER TOO. The storefront step reads the title from the
+  // video record, which the hand-over copied once; an edit made afterwards
+  // is copied there as well, or the page and the storefronts disagree.
+  const saveAmazonTitle = async (): Promise<NextResponse | null> => {
+    const value = String(body.amazonTitle).trim().slice(0, 120) || null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: atErr } = await (supabase as any).from('launch_items')
-      .update({ amazon_title: body.amazonTitle.trim().slice(0, 120) || null, updated_at: new Date().toISOString() })
-      .eq('id', id).eq('user_id', user.id)
+    const { data: row, error: atErr } = await (supabase as any).from('launch_items')
+      .update({ amazon_title: value }).eq('id', id).eq('user_id', user.id).select('video_id')
     if (atErr) {
       return NextResponse.json({
         error: /amazon_title/.test(atErr.message) ? 'Saving the Amazon title needs migration 370 in the database first.' : atErr.message,
       }, { status: /amazon_title/.test(atErr.message) ? 503 : 500 })
     }
-    if (Object.keys(body).every((k) => k === 'amazonTitle')) return NextResponse.json({ ok: true })
+    const videoId = (row ?? [])[0]?.video_id
+    if (videoId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('youtube_videos').update({ amazon_title: value }).eq('id', videoId).eq('user_id', user.id)
+    }
+    return null
+  }
+  // ONLY THE AMAZON TITLE: saved at once, whatever state the video is in.
+  if (typeof body.amazonTitle === 'string' && Object.keys(body).every((k) => k === 'amazonTitle')) {
+    return (await saveAmazonTitle()) ?? NextResponse.json({ ok: true })
   }
 
-  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  // NO updated_at on an edit either (see above); only a change that sends the
+  // video back through the worker stamps it, further down.
+  const patch: Record<string, unknown> = {}
   if (typeof body.title === 'string') {
     patch.title = body.title.trim().slice(0, 200) || null
     // THEIRS NOW, AND NEVER OVERWRITTEN. The worker writes a title from the
@@ -168,7 +187,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // cleared and made again, the same as a new product. Locked once the video
   // is queued or on YouTube, because the uploader already has its thumbnail.
   if ('thumbnailFace' in body) {
-    if (onYouTube || item.planned_publish_at) {
+    if (onYouTube || item.planned_publish_at || item.state === 'amazon_only') {
       return NextResponse.json({
         error: 'This one is already queued for YouTube or on it, so its thumbnail is set. Change it in YouTube Studio.',
       }, { status: 409 })
@@ -189,14 +208,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     const same = JSON.stringify(parseFacePick(cur?.thumbnail_face)) === JSON.stringify(face)
     if (!same) {
+      // A BLOCKED VIDEO WITH ITS CTA BURNED IN is rebuilt too: the row says a
+      // new face builds the thumbnails again, and for it that was not true.
       const rebuild = item.state === 'preparing' || item.state === 'prepared'
+        || (item.state === 'blocked' && !!item.rendered_url)
       const { error: faceErr } = await sb.from('launch_items').update({
         thumbnail_face: face,
+        // Stamped only with a rebuild: a render in progress must still land.
         ...(rebuild ? {
           state: 'preparing', reason: null,
           thumbnail_url: null, thumbnail_clean_url: null, thumbnail_source: null, thumb_tries: 0,
+          updated_at: new Date().toISOString(),
         } : {}),
-        updated_at: new Date().toISOString(),
       }).eq('id', id).eq('user_id', user.id)
       if (faceErr) return NextResponse.json({ error: faceErr.message }, { status: 500 })
     }
@@ -288,7 +311,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
-  const { error } = await sb.from('launch_items').update(patch).eq('id', id).eq('user_id', user.id)
+  // A CHANGE THAT RESTARTS WORK is stamped, so a render or image made for the
+  // old state cannot land on top of it. A plain edit is not.
+  if (patch.state !== undefined) patch.updated_at = new Date().toISOString()
+  const { error } = Object.keys(patch).length
+    ? await sb.from('launch_items').update(patch).eq('id', id).eq('user_id', user.id)
+    : { error: null }
   if (error) {
     // THE ONE ERROR WITH A KNOWN CAUSE. If migration 364 has not been run the
     // columns do not exist, and PostgREST's own sentence about a schema cache
@@ -305,6 +333,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // write: a database without migration 370 has nothing here to clear.
   if (productChanged && typeof body.amazonTitle !== 'string') {
     await sb.from('launch_items').update({ amazon_title: null }).eq('id', id).eq('user_id', user.id)
+  }
+  // THE AMAZON TITLE LAST when it came with other changes, so a save refused
+  // above (a 409, a bad product) does not half-apply.
+  if (typeof body.amazonTitle === 'string') {
+    const refused = await saveAmazonTitle()
+    if (refused) return refused
   }
   return NextResponse.json({ ok: true, asin: patch.asin ?? null, resolvedFromLink: productNote })
 }

@@ -102,6 +102,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // the video anyway, with the batch's face, and says so.
   let faceSaved: boolean | null = null
   const face = body.thumbnailFace == null ? null : parseFacePick(body.thumbnailFace)
+  // A pick that is not a face MVP recognises is a pick that was not saved.
+  if (body.thumbnailFace != null && !face) faceSaved = false
   if (face) {
     let ok = true
     if (face.kind === 'face') {

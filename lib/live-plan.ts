@@ -13,6 +13,8 @@
 // is laid out here from the length the creator chose, so the run of show
 // always adds up to the minutes they asked for.
 
+import { tidyCopy } from '@/lib/copy-rules'
+
 export interface LiveProductInput {
   asin: string
   title: string
@@ -87,13 +89,9 @@ export function clockLabel(min: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:00` : `${m}:00`
 }
 
-/** No dashes as sentence breaks, no year, no banned words. */
+/** No dashes as sentence breaks, no year, no banned words (lib/copy-rules). */
 export function tidyLine(s: unknown): string {
-  return String(s ?? '')
-    .replace(/\s+[-–—]+\s+/g, ', ').replace(/[–—]/g, ', ')
-    .replace(/\b(19|20)\d{2}\b/g, '')
-    .replace(/\bhonest(ly|y)?\b/gi, '')
-    .replace(/[ \t]{2,}/g, ' ').replace(/\s+([,.!?])/g, '$1').trim()
+  return tidyCopy(s)
 }
 
 export function buildLivePrompt(opts: {
@@ -187,10 +185,18 @@ export function assemblePlan(opts: {
   return {
     title: tidyLine(opts.title) || 'Amazon Live',
     minutes: closingStart + clock.closing,
-    opening: { minutes: clock.opening, script: tidyLine(opts.model?.opening) },
+    // NEVER BLANK. A missing opening or close reads as a finished plan with a
+    // hole in it; a plain line in the creator's words is better than silence.
+    opening: {
+      minutes: clock.opening,
+      script: tidyLine(opts.model?.opening) || `Welcome in, everyone. Today I am going through ${segments.length} ${segments.length === 1 ? 'product' : 'products'} I picked out, and I will show you each one up close. Say hi in the chat and tell me where you are watching from.`,
+    },
     segments,
     // Spread through the products, never in the opening or the close.
     chatPrompts: prompts.map((text, i) => ({ atMin: clock.opening + Math.round(((i + 1) * body) / (prompts.length + 1)), text })),
-    closing: { startMin: closingStart, minutes: clock.closing, script: tidyLine(opts.model?.closing) },
+    closing: {
+      startMin: closingStart, minutes: clock.closing,
+      script: tidyLine(opts.model?.closing) || 'That is everything for today. Everything I showed you is in the carousel next to the stream. Thanks so much for hanging out with me.',
+    },
   }
 }

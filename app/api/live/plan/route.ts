@@ -40,6 +40,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `A show holds ${LIVE_MAX_PRODUCTS} products at most, so each one gets real time. Pick fewer.` }, { status: 400 })
   }
   const minutes = Math.max(10, Math.min(180, Math.round(Number(body.minutes) || 45)))
+  // TWO MINUTES A PRODUCT AT LEAST, plus the opening and close, or the show
+  // either overruns what was asked or gives each product seconds.
+  if (minutes < asins.length * 2 + 4) {
+    return NextResponse.json({ error: `${asins.length} products need a show of at least ${asins.length * 2 + 4} minutes. Pick a longer show or fewer products.` }, { status: 400 })
+  }
   const title = String(body.title || '').trim().slice(0, 120) || 'Amazon Live'
   const notes = String(body.notes || '').trim().slice(0, 600)
 
@@ -60,16 +65,20 @@ export async function POST(req: Request) {
     for (const [a, v] of leadVideo) transcripts.set(a, String(byId.get(v.id) || ''))
   }
 
-  // The listing, four at a time: a dozen sequential page reads would outlast the call.
+  // THE LISTINGS, ALL AT ONCE, AGAINST ONE CLOCK. A product page read can
+  // retry for most of a minute, and three rounds of those left no time for
+  // the writer. Whatever has not answered in 25 seconds goes without its
+  // listing: the creator's own words and the title still carry it.
   const listing = new Map<string, { title: string; bullets: string[]; image: string | null }>()
-  for (let i = 0; i < asins.length; i += 4) {
-    await Promise.all(asins.slice(i, i + 4).map(async (a) => {
+  await Promise.race([
+    Promise.all(asins.map(async (a) => {
       try {
         const p = await fetchAmazonProduct(a)
         listing.set(a, { title: p.title || '', bullets: (p.bullets ?? []).slice(0, 6), image: p.imageUrl || null })
-      } catch { /* the creator's words and the title still carry it */ }
-    }))
-  }
+      } catch { /* the creator's words carry it */ }
+    })),
+    new Promise((res) => setTimeout(res, 25_000)),
+  ])
 
   const products: LiveProductInput[] = asins.map((a) => {
     const c = covered.get(a)
@@ -101,6 +110,11 @@ export async function POST(req: Request) {
       messages: [{ role: 'user', content: buildLivePrompt({ title, minutes, products, voice, notes }) }],
     })
     recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'amazon_live_plan', model: MODEL })
+    // CUT OFF IS NOT A PLAN. A reply that ran out of room parses as a partial
+    // plan with blank products, which would look like a finished one.
+    if (msg.stop_reason === 'max_tokens') {
+      return NextResponse.json({ error: 'The show was too long to write in one go. Try fewer products.' }, { status: 502 })
+    }
     const text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('')
     const m = text.match(/\{[\s\S]*\}/)
     if (m) model = JSON.parse(m[0])

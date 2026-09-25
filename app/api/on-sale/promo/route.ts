@@ -12,7 +12,13 @@
 // for months, and Amazon's rules on showing prices are strict. The copy says
 // it is on sale and sends people to check; the page shows the numbers.
 //
-// EVENTS ARE NAMED ONLY WHEN AMAZON ALLOWS IT (lib/deal-embargo).
+// NO SALE EVENT IS NAMED. Whether a discount belongs to Prime Big Deal Days
+// or Black Friday is not something the price tells us, and a calendar guess
+// ("it is October, so it must be Prime") is a false claim on a real video.
+//
+// NOT ON SALE, NO PROMO. A lightning deal can end between the page loading
+// and this being pressed, and a comment saying "on sale right now" would then
+// sit on the video saying something untrue.
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -23,23 +29,22 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
 import { creatorVoiceBlock, CREATOR_VOICE_COLUMNS } from '@/lib/creator-voice'
-import { scrubBanned } from '@/lib/scrub'
+import { tidyCopy } from '@/lib/copy-rules'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { resolveCloakedLinkDetailed } from '@/lib/link-cloak'
 import { coveredProducts, findSales, saleLabel } from '@/lib/covered-sales'
-import { detectOccasion, getOccasion } from '@/lib/deal-occasion'
-import { canNameEvent } from '@/lib/deal-embargo'
 
 export const runtime = 'nodejs'
 export const maxDuration = 90
 
 const MODEL = 'claude-sonnet-4-6'
 
-/** No dashes as sentence breaks, and no year: the creator's rules for copy. */
-function tidy(s: unknown): string {
-  return scrubBanned(String(s ?? ''))
-    .replace(/\s+[-–—]+\s+/g, ', ').replace(/[–—]/g, ', ')
-    .replace(/\b(19|20)\d{2}\b/g, '').replace(/[ \t]{2,}/g, ' ').trim()
+const tidy = (s: unknown) => tidyCopy(s)
+
+/** words_to_avoid is one text column, commas or new lines between words. */
+function avoidList(raw: unknown): string[] {
+  const list = Array.isArray(raw) ? raw.map(String) : String(raw ?? '').split(/[,\n;]+/)
+  return list.map((w) => w.trim()).filter(Boolean).slice(0, 30)
 }
 
 export async function POST(req: Request) {
@@ -59,9 +64,12 @@ export async function POST(req: Request) {
   if (!/^[A-Z0-9]{10}$/.test(asin)) return NextResponse.json({ error: 'Which product? Send its ASIN.' }, { status: 400 })
 
   const admin = createAdminClient()
-  const covered = (await coveredProducts(admin, user.id)).find((p) => p.asin === asin)
+  const covered = (await coveredProducts(admin, user.id, 400, [asin])).find((p) => p.asin === asin)
   if (!covered) return NextResponse.json({ error: 'That product is not in your videos or storefront.' }, { status: 404 })
   const sale = (await findSales(admin, [covered]))[0] ?? null
+  if (!sale) {
+    return NextResponse.json({ error: 'This one is not on sale any more, so there is nothing true to promote. Check again later.', ended: true }, { status: 409 })
+  }
 
   const videos = covered.sources.filter((s) => s.kind === 'video')
   const lead = [...videos].sort((a, b) => (b.views ?? 0) - (a.views ?? 0))[0] ?? null
@@ -90,17 +98,13 @@ export async function POST(req: Request) {
     if (r.url) link = r.url
   } catch { /* the plain tagged link */ }
 
-  const occasion = detectOccasion()
-  const event = occasion !== 'none' && canNameEvent(occasion)
-    ? getOccasion(occasion).longLabel.replace(/\s*\b(19|20)\d{2}\b/g, '').trim()
-    : ''
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: brand } = await (admin as any).from('brand_profiles')
     .select(`name,author_name,tone,target_audience,words_to_avoid,writing_sample,${CREATOR_VOICE_COLUMNS}`)
     .eq('user_id', user.id).maybeSingle()
   const voice = creatorVoiceBlock(brand as never)
-  const avoid: string[] = Array.isArray(brand?.words_to_avoid) ? (brand!.words_to_avoid as string[]).slice(0, 30) : []
+  const avoid = avoidList(brand?.words_to_avoid)
 
   const prompt = `A product this creator already reviewed is on sale right now. Write the promo that brings their audience back to it.
 
@@ -108,7 +112,7 @@ THE PRODUCT: "${productTitle}"
 ${bullets.length ? `WHAT IT IS (from the listing):\n${bullets.map((b) => `- ${b.slice(0, 200)}`).join('\n')}` : ''}
 THEIR VIDEO ABOUT IT: ${lead ? `"${lead.title}"` : 'none (it is in their storefront)'}
 ${transcript ? `WHAT THEY SAID IN THAT VIDEO (transcript excerpt, use their real opinions and details):\n"""${transcript}"""` : ''}
-${event ? `THE SALE IS PART OF: ${event}. You may name it.` : 'Do NOT name any Amazon sale event.'}
+Do NOT name any Amazon sale event (Prime Day, Prime Big Deal Days, Black Friday and the like): nothing here says which one this is.
 ${voice ? `\nWRITE IN THIS CREATOR'S VOICE:\n${voice}` : ''}
 ${avoid.length ? `\nNEVER USE THESE WORDS: ${avoid.join(', ')}` : ''}
 
@@ -136,11 +140,16 @@ Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"com
     if (!m) return NextResponse.json({ error: 'The writer did not return a promo. Try again.' }, { status: 502 })
     const j = JSON.parse(m[0]) as { short?: { hook?: string; script?: string; onScreen?: string[] }; community?: string; comment?: string; social?: string }
     const fill = (s: string) => tidy(s).replace(/\{link\}/g, link)
+    // THE COMMENT ALWAYS CARRIES THE LINK: it is the whole point of it.
+    let comment = fill(j.comment ?? '')
+    if (comment && !comment.includes(link)) comment = `${comment} ${link}`
+    // THE SOCIAL POST, twice: with the link for copying, and without it for
+    // the quick-post sheet, which adds each platform's own link (and #ad).
+    const socialRaw = tidy(j.social ?? '')
     return NextResponse.json({
       ok: true,
       asin, title: productTitle, link,
-      sale: sale ? { label: saleLabel(sale.verdict), ...sale.verdict } : null,
-      event: event || null,
+      sale: { label: saleLabel(sale.verdict), ...sale.verdict },
       video: lead ? { youtubeVideoId: lead.youtubeVideoId, title: lead.title, channelId: lead.channelId } : null,
       promo: {
         short: {
@@ -149,8 +158,9 @@ Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"com
           onScreen: (j.short?.onScreen ?? []).map(tidy).filter(Boolean).slice(0, 4),
         },
         community: fill(j.community ?? ''),
-        comment: fill(j.comment ?? ''),
-        social: fill(j.social ?? ''),
+        comment,
+        social: socialRaw.replace(/\{link\}/g, link),
+        socialForSheet: socialRaw.replace(/\s*\{link\}\s*/g, ' ').replace(/\s{2,}/g, ' ').trim(),
       },
     })
   } catch (e) {
