@@ -21,7 +21,9 @@ const inOrderCheck = (src: string, a: string, b: string) => { const i = src.inde
   check('this year and next are removed, dashes become commas, "honest" goes',
     !/2026|2027/.test(tidyCopy('Best of 2026, and the 2027 model', now))
     && tidyCopy('Look at this - wow', now) === 'Look at this, wow'
-    && !/honest/i.test(tidyCopy('I am honestly impressed', now)))
+    && !/honest/i.test(tidyCopy('I am honestly impressed', now)) && !/honest/i.test(tidyCopy('Its honesty shows', now)))
+  check('a spaced hyphen between numbers is a range, and nothing starts with a comma',
+    tidyCopy('20 - 30% off', now) === '20 to 30% off' && !/^,/.test(tidyCopy('Honestly — this', now)))
 }
 
 // ── preview gate: only the owner sees these until they are opened ───────────
@@ -75,6 +77,10 @@ check('the label is words, not a guess', saleLabel(saleVerdict({ deal: deal({ di
     /NEVER state a price, a dollar amount, or a percentage/.test(PROMO) && /Do NOT name any Amazon sale event/.test(PROMO)
     && !/detectOccasion|canNameEvent/.test(PROMO),
     'a sale price is true for hours, and "it is October so it is Prime" is a false claim on a real video')
+  check('a price that could not be checked is not reported as a sale that ended',
+    /if \(!sale && checked === 0\)/.test(PROMO) && inOrderCheck(PROMO, 'if (!sale && checked === 0)', "This one is not on sale any more"))
+  check('the comment route asks YouTube whose video it is when the record does not say',
+    /yt\.getVideoChannelId\(videoId\)/.test(read('app/api/on-sale/comment/route.ts')))
   check('no promo for a product that is no longer on sale',
     /if \(!sale\) \{\s*return NextResponse\.json\(\{ error: 'This one is not on sale any more/.test(PROMO),
     'a comment saying "on sale right now" would sit on the video saying something untrue')

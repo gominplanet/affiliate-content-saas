@@ -725,7 +725,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     check('and a firing cannot outlive the function',
       callMs <= capMs - 30_000 && /if \(left\(\) < THUMB_CALL_MS \+ 30_000\) return 'stop'/.test(DRAIN)
       && Number.isFinite(pool) && pool >= 1 && images <= pool * 2
-      && /Array\.from\(\{ length: THUMB_POOL \}/.test(DRAIN) && /await Promise\.all\(\[styledJob\(\), cleanJob\(\), ensureAmazonTitle\(/.test(DRAIN),
+      && /Array\.from\(\{ length: THUMB_POOL \}/.test(DRAIN) && /await Promise\.all\(\[\s*styledJob\(\), cleanJob\(\),\s*Promise\.race\(\[ensureAmazonTitle\(/.test(DRAIN),
       `IMAGES=${images} THUMB_POOL=${pool} THUMB_CALL_MS=${callMs / 1000}s cap=${capMs / 1000}s`)
     check('the ASIN is read out of a file name, and only when there is exactly one',
       asinInFileName('Ninja Crispi - B0DDDD8WD6') === 'B0DDDD8WD6'
@@ -2219,7 +2219,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
 // ── WHAT THE LIFTOFF REVIEW FOUND ────────────────────────────────────────────
 {
   check('an edit does not throw away a render or thumbnail in progress',
-    /const patch: Record<string, unknown> = \{\}/.test(ITEM) && /if \(patch\.state !== undefined\) patch\.updated_at = /.test(ITEM)
+    /const patch: Record<string, unknown> = \{\}/.test(ITEM) && /if \(patch\.state !== undefined \|\| 'asin' in patch\) patch\.updated_at = /.test(ITEM)
     && /\.update\(\{ amazon_title: value \}\)\.eq\('id', id\)/.test(ITEM),
     'the worker only lands a render while updated_at is still its own claim stamp, and typing a title changed it')
   check('an Amazon title edited after the hand-over reaches the storefronts',
@@ -2229,6 +2229,11 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     && /if \(confirmRead\.failed\) return/.test(DRAIN) && /if \(plRead\.failed\) return/.test(DRAIN)
     && /error\.code === '42703'/.test(DRAIN),
     'a timeout read as "no channel" sent a batch confirmed to another channel through the default one')
+  check('clearing or changing the product stamps the row, so old images cannot land',
+    /if \(patch\.state !== undefined \|\| 'asin' in patch\) patch\.updated_at = /.test(ITEM))
+  check('the Amazon title writer beside the images is time-boxed',
+    /Promise\.race\(\[ensureAmazonTitle\(sb, it\.id, it\.user_id, asin, ytTitle\), new Promise\(\(res\) => setTimeout\(res, titleBox\)\)\]\)/.test(DRAIN),
+    'an unbounded title call could keep two finished images waiting past the end of the firing')
   check('the Amazon title no longer runs before the images can start',
     !/if \(left\(\) > 90_000\) await ensureAmazonTitle/.test(DRAIN),
     'a thumbnail may only start in the first seconds of a firing, and a slow title writer spent them')

@@ -42,8 +42,17 @@ export async function POST(req: Request) {
   // THE COMMENTER IS THE VIDEO'S OWN CHANNEL, asked of YouTube. A login can
   // fall back to the default channel when the video's own is not connected,
   // and the comment would then be posted as a different channel.
-  const owner = String(vid.channel_id || '')
-  if (/^UC[\w-]{22}$/.test(owner)) {
+  // WHEN MVP'S RECORD DOES NOT SAY WHICH CHANNEL ('unknown', as a Liftoff
+  // hand-over can write), YouTube is asked. A video this login cannot see at
+  // all is a video on another channel.
+  let owner = String(vid.channel_id || '')
+  if (!/^UC[\w-]{22}$/.test(owner)) {
+    try { owner = (await yt.getVideoChannelId(videoId)) || '' } catch { owner = '' }
+    if (!owner) {
+      return NextResponse.json({ error: 'The saved login cannot see this video, so it is on a channel that login is not. Nothing was posted. Reconnect that channel under Settings.' }, { status: 409 })
+    }
+  }
+  {
     let me: { id: string; title: string } | null = null
     try { me = await yt.getMyChannel() } catch { /* said below */ }
     if (!me) return NextResponse.json({ error: 'YouTube did not say which channel this login is. Nothing was posted.' }, { status: 502 })

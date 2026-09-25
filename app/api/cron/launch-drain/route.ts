@@ -565,7 +565,13 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
       }
     }
     // The Amazon title beside the images: seconds against their minutes.
-    await Promise.all([styledJob(), cleanJob(), ensureAmazonTitle(sb, it.id, it.user_id, asin, ytTitle)])
+    // TIME-BOXED: the title writer must never keep two finished images waiting
+    // past the end of the firing. If it is slow, the next firing writes it.
+    const titleBox = Math.max(0, Math.min(30_000, left() - 45_000))
+    await Promise.all([
+      styledJob(), cleanJob(),
+      Promise.race([ensureAmazonTitle(sb, it.id, it.user_id, asin, ytTitle), new Promise((res) => setTimeout(res, titleBox))]),
+    ])
 
     if (patch.thumbnail_url) {
       patch.thumbnail_source = usedPlain ? 'plain' : 'styled'

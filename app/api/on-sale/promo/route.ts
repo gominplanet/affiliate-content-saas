@@ -66,7 +66,13 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const covered = (await coveredProducts(admin, user.id, 400, [asin])).find((p) => p.asin === asin)
   if (!covered) return NextResponse.json({ error: 'That product is not in your videos or storefront.' }, { status: 404 })
-  const sale = (await findSales(admin, [covered]))[0] ?? null
+  let checked = 0
+  const sale = (await findSales(admin, [covered], { onStats: (st) => { checked = st.checked } }))[0] ?? null
+  // COULD NOT LOOK is not the same as NOT ON SALE: said differently, so the
+  // page does not mark a sale as ended because Keepa was busy.
+  if (!sale && checked === 0) {
+    return NextResponse.json({ error: 'The price could not be checked just now. Try again in a minute.' }, { status: 503 })
+  }
   if (!sale) {
     return NextResponse.json({ error: 'This one is not on sale any more, so there is nothing true to promote. Check again later.', ended: true }, { status: 409 })
   }

@@ -5,8 +5,9 @@
 // one shared table instead of re-paying Keepa per user. Flow per call:
 //   1. read keepa_product_cache for the requested ASINs that are still FRESH
 //   2. for the rest, hit Keepa once (fetchKeepaBasics)
-//   3. write every fetched ASIN back to the cache (data, or an `empty` tombstone
-//      so a no-data product isn't re-fetched by the next creator)
+//   3. write back every ASIN Keepa ANSWERED (an answered ASIN with no data is
+//      still written, so the next creator does not pay for it again); an ASIN
+//      whose batch never came back is not written at all
 //   4. return the merged map — callers then write their own epc_products rows.
 //
 // The cache uses the service-role (admin) client because it's shared operator

@@ -88,10 +88,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         error: /amazon_title/.test(atErr.message) ? 'Saving the Amazon title needs migration 370 in the database first.' : atErr.message,
       }, { status: /amazon_title/.test(atErr.message) ? 503 : 500 })
     }
+    if (!(row ?? []).length) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
     const videoId = (row ?? [])[0]?.video_id
     if (videoId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('youtube_videos').update({ amazon_title: value }).eq('id', videoId).eq('user_id', user.id)
+      const { error: yvErr } = await (supabase as any).from('youtube_videos').update({ amazon_title: value }).eq('id', videoId).eq('user_id', user.id)
+      if (yvErr) {
+        return NextResponse.json({
+          error: 'Saved here, but the copy the storefronts read could not be updated. Try Save again.',
+        }, { status: 500 })
+      }
     }
     return null
   }
@@ -313,7 +319,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   // A CHANGE THAT RESTARTS WORK is stamped, so a render or image made for the
   // old state cannot land on top of it. A plain edit is not.
-  if (patch.state !== undefined) patch.updated_at = new Date().toISOString()
+  // A PRODUCT CHANGED OR CLEARED counts too: images being built for the old
+  // product must not land on a row whose product is now different or empty.
+  if (patch.state !== undefined || 'asin' in patch) patch.updated_at = new Date().toISOString()
   const { error } = Object.keys(patch).length
     ? await sb.from('launch_items').update(patch).eq('id', id).eq('user_id', user.id)
     : { error: null }

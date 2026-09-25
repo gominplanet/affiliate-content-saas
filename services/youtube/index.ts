@@ -497,6 +497,14 @@ export class YouTubeOAuthService {
     return out
   }
 
+  /** The channel a video is on, as YouTube says, or null when this login
+   *  cannot see it (a private video on another channel reads as null). */
+  async getVideoChannelId(videoId: string): Promise<string | null> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.get<any>('/videos', { part: 'snippet', id: videoId })
+    return (data?.items?.[0]?.snippet?.channelId as string | undefined) ?? null
+  }
+
   /** The channel this login actually uploads to, as YouTube itself says.
    *  One quota unit. Null when the login has no channel. */
   async getMyChannel(): Promise<{ id: string; title: string; thumbnail: string | null } | null> {

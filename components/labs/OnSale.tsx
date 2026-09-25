@@ -30,7 +30,6 @@ interface Verdict {
 interface Product { asin: string; title: string; image: string | null; sources: Source[]; verdict: Verdict }
 interface Promo {
   link: string
-  event: string | null
   video: { youtubeVideoId: string; title: string } | null
   promo: { short: { hook: string; script: string; onScreen: string[] }; community: string; comment: string; social: string; socialForSheet: string }
 }
