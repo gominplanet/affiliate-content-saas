@@ -108,6 +108,9 @@ async function pinViaScout(youtubeVideoId: string, commentId: string, saleCommen
   }
   const r = await requestPinComment(youtubeVideoId, commentId)
   const pinned = !!(r.ok && r.pinned)
+  // WHAT SCOUT SAW, step by step, beside a failure: the step that failed is
+  // then on screen, not one line that could mean anything.
+  if (!pinned && r.steps) r.error = `${r.error || 'SCOUT could not pin it.'} What SCOUT saw: ${r.steps}.`
   if (saleCommentId) {
     await fetch(`/api/on-sale/comments/${saleCommentId}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

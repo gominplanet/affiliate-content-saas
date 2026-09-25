@@ -516,6 +516,7 @@ async function pinYouTubeComment({ youtubeVideoId, commentId, callerTabId }) {
       await waitLoaded()
       const seen = await run(true)
       if (seen.ok) out = seen
+      else out = Object.assign({}, out, { steps: [out.steps, seen.steps].filter(Boolean).join('; ') })
     }
     return out
   } catch (e) {
@@ -536,81 +537,110 @@ async function pinYouTubeComment({ youtubeVideoId, commentId, callerTabId }) {
 
 // Runs in the youtube.com watch page. Self-contained: executeScript
 // serializes it, so no outer references.
+//
+// IT SAYS HOW FAR IT GOT. Every answer carries `steps`, the steps it actually
+// saw happen, so a failure names the step that failed ("confirm box: none")
+// instead of one line that could mean anything.
 async function pinCommentInPage(commentId, verifyOnly) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const visible = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
   const until = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(250) } return null }
+  const steps = []
+  const label = (el) => (el.textContent || '').replace(/\s+/g, ' ').trim()
   try { const v = document.querySelector('video'); if (v) { v.muted = true; v.pause() } } catch (e) {}
 
-  // THE COMMENT, by its own id: its timestamp links to &lc=<id>, in both the
-  // older and the newer comment layouts. Never "the first comment".
-  const findComment = () => {
+  // EVERY COPY OF THE COMMENT, by its own id: its timestamp links to
+  // &lc=<id>, in both the older and the newer comment layouts. With &lc= in
+  // the address YouTube shows it twice, highlighted at the top and again in
+  // the list, and the pinned badge may be on either. Never "the first comment".
+  const findAll = () => {
+    const out = []
     for (const a of document.querySelectorAll('a[href*="lc="]')) {
-      const href = a.getAttribute('href') || ''
-      const m = /[?&]lc=([^&#]+)/.exec(href)
+      const m = /[?&]lc=([^&#]+)/.exec(a.getAttribute('href') || '')
       if (!m || decodeURIComponent(m[1]) !== commentId) continue
       const c = a.closest('ytd-comment-view-model, ytd-comment-renderer')
-      if (c) return c
+      if (c && out.indexOf(c) < 0) out.push(c)
     }
-    return null
+    return out
   }
-  const pinnedBadge = (c) => {
-    const b = c && c.querySelector('ytd-pinned-comment-badge-renderer, #pinned-comment-badge ytd-pinned-comment-badge-renderer')
-    return !!b && visible(b) && (b.textContent || '').trim().length > 0
+  // PINNED, in any layout: the badge element, or the badge's own words.
+  const PINNED_WORDS = /(pinned by|épinglé par|angeheftet von|fijado por|fissato da|fixado por|vastgezet door|przypięty przez|закреплено|sabitleyen|によって固定|고정함|置顶|固定)/i
+  const pinnedOne = (c) => {
+    if (!c) return false
+    const b = c.querySelector('ytd-pinned-comment-badge-renderer, #pinned-comment-badge > *')
+    if (b && visible(b) && label(b).length > 0) return true
+    const head = c.querySelector('#header, #header-author, #pinned-comment-badge')
+    return !!head && PINNED_WORDS.test(label(head))
   }
-  let comment = null
-  for (let i = 0; i < 50 && !comment; i++) {
+  const anyPinned = () => findAll().some(pinnedOne)
+
+  let comments = []
+  for (let i = 0; i < 50 && !comments.length; i++) {
     const box = document.querySelector('ytd-comments#comments') || document.querySelector('#comments')
     if (box) box.scrollIntoView({ block: 'start' })
     else window.scrollBy(0, 700)
-    comment = findComment()
-    if (!comment) await sleep(400)
+    comments = findAll()
+    if (!comments.length) await sleep(400)
   }
-  if (!comment) return { ok: false, error: 'The comment did not show on the video page. Comments may be off, or it is still being checked by YouTube.' }
-  if (pinnedBadge(comment)) return { ok: true, pinned: true, already: true }
+  if (!comments.length) return { ok: false, steps: 'comment: not found', error: 'The comment did not show on the video page. Comments may be off, or YouTube is still checking it.' }
+  steps.push(`comment: found (${comments.length} on page)`)
+  if (anyPinned()) return { ok: true, pinned: true, already: !verifyOnly, steps: steps.concat('badge: seen').join(', ') }
   if (verifyOnly) {
-    const seen = await until(() => pinnedBadge(findComment()), 8000)
-    return seen ? { ok: true, pinned: true } : { ok: false, clicked: true, error: 'Pin was pressed, but the comment does not show as pinned. Check the video, and pin it in Studio if it is not.' }
+    // The list loads a moment after the highlighted copy.
+    for (let i = 0; i < 6; i++) { window.scrollBy(0, 500); await sleep(500) }
+    const seen = await until(anyPinned, 8000)
+    return seen ? { ok: true, pinned: true, steps: steps.concat('after reload, badge: seen').join(', ') }
+      : { ok: false, clicked: true, steps: steps.concat('after reload, badge: not seen').join(', '), error: 'Pin was pressed, but the comment does not show as pinned. Check the video, and pin it in Studio if it is not.' }
   }
 
+  const comment = comments[0]
   comment.scrollIntoView({ block: 'center' })
   await sleep(400)
-  const menuBtn = comment.querySelector('#action-menu button, ytd-menu-renderer button, #action-buttons ~ #action-menu button')
+  const menuBtn = comment.querySelector('#action-menu button, ytd-menu-renderer button')
     || [...comment.querySelectorAll('button')].find((b) => /action|menu|more/i.test(b.getAttribute('aria-label') || ''))
-  if (!menuBtn) return { ok: false, error: 'The comment menu button was not found on the page.' }
+  if (!menuBtn) return { ok: false, steps: steps.concat('menu button: not found').join(', '), error: 'The comment menu button was not found on the page.' }
   menuBtn.click()
 
   const PIN = /^(pin|épingler|epingler|anheften|fijar|fissa|fixar|afixar|vastzetten|przypnij|закрепить|sabitle|ピン留め|고정|置顶|固定|sematkan|ghim)$/i
   const UNPIN = /^(unpin|désépingler|loslösen|no fijar|dejar de fijar|sblocca|desafixar|losmaken|odepnij|открепить|sabitlemeyi kaldır)$/i
   const items = await until(() => {
-    const list = [...document.querySelectorAll('ytd-popup-container ytd-menu-service-item-renderer, ytd-popup-container tp-yt-paper-item, ytd-popup-container yt-list-item-view-model')]
+    const list = [...document.querySelectorAll('ytd-popup-container ytd-menu-service-item-renderer, ytd-popup-container tp-yt-paper-item, ytd-popup-container yt-list-item-view-model, tp-yt-iron-dropdown yt-list-item-view-model')]
       .filter(visible)
     return list.length ? list : null
   }, 5000)
-  if (!items) return { ok: false, error: 'The comment menu did not open.' }
-  const label = (el) => (el.textContent || '').replace(/\s+/g, ' ').trim()
+  if (!items) return { ok: false, steps: steps.concat('menu: did not open').join(', '), error: 'The comment menu did not open.' }
+  const names = [...new Set(items.map(label).filter(Boolean))]
+  steps.push(`menu: ${names.slice(0, 6).join(' / ')}`)
   if (items.some((el) => UNPIN.test(label(el)))) {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    return { ok: true, pinned: true, already: true }
+    return { ok: true, pinned: true, already: true, steps: steps.concat('already pinned').join(', ') }
   }
   const pinItem = items.find((el) => PIN.test(label(el)))
   if (!pinItem) {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    return { ok: false, error: 'There was no Pin option in the comment menu. YouTube in this browser needs to be signed in as the channel that owns the video.' }
+    return { ok: false, steps: steps.concat('Pin: not in menu').join(', '), error: 'There was no Pin option in the comment menu. YouTube in this browser needs to be signed in as the channel that owns the video.' }
   }
-  ;(pinItem.querySelector('tp-yt-paper-item, a, button') || pinItem).click()
+  ;(pinItem.querySelector('tp-yt-paper-item, a, button, [role="menuitem"]') || pinItem).click()
+  steps.push('Pin: pressed')
 
-  // THE CONFIRM BOX ("Pin this comment?"). Its confirm button, by position
-  // in YouTube's own dialog, not by its words.
+  // THE CONFIRM BOX ("Pin this comment?"), in the older dialog and the newer
+  // one. Its confirm button is found by its words first (Pin), then by its
+  // place (the confirm slot, or the last button, where YouTube puts it).
+  const DIALOGS = 'ytd-popup-container yt-confirm-dialog-renderer, ytd-popup-container tp-yt-paper-dialog, yt-dialog-view-model, ytd-popup-container [role="dialog"], [role="alertdialog"]'
   const confirm = await until(() => {
-    const d = [...document.querySelectorAll('ytd-popup-container yt-confirm-dialog-renderer, ytd-popup-container tp-yt-paper-dialog')].find(visible)
+    const d = [...document.querySelectorAll(DIALOGS)].find(visible)
     if (!d) return null
-    return d.querySelector('#confirm-button button, #confirm-button tp-yt-paper-button, #confirm-button yt-button-shape button, #confirm-button')
+    const buttons = [...d.querySelectorAll('button, tp-yt-paper-button')].filter(visible)
+    return buttons.find((b) => PIN.test(label(b)))
+      || d.querySelector('#confirm-button button, #confirm-button tp-yt-paper-button, #confirm-button yt-button-shape button')
+      || buttons[buttons.length - 1] || null
   }, 5000)
-  if (confirm) confirm.click()
+  if (confirm) { steps.push(`confirm box: pressed "${label(confirm).slice(0, 20)}"`); confirm.click() }
+  else steps.push('confirm box: none')
 
-  const seen = await until(() => pinnedBadge(findComment()), 10000)
-  return seen ? { ok: true, pinned: true } : { ok: false, clicked: true, error: 'Pin was pressed, but the comment does not show as pinned yet.' }
+  const seen = await until(anyPinned, 10000)
+  return seen ? { ok: true, pinned: true, steps: steps.concat('badge: seen').join(', ') }
+    : { ok: false, clicked: true, steps: steps.concat('badge: not seen').join(', '), error: 'Pin was pressed, but the comment does not show as pinned yet.' }
 }
 
 // Runs in the PAGE (MAIN world) on a youtube.com/watch page. Reads the caption

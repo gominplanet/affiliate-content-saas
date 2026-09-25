@@ -290,7 +290,10 @@ async function saleEndedGuards() {
   check('SCOUT pins by the comment id and reports the badge, not the click',
     /msg\.type === 'MVP_YT_PIN_COMMENT'/.test(BG)
     && /decodeURIComponent\(m\[1\]\) !== commentId/.test(BG)
-    && (BG.match(/seen \? \{ ok: true, pinned: true \}/g) ?? []).length === 2
+    && (BG.match(/seen \? \{ ok: true, pinned: true, steps:/g) ?? []).length === 2
+    && (BG.match(/const seen = await until\(anyPinned, \d+\)/g) ?? []).length === 2
+    // It reports how far it got, so a failure names its step.
+    && /steps: steps\.concat\('confirm box: none'\)|steps\.push\('confirm box: none'\)/.test(BG)
     && !/return \{ ok: true, pinned: true \}/.test(BG)
     // A swapped tab (installed YouTube app, prerender) is found again by the
     // comment's own address, not given up on as "No tab with id".

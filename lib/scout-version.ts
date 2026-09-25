@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.21.15'
+export const SCOUT_LATEST_VERSION = '1.21.16'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Pinning the sale comment now survives Chrome swapping the YouTube tab (an installed YouTube app, or a prerendered page): SCOUT finds the tab again by the comment it shows, and says so plainly if the tab was closed.'
+  'Pinning handles the newer YouTube confirm box, looks for the pinned badge on every copy of the comment, and reports each step it saw, so a failed pin says exactly where it stopped.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -56,7 +56,7 @@ export function isScoutOutdated(installed: string | null | undefined): boolean {
 export const SCOUT_STUDIO_MIN_VERSION = '1.20.0'
 
 /** The oldest SCOUT that can pin a comment MVP posted (On sale now). */
-export const SCOUT_PIN_MIN_VERSION = '1.21.15'
+export const SCOUT_PIN_MIN_VERSION = '1.21.16'
 
 /** True when the installed SCOUT is at least `min`. False when unknown. */
 export function scoutAtLeast(installed: string | null | undefined, min: string): boolean {

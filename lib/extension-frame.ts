@@ -943,7 +943,7 @@ export async function requestVideoFrame(youtubeVideoId: string, seekFraction = 0
   return frames[0] ?? null
 }
 
-export interface PinCommentResult { ok: boolean; pinned?: boolean; already?: boolean; clicked?: boolean; error?: string }
+export interface PinCommentResult { ok: boolean; pinned?: boolean; already?: boolean; clicked?: boolean; error?: string; steps?: string }
 
 /**
  * Ask SCOUT (1.21.14+) to pin a comment MVP posted: YouTube's API cannot pin.
