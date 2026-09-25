@@ -33,6 +33,9 @@ export interface CoverSource {
   /** Who can see the video, asked of YouTube when the page loads. Null when
    *  YouTube could not be asked, which is not the same as private. */
   visibility?: VideoVisibility | null
+  /** A YouTube Short: links in its comments are not clickable, so Encore
+   *  does not comment on it. Null when it could not be told. */
+  isShort?: boolean | null
 }
 
 /**
@@ -90,14 +93,15 @@ export function notPublicMessage(privacy: string, publishAt: string | null): str
 
 /** Stamps each video source with who can see it, then puts the products with
  *  a public video first: those are the ones a comment can bring back. */
-export function applyVisibility<T extends CoveredProduct & { verdict: SaleVerdict }>(products: T[], vis: Map<string, VideoVisibility>): T[] {
+export function applyVisibility<T extends CoveredProduct & { verdict: SaleVerdict }>(products: T[], vis: Map<string, VideoVisibility>, shorts?: Map<string, boolean | null>): T[] {
   const stamped = products.map((p) => ({
     ...p,
     sources: p.sources.map((s) => (s.kind === 'video' && s.youtubeVideoId
-      ? { ...s, visibility: vis.get(s.youtubeVideoId) ?? null }
+      ? { ...s, visibility: vis.get(s.youtubeVideoId) ?? null, isShort: shorts?.get(s.youtubeVideoId) ?? null }
       : s)),
   }))
-  const rank = (p: T) => (p.sources.some((s) => s.kind === 'video' && s.visibility === 'public') ? 2
+  // A public video that is not a Short is one a comment can earn on.
+  const rank = (p: T) => (p.sources.some((s) => s.kind === 'video' && s.visibility === 'public' && s.isShort !== true) ? 2
     : p.sources.some((s) => s.kind === 'video') ? 1 : 0)
   return stamped.sort((a, b) => rank(b) - rank(a) || (b.verdict.pct ?? 0) - (a.verdict.pct ?? 0))
 }

@@ -16,6 +16,7 @@ import { YouTubeOAuthService } from '@/services/youtube'
 import { wrongChannelMessage } from '@/lib/launch-channel'
 import { notPublicMessage } from '@/lib/covered-sales'
 import { SALE_WORDING, PRICE_LINE_LEAD, DISCLOSURE, SALE_COMMENTS_PER_DAY } from '@/lib/sale-comments'
+import { detectShorts } from '@/lib/shorts-detect'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -97,6 +98,11 @@ export async function POST(req: Request) {
   }
   const notPublic = notPublicMessage(status.privacy, status.publishAt)
   if (notPublic) return NextResponse.json({ error: notPublic, notPublic: true }, { status: 409 })
+  // NOT ON A SHORT: YouTube does not make links in a Short's comments
+  // clickable, so a sale comment there would show a link nobody can use.
+  if ((await detectShorts([videoId], token)).get(videoId) === true) {
+    return NextResponse.json({ error: 'This video is a YouTube Short, and YouTube does not make links in Shorts comments clickable, so a sale comment would not earn. Nothing was posted. Use the Community post or the social post instead.', isShort: true }, { status: 409 })
+  }
   let owner = String(vid.channel_id || '')
   if (!/^UC[\w-]{22}$/.test(owner)) owner = status.channelId || ''
   if (!owner) {

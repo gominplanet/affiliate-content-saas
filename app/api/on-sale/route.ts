@@ -8,6 +8,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
 import { coveredProducts, findSales, videoVisibility, applyVisibility, type SaleCheckStats } from '@/lib/covered-sales'
+import { detectShorts } from '@/lib/shorts-detect'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -31,7 +32,10 @@ export async function GET() {
   // gets no comment button, since nobody would read a comment there.
   const ids = found.flatMap((p) => p.sources.filter((s) => s.kind === 'video').map((s) => s.youtubeVideoId || ''))
   const vis = await videoVisibility(process.env.YOUTUBE_API_KEY, ids)
-  const onSale = applyVisibility(found, vis)
+  // WHICH ARE SHORTS, for the public ones: a Short's comment links are not
+  // clickable, so it is labelled and not offered for a sale comment.
+  const shorts = await detectShorts(ids.filter((id) => vis.get(id) === 'public'))
+  const onSale = applyVisibility(found, vis, shorts)
   return NextResponse.json({
     covered: covered.length,
     checked: stats.checked,

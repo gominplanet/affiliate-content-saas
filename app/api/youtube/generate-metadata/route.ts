@@ -31,6 +31,7 @@ import { canUsePreview } from '@/lib/labs-preview'
 import { readComparisonSlots, shortProductName, comparisonLinkLines } from '@/lib/comparison-products'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { asinFromAmazonUrl } from '@/lib/asin'
+import { detectShorts } from '@/lib/shorts-detect'
 
 export const maxDuration = 120
 
@@ -553,12 +554,16 @@ export async function POST(request: Request) {
       ownerId = auth.ownerId
     }
 
-    const { asin, videoTitle, videoDescription, youtubeVideoId, skipAsinCheck = false, productOverride = null, transcript: bodyTranscript = null, comparisonProducts = null } = await request.json() as {
+    const { asin, videoTitle, videoDescription, youtubeVideoId, skipAsinCheck = false, productOverride = null, transcript: bodyTranscript = null, comparisonProducts = null, isShort = false } = await request.json() as {
       asin?: string | null
       /** COMPARISON VIDEO (Labs): the 2 to 4 products the video compares, each
        *  an ASIN or a product link, in the creator's order. The first is the
        *  video's main product. Ignored for accounts without the preview. */
       comparisonProducts?: Array<{ input: string; label?: string }> | null
+      /** SHORT MODE (Labs): YouTube says this video is a Short. Links in a
+       *  Short's description and comments are not clickable, so the metadata
+       *  is Short-shaped and points to the full review instead. */
+      isShort?: boolean
       videoTitle: string
       videoDescription?: string
       /** Optional transcript the client already has (e.g. SCOUT fetched it from
@@ -762,6 +767,7 @@ export async function POST(request: Request) {
       isProduct = true
       productDiscoverySource = 'caller'
     }
+    const shortMode = isShort === true && canUsePreview('shorts_mode', tier)
 
     if (!isProduct) {
       // Append the reused product link (from product_url or the blog post) so a
@@ -1230,6 +1236,13 @@ export async function POST(request: Request) {
           videoDescription ? `Video description / notes: "${videoDescription.slice(0, 800)}"` : '',
         ].filter(Boolean).join('\n')
 
+    // A SHORT is titled and described like one: the same product facts, a
+    // different shape. Said first so every agent reads it.
+    const shortNote = shortMode
+      ? 'THIS IS A YOUTUBE SHORT (vertical, under 3 minutes, watched in the Shorts feed). Titles must be under 50 characters, punchy and specific. The description is 2 short sentences at most.'
+      : ''
+    const agentContext = shortNote ? `${shortNote}\n\n${productContext}` : productContext
+
     // ── Voice anchors: pull this user's 2 most-recently-generated YT
     // metadata blocks so the title / description / pinned-comment
     // agents below match their channel voice over time. Excludes the
@@ -1275,14 +1288,14 @@ export async function POST(request: Request) {
       : null
 
     const [productAnalysis, seoData] = await Promise.all([
-      productAnalystAgent(anthropic, productContext, videoTitle, niches, isProduct),
-      seoResearcherAgent(anthropic, productContext, videoTitle, niches, [], isProduct),
+      productAnalystAgent(anthropic, agentContext, videoTitle, niches, isProduct),
+      seoResearcherAgent(anthropic, agentContext, videoTitle, niches, [], isProduct),
     ])
 
     // ── SWARM PHASE 2: Title + Content + Engagement run in parallel ───────────
     // (Title strategist gets product analysis context; content + engagement agents get title)
     const titleResult = await titleStrategistAgent(
-      anthropic, productContext, videoTitle, tone, productAnalysis, isProduct, priorTitles, seoProductName, !!videoBrief,
+      anthropic, agentContext, videoTitle, tone, productAnalysis, isProduct, priorTitles, seoProductName, !!videoBrief,
     )
 
     // ── Internal title scoring (Phase 2 / Track A) ────────────────────────────
@@ -1334,11 +1347,18 @@ export async function POST(request: Request) {
       engagementResult.pinnedComment = engagementResult.pinnedComment.trimEnd() + '\n' + affiliateUrl
     }
 
+    // A Short's pinned comment cannot carry a working link, so it carries none
+    // (and so needs no ad label): a dead link in the top comment reads as broken.
+    if (shortMode && engagementResult.pinnedComment) {
+      engagementResult.pinnedComment = engagementResult.pinnedComment
+        .replace(/https?:\/\/\S+/g, '').replace(/^[^\n]{0,80}:[ \t]*$/gm, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+    }
+
     // ── FTC disclosure ────────────────────────────────────────────────────────
     // Affiliate / sponsored content must be labelled. Append "#ad #sponsored"
     // at the very end of the pinned comment (product mode only), unless an
     // equivalent disclosure is already present.
-    if (affiliateUrl && engagementResult.pinnedComment) {
+    if (affiliateUrl && engagementResult.pinnedComment && !shortMode) {
       const lc = engagementResult.pinnedComment.toLowerCase()
       if (!lc.includes('#ad') && !lc.includes('#sponsored')) {
         engagementResult.pinnedComment = engagementResult.pinnedComment.trimEnd() + '\n\n#ad #sponsored'
@@ -1477,7 +1497,45 @@ export async function POST(request: Request) {
       )
     }
 
-    const description = descParts.join('\n')
+    // ── SHORT MODE: a Short's own description ─────────────────────────────────
+    // Links in a Short's description are not clickable on YouTube, so the
+    // description is short and sends viewers to the creator's full review of
+    // the same product (which they can also set as the Short's Related video,
+    // the clickable link a Short has). The product link and disclosure stay:
+    // they cost nothing and keep the description honest where it is read.
+    let fullReviewUrl: string | null = null
+    if (shortMode && trimmedAsin && youtubeVideoId) {
+      try {
+        const asinsFor = comparison ? comparison.map((c) => c.asin) : [trimmedAsin]
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: others } = await (supabase as any).from('youtube_videos')
+          .select('youtube_video_id,view_count').eq('user_id', ownerId).in('asin', asinsFor)
+          .neq('youtube_video_id', youtubeVideoId).order('view_count', { ascending: false, nullsFirst: false }).limit(6)
+        const ids = ((others ?? []) as Array<{ youtube_video_id: string }>).map((o) => o.youtube_video_id).filter((id) => /^[A-Za-z0-9_-]{11}$/.test(id))
+        if (ids.length) {
+          const shorts = await detectShorts(ids)
+          // The most watched one that is not itself a Short.
+          const pick = ids.find((id) => shorts.get(id) === false) ?? null
+          if (pick) fullReviewUrl = `https://youtu.be/${pick}`
+        }
+      } catch { /* no full review to point to; the page says so */ }
+    }
+    const firstSentences = (t: string, n: number) => (String(t || '').match(/[^.!?]+[.!?]+/g) ?? [String(t || '')]).slice(0, n).join(' ').trim()
+    const shortTags = (() => {
+      const tags = String(seoData.hashtags || '').split(/\s+/).filter((h) => h.startsWith('#'))
+      const keep = [...new Set(['#shorts', ...tags.map((h) => h.toLowerCase() === '#shorts' ? '#shorts' : h)])]
+      return keep.slice(0, 6).join(' ')
+    })()
+    const description = shortMode
+      ? [
+          firstSentences(contentResult.productDescription, 2),
+          fullReviewUrl ? `Watch the full review: ${fullReviewUrl}` : '',
+          affiliateUrl ? `Product (affiliate link): ${affiliateUrl}` : '',
+          affiliateUrl ? LINES.disclosureProduct : '',
+          shortTags,
+          customBlock || '',
+        ].filter(Boolean).join('\n\n')
+      : descParts.join('\n')
     // Confirm the link actually landed in the final text (true when there's no
     // link to place). Surfaced to the client so Co-Pilot can flag a missing link
     // instead of the creator discovering it after publishing.
@@ -1588,6 +1646,9 @@ export async function POST(request: Request) {
         ? comparison.map((c) => ({ asin: c.asin, label: c.label, title: c.title, imageUrl: c.imageUrl, link: c.link, linkNote: c.linkNote }))
         : null,
       comparisonSaved,
+      // SHORT MODE: whether this was written as a Short, and the full review it points to.
+      shortMode,
+      fullReviewUrl,
       isProduct,
       productDiscoverySource,
       affiliateUrl,

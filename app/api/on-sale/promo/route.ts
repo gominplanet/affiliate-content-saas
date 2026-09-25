@@ -33,6 +33,7 @@ import { tidyCopy } from '@/lib/copy-rules'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { resolveCloakedLinkDetailed } from '@/lib/link-cloak'
 import { coveredProducts, findSales, saleLabel, videoVisibility } from '@/lib/covered-sales'
+import { detectShorts } from '@/lib/shorts-detect'
 import { commentWithLink, lastingBody, PRICE_LINE_LEAD, DISCLOSURE } from '@/lib/sale-comments'
 
 export const runtime = 'nodejs'
@@ -85,8 +86,17 @@ export async function POST(req: Request) {
   // but there is no video to comment on or link to, and the page says why.
   const vis = await videoVisibility(process.env.YOUTUBE_API_KEY, videos.map((v) => v.youtubeVideoId || ''))
   const byViews = [...videos].sort((a, b) => (b.views ?? 0) - (a.views ?? 0))
-  const lead = byViews.find((v) => vis.get(v.youtubeVideoId || '') === 'public') ?? byViews[0] ?? null
-  const leadVis = lead ? (vis.get(lead.youtubeVideoId || '') ?? null) : null
+  // NOT A SHORT: links in a Short's comments are not clickable, so the
+  // comment goes on the most viewed public video that is not one.
+  const publicIds = byViews.map((v) => v.youtubeVideoId || '').filter((id) => vis.get(id) === 'public')
+  const shorts = await detectShorts(publicIds)
+  const lead = byViews.find((v) => vis.get(v.youtubeVideoId || '') === 'public' && shorts.get(v.youtubeVideoId || '') !== true)
+    ?? byViews.find((v) => vis.get(v.youtubeVideoId || '') === 'public')
+    ?? byViews[0] ?? null
+  const leadIsShort = !!lead && shorts.get(lead.youtubeVideoId || '') === true
+  const leadVis: 'public' | 'unlisted' | 'not_public' | 'short' | null = lead
+    ? (leadIsShort ? 'short' : (vis.get(lead.youtubeVideoId || '') ?? null))
+    : null
   // YouTube not answering is unknown, not private: the button stays, and the
   // comment route asks YouTube again through the channel's own login.
   const leadPublic = !!lead && (leadVis === 'public' || leadVis === null)
@@ -115,6 +125,15 @@ export async function POST(req: Request) {
     if (r.url) link = r.url
   } catch { /* the plain tagged link */ }
 
+
+  // THE CHANNEL THE COMMUNITY POST GOES ON: the lead video's, else the
+  // creator's default channel, so "Copy and open YouTube" lands on theirs.
+  let communityChannelId: string | null = /^UC[\w-]{22}$/.test(String(lead?.channelId || '')) ? String(lead?.channelId) : null
+  if (!communityChannelId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: ch } = await (admin as any).from('youtube_channels').select('channel_id').eq('user_id', user.id).eq('is_default', true).maybeSingle()
+    if (/^UC[\w-]{22}$/.test(String(ch?.channel_id || ''))) communityChannelId = String(ch.channel_id)
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: brand } = await (admin as any).from('brand_profiles')
@@ -169,7 +188,8 @@ Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"com
     // WHAT THE COMMENT BECOMES WHEN THE SALE ENDS. Same link and disclosure;
     // no sale in it. A writer slip falls back to a plain line (lib/sale-comments).
     const commentLasting = commentWithLink(lastingBody(j.commentAfter, productTitle), link)
-    const videoUrl = leadPublic && lead?.youtubeVideoId ? `https://youtu.be/${lead.youtubeVideoId}` : ''
+    // A Community post's links ARE clickable, so a Short can be linked there.
+    const videoUrl = (leadPublic || leadVis === 'short') && lead?.youtubeVideoId ? `https://youtu.be/${lead.youtubeVideoId}` : ''
     const community = `${strip(j.community ?? '')}\n\n${videoUrl ? `Watch my review: ${videoUrl}\n` : ''}${priceLine}\n${disclosure}`
     // THE SOCIAL POST, twice: with the link for copying, and without it for
     // the quick-post sheet, which adds each platform's own link (and #ad).
@@ -180,6 +200,7 @@ Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"com
       sale: { label: saleLabel(sale.verdict), ...sale.verdict },
       // Only a public video can take the comment. `videoNotPublic` says why
       // there is none, so the page can tell "private" from "no video at all".
+      communityChannelId,
       video: leadPublic && lead ? { youtubeVideoId: lead.youtubeVideoId, title: lead.title, channelId: lead.channelId } : null,
       videoNotPublic: lead && leadVis && leadVis !== 'public' ? { title: lead.title, visibility: leadVis } : null,
       promo: {

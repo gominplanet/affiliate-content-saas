@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -18,6 +18,8 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   amazon_live: 'admin',
   // Co-Pilot comparison videos: 2 to 4 products in one video. Open to Pro.
   comparison: 'labs',
+  // Co-Pilot Short mode: Shorts get Short-shaped metadata (links in Shorts are not clickable).
+  shorts_mode: 'admin',
 }
 
 export function canUsePreview(feature: PreviewFeature, rawTier: unknown): boolean {

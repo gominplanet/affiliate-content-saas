@@ -559,9 +559,11 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   )
 }
 
-function VideoStudioCard({ video, userTier, playlists, onApplied }: {
+function VideoStudioCard({ video, userTier, playlists, onApplied, isShort = null }: {
   video: DraftVideo
   userTier: Tier
+  /** SHORT MODE (Labs): true when YouTube says this video is a Short, null when unknown. */
+  isShort?: boolean | null
   playlists: Array<{ id: string; title: string }>
   /** Fires AFTER a successful Apply to YouTube with the pushed video's id so
    *  the parent can move just THAT video into the "🚀 Pushed via Co-Pilot" tab
@@ -779,6 +781,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [overrideProduct, setOverrideProduct] = useState(false)
   // COMPARISON VIDEO (Labs): 2 to 4 products in one video, set before generating.
   const canCompare = canUsePreview('comparison', userTier)
+  // SHORT MODE (Labs): only when YouTube itself says this video is a Short.
+  const shortMode = isShort === true && canUsePreview('shorts_mode', userTier)
+  const [shortResult, setShortResult] = useState<{ fullReviewUrl: string | null } | null>(null)
   const [compareOn, setCompareOn] = useState(false)
   const [compareSlots, setCompareSlots] = useState<ComparisonSlotInput[]>([])
   const [compareResult, setCompareResult] = useState<ComparisonResultItem[] | null>(null)
@@ -1218,6 +1223,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // SCOUT-scraped product (only on the fallback retry below).
           ...(productOverride ? { productOverride } : {}),
           ...(comparing ? { comparisonProducts: compareSlots } : {}),
+          ...(shortMode ? { isShort: true } : {}),
         }),
       })
 
@@ -1303,6 +1309,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       setDescOverrides((data.descriptionLineOverrides ?? null) as Record<string, unknown> | null)
       setGeniuslinkVerified((data.geniuslinkVerified ?? true) as boolean)
       setCompareResult((data.comparison ?? null) as ComparisonResultItem[] | null)
+      setShortResult(data.shortMode ? { fullReviewUrl: (data.fullReviewUrl ?? null) as string | null } : null)
       setCompareSaved((data.comparisonSaved ?? null) as typeof compareSaved)
       if (comparing && !data.comparison) toast.error('The comparison was not applied: this metadata covers one product. Try again, or tell support.')
 
@@ -2481,6 +2488,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                 <Lock size={9} className="text-[#ff9500]" /> Private · not scheduled
               </span>
             )}
+            {shortMode && (
+              <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#ff3b30]/10 text-[#ff3b30]" title="YouTube says this is a Short: Co-Pilot writes Short-shaped metadata for it">
+                Short
+              </span>
+            )}
             {cardAsin && (
               <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500]">
                 <Tag size={9} /> ASIN: {cardAsin}
@@ -2496,6 +2508,17 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             onFixed={(a) => setFixedAsin(a)}
             onRewrite={() => { if (!generating) void generate() }}
           />
+          {shortMode && (
+            <div className="mb-2 rounded-lg border border-[#ff3b30]/20 bg-[#ff3b30]/[0.04] px-2.5 py-1.5 text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+              <b>This is a Short.</b> YouTube does not make links clickable in a Short&apos;s description or comments, so Co-Pilot writes a short
+              title and description that send viewers to your full review, and no pinned comment link. The product tag SCOUT adds in Studio is the link that works on a Short.
+              {shortResult && (
+                <span className="block mt-0.5 text-[#86868b]">
+                  {shortResult.fullReviewUrl ? `Full review linked: ${shortResult.fullReviewUrl}. Also set it as the Short's Related video in YouTube Studio or the app, which is clickable.` : 'MVP found no other video of yours for this product, so there is no full review to point to.'}
+                </span>
+              )}
+            </div>
+          )}
           {canCompare && (
             <ComparisonProducts
               on={compareOn}
@@ -2806,6 +2829,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Designs a unique, viral thumbnail from your product & face</p>
                     </div>
                   </div>
+                  {shortMode && (
+                    <p className="rounded-lg border border-[#ff3b30]/20 bg-[#ff3b30]/[0.04] px-3 py-2 text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      This is a Short. The Shorts feed shows the Short itself, vertical, so a 16:9 thumbnail is mostly not seen. You can skip this step; pick the Short&apos;s frame in the YouTube app instead.
+                    </p>
+                  )}
 
                   {/* Best-results tips — collapsible so it sets expectations
                       without cluttering the panel. Native <details>, no state. */}
@@ -3931,6 +3959,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 export default function StudioPage() {
   const supabase = createBrowserClient()
   const [drafts, setDrafts] = useState<DraftVideo[]>([])
+  // SHORT MODE (Labs): which listed videos YouTube says are Shorts.
+  const [shortsMap, setShortsMap] = useState<Record<string, boolean | null>>({})
   const [loading, setLoading] = useState(true)
   // loadingMore = "Load more" button busy state; distinct from initial load
   // because we want to keep the existing list rendered while it spins.
@@ -3941,6 +3971,24 @@ export default function StudioPage() {
   // Passport (MVP's own geo-routing) makes the Geniuslink nag irrelevant.
   const [passportEnabled, setPassportEnabled] = useState(false)
   const [userTier, setUserTier] = useState<Tier>('trial')
+  // Ask YouTube which listed videos are Shorts, once each (Labs).
+  useEffect(() => {
+    if (!canUsePreview('shorts_mode', userTier)) return
+    const ids = drafts.map((d) => d.youtubeVideoId).filter((id) => !(id in shortsMap)).slice(0, 200)
+    if (ids.length === 0) return
+    let alive = true
+    fetch('/api/youtube/shorts-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!alive) return
+        // Every asked id gets an answer (null when YouTube could not say), so it is not asked again.
+        const got = (j?.shorts ?? {}) as Record<string, boolean | null>
+        setShortsMap((m) => ({ ...m, ...Object.fromEntries(ids.map((id) => [id, got[id] ?? null])) }))
+      })
+      .catch(() => {})
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drafts, userTier])
   const [playlists, setPlaylists] = useState<Array<{ id: string; title: string }>>([])
   // Admin-only: read back the YouTube Studio save requests SCOUT captured, to
   // learn the real InnerTube disclosure/monetization/tag-product request shapes.
@@ -4611,6 +4659,7 @@ export default function StudioPage() {
                     key={video.youtubeVideoId}
                     video={video}
                     userTier={userTier}
+                    isShort={shortsMap[video.youtubeVideoId] ?? null}
                     playlists={playlists}
                     onApplied={(videoId) => {
                       // Optimistic in-place reclassify: mark just this video

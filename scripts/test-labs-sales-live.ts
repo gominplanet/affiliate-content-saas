@@ -215,7 +215,7 @@ for (const m of [30, 45, 60, 90, 120]) {
     inOrderCheck(C, 'notPublicMessage(status.privacy', 'yt.postComment('))
   const PR = read('app/api/on-sale/promo/route.ts')
   check('the promo only offers a public video for the comment and the review link',
-    /video: leadPublic && lead \?/.test(PR) && /const videoUrl = leadPublic &&/.test(PR)
+    /video: leadPublic && lead \?/.test(PR) && /const videoUrl = \(leadPublic \|\| leadVis === 'short'\) &&/.test(PR)
     && /videoNotPublic: lead && leadVis && leadVis !== 'public'/.test(PR))
   const UI = read('components/labs/OnSale.tsx')
   check('the page says why there is no comment button',
@@ -347,6 +347,36 @@ await saleEndedGuards()
     && /const RECHECK_HOURS = 20/.test(CRON) && /\(lastChecked\.get\(u\) as string\) < dueBefore/.test(CRON)
     && /"schedule": "23 \*\/6 \* \* \*"/.test(read('vercel.json').replace(/"schedule":"/g, '"schedule": "')))
   check('the page says what is checked daily and what goes round', /The products in your YouTube videos are checked for a real sale every day/.test(read('components/labs/OnSale.tsx')))
+}
+
+// ── Shorts: links in their comments are not clickable ────────────────────
+{
+  const { shortFromDetails, isoSeconds } = await import('../lib/shorts-detect')
+  check('a Short is three minutes or less and square or vertical; anything unknown stays unknown',
+    shortFromDetails({ durationIso: 'PT45S', width: 1080, height: 1920 }) === true
+    && shortFromDetails({ durationIso: 'PT2M59S', width: 1080, height: 1080 }) === true
+    && shortFromDetails({ durationIso: 'PT45S', width: 1920, height: 1080 }) === false
+    && shortFromDetails({ durationIso: 'PT3M1S', width: 1080, height: 1920 }) === false
+    && shortFromDetails({ durationIso: 'PT45S' }) === null && shortFromDetails({}) === null && isoSeconds('PT1H2M3S') === 3723)
+  const D = read('lib/shorts-detect.ts')
+  check('a video the API saw without a frame size is not guessed by the public probe', /out\.get\(id\) === null && !seenByApi\.has\(id\)/.test(D))
+  const C = read('app/api/on-sale/comment/route.ts')
+  check('Encore never posts a sale comment on a Short, and says why',
+    inOrderCheck(C, '(await detectShorts([videoId], token)).get(videoId) === true', 'yt.postComment(') && /YouTube does not make links in Shorts comments clickable/.test(C))
+  const PR = read('app/api/on-sale/promo/route.ts')
+  check('the promo picks a public video that is not a Short for the comment',
+    /vis\.get\(v\.youtubeVideoId \|\| ''\) === 'public' && shorts\.get\(v\.youtubeVideoId \|\| ''\) !== true/.test(PR))
+  const UI = read('components/labs/OnSale.tsx')
+  check('the page labels Shorts and explains the missing comment button', /v\.isShort === true/.test(UI) && /is a Short, and YouTube does not make links in Shorts comments clickable/.test(UI))
+  check('the Community post can be copied and opened on the channel in one press',
+    /\/community\?show_create_dialog=1/.test(UI) && /Copy and open YouTube/.test(UI) && /communityChannelId,/.test(PR))
+  const M = read('app/api/youtube/generate-metadata/route.ts')
+  check('Co-Pilot Short mode is gated, points to the full review, and leaves no dead link in the pinned comment',
+    /isShort === true && canUsePreview\('shorts_mode', tier\)/.test(M) && /Watch the full review: \$\{fullReviewUrl\}/.test(M)
+    && /if \(shortMode && engagementResult\.pinnedComment\)/.test(M) && /shorts\.get\(id\) === false/.test(M))
+  const P = read('app/(dashboard)/co-pilot/page.tsx')
+  check('the Co-Pilot card only goes Short when YouTube said so', /const shortMode = isShort === true && canUsePreview\('shorts_mode', userTier\)/.test(P) && /\.\.\.\(shortMode \? \{ isShort: true \} : \{\}\)/.test(P))
+  check('Short mode is admin only while testing', !canUsePreview('shorts_mode', 'pro') && canUsePreview('shorts_mode', 'admin'))
 }
 
 // ── the name: Encore, at /encore, and the old address still lands there ────

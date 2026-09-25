@@ -21,6 +21,7 @@ interface Source {
   views?: number | null
   thumbnail?: string | null
   visibility?: 'public' | 'unlisted' | 'not_public' | null
+  isShort?: boolean | null
 }
 interface Verdict {
   pct: number | null
@@ -34,7 +35,8 @@ interface Product { asin: string; title: string; image: string | null; sources: 
 interface Promo {
   link: string
   video: { youtubeVideoId: string; title: string } | null
-  videoNotPublic: { title: string; visibility: 'unlisted' | 'not_public' } | null
+  videoNotPublic: { title: string; visibility: 'unlisted' | 'not_public' | 'short' } | null
+  communityChannelId?: string | null
   promo: { short: { hook: string; script: string; onScreen: string[] }; community: string; comment: string; commentLasting: string; social: string; socialForSheet: string }
   sale: { label: string }
 }
@@ -261,6 +263,12 @@ function ProductCard({ p, onShare, onPosted, lastComment, lastShare }: {
                   <a href={`https://www.youtube.com/watch?v=${v.youtubeVideoId}`} target="_blank" rel="noreferrer"
                     className="underline" style={{ color: 'var(--text)' }}>{v.title || v.youtubeVideoId}</a>
                   {v.views != null && <span style={{ color: 'var(--text-faint)' }}> · {v.views.toLocaleString()} views</span>}
+                  {v.isShort === true && (
+                    <span className="ml-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded" style={{ background: 'rgba(220,38,38,0.1)', color: '#DC2626' }}
+                      title="Links in Shorts comments are not clickable, so Encore does not comment on Shorts">
+                      Short
+                    </span>
+                  )}
                   {visibilityNote(v.visibility) && (
                     <span className="ml-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded" style={{ background: 'rgba(217,119,6,0.12)', color: '#d97706' }}>
                       {visibilityNote(v.visibility)}
@@ -295,9 +303,27 @@ function ProductCard({ p, onShare, onPosted, lastComment, lastShare }: {
             </p>
           </CopyBlock>
           <CopyBlock title="YouTube Community post" text={promo.promo.community}>
-            <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
-              YouTube has no way for apps to post these: in YouTube Studio press Create, then Post, and paste it. The links in it are clickable there.
-            </p>
+            {/* ONE PRESS TO THE POST BOX. YouTube has no way for apps to
+                publish a Community post, so this copies it and opens the
+                channel's Posts tab, where the creator pastes it. */}
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <button type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(promo.promo.community)
+                  const url = promo.communityChannelId
+                    ? `https://www.youtube.com/channel/${promo.communityChannelId}/community?show_create_dialog=1`
+                    : 'https://studio.youtube.com/'
+                  window.open(url, '_blank', 'noopener,noreferrer')
+                  toast.success('Post copied. Paste it into the post box on YouTube.')
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white"
+                style={{ background: '#FF0000' }}>
+                <ExternalLink size={12} /> Copy and open YouTube
+              </button>
+              <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+                YouTube does not let apps publish these, so this copies the post and opens your channel&apos;s Posts page. Paste it in; the links are clickable there.
+              </span>
+            </div>
           </CopyBlock>
           {/* THE COMMENT ONLY WHERE SOMEONE WILL READ IT: on a public video.
               A private or scheduled video, or none at all, says so instead of
@@ -357,8 +383,10 @@ function ProductCard({ p, onShare, onPosted, lastComment, lastShare }: {
           ) : promo.videoNotPublic ? (
             <div className="rounded-xl border p-3 text-[12.5px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
               <span className="text-[11px] font-semibold uppercase tracking-wide block mb-1" style={{ color: 'var(--text-soft)' }}>YouTube comment</span>
-              Your video &quot;{promo.videoNotPublic.title}&quot; is {promo.videoNotPublic.visibility === 'unlisted' ? 'unlisted' : 'private or scheduled'},
-              so a comment there would not be seen. Once it is public, press Write it again and the comment button appears.
+              {promo.videoNotPublic.visibility === 'short'
+                ? <>Your video &quot;{promo.videoNotPublic.title}&quot; is a Short, and YouTube does not make links in Shorts comments clickable, so a sale comment there would not earn. The Community post and the social post above and below do have working links.</>
+                : <>Your video &quot;{promo.videoNotPublic.title}&quot; is {promo.videoNotPublic.visibility === 'unlisted' ? 'unlisted' : 'private or scheduled'},
+              so a comment there would not be seen. Once it is public, press Write it again and the comment button appears.</>}
             </div>
           ) : (
             <div className="rounded-xl border p-3 text-[12.5px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
