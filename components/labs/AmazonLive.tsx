@@ -175,11 +175,14 @@ export default function AmazonLive() {
   const [plan, setPlan] = useState<LivePlan | null>(null)
   const [planId, setPlanId] = useState<string | null>(null)
   const [saved, setSaved] = useState<SavedPlan[]>([])
+  const [savedErr, setSavedErr] = useState<string | null>(null)
   const [prompter, setPrompter] = useState(false)
 
   const loadSaved = useCallback(async () => {
     const r = await fetch('/api/live/plans').catch(() => null)
     const j = r ? await r.json().catch(() => ({})) : {}
+    if (!r || !r.ok) { setSavedErr(j?.error || 'Could not load your saved shows.'); return }
+    setSavedErr(null)
     setSaved(Array.isArray(j?.plans) ? j.plans : [])
   }, [])
 
@@ -374,6 +377,9 @@ export default function AmazonLive() {
               {building && <p className="text-[11.5px] mt-1.5" style={{ color: 'var(--text-faint)' }}>Reading each product and your videos about it. Up to a minute.</p>}
             </section>
 
+            {savedErr && (
+              <p className="text-[12px] rounded-xl border p-3" style={{ borderColor: 'var(--border)', color: '#ef4444' }}>{savedErr}</p>
+            )}
             {saved.length > 0 && (
               <section className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
                 <p className="text-[13px] font-semibold mb-2" style={{ color: 'var(--text)' }}>Saved shows</p>
