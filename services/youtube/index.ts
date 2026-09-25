@@ -754,6 +754,24 @@ export class YouTubeOAuthService {
   }
 
   /** Add a video to a playlist. No-op if it's already there. */
+  /** Post a top-level comment on a video, as the channel. Returns the new
+   *  comment's id. Fifty quota units. (YouTube has no API to PIN a comment;
+   *  that stays a click in Studio.) */
+  async postComment(videoId: string, text: string): Promise<string> {
+    const res = await fetchWithTimeout(`${BASE}/commentThreads?part=snippet`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ snippet: { videoId, topLevelComment: { snippet: { textOriginal: text } } } }),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      throw new Error(`YouTube API error ${res.status}: ${body.slice(0, 300)}`)
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const j = await res.json() as any
+    return String(j?.id || '')
+  }
+
   async addVideoToPlaylist(playlistId: string, videoId: string): Promise<void> {
     const res = await fetchWithTimeout(`${BASE}/playlistItems?part=snippet`, {
       method: 'POST',

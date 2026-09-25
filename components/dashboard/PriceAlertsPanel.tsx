@@ -16,7 +16,7 @@ import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostM
 interface PriceAlert {
   id: string
   asin: string
-  kind: 'new_low' | 'stale_price' | 'new_niche_deal'
+  kind: 'new_low' | 'stale_price' | 'new_niche_deal' | 'covered_sale'
   title: string | null
   image_url: string | null
   price_now_cents: number | null
@@ -84,7 +84,7 @@ export default function PriceAlertsPanel() {
   // Offer a one-tap re-share when the news is a price DROP worth posting: any
   // new all-time low, or a stale-price alert where the price fell.
   const canRepost = (a: PriceAlert) =>
-    a.kind === 'new_low' || a.kind === 'new_niche_deal' ||
+    a.kind === 'new_low' || a.kind === 'new_niche_deal' || a.kind === 'covered_sale' ||
     (a.kind === 'stale_price' && a.price_now_cents != null && a.price_ref_cents != null && a.price_now_cents < a.price_ref_cents)
 
   return (
@@ -105,6 +105,8 @@ export default function PriceAlertsPanel() {
             ? { icon: <TrendingDown size={13} />, cls: 'text-emerald-600', label: a.label || 'All-time low' }
             : a.kind === 'new_niche_deal'
               ? { icon: <Sparkles size={13} />, cls: 'text-violet-600 dark:text-violet-400', label: a.label || 'New deal in your niche' }
+            : a.kind === 'covered_sale'
+              ? { icon: <TrendingDown size={13} />, cls: 'text-orange-600', label: a.label || 'A product you covered is on sale' }
               : { icon: <RefreshCw size={13} />, cls: 'text-amber-600', label: a.label || 'Price changed' }
           return (
             <li key={a.id} className="flex items-center gap-3 px-4 py-3">

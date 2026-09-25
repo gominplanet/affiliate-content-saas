@@ -115,6 +115,10 @@
     {
       "path": "/api/cron/rehost-hotlinked",
       "schedule": "20 */2 * * *"
+    },
+    {
+      "path": "/api/cron/covered-sales",
+      "schedule": "23 12 * * *"
     }
   ],
   "git": {

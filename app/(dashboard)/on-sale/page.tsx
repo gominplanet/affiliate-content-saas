@@ -1,0 +1,30 @@
+/**
+ * /on-sale — On sale now (LABS). Products the creator already covered that
+ * are on sale today, and the promo for each. Pro/admin only (LABS),
+ * matching the other Labs tools.
+ */
+'use client'
+
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import { canSeeNav } from '@/lib/feature-access'
+import OnSale from '@/components/labs/OnSale'
+
+export default function OnSalePage() {
+  const tier = useEffectiveTier()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (tier !== null && !canSeeNav('labs', tier)) router.replace('/dashboard')
+  }, [tier, router])
+
+  if (tier !== null && canSeeNav('labs', tier)) return <OnSale />
+
+  return (
+    <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">
+      <Loader2 size={16} className="animate-spin" />
+    </div>
+  )
+}

@@ -35,6 +35,10 @@ for _ in $(seq 20); do su postgres -c "psql -h $D/sock -d postgres -c 'select 1'
 # hang off. Add to this rather than making a migration avoid them.
 cat > "$D/prelude.sql" <<'SQL'
 create schema if not exists auth;
+-- Supabase's own roles, which policies are written against.
+do $$ begin create role authenticated; exception when duplicate_object then null; end $$;
+do $$ begin create role anon; exception when duplicate_object then null; end $$;
+do $$ begin create role service_role; exception when duplicate_object then null; end $$;
 create table if not exists auth.users (id uuid primary key default gen_random_uuid());
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 create table if not exists public.youtube_videos (
