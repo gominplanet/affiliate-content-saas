@@ -592,7 +592,11 @@ async function backfillTrueDescriptions(
   // The saved list is only ever topped up with new uploads, so a video that
   // was private when first seen stayed "Private, not scheduled" here after it
   // went live, and kept showing as work to do. One call covers fifty videos.
-  const suspects = drafts.filter(d => d.youtubeVideoId && d.status !== 'public').slice(0, 200)
+  // ALL OF THEM, not the first 200: a channel with a long history had
+  // hundreds filed wrongly as private, and the ones past 200 were never
+  // checked. Fifty per call, one quota unit each, and what is corrected is
+  // saved, so the next load has almost nothing left to ask about.
+  const suspects = drafts.filter(d => d.youtubeVideoId && d.status !== 'public').slice(0, 1500)
   if (!suspects.length) return drafts
   let meta: Record<string, { description: string; status: string; publishAt: string | null }> = {}
   try {

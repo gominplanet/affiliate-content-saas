@@ -44,6 +44,22 @@ export async function POST(request: Request) {
     const raw = Array.isArray(body.videos) ? body.videos : []
     if (raw.length === 0) return NextResponse.json({ error: 'no videos' }, { status: 400 })
 
+    // WHAT IS ALREADY KNOWN TO BE PUBLIC STAYS PUBLIC. Older SCOUT versions
+    // (before 1.21.13) filed every video ever published on a schedule as
+    // private, and this sync rewrote the saved list every fifteen minutes,
+    // undoing the drafts route's own check each time. A video once confirmed
+    // public is not taken back to private by a Studio read.
+    const knownPublic = new Set<string>()
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: prev } = await (supabase as any)
+        .from('youtube_video_cache').select('videos').eq('user_id', user.id).maybeSingle()
+      for (const pv of (Array.isArray(prev?.videos) ? prev.videos : []) as Array<{ youtubeVideoId?: string; status?: string }>) {
+        if (pv?.status === 'public' && pv.youtubeVideoId) knownPublic.add(pv.youtubeVideoId)
+      }
+    } catch { /* first sync, or the read failed: SCOUT's answer stands */ }
+    const now = Date.now()
+
     // Map SCOUT's list → the cache's video shape (matches buildDraftVideo in the
     // drafts route). Dedup by id, clamp fields, cap size.
     const seen = new Set<string>()
@@ -54,7 +70,13 @@ export async function POST(request: Request) {
       if (!id || seen.has(id)) continue
       seen.add(id)
       const title = typeof v.title === 'string' ? v.title.slice(0, 300) : ''
-      const status = typeof v.status === 'string' && ALLOWED_STATUS.has(v.status) ? v.status : 'private'
+      let status = typeof v.status === 'string' && ALLOWED_STATUS.has(v.status) ? v.status : 'private'
+      const at = typeof v.publishAt === 'string' && v.publishAt ? Date.parse(v.publishAt) : NaN
+      const future = Number.isFinite(at) && at > now
+      // A scheduled time that has passed means YouTube has published it: it
+      // goes out at its time. Only a time still ahead makes it a schedule.
+      if (status === 'private' && Number.isFinite(at) && !future) status = 'public'
+      if (status !== 'public' && knownPublic.has(id) && !future) status = 'public'
       videos.push({
         youtubeVideoId: id,
         title,
@@ -65,7 +87,7 @@ export async function POST(request: Request) {
             : `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
         status,
         publishedAt: typeof v.publishedAt === 'string' ? v.publishedAt : '',
-        publishAt: typeof v.publishAt === 'string' && v.publishAt ? v.publishAt : null,
+        publishAt: future ? (v.publishAt as string) : null,
         detectedAsin: detectAsin(title),
         // Studio returns newest-first; preserve that order for byNewestUpload.
         uploadPosition: i,

@@ -7335,19 +7335,23 @@ function harvestStudioVideosInPage() {
           const vis = v.visibility ? (v.visibility.effectiveStatus || v.visibility.userSetVisibility || '') : ''
           const visStr = String(vis || '').toUpperCase()
           const scheduledSecs = det ? findEpochSeconds(det, 0) : null
-          const isScheduled = !!scheduledSecs || visStr.indexOf('SCHEDULED') >= 0
-          // Map Studio visibility → the app's privacyStatus. A scheduled video is
-          // private-until-publish, so status stays 'private' but publishAt is set.
+          // PUBLIC WINS. Studio keeps a video's scheduling record after it has
+          // gone out at its time, so "has a schedule" used to beat "is public"
+          // and every video ever published on a schedule came back as private:
+          // live videos listed under Needs metadata as "Private, not scheduled".
+          // A video is only scheduled when it is not public and its time is
+          // still ahead.
+          const isPublic = visStr.indexOf('PUBLIC') >= 0
+          const ahead = !!scheduledSecs && scheduledSecs * 1000 > Date.now()
+          const isScheduled = !isPublic && (ahead || visStr.indexOf('SCHEDULED') >= 0)
           let status = 'private'
-          if (!isScheduled) {
-            if (visStr.indexOf('PUBLIC') >= 0) status = 'public'
-            else if (visStr.indexOf('UNLISTED') >= 0) status = 'unlisted'
-            else status = 'private'
-          }
+          if (isPublic) status = 'public'
+          else if (!isScheduled && visStr.indexOf('UNLISTED') >= 0) status = 'unlisted'
           const pubSecs = Number(v.timePublishedSeconds)
           const publishedAt = (status === 'public' && pubSecs > 1000000000 && pubSecs < 5000000000)
             ? new Date(pubSecs * 1000).toISOString() : ''
-          const publishAt = scheduledSecs ? new Date(scheduledSecs * 1000).toISOString() : null
+          // Only a time still ahead is a schedule; a past one is history.
+          const publishAt = scheduledSecs && isScheduled ? new Date(scheduledSecs * 1000).toISOString() : null
           videos.push({
             videoId: v.videoId,
             title: titleText(v.title),
