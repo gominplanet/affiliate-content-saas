@@ -478,8 +478,28 @@ export default function OnSale() {
       <PageHero
         accent={ACCENT}
         title="Encore"
-        subtitle="Your old reviews, back in the spotlight when the price drops. These are products you already made videos about that are on sale today, when those videos sell best."
+        subtitle="Timely sale comments for your YouTube videos. When a product you already reviewed goes on sale, Encore writes a comment for that video with your link, posts it and pins it, so everyone watching sees the deal while it lasts."
       />
+
+      {/* HOW IT WORKS, in the order it happens: a real sequence, so numbered. */}
+      <ol className="grid gap-2 sm:grid-cols-3 mb-6">
+        {[
+          { h: 'MVP watches your products', p: 'Every product in your videos and your storefront is checked for a real sale every day. The ones on sale today are listed below.' },
+          { h: 'You post the comment', p: 'Press Write the promo, then Post it on the video. It is written in your voice with your link and the Amazon disclosure. With SCOUT installed, it is pinned to the top for you.' },
+          { h: 'MVP cleans it up', p: 'When the sale ends, the comment is edited so it no longer mentions a sale. It stays on the video, pinned, with your link.' },
+        ].map((step, i) => (
+          <li key={step.h} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold text-white shrink-0" style={{ background: ACCENT }}>{i + 1}</span>
+              <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{step.h}</span>
+            </div>
+            <p className="text-[12px] leading-snug" style={{ color: 'var(--text-soft)' }}>{step.p}</p>
+          </li>
+        ))}
+      </ol>
+      <p className="text-[12px] -mt-3 mb-6" style={{ color: 'var(--text-faint)' }}>
+        Every promo also gives you a script for a quick Short, Reel or Story, a YouTube Community post, and a post for your socials.
+      </p>
 
       {loading && (
         <div className="flex items-center gap-2 text-[13px] py-10 justify-center" style={{ color: 'var(--text-soft)' }}>
