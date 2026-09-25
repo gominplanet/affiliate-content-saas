@@ -128,6 +128,24 @@ function asFaceId(v: unknown): string | null {
 }
 
 /**
+ * One video's own face, overriding its batch's. Null means "follow the batch",
+ * and so does anything that is not a real answer: a face id that is not a
+ * uuid cannot be looked up, and guessing would put the wrong person on it.
+ */
+export function parseFacePick(raw: unknown): FacePick | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const kind = String(r.kind ?? '')
+  if (kind === 'auto') return { kind: 'auto' }
+  if (kind === 'none') return { kind: 'none' }
+  if (kind === 'face') {
+    const id = asFaceId(r.faceId)
+    return id ? { kind: 'face', faceId: id } : null
+  }
+  return null
+}
+
+/**
  * A preset we are prepared to store.
  *
  * NEVER THROWS AND NEVER REFUSES. Every field falls back to the default, so a

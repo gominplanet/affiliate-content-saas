@@ -21,6 +21,7 @@ import {
   Loader2, Plus, Trash2, Upload, Rocket, Clock, X, Check, AlertTriangle, LogIn, Wand2, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { uploadWithProgress, STALL_MS } from '@/lib/upload-progress'
 import { deliverPreparedStorefronts, deliverySummary, type DeliveryOutcome } from '@/lib/storefront-delivery'
 import { MARKETS } from '@/lib/markets'
 import { cadenceLabel, scheduleItems, todayIn, type ItemSchedule } from '@/lib/launch-schedule'
@@ -52,6 +53,8 @@ interface Item {
   /** The storefront title, separate from YouTube's (migration 370). Empty
    *  means MVP writes one before the video goes to Amazon. */
   amazon_title?: string | null
+  /** This video's own face, or null to follow the batch (migration 371). */
+  thumbnail_face?: { kind: string; faceId?: string } | null
   thumbnail_url: string | null
   /** 'styled' (the batch look applied) or 'plain' (it did not). */
   thumbnail_source: string | null
@@ -93,6 +96,63 @@ interface Item {
   /** What YouTube confirmed after the uploader set the disclosures (368). */
   api_disclosures?: ReportItem['api_disclosures']
 }
+/** Files sent to storage side by side. */
+const UPLOAD_LANES = 3
+
+/** One file on its way up, as the page shows it. */
+interface UploadRow {
+  key: string
+  name: string
+  total: number
+  sent: number
+  state: 'waiting' | 'uploading' | 'retrying' | 'adding' | 'done' | 'failed'
+  startedAt: number
+  lastMoveAt: number
+  tries: number
+  error?: string
+}
+
+function mb(n: number): string {
+  return n >= 1024 * 1024 * 1024 ? `${(n / 1024 / 1024 / 1024).toFixed(2)} GB` : `${(n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`
+}
+
+/** One upload's line: what it is doing, in numbers, and whether it is moving. */
+function UploadLine({ u, now }: { u: UploadRow; now: number }) {
+  const pct = u.total > 0 ? Math.min(100, Math.round((u.sent / u.total) * 100)) : 0
+  const secs = u.startedAt ? Math.max(1, (now - u.startedAt) / 1000) : 1
+  const rate = u.sent / secs
+  const still = u.state === 'uploading' && u.lastMoveAt ? Math.floor((now - u.lastMoveAt) / 1000) : 0
+  const stalled = still >= 15
+  const leftSecs = rate > 0 ? Math.round((u.total - u.sent) / rate) : 0
+  const leftTxt = leftSecs >= 60 ? `about ${Math.round(leftSecs / 60)} min left` : `${leftSecs}s left`
+  const color = u.state === 'failed' ? '#ef4444'
+    : u.state === 'done' ? '#10B981'
+      : stalled || u.state === 'retrying' ? '#d97706' : '#0EA5A4'
+  const line = u.state === 'waiting' ? 'Waiting for a free lane'
+    : u.state === 'uploading'
+      ? stalled
+        ? `No progress for ${still}s. If it is still stuck at ${STALL_MS / 1000}s it starts again on its own.`
+        : `${mb(u.sent)} of ${mb(u.total)} · ${mb(rate)}/s · ${u.sent > 0 ? leftTxt : 'starting'}${u.tries > 1 ? ` · try ${u.tries} of 3` : ''}`
+      : u.state === 'retrying' ? `${u.error ?? 'It stopped.'} Starting it again.`
+        : u.state === 'adding' ? 'Uploaded. Adding it to the batch.'
+          : u.state === 'done' ? `Uploaded, ${mb(u.total)}`
+            : (u.error ?? 'Failed.')
+  return (
+    <li className="rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border)' }}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="truncate text-[12.5px]" style={text}>{u.name}</span>
+        <span className="text-[11.5px] tabular-nums shrink-0" style={{ color }}>
+          {u.state === 'done' ? 'Done' : u.state === 'failed' ? 'Failed' : `${pct}%`}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full mt-1.5 overflow-hidden" style={{ background: 'var(--surface-hover)' }}>
+        <div className="h-full rounded-full" style={{ width: `${u.state === 'failed' ? 100 : pct}%`, background: color, transition: 'width 0.4s' }} />
+      </div>
+      <span className="block text-[11px] mt-1 tabular-nums" style={{ color: stalled || u.state === 'failed' ? color : 'var(--text-2)' }}>{line}</span>
+    </li>
+  )
+}
+
 interface Market { domain: string; country: string; langName: string | null; needsDub: boolean }
 /** A batch in the switcher: enough to choose between them, nothing more. */
 interface BatchSummary {
@@ -147,6 +207,18 @@ export default function LaunchBoard() {
   const [studioOpts, setStudioOpts] = useState<StudioOptions>(DEFAULT_STUDIO_OPTIONS)
   const [ytOptionsAvailable, setYtOptionsAvailable] = useState(true)
   const [youtubeChoiceAvailable, setYoutubeChoiceAvailable] = useState(true)
+  // THE CREATOR'S SAVED FACES, for choosing one per video. A channel with two
+  // presenters films some videos with each, and some with nobody.
+  const [faceAvailable, setFaceAvailable] = useState(true)
+  const [faces, setFaces] = useState<Array<{ id: string; name: string }>>([])
+  useEffect(() => {
+    let cancelled = false
+    void fetch('/api/face-models').then((r) => r.json()).then((d) => {
+      if (cancelled) return
+      setFaces(((d?.models || []) as Array<{ id: string; name: string }>).map((m) => ({ id: m.id, name: m.name })))
+    }).catch(() => { /* none saved */ })
+    return () => { cancelled = true }
+  }, [])
   const [scoutReady, setScoutReady] = useState<boolean | null>(null)
   const [scoutVersion, setScoutVersion] = useState<string | null>(null)
   // ── KEEP GOING WHEN THIS PAGE IS CLOSED ──────────────────────────────────
@@ -349,6 +421,19 @@ export default function LaunchBoard() {
   const autoOpened = useRef(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [uploading, setUploading] = useState(0)
+  const [uploads, setUploads] = useState<UploadRow[]>([])
+  // A CLOCK FOR THE BARS, so "no progress for 40s" counts up on its own
+  // rather than only when a byte arrives. Only while something is uploading.
+  const [clock, setClock] = useState(() => Date.now())
+  useEffect(() => {
+    if (uploading <= 0) return
+    const t = setInterval(() => setClock(Date.now()), 1_000)
+    // CLOSING THE TAB KILLS THE UPLOAD. The rest of Liftoff runs with the tab
+    // shut, so this is the one moment it matters, and the browser says so.
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => { clearInterval(t); window.removeEventListener('beforeunload', warn) }
+  }, [uploading])
   const [signin, setSignin] = useState<Record<string, string>>({})
   // ROOM LEFT TODAY, per storefront, from the same counting the upload queue
   // enforces. Reported while the creator is still choosing countries rather
@@ -389,6 +474,7 @@ export default function LaunchBoard() {
       if (j.studioOptions) setStudioOpts(j.studioOptions as StudioOptions)
       setYtOptionsAvailable(j.youtubeOptionsAvailable !== false)
       setYoutubeChoiceAvailable(j.youtubeChoiceAvailable !== false)
+      setFaceAvailable(j.faceAvailable !== false)
       // ONCE. See autoOpened: after this the creator drives.
       if (!autoOpened.current) {
         const current = (j.steps ?? []).find((s: StepStatus) => s.current)
@@ -783,13 +869,35 @@ export default function LaunchBoard() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { toast.error('Not signed in.'); return }
 
+    // ── SEVERAL AT ONCE, EACH ONE VISIBLE ────────────────────────────────
+    //
+    // One file at a time behind a single "Uploading 3..." line meant ten
+    // minutes of a sentence that read the same at 90% as it did stalled at
+    // the first byte. Each file now has its own bar with MB sent, speed and
+    // time left, a stall says so by the second, and three go up side by side.
+    //
+    // ADDED IN THE ORDER PICKED. The batch's order is the publishing order,
+    // so a small file that finishes first still waits for the file before it
+    // to be added, and only the adding waits: the bytes go up together.
     setUploading(picked.length)
-    for (const file of picked) {
+    const rows: UploadRow[] = picked.map((f, i) => ({
+      key: `${Date.now()}-${i}-${f.name}`, name: f.name, total: f.size, sent: 0,
+      state: 'waiting', startedAt: 0, lastMoveAt: 0, tries: 0,
+    }))
+    setUploads((u) => [...u.filter((r) => r.state !== 'done'), ...rows])
+    const mark = (key: string, patch: Partial<UploadRow>) =>
+      setUploads((u) => u.map((r) => (r.key === key ? { ...r, ...patch } : r)))
+
+    const turns: Array<Promise<void>> = []
+    const uploadOne = async (file: File, i: number) => {
+      const key = rows[i].key
+      let path = ''
+      let durationSec = 0
+      let ok = false
       try {
-        if (!file.type.startsWith('video/')) { toast.error(`${file.name} is not a video.`); continue }
+        if (!file.type.startsWith('video/')) throw new Error(`${file.name} is not a video.`)
         if (file.size > 500 * 1024 * 1024) {
-          toast.error(`${file.name} is ${(file.size / 1024 / 1024).toFixed(0)}MB. Keep them under 500MB.`)
-          continue
+          throw new Error(`${file.name} is ${(file.size / 1024 / 1024).toFixed(0)}MB. Keep them under 500MB.`)
         }
         const probed = await probeVideo(file)
         // THE SAME RULE AS VIDEO LAUNCHPAD. That path refuses vertical and
@@ -797,17 +905,44 @@ export default function LaunchBoard() {
         // CTA positioned against a 16:9 preview onto a 9:16 frame, and the
         // creator would find out ten renders later.
         if (probed.width > 0 && probed.height > 0 && probed.height > probed.width) {
-          toast.error(`${file.name} looks vertical. This path is for horizontal videos, so use Clip Factory for Shorts.`)
-          continue
+          throw new Error(`${file.name} looks vertical. This path is for horizontal videos, so use Clip Factory for Shorts.`)
         }
-        const durationSec = probed.duration
+        durationSec = probed.duration
         const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
-        const path = `${user.id}/batch-${crypto.randomUUID()}.${ext}`
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: upErr } = await (supabase.storage as any)
-          .from('instagram-videos')
-          .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || 'video/mp4' })
-        if (upErr) throw new Error(upErr.message || 'Upload failed')
+        path = `${user.id}/batch-${crypto.randomUUID()}.${ext}`
+        // TWO RETRIES, each from a fresh session: a stalled connection does not
+        // start moving again by being waited on.
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (!session) throw new Error('Signed out during the upload. Sign in again and add this one again.')
+          mark(key, { state: 'uploading', sent: 0, startedAt: Date.now(), lastMoveAt: Date.now(), tries: attempt, error: undefined })
+          try {
+            await uploadWithProgress({
+              supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+              accessToken: session.access_token,
+              bucket: 'instagram-videos', path, file, contentType: file.type || 'video/mp4',
+              onProgress: ({ sent }) => mark(key, { sent, lastMoveAt: Date.now() }),
+            })
+            break
+          } catch (e) {
+            if (attempt === 3) throw e
+            mark(key, { state: 'retrying', error: e instanceof Error ? e.message : 'The upload failed.' })
+            // A new name for the next try, so a half-written object cannot
+            // refuse it as a duplicate.
+            path = `${user.id}/batch-${crypto.randomUUID()}.${ext}`
+          }
+        }
+        ok = true
+      } catch (e) {
+        mark(key, { state: 'failed', error: e instanceof Error ? e.message : `Could not upload ${file.name}.` })
+      }
+
+      // Its turn to be added, after the file before it.
+      await (i > 0 ? turns[i - 1] : Promise.resolve())
+      if (!ok) return
+      mark(key, { state: 'adding', sent: file.size })
+      try {
         const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
         const r = await fetch(`/api/launch/batches/${batchId}/items`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -824,12 +959,27 @@ export default function LaunchBoard() {
         })
         const j = await r.json().catch(() => ({}))
         if (!r.ok) throw new Error(j?.error || 'Could not add that video.')
+        mark(key, { state: 'done' })
+        await load(batchId)
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : `Could not add ${file.name}.`)
-      } finally {
-        setUploading((n) => Math.max(0, n - 1))
+        mark(key, { state: 'failed', error: e instanceof Error ? e.message : `Could not add ${file.name}.` })
       }
     }
+
+    // THREE LANES. Each file's turn promise exists before any lane starts, so
+    // the order-of-adding chain is complete from the first byte.
+    const resolvers: Array<() => void> = []
+    picked.forEach((_, i) => { turns[i] = new Promise<void>((res) => { resolvers[i] = res }) })
+    let next = 0
+    await Promise.all(Array.from({ length: Math.min(UPLOAD_LANES, picked.length) }, async () => {
+      while (next < picked.length) {
+        const i = next++
+        try { await uploadOne(picked[i], i) } finally {
+          resolvers[i]()
+          setUploading((n) => Math.max(0, n - 1))
+        }
+      }
+    }))
     await load(batchId)
   }
 
@@ -1078,12 +1228,24 @@ export default function LaunchBoard() {
             />
             <Upload size={18} style={{ color: '#0EA5A4', margin: '0 auto 6px' }} />
             <span className="block text-[13px] font-medium" style={text}>
-              {uploading > 0 ? `Uploading ${uploading}…` : 'Choose videos'}
+              {uploading > 0 ? `Uploading ${uploading} ${uploading === 1 ? 'video' : 'videos'}. Keep this tab open until they finish.` : 'Choose videos'}
             </span>
             <span className="block text-[11.5px] mt-0.5" style={muted}>
               Pick several at once. Up to {maxItems} per batch, under 500MB each.
             </span>
           </label>
+
+          {uploads.length > 0 && (
+            <ul className="flex flex-col gap-1.5">
+              {uploads.map((u) => <UploadLine key={u.key} u={u} now={clock} />)}
+            </ul>
+          )}
+          {uploading === 0 && uploads.some((u) => u.state === 'done' || u.state === 'failed') && (
+            <button type="button" onClick={() => setUploads([])}
+              className="self-start text-[11px] underline" style={muted}>
+              Clear this list
+            </button>
+          )}
 
           {items.length > 0 && (
             <ul className="flex flex-col gap-1.5">
@@ -1291,7 +1453,8 @@ export default function LaunchBoard() {
           {items.length === 0 && <p className="text-[12.5px]" style={muted}>Add some videos first.</p>}
           {items.map((it, i) => (
             <ItemRowEditor key={it.id} item={it} busy={busy === it.id} onSave={patchItem}
-              onMove={moveItem} first={i === 0} last={i === items.length - 1} />
+              onMove={moveItem} first={i === 0} last={i === items.length - 1}
+              faces={faces} faceAvailable={faceAvailable} />
           ))}
         </div>
       </StepCard>
@@ -2075,7 +2238,7 @@ function progressNote(it: Item): string {
 }
 
 function ItemRowEditor({
-  item, busy, onSave, onMove, first, last,
+  item, busy, onSave, onMove, first, last, faces, faceAvailable,
 }: {
   item: Item
   busy: boolean
@@ -2083,6 +2246,8 @@ function ItemRowEditor({
   onMove: (id: string, direction: 'up' | 'down') => Promise<void>
   first: boolean
   last: boolean
+  faces: Array<{ id: string; name: string }>
+  faceAvailable: boolean
 }) {
   const [title, setTitle] = useState(item.title ?? '')
   const [product, setProduct] = useState(item.asin ?? '')
@@ -2183,6 +2348,20 @@ function ItemRowEditor({
 
   const lab = { color: 'var(--text-2)', fontSize: 11, fontWeight: 600 } as const
 
+  // THE FACE CHOICES, the batch's first. Null follows the batch.
+  const faceChoices: Array<{ key: string; label: string; value: { kind: string; faceId?: string } | null }> = [
+    { key: 'batch', label: 'Same as the batch', value: null },
+    { key: 'auto', label: 'My usual face', value: { kind: 'auto' } },
+    ...faces.map((f) => ({ key: f.id, label: f.name, value: { kind: 'face', faceId: f.id } })),
+    { key: 'none', label: 'No face', value: { kind: 'none' } },
+  ]
+  const ownFace = item.thumbnail_face ?? null
+  const faceLabel = !ownFace ? ''
+    : ownFace.kind === 'none' ? 'no face'
+      : ownFace.kind === 'auto' ? 'your usual face'
+        : (faces.find((f) => f.id === ownFace.faceId)?.name ?? 'a chosen face')
+  const faceLocked = !!item.planned_publish_at || !!String(item.youtube_video_id || '').trim()
+
   // COLLAPSED UNTIL IT NEEDS YOU. Each row carries a title box, a product box,
   // a description, two buttons and a pair of arrows. That is fine for one video
   // and a wall for ten, and the wall hides the one row that actually needs
@@ -2207,7 +2386,10 @@ function ItemRowEditor({
         </span>
         <span className="flex-1 min-w-0">
           <span className="block text-[12.5px] truncate" style={text}>{title || 'Untitled'}</span>
-          <span className="block text-[11px] font-mono truncate" style={muted}>{product || 'No product yet'}</span>
+          <span className="block text-[11px] font-mono truncate" style={muted}>
+            {product || 'No product yet'}
+            {faceLabel && <span className="font-sans"> · {faceLabel}</span>}
+          </span>
         </span>
         <button type="button" onClick={() => setOpenRow(true)}
           className="text-[11.5px] underline shrink-0" style={muted}>
@@ -2310,6 +2492,38 @@ function ItemRowEditor({
           )}
         </label>
       </div>
+
+      {/* ── this video's own face ─────────────────────────────────────────── */}
+      {faceAvailable && (
+        <div className="flex items-start gap-2">
+          <span className="w-5" />
+          <div className="flex-1 min-w-0">
+            <span className="block mb-1" style={lab}>Face on this thumbnail</span>
+            <div className="flex flex-wrap gap-1.5">
+              {faceChoices.map((c) => {
+                const cur = item.thumbnail_face ?? null
+                const on = (!c.value && !cur) || (!!c.value && !!cur && c.value.kind === cur.kind && (c.value.faceId ?? null) === (cur.faceId ?? null))
+                return (
+                  <button key={c.key} type="button" disabled={busy || faceLocked}
+                    onClick={() => { if (!on) void onSave(item.id, { thumbnailFace: c.value }) }}
+                    title={faceLocked ? 'This one is queued for YouTube or on it, so its thumbnail is set.' : undefined}
+                    className="px-2.5 py-1 rounded-full text-[11.5px] disabled:opacity-40"
+                    style={on
+                      ? { background: '#0EA5A4', color: '#fff' }
+                      : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+                    {c.label}
+                  </button>
+                )
+              })}
+            </div>
+            <span className="block text-[11px] mt-1" style={muted}>
+              {item.thumbnail_url && !faceLocked
+                ? 'Changing it builds this video\'s thumbnails again with the new face.'
+                : 'Only this video. The rest keep the batch\'s face.'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ── the description, where the affiliate link lives ──────────────── */}
       <div className="flex items-start gap-2">

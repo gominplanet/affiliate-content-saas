@@ -15,6 +15,7 @@ import { normalizeAsinInput, asinFromAmazonUrl } from '@/lib/asin'
 import { resolveAsinFromLinks } from '@/lib/product-link'
 import { normalizeSlots, todayIn } from '@/lib/launch-schedule'
 import { readStudioRun } from '@/lib/studio-finish'
+import { parseFacePick } from '@/lib/thumbnail-preset'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -39,6 +40,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     studioFinish?: unknown
     /** The title Amazon storefronts carry (migration 370). */
     amazonTitle?: string
+    /** This video's own face (migration 371), or null to follow the batch. */
+    thumbnailFace?: unknown
   }
 
   // ── WHAT SCOUT REPORTED, AND NOTHING ELSE ─────────────────────────────────
@@ -156,6 +159,48 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({
       error: 'This one is already queued for YouTube, so its product is locked in. Its title and description can still be changed until it uploads.',
     }, { status: 409 })
+  }
+
+  // ── ITS OWN FACE (migration 371) ──────────────────────────────────────────
+  //
+  // A channel with two presenters films some videos with one and some with the
+  // other. A new face means new thumbnails, so the ones already built are
+  // cleared and made again, the same as a new product. Locked once the video
+  // is queued or on YouTube, because the uploader already has its thumbnail.
+  if ('thumbnailFace' in body) {
+    if (onYouTube || item.planned_publish_at) {
+      return NextResponse.json({
+        error: 'This one is already queued for YouTube or on it, so its thumbnail is set. Change it in YouTube Studio.',
+      }, { status: 409 })
+    }
+    const face = body.thumbnailFace === null ? null : parseFacePick(body.thumbnailFace)
+    if (body.thumbnailFace !== null && !face) {
+      return NextResponse.json({ error: 'That is not a face MVP recognises. Pick one from the list.' }, { status: 400 })
+    }
+    if (face?.kind === 'face') {
+      const { data: mine } = await sb.from('face_models').select('id').eq('id', face.faceId).eq('user_id', user.id).maybeSingle()
+      if (!mine) return NextResponse.json({ error: 'That face is not one of yours.' }, { status: 400 })
+    }
+    const { data: cur, error: readErr } = await sb.from('launch_items').select('thumbnail_face').eq('id', id).maybeSingle()
+    if (readErr) {
+      return NextResponse.json({
+        error: /thumbnail_face/.test(readErr.message) ? 'A face per video needs migration 371 in the database first. Nothing was saved.' : readErr.message,
+      }, { status: /thumbnail_face/.test(readErr.message) ? 503 : 500 })
+    }
+    const same = JSON.stringify(parseFacePick(cur?.thumbnail_face)) === JSON.stringify(face)
+    if (!same) {
+      const rebuild = item.state === 'preparing' || item.state === 'prepared'
+      const { error: faceErr } = await sb.from('launch_items').update({
+        thumbnail_face: face,
+        ...(rebuild ? {
+          state: 'preparing', reason: null,
+          thumbnail_url: null, thumbnail_clean_url: null, thumbnail_source: null, thumb_tries: 0,
+        } : {}),
+        updated_at: new Date().toISOString(),
+      }).eq('id', id).eq('user_id', user.id)
+      if (faceErr) return NextResponse.json({ error: faceErr.message }, { status: 500 })
+    }
+    if (Object.keys(body).every((k) => k === 'thumbnailFace')) return NextResponse.json({ ok: true })
   }
 
   // ── ITS OWN DATE AND TIME ─────────────────────────────────────────────────

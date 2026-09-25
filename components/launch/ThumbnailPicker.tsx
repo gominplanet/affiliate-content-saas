@@ -119,6 +119,9 @@ export default function ThumbnailPicker({ value, chosen, saving, onSave }: {
             No face
           </button>
         </div>
+        <p className="text-[11px] mt-1" style={muted}>
+          Two presenters? Pick a different face for any one video in its row under Set each product.
+        </p>
         {!loadingFaces && faces.length === 0 && (
           <p className="text-[11px] mt-1" style={muted}>
             No saved face yet. <a href="/photobooth" className="underline" style={{ color: '#7C3AED' }}>Add your selfies</a> to put yourself on these.
