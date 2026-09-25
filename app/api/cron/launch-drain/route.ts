@@ -26,7 +26,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { buildProductThumbnail } from '@/lib/product-thumbnail'
 import { renderCta } from '@/lib/youtube-ingest'
 import { normalizeTier } from '@/lib/tier'
-import { ctaStickerAllowed, type CtaPreset } from '@/lib/launch-batch'
+import { ctaStickerAllowed, ctaTopLeft, type CtaPreset } from '@/lib/launch-batch'
 import { validateThumbnailPreset, presetToRequestFields, parseFacePick, type ThumbnailPreset } from '@/lib/thumbnail-preset'
 import { postToSelf } from '@/lib/self-url'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
@@ -120,6 +120,29 @@ async function channelsForBatches(sb: Sb, batchIds: string[]): Promise<Map<strin
     out.set(b.id, String(b.youtube_channel_id || '').trim() || null)
   }
   return out
+}
+
+/**
+ * A CTA badge's height over its width, read from the PNG's own header (the
+ * first 24 bytes), so the badge is centred on the spot the creator picked
+ * rather than on a guess at its size. 1 when it cannot be read.
+ */
+const stickerAspects = new Map<string, number>()
+async function stickerAspect(url: string): Promise<number> {
+  const known = stickerAspects.get(url)
+  if (known) return known
+  let aspect = 1
+  try {
+    const res = await fetchWithTimeout(url, { timeoutMs: 10_000, headers: { Range: 'bytes=0-63' } })
+    const buf = Buffer.from(await res.arrayBuffer())
+    // PNG: an 8-byte signature, then IHDR with width and height big-endian.
+    if (buf.length >= 24 && buf.readUInt32BE(0) === 0x89504e47) {
+      const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20)
+      if (w > 0 && h > 0) aspect = h / w
+    }
+  } catch { /* a square guess, still centred */ }
+  stickerAspects.set(url, aspect)
+  return aspect
 }
 
 async function renders(sb: Sb, left: Left): Promise<{ done: number; skipped: number; failed: number; recovered: number }> {
@@ -231,9 +254,11 @@ async function renders(sb: Sb, left: Left): Promise<{ done: number; skipped: num
       // single video does today.
       const startSec = cta.style === 'endcard' && dur > 0 ? Math.max(0, dur - 8) : 3
       const endSec = cta.style === 'endcard' && dur > 0 ? dur : (dur > 0 ? Math.min(dur, 13) : 13)
+      // THE CENTRE THE CREATOR PICKED, sent as the corner the service places.
+      const corner = ctaTopLeft(cta, await stickerAspect(cta.stickerUrl))
       const out = await renderCta(it.source_url as string, {
         text: '', subtext: '', style: cta.style, startSec, endSec,
-        stickerUrl: cta.stickerUrl, widthPct: cta.widthPct, xPct: cta.xPct, yPct: cta.yPct,
+        stickerUrl: cta.stickerUrl, widthPct: cta.widthPct, xPct: corner.x, yPct: corner.y,
       }, it.user_id as string, left() - 15_000)
       if (!out.ok) throw new Error(out.reason || 'the render did not finish')
       // TWO FILES FROM HERE ON, AND THEY GO TO DIFFERENT PLACES.
