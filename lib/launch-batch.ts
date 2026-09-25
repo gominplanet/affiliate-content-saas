@@ -140,6 +140,37 @@ export interface BatchRow {
 }
 
 /**
+ * Where the CTA's TOP-LEFT corner goes, as fractions of the frame.
+ *
+ * TWO MEANINGS FOR ONE PAIR OF NUMBERS. The picker's nine spots are the
+ * CENTRE of the badge, and its preview draws them that way. The render
+ * service reads the same numbers as the badge's top-left corner. So "Bottom
+ * left" put the badge's left edge 22% in and its top 82% down, the service
+ * pushed it back up inside the frame, and it landed near the middle of the
+ * shot on every video in the batch.
+ *
+ * Converted here, once, from the centre to the corner the service wants, and
+ * kept inside the frame the same way the preview keeps it. `stickerAspect` is
+ * the badge's height over its width; `frameAspect` the video's width over its
+ * height (Liftoff takes horizontal video, so 16:9 unless known).
+ */
+export function ctaTopLeft(
+  p: { xPct: number; yPct: number; widthPct: number },
+  stickerAspect: number,
+  frameAspect = 16 / 9,
+): { x: number; y: number; h: number } {
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+  const w = clamp(Number(p.widthPct) || 0.4, 0.05, 1)
+  const aspect = Number.isFinite(stickerAspect) && stickerAspect > 0 ? stickerAspect : 1
+  const h = clamp(w * aspect * frameAspect, 0, 1)
+  return {
+    x: clamp((Number(p.xPct) || 0) - w / 2, 0, 1 - w),
+    y: clamp((Number(p.yPct) || 0) - h / 2, 0, 1 - h),
+    h,
+  }
+}
+
+/**
  * The batch's YouTube-or-not choice, attached to a batch already loaded.
  *
  * A SEPARATE READ, like every column added after launch, so a batch still

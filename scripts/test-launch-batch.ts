@@ -20,6 +20,7 @@ import { validateThumbnailPreset, presetToRequestFields, defaultThumbnailPreset,
 import { VISUAL_PRESETS } from '../lib/visual-presets'
 import { cleanAmazonTitle, STOREFRONT_TITLE_EXAMPLES } from '../lib/amazon-title'
 import { asinInFileName } from '../lib/asin'
+import { ctaTopLeft } from '../lib/launch-batch'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -2164,6 +2165,32 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('the check sits above the Launch button and shows a mismatch as one',
     /<ChannelCheck batchId=\{batch\.id\}/.test(BOARD) && /Yes, upload here/.test(CARD) && /uploads to &quot;\{st\.live\?\.title\}&quot; instead/.test(CARD),
     'a check whose failure looks like its success is not a check')
+}
+
+// ── THE CTA LANDS WHERE IT WAS PLACED ────────────────────────────────────────
+// The picker's spots are the badge's CENTRE; the render service places its
+// TOP-LEFT corner. Sent unconverted, "Bottom left" rendered near the middle.
+{
+  const PICK = read('components/launch/CtaPicker.tsx')
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.005
+  const bl = ctaTopLeft({ xPct: 0.22, yPct: 0.82, widthPct: 0.4 }, 1024 / 1536)
+  const mc = ctaTopLeft({ xPct: 0.5, yPct: 0.5, widthPct: 0.4 }, 1024 / 1536)
+  const bc = ctaTopLeft({ xPct: 0.5, yPct: 0.84, widthPct: 0.3 }, 1)
+  check('a spot is the badge\'s centre, converted to the corner the service places',
+    near(mc.x, 0.3) && near(mc.x + 0.4 / 2, 0.5) && near(mc.y + mc.h / 2, 0.5)
+    && near(bc.x, 0.35) && near(bc.y + bc.h, 1),
+    `centre went to ${JSON.stringify(mc)}, bottom centre to ${JSON.stringify(bc)}`)
+  check('and a big badge in a corner stays in that corner, inside the frame',
+    near(bl.x, 0.02) && near(bl.y + bl.h, 1) && bl.y > 0.5,
+    `bottom left went to ${JSON.stringify(bl)}`)
+  check('the render is sent the corner, not the raw spot',
+    /const corner = ctaTopLeft\(cta, await stickerAspect\(cta\.stickerUrl\)\)/.test(DRAIN)
+    && /xPct: corner\.x, yPct: corner\.y/.test(DRAIN) && !/xPct: cta\.xPct/.test(DRAIN),
+    'the raw spot as a corner is what put "Bottom left" in the middle of the shot')
+  check('and the preview uses the same maths',
+    /ctaTopLeft\(\{ xPct: place\.x, yPct: place\.y, widthPct: width \}, stickerAspect\)/.test(PICK)
+    && !/translate\(-50%, -50%\)/.test(PICK),
+    'a preview drawn one way and a render placed another is how the two disagreed')
 }
 
 if (failures.length) {

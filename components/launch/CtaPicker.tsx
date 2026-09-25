@@ -14,7 +14,7 @@ import { useState } from 'react'
 import Image from 'next/image'
 import { Check, Ban } from 'lucide-react'
 import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
-import type { CtaPreset } from '@/lib/launch-batch'
+import { ctaTopLeft, type CtaPreset } from '@/lib/launch-batch'
 
 const text = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -55,6 +55,9 @@ export default function CtaPicker({
   const [spot, setSpot] = useState(value ? nearestSpot(value.xPct, value.yPct) : 'bc')
   const [width, setWidth] = useState(value?.widthPct ?? 0.5)
   const [style, setStyle] = useState<'lowerthird' | 'endcard'>(value?.style ?? 'lowerthird')
+  // THE BADGE'S OWN PROPORTIONS, from the image once it loads, so the preview
+  // keeps it inside the frame exactly the way the render will.
+  const [stickerAspect, setStickerAspect] = useState(1)
 
   const sticker = CTA_STICKERS.find((s) => s.id === stickerId) ?? CTA_STICKERS[0]
   const place = SPOTS.find((s) => s.key === spot) ?? SPOTS[7]
@@ -135,12 +138,20 @@ export default function CtaPicker({
                 <Image
                   src={ctaStickerUrl(sticker.file)} alt=""
                   width={200} height={100} unoptimized
-                  style={{
-                    position: 'absolute',
-                    left: `${place.x * 100}%`, top: `${place.y * 100}%`,
-                    transform: 'translate(-50%, -50%)',
-                    width: `${width * 100}%`, height: 'auto', objectFit: 'contain',
+                  onLoad={(e) => {
+                    const im = e.currentTarget
+                    if (im.naturalWidth > 0) setStickerAspect(im.naturalHeight / im.naturalWidth)
                   }}
+                  style={(() => {
+                    // THE SAME MATHS THE RENDER USES (ctaTopLeft), so what is
+                    // shown here is where it lands on the video.
+                    const c = ctaTopLeft({ xPct: place.x, yPct: place.y, widthPct: width }, stickerAspect)
+                    return {
+                      position: 'absolute' as const,
+                      left: `${c.x * 100}%`, top: `${c.y * 100}%`,
+                      width: `${width * 100}%`, height: 'auto', objectFit: 'contain' as const,
+                    }
+                  })()}
                 />
               )}
             </div>
