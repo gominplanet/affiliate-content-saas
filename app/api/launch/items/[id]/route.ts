@@ -37,6 +37,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
      *  on its own, and accepted whatever state the video is in: the run
      *  happens after it is on YouTube. */
     studioFinish?: unknown
+    /** The title Amazon storefronts carry (migration 370). */
+    amazonTitle?: string
   }
 
   // ── WHAT SCOUT REPORTED, AND NOTHING ELSE ─────────────────────────────────
@@ -59,6 +61,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
     return NextResponse.json({ ok: true })
+  }
+
+  // ── THE AMAZON TITLE, ON ITS OWN WRITE (migration 370) ────────────────────
+  // Separate so a database without the column refuses only this, by name. It
+  // can change after the video is on YouTube: it is not YouTube's title, and
+  // the storefront listings are made later.
+  if (typeof body.amazonTitle === 'string') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: atErr } = await (supabase as any).from('launch_items')
+      .update({ amazon_title: body.amazonTitle.trim().slice(0, 120) || null, updated_at: new Date().toISOString() })
+      .eq('id', id).eq('user_id', user.id)
+    if (atErr) {
+      return NextResponse.json({
+        error: /amazon_title/.test(atErr.message) ? 'Saving the Amazon title needs migration 370 in the database first.' : atErr.message,
+      }, { status: /amazon_title/.test(atErr.message) ? 503 : 500 })
+    }
+    if (Object.keys(body).every((k) => k === 'amazonTitle')) return NextResponse.json({ ok: true })
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -207,9 +226,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // it does not depend on the product. A title MVP wrote goes back to being
   // rewritten; one the creator typed is left alone. (A blocked video with no
   // render goes back to the start, as it always did.)
+  let productChanged = false
   if (patch.asin && patch.asin !== undefined) {
     const { data: cur } = await sb.from('launch_items').select('asin').eq('id', id).maybeSingle()
     const changed = String(cur?.asin || '').toUpperCase() !== String(patch.asin).toUpperCase()
+    productChanged = changed
     if (changed || item.state === 'blocked') {
       patch.state = item.rendered_url ? 'preparing' : 'draft'
       patch.reason = null
@@ -233,6 +254,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       }, { status: 503 })
     }
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+  // THE AMAZON TITLE WAS WRITTEN FOR THE OLD PRODUCT, so it goes too and MVP
+  // writes a new one, unless a new one came with this same save. Its own
+  // write: a database without migration 370 has nothing here to clear.
+  if (productChanged && typeof body.amazonTitle !== 'string') {
+    await sb.from('launch_items').update({ amazon_title: null }).eq('id', id).eq('user_id', user.id)
   }
   return NextResponse.json({ ok: true, asin: patch.asin ?? null, resolvedFromLink: productNote })
 }

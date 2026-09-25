@@ -18,6 +18,8 @@ import { batchSteps, launchBlocker, validateCtaPreset, launchOutcome, MAX_ITEMS,
 import { channelBlocker, prepEta, minutesLeft, stepIsOptional, batchRecap, defaultBatchName } from '../lib/launch-batch'
 import { validateThumbnailPreset, presetToRequestFields, defaultThumbnailPreset, styleReferenceAllowed, looksForRequest, LOOKS, presetSummary as presetSummaryOf } from '../lib/thumbnail-preset'
 import { VISUAL_PRESETS } from '../lib/visual-presets'
+import { cleanAmazonTitle, STOREFRONT_TITLE_EXAMPLES } from '../lib/amazon-title'
+import { asinInFileName } from '../lib/asin'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -253,7 +255,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /YouTube will use a frame from the video/.test(DRAIN_RAW),
     'a listing without a thumbnail is still a listing; refusing to launch over one is the wrong trade')
   check('a video with no product is waited for, not blocked',
-    /if \(!asin \|\| !title\) continue/.test(DRAIN),
+    /if \(!asin \|\| !title\) return\n/.test(DRAIN),
     'that step needs the creator, and calling it a failure is blaming them for taking their time')
   check('a render that failed goes back to draft rather than blocking',
     /state: 'draft',\s*\n?\s*reason:/.test(DRAIN),
@@ -713,9 +715,30 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
       `IMAGES=${images} THUMB_CALL_MS=${callMs} cap=${capMs}`)
     // A MARGIN, not a dead heat. The writes after the image still have to
     // happen, and a firing that ends exactly on the cap loses them.
+    // SIDE BY SIDE, NOT END TO END. The images of a firing now run together
+    // (THUMB_POOL videos, both images of each at once), so the firing's length
+    // is one call, not the sum of them. What must hold is that one call fits,
+    // that no call starts without that much time left, and that the budget
+    // is not larger than what the pool can have in flight.
+    const pool = num('THUMB_POOL')
     check('and a firing cannot outlive the function',
-      images * callMs <= capMs - 30_000,
-      `${images} image(s) x ${callMs / 1000}s leaves no room in ${capMs / 1000}s`)
+      callMs <= capMs - 30_000 && /if \(left\(\) < THUMB_CALL_MS \+ 30_000\) return 'stop'/.test(DRAIN)
+      && Number.isFinite(pool) && pool >= 1 && images <= pool * 2
+      && /Array\.from\(\{ length: THUMB_POOL \}/.test(DRAIN) && /await Promise\.all\(\[styledJob\(\), cleanJob\(\)\]\)/.test(DRAIN),
+      `IMAGES=${images} THUMB_POOL=${pool} THUMB_CALL_MS=${callMs / 1000}s cap=${capMs / 1000}s`)
+    check('the ASIN is read out of a file name, and only when there is exactly one',
+      asinInFileName('Ninja Crispi - B0DDDD8WD6') === 'B0DDDD8WD6'
+      && asinInFileName('Swim googles - B0H4FVZNHF.mp4') === 'B0H4FVZNHF'
+      && asinInFileName('XB0DDDD8WD6') === null
+      && asinInFileName('B0DDDD8WD6 vs B0H4FVZNHF') === null,
+      'two ASINs in one name is a question for the creator, not a guess')
+    check('renders and thumbnails share the firing instead of queueing',
+      /await Promise\.all\(\[renders\(sb, left\), thumbs\(sb, left\)\]\)/.test(DRAIN),
+      'renders ran first and used the firing, so no thumbnail started while any CTA was still burning in')
+    check('a product in the file name is used, and a row without one says it is waiting',
+      /asin: asinInFileName\(body\.title\)/.test(ITEMS) && /asinInFileName\(title\)/.test(DRAIN)
+      && /\.is\('asin', null\)/.test(DRAIN) && /'Waiting for its product'/.test(LIB),
+      '"Building the thumbnail, nothing for 26 minutes" over a row the worker was skipping for want of a product')
     // THE BUDGET IS PER IMAGE. Counting videos put both of a video's images in
     // one function, which left the styled call about two minutes, and the
     // designed path does not reliably finish in two minutes: the first real
@@ -818,7 +841,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     ['render_tries', 'thumb_tries', 'updated_at'].every((c) => ITEM_COLUMNS.split(',').includes(c)),
     'a column the route does not select is a fact the screen cannot report')
   check('and it is only said while something is running',
-    /it\.state === 'rendering' \|\| it\.state === 'preparing'/.test(BOARD),
+    /it\.state === 'rendering' \|\| \(it\.state === 'preparing' && !!it\.asin\)/.test(BOARD),
     'a try count beside a finished video is noise')
 
   // 3. AN ASIN WAS ACCEPTED AS A TITLE. It would have gone to YouTube exactly
@@ -1193,14 +1216,14 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
 // another: "why does it want more asin.. i only uploaded 1 video".
 {
   check('both boxes are labelled, not just placeheld',
-    /Title, for YouTube and the English stores/.test(BOARD)
+    />Title for YouTube</.test(BOARD)
     && />Product</.test(BOARD),
     'a placeholder disappears the moment a box has anything in it')
 
   // THE WARNING SITS WITH THE BOX IT IS ABOUT. This is the whole bug: it was
   // under the product input, so that is the one that got edited.
   {
-    const titleAt = BOARD.indexOf('Title, for YouTube and the English stores')
+    const titleAt = BOARD.indexOf('>Title for YouTube<')
     const warnAt = BOARD.indexOf('That is the ASIN, not a title')
     const productAt = BOARD.indexOf('>Product<')
     check('the ASIN warning sits with the title box, not the product box',
@@ -1647,7 +1670,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /\.eq\('state', 'rendering'\)\.lt\('updated_at', stale\)/.test(DRAIN),
     'a killed firing left the row on rendering, which nothing picked up and Try again refused')
   check('preparing and publishing take turns, each with the whole limit',
-    /getUTCMinutes\(\) % 2 === 0 \? 'prepare' : 'publish'/.test(DRAIN) && /if \(left\(\) < THUMB_CALL_MS \+ 30_000\) break/.test(DRAIN)
+    /getUTCMinutes\(\) % 2 === 0 \? 'prepare' : 'publish'/.test(DRAIN) && /if \(left\(\) < THUMB_CALL_MS \+ 30_000\) return 'stop'/.test(DRAIN)
       && /if \(left\(\) < 150_000\) break/.test(DRAIN) && /uploadTimeoutMs: left\(\) - 20_000/.test(DRAIN))
   check('late videos do not hold the confirm line forever',
     /confirm_tries\.lt\.\$\{CONFIRM_TRIES\},updated_at\.lt\./.test(DRAIN) && /order\('updated_at', \{ ascending: true \}\)\.limit\(CONFIRMS\)/.test(DRAIN))
@@ -1971,6 +1994,78 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     // passed with the launch_items block deleted entirely.
     /alter table public\.launch_items\s+add column if not exists confirm_tries integer not null default 0,\s+add column if not exists confirmed_at timestamptz;/.test(M362),
     'a column the code writes and the database has not got fails silently on every row')
+}
+
+// ── THE AMAZON TITLE IS ITS OWN LINE ─────────────────────────────────────────
+//
+// Liftoff sent the thumbnail headline ("FLY TRAP WORKS") to every storefront.
+// The creator asked for titles in their own storefront's style, kept separate
+// from the longer YouTube title.
+{
+  const AMZ = read('lib/amazon-title.ts')
+  const SYNC = live(read('app/api/cron/drain-global-sync/route.ts'))
+  const TITLE = live(read('app/api/launch/items/[id]/title/route.ts'))
+  const M370 = read('supabase/migrations/370_amazon_titles.sql')
+
+  check('the writer is taught on the creator\'s own storefront titles',
+    STOREFRONT_TITLE_EXAMPLES.length >= 8 && STOREFRONT_TITLE_EXAMPLES.includes('No More Old School SIPHONING!')
+    && /STOREFRONT_TITLE_EXAMPLES\.map/.test(AMZ),
+    'without the examples in the prompt the style is a guess')
+  check('a storefront title never carries a dash',
+    cleanAmazonTitle('Watch it Glow at Night - Mesmerizing!') === 'Watch it Glow at Night, Mesmerizing!'
+    && !/[\u2013\u2014]/.test(cleanAmazonTitle('So Soft \u2014 Really Soft Indeed') || ''),
+    'the creator\'s rule for anything MVP writes')
+  check('nor a year, the ASIN, or the word Amazon',
+    cleanAmazonTitle('Best Bathroom Mat of 2026') === null
+    && cleanAmazonTitle('Is B0ABCDEFGH Worth It?', 'B0ABCDEFGH') === null
+    && cleanAmazonTitle('My Favorite Amazon Find Ever') === null,
+    'a year dates the listing, an ASIN is not a title, and the store is not the subject')
+  check('and it stays short',
+    cleanAmazonTitle('Wow') === null
+    && cleanAmazonTitle('One two three four five six seven eight nine ten eleven twelve') === null
+    && cleanAmazonTitle('Must See TEXTURE Up Close!') === 'Must See TEXTURE Up Close!',
+    'a storefront title is a hook, not a search phrase')
+
+  check('the button asks for the Amazon writer by name',
+    /\/title\?for=amazon/.test(BOARD) && /searchParams\.get\('for'\) === 'amazon'/.test(TITLE)
+    && /generateAmazonTitleOptions\(/.test(TITLE),
+    'otherwise the Amazon box would fill with YouTube titles')
+  check('the YouTube box gets Co-Pilot\'s title writer, not the thumbnail headline',
+    /path: '\/api\/youtube\/generate-metadata'/.test(TITLE) && inOrder(TITLE, "generate-metadata'", 'generateProductTitleOptions({'),
+    'FLY TRAP WORKS is a thumbnail line, not a YouTube title')
+  check('the row shows both boxes, labelled',
+    /Title for YouTube/.test(BOARD) && /Title for Amazon/.test(BOARD)
+    && /body\.amazonTitle = amazonTitle/.test(BOARD),
+    'one box for two different titles is how the headline reached Amazon')
+
+  check('saving the Amazon title is its own write',
+    /typeof body\.amazonTitle === 'string'/.test(ITEM) && /needs migration 370/.test(ITEM),
+    'a database without the column must refuse only this, by name')
+  check('a new product clears the Amazon title written for the old one',
+    /productChanged && typeof body\.amazonTitle !== 'string'/.test(ITEM) && /update\(\{ amazon_title: null \}\)/.test(ITEM),
+    'otherwise a listing for product B goes up titled for product A')
+
+  check('the worker writes one when the box is empty, and never over a typed one',
+    /async function ensureAmazonTitle/.test(DRAIN)
+    && /update\(\{ amazon_title: first \}\)\.eq\('id', itemId\)\.is\('amazon_title', null\)/.test(DRAIN)
+    && /await ensureAmazonTitle\(sb, it\.id, it\.user_id, asin, title\)/.test(DRAIN),
+    'nobody should have to touch the box, and anybody who did must win')
+  check('it rides with the video to the Amazon side',
+    inOrder(DRAIN, "from('youtube_videos').upsert({", "from('youtube_videos').update({ amazon_title: amazonTitle })")
+    && inOrder(DRAIN, "from('youtube_videos').update({ amazon_title: amazonTitle })", "from('storefront_coverage').upsert("),
+    'written after the listings start, the first countries would carry the YouTube title')
+  check('and the storefront step prefers it over the YouTube title',
+    /select\('amazon_title'\)\.eq\('id', job\.video_id\)/.test(SYNC)
+    && /const masterTitle = \(amazonTitle \|\| \(video\?\.generated_title/.test(SYNC),
+    'a title that is written and never used is the plan, not the result')
+  check('and every read of the new column tolerates it not existing yet',
+    !/select\('[^']*,amazon_title/.test(DRAIN) && !/amazon_title,[^']*'\)/.test(DRAIN)
+    && /amazonTitleAvailable/.test(BATCH),
+    'one missing column in a shared select stops the whole worker until the SQL is run')
+  check('and the column exists, twice-runnable',
+    /alter table public\.launch_items add column if not exists amazon_title text;/.test(M370)
+    && /alter table public\.youtube_videos add column if not exists amazon_title text;/.test(M370),
+    'a column the code writes and the database has not got fails silently')
 }
 
 if (failures.length) {

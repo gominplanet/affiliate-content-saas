@@ -19,12 +19,17 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { generateProductTitleOptions } from '@/lib/title-options'
+import { generateAmazonTitleOptions } from '@/lib/amazon-title'
+import { postToSelf } from '@/lib/self-url'
 import { normalizeTier } from '@/lib/tier'
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 120
 
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  // ?for=amazon writes the Amazon title (the creator's storefront style)
+  // instead of the thumbnail-style line this route was first written for.
+  const forAmazon = new URL(req.url).searchParams.get('for') === 'amazon'
   const { id } = await params
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -43,8 +48,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }, { status: 400 })
   }
   // ALREADY ON YOUTUBE MEANS YOUTUBE OWNS IT. Writing here would leave the two
-  // disagreeing with nothing on screen saying which one is live.
-  if (item.state === 'scheduled' || item.state === 'published') {
+  // disagreeing with nothing on screen saying which one is live. (The Amazon
+  // title is not YouTube's, so it can still be written.)
+  if (!forAmazon && (item.state === 'scheduled' || item.state === 'published')) {
     return NextResponse.json({
       error: 'This one is already on YouTube, so its title is set there now.',
     }, { status: 409 })
@@ -60,6 +66,34 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const useful = hint && hint.toUpperCase() !== asin.toUpperCase() ? hint : ''
 
   let options: string[] = []
+  if (forAmazon) {
+    options = await generateAmazonTitleOptions({ asin, videoTitle: useful, count: 5, ctx: { userId: user.id, tier } })
+    const amazon = options.map(t => t.trim()).filter(Boolean)
+    if (amazon.length === 0) {
+      return NextResponse.json({ error: 'Nothing usable came back. Try again, or type one yourself.' }, { status: 502 })
+    }
+    return NextResponse.json({ ok: true, titles: amazon })
+  }
+  // ── THE YOUTUBE TITLE: CO-PILOT'S WRITER ─────────────────────────────────
+  // This box used to be filled by the THUMBNAIL headline writer (two or three
+  // words, all capitals: FLY TRAP WORKS, GNATS GONE?), which is neither a
+  // YouTube title nor the one the worker gives the video when nobody picks.
+  // Co-Pilot's writer is both, and returns a best title plus alternatives.
+  try {
+    const res = await postToSelf({
+      path: '/api/youtube/generate-metadata',
+      userId: user.id,
+      timeoutMs: 110_000,
+      body: { videoTitle: useful, asin, skipAsinCheck: !asin },
+    })
+    if (res.ok) {
+      const j = await res.json().catch(() => ({})) as { generated?: { title?: string; title_alternatives?: string[] } }
+      const yt = [j.generated?.title, ...(j.generated?.title_alternatives ?? [])]
+        .map((t) => String(t || '').trim()).filter((t) => t && t.toUpperCase() !== asin.toUpperCase())
+      const uniq = Array.from(new Set(yt)).slice(0, 5)
+      if (uniq.length > 0) return NextResponse.json({ ok: true, titles: uniq })
+    }
+  } catch { /* the headline writer below is the fallback */ }
   try {
     options = await generateProductTitleOptions({
       // NOT "Amazon product B0H3P7H9T2". That placeholder was handed to the

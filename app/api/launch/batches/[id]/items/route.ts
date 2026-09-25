@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { MAX_ITEMS } from '@/lib/launch-batch'
+import { asinInFileName } from '@/lib/asin'
 
 export const runtime = 'nodejs'
 
@@ -82,6 +83,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // anybody chose, and without this column nothing downstream could tell it
     // apart from one somebody typed. A file name reached YouTube that way.
     title_source: body.titleSource === 'creator' ? 'creator' : 'filename',
+    // THE PRODUCT IS OFTEN IN THE FILE NAME ("Ninja Crispi - B0DDDD8WD6").
+    // Left unread, the video sat in the list as "Building the thumbnail" while
+    // the worker was in fact waiting for a product it had been handed.
+    asin: asinInFileName(body.title),
     state: 'draft',
   }).select('id,position').single()
 
