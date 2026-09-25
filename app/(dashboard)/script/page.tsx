@@ -268,8 +268,8 @@ export default function ScriptPage() {
           'Scripted hook + verdict (word-for-word) + talking-point middle',
           'Subject-only shot list (no over-direction)',
           'Hands-On + Long-Term include an auto vertical-short cutdown (TikTok / Reels / Shorts)',
-          'Grounded in real scraped product info — no hallucinated specs',
-          'Pro: 120 scripts a month',
+          'Grounded in real scraped product info, no made-up specs',
+          `Pro: ${TIERS.pro.scriptsPerMonth} scripts a month`,
         ]}
         requiredTier="creator"
         currentTier={previewTier}

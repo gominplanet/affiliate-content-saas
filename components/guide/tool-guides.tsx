@@ -21,6 +21,7 @@ import {
   Calendar, Trophy, Table2, Signpost, Gauge, Wand2, Bot, Star, Smartphone,
 } from 'lucide-react'
 import { FREE_TRIAL } from '@/lib/free-trial'
+import { TIERS } from '@/lib/tier'
 
 // ── AMZ Product Finder ───────────────────────────────────────────────────────
 export function AmzFinderGuide() {
@@ -181,7 +182,7 @@ export function ScriptwriterGuide() {
         { icon: <Camera size={18} />, title: 'A shot list for each section', body: <>Every section lists what to film: the subject only, with no lighting or director notes. Each section shows its target length, and the header shows the total runtime.</> },
         { icon: <Smartphone size={18} />, title: 'A vertical short, written fresh', body: <>Both styles include a vertical short for TikTok, Reels and YouTube Shorts, with its own hook, script and shots. It is written from scratch, not cut down from the long version.</> },
         { icon: <Mic size={18} />, title: 'In your voice, no sales pitch', body: <>Scripts are written in first person, in your brand voice. They skip the lines viewers tune out: no &ldquo;hey guys&rdquo;, no asking for likes or subscribes, no price read aloud, and no on-camera push to a link.</> },
-        { icon: <Clock size={18} />, title: 'Recent scripts', body: <>Every script is saved under <strong>Recent scripts</strong>, and reopening one shows it exactly as written, with no new generation and no cost. <strong>Scripts this month</strong> shows how many you have left before the monthly reset.</> },
+        { icon: <Clock size={18} />, title: 'Recent scripts', body: <>Every script is saved under <strong>Recent scripts</strong>, and reopening one shows it exactly as written, with no new generation and no cost. <strong>Scripts this month</strong> shows how many you have left before the monthly reset; Pro includes {TIERS.pro.scriptsPerMonth} a month.</> },
       ]}
     />
   )

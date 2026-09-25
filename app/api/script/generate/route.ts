@@ -9,7 +9,8 @@
  * Tier gate: Pro / Admin only. Trial / Creator get a 403 with upgrade hint
  * (the /script page shows an upsell card instead of the generator).
  *
- * Usage gate: 30 scripts / UTC calendar month for Pro. Admin uncapped.
+ * Usage gate: TIERS[tier].scriptsPerMonth per UTC calendar month (Pro 120,
+ * Studio 30, Creator 10). Admin uncapped.
  *
  * Voice + craft spec (locked in with the creator, 2026-05-28):
  *   - First person always. Friend who tested it + excited discoverer + expert.
@@ -154,8 +155,8 @@ export async function POST(req: Request) {
 
   // ── Tier + monthly cap gate ───────────────────────────────────────────────
   // Pro-only feature. Trial / Creator return a 403 with upgrade copy that the
-  // /script page surfaces as an upsell card. Pro past 30/month gets the cap
-  // message + reset date.
+  // /script page surfaces as an upsell card. Past the plan's monthly cap
+  // (TIERS[tier].scriptsPerMonth) it gets the cap message + reset date.
   const usage = await checkScriptUsage(supabase, user.id)
   if (!usage.allowed) {
     return NextResponse.json({
