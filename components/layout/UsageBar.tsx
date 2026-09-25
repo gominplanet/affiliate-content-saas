@@ -44,6 +44,7 @@ export default function UsageBar() {
         </span>
         <span className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-faint)' }}>
           {data?.resetLabel && <span>resets {data.resetLabel}</span>}
+          <Link href="/usage" className="underline" style={{ color: 'var(--text-soft)' }}>Details</Link>
           <Link href="/billing" className="rounded-md px-2 py-0.5 font-semibold text-white" style={{ background: '#7C3AED' }}>
             Upgrade
           </Link>

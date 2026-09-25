@@ -42,7 +42,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench, ImageOff,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe, Tag, Radio } from 'lucide-react'
+  Inbox, PackageSearch, Rocket, Database, History, Globe, Tag, Radio, Gauge } from 'lucide-react'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
 // Deal Days, Black Friday and so on) and is deliberately off between them. The
@@ -682,6 +682,7 @@ export default function DashboardShellV2({
       label: 'Account',
       items: [
         { href: '/billing', icon: <CreditCard size={15} />, label: 'Plan & Billing' },
+        { href: '/usage', icon: <Gauge size={15} />, label: 'Your usage' },
         // API Access (/developers) + White-label (/branding) remain hidden.
       ],
     },
@@ -794,6 +795,7 @@ export default function DashboardShellV2({
       { href: '/support', icon: <LifeBuoy size={15} />, label: 'Create a Help Ticket' },
       { href: '/community', icon: <MessageCircle size={15} />, label: 'Community' },
       { href: '/billing', icon: <CreditCard size={15} />, label: 'Plan & Billing' },
+      { href: '/usage', icon: <Gauge size={15} />, label: 'Your usage' },
     ],
   }
   const AMAZON_HUB_HREFS = new Set<string>(

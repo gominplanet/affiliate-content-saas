@@ -17,9 +17,11 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { INDEX_NUDGES_PER_DAY } from '@/lib/daily-limits'
 import { getValidGscToken, submitUrlForIndexing, tokenHasIndexingScope } from '@/lib/gsc'
 
-const PER_USER_DAILY_CAP = 2
+// Shared with the usage page, so both say the same number.
+const PER_USER_DAILY_CAP = INDEX_NUDGES_PER_DAY
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
