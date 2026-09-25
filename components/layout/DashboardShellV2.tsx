@@ -42,7 +42,8 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench, ImageOff,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat } from 'lucide-react'
+  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star } from 'lucide-react'
+import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
 // Deal Days, Black Friday and so on) and is deliberately off between them. The
@@ -131,6 +132,7 @@ const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
   'Source & Earn':     { dark: '#A3E635', light: '#4D7C0F' }, // green     — find & monetize (legacy key)
   'Collaborate':       { dark: '#F472B6', light: '#BE185D' }, // pink      — deals / people
   'Labs':              { dark: '#F87171', light: '#DC2626' }, // red       — experimental
+  'My features':       { dark: '#F472B6', light: '#BE185D' }, // pink      — the creator's own picks
   'Help & Community':  { dark: '#5EEAD4', light: '#0D9488' }, // turquoise — support
   'Account':           { dark: '#94A3B8', light: '#475569' }, // slate     — neutral utility
   'Recommended tools': { dark: '#2DD4BF', light: '#0F766E' }, // teal      — discovery
@@ -148,6 +150,7 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   'Grow': <BarChart3 size={12} />,
   'Collaborate': <Share2 size={12} />,
   'Labs': <FlaskConical size={12} />,
+  'My features': <Star size={12} />,
   'Help & Community': <LifeBuoy size={12} />,
   'Account': <UserCog size={12} />,
   'Recommended tools': <Wrench size={12} />,
@@ -284,6 +287,18 @@ export default function DashboardShellV2({
   // persisted). It force-opens while you're actually on an /admin page so the
   // active tool stays visible.
   const [adminOpen, setAdminOpen] = useState(false)
+  // MY FEATURES: the pages this creator starred, pinned at the top of the sidebar.
+  const { favorites, toggle: toggleFavorite, savedTo: favoritesSavedTo } = useNavFavorites()
+  const [editingFavorites, setEditingFavorites] = useState(false)
+  const [favoritesNote, setFavoritesNote] = useState<string | null>(null)
+  const [favoritesHintHidden, setFavoritesHintHidden] = useState(true)
+  useEffect(() => {
+    try { setFavoritesHintHidden(window.localStorage.getItem('mvp_nav_fav_hint_hidden') === '1') } catch { setFavoritesHintHidden(false) }
+  }, [])
+  const starFeature = (href: string, label: string) => {
+    const { full } = toggleFavorite(href)
+    setFavoritesNote(full ? `My features holds ${MAX_NAV_FAVORITES}. Take one out to add ${label}.` : null)
+  }
   useEffect(() => {
     try { if (localStorage.getItem('mvp_admin_nav_open') === '1') setAdminOpen(true) } catch { /* ignore */ }
   }, [])
@@ -816,6 +831,22 @@ export default function DashboardShellV2({
     return [dash, AMAZON_HUB, ...rest].filter(Boolean) as NavGroupDef[]
   })()
 
+  // MY FEATURES, right under the Dashboard row: the starred pages, in the
+  // order they were starred, drawn from the menu this creator can actually
+  // see. A starred page their plan no longer shows simply is not listed.
+  const groupsWithFavorites: NavGroupDef[] = (() => {
+    const seen = new Map<string, NavItemDef>()
+    for (const g of orderedGroups) for (const it of g.items) {
+      if (it.gate !== false && !it.external && !seen.has(it.href)) seen.set(it.href, it)
+    }
+    const items = favorites.map((h) => seen.get(h)).filter((it): it is NavItemDef => !!it).map((it) => ({ ...it, subheading: undefined }))
+    const mine: NavGroupDef = { label: 'My features', items }
+    const dashIdx = orderedGroups.findIndex((g) => !g.label)
+    return dashIdx >= 0
+      ? [...orderedGroups.slice(0, dashIdx + 1), mine, ...orderedGroups.slice(dashIdx + 1)]
+      : [mine, ...orderedGroups]
+  })()
+
   // ── Active-route detection. Match by prefix so a child route still
   // highlights its parent (e.g. /admin/users/123 lights /admin/users).
   const isActive = useCallback((href: string) => {
@@ -962,8 +993,25 @@ export default function DashboardShellV2({
 
         {/* Nav groups */}
         <nav className="flex-1 px-2 flex flex-col gap-5 overflow-y-auto pb-3">
-          {orderedGroups.map((group) => {
+          {groupsWithFavorites.map((group) => {
             const visibleItems = group.items.filter((it) => it.gate !== false)
+            const isFavorites = group.label === 'My features'
+            // An empty My features says how to fill it, once, until dismissed.
+            if (isFavorites && visibleItems.length === 0) {
+              if (collapsed || favoritesHintHidden) return null
+              return (
+                <div key="my-features-hint" className="rounded-xl border border-dashed px-3 py-2.5 text-[12px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+                  <p className="flex items-center gap-1.5 font-semibold text-[11px] uppercase tracking-[0.14em] mb-1" style={{ color: isDark ? '#F472B6' : '#BE185D' }}>
+                    <Star size={12} /> My features
+                  </p>
+                  <p>Tap the star next to any feature to pin it here, at the top.</p>
+                  <div className="mt-1.5 flex gap-3">
+                    <button type="button" onClick={() => setEditingFavorites((e) => !e)} className="font-semibold underline" style={{ color: 'var(--text)' }}>{editingFavorites ? 'Hide the stars' : 'Show the stars'}</button>
+                    <button type="button" onClick={() => { setFavoritesHintHidden(true); try { window.localStorage.setItem('mvp_nav_fav_hint_hidden', '1') } catch { /* fine */ } }} className="underline">Not now</button>
+                  </div>
+                </div>
+              )
+            }
             if (visibleItems.length === 0) return null
             // Amazon view: a labelled divider after their hub separates "your
             // plan" from the rest of MVP.
@@ -1027,6 +1075,16 @@ export default function DashboardShellV2({
                     >
                       {headerIcon}
                       {group.label}
+                      {isFavorites && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingFavorites((e) => !e)}
+                          className="ml-auto normal-case tracking-normal text-[11px] font-semibold underline"
+                          style={{ color: 'var(--text-soft)' }}
+                        >
+                          {editingFavorites ? 'Done' : 'Edit'}
+                        </button>
+                      )}
                       {lockPill && (
                         <span
                           className="ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
@@ -1051,14 +1109,43 @@ export default function DashboardShellV2({
                             {item.subheading}
                           </p>
                         )}
-                        <NavItem
-                          item={item}
-                          active={isActive(item.href)}
-                          collapsed={collapsed}
-                        />
+                        <div className="relative group/nav">
+                          <NavItem
+                            item={item}
+                            active={isActive(item.href)}
+                            collapsed={collapsed}
+                          />
+                          {/* THE STAR: pins a feature to My features, or takes it
+                              out. Shown on hover, and always while editing, so
+                              the menu stays calm the rest of the time. */}
+                          {!collapsed && !item.external && (() => {
+                            const starred = favorites.includes(item.href)
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); starFeature(item.href, item.label) }}
+                                aria-label={starred ? `Take ${item.label} out of My features` : `Add ${item.label} to My features`}
+                                aria-pressed={starred}
+                                title={starred ? 'Take out of My features' : 'Add to My features'}
+                                className={cn(
+                                  'absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md transition-opacity focus-visible:opacity-100',
+                                  editingFavorites ? 'opacity-100' : 'opacity-0 group-hover/nav:opacity-100',
+                                )}
+                                style={{ background: 'var(--bg-sidebar, var(--surface))', color: starred ? (isDark ? '#F472B6' : '#BE185D') : 'var(--text-faint)' }}
+                              >
+                                <Star size={13} fill={starred ? 'currentColor' : 'none'} />
+                              </button>
+                            )
+                          })()}
+                        </div>
                       </Fragment>
                     ))}
                   </div>
+                )}
+                {isFavorites && !collapsed && (favoritesNote || favoritesSavedTo === 'device') && (
+                  <p className="px-2.5 pt-1 text-[10.5px]" style={{ color: '#D97706' }}>
+                    {favoritesNote || 'Saved on this browser only for now, so it will not show on your other devices.'}
+                  </p>
                 )}
               </div>
               {showDividerAfter && (
