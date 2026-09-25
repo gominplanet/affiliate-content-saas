@@ -480,6 +480,11 @@ export default function DashboardShellV2({
         // Launchpad lives in LABS while under test (moved 2026-08-30). It will
         // graduate here and lead this group once the full pipeline is verified.
         { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot' },
+        // Encore (formerly On sale now) graduated out of Labs 2026-09: timely
+        // sale comments on the creator's own YouTube videos, pinned, and edited
+        // when the sale ends. Beside Co-Pilot because both work on their videos.
+        // Pro and admin (lib/labs-preview decides, so nav and routes agree).
+        { href: '/encore', icon: <Repeat size={15} />, label: 'Encore', gate: previewOpenToPro('on_sale') ? isPro : isAdmin, badge: 'New' },
         // "Library" renamed -> "Blog Post Generator" (2026-06-12 IA).
         { href: '/content', icon: <Library size={15} />, label: 'Blog Post Generator' },
         // Jumps straight to the "Published Posts & Social Push" tab — publish or
@@ -651,9 +656,6 @@ export default function DashboardShellV2({
         // scanned (it is an in-app mini program with no web page), so this is
         // deliberately one product at a time and the page says so.
         { href: '/tiktok-shop', icon: <ShoppingBag size={15} />, label: 'TikTok Shop', gate: isPro, badge: 'New' },
-        // Encore (formerly On sale now) — products the creator already covered that are on sale
-        // today, and the promo for each (Short, Community post, comment, social).
-        { href: '/encore', icon: <Repeat size={15} />, label: 'Encore', gate: previewOpenToPro('on_sale') ? isPro : isAdmin, badge: previewOpenToPro('on_sale') ? 'New' : 'Test' },
         // Amazon Live prep — pick products, get the show: lineup, timings,
         // talking points from the creator's own reviews, and a teleprompter.
         { href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live prep', gate: previewOpenToPro('amazon_live') ? isPro : isAdmin, badge: 'Test' },

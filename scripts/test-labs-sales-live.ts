@@ -37,6 +37,8 @@ check('On sale now is open to Pro (and admin) only, and Amazon Live prep is stil
   const SHELL = read('components/layout/DashboardShellV2.tsx')
   check('and the nav follows the same switch',
     /href: '\/encore'[^\n]*label: 'Encore', gate: previewOpenToPro\('on_sale'\) \? isPro : isAdmin/.test(SHELL)
+    // Encore sits in Create, beside Co-Pilot, not in Labs.
+    && SHELL.indexOf("href: '/encore'") > SHELL.indexOf("label: 'Create'") && SHELL.indexOf("href: '/encore'") < SHELL.indexOf("label: 'Labs'")
     && /href: '\/amazon-live'[^\n]*gate: previewOpenToPro\('amazon_live'\) \? isPro : isAdmin/.test(SHELL),
     'a nav gated on Pro shows a page whose routes refuse')
   for (const f of ['app/api/on-sale/route.ts', 'app/api/on-sale/promo/route.ts', 'app/api/on-sale/comment/route.ts']) {

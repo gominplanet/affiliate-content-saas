@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePreview('on_sale', intg?.tier)) {
-    return NextResponse.json({ error: 'Encore is in Labs testing and not open yet.', code: 'tier_not_allowed' }, { status: 403 })
+    return NextResponse.json({ error: 'Encore is part of the Pro plan.', code: 'tier_not_allowed' }, { status: 403 })
   }
   const body = await req.json().catch(() => ({})) as { youtubeVideoId?: string; text?: string; lastingText?: string; asin?: string; saleLabel?: string }
   const videoId = String(body.youtubeVideoId || '').trim()
