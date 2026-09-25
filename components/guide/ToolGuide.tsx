@@ -28,6 +28,7 @@ export default function ToolGuide({
   ctaLabel = 'Got it',
   buttonLabel = 'Full guide',
   autoOpen = true,
+  version = 1,
 }: {
   /** Stable key; drives the once-per-browser auto-open (localStorage). */
   guideKey: string
@@ -40,17 +41,22 @@ export default function ToolGuide({
   ctaLabel?: string
   buttonLabel?: string
   autoOpen?: boolean
+  /** Bump when the guide is rewritten for new features: it then opens once
+   *  more for everybody, including people who closed the old one. */
+  version?: number
 }) {
   const [open, setOpen] = useState(false)
+  // Version 1 keeps the original key, so nobody sees an unchanged guide twice.
+  const seenKey = version > 1 ? `mvp_guide_seen_${guideKey}_v${version}` : `mvp_guide_seen_${guideKey}`
 
   useEffect(() => {
     if (!autoOpen) return
-    try { if (!localStorage.getItem(`mvp_guide_seen_${guideKey}`)) setOpen(true) } catch { /* no-op */ }
-  }, [autoOpen, guideKey])
+    try { if (!localStorage.getItem(seenKey)) setOpen(true) } catch { /* no-op */ }
+  }, [autoOpen, seenKey])
 
   const close = () => {
     setOpen(false)
-    try { localStorage.setItem(`mvp_guide_seen_${guideKey}`, '1') } catch { /* no-op */ }
+    try { localStorage.setItem(seenKey, '1') } catch { /* no-op */ }
   }
 
   return (
