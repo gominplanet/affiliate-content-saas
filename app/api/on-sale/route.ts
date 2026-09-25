@@ -24,7 +24,7 @@ export async function GET() {
   const covered = await coveredProducts(admin, user.id)
   // WHAT WAS ACTUALLY CHECKED, said beside the result: a product past the
   // Keepa cap is "not checked today", which is not the same as "not on sale".
-  let stats: SaleCheckStats = { checked: 0, skipped: 0 }
+  let stats: SaleCheckStats = { checked: 0, skipped: 0, checkedAsins: [] }
   const found = await findSales(admin, covered, { keepaCap: 50, onStats: (s) => { stats = s } })
   // WHO CAN SEE EACH VIDEO, only for the products on sale: those are the
   // videos a comment would go on. A private or scheduled one is labelled and

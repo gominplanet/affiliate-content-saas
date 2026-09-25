@@ -216,20 +216,31 @@ export interface SaleCheckStats {
   checked: number
   /** Products not checked this time: past the Keepa cap, or Keepa did not answer. */
   skipped: number
+  /** Which products were actually checked, so "not on sale" can be told from "not looked at". */
+  checkedAsins: string[]
 }
 
 export async function findSales(
   admin: Sb, products: CoveredProduct[],
-  opts?: { keepaCap?: number; onStats?: (s: SaleCheckStats) => void },
+  opts?: { keepaCap?: number; keepaMaxAgeDays?: number; dealMaxAgeHours?: number; onStats?: (s: SaleCheckStats) => void },
 ): Promise<OnSaleProduct[]> {
-  if (products.length === 0) { opts?.onStats?.({ checked: 0, skipped: 0 }); return [] }
+  if (products.length === 0) { opts?.onStats?.({ checked: 0, skipped: 0, checkedAsins: [] }); return [] }
   const asins = products.map((p) => p.asin)
   const deals = new Map<string, NonNullable<Parameters<typeof saleVerdict>[0]['deal']> & { title?: string; image_url?: string | null }>()
   for (let i = 0; i < asins.length; i += 200) {
     const { data } = await admin.from('deal_radar_cache')
-      .select('asin,title,image_url,discount_pct,price_now_cents,price_was_cents,deal_type,lightning_ends_at')
+      .select('asin,title,image_url,discount_pct,price_now_cents,price_was_cents,deal_type,lightning_ends_at,refreshed_at')
       .in('asin', asins.slice(i, i + 200))
-    for (const r of (data ?? []) as Array<Record<string, unknown>>) deals.set(String(r.asin), r as never)
+    for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+      // A DEAL ROW CAN OUTLIVE ITS DEAL: the cache keeps rows up to two days.
+      // A caller asking "has it ended?" sets a limit, and an older row is
+      // left to Keepa, so an ended sale is not kept alive by a stale row.
+      if (opts?.dealMaxAgeHours != null) {
+        const at = Date.parse(String(r.refreshed_at || ''))
+        if (!Number.isFinite(at) || Date.now() - at > opts.dealMaxAgeHours * 3_600_000) continue
+      }
+      deals.set(String(r.asin).toUpperCase(), r as never)
+    }
   }
   // Keepa only for what the shared cache did not already answer, capped so
   // one creator with a huge catalogue cannot spend the day's tokens.
@@ -244,7 +255,7 @@ export async function findSales(
   // Counting the cached ones too meant every check re-read the same first 50
   // and the rest of a big catalogue was never reached.
   const fresh = new Set<string>()
-  const since = new Date(Date.now() - 86_400_000).toISOString()
+  const since = new Date(Date.now() - (opts?.keepaMaxAgeDays ?? 1) * 86_400_000).toISOString()
   for (let i = 0; i < videoFirst.length; i += 200) {
     const { data, error } = await admin.from('keepa_product_cache').select('asin')
       .in('asin', videoFirst.slice(i, i + 200)).gte('fetched_at', since)
@@ -254,9 +265,10 @@ export async function findSales(
   const cached = videoFirst.filter((a) => fresh.has(a))
   const unseen = videoFirst.filter((a) => !fresh.has(a)).slice(0, opts?.keepaCap ?? 50)
   const rest = [...cached, ...unseen]
-  const keepa = rest.length ? await fetchKeepaBasicsCached(admin, rest, { maxAgeDays: 1 }) : new Map()
-  const checked = deals.size + rest.filter((a) => keepa.has(a)).length
-  opts?.onStats?.({ checked, skipped: Math.max(0, asins.length - checked) })
+  const keepa = rest.length ? await fetchKeepaBasicsCached(admin, rest, { maxAgeDays: opts?.keepaMaxAgeDays ?? 1 }) : new Map()
+  const checkedAsins = [...deals.keys(), ...rest.filter((a) => keepa.has(a))]
+  const checked = checkedAsins.length
+  opts?.onStats?.({ checked, skipped: Math.max(0, asins.length - checked), checkedAsins })
 
   const out: OnSaleProduct[] = []
   for (const p of products) {

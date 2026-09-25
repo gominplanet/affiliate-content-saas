@@ -6,7 +6,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Tag, Copy, Wand2, MessageSquare, Send, ExternalLink, Zap, RefreshCw } from 'lucide-react'
+import { Loader2, Tag, Copy, Wand2, MessageSquare, Send, ExternalLink, Zap, RefreshCw, Pin, Eraser } from 'lucide-react'
+import { getScoutStatus, requestPinComment } from '@/lib/extension-frame'
+import { scoutAtLeast, SCOUT_PIN_MIN_VERSION } from '@/lib/scout-version'
 import PageHero from '@/components/layout/PageHero'
 import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
 
@@ -33,7 +35,46 @@ interface Promo {
   link: string
   video: { youtubeVideoId: string; title: string } | null
   videoNotPublic: { title: string; visibility: 'unlisted' | 'not_public' } | null
-  promo: { short: { hook: string; script: string; onScreen: string[] }; community: string; comment: string; social: string; socialForSheet: string }
+  promo: { short: { hook: string; script: string; onScreen: string[] }; community: string; comment: string; commentLasting: string; social: string; socialForSheet: string }
+  sale: { label: string }
+}
+
+interface SaleComment {
+  id: string
+  asin: string
+  youtube_video_id: string
+  video_title: string | null
+  comment_id: string
+  sale_label: string | null
+  state: 'on_sale' | 'updated' | 'gone' | 'failed'
+  pinned: boolean | null
+  pin_error: string | null
+  last_error: string | null
+  posted_at: string
+  updated_at: string
+}
+
+/**
+ * PIN THROUGH SCOUT, AND SAY WHAT HAPPENED. YouTube has no pin API, so SCOUT
+ * does it in the creator's own signed-in YouTube and reports whether the
+ * pinned badge showed. That report is saved, so the list says "Pinned" only
+ * when it was seen, and says why when it was not.
+ */
+async function pinViaScout(youtubeVideoId: string, commentId: string, saleCommentId: string | null): Promise<{ pinned: boolean; error?: string }> {
+  const scout = await getScoutStatus()
+  if (!scout.installed) return { pinned: false, error: 'SCOUT is not installed in this browser. Pin it in Studio instead.' }
+  if (!scoutAtLeast(scout.version, SCOUT_PIN_MIN_VERSION)) {
+    return { pinned: false, error: `SCOUT ${scout.version ?? ''} cannot pin yet. Chrome updates it to ${SCOUT_PIN_MIN_VERSION} by itself soon; until then, pin it in Studio.` }
+  }
+  const r = await requestPinComment(youtubeVideoId, commentId)
+  const pinned = !!(r.ok && r.pinned)
+  if (saleCommentId) {
+    await fetch(`/api/on-sale/comments/${saleCommentId}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'pin_result', pinned, error: pinned ? undefined : r.error }),
+    }).catch(() => {})
+  }
+  return pinned ? { pinned } : { pinned, error: r.error || 'SCOUT could not pin it.' }
 }
 
 /** Said beside a video that is not public, so a missing comment button has a reason on screen. */
@@ -75,11 +116,13 @@ function CopyBlock({ title, text, children }: { title: string; text: string; chi
   )
 }
 
-function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, caption: string) => void }) {
+function ProductCard({ p, onShare, onPosted }: { p: Product; onShare: (d: QuickPostDeal, caption: string) => void; onPosted: () => void }) {
   const [promo, setPromo] = useState<Promo | null>(null)
   const [writing, setWriting] = useState(false)
   const [posting, setPosting] = useState(false)
-  const [posted, setPosted] = useState<{ studioUrl: string; watchUrl: string } | null>(null)
+  const [posted, setPosted] = useState<{ studioUrl: string; watchUrl: string; commentId: string; saleCommentId: string | null; trackError: string | null } | null>(null)
+  const [pinning, setPinning] = useState(false)
+  const [pin, setPin] = useState<{ pinned: boolean; error?: string } | null>(null)
   const [ended, setEnded] = useState(false)
   const videos = p.sources.filter((s) => s.kind === 'video')
   const publicVideos = videos.filter((v) => v.visibility === 'public' || v.visibility == null).length
@@ -101,18 +144,35 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
     } catch { toast.error('Could not reach the server.') } finally { setWriting(false) }
   }
 
+  async function pinIt() {
+    if (!promo?.video || !posted?.commentId) return
+    setPinning(true)
+    try {
+      const r = await pinViaScout(promo.video.youtubeVideoId, posted.commentId, posted.saleCommentId)
+      setPin(r)
+      if (r.pinned) toast.success('Pinned. SCOUT saw it pinned on the video.')
+      else toast.error(r.error || 'Not pinned.')
+      onPosted()
+    } finally { setPinning(false) }
+  }
+
   async function comment() {
     if (!promo?.video) return
     setPosting(true)
     try {
       const r = await fetch('/api/on-sale/comment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ youtubeVideoId: promo.video.youtubeVideoId, text: promo.promo.comment }),
+        body: JSON.stringify({
+          youtubeVideoId: promo.video.youtubeVideoId, text: promo.promo.comment,
+          lastingText: promo.promo.commentLasting, asin: p.asin, saleLabel: promo.sale?.label,
+        }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) { toast.error(j?.error || 'YouTube did not take the comment.'); return }
-      setPosted({ studioUrl: j.studioUrl, watchUrl: j.watchUrl })
+      setPosted({ studioUrl: j.studioUrl, watchUrl: j.watchUrl, commentId: j.commentId, saleCommentId: j.saleCommentId ?? null, trackError: j.trackError ?? null })
+      setPin(null)
       toast.success('Comment posted on your video')
+      onPosted()
     } catch { toast.error('Could not reach the server. Nothing was posted.') } finally { setPosting(false) }
   }
 
@@ -203,6 +263,16 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
                   ) : (
                     <>
                       <span className="text-[12px] font-semibold" style={{ color: '#10B981' }}>Posted.</span>
+                      {pin?.pinned ? (
+                        <span className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: '#10B981' }}><Pin size={11} /> Pinned</span>
+                      ) : (
+                        <button type="button" onClick={() => void pinIt()} disabled={pinning}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white disabled:opacity-60"
+                          style={{ background: '#0EA5A4' }}>
+                          {pinning ? <Loader2 size={12} className="animate-spin" /> : <Pin size={12} />}
+                          {pinning ? 'Pinning…' : 'Pin it with SCOUT'}
+                        </button>
+                      )}
                       <a href={posted.studioUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] underline" style={{ color: 'var(--text)' }}>
                         Pin it in Studio <ExternalLink size={11} />
                       </a>
@@ -211,9 +281,25 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
                       </a>
                     </>
                   )}
-                  <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>YouTube does not let apps pin a comment, so pinning is one click in Studio.</span>
                 </div>
               )}
+              {posted && pin && !pin.pinned && pin.error && (
+                <p className="text-[11.5px] mt-1.5" style={{ color: '#d97706' }}>Not pinned: {pin.error}</p>
+              )}
+              {posted && !posted.trackError && (
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
+                  YouTube has no pin option for apps, so SCOUT opens the video for a few seconds and pins it for you. Pinning replaces the comment you have pinned on this video now, if any.
+                </p>
+              )}
+              {posted?.trackError && (
+                <p className="text-[11.5px] mt-1.5" style={{ color: '#d97706' }}>
+                  Posted, but MVP could not save it, so it will not take the sale out when the sale ends ({posted.trackError}). Edit the comment by hand then.
+                </p>
+              )}
+              <div className="mt-2 rounded-lg p-2" style={{ background: 'var(--surface-hover)' }}>
+                <span className="text-[11px] font-semibold block mb-0.5" style={{ color: 'var(--text-soft)' }}>When the sale ends, MVP edits it to this. It stays on the video, pin included:</span>
+                <p className="text-[12px] whitespace-pre-wrap" style={{ color: 'var(--text-soft)' }}>{promo.promo.commentLasting}</p>
+              </div>
             </CopyBlock>
           ) : promo.videoNotPublic ? (
             <div className="rounded-xl border p-3 text-[12.5px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
@@ -244,6 +330,69 @@ function ProductCard({ p, onShare }: { p: Product; onShare: (d: QuickPostDeal, c
   )
 }
 
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+/** One posted comment, and what actually happened to it. */
+function SaleCommentRow({ c, onChange }: { c: SaleComment; onChange: () => void }) {
+  const [busy, setBusy] = useState<'out' | 'pin' | null>(null)
+  const watch = `https://www.youtube.com/watch?v=${c.youtube_video_id}&lc=${encodeURIComponent(c.comment_id)}`
+  const state = c.state === 'on_sale' ? { text: 'Says it is on sale', color: ACCENT }
+    : c.state === 'updated' ? { text: `Sale taken out ${when(c.updated_at)}`, color: '#10B981' }
+      : c.state === 'gone' ? { text: 'No longer on YouTube', color: 'var(--text-soft)' }
+        : { text: 'Could not update', color: '#ef4444' }
+  async function takeOut() {
+    setBusy('out')
+    try {
+      const r = await fetch(`/api/on-sale/comments/${c.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'take_sale_out' }) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) toast.error(j?.error || 'The comment could not be edited.')
+      else toast.success('Edited on YouTube. The sale is out of it.')
+      onChange()
+    } catch { toast.error('Could not reach the server. Nothing was changed.') } finally { setBusy(null) }
+  }
+  async function pinIt() {
+    setBusy('pin')
+    try {
+      const r = await pinViaScout(c.youtube_video_id, c.comment_id, c.id)
+      if (r.pinned) toast.success('Pinned. SCOUT saw it pinned on the video.')
+      else toast.error(r.error || 'Not pinned.')
+      onChange()
+    } finally { setBusy(null) }
+  }
+  return (
+    <li className="rounded-xl border p-3 text-[12.5px]" style={{ borderColor: 'var(--border)' }}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <a href={watch} target="_blank" rel="noreferrer" className="font-semibold underline truncate max-w-[60%]" style={{ color: 'var(--text)' }}>
+          {c.video_title || c.youtube_video_id}
+        </a>
+        <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded" style={{ color: state.color, border: '1px solid var(--border)' }}>{state.text}</span>
+        <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded" style={{ color: c.pinned ? '#10B981' : 'var(--text-soft)', border: '1px solid var(--border)' }}>
+          {c.pinned ? 'Pinned' : c.pinned === false ? 'Not pinned' : 'Pin not tried'}
+        </span>
+        <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>Posted {when(c.posted_at)}{c.sale_label ? ` · ${c.sale_label}` : ''}</span>
+      </div>
+      {c.state === 'failed' && c.last_error && <p className="text-[11.5px] mt-1" style={{ color: '#ef4444' }}>{c.last_error} MVP tries again every few hours while the sale is over.</p>}
+      {c.pinned === false && c.pin_error && <p className="text-[11.5px] mt-1" style={{ color: '#d97706' }}>Not pinned: {c.pin_error}</p>}
+      {c.state !== 'gone' && (
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
+          {(c.state === 'on_sale' || c.state === 'failed') && (
+            <button type="button" onClick={() => void takeOut()} disabled={busy !== null}
+              className="inline-flex items-center gap-1 text-[12px] px-2 py-0.5 rounded-md border disabled:opacity-50" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+              {busy === 'out' ? <Loader2 size={11} className="animate-spin" /> : <Eraser size={11} />} Take the sale out now
+            </button>
+          )}
+          {!c.pinned && (
+            <button type="button" onClick={() => void pinIt()} disabled={busy !== null}
+              className="inline-flex items-center gap-1 text-[12px] px-2 py-0.5 rounded-md border disabled:opacity-50" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+              {busy === 'pin' ? <Loader2 size={11} className="animate-spin" /> : <Pin size={11} />} Pin it with SCOUT
+            </button>
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
 export default function OnSale() {
   const [data, setData] = useState<{ covered: number; checked: number; skipped: number; videosCovered: number; onSale: Product[]; visibilityChecked?: boolean; checkedAt: string } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -260,6 +409,16 @@ export default function OnSale() {
     } catch { setError('Could not reach the server.') } finally { setLoading(false) }
   }, [])
   useEffect(() => { void load() }, [load])
+
+  const [comments, setComments] = useState<{ list: SaleComment[]; missingTable: boolean } | null>(null)
+  const loadComments = useCallback(async () => {
+    try {
+      const r = await fetch('/api/on-sale/comments')
+      const j = await r.json().catch(() => ({}))
+      if (r.ok) setComments({ list: j.comments ?? [], missingTable: !!j.missingTable })
+    } catch { /* the list is extra; the page works without it */ }
+  }, [])
+  useEffect(() => { void loadComments() }, [loadComments])
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -308,9 +467,27 @@ export default function OnSale() {
           )}
           <ul className="grid gap-3">
             {data.onSale.map((p) => (
-              <ProductCard key={p.asin} p={p} onShare={(deal, caption) => setShare({ deal, caption })} />
+              <ProductCard key={p.asin} p={p} onShare={(deal, caption) => setShare({ deal, caption })} onPosted={() => void loadComments()} />
             ))}
           </ul>
+          {comments && (comments.missingTable || comments.list.length > 0) && (
+            <section className="mt-6">
+              <h2 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text)' }}>Your sale comments</h2>
+              <p className="text-[12px] mb-2" style={{ color: 'var(--text-soft)' }}>
+                Every few hours MVP checks the price of each one. When the sale is over it edits the comment on YouTube to the version
+                with no sale in it, so the comment stays up, pinned, and true.
+              </p>
+              {comments.missingTable ? (
+                <p className="text-[12.5px]" style={{ color: '#ef4444' }}>
+                  The sale_comments table is missing (migration 374), so posted comments are not remembered and will not be updated when the sale ends.
+                </p>
+              ) : (
+                <ul className="grid gap-2">
+                  {comments.list.map((c) => <SaleCommentRow key={c.id} c={c} onChange={() => void loadComments()} />)}
+                </ul>
+              )}
+            </section>
+          )}
           <p className="text-[11.5px] mt-4" style={{ color: 'var(--text-faint)' }}>
             Prices are checked against the usual price for the last 90 days. The promo never states a price or a percentage,
             because a sale price can change within hours while a post stays up.

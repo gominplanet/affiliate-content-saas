@@ -943,6 +943,19 @@ export async function requestVideoFrame(youtubeVideoId: string, seekFraction = 0
   return frames[0] ?? null
 }
 
+export interface PinCommentResult { ok: boolean; pinned?: boolean; already?: boolean; clicked?: boolean; error?: string }
+
+/**
+ * Ask SCOUT (1.21.14+) to pin a comment MVP posted: YouTube's API cannot pin.
+ * SCOUT opens the video in the creator's signed-in YouTube for a few seconds,
+ * pins the comment and reports whether the pinned badge actually showed.
+ * Resolves, never throws; `pinned` is only true when the badge was seen.
+ */
+export async function requestPinComment(youtubeVideoId: string, commentId: string): Promise<PinCommentResult> {
+  const res = await sendToExtension<PinCommentResult>({ type: 'MVP_YT_PIN_COMMENT', youtubeVideoId, commentId }, 95_000)
+  return res || { ok: false, error: 'SCOUT did not answer. Is it installed and up to date?' }
+}
+
 /**
  * Ask SCOUT to pull the video's TRANSCRIPT from the user's own browser session.
  * The server can't reliably fetch captions (its IP is throttled, and the Data

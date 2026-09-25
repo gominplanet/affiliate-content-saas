@@ -33,6 +33,7 @@ import { tidyCopy } from '@/lib/copy-rules'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { resolveCloakedLinkDetailed } from '@/lib/link-cloak'
 import { coveredProducts, findSales, saleLabel, videoVisibility } from '@/lib/covered-sales'
+import { commentWithLink, lastingBody, PRICE_LINE_LEAD, DISCLOSURE } from '@/lib/sale-comments'
 
 export const runtime = 'nodejs'
 export const maxDuration = 90
@@ -136,6 +137,7 @@ Write four pieces. First person, the creator talking, warm and specific, like te
 1. "short": a script the creator films as a new 15 to 30 second vertical video (YouTube Short, Reel, TikTok or Story), holding or showing the product. {"hook": the first line spoken, under 12 words, "script": the full spoken script, "onScreen": 2 to 4 short on-screen text lines}. End by saying the link is in the description or pinned comment. Do not put a URL in it.
 2. "community": a YouTube Community post, 2 to 4 sentences. Do not put any URL or link placeholder in it: MVP adds the links itself on their own lines.
 3. "comment": a comment for the original video, 1 to 3 sentences, telling viewers it is on sale right now. Do not put any URL or link placeholder in it: MVP adds the price line and the disclosure itself.
+3b. "commentAfter": the same comment for after the sale ends, 1 to 2 sentences, pointing viewers to the product from this video. It must stay true forever: NO mention of a sale, deal, discount, saving, price, "right now", "today" or any time pressure. No URL.
 4. "social": a post for X, Threads or Facebook, under 240 characters, including {link}.
 
 HARD RULES for every piece:
@@ -145,7 +147,7 @@ HARD RULES for every piece:
 - Never use any form of the word "honest". Never "game-changer", "must-have", "insane", "amazing".
 - Do not say "link in bio".
 
-Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"community":"...","comment":"...","social":"..."}`
+Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"community":"...","comment":"...","commentAfter":"...","social":"..."}`
 
   try {
     const anthropic = createAnthropicClient()
@@ -154,16 +156,19 @@ Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"com
     const text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('')
     const m = text.match(/\{[\s\S]*\}/)
     if (!m) return NextResponse.json({ error: 'The writer did not return a promo. Try again.' }, { status: 502 })
-    const j = JSON.parse(m[0]) as { short?: { hook?: string; script?: string; onScreen?: string[] }; community?: string; comment?: string; social?: string }
+    const j = JSON.parse(m[0]) as { short?: { hook?: string; script?: string; onScreen?: string[] }; community?: string; comment?: string; commentAfter?: string; social?: string }
     const fill = (s: string) => tidy(s).replace(/\{link\}/g, link)
     // THE LINK AND THE DISCLOSURE ARE MVP'S, NOT THE WRITER'S. Written by
     // code, they are always there, always the same, and always say where the
     // link goes: "Check the latest price on Amazon here", then the Associates
     // statement, which Amazon requires wherever an Associates link is shared.
     const strip = (t: string) => fill(t).replace(/https?:\/\/\S+/g, '').replace(/\{link\}/g, '').replace(/[ \t]{2,}/g, ' ').trim()
-    const priceLine = `Check the latest price on Amazon here: ${link}`
-    const disclosure = 'As an Amazon Associate I earn from qualifying purchases.'
-    const comment = `${strip(j.comment ?? '')}\n\n${priceLine}\n${disclosure}`
+    const priceLine = `${PRICE_LINE_LEAD} ${link}`
+    const disclosure = DISCLOSURE
+    const comment = commentWithLink(strip(j.comment ?? ''), link)
+    // WHAT THE COMMENT BECOMES WHEN THE SALE ENDS. Same link and disclosure;
+    // no sale in it. A writer slip falls back to a plain line (lib/sale-comments).
+    const commentLasting = commentWithLink(lastingBody(j.commentAfter, productTitle), link)
     const videoUrl = leadPublic && lead?.youtubeVideoId ? `https://youtu.be/${lead.youtubeVideoId}` : ''
     const community = `${strip(j.community ?? '')}\n\n${videoUrl ? `Watch my review: ${videoUrl}\n` : ''}${priceLine}\n${disclosure}`
     // THE SOCIAL POST, twice: with the link for copying, and without it for
@@ -185,6 +190,7 @@ Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"com
         },
         community,
         comment,
+        commentLasting,
         social: socialRaw.replace(/\{link\}/g, link),
         socialForSheet: socialRaw.replace(/\s*\{link\}\s*/g, ' ').replace(/\s{2,}/g, ' ').trim(),
       },

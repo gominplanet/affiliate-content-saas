@@ -119,6 +119,10 @@
     {
       "path": "/api/cron/covered-sales",
       "schedule": "23 12 * * *"
+    },
+    {
+      "path": "/api/cron/sale-comments",
+      "schedule": "41 */3 * * *"
     }
   ],
   "git": {

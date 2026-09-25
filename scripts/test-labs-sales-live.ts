@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { saleVerdict, SALE_MIN_PCT, saleLabel, visibilityFromItem, applyVisibility, notPublicMessage, type CoverSource } from '../lib/covered-sales'
 import { layoutClock, assemblePlan, tidyLine, clockLabel, LIVE_MAX_PRODUCTS } from '../lib/live-plan'
 import { canUsePreview } from '../lib/labs-preview'
+import { lastingBody, commentWithLink, SALE_WORDING, salesNow, DISCLOSURE, PRICE_LINE_LEAD } from '../lib/sale-comments'
 import { tidyCopy } from '../lib/copy-rules'
 
 const failures: string[] = []
@@ -93,9 +94,10 @@ check('the label is words, not a guess', saleLabel(saleVerdict({ deal: deal({ di
   check('the creator\'s banned words reach the prompt (the column is text, not an array)',
     /String\(raw \?\? ''\)\.split\(/.test(PROMO) && /const avoid = avoidList\(brand\?\.words_to_avoid\)/.test(PROMO))
   check('the comment and Community post always end with the price line and the Associates disclosure, written by code; the social sheet gets the post without a second link',
-    /const priceLine = `Check the latest price on Amazon here: \$\{link\}`/.test(PROMO)
-    && /const disclosure = 'As an Amazon Associate I earn from qualifying purchases\.'/.test(PROMO)
-    && /const comment = `\$\{strip\(j\.comment \?\? ''\)\}\\n\\n\$\{priceLine\}\\n\$\{disclosure\}`/.test(PROMO)
+    /const priceLine = `\$\{PRICE_LINE_LEAD\} \$\{link\}`/.test(PROMO) && /const disclosure = DISCLOSURE/.test(PROMO)
+    && PRICE_LINE_LEAD === 'Check the latest price on Amazon here:' && DISCLOSURE === 'As an Amazon Associate I earn from qualifying purchases.'
+    && /const comment = commentWithLink\(strip\(j\.comment \?\? ''\), link\)/.test(PROMO)
+    && /const commentLasting = commentWithLink\(lastingBody\(j\.commentAfter, productTitle\), link\)/.test(PROMO)
     && /\$\{priceLine\}\\n\$\{disclosure\}`/.test(PROMO.slice(PROMO.indexOf('const community ='))) && /socialForSheet:/.test(PROMO)
     && /promo\.promo\.socialForSheet/.test(read('components/labs/OnSale.tsx')))
   const CMT = read('app/api/on-sale/comment/route.ts')
@@ -103,7 +105,7 @@ check('the label is words, not a guess', saleLabel(saleVerdict({ deal: deal({ di
     /me\.id !== owner/.test(CMT) && inOrderCheck(CMT, 'me.id !== owner', 'yt.postComment('),
     'a login can fall back to the default channel, and the comment would come from somebody else')
   check('a comment only ever goes on the creator\'s own video, through that video\'s channel',
-    /from\('youtube_videos'\)\s*\.select\('id,channel_id'\)\.eq\('user_id', user\.id\)\.eq\('youtube_video_id', videoId\)/.test(CMT)
+    /from\('youtube_videos'\)\s*\.select\('id,channel_id,title'\)\.eq\('user_id', user\.id\)\.eq\('youtube_video_id', videoId\)/.test(CMT)
     && /getChannelOAuthToken\(supabase, user\.id, vid\.channel_id \?\? null\)/.test(CMT),
     'a comment on somebody else\'s video, or from the wrong channel, cannot be taken back quietly')
   const CRON = read('app/api/cron/covered-sales/route.ts')
@@ -217,9 +219,85 @@ for (const m of [30, 45, 60, 90, 120]) {
     /promo\.videoNotPublic \?/.test(UI) && /no video yet, so there is no video to comment on/.test(UI) && /Private or scheduled/.test(UI))
 }
 
+// ── the sale comes out of the comment when the sale ends ────────────────────
+async function saleEndedGuards() {
+  check('the after-sale version never carries the sale',
+    lastingBody('It is on sale right now, grab it!', 'KAKULO Water Bottle, 1L') === 'Here is the link to the KAKULO Water Bottle from this video, if you want to take a closer look.'
+    && lastingBody('A great deal today', 'X') !== 'A great deal today'
+    && lastingBody('This is the bottle I use on every camping trip.', 'X') === 'This is the bottle I use on every camping trip.')
+  check('both versions end with the price line and the disclosure',
+    commentWithLink('Hi', 'https://amzn.to/x').endsWith(`${PRICE_LINE_LEAD} https://amzn.to/x\n${DISCLOSURE}`)
+    && !SALE_WORDING.test('Check the latest price on Amazon here:'))
+
+  // A fake database: deal cache, Keepa cache, nothing else. No Keepa key, so
+  // a product in neither cache cannot be checked at all.
+  const fresh = new Date().toISOString()
+  const fake = (tables: Record<string, Array<Record<string, unknown>>>) => ({
+    from: (t: string) => {
+      const rows = tables[t] ?? []
+      const q: Record<string, unknown> = {}
+      let out = rows
+      const chain = new Proxy(q, {
+        get: (_o, k: string) => {
+          if (k === 'then') return (res: (v: unknown) => void) => res({ data: out, error: null })
+          if (k === 'in') return (col: string, vals: string[]) => { out = out.filter((r) => vals.includes(String(r[col]))); return chain }
+          return () => chain
+        },
+      })
+      return chain
+    },
+  })
+  const saved = process.env.KEEPA_API_KEY
+  delete process.env.KEEPA_API_KEY
+  try {
+    const db = fake({
+      deal_radar_cache: [{ asin: 'DEAL000001', discount_pct: 30, price_now_cents: 700, price_was_cents: 1000, deal_type: 'deal', lightning_ends_at: null, refreshed_at: fresh }],
+      keepa_product_cache: [{ asin: 'OVER000001', price_now_cents: 1000, price_avg_cents: 1000, price_lowest_cents: 800, discount_pct: 0, empty: false, fetched_at: fresh }],
+    })
+    const now = await salesNow(db, ['DEAL000001', 'OVER000001', 'NONE000001'])
+    check('a live deal is on, a checked full price is ended, and an unchecked product is unknown, never ended',
+      now.get('DEAL000001') === 'on' && now.get('OVER000001') === 'ended' && now.get('NONE000001') === 'unknown',
+      JSON.stringify([...now]))
+    const stale = await salesNow(fake({
+      deal_radar_cache: [{ asin: 'DEAL000001', discount_pct: 30, deal_type: 'deal', refreshed_at: new Date(Date.now() - 30 * 3_600_000).toISOString() }],
+    }), ['DEAL000001'])
+    check('a day-old deal row does not keep an ended sale alive', stale.get('DEAL000001') !== 'on', String(stale.get('DEAL000001')))
+  } finally { if (saved !== undefined) process.env.KEEPA_API_KEY = saved }
+
+  const C = read('app/api/on-sale/comment/route.ts')
+  check('no sale comment is posted without its after-sale version',
+    inOrderCheck(C, 'The version for after the sale is missing', 'yt.postComment(') && /SALE_WORDING\.test\(lastingBodyPart\)/.test(C))
+  check('one sale comment per video per sale',
+    inOrderCheck(C, ".eq('state', 'on_sale').limit(1)", 'yt.postComment('))
+  check('a posted comment is remembered, and a failure to remember is said',
+    inOrderCheck(C, 'yt.postComment(', "from('sale_comments').insert(") && /trackError/.test(C))
+  const CRON = read('app/api/cron/sale-comments/route.ts')
+  check('the job leaves an unchecked price alone and only edits an ended sale',
+    inOrderCheck(CRON, "if (verdict === 'unknown') { unknown++; continue }", 'takeSaleOut(sb, r)')
+    && /"path": "\/api\/cron\/sale-comments"/.test(read('vercel.json')))
+  const M = read('supabase/migrations/374_sale_comments.sql')
+  check('migration 374 is twice-runnable',
+    /create table if not exists public\.sale_comments/.test(M) && /drop policy if exists "sale_comments_own_read"/.test(M))
+
+  const BG = read('extension/background.js')
+  check('SCOUT pins by the comment id and reports the badge, not the click',
+    /msg\.type === 'MVP_YT_PIN_COMMENT'/.test(BG)
+    && /decodeURIComponent\(m\[1\]\) !== commentId/.test(BG)
+    && (BG.match(/seen \? \{ ok: true, pinned: true \}/g) ?? []).length === 2
+    && !/return \{ ok: true, pinned: true \}/.test(BG))
+  const UI = read('components/labs/OnSale.tsx')
+  check('the page says Pinned only when SCOUT saw it, and saves what it saw',
+    /const pinned = !!\(r\.ok && r\.pinned\)/.test(UI) && /action: 'pin_result'/.test(UI)
+    && /scoutAtLeast\(scout\.version, SCOUT_PIN_MIN_VERSION\)/.test(UI))
+}
+
+async function finish() {
+await saleEndedGuards()
 if (failures.length) {
   console.error(`\n❌ labs-sales-live: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
   process.exit(1)
 }
 console.log('✅ labs-sales-live: admin-only previews, a sale rule with a line, a promo with no prices, and a show clock that adds up')
+}
+void finish()

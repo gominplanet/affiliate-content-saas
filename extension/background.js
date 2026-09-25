@@ -442,6 +442,133 @@ async function fetchYouTubeTranscript({ youtubeVideoId, callerTabId }) {
   }
 }
 
+// ── Pin a comment MVP posted (YouTube has no API for pinning) ──────────────
+// MVP posts the sale comment through the Data API, which cannot pin. SCOUT
+// opens the video with that comment highlighted, in the creator's own
+// signed-in YouTube, presses the comment's menu, Pin, and Pin again in the
+// confirm box, then LOOKS for the pinned badge. It reports what it saw, never
+// what it pressed: "pinned" only when the badge is on screen.
+//
+// The tab is opened in the FOREGROUND for a few seconds: YouTube only loads
+// comments once they are scrolled into a visible page, and a background tab
+// never renders them. The creator's own tab is brought back afterwards.
+async function pinYouTubeComment({ youtubeVideoId, commentId, callerTabId }) {
+  if (!youtubeVideoId || !/^[a-zA-Z0-9_-]{11}$/.test(youtubeVideoId)) return { ok: false, error: 'bad-video-id' }
+  if (!commentId || !/^[a-zA-Z0-9_.-]{10,80}$/.test(commentId)) return { ok: false, error: 'bad-comment-id' }
+  const url = `https://www.youtube.com/watch?v=${youtubeVideoId}&lc=${encodeURIComponent(commentId)}`
+  let tabId = null
+  const waitLoaded = () => new Promise((resolve) => {
+    const onUpdated = (id, info) => {
+      if (id === tabId && info.status === 'complete') { chrome.tabs.onUpdated.removeListener(onUpdated); resolve() }
+    }
+    chrome.tabs.onUpdated.addListener(onUpdated)
+    setTimeout(() => { chrome.tabs.onUpdated.removeListener(onUpdated); resolve() }, 20000)
+  })
+  try {
+    const tab = await chrome.tabs.create({ url, active: true })
+    tabId = tab.id
+    await waitLoaded()
+    const run = async (verifyOnly) => {
+      const results = await chrome.scripting.executeScript({ target: { tabId }, func: pinCommentInPage, args: [commentId, verifyOnly] })
+      return (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
+    }
+    let out = await run(false)
+    // PRESSED BUT NOT SEEN: YouTube sometimes redraws the comments only on
+    // the next load. One reload, and a look, before saying it did not stick.
+    if (!out.ok && out.clicked) {
+      try { await chrome.tabs.reload(tabId) } catch (e) {}
+      await waitLoaded()
+      const seen = await run(true)
+      if (seen.ok) out = seen
+    }
+    return out
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'pin-exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+  }
+}
+
+// Runs in the youtube.com watch page. Self-contained: executeScript
+// serializes it, so no outer references.
+async function pinCommentInPage(commentId, verifyOnly) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const visible = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
+  const until = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(250) } return null }
+  try { const v = document.querySelector('video'); if (v) { v.muted = true; v.pause() } } catch (e) {}
+
+  // THE COMMENT, by its own id: its timestamp links to &lc=<id>, in both the
+  // older and the newer comment layouts. Never "the first comment".
+  const findComment = () => {
+    for (const a of document.querySelectorAll('a[href*="lc="]')) {
+      const href = a.getAttribute('href') || ''
+      const m = /[?&]lc=([^&#]+)/.exec(href)
+      if (!m || decodeURIComponent(m[1]) !== commentId) continue
+      const c = a.closest('ytd-comment-view-model, ytd-comment-renderer')
+      if (c) return c
+    }
+    return null
+  }
+  const pinnedBadge = (c) => {
+    const b = c && c.querySelector('ytd-pinned-comment-badge-renderer, #pinned-comment-badge ytd-pinned-comment-badge-renderer')
+    return !!b && visible(b) && (b.textContent || '').trim().length > 0
+  }
+  let comment = null
+  for (let i = 0; i < 50 && !comment; i++) {
+    const box = document.querySelector('ytd-comments#comments') || document.querySelector('#comments')
+    if (box) box.scrollIntoView({ block: 'start' })
+    else window.scrollBy(0, 700)
+    comment = findComment()
+    if (!comment) await sleep(400)
+  }
+  if (!comment) return { ok: false, error: 'The comment did not show on the video page. Comments may be off, or it is still being checked by YouTube.' }
+  if (pinnedBadge(comment)) return { ok: true, pinned: true, already: true }
+  if (verifyOnly) {
+    const seen = await until(() => pinnedBadge(findComment()), 8000)
+    return seen ? { ok: true, pinned: true } : { ok: false, clicked: true, error: 'Pin was pressed, but the comment does not show as pinned. Check the video, and pin it in Studio if it is not.' }
+  }
+
+  comment.scrollIntoView({ block: 'center' })
+  await sleep(400)
+  const menuBtn = comment.querySelector('#action-menu button, ytd-menu-renderer button, #action-buttons ~ #action-menu button')
+    || [...comment.querySelectorAll('button')].find((b) => /action|menu|more/i.test(b.getAttribute('aria-label') || ''))
+  if (!menuBtn) return { ok: false, error: 'The comment menu button was not found on the page.' }
+  menuBtn.click()
+
+  const PIN = /^(pin|épingler|epingler|anheften|fijar|fissa|fixar|afixar|vastzetten|przypnij|закрепить|sabitle|ピン留め|고정|置顶|固定|sematkan|ghim)$/i
+  const UNPIN = /^(unpin|désépingler|loslösen|no fijar|dejar de fijar|sblocca|desafixar|losmaken|odepnij|открепить|sabitlemeyi kaldır)$/i
+  const items = await until(() => {
+    const list = [...document.querySelectorAll('ytd-popup-container ytd-menu-service-item-renderer, ytd-popup-container tp-yt-paper-item, ytd-popup-container yt-list-item-view-model')]
+      .filter(visible)
+    return list.length ? list : null
+  }, 5000)
+  if (!items) return { ok: false, error: 'The comment menu did not open.' }
+  const label = (el) => (el.textContent || '').replace(/\s+/g, ' ').trim()
+  if (items.some((el) => UNPIN.test(label(el)))) {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    return { ok: true, pinned: true, already: true }
+  }
+  const pinItem = items.find((el) => PIN.test(label(el)))
+  if (!pinItem) {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    return { ok: false, error: 'There was no Pin option in the comment menu. YouTube in this browser needs to be signed in as the channel that owns the video.' }
+  }
+  ;(pinItem.querySelector('tp-yt-paper-item, a, button') || pinItem).click()
+
+  // THE CONFIRM BOX ("Pin this comment?"). Its confirm button, by position
+  // in YouTube's own dialog, not by its words.
+  const confirm = await until(() => {
+    const d = [...document.querySelectorAll('ytd-popup-container yt-confirm-dialog-renderer, ytd-popup-container tp-yt-paper-dialog')].find(visible)
+    if (!d) return null
+    return d.querySelector('#confirm-button button, #confirm-button tp-yt-paper-button, #confirm-button yt-button-shape button, #confirm-button')
+  }, 5000)
+  if (confirm) confirm.click()
+
+  const seen = await until(() => pinnedBadge(findComment()), 10000)
+  return seen ? { ok: true, pinned: true } : { ok: false, clicked: true, error: 'Pin was pressed, but the comment does not show as pinned yet.' }
+}
+
 // Runs in the PAGE (MAIN world) on a youtube.com/watch page. Reads the caption
 // track off ytInitialPlayerResponse and fetches the timedtext (json3) with the
 // user's cookies. Self-contained — executeScript serializes it, so no outer refs.
@@ -10570,6 +10697,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_YT_PIN_COMMENT') {
+    // MVP posted a sale comment and asks SCOUT to pin it, in the creator's
+    // own signed-in YouTube. The answer says whether the pinned badge was seen.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 90000)
+    pinYouTubeComment({ youtubeVideoId: msg.youtubeVideoId, commentId: msg.commentId, callerTabId })
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response, keep the channel open
   }
   if (msg.type === 'MVP_YT_TRANSCRIPT') {
     // MVP asks us to pull the video's transcript from the user's own browser

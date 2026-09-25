@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.21.13'
+export const SCOUT_LATEST_VERSION = '1.21.14'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Keeps Liftoff going when its page is closed: while Chrome is open, SCOUT opens Liftoff in a pinned background tab to finish the Studio steps and Amazon uploads, then closes it. Uses the alarms permission, which asks nothing of you.'
+  'Pins the sale comment MVP posts on your video: opens the video for a few seconds in your signed-in YouTube, pins the comment, and checks it shows as pinned.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -54,6 +54,9 @@ export function isScoutOutdated(installed: string | null | undefined): boolean {
  * waits for review first. Raise this only when the page needs something an
  * older SCOUT cannot do. */
 export const SCOUT_STUDIO_MIN_VERSION = '1.20.0'
+
+/** The oldest SCOUT that can pin a comment MVP posted (On sale now). */
+export const SCOUT_PIN_MIN_VERSION = '1.21.14'
 
 /** True when the installed SCOUT is at least `min`. False when unknown. */
 export function scoutAtLeast(installed: string | null | undefined, min: string): boolean {

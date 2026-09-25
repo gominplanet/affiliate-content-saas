@@ -793,6 +793,21 @@ export class YouTubeOAuthService {
     return String(j?.id || '')
   }
 
+  /** Edit a comment this login wrote. Its pin and replies stay. 50 quota
+   *  units. Throws with the HTTP status in the message on a refusal, so a
+   *  deleted comment (404) can be told from any other failure. */
+  async updateComment(commentId: string, text: string): Promise<void> {
+    const res = await fetchWithTimeout(`${BASE}/comments?part=snippet`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: commentId, snippet: { textOriginal: text } }),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      throw new Error(`YouTube API error ${res.status}: ${body.slice(0, 300)}`)
+    }
+  }
+
   /** Add a video to a playlist. No-op if it's already there. */
   async addVideoToPlaylist(playlistId: string, videoId: string): Promise<void> {
     const res = await fetchWithTimeout(`${BASE}/playlistItems?part=snippet`, {

@@ -9,11 +9,13 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { wrongChannelMessage } from '@/lib/launch-channel'
 import { notPublicMessage } from '@/lib/covered-sales'
+import { SALE_WORDING, PRICE_LINE_LEAD, DISCLOSURE } from '@/lib/sale-comments'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -26,16 +28,38 @@ export async function POST(req: Request) {
   if (!canUsePreview('on_sale', intg?.tier)) {
     return NextResponse.json({ error: 'On sale now is in Labs testing and not open yet.', code: 'tier_not_allowed' }, { status: 403 })
   }
-  const body = await req.json().catch(() => ({})) as { youtubeVideoId?: string; text?: string }
+  const body = await req.json().catch(() => ({})) as { youtubeVideoId?: string; text?: string; lastingText?: string; asin?: string; saleLabel?: string }
   const videoId = String(body.youtubeVideoId || '').trim()
   const text = String(body.text || '').trim().slice(0, 1500)
+  const lasting = String(body.lastingText || '').trim().slice(0, 1500)
+  const asin = String(body.asin || '').trim().toUpperCase()
   if (!/^[A-Za-z0-9_-]{11}$/.test(videoId) || !text) {
     return NextResponse.json({ error: 'A video and the comment text are both needed.' }, { status: 400 })
   }
+  // THE AFTER-SALE VERSION COMES WITH IT, OR NOTHING IS POSTED. A sale
+  // comment MVP cannot take the sale out of later is one that ends up saying
+  // something untrue, so it is not posted at all.
+  const lastingBodyPart = lasting.split(PRICE_LINE_LEAD)[0] ?? ''
+  if (!/^[A-Z0-9]{10}$/.test(asin) || !lasting || !lasting.includes(PRICE_LINE_LEAD) || !lasting.endsWith(DISCLOSURE) || SALE_WORDING.test(lastingBodyPart)) {
+    return NextResponse.json({ error: 'The version for after the sale is missing, so MVP could not take the sale out later. Press Write it again. Nothing was posted.' }, { status: 400 })
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: vid } = await (supabase as any).from('youtube_videos')
-    .select('id,channel_id').eq('user_id', user.id).eq('youtube_video_id', videoId).maybeSingle()
+    .select('id,channel_id,title').eq('user_id', user.id).eq('youtube_video_id', videoId).maybeSingle()
   if (!vid) return NextResponse.json({ error: 'That video is not one of yours.' }, { status: 404 })
+
+  // ONE SALE COMMENT PER VIDEO PER SALE. A second press would put the same
+  // pitch on the video twice.
+  const admin = createAdminClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: live, error: liveErr } = await (admin as any).from('sale_comments').select('id,comment_id')
+    .eq('user_id', user.id).eq('youtube_video_id', videoId).eq('asin', asin).eq('state', 'on_sale').limit(1)
+  if (!liveErr && live?.length) {
+    return NextResponse.json({
+      error: 'There is already a sale comment for this product on this video. It gets edited when the sale ends. Nothing new was posted.',
+      already: true, watchUrl: `https://www.youtube.com/watch?v=${videoId}&lc=${encodeURIComponent(live[0].comment_id)}`,
+    }, { status: 409 })
+  }
 
   const token = await getChannelOAuthToken(supabase, user.id, vid.channel_id ?? null)
   if (!token) return NextResponse.json({ error: 'The channel this video is on is not connected for publishing. Connect it under Settings.' }, { status: 400 })
@@ -77,8 +101,22 @@ export async function POST(req: Request) {
   }
   try {
     const id = await yt.postComment(videoId, text)
+    // REMEMBERED, SO THE SALE CAN BE TAKEN OUT LATER. If this cannot be
+    // saved the comment is still up, and the page says it will not be
+    // updated by itself, rather than letting it look like it will.
+    let tracked: { id: string } | null = null
+    let trackError: string | null = null
+    if (id) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: row, error } = await (admin as any).from('sale_comments').insert({
+        user_id: user.id, asin, youtube_video_id: videoId, video_title: vid.title ?? null, channel_id: owner,
+        comment_id: id, sale_text: text, lasting_text: lasting, sale_label: String(body.saleLabel || '').slice(0, 80) || null,
+      }).select('id').single()
+      if (error || !row) trackError = error?.code === '42P01' ? 'The sale_comments table is missing (migration 374).' : (error?.message || 'not saved')
+      else tracked = row
+    } else trackError = 'YouTube did not return the comment id.'
     return NextResponse.json({
-      ok: true, commentId: id,
+      ok: true, commentId: id, saleCommentId: tracked?.id ?? null, trackError,
       // PINNING IS A CLICK IN STUDIO: YouTube offers no way to do it by API.
       studioUrl: `https://studio.youtube.com/video/${videoId}/comments`,
       watchUrl: `https://www.youtube.com/watch?v=${videoId}${id ? `&lc=${encodeURIComponent(id)}` : ''}`,
