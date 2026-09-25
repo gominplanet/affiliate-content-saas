@@ -146,7 +146,8 @@ function UploadLine({ u, now }: { u: UploadRow; now: number }) {
         </span>
       </div>
       <div className="h-1.5 rounded-full mt-1.5 overflow-hidden" style={{ background: 'var(--surface-hover)' }}>
-        <div className="h-full rounded-full" style={{ width: `${u.state === 'failed' ? 100 : pct}%`, background: color, transition: 'width 0.4s' }} />
+        <div className="h-full w-full rounded-full motion-safe:transition-transform motion-safe:duration-300"
+          style={{ transform: `scaleX(${(u.state === 'failed' ? 100 : pct) / 100})`, transformOrigin: 'left', background: color }} />
       </div>
       <span className="block text-[11px] mt-1 tabular-nums" style={{ color: stalled || u.state === 'failed' ? color : 'var(--text-2)' }}>{line}</span>
     </li>
