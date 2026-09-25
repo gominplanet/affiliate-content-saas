@@ -2111,6 +2111,10 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('a stall is named and retried rather than waited on',
     /Date\.now\(\) - last > STALL_MS/.test(UP) && /attempt <= 3/.test(BOARD) && /No progress for \$\{still\}s/.test(BOARD),
     'a stuck connection does not start moving by being waited on')
+  check('the quiet after 100% is finishing, not a stall',
+    /if \(!sentAt && Date\.now\(\) - last > STALL_MS\)/.test(UP) && /sentAt && Date\.now\(\) - sentAt > FINISH_MS/.test(UP)
+    && /onSent: \(\) => mark\(key, \{ state: 'finishing'/.test(BOARD) && /All sent from your browser/.test(BOARD),
+    'a slow line holds the last MB after the browser says 100%, and that upload was flagged as stuck while it finished')
   check('files go up side by side but join the batch in the order picked',
     /const UPLOAD_LANES = 3/.test(BOARD) && /await \(i > 0 \? turns\[i - 1\] : Promise\.resolve\(\)\)/.test(BOARD)
     && inOrder(BOARD, 'await (i > 0 ? turns[i - 1]', "fetch(`/api/launch/batches/${batchId}/items`"),
