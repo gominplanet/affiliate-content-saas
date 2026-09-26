@@ -43,9 +43,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   if (body.action === 'pin_result') {
     const pinned = body.pinned === true
-    await admin.from('sale_comments').update({
+    const { error } = await admin.from('sale_comments').update({
       pinned, pin_error: pinned ? null : String(body.error || 'SCOUT could not pin it.').slice(0, 300),
     }).eq('id', row.id)
+    if (error) return NextResponse.json({ error: 'Could not record the pin result.' }, { status: 500 })
     return NextResponse.json({ ok: true, pinned })
   }
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })
