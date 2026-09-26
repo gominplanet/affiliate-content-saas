@@ -21,8 +21,8 @@ export interface PinPreviewData {
   boardName: string
   /** The post's vertical render, when it has one — enables a VIDEO pin. */
   videoUrl?: string | null
-  /** The direct product link (Geniuslink when the user has one, else the tagged
-   *  Amazon URL). When present, the modal offers a Blog/Product destination
+  /** The direct product link: always the full tagged Amazon URL (or the store
+   *  page), never a short or redirect link, which Pinterest blocks. When present, the modal offers a Blog/Product destination
    *  toggle. null → no product to link to, pin stays on the blog link. */
   productUrl?: string | null
   /** Set when the designed pin did NOT render and this is a fallback. Null on
@@ -53,8 +53,7 @@ export function PinterestPreviewModal({
   const [asVideo, setAsVideo] = useState(!!data.videoUrl)
   // Where the pin links: the blog post (default, safest) or the direct product
   // link. Only offered when a product link resolved. Pinterest allows affiliate
-  // links WITH disclosure (always appended below), and uses the user's
-  // Geniuslink when they have one.
+  // links WITH disclosure (always appended below), as the full URL.
   const [linkTarget, setLinkTarget] = useState<'blog' | 'product'>('blog')
   const hasProduct = !!(data.productUrl && data.productUrl.trim())
   const destLink = linkTarget === 'product' && hasProduct ? (data.productUrl as string) : data.link
@@ -242,7 +241,7 @@ export function PinterestPreviewModal({
                 <p className="text-[11px] text-[#ff3b30]">No blog URL — this post can&apos;t be pinned.</p>
               )}
               {linkTarget === 'product' && (
-                <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">Links straight to the product. The affiliate disclosure above is always included.</p>
+                <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">Links straight to the full Amazon page with your tag. Pinterest blocks short and redirect links, so this one is never shortened. The affiliate disclosure above is always included.</p>
               )}
             </div>
 

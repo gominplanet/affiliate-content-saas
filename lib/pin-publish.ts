@@ -12,6 +12,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { channelWrapLink } from '@/lib/channel-share-url'
 import { getLinkStyle } from '@/lib/link-cloak'
 import { shortenBitly } from '@/lib/bitly'
+import { isBlockedPinLink } from '@/lib/pinterest-destination'
 
 const GENERIC = /^(blog|uncategorized|general|news|misc|other|posts?)$/i
 
@@ -64,15 +65,16 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
     throw new PinPublishError('This post has no blog URL to link the pin to.', 400)
   }
   let destLink = useOverride ? override : blogLink
-  // Cloak the pin's link per the creator's ONE chosen Link style. Geniuslink →
+  // Cloak the BLOG link per the creator's ONE chosen Link style. Geniuslink →
   // route into MVP-PINTEREST so pin clicks attribute to Pinterest. Bitly → shorten
-  // the blog link (an override is already the creator's resolved product link).
-  // Passport / Direct → leave the link plain: Pinterest prefers unmasked
-  // destinations and a passport forwarder adds nothing to a blog URL. Best-effort:
-  // any hiccup leaves the link untouched.
+  // it. Passport / Direct → leave it plain: a passport forwarder adds nothing to
+  // a blog URL. A product override is never wrapped: it is the full tagged
+  // product URL on purpose (lib/pin-product-link.ts), because Pinterest asks for
+  // the full affiliate URL and blocks redirect domains. Best-effort: any hiccup
+  // leaves the link untouched.
   try {
     const cfg = await getLinkStyle(createAdminClient(), p.user_id)
-    if (cfg.style === 'geniuslink') {
+    if (cfg.style === 'geniuslink' && !useOverride) {
       destLink = await channelWrapLink({
         supabase: createAdminClient(), destination: destLink, channel: 'pinterest',
         userId: p.user_id, apiKey: ig?.geniuslink_api_key, apiSecret: ig?.geniuslink_api_secret,
@@ -83,6 +85,11 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
       if (short) destLink = short
     }
   } catch { /* keep destLink */ }
+  // Last guard on the product link: a redirect or short link never goes on a
+  // pin (Pinterest calls it spam, and the rejection counts against the domain
+  // every creator's links share). The pin falls back to the blog post instead.
+  if (useOverride && isBlockedPinLink(destLink) && /^https?:\/\//i.test(blogLink)) destLink = blogLink
+  else if (useOverride && isBlockedPinLink(destLink)) throw new PinPublishError('This product link is a redirect link, which Pinterest blocks, and the post has no blog URL to use instead. Nothing was pinned.', 400)
 
   // Never fall back to a raw (unscrubbed) value — that would leak the
   // banned word in the edge case where the scrubbed string is empty.

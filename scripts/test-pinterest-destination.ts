@@ -13,6 +13,7 @@
 //
 // So the test is not "does it pick a URL". It is: can an affiliate redirect
 // EVER come out of this, by any route, including the fallbacks.
+import { readFileSync } from 'node:fs'
 import { pinDestination, isBlockedPinLink } from '../lib/pinterest-destination'
 
 const failures: string[] = []
@@ -133,6 +134,25 @@ const APP = 'https://www.mvpaffiliate.io'
     check(`and always explains itself when it is not the obvious answer: ${JSON.stringify(i)}`,
       d.kind === 'blog_post' ? d.note === null : d.note !== null)
   }
+}
+
+// ── the blog pin "Product link" never carries a short or redirect link ──────
+//
+// It used to return the creator's Passport link first (mvpl.ink), then
+// Geniuslink or Bitly, and publishPinForPost wrapped it again in geni.us. Every
+// one of those is a link Pinterest can reject as spam, and a rejection counts
+// against the domain every creator's links share.
+{
+
+  const R = readFileSync('lib/pin-product-link.ts', 'utf8').replace(/^\s*\/\/.*$/gm, '')
+  check('the pin product link never makes a Passport, Geniuslink or Bitly link',
+    !/passportLinkFor|shortenBitly|getOrCreateAmazonGeniuslink/.test(R))
+  check('a stored mvpl.ink link is unwrapped to the real product', /mvpl\\\.ink/.test(R))
+  check('and a link that could not be unwrapped is not sent', /return isBlockedPinLink\(dest\) \? null : dest/.test(R))
+  const P = readFileSync('lib/pin-publish.ts', 'utf8')
+  check('the product link is not wrapped in geni.us on the way out', /cfg\.style === 'geniuslink' && !useOverride/.test(P))
+  check('and a blocked product link falls back to the blog post, or stops with a reason',
+    /if \(useOverride && isBlockedPinLink\(destLink\) && /.test(P) && /which Pinterest blocks/.test(P))
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

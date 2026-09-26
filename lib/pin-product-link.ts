@@ -3,21 +3,24 @@
 // Resolve the "direct product link" a creator can opt a single Pinterest pin to
 // instead of the blog post (the preview modal's Blog/Product toggle).
 //
-// Pinterest allows affiliate links WITH a clear disclosure (we always append one
-// to the pin description) and prefers unmasked destinations. Per the product
-// rule: when the user has Geniuslink configured, use their Geniuslink (their own
-// managed, disclosed affiliate link); otherwise use the tagged direct Amazon URL.
-// Returns null when there's no product to link to (the modal then disables the
+// ALWAYS THE FULL, UNSHORTENED LINK. Pinterest allows affiliate links with a
+// clear disclosure (we always append one to the pin description), but its own
+// help asks for the full affiliate URL, not a shortened one, and it blocks
+// redirect domains it does not trust. It already blocked an mvpl.ink pin with
+// "may lead to spam". Every rejection counts against the domain, and mvpl.ink
+// is the same domain every creator's YouTube and Instagram links use, so a pin
+// is the one place a Passport link must never go. So whatever the creator's
+// Link style (Passport, Geniuslink, Bitly), the pin gets the tagged amazon.com
+// URL, or the store page itself for a non-Amazon product. The one exception is
+// a TikTok Showcase account, whose tiktok.com link is not a redirect. Returns
+// null when there's no product to link to (the modal then disables the
 // Product option and the pin stays on the blog link).
 import { asinFromAmazonUrl, firstProductUrl } from '@/lib/product-link'
-import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
+import { isSafePassportDestination } from '@/lib/passport-links'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { getLinkStyle, resolveShowcaseLink } from '@/lib/link-cloak'
-import { geniuslinkCreds } from '@/lib/link-style'
-import { shortenBitly } from '@/lib/bitly'
 import { extractAsin } from '@/services/amazon'
-import { createGeniuslinkService } from '@/services/geniuslink'
-import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
+import { isBlockedPinLink } from '@/lib/pinterest-destination'
 
 export async function resolvePinProductLink(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,35 +57,21 @@ export async function resolvePinProductLink(
   let asin = (productUrl ? asinFromAmazonUrl(productUrl) : null)
     || extractAsin(`${productUrl || ''} ${title}`)
 
-  // A stored geni.us / short link carries no ASIN in the string, so the above
-  // finds nothing and Passport would be skipped — leaving the pin on the geni.us.
-  // Unwrap it via its PUBLIC redirect to recover the real product, so Passport
-  // (and the tagged fallback) can use it.
+  // A stored geni.us / Passport / short link carries no ASIN in the string, so the above
+  // finds nothing and the pin would be left on the short link. Unwrap it via
+  // its PUBLIC redirect to recover the real product.
   let unwrapped: string | null = null
-  if (!asin && productUrl && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(productUrl)) {
+  if (!asin && productUrl && /(?:geni\.us|\bgnz\.|mvpl\.ink|\/go\/[a-z0-9]+|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(productUrl)) {
     try {
       const finalUrl = await resolveTrueDestination(productUrl)
       asin = asinFromAmazonUrl(finalUrl)
       if (!asin && !/amazon\.[a-z.]+/i.test(finalUrl) && isSafePassportDestination(finalUrl)) unwrapped = finalUrl
     } catch { /* redirect unreachable — keep the original link */ }
   }
-  // Once unwrapped to a real non-Amazon store page, use THAT as the destination
-  // (never the geni.us) for the fallback below too.
+  // Once unwrapped to a real non-Amazon store page, use THAT as the
+  // destination, never the short link.
   if (unwrapped) productUrl = unwrapped
 
-  // Passport Links (geo-routing / cloaking) wins WHEN ON. Off → null and we fall
-  // through to the Geniuslink / tagged-direct link below unchanged.
-  if (asin) {
-    try {
-      const pl = await passportLinkForUser(supabase, userId, asin, { source: 'pinterest', title })
-      if (pl) return pl
-    } catch { /* fall through */ }
-  } else if (unwrapped) {
-    try {
-      const pl = await passportLinkForDestination(supabase, userId, unwrapped, { source: 'pinterest', title })
-      if (pl) return pl
-    } catch { /* fall through */ }
-  }
   const tag = ((ig?.amazon_associates_tag as string) || '').trim()
 
   // Tagged direct Amazon destination when we know the ASIN; else a non-Amazon
@@ -97,26 +86,11 @@ export async function resolvePinProductLink(
   }
   if (!dest) return null
 
-  // Apply the creator's ONE chosen Link style. Geniuslink only when they picked
-  // it (Amazon ASIN only); Bitly shortens the direct link; otherwise the tagged
-  // direct URL. Passport was already handled above (it wins when it's the style).
+  // A TikTok Showcase account links its own tiktok.com page (migration 333),
+  // which is not a redirect. Null on an Amazon account.
   const cfg = await getLinkStyle(supabase, userId)
-  // Showcase account (migration 333). Returns null on an Amazon account.
   const showcase = await resolveShowcaseLink(supabase, userId, cfg, { source: 'pinterest' })
   if (showcase) return showcase
-  if (cfg.style === 'bitly' && cfg.bitlyToken) {
-    const short = await shortenBitly(cfg.bitlyToken, dest)
-    return short || dest
-  }
-  const creds = geniuslinkCreds(cfg, ig as { geniuslink_api_key?: string | null; geniuslink_api_secret?: string | null } | null)
-  if (cfg.style === 'geniuslink' && asin && creds) {
-    // Best-effort: Geniuslink's create endpoint is flaky, so fall back to the
-    // tagged direct URL.
-    try {
-      const svc = createGeniuslinkService(creds.key, creds.secret)
-      const { url } = await getOrCreateAmazonGeniuslink({ userId, asin, destination: dest, service: svc })
-      if (url && /^https?:\/\//i.test(url)) return url
-    } catch { /* Geniuslink unavailable — use the tagged direct link */ }
-  }
-  return dest
+  // Last guard: a stored short link that could not be unwrapped is not sent.
+  return isBlockedPinLink(dest) ? null : dest
 }

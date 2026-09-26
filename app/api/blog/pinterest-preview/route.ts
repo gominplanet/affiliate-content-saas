@@ -138,8 +138,8 @@ export async function POST(request: NextRequest) {
     }
   } catch { /* fall back to the saved board below */ }
 
-  // The direct product link for the Blog/Product toggle (Geniuslink when the
-  // user has it, else the tagged direct Amazon URL). null → modal keeps Blog only.
+  // The direct product link for the Blog/Product toggle: the full tagged
+  // Amazon URL, never a short link (lib/pin-product-link.ts). null → modal keeps Blog only.
   const productUrl = await resolvePinProductLink(supabase, user.id, p, ig).catch(() => null)
 
   return NextResponse.json({

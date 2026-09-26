@@ -120,8 +120,8 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const decIg = decryptIntegrationRow(integration as any)
     // Blog/Product toggle: when the creator chose "Product", resolve the direct
-    // product link server-side (Geniuslink when configured, else the tagged
-    // Amazon URL) so the pin links there instead of the blog. The disclosure is
+    // product link server-side (the full tagged Amazon URL, never a short
+    // link) so the pin links there instead of the blog. The disclosure is
     // already in `description`. Falls back to the blog link if none resolves.
     let linkOverride: string | null = null
     if (linkTarget === 'product') {
