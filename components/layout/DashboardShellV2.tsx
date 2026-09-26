@@ -729,6 +729,7 @@ export default function DashboardShellV2({
         { href: '/admin/subscriptions', icon: <CreditCard size={15} />, label: 'Duplicate Subs (admin)' },
         { href: '/admin/blog-quality', icon: <Activity size={15} />, label: 'Blog Quality' },
         { href: '/admin/hotlinked', icon: <ImageOff size={15} />, label: 'Hot-linked posts' },
+        { href: '/admin/link-reports', icon: <ShieldCheck size={15} />, label: 'Link reports (mvpl.ink)' },
         { href: '/admin/template-performance', icon: <BarChart3 size={15} />, label: 'Template Performance' },
         { href: '/admin/designer-text', icon: <Wand2 size={15} />, label: 'Designer Text Playground' },
         { href: '/admin/announcement', icon: <Newspaper size={15} />, label: 'News banner (admin)' },

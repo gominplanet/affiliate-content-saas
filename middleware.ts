@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase/middleware'
 import { isPathBlockedForVa } from '@/lib/agency-routes'
+import { isLinkDomainPage, previewCode } from '@/lib/link-trust'
 
 const publicPaths = [
   '/login', '/signup', '/reset-password',
@@ -74,6 +75,10 @@ const publicPaths = [
   // mvpl.ink/, and it must render for a logged-out visitor or a crawler, which
   // is the entire population that will ever see it.
   '/link-domain',
+  // The short domain's other pages (lib/link-trust): its published link policy,
+  // the report form and where it posts, and the mvpl.ink/CODE+ preview. Read by
+  // visitors and platform reviewers, none of whom has a session.
+  '/link-policy', '/report-a-link', '/link-preview', '/api/link-report',
   '/pricing', '/privacy', '/terms',
   // Public product tour — the marketing twin of the in-app /pro-tour page.
   '/tour',
@@ -170,7 +175,17 @@ export async function middleware(request: NextRequest) {
     const host = (request.headers.get('host') || '').toLowerCase().split(':')[0]
     const passportHost = (process.env.PASSPORT_LINK_HOST || 'mvpl.ink').toLowerCase()
     if (host === passportHost || host === `www.${passportHost}`) {
+      // Its own pages (link policy, report form) are served as they are. Each
+      // path has a hyphen, which a link code never has.
+      if (isLinkDomainPage(request.nextUrl.pathname)) return NextResponse.next()
       const seg = request.nextUrl.pathname.replace(/^\/+/, '').split('/')[0]
+      // mvpl.ink/CODE+ shows where the link goes instead of going there.
+      const preview = previewCode(seg)
+      if (preview) {
+        const url = request.nextUrl.clone()
+        url.pathname = `/link-preview/${preview}`
+        return NextResponse.rewrite(url)
+      }
       if (seg && seg !== 'go' && /^[A-Za-z0-9]{1,32}$/.test(seg)) {
         const url = request.nextUrl.clone()
         url.pathname = `/go/${seg}`

@@ -19,13 +19,13 @@
 // page exists to remove.
 
 import type { Metadata } from 'next'
+import LinkDomainShell, { ld } from '@/components/link-domain/LinkDomainShell'
 
 export const dynamic = 'force-static'
 
-const APP = process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io'
 
 export const metadata: Metadata = {
-  title: 'mvpl.ink — short links by MVP Affiliate',
+  title: 'mvpl.ink, short links by MVP Affiliate',
   description:
     'mvpl.ink is the link shortener operated by MVP Affiliate. Links on this domain are created by creators using MVP Affiliate and send visitors to the retailer for the product being recommended.',
   robots: { index: true, follow: true },
@@ -34,67 +34,48 @@ export const metadata: Metadata = {
 
 export default function LinkDomainRootPage() {
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '48px 24px',
-        background: '#0b0b0f',
-        color: '#f5f5f7',
-        fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-      }}
-    >
-      <div style={{ maxWidth: 640, width: '100%' }}>
-        <p style={{ fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8e8e93', margin: 0 }}>
-          MVP Affiliate
+    <LinkDomainShell title="mvpl.ink is a short link service for creators">
+      <p style={ld.p}>
+        Creators who publish product reviews use MVP Affiliate to make and manage their
+        links. A link on this domain was created by one of them, and sends you to the
+        retailer selling the product they were talking about, in your own country where
+        that product is available.
+      </p>
+      <p style={ld.p}>
+        Those creators earn a commission when someone buys through their link, at no
+        extra cost to you. That is what the disclosure on their post or video refers to.
+      </p>
+      <p style={{ ...ld.p, margin: 0 }}>
+        There is nothing to see at this address on its own. A link here always has a
+        short code after the slash.
+      </p>
+
+      <section style={ld.section}>
+        <h2 style={ld.h2}>See where a link goes first</h2>
+        <p style={{ ...ld.p, margin: 0 }}>
+          Add a plus sign to the end of any link, like <strong>mvpl.ink/abc123+</strong>, to see the store and the
+          product it goes to without going there.
         </p>
-        <h1 style={{ fontSize: 34, lineHeight: 1.2, margin: '10px 0 18px', fontWeight: 700 }}>
-          mvpl.ink is a short link service for creators
-        </h1>
+      </section>
 
-        <p style={{ fontSize: 16, lineHeight: 1.65, color: '#d1d1d6', margin: '0 0 16px' }}>
-          Creators who publish product reviews use MVP Affiliate to make and manage their
-          links. A link on this domain was created by one of them, and sends you to the
-          retailer selling the product they were talking about, in your own country where
-          that product is available.
+      <section style={ld.section}>
+        <h2 style={ld.h2}>Who operates this domain</h2>
+        <p style={{ ...ld.p, margin: 0 }}>
+          MVP Affiliate, by Gominplanet. Reach us at{' '}
+          <a href="mailto:support@mvpaffiliate.io" style={ld.a}>support@mvpaffiliate.io</a>.
         </p>
+      </section>
 
-        <p style={{ fontSize: 16, lineHeight: 1.65, color: '#d1d1d6', margin: '0 0 16px' }}>
-          Those creators earn a commission when someone buys through their link, at no
-          extra cost to you. That is what the disclosure on their post or video refers to.
+      {/* Named plainly, because a reviewer looking at a shortener wants to know
+          whether anyone is policing it. The policy and the form are the proof. */}
+      <section style={ld.section}>
+        <h2 style={ld.h2}>Reporting a link</h2>
+        <p style={{ ...ld.p, margin: 0 }}>
+          Links here point only to retail product pages, and every one is tied to the
+          creator who made it. The <a href="/link-policy" style={ld.a}>link policy</a> says what is allowed. If you
+          find a link that breaks it, <a href="/report-a-link" style={ld.a}>report it</a> and it will be switched off.
         </p>
-
-        <p style={{ fontSize: 16, lineHeight: 1.65, color: '#d1d1d6', margin: '0 0 28px' }}>
-          There is nothing to see at this address on its own. A link here always has a
-          short code after the slash.
-        </p>
-
-        <div style={{ borderTop: '1px solid #2c2c2e', paddingTop: 22 }}>
-          <h2 style={{ fontSize: 15, margin: '0 0 10px', fontWeight: 600 }}>Who operates this domain</h2>
-          <p style={{ fontSize: 15, lineHeight: 1.65, color: '#d1d1d6', margin: '0 0 8px' }}>
-            MVP Affiliate, by Gominplanet.
-          </p>
-          <p style={{ fontSize: 15, lineHeight: 1.65, color: '#d1d1d6', margin: 0 }}>
-            <a href={APP} style={{ color: '#7c9cff' }}>{APP.replace(/^https?:\/\//, '')}</a>
-            {' · '}
-            <a href="mailto:support@mvpaffiliate.io" style={{ color: '#7c9cff' }}>support@mvpaffiliate.io</a>
-          </p>
-        </div>
-
-        {/* Named plainly, because a reviewer looking at a shortener wants to know
-            whether anyone is policing it. Saying so is free and true. */}
-        <div style={{ borderTop: '1px solid #2c2c2e', paddingTop: 22, marginTop: 22 }}>
-          <h2 style={{ fontSize: 15, margin: '0 0 10px', fontWeight: 600 }}>Reporting a link</h2>
-          <p style={{ fontSize: 15, lineHeight: 1.65, color: '#d1d1d6', margin: 0 }}>
-            Links here point only to retail product pages, and every one is tied to the
-            creator who made it. If you find one that does not, send it to{' '}
-            <a href="mailto:abuse@mvpaffiliate.io" style={{ color: '#7c9cff' }}>abuse@mvpaffiliate.io</a>{' '}
-            and it will be switched off.
-          </p>
-        </div>
-      </div>
-    </main>
+      </section>
+    </LinkDomainShell>
   )
 }
