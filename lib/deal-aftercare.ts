@@ -123,3 +123,54 @@ export function rewriteIsSafe(before: string, after: string): { ok: boolean; why
   if (missing.length) return { ok: false, why: `the rewrite dropped ${missing.length} link${missing.length === 1 ? '' : 's'}` }
   return { ok: true, why: null }
 }
+
+// ── Back on sale ───────────────────────────────────────────────────────────
+//
+// A lasting review whose product goes on sale again gets its deal back, in the
+// box and the intro only. The article stays the lasting review and the title
+// stays put, so the page does not swing its wording (and its ranking) back and
+// forth with every sale. When that sale ends, the box and intro go back.
+
+/** Where a deal post is in its life. Pure. */
+export type DealPhase = 'deal' | 'lasting' | 'revived'
+export function dealPhase(meta: { endedAt?: unknown; revivedAt?: unknown } | null | undefined): DealPhase {
+  const ended = Date.parse(String(meta?.endedAt || '')) || 0
+  const revived = Date.parse(String(meta?.revivedAt || '')) || 0
+  if (!ended && !revived) return 'deal'
+  return revived > ended ? 'revived' : 'lasting'
+}
+
+/**
+ * Bring the deal boxes back: no ended flag, the new discount on the chip, and
+ * the new end date (a lightning deal's) or none, never the old one, which is
+ * in the past and would show the box ended again. Pure.
+ */
+export function reviveShortcodes(content: string, sale: { pct: number | null; endsAt: string | null }): { html: string; changed: boolean } {
+  const badge = sale.pct != null && sale.pct > 0 ? `${Math.round(sale.pct)}% OFF` : 'DEAL'
+  let changed = false
+  const html = String(content || '').replace(/\[(mvp_deal_banner|mvp_deal_cta)\b([^\]]*)\]/gi, (_all, name: string, attrs: string) => {
+    let a = attrs
+      .replace(/\s+ended\s*=\s*["']?[^"'\s\]]*["']?/gi, '')
+      .replace(/\s+end_date\s*=\s*"[^"]*"|\s+end_date\s*=\s*'[^']*'/gi, '')
+      .replace(/\s+badge\s*=\s*"[^"]*"|\s+badge\s*=\s*'[^']*'/gi, '')
+      .replace(/\s+$/, '')
+    a += ` badge="${badge}"`
+    if (name.toLowerCase() === 'mvp_deal_banner' && sale.endsAt) a += ` end_date="${sale.endsAt}"`
+    const out = `[${name}${a}]`
+    if (out !== `[${name}${attrs}]`) changed = true
+    return out
+  })
+  return { html, changed }
+}
+
+/** The first product link in the article, for a post that never had a deal box. */
+export function firstProductHref(content: string): string | null {
+  const m = /href\s*=\s*["'](https?:\/\/[^"']*(?:amazon\.[a-z.]+|amzn\.to|geni\.us|mvpl\.ink)[^"']*)["']/i.exec(String(content || ''))
+  return m ? m[1] : null
+}
+
+/** The intro while the product is on sale again. Pure. */
+export function saleAgainExcerpt(pct: number | null, productName: string): string {
+  const lead = pct != null && pct > 0 ? `On sale again: about ${Math.round(pct)}% off right now.` : 'On sale again right now.'
+  return `${lead} ${lastingExcerpt(productName)}`
+}

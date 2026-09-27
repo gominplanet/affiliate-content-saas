@@ -9,7 +9,7 @@
 // a rewrite that lost a link or a box is never published; and the title and
 // intro that replace the sale ones stay true.
 import { readFileSync } from 'node:fs'
-import { parseDealEnd, dealState, lastingTitle, lastingExcerpt, markShortcodesEnded, rewriteIsSafe } from '../lib/deal-aftercare'
+import { parseDealEnd, dealState, lastingTitle, lastingExcerpt, markShortcodesEnded, rewriteIsSafe, dealPhase, reviveShortcodes, saleAgainExcerpt, firstProductHref } from '../lib/deal-aftercare'
 import { canUsePreview } from '../lib/labs-preview'
 import { WP_VERSIONS } from '../lib/wp-versions'
 
@@ -69,9 +69,44 @@ check('a post whose deal did not end is not rewritten', /if \(row\.state !== 'en
 check('the article is replaced only when the rewrite kept every link and box',
   inOrder(SRV, 'const safe = rewriteIsSafe(html, out)', "if (safe.ok) { html = out; article = 'rewritten' }"))
 check('the change is recorded only after WordPress took it', inOrder(SRV, 'await wp.updatePost(', 'endedAt: at, aftercare: report'))
-check('the price check spends a capped number of Keepa lookups', /const batch = need\.slice\(0, CHECK_MAX\)/.test(SRV))
+check('the price check spends a capped number of Keepa lookups', /const batch = need\.slice\(0, cap\)/.test(SRV) && /cap = CHECK_MAX\)/.test(SRV))
 check('the address never changes', !/slug\s*:/.test(SRV))
 check('Ended deals is admin only while it is tested', !canUsePreview('deal_aftercare', 'pro') && canUsePreview('deal_aftercare', 'admin'))
+
+// ── back on sale, and ended again ───────────────────────────────────────────
+check('a post moves deal, lasting, revived, lasting by its timestamps',
+  dealPhase({}) === 'deal' && dealPhase({ endedAt: '2026-08-01' }) === 'lasting'
+  && dealPhase({ endedAt: '2026-08-01', revivedAt: '2026-09-01' }) === 'revived' && dealPhase({ endedAt: '2026-09-10', revivedAt: '2026-09-01' }) === 'lasting')
+const endedBody = '[mvp_deal_banner end_date="2026-07-08" badge="27% OFF" url="https://amazon.com/dp/X" ended="1"]<p>x</p>[mvp_deal_cta url="https://amazon.com/dp/X" ended="1"]'
+const back = reviveShortcodes(endedBody, { pct: 31.6, endsAt: null })
+check('bringing it back drops the ended flag and the OLD end date, and shows the new discount',
+  back.changed && !/ended=/.test(back.html) && !/2026-07-08/.test(back.html) && (back.html.match(/badge="32% OFF"/g) || []).length === 2, back.html)
+const light = reviveShortcodes(endedBody, { pct: null, endsAt: '2026-10-01T18:00:00Z' })
+check('a lightning deal counts down on the box, with a plain DEAL chip when the discount is not known',
+  /\[mvp_deal_banner[^\]]*end_date="2026-10-01T18:00:00Z"/.test(light.html) && !/\[mvp_deal_cta[^\]]*end_date/.test(light.html) && /badge="DEAL"/.test(light.html))
+check('and when that sale ends the boxes go back to ended', (markShortcodesEnded(back.html).html.match(/ended="1"/g) || []).length === 2)
+const again = saleAgainExcerpt(31.6, 'LEVOIT Tower Fan')
+check('the on-sale-again intro gives the discount and stays free of dashes and a year', /^On sale again: about 32% off right now\./.test(again) && !/[\u2013\u2014]/.test(again) && !/\b20\d\d\b/.test(again))
+check('a post with no deal box gets one pointing at its own product link', firstProductHref('<a href="https://www.amazon.com/dp/X?tag=t">x</a>') === 'https://www.amazon.com/dp/X?tag=t' && firstProductHref('<a href="https://blog.example/x">x</a>') === null)
+
+const SRV2 = read('lib/deal-aftercare-server.ts')
+check('a brought-back deal runs on its NEW end date, never the old one that would end it again',
+  /phase === 'revived'\s*\?\s*parseDealEnd\(m\.revivedEndsAt/.test(SRV2))
+check('a price check made before the post last changed is not an answer', /checkedAt >= since/.test(SRV2))
+check('a lasting review is never "ended" into another rewrite, only brought back on a fresh sale',
+  /if \(row\.phase === 'lasting'\) return \{ ok: false, error: 'Not changed: it is already a lasting review\.' \}/.test(SRV2)
+  && /if \(row\.state !== 'on'\) return \{ ok: false/.test(SRV2))
+check('ending again does not rewrite the article a second time', /if \(articleAlreadyLasting\) \{ article = 'already' \} else try \{/.test(SRV2))
+check('bringing it back leaves the title and the article alone', (() => {
+  const i = SRV2.indexOf('export async function reviveDealPost'); const body = SRV2.slice(i)
+  return i > 0 && !/title:/.test(body.slice(0, body.indexOf('return { ok: true, report }'))) && !/messages\.create/.test(body)
+})())
+const CRON = read('app/api/cron/deal-aftercare/route.ts')
+check('the job runs for those who can use it and have it on, within caps and a deadline',
+  /TIERS\.filter\(\(t\) => canUsePreview\('deal_aftercare', t\)\)/.test(CRON) && /\.eq\('deal_aftercare_auto', true\)/.test(CRON)
+  && /const CHECKS_PER_RUN = 150/.test(CRON) && /if \(Date\.now\(\) > deadline\) break/.test(CRON))
+check('the job is scheduled', /"\/api\/cron\/deal-aftercare"/.test(read('vercel.json')))
+check('the switch has its migration, and it defaults to on', /add column if not exists deal_aftercare_auto boolean not null default true/.test(read('supabase/migrations/380_deal_aftercare_auto.sql')))
 
 console.log(failures.length ? `FAIL (${failures.length})` : '✅ deal-aftercare: an ended deal shows as ended with a live button, and only a truly ended post is rewritten, safely')
 for (const f of failures) console.log(`   • ${f}`)

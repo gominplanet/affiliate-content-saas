@@ -5,6 +5,8 @@
 // GET                                  the creator's deal posts, each with its state
 // POST { action: 'check' }             a fresh price check for posts with no passed end date
 // POST { action: 'convert', postId }   turn one ended deal post into a lasting review
+// POST { action: 'revive', postId }    bring the deal back on a lasting review on sale again
+// POST { action: 'auto', on }          switch the automatic job on or off (migration 380)
 //
 // LABS, admin only while it is tested (lib/labs-preview.ts deal_aftercare).
 
@@ -13,7 +15,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { canUsePreview } from '@/lib/labs-preview'
-import { listDealPosts, checkDealPrices, convertDealPost } from '@/lib/deal-aftercare-server'
+import { listDealPosts, checkDealPrices, convertDealPost, reviveDealPost } from '@/lib/deal-aftercare-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,15 +35,22 @@ async function gate() {
 export async function GET() {
   const g = await gate()
   if ('error' in g) return g.error
-  const r = await listDealPosts(createAdminClient(), g.ownerId)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any
+  const r = await listDealPosts(admin, g.ownerId)
   if (r.error) return NextResponse.json({ error: r.error }, { status: 500 })
-  return NextResponse.json(r)
+  // The switch. Without migration 380 it does not exist, and the job treats
+  // everyone as on (its default), so the page says so rather than "off".
+  const a = await admin.from('integrations').select('deal_aftercare_auto').eq('user_id', g.ownerId).maybeSingle()
+  const autoColumn = !a.error
+  const auto = autoColumn ? a.data?.deal_aftercare_auto !== false : true
+  return NextResponse.json({ ...r, auto, autoColumn })
 }
 
 export async function POST(req: Request) {
   const g = await gate()
   if ('error' in g) return g.error
-  const body = await req.json().catch(() => ({})) as { action?: string; postId?: string; force?: boolean }
+  const body = await req.json().catch(() => ({})) as { action?: string; postId?: string; force?: boolean; on?: boolean }
   const admin = createAdminClient()
   try {
     if (body.action === 'check') return NextResponse.json({ ok: true, ...(await checkDealPrices(admin, g.ownerId)) })
@@ -49,6 +58,22 @@ export async function POST(req: Request) {
       if (!body.postId) return NextResponse.json({ error: 'Which post?' }, { status: 400 })
       const r = await convertDealPost(admin, g.ownerId, String(body.postId), { force: body.force === true })
       return NextResponse.json(r, { status: r.ok ? 200 : 422 })
+    }
+    if (body.action === 'revive') {
+      if (!body.postId) return NextResponse.json({ error: 'Which post?' }, { status: 400 })
+      const r = await reviveDealPost(admin, g.ownerId, String(body.postId))
+      return NextResponse.json(r, { status: r.ok ? 200 : 422 })
+    }
+    if (body.action === 'auto') {
+      const on = (body as { on?: boolean }).on === true
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (admin as any).from('integrations').update({ deal_aftercare_auto: on }).eq('user_id', g.ownerId).select('deal_aftercare_auto')
+      if (error) {
+        const missing = /deal_aftercare_auto/.test(error.message)
+        return NextResponse.json({ ok: false, error: missing ? 'The switch needs migration 380, so nothing was changed.' : error.message }, { status: missing ? 422 : 500 })
+      }
+      if (!(data ?? []).length) return NextResponse.json({ ok: false, error: 'Your account settings row was not found, so nothing was changed.' }, { status: 404 })
+      return NextResponse.json({ ok: true, auto: data[0].deal_aftercare_auto === true })
     }
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   } catch (e) {

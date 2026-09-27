@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, RefreshCw, Wand2, ExternalLink, CheckCircle2, AlertTriangle, Search } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
-import type { DealPostRow, AftercareReport } from '@/lib/deal-aftercare-server'
+import type { DealPostRow, AftercareReport, ReviveReport } from '@/lib/deal-aftercare-server'
 
 const ACCENT = '#7C3AED'
 const fmt = (s: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '')
@@ -23,29 +23,59 @@ export default function EndedDeals() {
   const [busy, setBusy] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
   const [results, setResults] = useState<Record<string, { ok: boolean; text: string }>>({})
+  const [auto, setAuto] = useState<{ on: boolean; column: boolean } | null>(null)
+  const [savingAuto, setSavingAuto] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
     try {
       const r = await fetch('/api/deal-aftercare')
       const text = await r.text()
-      let j: { posts?: DealPostRow[]; error?: string }
+      let j: { posts?: DealPostRow[]; error?: string; auto?: boolean; autoColumn?: boolean }
       try { j = JSON.parse(text) } catch { throw new Error(`The server answered with an error page (HTTP ${r.status}).`) }
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
       setPosts(j.posts ?? [])
+      setAuto({ on: j.auto !== false, column: j.autoColumn !== false })
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
   }, [])
   useEffect(() => { load() }, [load])
 
   const groups = useMemo(() => {
     const all = posts ?? []
+    const live = all.filter((p) => p.phase !== 'lasting')
+    const lasting = all.filter((p) => p.phase === 'lasting')
     return {
-      ended: all.filter((p) => p.state === 'ended' && !p.convertedAt),
-      done: all.filter((p) => !!p.convertedAt),
-      unknown: all.filter((p) => p.state === 'unknown' && !p.convertedAt),
-      on: all.filter((p) => p.state === 'on' && !p.convertedAt),
+      ended: live.filter((p) => p.state === 'ended'),
+      unknown: live.filter((p) => p.state === 'unknown'),
+      on: live.filter((p) => p.state === 'on' && p.phase === 'deal'),
+      revived: live.filter((p) => p.state === 'on' && p.phase === 'revived'),
+      saleAgain: lasting.filter((p) => p.state === 'on'),
+      done: lasting.filter((p) => p.state !== 'on'),
+      toCheck: all.filter((p) => p.state === 'unknown').length,
     }
   }, [posts])
+
+  async function setAutoOn(on: boolean) {
+    setSavingAuto(true)
+    try {
+      const r = await fetch('/api/deal-aftercare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'auto', on }) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`)
+      setAuto({ on: j.auto === true, column: true })
+      toast.success(j.auto ? 'Automatic is on.' : 'Automatic is off. Nothing changes on its own.')
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)) }
+    setSavingAuto(false)
+  }
+
+  async function revive(p: DealPostRow) {
+    setBusy(p.id)
+    try {
+      const r = await fetch('/api/deal-aftercare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'revive', postId: p.id }) })
+      const j = await r.json().catch(() => ({ ok: false, error: `The server answered with an error page (HTTP ${r.status}).` }))
+      setResults((m) => ({ ...m, [p.id]: j.ok ? { ok: true, text: 'The deal is back in the post.' } : { ok: false, text: j.error || 'Not changed.' } }))
+    } finally { setBusy(null) }
+    await load()
+  }
 
   async function checkPrices() {
     setChecking(true)
@@ -90,14 +120,29 @@ export default function EndedDeals() {
         <span className="block mt-1 text-[12px] text-[#86868b]">The deal boxes need the MVP plugin 1.0.97 or later on your site. Update it under Plugins in WordPress.</span>
       </div>
 
+      {auto && (
+        <div className="card p-4 mb-4 flex flex-wrap items-center gap-3">
+          <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" checked={auto.on} disabled={savingAuto || !auto.column} onChange={(e) => setAutoOn(e.target.checked)} className="w-4 h-4 accent-[#7C3AED]" />
+            <span className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Automatic {auto.on ? 'on' : 'off'}</span>
+          </label>
+          <span className="text-[12px] text-[#6e6e73] dark:text-[#aeaeb2] flex-1 min-w-[240px]">
+            {auto.on
+              ? 'Every six hours MVP makes ended deals lasting reviews, and brings the deal back when a product is on sale again. Only on a real answer: a passed end date or a fresh price check.'
+              : 'Nothing changes on its own. The buttons below still work.'}
+            {!auto.column && ' Run migration 380 to be able to switch it off.'}
+          </span>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2 mb-4">
         <button onClick={convertAll} disabled={!groups.ended.length || !!busy}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-[13px] font-semibold disabled:opacity-40" style={{ background: ACCENT }}>
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} Make all {groups.ended.length} ended deals lasting reviews
         </button>
-        <button onClick={checkPrices} disabled={checking || !groups.unknown.length}
+        <button onClick={checkPrices} disabled={checking || !groups.toCheck}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] text-[13px] font-medium disabled:opacity-40">
-          {checking ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Check prices for {groups.unknown.length} with no end date
+          {checking ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Check prices for {groups.toCheck} not known yet
         </button>
         <button onClick={load} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] text-[12px]"><RefreshCw size={12} /> Refresh</button>
       </div>
@@ -106,17 +151,19 @@ export default function EndedDeals() {
       {posts === null && !error && <div className="flex items-center gap-2 text-[13px] text-[#86868b] py-10 justify-center"><Loader2 size={14} className="animate-spin" /> Reading your deal posts…</div>}
       {posts && posts.length === 0 && <div className="card p-6 text-[13px] text-[#6e6e73]">You have no published single-product deal posts.</div>}
 
-      <Section title="Deal ended" note="The sale is over and the post still says it is on." posts={groups.ended} busy={busy} results={results} onConvert={async (p) => { await convert(p); await load() }} />
-      <Section title="Not known yet" note="No end date was saved. Check prices to find out whether they are still on sale." posts={groups.unknown} busy={busy} results={results} />
+      <Section title="Deal ended" note="The sale is over and the post still says it is on." posts={groups.ended} busy={busy} results={results} action={{ label: 'Make it a lasting review', run: async (p) => { await convert(p); await load() } }} />
+      <Section title="Back on sale" note="Lasting reviews whose product is on sale again. Bringing the deal back changes the deal box and the intro only." posts={groups.saleAgain} busy={busy} results={results} action={{ label: 'Bring the deal back', run: revive }} />
+      <Section title="Not known yet" note="No answer yet on whether they are on sale. Check prices to find out." posts={groups.unknown} busy={busy} results={results} />
+      <Section title="Deal brought back" note="On sale again, with the deal back in the box. It goes back to a lasting review when this sale ends." posts={groups.revived} busy={busy} results={results} />
       <Section title="Still on sale" note="Left as they are while the sale runs." posts={groups.on} busy={busy} results={results} />
-      <Section title="Already lasting reviews" note="Converted by MVP. What was done is listed on each." posts={groups.done} busy={busy} results={results} />
+      <Section title="Lasting reviews" note="Converted by MVP. What was done is listed on each." posts={groups.done} busy={busy} results={results} />
     </div>
   )
 }
 
-function Section({ title, note, posts, busy, results, onConvert }: {
+function Section({ title, note, posts, busy, results, action }: {
   title: string; note: string; posts: DealPostRow[]; busy: string | null
-  results: Record<string, { ok: boolean; text: string }>; onConvert?: (p: DealPostRow) => void
+  results: Record<string, { ok: boolean; text: string }>; action?: { label: string; run: (p: DealPostRow) => void }
 }) {
   if (!posts.length) return null
   return (
@@ -132,10 +179,10 @@ function Section({ title, note, posts, busy, results, onConvert }: {
                 <p className="text-[#86868b]">{p.asin} · published {fmt(p.publishedAt)} · {p.why}</p>
               </div>
               {p.url && <a href={p.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[#0a84ff]">View <ExternalLink size={11} /></a>}
-              {onConvert && (
-                <button onClick={() => onConvert(p)} disabled={!!busy}
+              {action && (
+                <button onClick={() => action.run(p)} disabled={!!busy}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white font-semibold disabled:opacity-40" style={{ background: ACCENT }}>
-                  {busy === p.id ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />} Make it a lasting review
+                  {busy === p.id ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />} {action.label}
                 </button>
               )}
             </div>
@@ -144,7 +191,9 @@ function Section({ title, note, posts, busy, results, onConvert }: {
                 {results[p.id].ok ? <CheckCircle2 size={13} className="shrink-0 mt-px" /> : <AlertTriangle size={13} className="shrink-0 mt-px" />}{results[p.id].text}
               </p>
             )}
+            {p.salePct != null && <p className="mt-1 text-[#248a3d]">About {Math.round(p.salePct)}% off at the latest price check.</p>}
             {p.aftercare && <Report r={p.aftercare} />}
+            {p.revive && <RevivedLine r={p.revive} />}
           </li>
         ))}
       </ul>
@@ -160,11 +209,23 @@ function Report({ r }: { r: AftercareReport }) {
   )
   return (
     <ul className="mt-2 flex flex-col gap-0.5 text-[11px]">
-      <li className="text-[#86868b]">Converted {fmt(r.at)}:</li>
+      <li className="text-[#86868b]">Made a lasting review {fmt(r.at)}{r.auto ? ' by the automatic job' : ''}:</li>
       {line(r.boxes !== 'none', r.boxes === 'ended' ? 'Deal boxes marked ended.' : r.boxes === 'already' ? 'Deal boxes were already marked ended.' : 'The post had no deal box to mark.')}
-      {line(r.article === 'rewritten', r.article === 'rewritten' ? 'Sale wording taken out of the article.' : r.articleWhy || 'The article text was not changed.')}
+      {line(r.article === 'rewritten' || r.article === 'already', r.article === 'rewritten' ? 'Sale wording taken out of the article.' : r.article === 'already' ? 'The article was already a lasting review from before.' : r.articleWhy || 'The article text was not changed.')}
       {line(true, r.title ? `Title: "${r.title.before}" is now "${r.title.after}".` : 'The title had no sale wording to take out.')}
       {line(r.excerpt && r.meta, 'Intro and search description replaced with lasting ones.')}
     </ul>
+  )
+}
+
+function RevivedLine({ r }: { r: ReviveReport }) {
+  return (
+    <p className="mt-1 flex items-start gap-1.5 text-[11px] text-[#248a3d]">
+      <CheckCircle2 size={12} className="shrink-0 mt-px" />
+      <span>
+        Deal brought back {fmt(r.at)}{r.auto ? ' by the automatic job' : ''}: {r.boxes === 'added' ? 'a deal box was added' : 'the deal box shows the sale again'}
+        {r.pct != null ? ` at about ${Math.round(r.pct)}% off` : ''}{r.endsAt ? `, counting down to ${fmt(r.endsAt)}` : ''}, and the intro says it is on sale again.
+      </span>
+    </p>
   )
 }
