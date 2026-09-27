@@ -2415,6 +2415,20 @@ function TabQueryWatcher({ onParams }: { onParams: (params: URLSearchParams) => 
   return null
 }
 
+/** Where a post is live, for the "Published" badge on a post-only card, from
+ *  the platforms it is recorded on. Same order and names as the video cards. */
+const PUBLISHED_ORDER: Array<[string, string]> = [
+  ['facebook', 'Facebook'], ['instagram', 'Instagram'], ['x', 'X'], ['twitter', 'X'], ['linkedin', 'LinkedIn'],
+  ['threads', 'Threads'], ['bluesky', 'Bluesky'], ['telegram', 'Telegram'], ['pinterest', 'Pinterest'],
+]
+function publishedChannels(posted: string[] | undefined, pinned: boolean, onWordPress: boolean): string[] {
+  const have = new Set((posted ?? []).map((p) => String(p).toLowerCase()))
+  if (pinned) have.add('pinterest')
+  const out: string[] = onWordPress ? ['WordPress'] : []
+  for (const [key, label] of PUBLISHED_ORDER) if (have.has(key) && !out.includes(label)) out.push(label)
+  return out
+}
+
 export default function ContentPage() {
   const supabase = createBrowserClient()
   const { confirm, ConfirmHost } = useConfirm()
@@ -4681,7 +4695,10 @@ export default function ContentPage() {
                   const post = it.post
                   return (
             <div key={post.id} className={`card p-4 transition-colors ${selectedPostIds.has(post.id) ? 'ring-2 ring-[#7C3AED]/40 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
-              <div className="flex items-center gap-3">
+              {/* Two rows: the post (thumbnail, title, date, where it is live),
+                  then its buttons. In the two-column grid the buttons used to
+                  share the first row and squeezed the title out of sight. */}
+              <div className="flex flex-wrap items-center gap-3">
               <input
                 type="checkbox"
                 checked={selectedPostIds.has(post.id)}
@@ -4720,8 +4737,23 @@ export default function ContentPage() {
                     {post.date ? new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : ''}
                   </p>
                 </div>
+                {/* "Published · where", the same badge the video cards carry,
+                    from the channels this post is recorded on. */}
+                {(() => {
+                  const chans = publishedChannels(post.posted, !!post.pinnedPersisted || pinnedPostIds.has(post.mvpId || String(post.id)), !!post.link)
+                  if (!chans.length) return null
+                  return (
+                    <span
+                      className="inline-flex flex-wrap items-center gap-1 mt-1.5 text-[10px] font-bold rounded-full px-2 py-0.5"
+                      style={{ background: 'rgba(10,132,255,0.14)', color: '#0a6fd6', border: '1px solid rgba(10,132,255,0.35)' }}
+                      title={`This post is live on ${chans.join(', ')}.`}
+                    >
+                      ✓ Published · {chans.join(' · ')}
+                    </span>
+                  )
+                })()}
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+              <div className="basis-full flex items-center gap-2 flex-wrap">
                 {/* Rewrite is Pro-only and one-shot per post. Hide for
                     everyone else — they manually edit in WordPress. */}
                 {post.videoId && (userTier === 'pro' || userTier === 'admin') && (
