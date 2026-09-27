@@ -237,28 +237,43 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
   // ── phase 3: brand and name for products the creator's own rows did not cover ──
   const contentAsins = [...new Set(links.map((l) => up(l.asin)).filter((a) => ASIN_RE.test(a)))]
   const missing = contentAsins.filter((a) => !brandOf.has(a))
-  // One ASIN per query with contains(), answered by the GIN index on asins.
-  // NO ORDER BY: sorting by ends_at lets Postgres walk the ends_at index and
-  // filter, which for a product that is not in the catalog means reading all
-  // ~800k rows, and the page ran out of time on exactly that. Results land in
-  // `found` as they come, so a deadline keeps what was found instead of
-  // throwing it all away.
-  type CatRow = { campaign_id: string; brand_name: string | null; asins: string[] | null; campaign_name: string | null }
+  // WHICH BRAND, FROM THE CATALOG. First the cc_brands_for_asins function
+  // (migration 381): the whole list in one call, one index lookup each. A
+  // per-product query with a LIMIT took over ten seconds each on the real
+  // catalog, because Postgres may read ~800k rows from the top rather than use
+  // the index. Without the function, the fallback asks one product at a time
+  // with no LIMIT, which leaves the index as the planner's obvious choice.
+  // Results land in `found` as they come, so a deadline keeps what was found.
+  type CatRow = { campaign_id: string; brand_name: string | null; asins?: string[] | null; campaign_name: string | null }
   const catErrors: string[] = []
   const found: Array<{ asin: string; rows: CatRow[] }> = []
   const lookFor = missing.slice(0, 600)
   const queue = [...lookFor]
+  let viaFunction = false
   const catR = await withDeadline(timed('catalog', async () => {
+    let rpc: { data?: unknown; error: { message: string } | null }
+    try { rpc = await sb.rpc('cc_brands_for_asins', { p_asins: lookFor }) } catch (e) { rpc = { error: { message: `function call failed: ${e instanceof Error ? e.message : String(e)}` } } }
+    if (!rpc.error) {
+      viaFunction = true
+      const by = new Map<string, CatRow[]>()
+      for (const r of (rpc.data ?? []) as Array<{ asin: string; brand_name: string | null; campaign_id: string; campaign_name: string | null }>) {
+        by.set(r.asin, [...(by.get(r.asin) ?? []), { campaign_id: r.campaign_id, brand_name: r.brand_name, campaign_name: r.campaign_name }])
+      }
+      for (const a of lookFor) found.push({ asin: a, rows: by.get(a) ?? [] })
+      queue.length = 0
+      return found
+    }
+    if (!/cc_brands_for_asins|function|schema cache/i.test(String(rpc.error.message))) catErrors.push(String(rpc.error.message).slice(0, 120))
     await Promise.all(Array.from({ length: Math.min(16, queue.length) }, async () => {
       for (let a = queue.shift(); a; a = queue.shift()) {
-        const r = await sb.from('cc_campaign_catalog').select('campaign_id, brand_name, asins, campaign_name').contains('asins', [a]).limit(5)
+        const r = await sb.from('cc_campaign_catalog').select('campaign_id, brand_name, campaign_name').contains('asins', [a])
         if (r.error) { if (catErrors.length < 3) catErrors.push(String(r.error.message || r.error).slice(0, 120)); continue }
-        found.push({ asin: a, rows: (r.data ?? []) as CatRow[] })
+        found.push({ asin: a, rows: ((r.data ?? []) as CatRow[]).slice(0, 5) })
       }
     }))
     return found
   }), 25_000, found)
-  if (catR.timedOut) { queue.length = 0; timings.catalog = 25_000; unread.push(`the Creator Connections catalog for ${lookFor.length - found.length} of ${lookFor.length} products (it was slow)`) }
+  if (catR.timedOut) { queue.length = 0; timings.catalog = 25_000; unread.push(`the Creator Connections catalog for ${lookFor.length - found.length} of ${lookFor.length} products (it was slow${viaFunction ? '' : '; migration 381 makes this one fast lookup'})`) }
   else if (catErrors.length) unread.push(`the Creator Connections catalog (${catErrors[0]})`)
   if (missing.length > 600) unread.push(`the brand of ${missing.length - 600} older products (only the first 600 are looked up)`)
   for (const { asin, rows } of found) {
