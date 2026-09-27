@@ -231,6 +231,18 @@ check('a product link only from a real ASIN', productLinkFor('B0ABCDEFGH') === '
 
 // ── the SQL ──────────────────────────────────────────────────────────────
 const SQL = read('supabase/migrations/367_launch_youtube_options.sql')
+{
+  // ── Liftoff's videos in Studio: what the stored runs showed failing ──
+  const SF = read('lib/studio-finish.ts')
+  check('the end screen step on a video\'s own page does not look for a draft window first',
+    /K\.steps\.endscreen = async \(out, o\) => \{[\s\S]{0,600}?const dlg = o\.page \? document\.body : mainDialog\(\)/.test(BG_RAW))
+  check('the product search counts wherever Studio opens it, not only in a new window',
+    /const searchIn = \(d\) =>/.test(BG_RAW) && /dialogsNow\(\)\.filter\(\(x\) => x !== fresh\)/.test(BG_RAW) && /out\.debug\.dialogs = /.test(BG_RAW))
+  check('paid promotion is answered, saved and read back a second time when Studio did not keep it',
+    /for \(let round = 0; round < 2; round\+\+\)/.test(BG_RAW) && /const again = await studioDraftExec\(tabId, 'videoDetails', ask\)/.test(BG_RAW))
+  check('a stored run keeps what a failed step saw, capped',
+    /\.\.\.\(!s\.ok && !s\.skipped \? seenOf\(s\) : \{\}\)/.test(SF) && /JSON\.stringify\(bits\)\.slice\(0, 900\)/.test(SF) && /seen: x\.seen\.slice\(0, 900\)/.test(SF))
+}
 check('migration 367 can run twice', (SQL.match(/add column if not exists/g) || []).length === 5)
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

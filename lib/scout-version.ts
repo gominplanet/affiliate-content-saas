@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.21.16'
+export const SCOUT_LATEST_VERSION = '1.21.17'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Pinning handles the newer YouTube confirm box, looks for the pinned badge on every copy of the comment, and reports each step it saw, so a failed pin says exactly where it stopped.'
+  'Liftoff in Studio: end screens work on uploaded videos, the product search is found wherever Studio opens it, and paid promotion is answered again when Studio did not keep it the first time.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

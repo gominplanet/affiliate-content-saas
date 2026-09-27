@@ -8990,13 +8990,29 @@ K.steps.monetization = async (out, o) => {
     if (!add) { out.skipped = true; out.detail = 'Tag products is not offered on this channel'; return out }
     const before = dialogsNow()
     click(add)
+    // THE SEARCH BOX, WHEREVER IT OPENED. Only a dialog that was not there
+    // before the click used to count, and on a video's own Details page
+    // Studio shows the product window by revealing one it already has, so a
+    // search that opened was reported as never opening. A new dialog is still
+    // preferred; any open dialog with a search box is accepted after it.
+    const searchIn = (d) => all(d).find((el) => {
+      const tag = (el.tagName || '').toLowerCase()
+      if (!visible(el)) return false
+      if (tag === 'input') { const ty = String(el.type || 'text').toLowerCase(); return ty === 'text' || ty === 'search' }
+      return el.getAttribute && (el.getAttribute('role') === 'searchbox' || el.getAttribute('role') === 'combobox')
+    }) || null
     const pop = await waitFor(() => {
-      const d = newDialog(before)
-      if (!d) return null
-      const input = all(d).find((el) => (el.tagName || '').toLowerCase() === 'input' && visible(el))
-      return input ? { d, input } : null
-    }, 10000, 400)
-    if (!pop) { out.detail = 'Pressed Add, but the product search did not open'; out.debug.buttons = buttonSample(document); return out }
+      const fresh = newDialog(before)
+      const order = (fresh ? [fresh] : []).concat(dialogsNow().filter((x) => x !== fresh))
+      for (const d of order) { const input = searchIn(d); if (input) return { d, input } }
+      return null
+    }, 15000, 400)
+    if (!pop) {
+      out.detail = 'Pressed ' + ((deepText(add) || attrLabel(add) || 'Add').slice(0, 30)) + ', but the product search did not open'
+      out.debug.buttons = buttonSample(document)
+      out.debug.dialogs = dialogsNow().map((x) => (x.tagName || '').toLowerCase() + ':' + visibleText(x).slice(0, 80)).slice(0, 4)
+      return out
+    }
     const { d, input } = pop
     const setInput = (q) => {
       try {
@@ -9198,7 +9214,11 @@ K.steps.monetization = async (out, o) => {
   }
 
   K.steps.endscreen = async (out, o) => {
-    const dlg = mainDialog()
+    // A VIDEO'S OWN END-SCREEN PAGE HAS NO DRAFT WINDOW. This looked for the
+    // upload dialog first and stopped on its absence, so every Liftoff video
+    // (never a draft) reported "The draft window closed" before the editor
+    // was even looked for.
+    const dlg = o.page ? document.body : mainDialog()
     if (!dlg) { out.detail = 'The draft window closed'; return out }
     const importBtn = () => findBtn(/^import from video$/i, dlg, { enabled: true })
     const rowDone = () => all(dlg).some((el) => isBtn(el) && visible(el) && /^edit$/i.test(deepText(el) || attrLabel(el)) && rowOf(el) === 'endscreen')
@@ -9728,12 +9748,27 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
       if (!answered || !answered.ok) {
         steps.push(Object.assign({}, answered || {}, { step: 'details', ok: false }))
       } else {
+        // READ BACK, AND ANSWER AGAIN WHEN STUDIO DID NOT KEEP IT. One run in
+        // five kept paid promotion and four did not, with the same clicks: a
+        // save that raced the box. A second full answer, save and reload
+        // costs half a minute and is the difference between a video going
+        // out on time and one held private.
         let check = null
-        for (let attempt = 0; attempt < 2; attempt++) {
-          await goto('edit', true)
-          await sleep(1500)
-          check = await studioDraftExec(tabId, 'readDetails', ask)
-          if (!check.needsReload) break
+        for (let round = 0; round < 2; round++) {
+          for (let attempt = 0; attempt < 2; attempt++) {
+            await goto('edit', true)
+            await sleep(1500)
+            check = await studioDraftExec(tabId, 'readDetails', ask)
+            if (!check.needsReload) break
+          }
+          if (check && check.ok) break
+          if (round === 0) {
+            await goto('edit', true)
+            await sleep(2500)
+            const again = await studioDraftExec(tabId, 'videoDetails', ask)
+            if (!again || !again.ok) break
+            await sleep(2000)
+          }
         }
         steps.push(Object.assign({}, check || {}, { step: 'details' }))
       }

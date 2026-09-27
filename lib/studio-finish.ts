@@ -164,7 +164,13 @@ export interface StoredStudioRun {
    *  only up to MAX_STUDIO_TRIES, so a video Studio never finishes cannot
    *  keep the background tab coming back for ever. */
   tries: number
-  steps: Array<Pick<StudioFinishStep, 'step' | 'ok' | 'skipped' | 'notReached' | 'partial' | 'detail'>>
+  steps: Array<Pick<StudioFinishStep, 'step' | 'ok' | 'skipped' | 'notReached' | 'partial' | 'detail'> & {
+    /** For a step that failed: what SCOUT saw on the page (its read-back and
+     *  the buttons and windows it found), capped. A stored run used to keep
+     *  only the sentence, so "the product search did not open" could not say
+     *  what DID open, and the next fix was a guess. */
+    seen?: string
+  }>
 }
 
 export const MAX_STUDIO_TRIES = 3
@@ -190,8 +196,21 @@ export function storeStudioRun(r: StudioFinishResult, at: Date = new Date(), pri
       notReached: !!s.notReached,
       partial: !!s.partial,
       detail: String(s.detail ?? '').slice(0, 240),
+      ...(!s.ok && !s.skipped ? seenOf(s) : {}),
     })),
   }
+}
+
+/** What a failed step saw, as one capped string. Never auth: read-backs are
+ *  the page's own answers, and debug holds button labels and page text. */
+function seenOf(s: StudioFinishStep): { seen?: string } {
+  try {
+    const bits: Record<string, unknown> = {}
+    if (s.readBack && Object.keys(s.readBack).length) bits.readBack = s.readBack
+    if (s.debug && Object.keys(s.debug).length) bits.debug = s.debug
+    if (!Object.keys(bits).length) return {}
+    return { seen: JSON.stringify(bits).slice(0, 900) }
+  } catch { return {} }
 }
 
 /** Read a stored run back, refusing anything that is not one. */
@@ -215,6 +234,7 @@ export function readStudioRun(raw: unknown): StoredStudioRun | null {
         notReached: x.notReached === true,
         partial: x.partial === true,
         detail: String(x.detail ?? '').slice(0, 240),
+        ...(typeof x.seen === 'string' && x.seen ? { seen: x.seen.slice(0, 900) } : {}),
       }
     }),
   }
