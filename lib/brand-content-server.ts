@@ -237,14 +237,29 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
   // ── phase 3: brand and name for products the creator's own rows did not cover ──
   const contentAsins = [...new Set(links.map((l) => up(l.asin)).filter((a) => ASIN_RE.test(a)))]
   const missing = contentAsins.filter((a) => !brandOf.has(a))
-  const catR = await withDeadline(timed('catalog', () => Promise.all(chunk(missing).map((part) =>
-    sb.from('cc_campaign_catalog').select('campaign_id, brand_name, asins, campaign_name').overlaps('asins', part).limit(2000)))), 20_000, [] as Array<{ data: unknown[] | null; error: unknown }>)
-  if (catR.timedOut || catR.value.some((r) => r.error)) unread.push('the Creator Connections catalog')
-  const missingSet = new Set(missing)
-  for (const r of catR.value) {
-    for (const c of (r.data ?? []) as Array<{ campaign_id: string; brand_name: string | null; asins: string[] | null; campaign_name: string | null }>) {
-      for (const a of (c.asins ?? []).map(up)) if (missingSet.has(a)) { setBrand(a, c.brand_name, c.campaign_id, false); nameIfNone(a, c.campaign_name) }
-    }
+  // One ASIN per query with contains(), the lookup catalog-by-asin already
+  // uses against this table (~800k rows, GIN on asins). An overlaps() over a
+  // hundred ASINs at once came back as an error on a real account, which hid
+  // every brand known only from the catalog. Ten at a time, with a deadline.
+  type CatRow = { campaign_id: string; brand_name: string | null; asins: string[] | null; campaign_name: string | null }
+  const catErrors: string[] = []
+  const catR = await withDeadline(timed('catalog', async () => {
+    const out: Array<{ asin: string; rows: CatRow[] }> = []
+    const queue = missing.slice(0, 600)
+    await Promise.all(Array.from({ length: Math.min(10, queue.length) }, async () => {
+      for (let a = queue.shift(); a; a = queue.shift()) {
+        const r = await sb.from('cc_campaign_catalog').select('campaign_id, brand_name, asins, campaign_name').contains('asins', [a]).order('ends_at', { ascending: false }).limit(5)
+        if (r.error) { if (catErrors.length < 3) catErrors.push(String(r.error.message || r.error).slice(0, 120)); continue }
+        out.push({ asin: a, rows: (r.data ?? []) as CatRow[] })
+      }
+    }))
+    return out
+  }), 25_000, [] as Array<{ asin: string; rows: CatRow[] }>)
+  if (catR.timedOut) unread.push('the Creator Connections catalog (it was slow)')
+  else if (catErrors.length) unread.push(`the Creator Connections catalog (${catErrors[0]})`)
+  if (missing.length > 600) unread.push(`the brand of ${missing.length - 600} older products (only the first 600 are looked up)`)
+  for (const { asin, rows } of catR.value) {
+    for (const c of rows) { setBrand(asin, c.brand_name, c.campaign_id, false); nameIfNone(asin, c.campaign_name) }
   }
   const nameless = contentAsins.filter((a) => !names.has(a) && brandOf.has(a))
   const keepaR = await withDeadline(timed('names', () => Promise.all(chunk(nameless).map((part) =>

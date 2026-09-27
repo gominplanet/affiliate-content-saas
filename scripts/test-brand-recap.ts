@@ -85,7 +85,7 @@ check('an edited message keeps the greeting with its first line and packs the re
 const SRV = read('lib/brand-content-server.ts')
 check('a private or scheduled video is left out and counted', /if \(seen === 'not_public'\) \{ privateVideos\+\+; continue \}/.test(SRV))
 check('only a recap that reached the brand counts its links as sent', /from\('brand_recaps'\)\.select\('brand_key, urls, created_at, ok'\)\.eq\('user_id', ownerId\)\.eq\('ok', true\)/.test(SRV))
-check('reads that fail are named, not silent', /unread\.push\('your YouTube videos'\)/.test(SRV) && /unread\.push\('the Creator Connections catalog'\)/.test(SRV))
+check('reads that fail are named, not silent', /unread\.push\('your YouTube videos'\)/.test(SRV) && /unread\.push\(`the Creator Connections catalog \(\$\{catErrors\[0\]\}\)`\)/.test(SRV))
 const UI = read('components/brand-recap/BrandRecap.tsx')
 check('sent is recorded only after Amazon confirmed it',
   inOrder(UI, 'if (byAsin.ok) {', "await log('cc', true") && !/log\('cc', true[^)]*\)[^\n]*\n\s*if \(byAsin\.error/.test(UI))
@@ -97,6 +97,8 @@ check('an unconfirmed send in a visible tab is not recorded as sent', inOrder(UI
 // ── a large account still gets an answer ───────────────────────────────────
 // The first version read everything one after another under a 60 second limit,
 // and a large account got the host's error page instead of its brands.
+check('the catalog is looked up one ASIN at a time with contains(), the lookup proven on that table',
+  /\.contains\('asins', \[a\]\)/.test(SRV) && !/\.overlaps\('asins'/.test(SRV))
 check('the reads run at once, the slow lookups have deadlines, and the limit matches the heavy routes',
   /await Promise\.all\(\[\s*timed\('campaigns'/.test(SRV) && /withDeadline\(timed\('catalog'/.test(SRV) && /withDeadline\(timed\('youtube_visibility'/.test(SRV)
   && /export const maxDuration = 300/.test(read('app/api/brand-recap/route.ts')))
