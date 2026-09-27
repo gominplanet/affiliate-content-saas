@@ -96,40 +96,70 @@ export default function BrandRecap() {
     }
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
     try {
-      // 1. The video list.
-      const s1 = await startCreatorHubVideosScan()
-      if (!s1.ok) {
-        setScanNote({ ok: false, text: s1.error === 'not-installed' ? 'Finding your Amazon videos needs the SCOUT extension in this browser.'
-          : s1.error === 'needs-update' ? 'Your SCOUT is too old to read your Amazon videos. Update it, then try again.'
-            : 'SCOUT could not start reading your Amazon videos. Open amazon.com signed in to your Influencer account, then try again.' })
-        return
+      const stopped = () => {
+        if (!stopWatching.current) return false
+        setScanNote({ ok: true, text: 'Stopped watching. SCOUT carries on in the background and saves as it goes; press Find my Amazon videos again to see where it is.' })
+        return true
       }
+      // 1. The video list. Resume from what MVP already holds (as the Earnings
+      // page does), join a run that is already going, and pick up again from
+      // its own checkpoint when Chrome pauses SCOUT. Watched until it is
+      // actually finished: a library of thousands takes a long time, and
+      // moving on early would read products for a list still being read.
+      let from = 0
+      try { from = (await fetch('/api/amazon-videos').then((x) => x.json()))?.count || 0 } catch { from = 0 }
       let list: VideoScanStatus | null = null
-      for (let i = 0; i < 900; i++) {
-        await wait(2000)
-        list = await getVideoScanStatus()
-        if (!list) continue
-        if (list.done || list.interrupted) break
-        if (stopWatching.current) { setScanNote({ ok: true, text: 'Stopped watching. SCOUT carries on in the background and saves as it goes; press Find my Amazon videos again to see where it is.' }); return }
-        track(1, list.offset || 0, list.total, list.pageTitle || list.landedOn || null)
-        setScanNote(null)
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const s1 = await startCreatorHubVideosScan(undefined, from || undefined)
+        if (!s1.ok) {
+          setScanNote({ ok: false, text: s1.error === 'not-installed' ? 'Finding your Amazon videos needs the SCOUT extension in this browser.'
+            : s1.error === 'needs-update' ? 'Your SCOUT is too old to read your Amazon videos. Update it, then try again.'
+              : 'SCOUT could not start reading your Amazon videos. Open amazon.com signed in to your Influencer account, then try again.' })
+          return
+        }
+        list = null
+        for (;;) {
+          await wait(2000)
+          if (stopped()) return
+          const st = await getVideoScanStatus()
+          if (!st) continue
+          list = st
+          if (st.done || st.interrupted) break
+          track(1, st.offset || from, st.total, st.pageTitle || st.landedOn || null)
+          setScanNote(null)
+        }
+        if (!list?.interrupted) break
+        // Restart only when it moved; a run stuck in one place would loop forever.
+        if ((list.offset || 0) <= from) break
+        from = list.offset
+        setScanNote({ ok: true, text: `Chrome paused SCOUT at ${from.toLocaleString()} videos. Picking up from there.` })
       }
-      if (!list || list.error) {
-        setScanNote({ ok: false, text: list?.error === 'no-videos' ? 'SCOUT opened your video list but could not read any videos. Open Manage Content once on Amazon, then try again.' : 'SCOUT could not finish reading your video list. What it read is saved; press again to carry on.' })
+      if (!list || list.error || list.interrupted) {
+        setScanNote({ ok: false, text: list?.error === 'no-videos' ? 'SCOUT opened your video list but could not read any videos. Open Manage Content once on Amazon, then try again.'
+          : 'SCOUT could not finish reading your video list. What it read is saved; press again to carry on from there.' })
         return
       }
-      // 2. Which product each video sells.
-      const s2 = await startVideoProductsScan()
-      if (!s2.ok) { setScanNote({ ok: false, text: `Read ${list.saved.toLocaleString()} new videos, but could not start reading their products. Press again to carry on.` }); return }
+      // 2. Which product each video sells, for the videos not read yet. Same
+      // rules: join, restart after a pause when it moved, watch until done.
       let prod: VideoProductsStatus | null = null
-      for (let i = 0; i < 5400; i++) {
-        await wait(2000)
-        prod = await getVideoProductsStatus()
-        if (!prod) continue
-        if (prod.done || prod.interrupted) break
-        if (stopWatching.current) { setScanNote({ ok: true, text: 'Stopped watching. SCOUT carries on in the background and saves as it goes; press Find my Amazon videos again to see where it is.' }); return }
-        track(2, prod.read, prod.remaining != null ? prod.read + prod.remaining : null, null)
-        setScanNote({ ok: true, text: `${prod.withProducts.toLocaleString()} have a product so far. You can keep working; it saves as it goes.` })
+      let lastRead = -1
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const s2 = await startVideoProductsScan()
+        if (!s2.ok) { setScanNote({ ok: false, text: 'Your video list is saved, but SCOUT could not start reading which product each video sells. Press again to carry on.' }); return }
+        prod = null
+        for (;;) {
+          await wait(2000)
+          if (stopped()) return
+          const st = await getVideoProductsStatus()
+          if (!st) continue
+          prod = st
+          if (st.done || st.interrupted) break
+          track(2, st.read, st.remaining != null ? st.read + st.remaining : null, null)
+          setScanNote({ ok: true, text: `${st.withProducts.toLocaleString()} have a product so far. You can keep working; it saves as it goes.` })
+        }
+        if (!prod?.interrupted || prod.read <= lastRead) break
+        lastRead = prod.read
+        setScanNote({ ok: true, text: 'Chrome paused SCOUT. Picking up from where it stopped.' })
       }
       await load()
       if (!prod) setScanNote({ ok: false, text: 'SCOUT stopped answering. What was read is saved; reload and press again to carry on.' })
