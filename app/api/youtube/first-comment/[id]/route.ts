@@ -27,7 +27,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!row) return NextResponse.json({ error: 'That comment is not one of yours.' }, { status: 404 })
   if (body.action === 'pin_result') {
     const pinned = body.pinned === true
-    await admin.from('video_first_comments').update({ pinned, pin_error: pinned ? null : String(body.error || 'SCOUT could not pin it.').slice(0, 300) }).eq('id', id)
+    const { error } = await admin.from('video_first_comments').update({ pinned, pin_error: pinned ? null : String(body.error || 'SCOUT could not pin it.').slice(0, 300) }).eq('id', id)
+    if (error) return NextResponse.json({ error: 'Could not record the pin result.' }, { status: 500 })
     return NextResponse.json({ ok: true, pinned })
   }
   if (body.action === 'cancel') {
