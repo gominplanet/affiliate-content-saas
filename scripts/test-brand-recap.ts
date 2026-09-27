@@ -133,7 +133,7 @@ check('an error page from the host reads as a sentence, not a JSON error',
     asinsInDescription('Get it: https://www.amazon.com/Some-Thing/dp/B000000001?tag=x-20 and https://www.mvpl.ink/Ab12Cd and https://www.mvpl.ink/Unknown1', codes).sort().join(',') === 'B000000001,B000000002')
   check('a description with no product link names none', asinsInDescription('Subscribe for more reviews!', codes).length === 0)
   check('videos found through their descriptions get a YouTube link, public ones only',
-    /for \(const \[vid, asins\] of descAsins\)/.test(SRV) && /timed\('video_descriptions'/.test(SRV) && /timed\('short_links'/.test(SRV))
+    /for \(const \[vid, asins\] of descAsins\)/.test(SRV) && /const found = asinsInDescription\(v\.description, codeToAsin\)/.test(SRV) && /timed\('video_descriptions'/.test(SRV) && /timed\('short_links'/.test(SRV))
 }
 
 // ── links kept from now on ─────────────────────────────────────────────────

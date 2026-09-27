@@ -21,6 +21,7 @@
 
 import { brandKey, brandDisplay } from '@/lib/brand-normalize'
 import { CC_GROUP_BREAK } from '@/lib/brand-recap'
+import { asinFromAmazonUrl } from '@/lib/asin'
 
 export type ContentPlatform =
   | 'youtube' | 'blog' | 'x' | 'facebook' | 'instagram' | 'threads' | 'pinterest'
@@ -296,7 +297,9 @@ export function asinsInDescription(text: string | null | undefined, codeToAsin: 
   const s = String(text || '')
   if (!s) return []
   const out = new Set<string>()
-  for (const m of s.matchAll(/amazon\.[a-z.]+\/(?:[^\s"'<>]*?\/)?(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})/gi)) out.add(m[1].toUpperCase())
+  // Every Amazon link, read by the shared parser, which finds the ASIN
+  // anywhere in the path (amazon.com/Product-Name/dp/B0..., /gp/product/...).
+  for (const m of s.matchAll(/https?:\/\/(?:[a-z0-9-]+\.)*amazon\.[a-z.]+\/[^\s"'<>)\]]+/gi)) { const a = asinFromAmazonUrl(m[0]); if (a) out.add(a) }
   for (const m of s.matchAll(/[?&]asin=([A-Z0-9]{10})\b/gi)) out.add(m[1].toUpperCase())
   for (const m of s.matchAll(/(?:mvpl\.ink|\/go)\/([A-Za-z0-9]{4,16})\b/g)) {
     const a = codeToAsin.get(m[1])
