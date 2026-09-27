@@ -406,6 +406,19 @@ await saleEndedGuards()
   check('Short mode is admin only while testing', !canUsePreview('shorts_mode', 'pro') && canUsePreview('shorts_mode', 'admin'))
 }
 
+// ── bulk: several products, one at a time, progress on screen ─────────────
+{
+  const UI = read('components/labs/OnSale.tsx')
+  check('only a product with a public, non-Short video and no live sale comment can be ticked',
+    /s\.visibility === 'public' \|\| s\.visibility == null\) && s\.isShort !== true/.test(UI) && /!\(lastComment && lastComment\.state === 'on_sale'\)/.test(UI))
+  check('each product goes through write, post and pin in turn, never at once',
+    /for \(let i = 0; i < picked\.length; i\+\+\)/.test(UI) && inOrderCheck(UI, "fetch('/api/on-sale/promo'", "fetch('/api/on-sale/comment'") && inOrderCheck(UI, "fetch('/api/on-sale/comment'", 'await pinViaScout(promo.video.youtubeVideoId'))
+  check('the run stops at the daily limit and says so for the rest', /if \(r2\.status === 429\) capHit = true/.test(UI) && /Not started: the daily limit was reached\./.test(UI))
+  check('a product with no public video is skipped with the reason, not posted', /set\(i, \{ step: 'skipped', note: promo\.videoNotPublic/.test(UI))
+  check('"pinned" only when SCOUT saw it pinned', /pin\.pinned\s*\?\s*\{ step: 'done', note: 'Posted and pinned\. SCOUT saw it pinned on the video\.' \}/.test(UI) && /Posted, but not pinned: /.test(UI))
+  check('Stop finishes the one in hand and starts no more', /stopRef\.current = true/.test(UI) && /Not started: you pressed Stop\./.test(UI))
+}
+
 // ── the name: Encore, at /encore, and the old address still lands there ────
 check('Encore lives at /encore and /on-sale redirects to it',
   /redirect\('\/encore'\)/.test(read('app/(dashboard)/on-sale/page.tsx'))

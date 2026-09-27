@@ -4,7 +4,7 @@
 // and the promo for each, one press away.
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Tag, Copy, Wand2, MessageSquare, Send, ExternalLink, Zap, RefreshCw, Pin, Eraser, Check } from 'lucide-react'
 import { getScoutStatus, requestPinComment } from '@/lib/extension-frame'
@@ -161,9 +161,25 @@ function CopyBlock({ title, text, children }: { title: string; text: string; chi
   )
 }
 
-function ProductCard({ p, onShare, onPosted, lastComment, lastShare }: {
+/**
+ * Can this product take a sale comment in a bulk run? It needs a public video
+ * that is not a Short (links in Shorts comments are not clickable), and no
+ * sale comment already live on it. The comment route checks all of this
+ * again before posting; this only decides which boxes can be ticked.
+ */
+function bulkEligible(p: Product, lastComment: SaleComment | null): boolean {
+  const canPost = p.sources.some((s) => s.kind === 'video' && (s.visibility === 'public' || s.visibility == null) && s.isShort !== true)
+  return canPost && !(lastComment && lastComment.state === 'on_sale')
+}
+
+type BulkStep = 'waiting' | 'writing' | 'posting' | 'pinning' | 'done' | 'skipped' | 'failed'
+interface BulkItem { asin: string; title: string; step: BulkStep; note: string | null; watchUrl?: string | null }
+
+function ProductCard({ p, onShare, onPosted, lastComment, lastShare, selectable, selected, onToggle }: {
   p: Product; onShare: (d: QuickPostDeal, caption: string) => void; onPosted: () => void
   lastComment: SaleComment | null; lastShare: Share | null
+  /** Tick box for a bulk run; shown disabled, with a reason, when the product cannot take one. */
+  selectable?: boolean; selected?: boolean; onToggle?: () => void
 }) {
   const [promo, setPromo] = useState<Promo | null>(null)
   const [writing, setWriting] = useState(false)
@@ -240,6 +256,12 @@ function ProductCard({ p, onShare, onPosted, lastComment, lastShare }: {
   return (
     <li className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
       <div className="flex items-start gap-3">
+        {onToggle && (
+          <input type="checkbox" checked={!!selected} disabled={!selectable} onChange={onToggle}
+            aria-label={`Select ${p.title} for the bulk run`}
+            title={selectable ? 'Add to the bulk run' : (lastComment?.state === 'on_sale' ? 'Already has a live sale comment' : 'No public video that is not a Short, so no comment can go on it')}
+            className="mt-6 w-4 h-4 shrink-0 cursor-pointer disabled:cursor-not-allowed" style={{ accentColor: ACCENT }} />
+        )}
         {p.image
           // eslint-disable-next-line @next/next/no-img-element
           ? <img src={p.image} alt="" className="w-16 h-16 rounded-xl object-contain bg-white border shrink-0" />
@@ -508,6 +530,70 @@ export default function OnSale() {
   }, [])
   useEffect(() => { void loadComments() }, [loadComments])
 
+  // ── BULK: tick several, MVP does each one in turn ─────────────────────────
+  // The same three steps a press does (write the promo, post the comment, pin
+  // it through SCOUT), one product at a time, each step shown as it happens.
+  // It stops at the daily limit, and a Stop button finishes the one in hand.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulk, setBulk] = useState<BulkItem[] | null>(null)
+  const [bulkRunning, setBulkRunning] = useState(false)
+  const stopRef = useRef(false)
+  const lastCommentFor = (asin: string) => comments?.list.find((c) => c.asin === asin && c.state !== 'gone') ?? null
+  const eligible = (data?.onSale ?? []).filter((p) => bulkEligible(p, lastCommentFor(p.asin)))
+  const leftToday = comments && !comments.missingTable ? Math.max(0, comments.perDay - comments.postedToday) : null
+  const toggle = (asin: string) => setSelected((s) => { const n = new Set(s); if (n.has(asin)) n.delete(asin); else n.add(asin); return n })
+
+  async function runBulk() {
+    const picked = (data?.onSale ?? []).filter((p) => selected.has(p.asin))
+    if (!picked.length || bulkRunning) return
+    stopRef.current = false
+    setBulkRunning(true)
+    const items: BulkItem[] = picked.map((p) => ({ asin: p.asin, title: p.title, step: 'waiting', note: null }))
+    setBulk(items)
+    const set = (i: number, patch: Partial<BulkItem>) => { items[i] = { ...items[i], ...patch }; setBulk([...items]) }
+    let capHit = false
+    for (let i = 0; i < picked.length; i++) {
+      if (stopRef.current || capHit) { set(i, { step: 'skipped', note: capHit ? 'Not started: the daily limit was reached.' : 'Not started: you pressed Stop.' }); continue }
+      const p = picked[i]
+      try {
+        set(i, { step: 'writing', note: 'Writing the comment…' })
+        const r1 = await fetch('/api/on-sale/promo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asin: p.asin }) })
+        const promo = await r1.json().catch(() => ({})) as Promo & { error?: string }
+        if (!r1.ok) { set(i, { step: 'failed', note: promo.error || 'The comment could not be written.' }); continue }
+        if (!promo.video) {
+          set(i, { step: 'skipped', note: promo.videoNotPublic ? `Its video "${promo.videoNotPublic.title}" is ${promo.videoNotPublic.visibility === 'short' ? 'a Short' : 'not public'}, so nothing was posted.` : 'No public video to comment on, so nothing was posted.' })
+          continue
+        }
+        set(i, { step: 'posting', note: `Posting on "${promo.video.title}"…` })
+        const r2 = await fetch('/api/on-sale/comment', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ youtubeVideoId: promo.video.youtubeVideoId, text: promo.promo.comment, lastingText: promo.promo.commentLasting, asin: p.asin, saleLabel: promo.sale?.label }),
+        })
+        const posted = await r2.json().catch(() => ({})) as { error?: string; commentId?: string; saleCommentId?: string | null; watchUrl?: string; editedFirstComment?: boolean; pinned?: boolean }
+        if (!r2.ok) {
+          if (r2.status === 429) capHit = true
+          set(i, { step: 'failed', note: posted.error || 'YouTube did not take the comment. Nothing was posted.' })
+          continue
+        }
+        if (posted.editedFirstComment && posted.pinned) {
+          set(i, { step: 'done', note: 'Added to the top of your pinned first comment.', watchUrl: posted.watchUrl ?? null })
+          continue
+        }
+        if (!posted.commentId) { set(i, { step: 'done', note: 'Posted. YouTube did not return the comment id, so it could not be pinned.', watchUrl: posted.watchUrl ?? null }); continue }
+        set(i, { step: 'pinning', note: 'Posted. Pinning with SCOUT…', watchUrl: posted.watchUrl ?? null })
+        const pin = await pinViaScout(promo.video.youtubeVideoId, posted.commentId, posted.saleCommentId ?? null)
+        set(i, pin.pinned
+          ? { step: 'done', note: 'Posted and pinned. SCOUT saw it pinned on the video.' }
+          : { step: 'done', note: `Posted, but not pinned: ${pin.error || 'SCOUT could not pin it.'}` })
+      } catch {
+        set(i, { step: 'failed', note: 'Could not reach the server. Check the video before trying this one again.' })
+      }
+    }
+    setBulkRunning(false)
+    setSelected(new Set())
+    void loadComments()
+  }
+
   return (
     <div className="max-w-4xl mx-auto">
       <PageHero
@@ -576,11 +662,47 @@ export default function OnSale() {
               Nothing you have covered is on sale today. MVP checks every day and puts an alert in Price Alerts on your dashboard when one is.
             </p>
           )}
+          {data.onSale.length > 0 && (
+            <div className="rounded-2xl border p-3 mb-3 flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+              <span className="text-[12.5px] font-semibold" style={{ color: 'var(--text)' }}>Do several at once</span>
+              <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
+                Tick the products, and MVP writes, posts and pins each comment in turn.
+                {leftToday != null && ` ${leftToday} comment${leftToday === 1 ? '' : 's'} left in the last 24 hours.`}
+              </span>
+              <div className="ml-auto flex flex-wrap gap-2">
+                <button type="button" disabled={bulkRunning || !eligible.length}
+                  onClick={() => setSelected(new Set(eligible.slice(0, leftToday ?? eligible.length).map((p) => p.asin)))}
+                  className="text-[12px] px-2.5 py-1 rounded-lg border disabled:opacity-40" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                  Select {Math.min(eligible.length, leftToday ?? eligible.length)} that can take a comment
+                </button>
+                {selected.size > 0 && !bulkRunning && (
+                  <button type="button" onClick={() => setSelected(new Set())}
+                    className="text-[12px] px-2.5 py-1 rounded-lg border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Clear</button>
+                )}
+                {bulkRunning ? (
+                  <button type="button" onClick={() => { stopRef.current = true }}
+                    className="text-[12px] px-3 py-1 rounded-lg border font-semibold" style={{ borderColor: '#ef4444', color: '#ef4444' }}>Stop after this one</button>
+                ) : (
+                  <button type="button" disabled={!selected.size} onClick={() => void runBulk()}
+                    className="inline-flex items-center gap-1.5 text-[12.5px] px-3 py-1.5 rounded-lg font-semibold text-white disabled:opacity-40" style={{ background: ACCENT }}>
+                    <Send size={12} /> Write, post and pin {selected.size || ''}
+                  </button>
+                )}
+              </div>
+              {leftToday != null && selected.size > leftToday && (
+                <p className="basis-full text-[12px]" style={{ color: '#d97706' }}>
+                  {selected.size} ticked, {leftToday} left today: the first {leftToday} go out, and the run stops at the limit.
+                </p>
+              )}
+              {bulk && <BulkProgress items={bulk} running={bulkRunning} />}
+            </div>
+          )}
           <ul className="grid gap-3">
             {data.onSale.map((p) => (
               <ProductCard key={p.asin} p={p} onShare={(deal, caption) => setShare({ deal, caption })} onPosted={() => void loadComments()}
-                lastComment={comments?.list.find((c) => c.asin === p.asin && c.state !== 'gone') ?? null}
-                lastShare={comments?.shares.find((s) => s.asin === p.asin) ?? null} />
+                lastComment={lastCommentFor(p.asin)}
+                lastShare={comments?.shares.find((s) => s.asin === p.asin) ?? null}
+                selectable={!bulkRunning && bulkEligible(p, lastCommentFor(p.asin))} selected={selected.has(p.asin)} onToggle={() => toggle(p.asin)} />
             ))}
           </ul>
           {comments && (comments.missingTable || comments.list.length > 0) && (
@@ -610,6 +732,40 @@ export default function OnSale() {
 
       {share && <QuickPostModal deal={share.deal} initialCaption={share.caption} onClose={() => setShare(null)}
         source="on_sale" onDone={() => void loadComments()} />}
+    </div>
+  )
+}
+
+function BulkProgress({ items, running }: { items: BulkItem[]; running: boolean }) {
+  const finished = items.filter((i) => i.step === 'done' || i.step === 'skipped' || i.step === 'failed').length
+  const pinned = items.filter((i) => i.step === 'done' && /pinned\. SCOUT saw|pinned first comment/.test(i.note || '')).length
+  const posted = items.filter((i) => i.step === 'done').length
+  const colour: Record<BulkStep, string> = { waiting: 'var(--text-faint)', writing: ACCENT, posting: ACCENT, pinning: ACCENT, done: '#16a34a', skipped: '#d97706', failed: '#ef4444' }
+  const word: Record<BulkStep, string> = { waiting: 'Waiting', writing: 'Writing', posting: 'Posting', pinning: 'Pinning', done: 'Done', skipped: 'Skipped', failed: 'Not posted' }
+  return (
+    <div className="basis-full mt-1">
+      <p className="text-[12px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
+        {running ? `Working: ${finished} of ${items.length} finished` : `Finished: ${posted} posted, ${pinned} of them pinned, ${items.length - posted} not posted`}
+      </p>
+      <div className="h-1.5 rounded-full mb-2 overflow-hidden" style={{ background: 'var(--surface-hover)' }}>
+        <div className="h-full rounded-full transition-all" style={{ width: `${Math.round((finished / items.length) * 100)}%`, background: ACCENT }} />
+      </div>
+      <ul className="flex flex-col gap-1">
+        {items.map((i) => (
+          <li key={i.asin} className="flex items-start gap-2 text-[12px]">
+            <span className="shrink-0 w-[70px] font-semibold inline-flex items-center gap-1" style={{ color: colour[i.step] }}>
+              {(i.step === 'writing' || i.step === 'posting' || i.step === 'pinning') && <Loader2 size={11} className="animate-spin" />}
+              {i.step === 'done' && <Check size={11} />}
+              {word[i.step]}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate" style={{ color: 'var(--text)' }}>{i.title}</span>
+              {i.note && <span className="block" style={{ color: 'var(--text-soft)' }}>{i.note}</span>}
+              {i.watchUrl && <a href={i.watchUrl} target="_blank" rel="noreferrer" className="underline" style={{ color: 'var(--text-soft)' }}>Open the video</a>}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
