@@ -131,6 +131,11 @@ check('an error page from the host reads as a sentence, not a JSON error',
   check('the video sync resumes from what is saved, joins a running job, and is watched until it is actually done',
     /fetch\('\/api\/amazon-videos'\)[^\n]*count/.test(UI) && !/tick < 900/.test(UI) && (UI.match(/for \(;;\)/g) || []).length >= 2
       && /if \(\(list\.offset \|\| 0\) <= from\) break/.test(UI) && /prod\.read <= lastRead\) break/.test(UI) && /Stopped watching\. SCOUT carries on in the background/.test(UI))
+  check('a list run SCOUT ended at its 15 minute limit (partial) carries on rather than counting as the whole list',
+    /const unfinished = list\?\.interrupted \|\| \(list\?\.partial && !list\.error\)/.test(UI) && /list\.interrupted \|\| list\.partial\) \{/.test(UI))
+  check('a failed product read says SCOUT\'s reason and what it saw, not only a count',
+    /function productReadFailure/.test(UI) && /'no-detail-call'/.test(UI) && /st\.probe/.test(UI) && /text: productReadFailure\(prod\)/.test(UI)
+      && /\(prod\.remaining \|\| 0\) > 0/.test(UI))
   const codes = new Map([['Ab12Cd', 'B000000002']])
   check('a video description names its products through Amazon links and the creator\'s own short links',
     asinsInDescription('Get it: https://www.amazon.com/Some-Thing/dp/B000000001?tag=x-20 and https://www.mvpl.ink/Ab12Cd and https://www.mvpl.ink/Unknown1', codes).sort().join(',') === 'B000000001,B000000002')

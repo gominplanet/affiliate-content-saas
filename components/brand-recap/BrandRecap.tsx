@@ -82,6 +82,19 @@ export default function BrandRecap() {
   const stopWatching = useRef(false)
   const [, setTick] = useState(0)
   useEffect(() => { if (!prog) return; const t = setInterval(() => setTick((n) => n + 1), 1000); return () => clearInterval(t) }, [prog])
+  // SCOUT's own reason, in words, with what it saw. "Stopped after 0 videos"
+  // on its own looked the same whatever went wrong and could not be acted on.
+  function productReadFailure(st: VideoProductsStatus): string {
+    const where = st.read ? `after ${st.read.toLocaleString()} videos (those are saved)` : 'before reading any videos, so nothing was stored'
+    const why =
+      st.error === 'no-detail-call' ? 'Amazon never loaded a single video on its own, so SCOUT had no request to copy.'
+      : st.error === 'same-products-every-video' ? 'Amazon gave the same products for every video, so SCOUT stored nothing rather than stamp one video\'s products on all of them.'
+      : st.error === 'MVP did not hand back any videos to read' ? 'MVP had no saved videos to hand SCOUT. Sign in to MVP in this Chrome, then try again.'
+      : st.error === 'could not reach MVP' || st.error === 'could not save' ? 'SCOUT could not save to MVP. Check you are signed in to MVP in this Chrome.'
+      : `SCOUT said: ${st.error}.`
+    const detail = [st.endpoint && `Request: ${st.endpoint}.`, st.probe, st.scoutVersion && `SCOUT ${st.scoutVersion}.`].filter(Boolean).join(' ')
+    return `Reading which product each video sells stopped ${where}. ${why}${detail ? ` ${detail}` : ''}`
+  }
   async function findAmazonVideos() {
     setScanning(true); setScanNote({ ok: true, text: 'Starting SCOUT…' })
     stopWatching.current = false
@@ -128,15 +141,19 @@ export default function BrandRecap() {
           track(1, st.offset || from, st.total, st.pageTitle || st.landedOn || null)
           setScanNote(null)
         }
-        if (!list?.interrupted) break
-        // Restart only when it moved; a run stuck in one place would loop forever.
+        // SCOUT ends each run after 15 minutes and marks it partial, and Chrome
+        // can pause it outright. Neither is the end of the list: carry on from
+        // where it stopped. Restart only when it moved; a run stuck in one
+        // place would loop forever.
+        const unfinished = list?.interrupted || (list?.partial && !list.error)
+        if (!list || !unfinished) break
         if ((list.offset || 0) <= from) break
         from = list.offset
-        setScanNote({ ok: true, text: `Chrome paused SCOUT at ${from.toLocaleString()} videos. Picking up from there.` })
+        setScanNote({ ok: true, text: list.interrupted ? `Chrome paused SCOUT at ${from.toLocaleString()} videos. Picking up from there.` : `Read up to ${from.toLocaleString()} videos. Carrying on from there.` })
       }
-      if (!list || list.error || list.interrupted) {
+      if (!list || list.error || list.interrupted || list.partial) {
         setScanNote({ ok: false, text: list?.error === 'no-videos' ? 'SCOUT opened your video list but could not read any videos. Open Manage Content once on Amazon, then try again.'
-          : 'SCOUT could not finish reading your video list. What it read is saved; press again to carry on from there.' })
+          : `SCOUT could not finish reading your video list${list?.offset ? ` (it reached ${list.offset.toLocaleString()})` : ''}${list?.stopped ? `: ${list.stopped}` : list?.error ? `: ${list.error}` : ''}. What it read is saved; press again to carry on from there.` })
         return
       }
       // 2. Which product each video sells, for the videos not read yet. Same
@@ -157,14 +174,19 @@ export default function BrandRecap() {
           track(2, st.read, st.remaining != null ? st.read + st.remaining : null, null)
           setScanNote({ ok: true, text: `${st.withProducts.toLocaleString()} have a product so far. You can keep working; it saves as it goes.` })
         }
-        if (!prod?.interrupted || prod.read <= lastRead) break
+        // A pause, or a run that hit SCOUT's time limit with videos still to
+        // read, carries on. Only when this run read something, so a run that
+        // fails the same way each time does not loop.
+        const more = prod?.interrupted || (prod?.done && !prod.error && (prod.remaining || 0) > 0)
+        if (!prod || !more || prod.read <= 0 || prod.read <= lastRead) break
         lastRead = prod.read
-        setScanNote({ ok: true, text: 'Chrome paused SCOUT. Picking up from where it stopped.' })
+        setScanNote({ ok: true, text: prod.interrupted ? 'Chrome paused SCOUT. Picking up from where it stopped.' : `${(prod.remaining || 0).toLocaleString()} videos still to read. Carrying on.` })
       }
       await load()
       if (!prod) setScanNote({ ok: false, text: 'SCOUT stopped answering. What was read is saved; reload and press again to carry on.' })
       else if (prod.interrupted) setScanNote({ ok: true, text: `Chrome paused SCOUT after ${prod.read.toLocaleString()} videos. What was read is saved and already in the list; press again to carry on.` })
-      else if (prod.error) setScanNote({ ok: false, text: `Stopped reading products after ${prod.read.toLocaleString()} videos. What was read is saved; press again to carry on.` })
+      else if (prod.error) setScanNote({ ok: false, text: productReadFailure(prod) })
+      else if ((prod.remaining || 0) > 0) setScanNote({ ok: true, text: `Read ${prod.read.toLocaleString()} videos this run, ${prod.withProducts.toLocaleString()} with a product, and ${(prod.remaining || 0).toLocaleString()} are still to read. What was read is in the list; press again to carry on.` })
       else setScanNote({ ok: true, text: `Done: ${prod.withProducts.toLocaleString()} of the ${prod.read.toLocaleString()} videos read have a product, and their Amazon video links are now in the list.` })
     } finally { setScanning(false); setProg(null) }
   }
