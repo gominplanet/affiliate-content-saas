@@ -10,6 +10,7 @@ import DownloadDesign from '@/components/amazon/DownloadDesign'
 import { AMAZON_QUEUE_EVENT } from '@/components/amazon/ScheduledQueue'
 import SavedProductImage, { useSavedProductImage, saveProductImage } from '@/components/product/SavedProductImage'
 import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
+import PinDestinationPicker from '@/components/pinterest/PinDestinationPicker'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
@@ -67,6 +68,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
   const [when, setWhen] = useState<'now' | 'later'>('now')
   const [scheduleAt, setScheduleAt] = useState('')
   const [pubBusy, setPubBusy] = useState(false)
+  const [pinDestSaving, setPinDestSaving] = useState(false)
   const [pubError, setPubError] = useState<string | null>(null)
   const [result, setResult] = useState<{ pinUrl?: string; scheduledAt?: string; note: string | null } | null>(null)
 
@@ -320,10 +322,10 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
               <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>Description</span>
               <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4} placeholder={copyBusy ? 'AI is writing this…' : 'Description'} className={`${inputCls} resize-none`} />
             </label>
-            <p className="text-[11px] flex items-start gap-1.5" style={{ color: 'var(--text-soft)' }}>
-              <Check size={12} className="mt-0.5 flex-shrink-0" style={{ color: '#34c759' }} />
-              Your affiliate link is attached to the Pin automatically — it&apos;s the destination when someone taps the Pin, so it doesn&apos;t need to sit in the text.
-            </p>
+            {/* Where the pin goes. Said as it is: never the affiliate short link
+                (Pinterest blocks those), but the page picked here, with your
+                link on it, or the full Amazon link. */}
+            <PinDestinationPicker onBusy={setPinDestSaving} />
 
             {/* Now vs Schedule */}
             <div className="grid grid-cols-2 gap-2">
@@ -344,7 +346,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
                 publish from here, and the pin is still theirs to post by hand. */}
             <DownloadDesign url={thumbUrl} filename="mvp-pin.jpg" accent="#e60023" label="Download pin" />
 
-            <button onClick={publish} disabled={pubBusy || connected === false || showcase.blocked}
+            <button onClick={publish} disabled={pubBusy || pinDestSaving || connected === false || showcase.blocked}
               className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold text-sm transition disabled:opacity-60" style={{ backgroundColor: PIN_RED }}>
               {pubBusy
                 ? <><Loader2 size={16} className="animate-spin" /> {when === 'later' ? 'Scheduling…' : 'Pinning…'}</>

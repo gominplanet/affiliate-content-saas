@@ -18,6 +18,7 @@ import SavedProductImage, { useSavedProductImage } from '@/components/product/Sa
 import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 import { useConnectedPlatforms, useSelectedPlatforms } from '@/components/social/useConnectedPlatforms'
 import PlatformPicker from '@/components/social/PlatformPicker'
+import PinDestinationPicker from '@/components/pinterest/PinDestinationPicker'
 
 // Sensible defaults: 2 hours out, on the minute. Split into date (YYYY-MM-DD)
 // and time (HH:mm) for the two separate pickers, both in the viewer's local time.
@@ -115,6 +116,9 @@ export default function QuickPostModal({
   const [story, setStory] = useState(false)
   const [caption, setCaption] = useState(initialCaption)
   const [posting, setPosting] = useState(false)
+  // The Pinterest destination is being saved: posting waits, so the pin goes
+  // where the creator just chose rather than where it pointed a second ago.
+  const [pinDestSaving, setPinDestSaving] = useState(false)
   const [results, setResults] = useState<PostResult[] | null>(null)
   const [linkNote, setLinkNote] = useState<string | null>(null)
   // Scheduling: the red "Schedule" button reveals a date + time picker; the same
@@ -281,7 +285,7 @@ export default function QuickPostModal({
               known={conn.known} connected={conn.connected}
             />
             {pinterestEnabled && selected.has('pinterest') && (
-              <p className="text-[11px] text-muted-foreground mt-1.5">Pinterest gets its own designed pin. Pinterest does not accept affiliate redirect links, so the pin points at your Link in Bio shop page and the product is added there with your affiliate link on it.</p>
+              <PinDestinationPicker onBusy={setPinDestSaving} />
             )}
           </div>
 
@@ -407,10 +411,10 @@ export default function QuickPostModal({
         <div className="flex items-center justify-between gap-2 p-4 border-t">
           <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={post} disabled={posting || scheduling || showcaseMissing || (selected.size === 0 && !story)}>
+            <Button size="sm" onClick={post} disabled={posting || scheduling || pinDestSaving || showcaseMissing || (selected.size === 0 && !story)}>
               {posting ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Posting…</> : <><Send size={14} className="mr-1.5" /> Post now</>}
             </Button>
-            <Button size="sm" onClick={schedule} disabled={scheduling || posting || showcaseMissing || (selected.size === 0 && !story)}
+            <Button size="sm" onClick={schedule} disabled={scheduling || posting || pinDestSaving || showcaseMissing || (selected.size === 0 && !story)}
               className="bg-red-600 hover:bg-red-700 text-white">
               {scheduling ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Scheduling…</> : <><CalendarClock size={14} className="mr-1.5" /> Schedule</>}
             </Button>

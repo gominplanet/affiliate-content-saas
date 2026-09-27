@@ -192,6 +192,16 @@ const APP = 'https://www.mvpaffiliate.io'
   check('the product page buys through the same click counter, and sends a gone product to the shop',
     /href=\{`\/api\/link-click\?i=\$\{item\.id\}`\}/.test(PAGE) && /if \(!data\.item\) redirect\(/.test(PAGE) && /images: data\.item\.image_url/.test(PAGE))
   check('a shopper who is not logged in can use the buy buttons', /'\/api\/link-click',/.test(readFileSync('middleware.ts', 'utf8')))
+  const PICK = readFileSync('components/pinterest/PinDestinationPicker.tsx', 'utf8')
+  check('the picker opens on the saved choice and saves a change at once, putting it back when the save failed',
+    /fetch\('\/api\/pinterest\/settings'\)\.then/.test(PICK) && /body: JSON\.stringify\(\{ pref: next \}\)/.test(PICK) && /setValue\(prev\)/.test(PICK))
+  for (const f of ['components/deal/QuickPostModal.tsx', 'components/amazon/PinterestComposer.tsx']) {
+    const src = readFileSync(f, 'utf8')
+    check(`${f}: "Pin links to" is right in the window, and posting waits for the choice to save`,
+      /<PinDestinationPicker onBusy=\{setPinDestSaving\} \/>/.test(src) && /pinDestSaving \|\|/.test(src))
+  }
+  check('the composer no longer says the affiliate link is the pin\'s destination',
+    !/Your affiliate link is attached to the Pin automatically/.test(readFileSync('components/amazon/PinterestComposer.tsx', 'utf8')))
   check('the setting has its migration', /check \(pinterest_product_dest in \('auto', 'blog_post', 'link_in_bio', 'amazon'\)\)/.test(readFileSync('supabase/migrations/382_pinterest_product_dest.sql', 'utf8')))
 }
 
