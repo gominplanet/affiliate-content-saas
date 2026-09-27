@@ -1003,6 +1003,22 @@ export class WordPressService {
     }
   }
 
+  /** The post's featured image id: a number (0 = none set), or NULL for
+   *  "could not tell". Read before skipping the thumbnail on a post that
+   *  already exists, because a post a timed-out attempt published has no
+   *  image, and "could not read it" must never be taken as "it has one". */
+  async getFeaturedMedia(id: number): Promise<number | null> {
+    try {
+      const p = await this.request<{ featured_media?: number }>(
+        `/posts/${id}?_fields=id,featured_media&context=edit`,
+        { method: 'GET' },
+      )
+      return typeof p?.featured_media === 'number' ? p.featured_media : null
+    } catch {
+      return null
+    }
+  }
+
   /** Does this post still exist on this site?
    *
    *  true, false, or NULL for "could not tell". getPostLink returns '' for both

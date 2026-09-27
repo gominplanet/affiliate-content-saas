@@ -1900,7 +1900,21 @@ async function handleGenerate(request: Request) {
   // retry once, then flag it; /api/blog/reattach-thumbnails heals the backlog
   // once the host is unblocked.
   let thumbnailBlocked = false
-  if (!existingWpPostId) {
+  // A post that already exists on WordPress used to skip this step outright.
+  // That is right for a rebuild of a post with a hand-picked image, and wrong
+  // for the two cases that leave a post with NO image: an attempt that
+  // published and then ran out of time (the retry reuses the saved post id),
+  // and a post adopted by its slug. Autopilot published posts with no
+  // thumbnail and no flag that way. So an existing post is asked: no featured
+  // image (0) means set one now. "Could not tell" (null) leaves it alone, as
+  // before, rather than replacing an image that may be there.
+  let attemptThumb = !existingWpPostId
+  if (existingWpPostId) {
+    const current = await wpService.getFeaturedMedia(wpPost.id).catch(() => null)
+    attemptThumb = current === 0
+    if (attemptThumb) console.warn('[blog-thumbnail] existing post has no featured image; setting it now', { ownerId, wpPostId: wpPost.id })
+  }
+  if (attemptThumb) {
     // One upload+attach attempt. CRITICAL: preserve the WP status from
     // createPost. When the post was created as 'future' (wp-native scheduling)
     // or 'draft' (draft-flip), hardcoding 'publish' here would force the post
@@ -2040,11 +2054,11 @@ async function handleGenerate(request: Request) {
     ai_model: 'claude-opus-4-8', // matches the #248 writer upgrade (was stale 'claude-sonnet-4-6')
     generation_prompt_version: 'v3.0',
     published_at: new Date().toISOString(),
-    // Record the thumbnail-upload outcome — but ONLY on a fresh generate, since
-    // that's the only path that actually attempts the upload (rewrites skip it,
-    // so they must not clobber a prior post's flag). Cleared by the re-attach
+    // Record the thumbnail-upload outcome, but ONLY when this run attempted the
+    // upload (a fresh generate, or an existing post found with no image).
+    // Runs that skipped it must not clobber a prior post's flag. Cleared by the re-attach
     // heal once the image finally lands.
-    ...(!existingWpPostId ? { thumbnail_blocked: thumbnailBlocked } : {}),
+    ...(attemptThumb ? { thumbnail_blocked: thumbnailBlocked } : {}),
     image_prompts: generated.imagePrompts,
     ...(geniuslinkCode ? { geniuslink_code: geniuslinkCode } : {}),
     // Track rewrite usage so the next attempt on the same post can be

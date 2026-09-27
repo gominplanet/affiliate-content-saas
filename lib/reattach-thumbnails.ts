@@ -30,7 +30,10 @@ export async function reattachThumbnailsForOwner(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   ownerId: string,
-  opts: { siteId?: string | null; limit?: number } = {},
+  /** onlyKnownMissing: upload only where WordPress SAID the post has no image.
+   *  For creators checked without any flagged post (the cron's recent sweep),
+   *  a failed read must not become an upload over images that are there. */
+  opts: { siteId?: string | null; limit?: number; onlyKnownMissing?: boolean } = {},
 ): Promise<ReattachResult> {
   const empty = (over: Partial<ReattachResult>): ReattachResult =>
     ({ ok: true, checked: 0, fixed: 0, alreadyOk: 0, stillBlocked: 0, failures: [], ...over })
@@ -121,6 +124,7 @@ export async function reattachThumbnailsForOwner(
       // upload, exactly as the old per-post probe did when it wasn't res.ok.
       const existingMedia = featuredById.get(wpId)
       if (existingMedia && existingMedia > 0) { alreadyOk++; nowFixedIds.push(wpId); continue }
+      if (opts.onlyKnownMissing && existingMedia === undefined) { checked--; continue }
       let media
       if (customThumb) {
         media = await wpService.uploadImageFromUrl(customThumb, `${ytId || wpId}-blogthumb.jpg`)

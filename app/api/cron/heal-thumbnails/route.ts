@@ -23,6 +23,9 @@ import { reattachThumbnailsForOwner } from '@/lib/reattach-thumbnails'
 export const maxDuration = 300
 
 const MAX_USERS_PER_RUN = 15
+/** Creators who published lately, checked even with nothing flagged. */
+const RECENT_USERS_PER_RUN = 25
+const RECENT_HOURS = 72
 
 export async function GET(request: Request) {
   const auth = request.headers.get('authorization') ?? ''
@@ -49,7 +52,38 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, skipped: 'thumbnail_blocked column not present or unreadable' })
   }
 
-  const results: Array<{ ownerId: string; fixed?: number; stillBlocked?: number; error?: string }> = []
+  // RECENT POSTS, FLAGGED OR NOT. A post can go live with no featured image
+  // and no flag: an attempt that published and then ran out of time, or a post
+  // adopted by its slug, never ran the upload, so nothing marked it. Autopilot
+  // published one that way. Waiting for the flag meant such a post was never
+  // looked at. So anyone who published in the last three days is checked too:
+  // one WordPress read for their newest posts, and an upload only where the
+  // image is actually missing.
+  const recentIds: string[] = []
+  try {
+    const since = new Date(Date.now() - RECENT_HOURS * 3_600_000).toISOString()
+    const { data } = await admin
+      .from('blog_posts')
+      .select('user_id')
+      .gte('created_at', since)
+      .not('wordpress_post_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(3000)
+    for (const r of (data ?? []) as Array<{ user_id: string }>) {
+      if (!ownerIds.includes(r.user_id) && !recentIds.includes(r.user_id)) recentIds.push(r.user_id)
+      if (recentIds.length >= RECENT_USERS_PER_RUN) break
+    }
+  } catch { /* the flagged owners above still run */ }
+
+  const results: Array<{ ownerId: string; fixed?: number; stillBlocked?: number; error?: string; recent?: boolean }> = []
+  for (const ownerId of recentIds) {
+    try {
+      const r = await reattachThumbnailsForOwner(admin, ownerId, { limit: 10, onlyKnownMissing: true })
+      results.push({ ownerId, fixed: r.fixed, stillBlocked: r.stillBlocked, recent: true })
+    } catch (e) {
+      results.push({ ownerId, error: (e instanceof Error ? e.message : String(e)).slice(0, 140), recent: true })
+    }
+  }
   for (const ownerId of ownerIds) {
     try {
       const r = await reattachThumbnailsForOwner(admin, ownerId, { limit: 40 })
@@ -61,5 +95,5 @@ export async function GET(request: Request) {
 
   const totalFixed = results.reduce((s, r) => s + (r.fixed ?? 0), 0)
   const totalStillBlocked = results.reduce((s, r) => s + (r.stillBlocked ?? 0), 0)
-  return NextResponse.json({ ok: true, users: ownerIds.length, totalFixed, totalStillBlocked, results })
+  return NextResponse.json({ ok: true, users: ownerIds.length, recentUsers: recentIds.length, totalFixed, totalStillBlocked, results })
 }

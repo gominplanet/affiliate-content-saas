@@ -102,6 +102,29 @@ const heal = strip(HEAL)
     'without it, "still blocked" cannot be told apart from "credentials revoked"')
 }
 
+// ── a post that already exists still gets its image ────────────────────────
+//
+// Autopilot published a post with no featured image and no flag: an attempt
+// that published and then ran out of time is retried with the saved post id,
+// and a post adopted by its slug also has one, and both used to skip the
+// upload outright. The heal only visited creators with a flagged post, so
+// nothing ever fixed it.
+{
+  const GEN = readFileSync('app/api/blog/generate/route.ts', 'utf8')
+  check('an existing post with no featured image gets one',
+    /const current = await wpService\.getFeaturedMedia\(wpPost\.id\)/.test(GEN) && /attemptThumb = current === 0/.test(GEN) && /if \(attemptThumb\) \{/.test(GEN),
+    'a retried or adopted post skips the upload and publishes with no image')
+  check('and its outcome is recorded whenever the upload was attempted',
+    /\.\.\.\(attemptThumb \? \{ thumbnail_blocked: thumbnailBlocked \} : \{\}\)/.test(GEN))
+  check('"could not read it" is never taken as "it has no image"',
+    /return typeof p\?\.featured_media === 'number' \? p\.featured_media : null/.test(readFileSync('services/wordpress/index.ts', 'utf8')))
+  const CRON = readFileSync('app/api/cron/heal-thumbnails/route.ts', 'utf8')
+  check('the heal also checks everyone who published lately, flagged or not',
+    /\.gte\('created_at', since\)/.test(CRON) && /reattachThumbnailsForOwner\(admin, ownerId, \{ limit: 10, onlyKnownMissing: true \}\)/.test(CRON))
+  check('and for them uploads only where WordPress said the image is missing',
+    /if \(opts\.onlyKnownMissing && existingMedia === undefined\) \{ checked--; continue \}/.test(heal))
+}
+
 if (failures.length) {
   console.error(`\n❌ thumbnail-heal: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
