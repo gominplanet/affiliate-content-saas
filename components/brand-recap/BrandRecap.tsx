@@ -10,7 +10,7 @@
 // copied or emailed recap counts as sent only when the creator says so.
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Send, Copy, Mail, Check, ChevronDown, ChevronRight, RefreshCw, AlertTriangle, ExternalLink, Search, Film } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
@@ -75,8 +75,25 @@ export default function BrandRecap() {
   // Progress and the outcome are said in numbers, never just "done".
   const [scanning, setScanning] = useState(false)
   const [scanNote, setScanNote] = useState<{ ok: boolean; text: string } | null>(null)
+  // Live progress, so a long run reads as working or stuck, never as a
+  // frozen sentence: how far, out of how many, how long it has been running,
+  // when the count last moved, and which Amazon page SCOUT is on.
+  const [prog, setProg] = useState<{ step: 1 | 2; done: number; total: number | null; startedAt: number; movedAt: number; page: string | null } | null>(null)
+  const stopWatching = useRef(false)
+  const [, setTick] = useState(0)
+  useEffect(() => { if (!prog) return; const t = setInterval(() => setTick((n) => n + 1), 1000); return () => clearInterval(t) }, [prog])
   async function findAmazonVideos() {
     setScanning(true); setScanNote({ ok: true, text: 'Starting SCOUT…' })
+    stopWatching.current = false
+    const started = Date.now()
+    let lastDone = -1
+    const track = (step: 1 | 2, done: number, total: number | null, page: string | null) => {
+      setProg((p) => {
+        const moved = !p || p.step !== step || done !== lastDone
+        lastDone = done
+        return { step, done, total, startedAt: p?.startedAt ?? started, movedAt: moved ? Date.now() : p.movedAt, page }
+      })
+    }
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
     try {
       // 1. The video list.
@@ -93,7 +110,9 @@ export default function BrandRecap() {
         list = await getVideoScanStatus()
         if (!list) continue
         if (list.done || list.interrupted) break
-        setScanNote({ ok: true, text: `Step 1 of 2: reading your Amazon videos, ${(list.offset || 0).toLocaleString()}${list.total ? ` of ${list.total.toLocaleString()}` : ''} so far.` })
+        if (stopWatching.current) { setScanNote({ ok: true, text: 'Stopped watching. SCOUT carries on in the background and saves as it goes; press Find my Amazon videos again to see where it is.' }); return }
+        track(1, list.offset || 0, list.total, list.pageTitle || list.landedOn || null)
+        setScanNote(null)
       }
       if (!list || list.error) {
         setScanNote({ ok: false, text: list?.error === 'no-videos' ? 'SCOUT opened your video list but could not read any videos. Open Manage Content once on Amazon, then try again.' : 'SCOUT could not finish reading your video list. What it read is saved; press again to carry on.' })
@@ -108,14 +127,16 @@ export default function BrandRecap() {
         prod = await getVideoProductsStatus()
         if (!prod) continue
         if (prod.done || prod.interrupted) break
-        setScanNote({ ok: true, text: `Step 2 of 2: reading which product each video sells, ${prod.read.toLocaleString()} read${prod.remaining != null ? `, ${prod.remaining.toLocaleString()} to go` : ''}. ${prod.withProducts.toLocaleString()} have a product so far. You can keep working; it saves as it goes.` })
+        if (stopWatching.current) { setScanNote({ ok: true, text: 'Stopped watching. SCOUT carries on in the background and saves as it goes; press Find my Amazon videos again to see where it is.' }); return }
+        track(2, prod.read, prod.remaining != null ? prod.read + prod.remaining : null, null)
+        setScanNote({ ok: true, text: `${prod.withProducts.toLocaleString()} have a product so far. You can keep working; it saves as it goes.` })
       }
       await load()
       if (!prod) setScanNote({ ok: false, text: 'SCOUT stopped answering. What was read is saved; reload and press again to carry on.' })
       else if (prod.interrupted) setScanNote({ ok: true, text: `Chrome paused SCOUT after ${prod.read.toLocaleString()} videos. What was read is saved and already in the list; press again to carry on.` })
       else if (prod.error) setScanNote({ ok: false, text: `Stopped reading products after ${prod.read.toLocaleString()} videos. What was read is saved; press again to carry on.` })
       else setScanNote({ ok: true, text: `Done: ${prod.withProducts.toLocaleString()} of the ${prod.read.toLocaleString()} videos read have a product, and their Amazon video links are now in the list.` })
-    } finally { setScanning(false) }
+    } finally { setScanning(false); setProg(null) }
   }
 
   const brands = useMemo(() => {
@@ -166,6 +187,7 @@ export default function BrandRecap() {
           {scanning ? <Loader2 size={12} className="animate-spin" /> : <Film size={12} />} Find my Amazon videos
         </button>
       </div>
+      {prog && <ScanProgress p={prog} onStop={() => { stopWatching.current = true }} />}
       {scanNote && <Notice tone={scanNote.ok ? 'info' : 'warn'}>{scanNote.text}</Notice>}
 
       {error && <Notice tone="error">Could not load your brands: {error}</Notice>}
@@ -404,6 +426,45 @@ function Composer({ brand, sender, onLogged }: { brand: BrandGroup; sender: { na
             <a href={outcome.chatUrl} target="_blank" rel="noreferrer" className="ml-1.5 inline-flex items-center gap-0.5 underline">Open the brand chat <ExternalLink size={11} /></a>
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+const since = (ms: number) => { const sec = Math.max(0, Math.round(ms / 1000)); return sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${sec % 60}s` }
+
+/** The Amazon video sync, in progress: a bar when the total is known, a
+ *  moving stripe when it is not, the time running, when the count last
+ *  moved, and a plain warning once it has not moved for 90 seconds. */
+function ScanProgress({ p, onStop }: { p: { step: 1 | 2; done: number; total: number | null; startedAt: number; movedAt: number; page: string | null }; onStop: () => void }) {
+  const now = Date.now()
+  const still = now - p.movedAt
+  const stuck = still > 90_000
+  const pct = p.total && p.total > 0 ? Math.min(100, Math.round((p.done / p.total) * 100)) : null
+  return (
+    <div className={`card p-3 mb-3 border text-[12px] ${stuck ? 'border-[#ff9500]/50' : 'border-[var(--border-2,#e5e5e7)]'}`}>
+      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+        <Loader2 size={13} className="animate-spin" style={{ color: ACCENT }} />
+        <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+          Step {p.step} of 2: {p.step === 1 ? 'reading your Amazon videos' : 'reading which product each video sells'}
+        </span>
+        <span className="text-[#86868b] tabular-nums">
+          {p.done.toLocaleString()}{p.total ? ` of ${p.total.toLocaleString()}` : ''}{pct != null ? ` (${pct}%)` : ''}
+        </span>
+        <button onClick={onStop} className="ml-auto text-[11px] text-[#86868b] hover:text-[#ff3b30]">Stop watching</button>
+      </div>
+      <div className="h-1.5 rounded-full overflow-hidden bg-black/5 dark:bg-white/10">
+        {pct != null
+          ? <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(2, pct)}%`, background: ACCENT }} />
+          : <div className="h-full w-1/3 rounded-full animate-pulse" style={{ background: ACCENT }} />}
+      </div>
+      <p className="mt-1.5 text-[11px] text-[#86868b] tabular-nums">
+        Running {since(now - p.startedAt)}. Last moved {since(still)} ago.{p.page ? ` SCOUT is on: ${p.page}.` : ''}
+      </p>
+      {stuck && (
+        <p className="mt-1 text-[11px] text-[#c93400]">
+          Nothing has moved for {since(still)}. SCOUT may be waiting on Amazon: check the Amazon tab it opened{p.page ? ` (${p.page})` : ''} and sign in if asked. Everything read so far is saved, so you can press Stop watching and try again later.
+        </p>
       )}
     </div>
   )
