@@ -9,6 +9,7 @@
  *
  * Resolves the board (named fallback → "Reviews", auto-created). Studio+ feature.
  */
+import { isBlockedPinLink } from '@/lib/pinterest-destination'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
@@ -98,6 +99,10 @@ export async function POST(request: Request) {
   )
   if (rawLink && !/^https?:\/\//i.test(rawLink)) {
     return NextResponse.json({ error: 'That link isn’t a valid URL. Leave it blank to pin the video with no link, or use your blog/site URL — never an affiliate redirect.' }, { status: 400 })
+  }
+  // A short or redirect link is what Pinterest blocks as spam; never send one.
+  if (rawLink && isBlockedPinLink(rawLink)) {
+    return NextResponse.json({ error: 'Pinterest blocks short and redirect links, so this pin was not published. Use the blog post, the Link in Bio page or the full Amazon link.' }, { status: 400 })
   }
   const link = rawLink || undefined
   const tier = (ig?.tier as Tier) ?? 'trial'

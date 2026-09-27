@@ -20,7 +20,9 @@ import { isSafePassportDestination } from '@/lib/passport-links'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { getLinkStyle, resolveShowcaseLink } from '@/lib/link-cloak'
 import { extractAsin } from '@/services/amazon'
-import { isBlockedPinLink } from '@/lib/pinterest-destination'
+import { isBlockedPinLink, type PinProductDest } from '@/lib/pinterest-destination'
+import { readPinSettings } from '@/lib/pinterest-pin-dest-server'
+import { productPageForPin, type PinIntegration } from '@/lib/amazon-pin-publish'
 
 export async function resolvePinProductLink(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -31,6 +33,19 @@ export async function resolvePinProductLink(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ig: any,
 ): Promise<string | null> {
+  return (await resolvePinProduct(supabase, userId, p, ig)).url
+}
+
+/** The product a blog post is about: its ASIN, name, and the full product link a pin may carry. */
+export async function resolvePinProduct(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  p: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ig: any,
+): Promise<{ url: string | null; asin: string | null; title: string }> {
   // The product this post is about: prefer its linked video's product_url
   // (single-product reviews), else the first product link in the article body
   // (guides / comparisons / from-link posts have no video but DO carry the
@@ -72,7 +87,10 @@ export async function resolvePinProductLink(
   // destination, never the short link.
   if (unwrapped) productUrl = unwrapped
 
-  const tag = ((ig?.amazon_associates_tag as string) || '').trim()
+  // The Pinterest tracking ID when the creator set one (migration 382), so
+  // Amazon's reports show what Pinterest earns; else the main tag.
+  const settings = await readPinSettings(supabase, userId)
+  const tag = (settings.pinterestTag || (ig?.amazon_associates_tag as string) || '').trim()
 
   // Tagged direct Amazon destination when we know the ASIN; else a non-Amazon
   // product page the user set, as-is.
@@ -84,13 +102,41 @@ export async function resolvePinProductLink(
   } else if (productUrl && /^https?:\/\//i.test(productUrl)) {
     dest = productUrl
   }
-  if (!dest) return null
+  if (!dest) return { url: null, asin: asin || null, title }
 
   // A TikTok Showcase account links its own tiktok.com page (migration 333),
   // which is not a redirect. Null on an Amazon account.
   const cfg = await getLinkStyle(supabase, userId)
   const showcase = await resolveShowcaseLink(supabase, userId, cfg, { source: 'pinterest' })
-  if (showcase) return showcase
+  if (showcase) return { url: showcase, asin: asin || null, title }
   // Last guard: a stored short link that could not be unwrapped is not sent.
-  return isBlockedPinLink(dest) ? null : dest
+  return { url: isBlockedPinLink(dest) ? null : dest, asin: asin || null, title }
+}
+
+export type BlogPinTarget = 'blog' | 'product' | 'shop'
+
+/** A blog pin's default target, from the creator's setting (migration 382). */
+export function blogPinTargetFor(pref: PinProductDest): BlogPinTarget {
+  return pref === 'amazon' ? 'product' : pref === 'link_in_bio' ? 'shop' : 'blog'
+}
+
+/**
+ * Where one blog pin goes. 'blog' is the post itself (url null: the pin keeps
+ * the post's own link). 'product' is the full Amazon link. 'shop' is the
+ * product's page on Link in Bio, with the product put on it first. A target
+ * that is not available falls back to the blog post and says why.
+ */
+export async function blogPinLink(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any, userId: string, p: any, ig: any, target: BlogPinTarget | 'default',
+): Promise<{ url: string | null; target: BlogPinTarget; note: string | null }> {
+  const want: BlogPinTarget = target === 'default' ? blogPinTargetFor((await readPinSettings(supabase, userId)).pref) : target
+  if (want === 'blog') return { url: null, target: 'blog', note: null }
+  const prod = await resolvePinProduct(supabase, userId, p, ig).catch(() => ({ url: null, asin: null, title: '' }))
+  if (want === 'product') {
+    return prod.url ? { url: prod.url, target: 'product', note: null } : { url: null, target: 'blog', note: 'No product link was found in this post, so the pin goes to the blog post.' }
+  }
+  if (!prod.asin) return { url: null, target: 'blog', note: 'This post has no Amazon product MVP could find, so the pin goes to the blog post.' }
+  const page = await productPageForPin({ userId, intRow: ig as PinIntegration, asin: prod.asin, productTitle: prod.title })
+  return page.url ? { url: page.url, target: 'shop', note: null } : { url: null, target: 'blog', note: `${page.note} The pin goes to the blog post.` }
 }

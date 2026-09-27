@@ -71,6 +71,11 @@ const publicPaths = [
   // renders server-side with the service-role client and shows only PUBLISHED
   // pages, so there's nothing session-gated to protect.
   '/shop',
+  // The click-through behind every product on a Link in Bio page. It was not
+  // listed, so a shopper who was not logged in to MVP (every real shopper) was
+  // sent to the MVP login page instead of the store. It needs no session: it
+  // counts the click and redirects to the tile's link.
+  '/api/link-click',
   // The short-link domain's own front page. Reached only by a rewrite from
   // mvpl.ink/, and it must render for a logged-out visitor or a crawler, which
   // is the entire population that will ever see it.

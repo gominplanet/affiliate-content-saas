@@ -17,7 +17,7 @@ import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
 import { syntheticWpPost } from '@/lib/wp-post-fallback'
-import { resolvePinProductLink } from '@/lib/pin-product-link'
+import { blogPinLink } from '@/lib/pin-product-link'
 import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 60
@@ -123,10 +123,12 @@ export async function POST(request: NextRequest) {
     // product link server-side (the full tagged Amazon URL, never a short
     // link) so the pin links there instead of the blog. The disclosure is
     // already in `description`. Falls back to the blog link if none resolves.
-    let linkOverride: string | null = null
-    if (linkTarget === 'product') {
-      linkOverride = await resolvePinProductLink(supabase, user.id, p, decIg).catch(() => null)
-    }
+    // Where the pin goes: the per-pin choice (Blog / Product / Link in Bio),
+    // else the creator's setting (migration 382). Not available falls back to
+    // the blog post, and the answer says so.
+    const target = linkTarget === 'product' || linkTarget === 'shop' || linkTarget === 'blog' ? linkTarget : 'default'
+    const chosen = await blogPinLink(supabase, user.id, p, decIg, target).catch(() => ({ url: null, target: 'blog' as const, note: null }))
+    const linkOverride: string | null = chosen.url
     const { pinId } = await publishPinForPost({
       p, ig: decIg, site: wpSite, title, description,
       imageBase64: effImageBase64, mediaType: effMediaType, fallbackImageUrl,
@@ -146,6 +148,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       pinId,
+      // Where the pin actually went, and why when it is not what was chosen.
+      pinTarget: chosen.target, pinTargetNote: chosen.note,
       publishCount: pinSocialCount + 1,
       isLastAllowed: pinCap.willBeLast,
     })

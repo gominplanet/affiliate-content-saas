@@ -35,7 +35,7 @@
 // the whole reason a pin normally goes via the creator's own page is that
 // Pinterest rejects affiliate redirect and cloaking domains, and tiktok.com is
 // neither.
-export type PinDestinationKind = 'shop' | 'blog_post' | 'homepage' | 'none' | 'showcase'
+export type PinDestinationKind = 'shop' | 'blog_post' | 'homepage' | 'none' | 'showcase' | 'product_page' | 'amazon'
 
 export interface PinDestination {
   /** The URL to put on the pin, or null when we must not pin at all. */
@@ -130,4 +130,99 @@ export function isBlockedPinLink(url: string | null | undefined): boolean {
 function clean(u: string | null | undefined): string | null {
   const s = String(u ?? '').trim()
   return /^https?:\/\/\S+$/i.test(s) ? s : null
+}
+
+// ── One setting for where product pins go (migration 382) ──────────────────
+//
+// Pinterest refuses short and redirect links, so every choice here is a real
+// page: the creator's blog post about the product, the product's own page on
+// their Link in Bio, or the full amazon.com product link with their tag. The
+// creator picks the order; whatever is not available falls through to the
+// next, and the pin says where it actually went and why.
+
+export type PinProductDest = 'auto' | 'blog_post' | 'link_in_bio' | 'amazon'
+export const PIN_PRODUCT_DESTS: PinProductDest[] = ['auto', 'blog_post', 'link_in_bio', 'amazon']
+export function readPinProductDest(raw: unknown): PinProductDest {
+  return (PIN_PRODUCT_DESTS as string[]).includes(String(raw)) ? (raw as PinProductDest) : 'auto'
+}
+
+export type ChosenPinKind = 'blog_post' | 'product_page' | 'amazon' | 'homepage' | 'none'
+export interface ChosenPin {
+  url: string | null
+  kind: ChosenPinKind
+  /** Why it is not the one the creator picked, when it is not. */
+  note: string | null
+}
+
+const LABEL: Record<Exclude<ChosenPinKind, 'none'>, string> = {
+  blog_post: 'your blog post about it', product_page: 'its page on your Link in Bio', amazon: 'Amazon directly', homepage: 'your blog homepage',
+}
+
+/**
+ * Pick the pin's link. The creator's choice first, then blog post, Link in Bio
+ * product page, Amazon, homepage, in that order. Never a redirect: anything
+ * Pinterest would block is treated as not available. Pure.
+ */
+export function choosePinDestination(input: {
+  pref: PinProductDest
+  blogPostUrl?: string | null
+  productPageUrl?: string | null
+  amazonUrl?: string | null
+  homepageUrl?: string | null
+}): ChosenPin {
+  const ok = (u: string | null | undefined) => (u && /^https?:\/\//i.test(u) && !isBlockedPinLink(u) ? u : null)
+  const have: Record<Exclude<ChosenPinKind, 'none'>, string | null> = {
+    blog_post: ok(input.blogPostUrl), product_page: ok(input.productPageUrl), amazon: ok(input.amazonUrl), homepage: ok(input.homepageUrl),
+  }
+  const wanted: Exclude<ChosenPinKind, 'none'> | null =
+    input.pref === 'blog_post' ? 'blog_post' : input.pref === 'link_in_bio' ? 'product_page' : input.pref === 'amazon' ? 'amazon' : null
+  if (wanted && have[wanted]) return { url: have[wanted], kind: wanted, note: null }
+  const order: Array<Exclude<ChosenPinKind, 'none'>> = ['blog_post', 'product_page', 'amazon', 'homepage']
+  for (const k of order) {
+    if (!have[k]) continue
+    const why = wanted
+      ? wanted === 'blog_post' ? 'There is no blog post about this product yet'
+        : wanted === 'product_page' ? 'Your Link in Bio page is not published, or the product could not be added to it'
+          : 'There is no Amazon tag to put on the link'
+      : null
+    return { url: have[k], kind: k, note: why ? `${why}, so this pin goes to ${LABEL[k]}.` : null }
+  }
+  return { url: null, kind: 'none', note: 'There is no page to send this pin to: no blog post, no published Link in Bio page, and no Amazon tag. Set up your Link in Bio page or add your Amazon tag.' }
+}
+
+/** The full amazon.com product link a pin may carry. Never shortened. Pure. */
+export function amazonPinUrl(asin: string | null | undefined, tag: string | null | undefined): string | null {
+  const a = String(asin || '').toUpperCase()
+  const t = String(tag || '').trim()
+  if (!/^[A-Z0-9]{10}$/.test(a) || !/^[A-Za-z0-9-]{3,40}$/.test(t)) return null
+  return `https://www.amazon.com/dp/${a}?tag=${encodeURIComponent(t)}`
+}
+
+/** The product's own page on Link in Bio. Pure. */
+export function productPageUrl(appOrigin: string, handle: string, asin: string): string {
+  return `${String(appOrigin || '').replace(/\/+$/, '')}/shop/${encodeURIComponent(handle)}/${encodeURIComponent(asin.toUpperCase())}`
+}
+
+/** The claim code out of whatever Pinterest gave: the bare code or the whole meta tag. Pure. */
+export function pinterestClaimCode(raw: unknown): string | null {
+  const s = String(raw ?? '').trim()
+  if (!s) return null
+  const m = /content\s*=\s*["']([a-f0-9]{16,64})["']/i.exec(s) || /^([a-f0-9]{16,64})$/i.exec(s)
+  return m ? m[1].toLowerCase() : null
+}
+
+/**
+ * The site's custom meta tags with the Pinterest claim tag set to this code
+ * (or removed, for null). Any earlier p:domain_verify tag is replaced, never
+ * duplicated, and every other tag is kept as it is. Pure.
+ */
+export function withClaimTag(tags: unknown, code: string | null): string[] {
+  const kept = (Array.isArray(tags) ? tags : []).map(String).filter((t) => t.trim() && !/p:domain_verify/i.test(t))
+  return code ? [...kept, `<meta name="p:domain_verify" content="${code}"/>`] : kept
+}
+
+/** The claim code already on the site, if any. Pure. */
+export function claimCodeIn(tags: unknown): string | null {
+  for (const t of Array.isArray(tags) ? tags : []) if (/p:domain_verify/i.test(String(t))) return pinterestClaimCode(t)
+  return null
 }

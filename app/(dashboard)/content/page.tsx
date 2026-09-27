@@ -3142,7 +3142,7 @@ export default function ContentPage() {
     return () => window.removeEventListener('mvp-social-posted', onSocialPosted)
   }, [])
 
-  async function handlePublishPin(description: string, title: string, linkTarget: 'blog' | 'product' = 'blog'): Promise<{ ok: boolean; error?: string }> {
+  async function handlePublishPin(description: string, title: string, linkTarget: 'blog' | 'product' | 'shop' = 'blog'): Promise<{ ok: boolean; error?: string }> {
     if (!pinPreview) return { ok: false, error: 'No pin to publish' }
     setPinPublishingFor(pinPreview.postId)
     const ctrl = new AbortController()
@@ -3179,6 +3179,8 @@ export default function ContentPage() {
       // never learn the pin succeeded).
       setPinnedPostIds(prev => new Set(prev).add(pinPreview.postId))
       setPinPreview(null)
+      // Where the pin went when it is not where it was asked to go.
+      if (d.pinTargetNote) toast(d.pinTargetNote as string)
       return { ok: true }
     } catch (e) {
       const aborted = e instanceof DOMException && e.name === 'AbortError'

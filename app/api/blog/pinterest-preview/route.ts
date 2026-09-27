@@ -15,7 +15,8 @@ import { syntheticWpPost } from '@/lib/wp-post-fallback'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
-import { resolvePinProductLink } from '@/lib/pin-product-link'
+import { resolvePinProduct, blogPinTargetFor } from '@/lib/pin-product-link'
+import { readPinSettings } from '@/lib/pinterest-pin-dest-server'
 import { spendGate } from '@/lib/ai-spend'
 
 // The Art Director pin does a Claude brief + a slow gpt-image-2 render + product-
@@ -140,7 +141,21 @@ export async function POST(request: NextRequest) {
 
   // The direct product link for the Blog/Product toggle: the full tagged
   // Amazon URL, never a short link (lib/pin-product-link.ts). null → modal keeps Blog only.
-  const productUrl = await resolvePinProductLink(supabase, user.id, p, ig).catch(() => null)
+  const product = await resolvePinProduct(supabase, user.id, p, ig).catch(() => ({ url: null, asin: null, title: '' }))
+  const productUrl = product.url
+  // The Link in Bio option: offered when the post has an Amazon product and the
+  // page is published. The product is put on the page when the pin goes out.
+  const pinSettings = await readPinSettings(supabase, user.id)
+  let shopAvailable = false
+  if (product.asin) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: page } = await (supabase as any).from('link_pages').select('published').eq('user_id', user.id).maybeSingle()
+      shopAvailable = !!page?.published
+    } catch { shopAvailable = false }
+  }
+  const wantDefault = blogPinTargetFor(pinSettings.pref)
+  const defaultTarget = wantDefault === 'product' && productUrl ? 'product' : wantDefault === 'shop' && shopAvailable ? 'shop' : 'blog'
 
   return NextResponse.json({
     ...a,
@@ -154,6 +169,8 @@ export async function POST(request: NextRequest) {
     designNote: describePinDowngrade(a.outcome, true),
     videoUrl,
     productUrl,
+    shopAvailable,
+    defaultTarget,
     // Category board (what publish will use) → the user's named fallback board
     // → saved board → "Reviews". Mirrors the publish-time resolution order.
     boardName: predictedBoard

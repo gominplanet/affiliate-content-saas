@@ -17,6 +17,7 @@
  * racing for the same row → one wins, the other sees an empty result.
  */
 
+import { blogPinLink } from '@/lib/pin-product-link'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createSession as createBlueskySession, createPost as createBlueskyPost } from '@/services/bluesky'
@@ -922,6 +923,12 @@ async function publishOne(
     case 'pinterest': {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (!(integration as any).pinterest_access_token) throw new Error('Pinterest not connected')
+      // Where the pin goes, from the creator's setting (migration 382): the
+      // blog post, the product's Link in Bio page, or Amazon directly. Any
+      // choice that is not available falls back to the blog post.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pinLink = await blogPinLink(admin, ((post as any).user_id || row.user_id) as string, post, integration, 'default')
+        .catch(() => ({ url: null as string | null, target: 'blog' as const, note: null }))
       // Build the SAME vertical pin the manual "Pin to Pinterest" button makes —
       // a composed 2:3 image + AI copy — instead of pinning the raw HORIZONTAL
       // thumbnail. The scheduled/cascade path used to fall back to thumbnail_url,
@@ -950,6 +957,7 @@ async function publishOne(
           p: post,
           ig: integration,
           site: null,
+          linkOverride: pinLink.url,
           title: post.title || '',
           description: row.body_text || post.title || '',
           imageBase64: preImageData,
@@ -1010,6 +1018,7 @@ async function publishOne(
         p: post,
         ig: integration,
         site: null,
+        linkOverride: pinLink.url,
         title: assets?.title || post.title || '',
         description: assets ? composePinDescription(assets) : (row.body_text || post.title || ''),
         imageBase64: assets?.imageBase64 ?? undefined,

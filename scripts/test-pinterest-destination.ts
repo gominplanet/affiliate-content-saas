@@ -14,7 +14,7 @@
 // So the test is not "does it pick a URL". It is: can an affiliate redirect
 // EVER come out of this, by any route, including the fallbacks.
 import { readFileSync } from 'node:fs'
-import { pinDestination, isBlockedPinLink } from '../lib/pinterest-destination'
+import { pinDestination, isBlockedPinLink, choosePinDestination, amazonPinUrl, productPageUrl, pinterestClaimCode, withClaimTag, claimCodeIn } from '../lib/pinterest-destination'
 
 const failures: string[] = []
 const check = (name: string, cond: boolean, detail?: string) => {
@@ -148,11 +148,51 @@ const APP = 'https://www.mvpaffiliate.io'
   check('the pin product link never makes a Passport, Geniuslink or Bitly link',
     !/passportLinkFor|shortenBitly|getOrCreateAmazonGeniuslink/.test(R))
   check('a stored mvpl.ink link is unwrapped to the real product', /mvpl\\\.ink/.test(R))
-  check('and a link that could not be unwrapped is not sent', /return isBlockedPinLink\(dest\) \? null : dest/.test(R))
+  check('and a link that could not be unwrapped is not sent', /url: isBlockedPinLink\(dest\) \? null : dest/.test(R))
   const P = readFileSync('lib/pin-publish.ts', 'utf8')
   check('the product link is not wrapped in geni.us on the way out', /cfg\.style === 'geniuslink' && !useOverride/.test(P))
   check('and a blocked product link falls back to the blog post, or stops with a reason',
     /if \(useOverride && isBlockedPinLink\(destLink\) && /.test(P) && /which Pinterest blocks/.test(P))
+}
+
+// ── one setting for where product pins go (migration 382) ──────────────────
+{
+  const all = { blogPostUrl: 'https://blog.example/review', productPageUrl: 'https://www.mvpaffiliate.io/shop/seb/B000000001', amazonUrl: 'https://www.amazon.com/dp/B000000001?tag=seb-pin-20', homepageUrl: 'https://blog.example' }
+  check('Automatic goes blog post, then Link in Bio product page, then Amazon, then homepage',
+    choosePinDestination({ pref: 'auto', ...all }).kind === 'blog_post'
+    && choosePinDestination({ pref: 'auto', ...all, blogPostUrl: null }).kind === 'product_page'
+    && choosePinDestination({ pref: 'auto', ...all, blogPostUrl: null, productPageUrl: null }).kind === 'amazon'
+    && choosePinDestination({ pref: 'auto', homepageUrl: all.homepageUrl }).kind === 'homepage')
+  check('the creator\'s choice wins when it is available, with no note',
+    choosePinDestination({ pref: 'amazon', ...all }).kind === 'amazon' && choosePinDestination({ pref: 'amazon', ...all }).note === null
+    && choosePinDestination({ pref: 'link_in_bio', ...all }).kind === 'product_page')
+  const fell = choosePinDestination({ pref: 'blog_post', ...all, blogPostUrl: null })
+  check('a choice that is not available falls through and says why', fell.kind === 'product_page' && /no blog post about this product yet/.test(fell.note || ''))
+  check('a redirect is never chosen, whatever it was offered as',
+    choosePinDestination({ pref: 'amazon', amazonUrl: 'https://amzn.to/x', productPageUrl: 'https://www.mvpl.ink/abcd' }).kind === 'none')
+  check('nothing available is said plainly', /no blog post, no published Link in Bio page, and no Amazon tag/.test(choosePinDestination({ pref: 'auto' }).note || ''))
+  check('the Amazon pin link is the full tagged amazon.com link, and needs a tag',
+    amazonPinUrl('b000000001', 'seb-pin-20') === 'https://www.amazon.com/dp/B000000001?tag=seb-pin-20' && amazonPinUrl('B000000001', '') === null && !isBlockedPinLink(amazonPinUrl('B000000001', 't-20')))
+  check('the product page lives under the shop handle', productPageUrl('https://www.mvpaffiliate.io/', 'seb', 'b000000001') === 'https://www.mvpaffiliate.io/shop/seb/B000000001')
+  const code = '5e1f4647f3b22f7c34b62e98e2ece410'
+  check('the claim code is read from the bare code or the whole tag', pinterestClaimCode(code) === code && pinterestClaimCode(`<meta name="p:domain_verify" content="${code.toUpperCase()}"/>`) === code && pinterestClaimCode('nope') === null)
+  const tags = withClaimTag(['<meta name="google-site-verification" content="g"/>', '<meta name="p:domain_verify" content="old"/>'], code)
+  check('setting the claim code replaces the old one and keeps the other tags',
+    tags.length === 2 && tags[0].includes('google-site-verification') && claimCodeIn(tags) === code && withClaimTag(tags, null).length === 1)
+
+  const PUB = readFileSync('lib/amazon-pin-publish.ts', 'utf8')
+  check('product and deal pins follow the setting', /pref: opts\.prefOverride \?\? settings\.pref/.test(PUB) && /choosePinDestination\(\{/.test(PUB) && !/\bpinDestination\(\{/.test(PUB))
+  check('the product page is offered only once the product is on the page', /productPageUrl: shopHandle && opts\.asin \? productPageUrl\(origin, shopHandle, opts\.asin\) : null/.test(PUB) && /if \(tileError\) shopHandle = null/.test(PUB))
+  check('blog pins follow the setting, per pin and when scheduled',
+    /blogPinLink\(supabase, user\.id, p, decIg, target\)/.test(readFileSync('app/api/blog/pinterest-post/route.ts', 'utf8'))
+    && /blogPinLink\(admin,[\s\S]{0,120}?'default'\)/.test(readFileSync('app/api/cron/process-scheduled/route.ts', 'utf8')))
+  check('the Pinterest tracking ID is used on direct Amazon pins', /settings\.pinterestTag \|\| \(ig\?\.amazon_associates_tag/.test(readFileSync('lib/pin-product-link.ts', 'utf8')) && /amazonTag: pinterestTag \|\|/.test(readFileSync('lib/pinterest-pin-dest-server.ts', 'utf8')))
+  check('video pins refuse a redirect too', /if \(rawLink && isBlockedPinLink\(rawLink\)\)/.test(readFileSync('app/api/pinterest/video-pin/route.ts', 'utf8')))
+  const PAGE = readFileSync('app/shop/[handle]/[asin]/page.tsx', 'utf8')
+  check('the product page buys through the same click counter, and sends a gone product to the shop',
+    /href=\{`\/api\/link-click\?i=\$\{item\.id\}`\}/.test(PAGE) && /if \(!data\.item\) redirect\(/.test(PAGE) && /images: data\.item\.image_url/.test(PAGE))
+  check('a shopper who is not logged in can use the buy buttons', /'\/api\/link-click',/.test(readFileSync('middleware.ts', 'utf8')))
+  check('the setting has its migration', /check \(pinterest_product_dest in \('auto', 'blog_post', 'link_in_bio', 'amazon'\)\)/.test(readFileSync('supabase/migrations/382_pinterest_product_dest.sql', 'utf8')))
 }
 
 console.log(failures.length ? `FAIL (${failures.length})` : 'ALL PASS')

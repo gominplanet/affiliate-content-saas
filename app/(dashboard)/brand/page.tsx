@@ -9,6 +9,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
 import GeniuslinkGroupsPanel from '@/components/brand/GeniuslinkGroupsPanel'
 import LinkStyleTiles from '@/components/brand/LinkStyleTiles'
+import PinterestPinSettings from '@/components/brand/PinterestPinSettings'
 import { GENIUSLINK_SIGNUP_URL, GENIUSLINK_PITCH } from '@/lib/geniuslink-signup'
 import VisualPresetPicker from '@/components/brand/VisualPresetPicker'
 import { DEFAULT_PRESET_ID } from '@/lib/visual-presets'
@@ -1490,11 +1491,15 @@ export default function BrandPage() {
               )}
             </div>
 
+            {/* Where product pins (Deal Radar, Amazon, blog) go, the Pinterest
+                tracking ID, and the site claim code (migration 382). */}
+            <PinterestPinSettings />
+
             {/* Where a Clip Factory Pinterest video pin links. Separate from the
                 link style above — this is the destination on the pin itself, and
                 is never an affiliate redirect (Pinterest doesn't allow it). */}
             <div className="rounded-xl border border-gray-200 dark:border-white/10 p-4 mb-3">
-              <span className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Pinterest pins link to</span>
+              <span className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Clip Factory video pins link to</span>
               <select
                 value={pinterestLinkPref}
                 onChange={e => setPinterestLinkPref(e.target.value as typeof pinterestLinkPref)}

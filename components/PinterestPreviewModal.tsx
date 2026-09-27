@@ -25,6 +25,10 @@ export interface PinPreviewData {
    *  page), never a short or redirect link, which Pinterest blocks. When present, the modal offers a Blog/Product destination
    *  toggle. null → no product to link to, pin stays on the blog link. */
   productUrl?: string | null
+  /** The post has an Amazon product and a published Link in Bio page. */
+  shopAvailable?: boolean
+  /** Where the creator's setting sends blog pins (migration 382). */
+  defaultTarget?: 'blog' | 'product' | 'shop'
   /** Set when the designed pin did NOT render and this is a fallback. Null on
    *  success. Shown under the image, because the preview is the one moment a
    *  person is looking at this pin with a choice still open: an off-brand pin
@@ -41,7 +45,7 @@ export function PinterestPreviewModal({
   onClose,
 }: {
   data: PinPreviewData
-  onPublish: (description: string, title: string, linkTarget: 'blog' | 'product') => Promise<{ ok: boolean; error?: string }>
+  onPublish: (description: string, title: string, linkTarget: 'blog' | 'product' | 'shop') => Promise<{ ok: boolean; error?: string }>
   onClose: () => void
 }) {
   const [title, setTitle] = useState(data.title)
@@ -54,9 +58,14 @@ export function PinterestPreviewModal({
   // Where the pin links: the blog post (default, safest) or the direct product
   // link. Only offered when a product link resolved. Pinterest allows affiliate
   // links WITH disclosure (always appended below), as the full URL.
-  const [linkTarget, setLinkTarget] = useState<'blog' | 'product'>('blog')
   const hasProduct = !!(data.productUrl && data.productUrl.trim())
-  const destLink = linkTarget === 'product' && hasProduct ? (data.productUrl as string) : data.link
+  const hasShop = !!data.shopAvailable
+  // Starts on the creator's setting (Brand page, "Product pins link to").
+  const [linkTarget, setLinkTarget] = useState<'blog' | 'product' | 'shop'>(
+    data.defaultTarget === 'product' && hasProduct ? 'product' : data.defaultTarget === 'shop' && hasShop ? 'shop' : 'blog')
+  // The Link in Bio page URL is made when the pin goes out (the product is put
+  // on the page first), so the preview names it rather than guessing its address.
+  const destLink = linkTarget === 'product' && hasProduct ? (data.productUrl as string) : linkTarget === 'shop' ? '' : data.link
 
   const tagLine = data.hashtags.length ? data.hashtags.map(t => `#${t}`).join(' ') : ''
 
@@ -217,7 +226,7 @@ export function PinterestPreviewModal({
                 The product option only shows when a product link resolved. */}
             <div>
               <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-1.5">Pin links to</p>
-              {hasProduct && (
+              {(hasProduct || hasShop) && (
                 <div className="inline-flex rounded-lg border border-gray-200 dark:border-white/10 p-0.5 mb-2">
                   <button
                     type="button"
@@ -229,13 +238,25 @@ export function PinterestPreviewModal({
                   <button
                     type="button"
                     onClick={() => setLinkTarget('product')}
+                    disabled={!hasProduct}
                     className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-colors ${linkTarget === 'product' ? 'bg-[#E60023] text-white' : 'text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'}`}
                   >
                     Product link
                   </button>
+                  {hasShop && (
+                    <button
+                      type="button"
+                      onClick={() => setLinkTarget('shop')}
+                      className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-colors ${linkTarget === 'shop' ? 'bg-[#E60023] text-white' : 'text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'}`}
+                    >
+                      Link in Bio
+                    </button>
+                  )}
                 </div>
               )}
-              {destLink ? (
+              {linkTarget === 'shop' ? (
+                <p className="text-[11px] text-[#7C3AED]">This product&apos;s own page on your Link in Bio. MVP puts the product on the page before the pin goes out.</p>
+              ) : destLink ? (
                 <a href={destLink} target="_blank" rel="noopener noreferrer" className="block text-[11px] text-[#7C3AED] hover:underline break-all">{destLink}</a>
               ) : (
                 <p className="text-[11px] text-[#ff3b30]">No blog URL — this post can&apos;t be pinned.</p>

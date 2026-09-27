@@ -16,7 +16,8 @@ import { geniuslinkCreds } from '@/lib/link-style'
 import { resolvePostDestination, styleForDestination, styleSwapNote } from '@/lib/post-destination'
 import { shortenBitly } from '@/lib/bitly'
 import { asinFromAmazonUrl, resolveFinalUrl } from '@/lib/product-link'
-import { pinDestination, isBlockedPinLink, type PinDestinationKind } from '@/lib/pinterest-destination'
+import { isBlockedPinLink, choosePinDestination, amazonPinUrl, productPageUrl, LINK_IN_BIO_PATH, type PinDestinationKind, type PinProductDest } from '@/lib/pinterest-destination'
+import { readPinSettings, blogPostUrlForAsin } from '@/lib/pinterest-pin-dest-server'
 import { tileImageFor } from '@/lib/tile-image'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -280,6 +281,8 @@ async function resolvePinDestinationFor(opts: {
   productTitle?: string
   imageUrl?: string | null
   affiliateUrl: string
+  /** For one pin, in place of the saved setting (a blog pin's per-pin choice). */
+  prefOverride?: PinProductDest
 }) {
   const admin = createAdminClient()
   let shopHandle: string | null = null
@@ -287,13 +290,11 @@ async function resolvePinDestinationFor(opts: {
   // Read the homepage here rather than off intRow: callers select a narrow
   // column set for the Pinterest token and tag, so wordpress_url is not on it
   // and the homepage fallback would have been silently empty every time.
-  let homepageUrl: string | null = null
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: ig } = await (admin as any)
-      .from('integrations').select('wordpress_url').eq('user_id', opts.userId).maybeSingle()
-    homepageUrl = (ig?.wordpress_url as string | null) || null
-  } catch { homepageUrl = null }
+  // The creator's choice of where product pins go (migration 382), their
+  // Pinterest tracking ID, and the homepage, read with select('*') so a
+  // database without the migration still answers with the defaults.
+  const settings = await readPinSettings(admin, opts.userId)
+  const homepageUrl = settings.homepageUrl
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: page } = await (admin as any)
@@ -381,17 +382,47 @@ async function resolvePinDestinationFor(opts: {
     try {
       const { revalidatePath } = await import('next/cache')
       revalidatePath(`/shop/${shopHandle}`)
+      if (opts.asin) revalidatePath(`/shop/${shopHandle}/${opts.asin.toUpperCase()}`)
     } catch { /* not in a request context that can revalidate */ }
   }
 
-  const dest = pinDestination({
-    shopHandle,
+  // WHERE THE PIN GOES: the creator's choice, then blog post, the product's
+  // own Link in Bio page, Amazon directly, homepage. The product page is only
+  // offered once the product is actually on the page it points at.
+  const origin = process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io'
+  const chosen = choosePinDestination({
+    pref: opts.prefOverride ?? settings.pref,
+    blogPostUrl: opts.asin ? await blogPostUrlForAsin(admin, opts.userId, opts.asin) : null,
+    productPageUrl: shopHandle && opts.asin ? productPageUrl(origin, shopHandle, opts.asin) : null,
+    amazonUrl: amazonPinUrl(opts.asin, settings.amazonTag || opts.intRow.amazon_associates_tag || null),
     homepageUrl,
-    appOrigin: process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io',
   })
+  const dest = {
+    url: chosen.url,
+    kind: (chosen.kind === 'none' ? 'none' : chosen.kind) as PinDestinationKind,
+    note: chosen.note,
+    needsLinkPage: chosen.kind === 'none',
+    setupPath: chosen.kind === 'none' ? LINK_IN_BIO_PATH : undefined,
+  }
   return tileError
-    ? { ...dest, note: `${dest.note ? dest.note + ' ' : ''}(The product could not be added to your shop page: ${tileError})` }
+    ? { ...dest, note: `${dest.note ? dest.note + ' ' : ''}(The product could not be added to your Link in Bio page: ${tileError})` }
     : dest
+}
+
+/**
+ * The product's own Link in Bio page for a pin made somewhere else (a blog
+ * pin whose creator chose Link in Bio). Puts the product on the page with the
+ * creator's affiliate link first, exactly as a product pin does, and returns
+ * the page only when that worked.
+ */
+export async function productPageForPin(opts: { userId: string; intRow: PinIntegration; asin: string; productTitle?: string; imageUrl?: string | null }): Promise<{ url: string | null; note: string | null }> {
+  const aff = await resolveAffiliateLink({ userId: opts.userId, intRow: opts.intRow, asin: opts.asin, productTitle: opts.productTitle, channel: 'pinterest' })
+  if (!aff.linkUrl) return { url: null, note: 'There is no product link to put on your Link in Bio page.' }
+  const d = await resolvePinDestinationFor({
+    userId: opts.userId, intRow: opts.intRow, asin: aff.asin || opts.asin, productTitle: opts.productTitle,
+    imageUrl: opts.imageUrl ?? null, affiliateUrl: aff.linkUrl, prefOverride: 'link_in_bio',
+  })
+  return d.kind === 'product_page' ? { url: d.url, note: null } : { url: null, note: d.note || 'Your Link in Bio page is not published.' }
 }
 
 /**
