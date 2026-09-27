@@ -1142,12 +1142,14 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       // status.containsSyntheticMedia), so they are set here, the moment the
       // video exists, and read back below. A failure is written on the row;
       // it never loses the upload.
+      // PAID PROMOTION CANNOT BE SET HERE. This used to call
+      // videos.update with part=paidProductPlacementDetails, and YouTube
+      // accepted the call and changed nothing: that part is readable, not
+      // writable (YouTube's videos.update lists what an app may set, and it is
+      // not there). Every batch video read back No and was held. Only Studio
+      // can set it (SCOUT's Studio step, or the creator), and heldForDisclosure
+      // below schedules the video once it reads back Yes.
       let discloseError: string | null = null
-      if (disclose) {
-        try { await yt.setPaidPromotion(videoId, true) } catch (pe) {
-          discloseError = (pe instanceof Error && pe.message ? pe.message : String(pe)).slice(0, 200)
-        }
-      }
       // EVERY STATUS PUT RESENDS EVERYTHING IT MUST KEEP. YouTube erases any
       // status field a PUT leaves out, and the scheduling call used to send the
       // time alone: that is what switched "Allow embedding" off and dropped the
@@ -1174,8 +1176,8 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       let heldBack: string | null = null
       if (!missed && !paidConfirmed) {
         heldBack = (goNow
-          ? `Kept private. YouTube did not confirm paid promotion on it${discloseError ? ` (${discloseError})` : ''}, so it was not made public. Give it a time and press Launch these too, or set paid promotion in Studio and make it public there.`
-          : `Kept private. YouTube did not confirm paid promotion on it${discloseError ? ` (${discloseError})` : ''}, so it was not scheduled for ${missedWhen(String(it.planned_publish_at), missedZone)}. Give it a time again and press Launch these too, or set paid promotion in Studio and schedule it there.`
+          ? `Kept private. YouTube did not confirm paid promotion on it${discloseError ? ` (${discloseError})` : ''}, so it was not made public. YouTube only takes paid promotion in Studio: once Studio has it (SCOUT's Studio step, or ticked by hand), give it a time and press Launch these too, or make it public in Studio.`
+          : `Kept private. YouTube did not confirm paid promotion on it${discloseError ? ` (${discloseError})` : ''}, so it is not scheduled yet. YouTube only takes paid promotion in Studio: once Studio has it (SCOUT's Studio step, or ticked by hand), MVP schedules it for ${missedWhen(String(it.planned_publish_at), missedZone)} on its own.`
         ).slice(0, 400)
       }
 
@@ -1630,6 +1632,96 @@ async function confirms(sb: Sb): Promise<{ published: number; late: number }> {
   return { published, late }
 }
 
+/**
+ * A VIDEO HELD FOR PAID PROMOTION IS SCHEDULED ONCE STUDIO HAS IT.
+ *
+ * YouTube's API can read paid promotion but not set it, so a batch video is
+ * uploaded, held private with no time, and waits for Studio (SCOUT's Studio
+ * step, or the creator ticking it by hand). This looks at those videos every
+ * ten minutes each and, when YouTube reads paid promotion back as Yes, sets the
+ * time the creator planned. Nobody has to come back and press anything.
+ *
+ * A time that has already gone is not quietly moved: the row says so and asks
+ * for a new one, the same as any missed slot.
+ */
+async function heldForDisclosure(sb: Sb, left: Left): Promise<{ scheduled: number; waiting: number; late: number }> {
+  const stamp = () => new Date().toISOString()
+  const tenAgo = new Date(Date.now() - 10 * 60_000).toISOString()
+  const { data: rows } = await sb.from('launch_items')
+    .select('id,user_id,batch_id,youtube_video_id,planned_publish_at')
+    .eq('state', 'blocked')
+    .not('youtube_video_id', 'is', null)
+    .like('reason', 'Kept private. YouTube did not confirm paid promotion%')
+    .lt('updated_at', tenAgo)
+    .order('updated_at', { ascending: true }).limit(25)
+  const items = rows ?? []
+  if (items.length === 0) return { scheduled: 0, waiting: 0, late: 0 }
+
+  const batchIds = Array.from(new Set<string>(items.map((i: { batch_id: string }) => String(i.batch_id))))
+  const read = await channelsForBatches(sb, batchIds)
+  // A wrong login would read every private video as undisclosed: wait instead.
+  if (read.failed) return { scheduled: 0, waiting: 0, late: 0 }
+  const { data: bs } = await sb.from('launch_batches').select('id,notify_subscribers,timezone').in('id', batchIds)
+  const notifyByBatch = new Map<string, boolean>()
+  const zoneByBatch = new Map<string, string | null>()
+  for (const b of (bs ?? [])) { notifyByBatch.set(b.id, b.notify_subscribers === true); zoneByBatch.set(b.id, b.timezone ?? null) }
+
+  let scheduled = 0, waiting = 0, late = 0
+  for (const it of items) {
+    if (left() < 20_000) break
+    const videoId = String(it.youtube_video_id)
+    const zone = zoneByBatch.get(it.batch_id) ?? null
+    try {
+      const token = await getChannelOAuthToken(sb, it.user_id, read.map.get(it.batch_id) ?? null)
+      if (!token) { await sb.from('launch_items').update({ updated_at: stamp() }).eq('id', it.id); waiting++; continue }
+      const yt = new YouTubeOAuthService(token)
+      const rb = await yt.readDisclosures(videoId)
+      if (rb?.paidPromotion !== true) {
+        // Still No. To the back of the line; looked at again in ten minutes.
+        await sb.from('launch_items').update({ updated_at: stamp() }).eq('id', it.id)
+        waiting++
+        continue
+      }
+      const planned = String(it.planned_publish_at || '')
+      const at = Date.parse(planned)
+      if (!Number.isFinite(at) || at < Date.now() + 5 * 60_000) {
+        await sb.from('launch_items').update({
+          reason: `Kept private. Paid promotion is on now, but its time${Number.isFinite(at) ? `, ${missedWhen(planned, zone)},` : ''} has passed, so it was not scheduled. Give it a new time and press Launch these too.`,
+          updated_at: stamp(),
+        }).eq('id', it.id)
+        late++
+        continue
+      }
+      await yt.updateVideoStatus(videoId, {
+        publishAt: planned,
+        notifySubscribers: notifyByBatch.get(it.batch_id) === true,
+        madeForKids: false,
+        embeddable: true,
+        containsSyntheticMedia: false,
+      })
+      await sb.from('launch_items').update({
+        state: 'scheduled', publish_at: planned, reason: null, updated_at: stamp(),
+      }).eq('id', it.id)
+      // The disclosure record, now that it reads Yes. Separate, so a database
+      // without migration 368 loses this and nothing else.
+      await sb.from('launch_items').update({
+        api_disclosures: {
+          at: stamp(), asked: true, paidPromotion: true,
+          aiUseNo: rb.containsSyntheticMedia === false, embeddable: rb.embeddable, madeForKids: rb.madeForKids,
+          error: null, via: 'studio',
+        },
+      }).eq('id', it.id)
+      scheduled++
+    } catch (e) {
+      // A check that could not run is not a verdict: the row waits and says why.
+      console.warn('[launch-drain] held video check failed', { item: it.id, said: e instanceof Error ? e.message : String(e) })
+      await sb.from('launch_items').update({ updated_at: stamp() }).eq('id', it.id)
+      waiting++
+    }
+  }
+  return { scheduled, waiting, late }
+}
+
 async function settle(sb: Sb): Promise<number> {
   const { data: batches } = await sb.from('launch_batches')
     .select('id,state').in('state', ['draft', 'preparing', 'launching']).limit(50)
@@ -1771,9 +1863,11 @@ export async function GET(request: Request) {
   const published = await publishes(sb, left)
   // AFTER the publishing, and cheap: one YouTube call covers fifty ids.
   const confirmed = left() > 30_000 ? await confirms(sb) : null
+  // Held for paid promotion, and Studio has it now: schedule at the planned time.
+  const disclosed = left() > 30_000 ? await heldForDisclosure(sb, left) : null
   // Videos on YouTube that never reached the Amazon side. Cheap when empty.
   const repaired = left() > 20_000 ? await repairs(sb) : null
   const playlisted = left() > 20_000 ? await playlistCatchUp(sb) : null
   const settled = await settle(sb)
-  return NextResponse.json({ ok: true, pass, published, confirmed, repaired, playlisted, settled })
+  return NextResponse.json({ ok: true, pass, published, confirmed, disclosed, repaired, playlisted, settled })
 }

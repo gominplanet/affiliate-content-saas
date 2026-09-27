@@ -944,12 +944,11 @@ export class YouTubeOAuthService {
   }
 
   /**
-   * Paid promotion, through YouTube's own API (paidProductPlacementDetails).
-   *
-   * THIS USED TO NEED A BROWSER. Paid promotion was only ever set by SCOUT
-   * clicking Studio's radio in the creator's own session, so a batch video
-   * went out undisclosed unless a page happened to be open. The API takes it
-   * now. Only this part is sent, so nothing else on the video is touched.
+   * NOT CALLED, AND KEPT ONLY TO SAY WHY. YouTube accepts this request and
+   * changes nothing: paidProductPlacementDetails can be read through the API
+   * but is not among the properties videos.update may set. Every Liftoff video
+   * read back No after it. Paid promotion is set in Studio (SCOUT, or by hand)
+   * and read back with readDisclosures.
    */
   async setPaidPromotion(videoId: string, has: boolean): Promise<void> {
     const res = await fetchWithTimeout(`${BASE}/videos?part=paidProductPlacementDetails`, {

@@ -152,11 +152,10 @@ const CP = code(read('app/(dashboard)/co-pilot/page.tsx'))
   // ── Co-Pilot takes Liftoff's API steps, and nobody finishes in Studio ──
   const AP = read('app/api/youtube/apply/route.ts')
   const CPX = read('app/(dashboard)/co-pilot/page.tsx')
-  const paidAt = AP.indexOf('await yt.setPaidPromotion(body.videoId, true)')
   const readAt = AP.indexOf('const rb = await yt.readDisclosures(body.videoId)')
   const statusAt = AP.indexOf('await yt.updateVideoStatus(body.videoId, {')
-  check('the push sets paid promotion through the API and reads it back before any status call',
-    paidAt > -1 && readAt > paidAt && statusAt > readAt)
+  check('the push reads paid promotion back before any status call, and does not pretend to set it',
+    readAt > -1 && statusAt > readAt && !/yt\.setPaidPromotion\(/.test(AP))
   check('nothing is scheduled or made public unless paid promotion read back',
     /if \(goesOut && disclosures\.paidPromotion !== true\) \{/.test(AP)
     && /privacyStatus: heldBack \? undefined : body\.privacyStatus,/.test(AP) && /publishAt: heldBack \? null : body\.publishAt \?\? null,/.test(AP))

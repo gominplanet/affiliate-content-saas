@@ -12,10 +12,11 @@
  *     query param
  *   - Adds the video to a playlist (if `playlistId` provided)
  *
- * Paid promotion (paidProductPlacementDetails) and the AI-use answer
- * (status.containsSyntheticMedia) ARE set here now, the same way Liftoff sets
- * them, and read back. Nothing is scheduled or made public unless paid
- * promotion reads back as Yes.
+ * The AI-use answer (status.containsSyntheticMedia) is set here. Paid
+ * promotion is only READ here: YouTube's API can read it but not set it
+ * (paidProductPlacementDetails is not among what videos.update may change), so
+ * SCOUT sets it in Studio first. Nothing is scheduled or made public unless it
+ * reads back as Yes.
  *
  * Things YouTube does NOT expose to apps (SCOUT does them in Studio):
  *   - Monetization access policy (only available with youtubepartner scope,
@@ -164,8 +165,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. THE DISCLOSURES, THEN THE STATUS, IN THAT ORDER (the same steps
-    //    Liftoff's uploader takes). Paid promotion is set through YouTube's
-    //    API and read back; the AI-use answer rides on the status call.
+    //    Liftoff's uploader takes). Paid promotion is read back (only Studio
+    //    can set it); the AI-use answer rides on the status call.
     //
     //    NOTHING GOES OUT WITHOUT IT. A time or a public/unlisted setting is
     //    only sent once paid promotion reads back as Yes. Otherwise the
@@ -182,9 +183,7 @@ export async function POST(request: NextRequest) {
     let heldBack: string | null = null
     const statusUpdate = (async () => {
       if (disclosures.asked) {
-        try { await yt.setPaidPromotion(body.videoId, true) } catch (pe) {
-          disclosures.error = (pe instanceof Error ? pe.message : String(pe)).slice(0, 200)
-        }
+        // Read, not set: only Studio can set paid promotion (see the top).
         try {
           const rb = await yt.readDisclosures(body.videoId)
           disclosures.paidPromotion = rb?.paidPromotion ?? null
@@ -193,7 +192,7 @@ export async function POST(request: NextRequest) {
           disclosures.error = disclosures.error ?? `could not read the video back: ${(re instanceof Error ? re.message : String(re)).slice(0, 160)}`
         }
         if (goesOut && disclosures.paidPromotion !== true) {
-          heldBack = `YouTube did not confirm paid promotion on this video${disclosures.error ? ` (${disclosures.error})` : ''}, so it was not ${body.publishAt ? 'scheduled' : `set to ${body.privacyStatus}`}. Its visibility was left exactly as it was.`
+          heldBack = `YouTube did not confirm paid promotion on this video${disclosures.error ? ` (${disclosures.error})` : ''}, so it was not ${body.publishAt ? 'scheduled' : `set to ${body.privacyStatus}`}. YouTube only takes paid promotion in Studio; once it is ticked there, push again. Its visibility was left exactly as it was.`
         }
       }
       if (!sendingStatus) return

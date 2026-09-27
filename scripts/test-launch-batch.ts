@@ -1784,8 +1784,12 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   check('a locked row shows the time the uploader has, not the pattern',
     /fixedAt=\{it\.publish_at \?\? it\.planned_publish_at \?\? null\}/.test(SCREEN) && /const now = !locked &&/.test(SCREEN))
   // ── THE DISCLOSURES GO THROUGH YOUTUBE'S API, AND NOTHING IS ERASED ───
-  check('paid promotion is set through the API the moment the video exists',
-    /await yt\.setPaidPromotion\(videoId, true\)/.test(DRAIN))
+  check('paid promotion is not "set" through the API, which accepts the call and changes nothing',
+    !/yt\.setPaidPromotion\(/.test(DRAIN) && (DRAIN.match(/YouTube only takes paid promotion in Studio/g) ?? []).length === 2)
+  check('a video held for paid promotion is scheduled at its planned time once Studio has it',
+    /async function heldForDisclosure\(/.test(DRAIN) && /\.like\('reason', 'Kept private\. YouTube did not confirm paid promotion%'\)/.test(DRAIN)
+    && /if \(rb\?\.paidPromotion !== true\) \{/.test(DRAIN) && /publishAt: planned,/.test(DRAIN) && /state: 'scheduled', publish_at: planned, reason: null/.test(DRAIN)
+    && /await heldForDisclosure\(sb, left\)/.test(DRAIN) && /has passed, so it was not scheduled\. Give it a new time/.test(DRAIN))
   check('AI use: No is sent on the upload and on every status call',
     /containsSyntheticMedia: false/.test(DRAIN) && /\.\.\.keep,/.test(DRAIN),
     'a status PUT that leaves a field out erases it')
