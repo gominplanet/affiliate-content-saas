@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.96
+ * Version: 1.0.97
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -4234,6 +4234,9 @@ if (!function_exists('mvp_deal_banner_shortcode')) {
             'badge'    => '',
             'code'     => '',
             'url'      => '',
+            // 1.0.97+: MVP sets ended="1" when a price check shows the sale is
+            // over on a post that never had an end date to count down to.
+            'ended'    => '',
         ], $atts, 'mvp_deal_banner');
 
         $end_date = trim((string) $atts['end_date']);
@@ -4267,15 +4270,41 @@ if (!function_exists('mvp_deal_banner_shortcode')) {
             }
         }
 
+        // ENDED IS DECIDED HERE, NOT ONLY IN THE BROWSER (1.0.97). The box
+        // used to be written as an active deal and then half-corrected by the
+        // countdown script: the heading kept saying "Active deal", the "27%
+        // OFF" chip stayed, and the button was disabled, so a reader who still
+        // wanted the product had nowhere to click. An ended deal now renders
+        // as one: no discount chip, an honest heading, and a live button to
+        // today's price.
+        $ended = in_array(strtolower(trim((string) $atts['ended'])), ['1', 'true', 'yes'], true)
+            || ($end_iso !== '' && strtotime($end_iso) <= time());
+
         ob_start();
+        if ($ended) {
+            ?>
+<div class="mvp-deal-banner mvp-deal-banner--ended" style="margin:20px 0;padding:20px;border-radius:14px;background:#f5f3ff;color:#1f1b2e;border:1px solid rgba(124,58,237,0.25);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between;">
+    <div style="flex:1 1 240px;min-width:0;">
+      <div style="font-size:18px;font-weight:700;line-height:1.3;margin-bottom:6px;">This deal has ended</div>
+      <div style="font-size:14px;line-height:1.5;opacity:0.85;">The sale price is gone, but the product is still available. Check today&apos;s price before you buy: it may be on sale again.</div>
+    </div>
+    <?php if ($url !== ''): ?>
+    <a href="<?php echo esc_url($url); ?>" rel="nofollow sponsored" target="_blank" class="mvp-deal-cta" style="display:inline-block;padding:16px 28px;border-radius:14px;background:#7C3AED;color:#ffffff;font-size:17px;font-weight:800;text-decoration:none;letter-spacing:0.3px;flex-shrink:0;">Check today&apos;s price →</a>
+    <?php endif; ?>
+  </div>
+</div>
+            <?php
+            return ob_get_clean();
+        }
         ?>
 <div class="mvp-deal-banner" id="<?php echo esc_attr($banner_id); ?>" data-end="<?php echo esc_attr($end_iso); ?>" style="margin:20px 0;padding:20px;border-radius:14px;background:linear-gradient(135deg,#7C3AED 0%,#C026D3 100%);color:#fff;box-shadow:0 4px 18px rgba(124,58,237,0.25);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between;">
     <div style="flex:1 1 240px;min-width:0;">
       <?php if ($badge !== ''): ?>
-      <div style="display:inline-block;padding:5px 10px;border-radius:999px;background:#ffffff;color:#7C3AED;font-size:11px;font-weight:800;letter-spacing:0.6px;text-transform:uppercase;margin-bottom:8px;"><?php echo esc_html($badge); ?></div>
+      <div class="mvp-deal-badge" style="display:inline-block;padding:5px 10px;border-radius:999px;background:#ffffff;color:#7C3AED;font-size:11px;font-weight:800;letter-spacing:0.6px;text-transform:uppercase;margin-bottom:8px;"><?php echo esc_html($badge); ?></div>
       <?php endif; ?>
-      <div style="font-size:18px;font-weight:700;line-height:1.3;margin-bottom:6px;">Active deal · save while it lasts</div>
+      <div class="mvp-deal-heading" style="font-size:18px;font-weight:700;line-height:1.3;margin-bottom:6px;">Active deal · save while it lasts</div>
       <?php if ($code !== ''): ?>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <span style="font-size:12px;opacity:0.9;">Code:</span>
@@ -4342,18 +4371,17 @@ if (!function_exists('mvp_deal_banner_shortcode')) {
   function tick(){
     var diff = endMs - Date.now();
     if (diff <= 0) {
+      // Ended while the page was open (or served from a cache made before the
+      // end). Say so everywhere in the box, and keep the button working: the
+      // reader can still check today's price.
       if (labelEl) labelEl.textContent = '';
-      valueEl.textContent = 'This deal has ended';
-      // Visually demote the banner so a stale deal post still looks honest
-      root.style.opacity = '0.78';
-      root.style.filter = 'grayscale(0.4)';
+      valueEl.textContent = '';
+      var heading = root.querySelector('.mvp-deal-heading');
+      if (heading) heading.textContent = 'This deal has ended';
+      var chip = root.querySelector('.mvp-deal-badge');
+      if (chip) chip.style.display = 'none';
       var cta = root.querySelector('.mvp-deal-cta');
-      if (cta) {
-        cta.style.background = 'rgba(255,255,255,0.45)';
-        cta.style.color = 'rgba(124,58,237,0.6)';
-        cta.style.pointerEvents = 'none';
-        cta.textContent = 'Deal ended';
-      }
+      if (cta) cta.textContent = 'Check today\'s price →';
       return;
     }
     var days = Math.floor(diff / 86400000);
@@ -4389,6 +4417,8 @@ if (!function_exists('mvp_deal_cta_shortcode')) {
             'code'  => '',
             'badge' => '',
             'label' => '', // optional override for the button text
+            'end_date' => '',
+            'ended' => '',
         ], $atts, 'mvp_deal_cta');
 
         $url   = trim((string) $atts['url']);
@@ -4404,6 +4434,36 @@ if (!function_exists('mvp_deal_cta_shortcode')) {
         // no CTA at all).
         if ($url === '') {
             return '';
+        }
+
+        // Has the deal ended? This block never carried an end date, so read
+        // the one on the same post's [mvp_deal_banner] (1.0.97). Every existing
+        // deal post then closes honestly with no edit to its content.
+        $end_src = trim((string) $atts['end_date']);
+        $ended = in_array(strtolower(trim((string) $atts['ended'])), ['1', 'true', 'yes'], true);
+        if (!$ended && $end_src === '') {
+            $post_obj = get_post();
+            $content_src = $post_obj ? (string) $post_obj->post_content : '';
+            if ($content_src !== '' && preg_match('/\[mvp_deal_banner\b[^\]]*\]/i', $content_src, $bm)) {
+                if (preg_match('/\bended\s*=\s*["\']?(1|true|yes)\b/i', $bm[0])) $ended = true;
+                if (preg_match('/\bend_date\s*=\s*["\']([^"\']+)["\']/i', $bm[0], $em)) $end_src = trim($em[1]);
+            }
+        }
+        if (!$ended && $end_src !== '') {
+            $end_ts = strtotime($end_src);
+            if ($end_ts !== false && $end_ts <= time()) $ended = true;
+        }
+
+        if ($ended) {
+            ob_start();
+            ?>
+<div class="mvp-deal-cta-block mvp-deal-cta-block--ended" style="margin:32px 0;padding:28px;border-radius:16px;background:#f5f3ff;color:#1f1b2e;border:1px solid rgba(124,58,237,0.25);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;text-align:center;">
+  <div style="font-size:22px;font-weight:800;line-height:1.25;margin-bottom:10px;">Still thinking about it?</div>
+  <p style="margin:0 0 18px;font-size:14px;line-height:1.5;opacity:0.85;max-width:520px;margin-left:auto;margin-right:auto;">The deal has ended, but prices change often. Check today&apos;s price on Amazon before you buy.</p>
+  <a href="<?php echo esc_url($url); ?>" rel="nofollow sponsored" target="_blank" style="display:inline-block;padding:18px 38px;border-radius:14px;background:#7C3AED;color:#ffffff;font-size:18px;font-weight:800;text-decoration:none;letter-spacing:0.4px;">Check today&apos;s price on Amazon →</a>
+</div>
+            <?php
+            return ob_get_clean();
         }
 
         $btn_label = $label !== ''
