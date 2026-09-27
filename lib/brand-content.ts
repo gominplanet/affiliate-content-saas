@@ -106,7 +106,10 @@ export function shareableUrl(raw: string | null | undefined): string | null {
 export function linkKey(url: string): string {
   try {
     const u = new URL(url)
-    return `${u.hostname.toLowerCase().replace(/^www\./, '')}${u.pathname.replace(/\/$/, '')}${u.search}`
+    const host = u.hostname.toLowerCase().replace(/^www\./, '')
+    // One Amazon video is one /vdp/ page, whatever ?product= is on the link.
+    if (/(^|\.)amazon\.[a-z.]+$/.test(host) && /^\/vdp\//.test(u.pathname)) return `${host}${u.pathname.replace(/\/$/, '').toLowerCase()}`
+    return `${host}${u.pathname.replace(/\/$/, '')}${u.search}`
   } catch { return url.trim().toLowerCase() }
 }
 
@@ -267,4 +270,18 @@ export function ccSendReason(reason: string | null | undefined): string {
   if (r === 'no-chat-unjoined' || r === 'no-message-button' || r === 'no-message-brand-button') return 'Amazon only opens the brand chat once you accept one of their campaigns. Accept one, then send again.'
   if (r === 'no-recipe') return 'SCOUT has not learned how to send on Creator Connections yet. Send one message to any brand by hand on Amazon, then try again.'
   return r ? `Amazon did not take the message (${r}). Copy it instead, or try again.` : 'The message was not sent. Copy it instead, or try again.'
+}
+
+/**
+ * The public page of one of the creator's Amazon videos. The exact /vdp/ link
+ * when Amazon gave one; otherwise built from Amazon's video id
+ * (amzn1.vse.video.<32 hex>), whose code is the same 32 characters as a /vdp/
+ * page. Only a video Amazon has published: a processing or rejected one has
+ * no public page. `built` says the link was made rather than read. Pure.
+ */
+export function amazonVideoPage(aci: string | null | undefined, mediaUrl: string | null | undefined, state: string | null | undefined): { url: string; built: boolean } | null {
+  if (state && !/publish|live|approved|active/i.test(state)) return null
+  if (mediaUrl && /^https?:\/\/(www\.)?amazon\.[a-z.]+\/vdp\/[a-z0-9]+/i.test(mediaUrl)) return { url: mediaUrl, built: false }
+  const m = /^amzn1\.vse\.video\.([0-9a-f]{32})$/i.exec(String(aci || '').trim())
+  return m ? { url: `https://www.amazon.com/vdp/${m[1].toLowerCase()}`, built: true } : null
 }

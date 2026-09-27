@@ -12,9 +12,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Send, Copy, Mail, Check, ChevronDown, ChevronRight, RefreshCw, AlertTriangle, ExternalLink, Search } from 'lucide-react'
+import { Loader2, Send, Copy, Mail, Check, ChevronDown, ChevronRight, RefreshCw, AlertTriangle, ExternalLink, Search, Film } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
-import { requestSendByAsin, requestSendByCampaign } from '@/lib/extension-frame'
+import { requestSendByAsin, requestSendByCampaign, requestAmazonVideos } from '@/lib/extension-frame'
 import {
   PLATFORM_LABEL, buildBrandRecapMessage, buildBrandRecapCcMessage, ccFromPlainText, ccGroupCount, ccSendReason, linkKey,
   type BrandGroup, type ContentLink,
@@ -66,6 +66,31 @@ export default function BrandRecap() {
   }, [])
   useEffect(() => { load() }, [load])
 
+  // AMAZON VIDEOS: SCOUT reads the creator's Amazon Manage Content page in
+  // their own signed-in browser (a server cannot), and every video's /vdp/
+  // link is kept against its product. What the scan found and what was kept
+  // are both said, so a scan that kept nothing never reads as done.
+  const [scanning, setScanning] = useState(false)
+  const [scanNote, setScanNote] = useState<{ ok: boolean; text: string } | null>(null)
+  async function findAmazonVideos() {
+    setScanning(true); setScanNote({ ok: true, text: 'SCOUT is reading your Amazon Manage Content page. This can take a minute…' })
+    try {
+      const r = await requestAmazonVideos()
+      if (!r.ok) {
+        setScanNote({ ok: false, text: r.error === 'not-installed' ? 'Finding your Amazon videos needs the SCOUT extension in this browser.'
+          : r.error === 'timeout' ? 'SCOUT did not answer in time. Try again.' : `SCOUT could not read the page (${r.error}).` })
+        return
+      }
+      if (r.signedOut) { setScanNote({ ok: false, text: 'You are signed out of Amazon in this browser. Sign in to your Amazon Influencer account, then try again.' }); return }
+      if (!r.videos.length) { setScanNote({ ok: false, text: 'SCOUT found no videos on your Manage Content page.' }); return }
+      const res = await fetch('/api/brand-recap/amazon-videos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videos: r.videos }) })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || !j.ok) { setScanNote({ ok: false, text: j.error || `The videos could not be kept (HTTP ${res.status}).` }); return }
+      setScanNote({ ok: j.kept > 0, text: `Found ${j.found} Amazon video${j.found === 1 ? '' : 's'}, kept ${j.kept} with their product${j.noProduct ? `. ${j.noProduct} had no product on them` : ''}.` })
+      if (j.kept > 0) await load()
+    } finally { setScanning(false) }
+  }
+
   const brands = useMemo(() => {
     const q = query.trim().toLowerCase()
     const all = data?.brands ?? []
@@ -109,7 +134,12 @@ export default function BrandRecap() {
         <button onClick={load} disabled={loading} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] text-[12px] font-medium disabled:opacity-50">
           {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Refresh
         </button>
+        <button onClick={findAmazonVideos} disabled={scanning} title="SCOUT reads your Amazon Manage Content page and adds each video to its product"
+          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] text-[12px] font-medium disabled:opacity-50">
+          {scanning ? <Loader2 size={12} className="animate-spin" /> : <Film size={12} />} Find my Amazon videos
+        </button>
       </div>
+      {scanNote && <Notice tone={scanNote.ok ? 'info' : 'warn'}>{scanNote.text}</Notice>}
 
       {error && <Notice tone="error">Could not load your brands: {error}</Notice>}
       {loading && !data && <div className="flex items-center gap-2 text-[13px] text-[#86868b] py-10 justify-center"><Loader2 size={14} className="animate-spin" /> Gathering every link you published…</div>}

@@ -28,7 +28,7 @@
 
 import { socialPermalink } from '@/lib/brand-recap'
 import { videoVisibility } from '@/lib/covered-sales'
-import { groupByBrand, linkKey, contentPlatform, productShortName, type BrandGroup, type BrandOfAsin, type ContentLink } from '@/lib/brand-content'
+import { groupByBrand, linkKey, contentPlatform, productShortName, amazonVideoPage, type BrandGroup, type BrandOfAsin, type ContentLink } from '@/lib/brand-content'
 import { brandKey } from '@/lib/brand-normalize'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -75,6 +75,7 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
   const links: ContentLink[] = []
   const names = new Map<string, string>()
   const nameIfNone = (asin: string, title: string | null | undefined) => { if (title && !names.has(asin)) names.set(asin, productShortName(title, asin)) }
+  const campaignName = new Map<string, string>()
   // How long each read took, returned with the answer, so a slow page says
   // which read is slow instead of leaving it to guesswork.
   const timings: Record<string, number> = {}
@@ -90,8 +91,9 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
     deal_meta?: { asin?: string } | null; twitter_post_id?: string | null; facebook_post_id?: string | null
     linkedin_post_id?: string | null; pinterest_pin_id?: string | null; tiktok_share_url?: string | null
     social_permalinks?: Record<string, string> | null
+    amazon_video_url?: string | null
   }
-  const FULL = 'id, video_id, title, wordpress_url, published_at, deal_meta, twitter_post_id, facebook_post_id, linkedin_post_id, pinterest_pin_id, tiktok_share_url, social_permalinks'
+  const FULL = 'id, video_id, title, wordpress_url, published_at, deal_meta, twitter_post_id, facebook_post_id, linkedin_post_id, pinterest_pin_id, tiktok_share_url, social_permalinks, amazon_video_url'
   const LEAN = 'id, video_id, title, wordpress_url, published_at'
 
   // ── phase 1: every independent read at once ─────────────────────────────
@@ -158,14 +160,27 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
     for (const a of list) { nameIfNone(a, v.amazon_title); if (v.title && !videoTitle.has(a)) videoTitle.set(a, v.title) }
   }
 
+  // THE VIDEO BEHIND EACH BLOG POST, even when that video has no product set
+  // on it. A review written from a video is about the post's product, so the
+  // video belongs in the recap with it; reading only videos that carry an
+  // ASIN left the YouTube link out of every such review.
+  const vidById = new Map(vids.rows.map((v) => [v.id, v]))
+  const postVideoIds = [...new Set(posts.rows.map((p) => p.video_id).filter((id): id is string => !!id && !vidById.has(id)))]
+  if (postVideoIds.length) {
+    const r = await withDeadline(timed('post_videos', () => Promise.all(chunk(postVideoIds).map((part) =>
+      sb.from('youtube_videos').select('id, youtube_video_id, asin, title, published_at').eq('user_id', ownerId).in('id', part)))), 10_000, [] as Array<{ data: unknown[] | null }>)
+    for (const res of r.value) for (const v of (res.data ?? []) as VidRow[]) vidById.set(v.id, v)
+    if (r.timedOut) unread.push('the videos behind some blog posts')
+  }
+
   // ── phase 2: the lookups that depend on phase 1, at once, each with a deadline ──
-  const ytIds = vids.rows.map((v) => v.youtube_video_id).filter(Boolean) as string[]
+  const ytIds = [...vidById.values()].map((v) => v.youtube_video_id).filter(Boolean) as string[]
   const byAci = new Map<string, string[]>()
   for (const row of avp.rows) byAci.set(row.aci, [...(byAci.get(row.aci) ?? []), up(row.asin)])
   const [visR, amzVidsR] = await Promise.all([
     withDeadline(timed('youtube_visibility', () => videoVisibility(process.env.YOUTUBE_API_KEY, ytIds)), 20_000, new Map()),
     withDeadline(timed('amazon_videos', () => Promise.all(chunk([...byAci.keys()]).map((part) =>
-      sb.from('amazon_videos').select('aci, media_url, published_at').eq('user_id', ownerId).in('aci', part)))), 15_000, [] as Array<{ data: unknown[] | null }>),
+      sb.from('amazon_videos').select('aci, media_url, published_at, state').eq('user_id', ownerId).in('aci', part)))), 15_000, [] as Array<{ data: unknown[] | null }>),
   ])
   const vis = visR.value as Map<string, string>
   if (visR.timedOut) unread.push('which of your videos are public (YouTube was slow)')
@@ -204,6 +219,15 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
       ['threads', pl.threads], ['instagram', pl.instagram], ['telegram', pl.telegram],
     ]
     for (const a of asins) for (const [platform, url] of each) if (url) links.push({ asin: a, platform, url, at })
+    // The video the review was written from, public or unlisted.
+    const pv = p.video_id ? vidById.get(p.video_id) : undefined
+    if (pv?.youtube_video_id) {
+      const seen = vis.get(pv.youtube_video_id)
+      if (seen !== 'not_public') for (const a of asins) links.push({ asin: a, platform: 'youtube', url: `https://www.youtube.com/watch?v=${pv.youtube_video_id}`, at: pv.published_at,
+        note: seen === 'unlisted' ? 'Unlisted: only people with the link can see it.' : seen ? null : 'YouTube did not say whether this video is public.' })
+    }
+    // The Amazon video SCOUT matched to this post.
+    if (p.amazon_video_url) for (const a of asins) links.push({ asin: a, platform: 'amazon_video', url: p.amazon_video_url, at })
   }
 
   // ── posts that kept their own URLs ──────────────────────────────────────
@@ -228,9 +252,11 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
     if (platform && row.url) links.push({ asin: up(row.asin), platform, url: row.url, at: row.posted_at })
   }
   for (const res of amzVidsR.value) {
-    for (const row of (res.data ?? []) as Array<{ aci: string; media_url: string | null; published_at: string | null }>) {
-      if (!row.media_url || !/\/vdp\//.test(row.media_url)) continue
-      for (const a of byAci.get(row.aci) ?? []) links.push({ asin: a, platform: 'amazon_video', url: row.media_url, at: row.published_at })
+    for (const row of (res.data ?? []) as Array<{ aci: string; media_url: string | null; published_at: string | null; state?: string | null }>) {
+      const page = amazonVideoPage(row.aci, row.media_url, row.state)
+      if (!page) continue
+      for (const a of byAci.get(row.aci) ?? []) links.push({ asin: a, platform: 'amazon_video', url: page.url, at: row.published_at,
+        note: page.built ? 'Link built from Amazon\'s video id. Open it once to check it plays.' : null })
     }
   }
 
@@ -277,7 +303,9 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
   else if (catErrors.length) unread.push(`the Creator Connections catalog (${catErrors[0]})`)
   if (missing.length > 600) unread.push(`the brand of ${missing.length - 600} older products (only the first 600 are looked up)`)
   for (const { asin, rows } of found) {
-    for (const c of rows) { setBrand(asin, c.brand_name, c.campaign_id, false); nameIfNone(asin, c.campaign_name) }
+    // A campaign's name is its promo line ("Give Mom a Spa-Ready Bath! Earn
+    // 10%"), not the product's name: kept only as the very last resort.
+    for (const c of rows) { setBrand(asin, c.brand_name, c.campaign_id, false); if (c.campaign_name && !campaignName.has(asin)) campaignName.set(asin, c.campaign_name) }
   }
   const nameless = contentAsins.filter((a) => !names.has(a) && brandOf.has(a))
   const keepaR = await withDeadline(timed('names', () => Promise.all(chunk(nameless).map((part) =>
@@ -285,6 +313,7 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
   for (const r of keepaR.value) for (const row of (r.data ?? []) as Array<{ asin: string; title: string | null }>) nameIfNone(up(row.asin), row.title)
   // Last resort: the title of the video about it, which beats a bare ASIN.
   for (const a of nameless) if (!names.has(a) && videoTitle.has(a)) names.set(a, productShortName(videoTitle.get(a), a))
+  for (const a of nameless) if (!names.has(a) && campaignName.has(a)) names.set(a, productShortName(campaignName.get(a), a))
 
   // ── what was already sent ───────────────────────────────────────────────
   const sent = new Map<string, Set<string>>()

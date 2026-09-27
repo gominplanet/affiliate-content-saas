@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs'
 import {
   shareableUrl, contentPlatform, groupByBrand, buildBrandRecapMessage, buildBrandRecapCcMessage, ccFromPlainText,
-  ccGroupCount, linkKey, CC_GROUP_MAX_CHARS, type ContentLink,
+  ccGroupCount, linkKey, CC_GROUP_MAX_CHARS, amazonVideoPage, type ContentLink,
 } from '../lib/brand-content'
 import { CC_GROUP_BREAK } from '../lib/brand-recap'
 import { canUsePreview } from '../lib/labs-preview'
@@ -107,6 +107,27 @@ check('the reads run at once, the slow lookups have deadlines, and the limit mat
   && /export const maxDuration = 300/.test(read('app/api/brand-recap/route.ts')))
 check('an error page from the host reads as a sentence, not a JSON error',
   /try \{ j = JSON\.parse\(text\) \} catch \{/.test(UI) && /The server took too long gathering your links/.test(UI))
+
+// ── video links: YouTube behind every review, Amazon videos ────────────────
+{
+  const hex = '2bc74774b19f46638c5102cb4c381905'
+  check('an Amazon video page is built from Amazon\'s video id, and marked built',
+    amazonVideoPage(`amzn1.vse.video.${hex}`, null, 'PUBLISHED')?.url === `https://www.amazon.com/vdp/${hex}` && amazonVideoPage(`amzn1.vse.video.${hex}`, null, null)?.built === true)
+  check('an exact /vdp/ link wins, and an unpublished or unknown video has no page',
+    amazonVideoPage('x', 'https://www.amazon.com/vdp/abc123?product=B000000001', 'PUBLISHED')?.built === false
+    && amazonVideoPage(`amzn1.vse.video.${hex}`, null, 'PROCESSING') === null && amazonVideoPage('amzn1.vse.video.short', null, null) === null)
+  check('the video a review was written from is listed with it, even with no product set on the video',
+    /const pv = p\.video_id \? vidById\.get\(p\.video_id\) : undefined/.test(SRV) && /\.in\('id', part\)\)\)\), 10_000/.test(SRV))
+  check('the Amazon video SCOUT matched to a post is listed', /if \(p\.amazon_video_url\) for \(const a of asins\)/.test(SRV) && /social_permalinks, amazon_video_url'/.test(SRV))
+  check('a campaign\'s promo line is the product\'s name only as the last resort',
+    /campaignName\.set\(asin, c\.campaign_name\)/.test(SRV) && !/nameIfNone\(asin, c\.campaign_name\)/.test(SRV)
+    && /videoTitle\.has\(a\)\) names\.set[\s\S]{0,200}campaignName\.has\(a\)\) names\.set/.test(SRV))
+  check('one Amazon video is one link, with or without ?product=', linkKey(`https://www.amazon.com/vdp/${hex}?product=B000000001`) === linkKey(`https://www.amazon.com/vdp/${hex}`))
+  const AV = read('app/api/brand-recap/amazon-videos/route.ts')
+  check('scanned Amazon videos are kept only as real /vdp/ links with a product, and the answer counts both',
+    /const VDP = \/\^https:/.test(AV) && /noProduct\+\+/.test(AV) && /kept: rows\.length/.test(AV) && /source: 'amazon_scan'/.test(AV))
+  check('the page says what the scan found and what was kept', /Found \$\{j\.found\} Amazon video/.test(UI) && /You are signed out of Amazon/.test(UI))
+}
 
 // ── links kept from now on ─────────────────────────────────────────────────
 check('Deal Radar and Encore posts keep their links', inOrder(read('lib/deal-quick-post.ts'), "await recordProductPostLinks(userId, asin, results, 'deal_post')", 'destinationKind: destination.kind'))
