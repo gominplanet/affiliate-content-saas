@@ -127,7 +127,7 @@ check('an error page from the host reads as a sentence, not a JSON error',
   check('scanned Amazon videos are kept only as real /vdp/ links with a product, and the answer counts both',
     /const VDP = \/\^https:/.test(AV) && /noProduct\+\+/.test(AV) && /kept: rows\.length/.test(AV) && /source: 'amazon_scan'/.test(AV))
   check('Find my Amazon videos runs the full library sync, list then products, with progress in numbers',
-    inOrder(UI, 'await startCreatorHubVideosScan(undefined, from || undefined)', 'await startVideoProductsScan()') && /reading which product each video sells/.test(UI) && /const stuck = still > 90_000/.test(UI) && /Last moved \{since\(still\)\} ago/.test(UI) && /Stop watching/.test(UI) && /have a product, and their Amazon video links are now in the list/.test(UI))
+    inOrder(UI, 'await startCreatorHubVideosScan(undefined, from || undefined)', 'await startVideoProductsScan()') && /reading which product each video sells/.test(UI) && /const stuck = still > \(p\.quietOk \?\? 90_000\)/.test(UI) && /Last moved \{since\(still\)\} ago/.test(UI) && /Stop watching/.test(UI) && /have a product, and their Amazon video links are now in the list/.test(UI))
   check('the video sync resumes from what is saved, joins a running job, and is watched until it is actually done',
     /fetch\('\/api\/amazon-videos'\)[^\n]*count/.test(UI) && !/tick < 900/.test(UI) && (UI.match(/for \(;;\)/g) || []).length >= 2
       && /if \(\(list\.offset \|\| 0\) <= from\) break/.test(UI) && /prod\.read <= lastRead\) break/.test(UI) && /Stopped watching\. SCOUT carries on in the background/.test(UI))
@@ -136,6 +136,13 @@ check('an error page from the host reads as a sentence, not a JSON error',
   check('a failed product read says SCOUT\'s reason and what it saw, not only a count',
     /function productReadFailure/.test(UI) && /'no-detail-call'/.test(UI) && /st\.probe/.test(UI) && /text: productReadFailure\(prod\)/.test(UI)
       && /\(prod\.remaining \|\| 0\) > 0/.test(UI))
+  check('step 2 says which stage SCOUT is in, and its stuck warning allows for batches of 60',
+    /phase = !st\.endpoint/.test(UI) && /still > \(p\.quietOk \?\? 90_000\)/.test(UI) && /330_000/.test(UI) && /\{p\.phase && </.test(UI))
+  {
+    const PEND = readFileSync('app/api/amazon-videos/pending/route.ts', 'utf8')
+    check('the product read is handed unread videos newest first, so recent videos get their products first',
+      /\.order\('published_at', \{ ascending: false, nullsFirst: false \}\)/.test(PEND) && /q = q\.is\('products_synced_at', null\)/.test(PEND))
+  }
   const codes = new Map([['Ab12Cd', 'B000000002']])
   check('a video description names its products through Amazon links and the creator\'s own short links',
     asinsInDescription('Get it: https://www.amazon.com/Some-Thing/dp/B000000001?tag=x-20 and https://www.mvpl.ink/Ab12Cd and https://www.mvpl.ink/Unknown1', codes).sort().join(',') === 'B000000001,B000000002')

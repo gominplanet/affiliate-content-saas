@@ -78,7 +78,7 @@ export default function BrandRecap() {
   // Live progress, so a long run reads as working or stuck, never as a
   // frozen sentence: how far, out of how many, how long it has been running,
   // when the count last moved, and which Amazon page SCOUT is on.
-  const [prog, setProg] = useState<{ step: 1 | 2; done: number; total: number | null; startedAt: number; movedAt: number; page: string | null } | null>(null)
+  const [prog, setProg] = useState<{ step: 1 | 2; done: number; total: number | null; startedAt: number; movedAt: number; page: string | null; phase?: string | null; quietOk?: number } | null>(null)
   const stopWatching = useRef(false)
   const [, setTick] = useState(0)
   useEffect(() => { if (!prog) return; const t = setInterval(() => setTick((n) => n + 1), 1000); return () => clearInterval(t) }, [prog])
@@ -100,11 +100,11 @@ export default function BrandRecap() {
     stopWatching.current = false
     const started = Date.now()
     let lastDone = -1
-    const track = (step: 1 | 2, done: number, total: number | null, page: string | null) => {
+    const track = (step: 1 | 2, done: number, total: number | null, page: string | null, phase: string | null = null, quietOk = 90_000) => {
       setProg((p) => {
-        const moved = !p || p.step !== step || done !== lastDone
+        const moved = !p || p.step !== step || done !== lastDone || (phase ?? null) !== (p.phase ?? null)
         lastDone = done
-        return { step, done, total, startedAt: p?.startedAt ?? started, movedAt: moved ? Date.now() : p.movedAt, page }
+        return { step, done, total, startedAt: p?.startedAt ?? started, movedAt: moved ? Date.now() : p.movedAt, page, phase, quietOk }
       })
     }
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -171,7 +171,17 @@ export default function BrandRecap() {
           if (!st) continue
           prod = st
           if (st.done || st.interrupted) break
-          track(2, st.read, st.remaining != null ? st.read + st.remaining : null, null)
+          // Which stage step 2 is in, from SCOUT itself. It first has to work
+          // out how Amazon loads one video's products, and then reports once
+          // per batch of 60 videos (one Amazon call each), so the count moves
+          // in jumps a few minutes apart. The stuck warning allows for that.
+          const viaList = !!st.endpoint && /get-content-list/.test(st.endpoint)
+          const phase = !st.endpoint
+            ? 'SCOUT is opening one of your videos on Amazon to see how Amazon loads its products. This can take a couple of minutes.'
+            : viaList
+              ? 'Amazon\'s video list carries the products, so SCOUT reads them 100 videos at a time.'
+              : `SCOUT asks Amazon about each video (${st.endpoint}) and reports every 60 videos, newest first, so the count moves in jumps.`
+          track(2, st.read, st.remaining != null ? st.read + st.remaining : null, null, phase, !st.endpoint ? 180_000 : viaList ? 90_000 : 330_000)
           setScanNote({ ok: true, text: `${st.withProducts.toLocaleString()} have a product so far. You can keep working; it saves as it goes.` })
         }
         // A pause, or a run that hit SCOUT's time limit with videos still to
@@ -488,10 +498,10 @@ const since = (ms: number) => { const sec = Math.max(0, Math.round(ms / 1000)); 
 /** The Amazon video sync, in progress: a bar when the total is known, a
  *  moving stripe when it is not, the time running, when the count last
  *  moved, and a plain warning once it has not moved for 90 seconds. */
-function ScanProgress({ p, onStop }: { p: { step: 1 | 2; done: number; total: number | null; startedAt: number; movedAt: number; page: string | null }; onStop: () => void }) {
+function ScanProgress({ p, onStop }: { p: { step: 1 | 2; done: number; total: number | null; startedAt: number; movedAt: number; page: string | null; phase?: string | null; quietOk?: number }; onStop: () => void }) {
   const now = Date.now()
   const still = now - p.movedAt
-  const stuck = still > 90_000
+  const stuck = still > (p.quietOk ?? 90_000)
   const pct = p.total && p.total > 0 ? Math.min(100, Math.round((p.done / p.total) * 100)) : null
   return (
     <div className={`card p-3 mb-3 border text-[12px] ${stuck ? 'border-[#ff9500]/50' : 'border-[var(--border-2,#e5e5e7)]'}`}>
@@ -510,6 +520,7 @@ function ScanProgress({ p, onStop }: { p: { step: 1 | 2; done: number; total: nu
           ? <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(2, pct)}%`, background: ACCENT }} />
           : <div className="h-full w-1/3 rounded-full animate-pulse" style={{ background: ACCENT }} />}
       </div>
+      {p.phase && <p className="mt-1.5 text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">{p.phase}</p>}
       <p className="mt-1.5 text-[11px] text-[#86868b] tabular-nums">
         Running {since(now - p.startedAt)}. Last moved {since(still)} ago.{p.page ? ` SCOUT is on: ${p.page}.` : ''}
       </p>

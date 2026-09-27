@@ -10,8 +10,8 @@
 //
 // That read is one call per video, thousands of them, so it runs as a resumable
 // job and this is where it gets its next slice of work. Rows are handed out
-// oldest first by ACI so a restart covers new ground rather than re-reading the
-// same head of the list.
+// newest first, and only unread ones, so a restart covers new ground rather
+// than re-reading the same head of the list.
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -44,8 +44,14 @@ export async function GET(request: Request) {
     .select('aci,description')
     .eq('user_id', user.id)
   if (!recent) q = q.is('products_synced_at', null)
+  // Newest first for the product read too. Only unread videos are handed out,
+  // and a read video (even one Amazon would not load) is marked read, so a
+  // restart still covers new ground. Newest first means the videos brands are
+  // asking about now (Brand recap, current campaigns) get their products in
+  // the first minutes of a read that takes hours, not the last.
   const { data, error } = await q
-    .order(recent ? 'published_at' : 'aci', { ascending: !recent, nullsFirst: false })
+    .order('published_at', { ascending: false, nullsFirst: false })
+    .order('aci', { ascending: true })
     .limit(limit)
   if (error) return NextResponse.json({ error: error.message, acis: [] }, { status: 200 })
 
