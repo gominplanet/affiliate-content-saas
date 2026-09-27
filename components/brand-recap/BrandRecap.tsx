@@ -151,10 +151,22 @@ export default function BrandRecap() {
         from = list.offset
         setScanNote({ ok: true, text: list.interrupted ? `Chrome paused SCOUT at ${from.toLocaleString()} videos. Picking up from there.` : `Read up to ${from.toLocaleString()} videos. Carrying on from there.` })
       }
+      // A list that did not reach Amazon's own total is still worth reading
+      // products for. Amazon's count includes videos its list never shows
+      // (6,875 said, pages stopped at 6,851), so insisting on the total blocked
+      // step 2 forever. Stop only when nothing at all is saved.
+      let listGap = ''
       if (!list || list.error || list.interrupted || list.partial) {
-        setScanNote({ ok: false, text: list?.error === 'no-videos' ? 'SCOUT opened your video list but could not read any videos. Open Manage Content once on Amazon, then try again.'
-          : `SCOUT could not finish reading your video list${list?.offset ? ` (it reached ${list.offset.toLocaleString()})` : ''}${list?.stopped ? `: ${list.stopped}` : list?.error ? `: ${list.error}` : ''}. What it read is saved; press again to carry on from there.` })
-        return
+        let have = 0
+        try { have = (await fetch('/api/amazon-videos').then((x) => x.json()))?.count || 0 } catch { have = 0 }
+        const why = list?.stopped || list?.error || (list?.interrupted ? 'Chrome paused SCOUT' : 'no reason given')
+        if (!have) {
+          setScanNote({ ok: false, text: list?.error === 'no-videos' ? 'SCOUT opened your video list but could not read any videos. Open Manage Content once on Amazon, then try again.'
+            : `SCOUT could not read your video list (${why}), and no videos are saved yet. Open Manage Content once on Amazon, then try again.` })
+          return
+        }
+        listGap = `Your video list has ${have.toLocaleString()} videos saved${list?.total && list.total > have ? `, of the ${list.total.toLocaleString()} Amazon counts` : ''}; the list read stopped with: ${why}. Pressing again later picks up any new ones.`
+        setScanNote({ ok: true, text: `${have.toLocaleString()} videos saved. Going on to which product each one sells.` })
       }
       // 2. Which product each video sells, for the videos not read yet. Same
       // rules: join, restart after a pause when it moved, watch until done.
@@ -193,11 +205,12 @@ export default function BrandRecap() {
         setScanNote({ ok: true, text: prod.interrupted ? 'Chrome paused SCOUT. Picking up from where it stopped.' : `${(prod.remaining || 0).toLocaleString()} videos still to read. Carrying on.` })
       }
       await load()
+      const withGap = (t: string) => (listGap ? `${t} ${listGap}` : t)
       if (!prod) setScanNote({ ok: false, text: 'SCOUT stopped answering. What was read is saved; reload and press again to carry on.' })
-      else if (prod.interrupted) setScanNote({ ok: true, text: `Chrome paused SCOUT after ${prod.read.toLocaleString()} videos. What was read is saved and already in the list; press again to carry on.` })
-      else if (prod.error) setScanNote({ ok: false, text: productReadFailure(prod) })
-      else if ((prod.remaining || 0) > 0) setScanNote({ ok: true, text: `Read ${prod.read.toLocaleString()} videos this run, ${prod.withProducts.toLocaleString()} with a product, and ${(prod.remaining || 0).toLocaleString()} are still to read. What was read is in the list; press again to carry on.` })
-      else setScanNote({ ok: true, text: `Done: ${prod.withProducts.toLocaleString()} of the ${prod.read.toLocaleString()} videos read have a product, and their Amazon video links are now in the list.` })
+      else if (prod.interrupted) setScanNote({ ok: true, text: withGap(`Chrome paused SCOUT after ${prod.read.toLocaleString()} videos. What was read is saved and already in the list; press again to carry on.`) })
+      else if (prod.error) setScanNote({ ok: false, text: withGap(productReadFailure(prod)) })
+      else if ((prod.remaining || 0) > 0) setScanNote({ ok: true, text: withGap(`Read ${prod.read.toLocaleString()} videos this run, ${prod.withProducts.toLocaleString()} with a product, and ${(prod.remaining || 0).toLocaleString()} are still to read. What was read is in the list; press again to carry on.`) })
+      else setScanNote({ ok: true, text: withGap(`Done: ${prod.withProducts.toLocaleString()} of the ${prod.read.toLocaleString()} videos read have a product, and their Amazon video links are now in the list.`) })
     } finally { setScanning(false); setProg(null) }
   }
 

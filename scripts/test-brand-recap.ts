@@ -134,7 +134,7 @@ check('an error page from the host reads as a sentence, not a JSON error',
   check('a list run SCOUT ended at its 15 minute limit (partial) carries on rather than counting as the whole list',
     /const unfinished = list\?\.interrupted \|\| \(list\?\.partial && !list\.error\)/.test(UI) && /list\.interrupted \|\| list\.partial\) \{/.test(UI))
   check('a failed product read says SCOUT\'s reason and what it saw, not only a count',
-    /function productReadFailure/.test(UI) && /'no-detail-call'/.test(UI) && /st\.probe/.test(UI) && /text: productReadFailure\(prod\)/.test(UI)
+    /function productReadFailure/.test(UI) && /'no-detail-call'/.test(UI) && /st\.probe/.test(UI) && /text: withGap\(productReadFailure\(prod\)\)/.test(UI)
       && /\(prod\.remaining \|\| 0\) > 0/.test(UI))
   check('step 2 says which stage SCOUT is in, and its stuck warning allows for batches of 60',
     /phase = !st\.endpoint/.test(UI) && /still > \(p\.quietOk \?\? 90_000\)/.test(UI) && /330_000/.test(UI) && /\{p\.phase && </.test(UI))
@@ -143,6 +143,8 @@ check('an error page from the host reads as a sentence, not a JSON error',
     check('the product read is handed unread videos newest first, so recent videos get their products first',
       /\.order\('published_at', \{ ascending: false, nullsFirst: false \}\)/.test(PEND) && /q = q\.is\('products_synced_at', null\)/.test(PEND))
   }
+  check('a video list short of Amazon\'s own total still goes on to read products; only an empty list stops',
+    /if \(!have\) \{/.test(UI) && /listGap = `Your video list has/.test(UI) && inOrder(UI, 'if (!have) {', 'await startVideoProductsScan()') && /withGap\(productReadFailure\(prod\)\)/.test(UI))
   const codes = new Map([['Ab12Cd', 'B000000002']])
   check('a video description names its products through Amazon links and the creator\'s own short links',
     asinsInDescription('Get it: https://www.amazon.com/Some-Thing/dp/B000000001?tag=x-20 and https://www.mvpl.ink/Ab12Cd and https://www.mvpl.ink/Unknown1', codes).sort().join(',') === 'B000000001,B000000002')
