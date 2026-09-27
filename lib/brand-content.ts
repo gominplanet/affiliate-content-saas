@@ -285,3 +285,22 @@ export function amazonVideoPage(aci: string | null | undefined, mediaUrl: string
   const m = /^amzn1\.vse\.video\.([0-9a-f]{32})$/i.exec(String(aci || '').trim())
   return m ? { url: `https://www.amazon.com/vdp/${m[1].toLowerCase()}`, built: true } : null
 }
+
+/**
+ * Which products a YouTube video description links to: Amazon product links
+ * (/dp/, /gp/product/, ?asin=) read directly, and MVP's own short links
+ * (mvpl.ink/CODE, /go/CODE) through the creator's code-to-product list.
+ * Pure. Codes it does not know are ignored rather than guessed.
+ */
+export function asinsInDescription(text: string | null | undefined, codeToAsin: Map<string, string>): string[] {
+  const s = String(text || '')
+  if (!s) return []
+  const out = new Set<string>()
+  for (const m of s.matchAll(/amazon\.[a-z.]+\/(?:[^\s"'<>]*?\/)?(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})/gi)) out.add(m[1].toUpperCase())
+  for (const m of s.matchAll(/[?&]asin=([A-Z0-9]{10})\b/gi)) out.add(m[1].toUpperCase())
+  for (const m of s.matchAll(/(?:mvpl\.ink|\/go)\/([A-Za-z0-9]{4,16})\b/g)) {
+    const a = codeToAsin.get(m[1])
+    if (a) out.add(a.toUpperCase())
+  }
+  return [...out].filter((a) => /^[A-Z0-9]{10}$/.test(a))
+}

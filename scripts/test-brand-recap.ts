@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs'
 import {
   shareableUrl, contentPlatform, groupByBrand, buildBrandRecapMessage, buildBrandRecapCcMessage, ccFromPlainText,
-  ccGroupCount, linkKey, CC_GROUP_MAX_CHARS, amazonVideoPage, type ContentLink,
+  ccGroupCount, linkKey, CC_GROUP_MAX_CHARS, amazonVideoPage, asinsInDescription, type ContentLink,
 } from '../lib/brand-content'
 import { CC_GROUP_BREAK } from '../lib/brand-recap'
 import { canUsePreview } from '../lib/labs-preview'
@@ -126,7 +126,14 @@ check('an error page from the host reads as a sentence, not a JSON error',
   const AV = read('app/api/brand-recap/amazon-videos/route.ts')
   check('scanned Amazon videos are kept only as real /vdp/ links with a product, and the answer counts both',
     /const VDP = \/\^https:/.test(AV) && /noProduct\+\+/.test(AV) && /kept: rows\.length/.test(AV) && /source: 'amazon_scan'/.test(AV))
-  check('the page says what the scan found and what was kept', /Found \$\{j\.found\} Amazon video/.test(UI) && /You are signed out of Amazon/.test(UI))
+  check('Find my Amazon videos runs the full library sync, list then products, with progress in numbers',
+    inOrder(UI, 'await startCreatorHubVideosScan()', 'await startVideoProductsScan()') && /Step 2 of 2: reading which product each video sells/.test(UI) && /have a product, and their Amazon video links are now in the list/.test(UI))
+  const codes = new Map([['Ab12Cd', 'B000000002']])
+  check('a video description names its products through Amazon links and the creator\'s own short links',
+    asinsInDescription('Get it: https://www.amazon.com/Some-Thing/dp/B000000001?tag=x-20 and https://www.mvpl.ink/Ab12Cd and https://www.mvpl.ink/Unknown1', codes).sort().join(',') === 'B000000001,B000000002')
+  check('a description with no product link names none', asinsInDescription('Subscribe for more reviews!', codes).length === 0)
+  check('videos found through their descriptions get a YouTube link, public ones only',
+    /for \(const \[vid, asins\] of descAsins\)/.test(SRV) && /timed\('video_descriptions'/.test(SRV) && /timed\('short_links'/.test(SRV))
 }
 
 // ── links kept from now on ─────────────────────────────────────────────────

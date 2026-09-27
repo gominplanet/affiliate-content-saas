@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Send, Copy, Mail, Check, ChevronDown, ChevronRight, RefreshCw, AlertTriangle, ExternalLink, Search, Film } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
-import { requestSendByAsin, requestSendByCampaign, requestAmazonVideos } from '@/lib/extension-frame'
+import { requestSendByAsin, requestSendByCampaign, startCreatorHubVideosScan, getVideoScanStatus, startVideoProductsScan, getVideoProductsStatus, type VideoScanStatus, type VideoProductsStatus } from '@/lib/extension-frame'
 import {
   PLATFORM_LABEL, buildBrandRecapMessage, buildBrandRecapCcMessage, ccFromPlainText, ccGroupCount, ccSendReason, linkKey,
   type BrandGroup, type ContentLink,
@@ -30,6 +30,7 @@ interface Data {
   linksTable: boolean
   sender: { name: string; site: string }
   timings?: Record<string, number>
+  amazonVideos?: number
   error?: string
 }
 
@@ -66,28 +67,54 @@ export default function BrandRecap() {
   }, [])
   useEffect(() => { load() }, [load])
 
-  // AMAZON VIDEOS: SCOUT reads the creator's Amazon Manage Content page in
-  // their own signed-in browser (a server cannot), and every video's /vdp/
-  // link is kept against its product. What the scan found and what was kept
-  // are both said, so a scan that kept nothing never reads as done.
+  // AMAZON VIDEOS: the same sync the Earnings page runs. SCOUT reads the whole
+  // video library from Amazon's own data in the creator's signed-in browser
+  // (thousands of videos, no paging through Manage Content), then reads which
+  // product each video sells. Both save as they go, so what is read is kept
+  // even if the tab is closed part way, and the next press carries on.
+  // Progress and the outcome are said in numbers, never just "done".
   const [scanning, setScanning] = useState(false)
   const [scanNote, setScanNote] = useState<{ ok: boolean; text: string } | null>(null)
   async function findAmazonVideos() {
-    setScanning(true); setScanNote({ ok: true, text: 'SCOUT is reading your Amazon Manage Content page. This can take a minute…' })
+    setScanning(true); setScanNote({ ok: true, text: 'Starting SCOUT…' })
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
     try {
-      const r = await requestAmazonVideos()
-      if (!r.ok) {
-        setScanNote({ ok: false, text: r.error === 'not-installed' ? 'Finding your Amazon videos needs the SCOUT extension in this browser.'
-          : r.error === 'timeout' ? 'SCOUT did not answer in time. Try again.' : `SCOUT could not read the page (${r.error}).` })
+      // 1. The video list.
+      const s1 = await startCreatorHubVideosScan()
+      if (!s1.ok) {
+        setScanNote({ ok: false, text: s1.error === 'not-installed' ? 'Finding your Amazon videos needs the SCOUT extension in this browser.'
+          : s1.error === 'needs-update' ? 'Your SCOUT is too old to read your Amazon videos. Update it, then try again.'
+            : 'SCOUT could not start reading your Amazon videos. Open amazon.com signed in to your Influencer account, then try again.' })
         return
       }
-      if (r.signedOut) { setScanNote({ ok: false, text: 'You are signed out of Amazon in this browser. Sign in to your Amazon Influencer account, then try again.' }); return }
-      if (!r.videos.length) { setScanNote({ ok: false, text: 'SCOUT found no videos on your Manage Content page.' }); return }
-      const res = await fetch('/api/brand-recap/amazon-videos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videos: r.videos }) })
-      const j = await res.json().catch(() => ({}))
-      if (!res.ok || !j.ok) { setScanNote({ ok: false, text: j.error || `The videos could not be kept (HTTP ${res.status}).` }); return }
-      setScanNote({ ok: j.kept > 0, text: `Found ${j.found} Amazon video${j.found === 1 ? '' : 's'}, kept ${j.kept} with their product${j.noProduct ? `. ${j.noProduct} had no product on them` : ''}.` })
-      if (j.kept > 0) await load()
+      let list: VideoScanStatus | null = null
+      for (let i = 0; i < 900; i++) {
+        await wait(2000)
+        list = await getVideoScanStatus()
+        if (!list) continue
+        if (list.done || list.interrupted) break
+        setScanNote({ ok: true, text: `Step 1 of 2: reading your Amazon videos, ${(list.offset || 0).toLocaleString()}${list.total ? ` of ${list.total.toLocaleString()}` : ''} so far.` })
+      }
+      if (!list || list.error) {
+        setScanNote({ ok: false, text: list?.error === 'no-videos' ? 'SCOUT opened your video list but could not read any videos. Open Manage Content once on Amazon, then try again.' : 'SCOUT could not finish reading your video list. What it read is saved; press again to carry on.' })
+        return
+      }
+      // 2. Which product each video sells.
+      const s2 = await startVideoProductsScan()
+      if (!s2.ok) { setScanNote({ ok: false, text: `Read ${list.saved.toLocaleString()} new videos, but could not start reading their products. Press again to carry on.` }); return }
+      let prod: VideoProductsStatus | null = null
+      for (let i = 0; i < 5400; i++) {
+        await wait(2000)
+        prod = await getVideoProductsStatus()
+        if (!prod) continue
+        if (prod.done || prod.interrupted) break
+        setScanNote({ ok: true, text: `Step 2 of 2: reading which product each video sells, ${prod.read.toLocaleString()} read${prod.remaining != null ? `, ${prod.remaining.toLocaleString()} to go` : ''}. ${prod.withProducts.toLocaleString()} have a product so far. You can keep working; it saves as it goes.` })
+      }
+      await load()
+      if (!prod) setScanNote({ ok: false, text: 'SCOUT stopped answering. What was read is saved; reload and press again to carry on.' })
+      else if (prod.interrupted) setScanNote({ ok: true, text: `Chrome paused SCOUT after ${prod.read.toLocaleString()} videos. What was read is saved and already in the list; press again to carry on.` })
+      else if (prod.error) setScanNote({ ok: false, text: `Stopped reading products after ${prod.read.toLocaleString()} videos. What was read is saved; press again to carry on.` })
+      else setScanNote({ ok: true, text: `Done: ${prod.withProducts.toLocaleString()} of the ${prod.read.toLocaleString()} videos read have a product, and their Amazon video links are now in the list.` })
     } finally { setScanning(false) }
   }
 
@@ -134,7 +161,7 @@ export default function BrandRecap() {
         <button onClick={load} disabled={loading} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] text-[12px] font-medium disabled:opacity-50">
           {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Refresh
         </button>
-        <button onClick={findAmazonVideos} disabled={scanning} title="SCOUT reads your Amazon Manage Content page and adds each video to its product"
+        <button onClick={findAmazonVideos} disabled={scanning} title="SCOUT reads all your Amazon videos and which product each one sells, then adds them to the list"
           className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] text-[12px] font-medium disabled:opacity-50">
           {scanning ? <Loader2 size={12} className="animate-spin" /> : <Film size={12} />} Find my Amazon videos
         </button>
@@ -151,7 +178,9 @@ export default function BrandRecap() {
 
       {data?.timings && (
         <p className="mb-2 text-[11px] text-[#86868b]">
-          {data.brands.length} brand{data.brands.length === 1 ? '' : 's'}. Slowest read: {(() => {
+          {data.brands.length} brand{data.brands.length === 1 ? '' : 's'}. {typeof data.amazonVideos === 'number' && (data.amazonVideos > 0
+            ? `${data.amazonVideos.toLocaleString()} Amazon videos with a product. `
+            : 'No Amazon videos synced yet: press Find my Amazon videos. ')}Slowest read: {(() => {
             const [name, ms] = Object.entries(data.timings).sort((a, b) => b[1] - a[1])[0] ?? ['none', 0]
             return `${name.replace(/_/g, ' ')} (${(ms / 1000).toFixed(1)}s)`
           })()}

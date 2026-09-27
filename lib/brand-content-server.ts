@@ -28,7 +28,7 @@
 
 import { socialPermalink } from '@/lib/brand-recap'
 import { videoVisibility } from '@/lib/covered-sales'
-import { groupByBrand, linkKey, contentPlatform, productShortName, amazonVideoPage, type BrandGroup, type BrandOfAsin, type ContentLink } from '@/lib/brand-content'
+import { groupByBrand, linkKey, contentPlatform, productShortName, amazonVideoPage, asinsInDescription, type BrandGroup, type BrandOfAsin, type ContentLink } from '@/lib/brand-content'
 import { brandKey } from '@/lib/brand-normalize'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,6 +58,9 @@ export interface BrandRecapData {
   /** Whether migration 379 is in: without it nothing is logged or kept. */
   recapsTable: boolean
   linksTable: boolean
+  /** How many Amazon videos MVP holds with a product on them, so an empty
+   *  Amazon column reads as "not synced" rather than "no videos". */
+  amazonVideos: number
 }
 
 /** A read that must answer in time or be named as not read. Slow reads are
@@ -97,7 +100,7 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
   const LEAN = 'id, video_id, title, wordpress_url, published_at'
 
   // ── phase 1: every independent read at once ─────────────────────────────
-  const [camp, accepted, vids, posts, dealSched, amzSched, kept, library, avp, recaps] = await Promise.all([
+  const [camp, accepted, vids, posts, dealSched, amzSched, kept, library, avp, recaps, descs, codes] = await Promise.all([
     timed('campaigns', async () => {
       const r = await pages<CampRow>((a, b) => sb.from('campaigns').select('asin, brand_name, cc_campaign_id, campaign_asins, product_title, blog_post_id, wordpress_url').eq('user_id', ownerId).range(a, b))
       return r.error ? pages<CampRow>((a, b) => sb.from('campaigns').select('asin, cc_campaign_id, product_title, blog_post_id, wordpress_url').eq('user_id', ownerId).range(a, b)) : r
@@ -121,8 +124,16 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
       sb.from('product_post_links').select('asin, platform, url, created_at').eq('user_id', ownerId).range(a, b))),
     timed('content_library', () => pages<{ asin: string | null; platform: string | null; url: string | null; posted_at: string | null }>((a, b) =>
       sb.from('creator_content').select('asin, platform, url, posted_at').eq('user_id', ownerId).not('asin', 'is', null).range(a, b), 2)),
-    timed('amazon_video_products', () => pages<{ asin: string; aci: string }>((a, b) => sb.from('amazon_video_products').select('asin, aci').eq('user_id', ownerId).range(a, b), 2)),
+    timed('amazon_video_products', () => pages<{ asin: string; aci: string }>((a, b) => sb.from('amazon_video_products').select('asin, aci').eq('user_id', ownerId).range(a, b), 10)),
     timed('recaps', () => sb.from('brand_recaps').select('brand_key, urls, created_at, ok').eq('user_id', ownerId).eq('ok', true).order('created_at', { ascending: false }).limit(2000)) as Promise<{ data: Array<{ brand_key: string; urls: string[]; created_at: string }> | null; error: { message: string } | null }>,
+    // Every video's description, to find the products it links to when no
+    // product is set on the video in MVP, which is most of them.
+    timed('video_descriptions', () => pages<{ id: string; youtube_video_id: string | null; description: string | null; title: string | null; published_at: string | null }>((a, b) =>
+      sb.from('youtube_videos').select('id, youtube_video_id, description, title, published_at').eq('user_id', ownerId).not('description', 'is', null).range(a, b), 3)),
+    // The creator's short link codes, so an mvpl.ink link in a description
+    // can be read as the product it points at.
+    timed('short_links', () => pages<{ code: string; asin: string | null }>((a, b) =>
+      sb.from('passport_links').select('code, asin').eq('user_id', ownerId).range(a, b), 5)),
   ])
 
   // ── the creator's own campaigns and accepts: the brand behind each product ──
@@ -173,6 +184,20 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
     if (r.timedOut) unread.push('the videos behind some blog posts')
   }
 
+  // VIDEOS BY WHAT THEIR DESCRIPTION LINKS TO. A video with no product set in
+  // MVP still names its product in its description, usually as an Amazon link
+  // or one of the creator's own short links, and a brand wants that video.
+  const codeToAsin = new Map<string, string>()
+  for (const c of codes.rows) if (c.code && c.asin) codeToAsin.set(c.code, up(c.asin))
+  const descAsins = new Map<string, string[]>()
+  for (const v of descs.rows) {
+    const found = asinsInDescription(v.description, codeToAsin)
+    if (!found.length || !v.youtube_video_id) continue
+    descAsins.set(v.id, found)
+    if (!vidById.has(v.id)) vidById.set(v.id, { id: v.id, youtube_video_id: v.youtube_video_id, asin: null, title: v.title, published_at: v.published_at })
+  }
+  if (descs.error) unread.push('your video descriptions')
+
   // ── phase 2: the lookups that depend on phase 1, at once, each with a deadline ──
   const ytIds = [...vidById.values()].map((v) => v.youtube_video_id).filter(Boolean) as string[]
   const byAci = new Map<string, string[]>()
@@ -196,6 +221,15 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
         note: seen === 'unlisted' ? 'Unlisted: only people with the link can see it.' : seen ? null : 'YouTube did not say whether this video is public.' })
       if (v.tiktok_share_url) links.push({ asin: a, platform: 'tiktok', url: v.tiktok_share_url, at: v.published_at })
     }
+  }
+
+  for (const [vid, asins] of descAsins) {
+    const v = vidById.get(vid)
+    if (!v?.youtube_video_id) continue
+    const seen = vis.get(v.youtube_video_id)
+    if (seen === 'not_public') continue
+    for (const a of asins) links.push({ asin: a, platform: 'youtube', url: `https://www.youtube.com/watch?v=${v.youtube_video_id}`, at: v.published_at,
+      note: seen === 'unlisted' ? 'Unlisted: only people with the link can see it.' : seen ? null : 'YouTube did not say whether this video is public.' })
   }
 
   // ── blog posts and the social posts made from them ──────────────────────
@@ -330,5 +364,6 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
 
   const brands = groupByBrand({ links, brandOf, names, sent, lastRecapAt })
   console.log('[brand-recap] timings ms', JSON.stringify(timings))
-  return { brands, unread, privateVideos, recapsTable, linksTable, timings }
+  const amazonVideos = new Set(avp.rows.map((r) => r.aci)).size
+  return { brands, unread, privateVideos, recapsTable, linksTable, timings, amazonVideos }
 }
