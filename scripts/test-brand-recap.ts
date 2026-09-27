@@ -94,6 +94,15 @@ check('a partial send stops, instead of trying another path that would send the 
 check('a copied or emailed recap counts only when the creator says it was sent', /I sent it/.test(UI) && inOrder(UI, 'async function markSent()', 'await log(ch, true)'))
 check('an unconfirmed send in a visible tab is not recorded as sent', inOrder(UI, 'if (direct.leftOpen) {', "setPendingManual('copy')") && !/leftOpen[\s\S]{0,400}log\('cc', true/.test(UI))
 
+// ── a large account still gets an answer ───────────────────────────────────
+// The first version read everything one after another under a 60 second limit,
+// and a large account got the host's error page instead of its brands.
+check('the reads run at once, the slow lookups have deadlines, and the limit matches the heavy routes',
+  /await Promise\.all\(\[\s*timed\('campaigns'/.test(SRV) && /withDeadline\(timed\('catalog'/.test(SRV) && /withDeadline\(timed\('youtube_visibility'/.test(SRV)
+  && /export const maxDuration = 300/.test(read('app/api/brand-recap/route.ts')))
+check('an error page from the host reads as a sentence, not a JSON error',
+  /try \{ j = JSON\.parse\(text\) \} catch \{/.test(UI) && /The server took too long gathering your links/.test(UI))
+
 // ── links kept from now on ─────────────────────────────────────────────────
 check('Deal Radar and Encore posts keep their links', inOrder(read('lib/deal-quick-post.ts'), "await recordProductPostLinks(userId, asin, results, 'deal_post')", 'destinationKind: destination.kind'))
 for (const [f, p] of [['fb', 'facebook'], ['ig', 'instagram'], ['pin', 'pinterest']] as const) {

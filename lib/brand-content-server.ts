@@ -60,18 +60,71 @@ export interface BrandRecapData {
   linksTable: boolean
 }
 
-export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandRecapData> {
+/** A read that must answer in time or be named as not read. Slow reads are
+ *  enrichment; the page must answer inside the function's time limit, and a
+ *  function that runs out returns Vercel's error page instead of anything. */
+function withDeadline<T>(p: PromiseLike<T>, ms: number, fallback: T): Promise<{ value: T; timedOut: boolean }> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve({ value: fallback, timedOut: true }), ms)
+    Promise.resolve(p).then((value) => { clearTimeout(t); resolve({ value, timedOut: false }) }, () => { clearTimeout(t); resolve({ value: fallback, timedOut: false }) })
+  })
+}
+
+export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandRecapData & { timings: Record<string, number> }> {
   const unread: string[] = []
   const links: ContentLink[] = []
   const names = new Map<string, string>()
   const nameIfNone = (asin: string, title: string | null | undefined) => { if (title && !names.has(asin)) names.set(asin, productShortName(title, asin)) }
+  // How long each read took, returned with the answer, so a slow page says
+  // which read is slow instead of leaving it to guesswork.
+  const timings: Record<string, number> = {}
+  const timed = async <T>(name: string, run: () => PromiseLike<T>): Promise<T> => {
+    const t0 = Date.now()
+    try { return await run() } finally { timings[name] = Date.now() - t0 }
+  }
 
-  // ── the creator's campaigns: their brands, and blog posts written for them ──
   type CampRow = { asin: string | null; brand_name?: string | null; cc_campaign_id?: string | null; campaign_asins?: string[] | null; product_title?: string | null; blog_post_id?: string | null; wordpress_url?: string | null }
-  let camp = await pages<CampRow>((a, b) => sb.from('campaigns').select('asin, brand_name, cc_campaign_id, campaign_asins, product_title, blog_post_id, wordpress_url').eq('user_id', ownerId).range(a, b))
-  if (camp.error) camp = await pages<CampRow>((a, b) => sb.from('campaigns').select('asin, cc_campaign_id, product_title, blog_post_id, wordpress_url').eq('user_id', ownerId).range(a, b))
-  if (camp.error) unread.push('your campaigns')
+  type VidRow = { id: string; youtube_video_id: string | null; asin: string | null; asins?: string[] | null; title: string | null; amazon_title?: string | null; published_at: string | null; tiktok_share_url?: string | null }
+  type PostRow = {
+    id: string; video_id: string | null; title: string | null; wordpress_url: string | null; published_at: string | null
+    deal_meta?: { asin?: string } | null; twitter_post_id?: string | null; facebook_post_id?: string | null
+    linkedin_post_id?: string | null; pinterest_pin_id?: string | null; tiktok_share_url?: string | null
+    social_permalinks?: Record<string, string> | null
+  }
+  const FULL = 'id, video_id, title, wordpress_url, published_at, deal_meta, twitter_post_id, facebook_post_id, linkedin_post_id, pinterest_pin_id, tiktok_share_url, social_permalinks'
+  const LEAN = 'id, video_id, title, wordpress_url, published_at'
 
+  // ── phase 1: every independent read at once ─────────────────────────────
+  const [camp, accepted, vids, posts, dealSched, amzSched, kept, library, avp, recaps] = await Promise.all([
+    timed('campaigns', async () => {
+      const r = await pages<CampRow>((a, b) => sb.from('campaigns').select('asin, brand_name, cc_campaign_id, campaign_asins, product_title, blog_post_id, wordpress_url').eq('user_id', ownerId).range(a, b))
+      return r.error ? pages<CampRow>((a, b) => sb.from('campaigns').select('asin, cc_campaign_id, product_title, blog_post_id, wordpress_url').eq('user_id', ownerId).range(a, b)) : r
+    }),
+    timed('accepted', () => sb.from('cc_accepted_campaigns').select('campaign_id, brand_name, asin').eq('user_id', ownerId).limit(5000)) as Promise<{ data: Array<{ campaign_id: string; brand_name: string | null; asin: string | null }> | null; error: { message: string } | null }>,
+    timed('videos', async () => {
+      const r = await pages<VidRow>((a, b) => sb.from('youtube_videos').select('id, youtube_video_id, asin, asins, title, amazon_title, published_at, tiktok_share_url').eq('user_id', ownerId).or('asin.not.is.null,asins.not.is.null').range(a, b))
+      return r.error ? pages<VidRow>((a, b) => sb.from('youtube_videos').select('id, youtube_video_id, asin, title, published_at').eq('user_id', ownerId).not('asin', 'is', null).range(a, b)) : r
+    }),
+    timed('posts', async () => {
+      const r = await pages<PostRow>((a, b) => sb.from('blog_posts').select(FULL).eq('user_id', ownerId).not('wordpress_url', 'is', null).range(a, b))
+      if (!r.error) return { ...r, lean: false }
+      const l = await pages<PostRow>((a, b) => sb.from('blog_posts').select(LEAN).eq('user_id', ownerId).not('wordpress_url', 'is', null).range(a, b))
+      return { ...l, lean: true }
+    }),
+    timed('deal_scheduled', () => pages<{ asin: string; results: Array<{ platform: string; ok: boolean; url?: string }> | null; scheduled_at: string }>((a, b) =>
+      sb.from('deal_scheduled_posts').select('asin, results, scheduled_at').eq('user_id', ownerId).eq('status', 'completed').range(a, b), 2)),
+    timed('amazon_scheduled', () => pages<{ asin: string | null; platform: string; external_url: string | null; scheduled_at: string }>((a, b) =>
+      sb.from('amazon_scheduled_posts').select('asin, platform, external_url, scheduled_at').eq('user_id', ownerId).eq('status', 'completed').not('external_url', 'is', null).range(a, b), 2)),
+    timed('kept_links', () => pages<{ asin: string; platform: string; url: string; created_at: string }>((a, b) =>
+      sb.from('product_post_links').select('asin, platform, url, created_at').eq('user_id', ownerId).range(a, b))),
+    timed('content_library', () => pages<{ asin: string | null; platform: string | null; url: string | null; posted_at: string | null }>((a, b) =>
+      sb.from('creator_content').select('asin, platform, url, posted_at').eq('user_id', ownerId).not('asin', 'is', null).range(a, b), 2)),
+    timed('amazon_video_products', () => pages<{ asin: string; aci: string }>((a, b) => sb.from('amazon_video_products').select('asin, aci').eq('user_id', ownerId).range(a, b), 2)),
+    timed('recaps', () => sb.from('brand_recaps').select('brand_key, urls, created_at, ok').eq('user_id', ownerId).eq('ok', true).order('created_at', { ascending: false }).limit(2000)) as Promise<{ data: Array<{ brand_key: string; urls: string[]; created_at: string }> | null; error: { message: string } | null }>,
+  ])
+
+  // ── the creator's own campaigns and accepts: the brand behind each product ──
+  if (camp.error) unread.push('your campaigns')
   const brandOf = new Map<string, BrandOfAsin>()
   const setBrand = (asin: string, brand: string | null | undefined, campaignId?: string | null, strong = true) => {
     const a = up(asin)
@@ -92,16 +145,10 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
     if (r.blog_post_id && ASIN_RE.test(a)) blogAsin.set(r.blog_post_id, a)
     if (r.wordpress_url && ASIN_RE.test(a)) blogUrlAsin.set(linkKey(r.wordpress_url), a)
   }
-  {
-    const r = await sb.from('cc_accepted_campaigns').select('campaign_id, brand_name, asin').eq('user_id', ownerId).limit(5000)
-    if (r.error) unread.push('your accepted campaigns')
-    for (const x of (r.data ?? []) as Array<{ campaign_id: string; brand_name: string | null; asin: string | null }>) setBrand(up(x.asin), x.brand_name, x.campaign_id)
-  }
+  if (accepted.error) unread.push('your accepted campaigns')
+  for (const x of accepted.data ?? []) setBrand(up(x.asin), x.brand_name, x.campaign_id)
 
   // ── YouTube ─────────────────────────────────────────────────────────────
-  type VidRow = { id: string; youtube_video_id: string | null; asin: string | null; asins?: string[] | null; title: string | null; amazon_title?: string | null; published_at: string | null; tiktok_share_url?: string | null }
-  let vids = await pages<VidRow>((a, b) => sb.from('youtube_videos').select('id, youtube_video_id, asin, asins, title, amazon_title, published_at, tiktok_share_url').eq('user_id', ownerId).or('asin.not.is.null,asins.not.is.null').range(a, b))
-  if (vids.error) vids = await pages<VidRow>((a, b) => sb.from('youtube_videos').select('id, youtube_video_id, asin, title, published_at').eq('user_id', ownerId).not('asin', 'is', null).range(a, b))
   if (vids.error) unread.push('your YouTube videos')
   const videoAsins = new Map<string, string[]>()
   const videoTitle = new Map<string, string>()
@@ -110,8 +157,20 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
     videoAsins.set(v.id, list)
     for (const a of list) { nameIfNone(a, v.amazon_title); if (v.title && !videoTitle.has(a)) videoTitle.set(a, v.title) }
   }
+
+  // ── phase 2: the lookups that depend on phase 1, at once, each with a deadline ──
   const ytIds = vids.rows.map((v) => v.youtube_video_id).filter(Boolean) as string[]
-  const vis = await videoVisibility(process.env.YOUTUBE_API_KEY, ytIds)
+  const byAci = new Map<string, string[]>()
+  for (const row of avp.rows) byAci.set(row.aci, [...(byAci.get(row.aci) ?? []), up(row.asin)])
+  const [visR, amzVidsR] = await Promise.all([
+    withDeadline(timed('youtube_visibility', () => videoVisibility(process.env.YOUTUBE_API_KEY, ytIds)), 20_000, new Map()),
+    withDeadline(timed('amazon_videos', () => Promise.all(chunk([...byAci.keys()]).map((part) =>
+      sb.from('amazon_videos').select('aci, media_url, published_at').eq('user_id', ownerId).in('aci', part)))), 15_000, [] as Array<{ data: unknown[] | null }>),
+  ])
+  const vis = visR.value as Map<string, string>
+  if (visR.timedOut) unread.push('which of your videos are public (YouTube was slow)')
+  if (amzVidsR.timedOut) unread.push('your Amazon videos')
+
   let privateVideos = 0
   for (const v of vids.rows) {
     if (!v.youtube_video_id) continue
@@ -125,19 +184,8 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
   }
 
   // ── blog posts and the social posts made from them ──────────────────────
-  type PostRow = {
-    id: string; video_id: string | null; title: string | null; wordpress_url: string | null; published_at: string | null
-    deal_meta?: { asin?: string } | null; twitter_post_id?: string | null; facebook_post_id?: string | null
-    linkedin_post_id?: string | null; pinterest_pin_id?: string | null; tiktok_share_url?: string | null
-    social_permalinks?: Record<string, string> | null
-  }
-  const FULL = 'id, video_id, title, wordpress_url, published_at, deal_meta, twitter_post_id, facebook_post_id, linkedin_post_id, pinterest_pin_id, tiktok_share_url, social_permalinks'
-  const LEAN = 'id, video_id, title, wordpress_url, published_at'
-  let posts = await pages<PostRow>((a, b) => sb.from('blog_posts').select(FULL).eq('user_id', ownerId).not('wordpress_url', 'is', null).range(a, b))
-  if (posts.error) {
-    posts = await pages<PostRow>((a, b) => sb.from('blog_posts').select(LEAN).eq('user_id', ownerId).not('wordpress_url', 'is', null).range(a, b))
-    unread.push(posts.error ? 'your blog posts' : 'the social posts made from your blog posts')
-  }
+  if (posts.error) unread.push('your blog posts')
+  else if (posts.lean) unread.push('the social posts made from your blog posts')
   for (const p of posts.rows) {
     const fromVideo = p.video_id ? videoAsins.get(p.video_id) ?? [] : []
     const asins = [...new Set([
@@ -159,71 +207,49 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
   }
 
   // ── posts that kept their own URLs ──────────────────────────────────────
-  {
-    const r = await pages<{ asin: string; results: Array<{ platform: string; ok: boolean; url?: string }> | null; scheduled_at: string }>((a, b) =>
-      sb.from('deal_scheduled_posts').select('asin, results, scheduled_at').eq('user_id', ownerId).eq('status', 'completed').range(a, b), 2)
-    if (r.error) unread.push('your scheduled Deal Radar posts')
-    for (const row of r.rows) for (const x of row.results ?? []) {
-      const platform = contentPlatform(x.platform)
-      if (x.ok && x.url && platform) links.push({ asin: up(row.asin), platform, url: x.url, at: row.scheduled_at })
-    }
+  if (dealSched.error) unread.push('your scheduled Deal Radar posts')
+  for (const row of dealSched.rows) for (const x of row.results ?? []) {
+    const platform = contentPlatform(x.platform)
+    if (x.ok && x.url && platform) links.push({ asin: up(row.asin), platform, url: x.url, at: row.scheduled_at })
   }
-  {
-    const r = await pages<{ asin: string | null; platform: string; external_url: string | null; scheduled_at: string }>((a, b) =>
-      sb.from('amazon_scheduled_posts').select('asin, platform, external_url, scheduled_at').eq('user_id', ownerId).eq('status', 'completed').not('external_url', 'is', null).range(a, b), 2)
-    if (r.error) unread.push('your scheduled Amazon posts')
-    for (const row of r.rows) {
-      const platform = contentPlatform(row.platform)
-      if (platform && row.external_url) links.push({ asin: up(row.asin), platform, url: row.external_url, at: row.scheduled_at })
-    }
+  if (amzSched.error) unread.push('your scheduled Amazon posts')
+  for (const row of amzSched.rows) {
+    const platform = contentPlatform(row.platform)
+    if (platform && row.external_url) links.push({ asin: up(row.asin), platform, url: row.external_url, at: row.scheduled_at })
   }
   let linksTable = true
-  {
-    const r = await pages<{ asin: string; platform: string; url: string; created_at: string }>((a, b) =>
-      sb.from('product_post_links').select('asin, platform, url, created_at').eq('user_id', ownerId).range(a, b))
-    if (r.error) { linksTable = !/product_post_links/.test(r.error) || !/exist|schema cache|find/i.test(r.error); if (linksTable) unread.push('your recent social posts') }
-    for (const row of r.rows) {
-      const platform = contentPlatform(row.platform)
-      if (platform) links.push({ asin: up(row.asin), platform, url: row.url, at: row.created_at })
-    }
+  if (kept.error) { linksTable = !/product_post_links/.test(kept.error) || !/exist|schema cache|find/i.test(kept.error); if (linksTable) unread.push('your recent social posts') }
+  for (const row of kept.rows) {
+    const platform = contentPlatform(row.platform)
+    if (platform) links.push({ asin: up(row.asin), platform, url: row.url, at: row.created_at })
   }
-  {
-    const r = await pages<{ asin: string | null; platform: string | null; url: string | null; posted_at: string | null }>((a, b) =>
-      sb.from('creator_content').select('asin, platform, url, posted_at').eq('user_id', ownerId).not('asin', 'is', null).range(a, b), 2)
-    for (const row of r.rows) {
-      const platform = contentPlatform(row.platform)
-      if (platform && row.url) links.push({ asin: up(row.asin), platform, url: row.url, at: row.posted_at })
-    }
+  for (const row of library.rows) {
+    const platform = contentPlatform(row.platform)
+    if (platform && row.url) links.push({ asin: up(row.asin), platform, url: row.url, at: row.posted_at })
   }
-  {
-    const r = await pages<{ asin: string; aci: string }>((a, b) => sb.from('amazon_video_products').select('asin, aci').eq('user_id', ownerId).range(a, b), 2)
-    const byAci = new Map<string, string[]>()
-    for (const row of r.rows) byAci.set(row.aci, [...(byAci.get(row.aci) ?? []), up(row.asin)])
-    for (const part of chunk([...byAci.keys()])) {
-      const v = await sb.from('amazon_videos').select('aci, media_url, published_at').eq('user_id', ownerId).in('aci', part)
-      for (const row of (v.data ?? []) as Array<{ aci: string; media_url: string | null; published_at: string | null }>) {
-        if (!row.media_url || !/\/vdp\//.test(row.media_url)) continue
-        for (const a of byAci.get(row.aci) ?? []) links.push({ asin: a, platform: 'amazon_video', url: row.media_url, at: row.published_at })
-      }
+  for (const res of amzVidsR.value) {
+    for (const row of (res.data ?? []) as Array<{ aci: string; media_url: string | null; published_at: string | null }>) {
+      if (!row.media_url || !/\/vdp\//.test(row.media_url)) continue
+      for (const a of byAci.get(row.aci) ?? []) links.push({ asin: a, platform: 'amazon_video', url: row.media_url, at: row.published_at })
     }
   }
 
-  // ── the brand behind every product with content, from the shared catalog ──
+  // ── phase 3: brand and name for products the creator's own rows did not cover ──
   const contentAsins = [...new Set(links.map((l) => up(l.asin)).filter((a) => ASIN_RE.test(a)))]
   const missing = contentAsins.filter((a) => !brandOf.has(a))
-  for (const part of chunk(missing)) {
-    const r = await sb.from('cc_campaign_catalog').select('campaign_id, brand_name, asins, campaign_name').overlaps('asins', part).limit(2000)
-    if (r.error) { unread.push('the Creator Connections catalog'); break }
+  const catR = await withDeadline(timed('catalog', () => Promise.all(chunk(missing).map((part) =>
+    sb.from('cc_campaign_catalog').select('campaign_id, brand_name, asins, campaign_name').overlaps('asins', part).limit(2000)))), 20_000, [] as Array<{ data: unknown[] | null; error: unknown }>)
+  if (catR.timedOut || catR.value.some((r) => r.error)) unread.push('the Creator Connections catalog')
+  const missingSet = new Set(missing)
+  for (const r of catR.value) {
     for (const c of (r.data ?? []) as Array<{ campaign_id: string; brand_name: string | null; asins: string[] | null; campaign_name: string | null }>) {
-      for (const a of (c.asins ?? []).map(up)) if (part.includes(a)) { setBrand(a, c.brand_name, c.campaign_id, false); nameIfNone(a, c.campaign_name) }
+      for (const a of (c.asins ?? []).map(up)) if (missingSet.has(a)) { setBrand(a, c.brand_name, c.campaign_id, false); nameIfNone(a, c.campaign_name) }
     }
   }
-  // Names for products still without one: Keepa's shared cache has titles.
   const nameless = contentAsins.filter((a) => !names.has(a) && brandOf.has(a))
-  for (const part of chunk(nameless)) {
-    const r = await sb.from('keepa_product_cache').select('asin, title').in('asin', part)
-    for (const row of (r.data ?? []) as Array<{ asin: string; title: string | null }>) nameIfNone(up(row.asin), row.title)
-  }
+  const keepaR = await withDeadline(timed('names', () => Promise.all(chunk(nameless).map((part) =>
+    sb.from('keepa_product_cache').select('asin, title').in('asin', part)))), 10_000, [] as Array<{ data: unknown[] | null }>)
+  for (const r of keepaR.value) for (const row of (r.data ?? []) as Array<{ asin: string; title: string | null }>) nameIfNone(up(row.asin), row.title)
   // Last resort: the title of the video about it, which beats a bare ASIN.
   for (const a of nameless) if (!names.has(a) && videoTitle.has(a)) names.set(a, productShortName(videoTitle.get(a), a))
 
@@ -231,18 +257,16 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
   const sent = new Map<string, Set<string>>()
   const lastRecapAt = new Map<string, string>()
   let recapsTable = true
-  {
-    const r = await sb.from('brand_recaps').select('brand_key, urls, created_at, ok').eq('user_id', ownerId).eq('ok', true).order('created_at', { ascending: false }).limit(2000)
-    if (r.error) recapsTable = !(/brand_recaps/.test(r.error.message) && /exist|schema cache|find/i.test(r.error.message))
-    if (r.error && recapsTable) unread.push('the recaps you already sent')
-    for (const row of (r.data ?? []) as Array<{ brand_key: string; urls: string[]; created_at: string }>) {
-      const set = sent.get(row.brand_key) ?? new Set<string>()
-      for (const u of row.urls ?? []) set.add(linkKey(u))
-      sent.set(row.brand_key, set)
-      if (!lastRecapAt.has(row.brand_key)) lastRecapAt.set(row.brand_key, row.created_at)
-    }
+  if (recaps.error) recapsTable = !(/brand_recaps/.test(recaps.error.message) && /exist|schema cache|find/i.test(recaps.error.message))
+  if (recaps.error && recapsTable) unread.push('the recaps you already sent')
+  for (const row of recaps.data ?? []) {
+    const set = sent.get(row.brand_key) ?? new Set<string>()
+    for (const u of row.urls ?? []) set.add(linkKey(u))
+    sent.set(row.brand_key, set)
+    if (!lastRecapAt.has(row.brand_key)) lastRecapAt.set(row.brand_key, row.created_at)
   }
 
   const brands = groupByBrand({ links, brandOf, names, sent, lastRecapAt })
-  return { brands, unread, privateVideos, recapsTable, linksTable }
+  console.log('[brand-recap] timings ms', JSON.stringify(timings))
+  return { brands, unread, privateVideos, recapsTable, linksTable, timings }
 }

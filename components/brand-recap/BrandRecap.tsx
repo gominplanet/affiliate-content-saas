@@ -29,6 +29,7 @@ interface Data {
   recapsTable: boolean
   linksTable: boolean
   sender: { name: string; site: string }
+  timings?: Record<string, number>
   error?: string
 }
 
@@ -49,7 +50,15 @@ export default function BrandRecap() {
     setLoading(true); setError(null)
     try {
       const r = await fetch('/api/brand-recap')
-      const j = await r.json()
+      const text = await r.text()
+      let j: Data
+      // A function that runs out of time answers with the host's own error
+      // page, not JSON. Say that in words rather than as a parse error.
+      try { j = JSON.parse(text) } catch {
+        throw new Error(r.status === 504 || /timed? ?out|An error occurred/i.test(text)
+          ? `The server took too long gathering your links (HTTP ${r.status}). Press Refresh to try again.`
+          : `The server answered with an error page (HTTP ${r.status}) instead of your brands.`)
+      }
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
       setData(j)
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
@@ -110,6 +119,14 @@ export default function BrandRecap() {
         </div>
       )}
 
+      {data?.timings && (
+        <p className="mb-2 text-[11px] text-[#86868b]">
+          {data.brands.length} brand{data.brands.length === 1 ? '' : 's'}. Slowest read: {(() => {
+            const [name, ms] = Object.entries(data.timings).sort((a, b) => b[1] - a[1])[0] ?? ['none', 0]
+            return `${name.replace(/_/g, ' ')} (${(ms / 1000).toFixed(1)}s)`
+          })()}
+        </p>
+      )}
       <ul className="flex flex-col gap-3">
         {brands.map((b) => (
           <li key={b.brandKey} className="card overflow-hidden">

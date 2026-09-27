@@ -15,7 +15,9 @@ import { gatherBrandRecaps } from '@/lib/brand-content-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+// The reads run in parallel with deadlines on the slow ones; the limit is
+// the same as the other heavy routes so a large account still gets an answer.
+export const maxDuration = 300
 
 export async function GET() {
   const supabase = await createServerClient()
