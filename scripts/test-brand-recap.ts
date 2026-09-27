@@ -98,7 +98,9 @@ check('an unconfirmed send in a visible tab is not recorded as sent', inOrder(UI
 // The first version read everything one after another under a 60 second limit,
 // and a large account got the host's error page instead of its brands.
 check('the catalog is looked up one ASIN at a time with contains(), the lookup proven on that table',
-  /\.contains\('asins', \[a\]\)/.test(SRV) && !/\.overlaps\('asins'/.test(SRV))
+  /\.contains\('asins', \[a\]\)\.limit\(5\)/.test(SRV) && !/\.overlaps\('asins'/.test(SRV) && !/contains\('asins', \[a\]\)\.order/.test(SRV))
+check('a slow catalog keeps what it found and says how many it could not look up',
+  /\}\), 25_000, found\)/.test(SRV) && /for \(const \{ asin, rows \} of found\)/.test(SRV))
 check('the reads run at once, the slow lookups have deadlines, and the limit matches the heavy routes',
   /await Promise\.all\(\[\s*timed\('campaigns'/.test(SRV) && /withDeadline\(timed\('catalog'/.test(SRV) && /withDeadline\(timed\('youtube_visibility'/.test(SRV)
   && /export const maxDuration = 300/.test(read('app/api/brand-recap/route.ts')))
