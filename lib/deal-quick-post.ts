@@ -7,6 +7,7 @@
 // the post. Extracted so scheduling reuses the exact same publish path instead
 // of a divergent copy.
 
+import { recordProductPostLinks } from '@/lib/product-post-links'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { scrubBanned } from '@/lib/scrub'
@@ -320,6 +321,10 @@ Return ONLY the caption text.` }],
     })
     results.push({ platform: 'instagram_story', ok: s.ok, url: s.ok ? 'https://www.instagram.com/' : undefined, error: s.error })
   }
+
+  // Keep each live post's address, so Brand recap can show it to the brand
+  // later (migration 379). Best effort: it never changes what is reported.
+  await recordProductPostLinks(userId, asin, results, 'deal_post')
 
   // Report where the clicks ACTUALLY went, not where they were meant to. A post
   // that asked for the showcase and fell back to Amazon returns 'amazon' here,

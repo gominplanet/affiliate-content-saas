@@ -5,6 +5,7 @@
 // caption.
 //
 // Body: { imageUrl, productUrl?, asin?, productTitle?, caption?, scheduledAt? }
+import { recordProductPostLinks } from '@/lib/product-post-links'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -101,6 +102,8 @@ export async function POST(request: Request) {
       imageUrl: body.imageUrl, asin: body.asin, productUrl: body.productUrl, productTitle: body.productTitle, caption: body.caption,
       useShowcase: destination.kind === 'showcase', showcaseUrl: destination.url,
     })
+    // Kept for Brand recap (migration 379). Best effort.
+    await recordProductPostLinks(user.id, body.asin, [{ platform: 'facebook', url: res.url }], 'amazon_push')
     return NextResponse.json({ ok: true, postUrl: res.url, id: res.id, caption: res.caption, linkUrl: res.linkUrl,
       // Two different things: the cloaker fell back, and the destination is not
       // the one that was asked for. Neither may hide the other.

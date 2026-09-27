@@ -677,6 +677,7 @@ export default function DashboardShellV2({
         // Amazon Live prep — pick products, get the show: lineup, timings,
         // talking points from the creator's own reviews, and a teleprompter.
         { href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live prep', gate: previewOpenToPro('amazon_live') ? isPro : isAdmin, badge: 'Test' },
+        { href: '/brand-recap', icon: <Send size={15} />, label: 'Brand recap', gate: previewOpenToPro('brand_recap') ? isPro : isAdmin, badge: 'Test' },
         // MVP x Wayward graduated out of Labs 2026-08 → now under the network
         // finders, right below MVP x PartnerBoost.
         // Clip Factory graduated out of Labs 2026-08 → now lives under Create

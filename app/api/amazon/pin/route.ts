@@ -9,6 +9,7 @@
 //   productUrl / asin — the product to link to (affiliate)
 //   title / description — optional; blank → the AI writes them
 //   scheduledAt — optional ISO time; when set, the pin is queued instead of posted now
+import { recordProductPostLinks } from '@/lib/product-post-links'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -111,6 +112,8 @@ export async function POST(request: Request) {
       boardId: body.boardId, title: body.title, description: body.description,
       useShowcase: destination.kind === 'showcase', showcaseUrl: destination.url,
     })
+    // Kept for Brand recap (migration 379). Best effort.
+    await recordProductPostLinks(user.id, body.asin, [{ platform: 'pinterest', url: res.pinUrl }], 'amazon_push')
     return NextResponse.json({
       ok: true, ...res,
       // A pin that asked for the showcase and fell back to Amazon must not
