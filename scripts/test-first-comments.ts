@@ -97,6 +97,23 @@ const inOrder = (src: string, a: string, b: string) => { const i = src.indexOf(a
     /<Check label="First comment"/.test(REP) && /fc\.pinned === true/.test(REP))
 }
 
+// ── Older videos: tick, and each is written, posted and pinned one at a time ──
+{
+  const LIST = read('app/api/youtube/first-comment/videos/route.ts')
+  check('the older videos list is behind the Labs gate and can show only the ones without one',
+    /canUsePreview\('first_comment', intg\?\.tier\)/.test(LIST) && /missing \? withFc\.filter\(\(x\) => !x\.fc \|\| x\.fc\.state === 'failed'/.test(LIST))
+  const UI = read('components/first-comments/OlderVideos.tsx')
+  check('one video at a time: post, then pin, each row saying what happened',
+    /for \(let i = 0; i < list\.length; i\+\+\)/.test(UI) && /await pinFirstComment\(j\.id, v\.youtubeVideoId, j\.commentId\)/.test(UI)
+    && /Posted and pinned\. SCOUT saw the pinned badge\./.test(UI) && /Posted, not pinned: /.test(UI))
+  check('YouTube\'s daily limit stops the run and says so, nothing after it marked failed',
+    /if \(j\.reason === 'quota'\) \{/.test(UI) && /Not started: the daily limit is used up/.test(UI))
+  check('a video not public yet is held, not failed', /j\.reason === 'not_public'/.test(UI) && /step: 'held'/.test(UI))
+  check('the run can be stopped between videos', /if \(stop\.current\) \{/.test(UI) && /Stop after this one/.test(UI))
+  check('the waiting reason comes back from the post step', /reason: 'quota'/.test(read('lib/first-comments.ts')) && /reason: 'not_public'/.test(read('lib/first-comments.ts')))
+  check('it is in the Labs menu', /href: '\/first-comments'/.test(read('components/layout/DashboardShellV2.tsx')))
+}
+
 if (failures.length) {
   console.error(`\n❌ first-comments: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

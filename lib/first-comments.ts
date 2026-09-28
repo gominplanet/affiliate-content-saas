@@ -53,7 +53,7 @@ export interface FirstCommentRow {
 
 export type FirstCommentOutcome =
   | { state: 'posted'; commentId: string }
-  | { state: 'waiting'; publishAt: string | null }
+  | { state: 'waiting'; publishAt: string | null; reason?: 'not_public' | 'no_answer' | 'quota' }
   | { state: 'failed'; error: string }
 
 /**
@@ -74,7 +74,7 @@ export async function postFirstCommentIfPublic(sb: Sb, row: FirstCommentRow): Pr
   try { status = await yt.getVideoStatus(row.youtube_video_id) } catch {
     // YouTube did not answer: not a verdict. Try again on the next run.
     await sb.from('video_first_comments').update({ last_checked_at: at }).eq('id', row.id)
-    return { state: 'waiting', publishAt: null }
+    return { state: 'waiting', publishAt: null, reason: 'no_answer' }
   }
   if (!status) return fail('The saved login cannot see this video: it was deleted, or it is on a channel that login is not. Nothing was posted.')
   if (status.privacy !== 'public') {
@@ -85,7 +85,7 @@ export async function postFirstCommentIfPublic(sb: Sb, row: FirstCommentRow): Pr
     await sb.from('video_first_comments').update({
       last_checked_at: at, publish_at: status.publishAt, channel_id: status.channelId ?? row.channel_id,
     }).eq('id', row.id)
-    return { state: 'waiting', publishAt: status.publishAt }
+    return { state: 'waiting', publishAt: status.publishAt, reason: 'not_public' }
   }
   // THE COMMENTER IS THE VIDEO'S OWN CHANNEL, asked of YouTube.
   let me: { id: string } | null = null
@@ -106,7 +106,7 @@ export async function postFirstCommentIfPublic(sb: Sb, row: FirstCommentRow): Pr
     if (/quota/i.test(msg)) {
       // A used-up daily limit is not the comment's fault: wait for tomorrow.
       await sb.from('video_first_comments').update({ last_checked_at: at, last_error: "YouTube's daily limit for MVP was used up. It will try again." }).eq('id', row.id)
-      return { state: 'waiting', publishAt: null }
+      return { state: 'waiting', publishAt: null, reason: 'quota' }
     }
     return fail(/commentsDisabled|disabled comments/i.test(msg) ? 'Comments are turned off on this video.' : `YouTube did not take the comment: ${msg.slice(0, 160)}`)
   }

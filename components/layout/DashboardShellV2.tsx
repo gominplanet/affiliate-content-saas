@@ -42,7 +42,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench, ImageOff,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star } from 'lucide-react'
+  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin } from 'lucide-react'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
@@ -679,6 +679,9 @@ export default function DashboardShellV2({
         { href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live prep', gate: previewOpenToPro('amazon_live') ? isPro : isAdmin, badge: 'Test' },
         { href: '/brand-recap', icon: <Send size={15} />, label: 'Brand recap', gate: previewOpenToPro('brand_recap') ? isPro : isAdmin, badge: 'Test' },
         { href: '/ended-deals', icon: <Wand2 size={15} />, label: 'Ended deals', gate: previewOpenToPro('deal_aftercare') ? isPro : isAdmin, badge: 'Test' },
+        // First comments for older videos: every new upload gets one; this
+        // gives the rest of the channel one, pinned by SCOUT.
+        { href: '/first-comments', icon: <Pin size={15} />, label: 'First comments', gate: previewOpenToPro('first_comment') ? isPro : isAdmin, badge: 'Test' },
         // MVP x Wayward graduated out of Labs 2026-08 → now under the network
         // finders, right below MVP x PartnerBoost.
         // Clip Factory graduated out of Labs 2026-08 → now lives under Create
