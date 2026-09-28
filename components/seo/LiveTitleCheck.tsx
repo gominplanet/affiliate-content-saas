@@ -12,7 +12,8 @@ import { Loader2, Globe, ExternalLink } from 'lucide-react'
 interface Differs { postId: string; url: string; mvpTitle: string; liveTitle: string; suggest: 'mvp' | 'site' | null; why: string }
 interface Misfiled { postId: string; url: string; mvpTitle: string; numberNowNames: string }
 interface OffTopic { postId: string; url: string; title: string }
-interface Result { checked: number; missing: number; differs: Differs[]; misfiled: Misfiled[]; offTopic?: OffTopic[]; unread: string[]; unconnected: string[] }
+interface Shared { url: string; records: Array<{ postId: string; title: string | null }> }
+interface Result { checked: number; missing: number; differs: Differs[]; misfiled: Misfiled[]; offTopic?: OffTopic[]; shared?: Shared[]; unread: string[]; unconnected: string[] }
 
 export default function LiveTitleCheck() {
   const [busy, setBusy] = useState(false)
@@ -77,6 +78,20 @@ export default function LiveTitleCheck() {
               <ul className="mt-2 flex flex-col gap-1 text-[12px]">
                 {res.misfiled.slice(0, 20).map((m) => (
                   <li key={m.postId}><a href={m.url} target="_blank" rel="noopener noreferrer" className="underline">{m.mvpTitle || m.url}</a>: that number on the site is now {m.numberNowNames}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {(res.shared?.length ?? 0) > 0 && (
+            <div className="mt-3 rounded-lg border border-[#ff3b30]/40 p-3">
+              <p className="font-semibold">{res.shared!.length} post{res.shared!.length === 1 ? ' is' : 's are'} claimed by more than one video in MVP</p>
+              <p className="text-[12px] text-[#6e6e73] mt-0.5">
+                Each fix MVP runs from either record writes that record&apos;s text into the same post, so it can end up with one video&apos;s title and another video&apos;s review. Ask support to separate them, or keep one record and delete the other.
+              </p>
+              <ul className="mt-2 flex flex-col gap-1 text-[12px]">
+                {res.shared!.map((g) => (
+                  <li key={g.url}><a href={g.url} target="_blank" rel="noopener noreferrer" className="underline break-all">{g.url}</a>: {g.records.length} records</li>
                 ))}
               </ul>
             </div>

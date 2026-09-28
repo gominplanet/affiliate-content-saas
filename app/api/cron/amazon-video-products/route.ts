@@ -1,6 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// GET /api/cron/amazon-video-products — every minute, the next slice of each
+// GET /api/cron/amazon-video-products — every two minutes, the next slice of each
 // creator's Amazon videos whose products have not been read, from the videos'
 // public pages (lib/amazon-video-products). A library of 7,000 is covered in
 // well under an hour with nobody's browser involved. Stops for the minute as

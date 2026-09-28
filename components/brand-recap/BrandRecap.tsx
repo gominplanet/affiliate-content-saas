@@ -16,7 +16,7 @@ import { Loader2, Send, Copy, Mail, Check, ChevronDown, ChevronRight, RefreshCw,
 import PageHero from '@/components/layout/PageHero'
 import { requestSendByAsin, requestSendByCampaign, requestAmazonVideoForAsin } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
-import { readAllVideoProducts } from '@/lib/amazon-video-products-client'
+import { readAllVideoProducts, readVideoProductsViaScout, type ProductReadProgress } from '@/lib/amazon-video-products-client'
 import {
   PLATFORM_LABEL, buildBrandRecapMessage, buildBrandRecapCcMessage, ccFromPlainText, ccGroupCount, ccSendReason, linkKey,
   type BrandGroup, type ContentLink,
@@ -120,7 +120,29 @@ export default function BrandRecap() {
       const tally = `${p.withProducts.toLocaleString()} videos matched to their products this run${p.noProducts ? `, ${p.noProducts.toLocaleString()} name no product on Amazon` : ''}${p.notFound ? `, ${p.notFound.toLocaleString()} have no page on Amazon any more` : ''}${p.errors ? `, ${p.errors.toLocaleString()} did not answer and are tried again later` : ''}.`
       if (out.kind === 'done') setScanNote({ ok: true, text: `Every video in your Amazon library is matched. ${tally} Products on this page with no Amazon video have none in your library.` })
       else if (out.kind === 'stopped') setScanNote({ ok: true, text: `Stopped watching. ${tally} MVP keeps reading the rest in the background.` })
-      else if (out.kind === 'blocked') fallback = `Amazon started answering MVP's server with robot checks, so SCOUT is looking up the products on this page one by one instead. ${tally}`
+      else if (out.kind === 'blocked') {
+        // SCOUT reads the same pages from this computer's connection, by fetch,
+        // with no tab. Only if SCOUT cannot, the product-by-product lookup.
+        const show = (q: ProductReadProgress) => {
+          movedAt = Date.now()
+          const total = q.total ?? 0
+          setProg({ step: 1, done: Math.max(0, total - (q.remaining ?? total)), total: q.total, startedAt: started, movedAt, page: null, server: true,
+            title: 'Matching your Amazon videos to their products',
+            phase: `Amazon paused MVP's server, so SCOUT is reading the video pages from your connection, in the background with no tabs. ${q.withProducts.toLocaleString()} videos matched to a product so far.`,
+            quietOk: 200_000 })
+        }
+        show(p)
+        const viaScout = await readVideoProductsViaScout(show, () => stopWatching.current, p)
+        await load()
+        const q = viaScout.p
+        const t2 = `${q.withProducts.toLocaleString()} videos matched to their products${q.noProducts ? `, ${q.noProducts.toLocaleString()} name no product on Amazon` : ''}${q.notFound ? `, ${q.notFound.toLocaleString()} have no page on Amazon any more` : ''}.`
+        if (viaScout.kind === 'done') setScanNote({ ok: true, text: `Every video in your Amazon library is matched (SCOUT finished what Amazon stopped MVP's server doing). ${t2}` })
+        else if (viaScout.kind === 'stopped') setScanNote({ ok: true, text: `Stopped watching. ${t2} MVP's server carries on when Amazon lets it.` })
+        else if (viaScout.kind === 'old-scout') fallback = `Amazon paused MVP's server. Update SCOUT to ${SCOUT_LATEST_VERSION} and it reads your video pages in the background with no tabs; until then SCOUT looks up the products on this page one by one. ${t2}`
+        else if (viaScout.kind === 'no-scout') setScanNote({ ok: false, text: `Amazon paused MVP's server. It carries on by itself when Amazon lets it, or install SCOUT to finish now. ${t2}` })
+        else if (viaScout.kind === 'blocked') setScanNote({ ok: false, text: `Amazon is also pausing reads from your connection, so this stopped for now. ${t2} MVP's server carries on by itself when Amazon lets it.` })
+        else setScanNote({ ok: false, text: `The read stopped: ${viaScout.error}. ${t2} What was read is kept; press again to carry on.` })
+      }
       else if (out.kind === 'no-library') fallback = 'MVP has not read your Amazon video list yet (Earnings, Read my video library), so SCOUT is looking up the products on this page one by one.'
       else setScanNote({ ok: false, text: `The read stopped: ${out.error}. ${tally} What was read is kept; press again to carry on.` })
     } finally { setScanning(false); setProg(null) }

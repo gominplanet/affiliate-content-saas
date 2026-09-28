@@ -3890,6 +3890,60 @@ async function harvestProductVideoInPage(asin) {
   }
 }
 
+// ── Amazon video pages, read by fetch: no tab at all ─────────────────────────
+// Every Amazon video has a public page at amazon.com/vdp/<id> that names the
+// products under it (MVP's lib/amazon-vdp.ts reads the same). MVP reads them
+// from its server; when Amazon robot-checks the server, the page hands SCOUT
+// the ids instead and SCOUT reads them from the creator's own connection,
+// with fetch, so nothing opens on screen. Same parser as the server's.
+function parseVdpPageJs(html, vdpId) {
+  const raw = String(html || '')
+  if (/validateCaptcha|Type the characters you see|api-services-support@amazon\.com|To discuss automated access/i.test(raw)) return { state: 'blocked' }
+  const t = raw.replace(/\\"/g, '"').replace(/&#034;|&quot;/g, '"').replace(/\\\//g, '/')
+  const id = String(vdpId).toLowerCase()
+  if (t.indexOf(id) === -1) return { state: 'not-found' }
+  const found = new Set()
+  const idAt = []
+  const idRe = new RegExp('"id":"' + id + '"', 'g')
+  let m
+  while ((m = idRe.exec(t)) !== null) idAt.push(m.index)
+  const carousels = []
+  const cRe = /"carouselItems":\[([^\]]*)\]/g
+  while ((m = cRe.exec(t)) !== null) carousels.push({ at: m.index, list: m[1] })
+  if (idAt.length && carousels.length) {
+    let best = null, dist = Infinity
+    for (const c of carousels) for (const i of idAt) { const d = Math.abs(c.at - i); if (d < dist) { dist = d; best = c } }
+    if (best && dist < 6000) { const aRe = /"([A-Z0-9]{10})"/g; while ((m = aRe.exec(best.list)) !== null) found.add(m[1]) }
+  }
+  const s1 = new RegExp('"asin":"([A-Z0-9]{10})","contentSeedId":"' + id + '"', 'g')
+  while ((m = s1.exec(t)) !== null) found.add(m[1])
+  const s2 = new RegExp('"contentSeedId":"' + id + '","asin":"([A-Z0-9]{10})"', 'g')
+  while ((m = s2.exec(t)) !== null) found.add(m[1])
+  const asins = [...found].filter((a) => /^[A-Z0-9]{10}$/.test(a))
+  return asins.length ? { state: 'ok', asins } : { state: 'no-products' }
+}
+
+async function readVdpPages(ids) {
+  const want = ids.map((x) => String(x || '').toLowerCase()).filter((x) => /^[0-9a-f]{32}$/.test(x)).slice(0, 60)
+  const results = []
+  let blockedRun = 0
+  for (const id of want) {
+    let r
+    try {
+      const res = await fetch(`https://www.amazon.com/vdp/${id}`, { credentials: 'include', signal: AbortSignal.timeout(20000) })
+      if (res.status === 404 || res.status === 410) r = { state: 'not-found' }
+      else if (res.status === 503 || res.status === 429) r = { state: 'blocked' }
+      else if (!res.ok) r = { state: 'error', detail: 'HTTP ' + res.status }
+      else r = parseVdpPageJs(await res.text(), id)
+    } catch (e) { r = { state: 'error', detail: (e && e.message) || 'fetch failed' } }
+    results.push({ id, ...r })
+    if (r.state === 'blocked') { if (++blockedRun >= 3) break } else blockedRun = 0
+    // A person's pace: under a page a second.
+    await _sleep(500 + Math.floor(Math.random() * 600))
+  }
+  return { ok: true, results, stoppedBlocked: blockedRun >= 3 }
+}
+
 // ── Amazon video lookups: ONE background tab, reused ────────────────────────
 // Brand recap looks up every product, 174 of them for one creator, and each
 // used to open a FOREGROUND tab and then switch back: a tab flashing up every
@@ -10876,6 +10930,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_AMZ_VDP') {
+    // Read Amazon video pages by fetch, from this browser, with no tab: the
+    // fallback when Amazon robot-checks MVP's server (see readVdpPages).
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 170000)
+    readVdpPages(Array.isArray(msg.ids) ? msg.ids : [])
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true
   }
   if (msg.type === 'MVP_AMZ_PRODUCT') {
     // Open the product page in the user's logged-in browser and read its

@@ -134,7 +134,7 @@
     },
     {
       "path": "/api/cron/amazon-video-products",
-      "schedule": "* * * * *"
+      "schedule": "*/2 * * * *"
     }
   ],
   "git": {

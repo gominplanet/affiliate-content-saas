@@ -97,8 +97,8 @@ check('an unconfirmed send in a visible tab is not recorded as sent', inOrder(UI
 // ── a large account still gets an answer ───────────────────────────────────
 // The first version read everything one after another under a 60 second limit,
 // and a large account got the host's error page instead of its brands.
-check('the catalog is asked in one call through the function, and the fallback has no LIMIT that would tempt a full table read',
-  /sb\.rpc\('cc_brands_for_asins', \{ p_asins: lookFor \}\)/.test(SRV) && /\.contains\('asins', \[a\]\)\n/.test(SRV) && !/\.overlaps\('asins'/.test(SRV) && !/contains\('asins', \[a\]\)\.(order|limit)/.test(SRV)
+check('the catalog is asked through the function a thousand at a time, and the fallback has no LIMIT that would tempt a full table read',
+  /sb\.rpc\('cc_brands_for_asins', \{ p_asins: part \}\)/.test(SRV) && /const part = lookFor\.slice\(i, i \+ 1000\)/.test(SRV) && /\.contains\('asins', \[a\]\)\n/.test(SRV) && !/\.overlaps\('asins'/.test(SRV) && !/contains\('asins', \[a\]\)\.(order|limit)/.test(SRV)
     && /set enable_seqscan = off/.test(read('supabase/migrations/381_cc_brands_for_asins.sql')))
 check('a slow catalog keeps what it found and says how many it could not look up',
   /\}\), 25_000, found\)/.test(SRV) && /for \(const \{ asin, rows \} of found\)/.test(SRV))

@@ -23,7 +23,7 @@ import { requestEarningsSync, requestEarningsStatus, startCreatorHubVideosScan, 
 import ProductBreakdown from '@/components/earnings/ProductBreakdown'
 import VideoInsights from '@/components/earnings/VideoInsights'
 import VideoProducts from '@/components/earnings/VideoProducts'
-import { readAllVideoProducts } from '@/lib/amazon-video-products-client'
+import { readAllVideoProducts, readVideoProductsViaScout } from '@/lib/amazon-video-products-client'
 
 const label = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -357,7 +357,19 @@ export default function EarningsPage() {
       const tally = `${p.withProducts.toLocaleString()} videos matched to their products this run${p.noProducts ? `, ${p.noProducts.toLocaleString()} name no product on Amazon` : ''}${p.notFound ? `, ${p.notFound.toLocaleString()} have no page on Amazon any more` : ''}${p.errors ? `, ${p.errors.toLocaleString()} did not answer and are tried again later` : ''}.`
       if (out.kind === 'done') { setProductScan(`Every video is matched. ${tally}`); toast.success('Every video now has its products.') }
       else if (out.kind === 'no-library') setProductScan('Read your video library first (the step above), then this.')
-      else if (out.kind === 'blocked') { setProductScan(`Amazon started answering MVP's server with robot checks, so the read paused. ${tally} MVP tries again on its own every minute.`); toast.error('Amazon paused the read. MVP will retry.') }
+      else if (out.kind === 'blocked') {
+        // SCOUT reads the same pages from this computer's connection, with no tab.
+        const via = await readVideoProductsViaScout((q) => {
+          const total = q.total ?? 0
+          setProductScan(`Amazon paused MVP's server, so SCOUT is reading your video pages from your connection, in the background with no tabs: ${Math.max(0, total - (q.remaining ?? total)).toLocaleString()} of ${total.toLocaleString()} done, ${q.withProducts.toLocaleString()} matched.`)
+        }, () => false, p)
+        setDataVersion(v => v + 1)
+        void load()
+        if (via.kind === 'done') { setProductScan(`Every video is matched. SCOUT finished what Amazon stopped MVP's server doing. ${via.p.withProducts.toLocaleString()} videos matched this run.`); toast.success('Every video now has its products.') }
+        else if (via.kind === 'old-scout') setProductScan(`Amazon paused MVP's server. Update SCOUT to 1.21.20 or later and it finishes the read in the background; otherwise MVP's server carries on by itself when Amazon lets it. ${tally}`)
+        else if (via.kind === 'no-scout') setProductScan(`Amazon paused MVP's server. It carries on by itself when Amazon lets it, or install SCOUT to finish now. ${tally}`)
+        else setProductScan(`Amazon paused the read${via.kind === 'blocked' ? ' from your connection too' : `: ${'error' in via ? via.error : ''}`}. What was read is kept, and MVP's server carries on by itself when Amazon lets it.`)
+      }
       else if (out.kind === 'stuck') { setProductScan(`The read stopped: ${out.error}. ${tally} What was read is kept; press again to carry on.`); toast.error('The product read stopped early.') }
     } finally { setScanningProducts(false) }
   }

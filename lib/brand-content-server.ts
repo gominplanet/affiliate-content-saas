@@ -307,22 +307,31 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
   type CatRow = { campaign_id: string; brand_name: string | null; asins?: string[] | null; campaign_name: string | null }
   const catErrors: string[] = []
   const found: Array<{ asin: string; rows: CatRow[] }> = []
-  const lookFor = missing.slice(0, 600)
-  const queue = [...lookFor]
+  // The function looks up a whole list in one call, so with it every product
+  // is looked up, a thousand per call. Only the slow one-by-one fallback is
+  // capped: a library matched to its Amazon videos easily passes 600 products.
+  const FALLBACK_CAP = 600
+  let lookFor = missing.slice(0, 8000)
+  const queue: string[] = []
   let viaFunction = false
   const catR = await withDeadline(timed('catalog', async () => {
-    let rpc: { data?: unknown; error: { message: string } | null }
-    try { rpc = await sb.rpc('cc_brands_for_asins', { p_asins: lookFor }) } catch (e) { rpc = { error: { message: `function call failed: ${e instanceof Error ? e.message : String(e)}` } } }
-    if (!rpc.error) {
+    let rpc: { data?: unknown; error: { message: string } | null } = { error: null }
+    for (let i = 0; i < lookFor.length; i += 1000) {
+      const part = lookFor.slice(i, i + 1000)
+      try { rpc = await sb.rpc('cc_brands_for_asins', { p_asins: part }) } catch (e) { rpc = { error: { message: `function call failed: ${e instanceof Error ? e.message : String(e)}` } } }
+      if (rpc.error) break
       viaFunction = true
       const by = new Map<string, CatRow[]>()
       for (const r of (rpc.data ?? []) as Array<{ asin: string; brand_name: string | null; campaign_id: string; campaign_name: string | null }>) {
         by.set(r.asin, [...(by.get(r.asin) ?? []), { campaign_id: r.campaign_id, brand_name: r.brand_name, campaign_name: r.campaign_name }])
       }
-      for (const a of lookFor) found.push({ asin: a, rows: by.get(a) ?? [] })
-      queue.length = 0
-      return found
+      for (const a of part) found.push({ asin: a, rows: by.get(a) ?? [] })
     }
+    if (!rpc.error) return found
+    // No function (or it failed part way): the rest one by one, capped.
+    const done = new Set(found.map((f) => f.asin))
+    lookFor = [...found.map((f) => f.asin), ...missing.filter((a) => !done.has(a)).slice(0, FALLBACK_CAP)]
+    queue.push(...lookFor.filter((a) => !done.has(a)))
     if (!/cc_brands_for_asins|function|schema cache/i.test(String(rpc.error.message))) catErrors.push(String(rpc.error.message).slice(0, 120))
     await Promise.all(Array.from({ length: Math.min(16, queue.length) }, async () => {
       for (let a = queue.shift(); a; a = queue.shift()) {
@@ -335,7 +344,7 @@ export async function gatherBrandRecaps(sb: Sb, ownerId: string): Promise<BrandR
   }), 25_000, found)
   if (catR.timedOut) { queue.length = 0; timings.catalog = 25_000; unread.push(`the Creator Connections catalog for ${lookFor.length - found.length} of ${lookFor.length} products (it was slow${viaFunction ? '' : '; migration 381 makes this one fast lookup'})`) }
   else if (catErrors.length) unread.push(`the Creator Connections catalog (${catErrors[0]})`)
-  if (missing.length > 600) unread.push(`the brand of ${missing.length - 600} older products (only the first 600 are looked up)`)
+  if (missing.length > lookFor.length) unread.push(`the brand of ${missing.length - lookFor.length} older products (${viaFunction ? 'there were more than 8,000' : `only ${lookFor.length} are looked up without migration 381's lookup function`})`)
   for (const { asin, rows } of found) {
     // A campaign's name is its promo line ("Give Mom a Spa-Ready Bath! Earn
     // 10%"), not the product's name: kept only as the very last resort.

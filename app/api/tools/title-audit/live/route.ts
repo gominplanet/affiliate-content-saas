@@ -52,6 +52,17 @@ export async function GET() {
     if (!data || data.length < 1000) break
   }
 
+  // ONE POST, TWO RECORDS. Two videos' records pointing at the same post on
+  // the same site: every fix run from either record writes its own body into
+  // that one post, so it ends up with one video's title and the other's text
+  // (a Jikasho phone-holder title over a baskets review). Listed so they can
+  // be separated; nothing is changed here.
+  const shareKey = (r: Row) => `${hostOf(r.wordpress_url)}#${r.wordpress_post_id}`
+  const sharing = new Map<string, Row[]>()
+  for (const r of rows) sharing.set(shareKey(r), [...(sharing.get(shareKey(r)) ?? []), r])
+  const shared = [...sharing.values()].filter((g) => g.length > 1)
+    .map((g) => ({ url: g[0].wordpress_url as string, records: g.map((r) => ({ postId: r.id, title: r.title })) }))
+
   const sites = await listSites(admin, o.ownerId)
   const byHost = new Map<string, Row[]>()
   const unconnected: string[] = []
@@ -110,7 +121,7 @@ export async function GET() {
   }
   // The likeliest wrong titles first.
   differs.sort((a, b) => (a.suggest === 'mvp' ? 0 : 1) - (b.suggest === 'mvp' ? 0 : 1))
-  return NextResponse.json({ checked, missing, differs, misfiled, offTopic, unread, unconnected })
+  return NextResponse.json({ checked, missing, differs, misfiled, offTopic, shared, unread, unconnected })
 }
 
 export async function POST(request: Request) {

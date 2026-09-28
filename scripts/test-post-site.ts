@@ -56,7 +56,8 @@ check('the Title Check page reads the live titles', /<LiveTitleCheck \/>/.test(r
   check('a rebuild never puts mismatched content into a live post', /if \(productMismatch\) \{\s*return NextResponse\.json\(\{ error: `\$\{productMismatch\} Your live post/.test(G))
   check('a rebuild never overwrites a post whose address is about something else', /which is about something else, so it was not rebuilt and nothing was changed/.test(G))
   const L = read('app/api/tools/title-audit/live/route.ts')
-  check('the live check lists posts about something other than their address', /offTopic\.push\(/.test(L) && /offTopic, unread/.test(L) && /res\.offTopic/.test(read('components/seo/LiveTitleCheck.tsx')))
+  check('the live check lists posts about something other than their address', /offTopic\.push\(/.test(L) && /offTopic, shared, unread/.test(L) && /res\.offTopic/.test(read('components/seo/LiveTitleCheck.tsx')))
+  check('the live check lists posts claimed by more than one video', /const shared = \[\.\.\.sharing\.values\(\)\]\.filter\(\(g\) => g\.length > 1\)/.test(L) && /res\.shared/.test(read('components/seo/LiveTitleCheck.tsx')))
   check('a held generation says so on the Content page', /Saved as a draft, not published\./.test(read('components/content/GenerateButton.tsx')) && /Draft, not published/.test(read('components/content/GenerateButton.tsx')))
 }
 

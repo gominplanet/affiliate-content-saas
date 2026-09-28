@@ -1087,6 +1087,23 @@ export async function requestAmazonVideoForAsin(asin: string): Promise<AmazonVid
   return { ok: false, error: resp.error || 'scan-failed' }
 }
 
+/** SCOUT reads Amazon video pages by fetch from the creator's own connection,
+ *  with no tab (1.21.20+). The fallback when Amazon robot-checks MVP's server.
+ *  `error: 'needs-update'` from an older SCOUT that does not know the message. */
+export async function requestVdpReads(ids: string[]): Promise<{ ok: boolean; results?: Array<{ id: string; state: string; asins?: string[] }>; stoppedBlocked?: boolean; error?: string }> {
+  const st = await getScoutStatus()
+  if (!st.installed) return { ok: false, error: 'not-installed' }
+  // An older SCOUT does not answer this message at all, so ask its version
+  // first rather than wait out the timeout.
+  if (_cmpVersion(st.version, '1.21.20') < 0) return { ok: false, error: 'needs-update' }
+  const resp = await sendToExtension<{ ok?: boolean; results?: Array<{ id: string; state: string; asins?: string[] }>; stoppedBlocked?: boolean; error?: string }>(
+    { type: 'MVP_AMZ_VDP', ids }, 180000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  if (resp.ok && Array.isArray(resp.results)) return { ok: true, results: resp.results, stoppedBlocked: !!resp.stoppedBlocked }
+  return { ok: false, error: resp.error || 'needs-update' }
+}
+
 /** Product details SCOUT scraped off the Amazon product page (in the user's
  *  own browser / residential IP — the request Amazon doesn't block). Used as a
  *  fallback when the server-side scrape is blocked. */

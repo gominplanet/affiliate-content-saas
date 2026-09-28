@@ -35,9 +35,10 @@ ${'x'.repeat(9000)}
 {
   const J = read('lib/amazon-video-products.ts')
   check('a video is marked read only after its page answered; robot checks and failures are left for the next run',
-    /if \(r\.state === 'blocked'\) \{[\s\S]*?continue/.test(J) && /if \(r\.state === 'error'\) \{ out\.errors\+\+; continue \}/.test(J))
+    /if \(r\.state === 'blocked'\) \{[\s\S]*?return\s*\}/.test(J) && /if \(r\.state === 'error'\) \{ out\.errors\+\+; return \}/.test(J))
   check('three robot checks in a row stop the run', /\+\+blockedRun >= 3\) stop = 'blocked'/.test(J))
-  check('no more than six pages at once', /Math\.min\(6,/.test(J))
+  check('no more than three pages at once, with a pause between pages', /Math\.min\(3,/.test(J) && /await pause\(\)/.test(J))
+  check('one page first, alone, and nothing more if Amazon blocks it', /await one\(queue\.shift\(\) as string\)\s*if \(out\.blocked\) stop = 'blocked'/.test(J))
   const C = read('app/api/cron/amazon-video-products/route.ts')
   check('the cron stops for the minute when Amazon blocks', /stoppedFor === 'blocked'\) break/.test(C) && /CRON_SECRET/.test(C))
   check('the cron is scheduled', /"\/api\/cron\/amazon-video-products"/.test(read('vercel.json')))
@@ -47,6 +48,28 @@ ${'x'.repeat(9000)}
   check('Earnings no longer depends on the SCOUT per-video replay', /readAllVideoProducts\(/.test(read('app/(dashboard)/earnings/page.tsx')) && !/startVideoProductsScan\(/.test(read('app/(dashboard)/earnings/page.tsx')))
   const X = read('extension/background.js')
   check('SCOUT\'s product-page lookups share one background tab', /chrome\.tabs\.create\(\{ url, active: false \}\)[\s\S]{0,200}AMZ_VIDEO_TAB_KEY/.test(X) && /async function scanAmazonVideoInBackground/.test(X))
+}
+
+// ── When Amazon pauses MVP's server: SCOUT reads the pages, by fetch, no tab ──
+{
+  const X = read('extension/background.js')
+  const a = X.indexOf('function parseVdpPageJs'), b = X.indexOf('async function readVdpPages')
+  // eslint-disable-next-line no-new-func
+  const parseJs = new Function(`${X.slice(a, b)}; return parseVdpPageJs`)() as (h: string, id: string) => { state: string; asins?: string[] }
+  const js = parseJs(page(ID), ID), ts = parseVdpPage(page(ID), ID)
+  check('SCOUT\'s parser answers exactly as the server\'s', JSON.stringify(js) === JSON.stringify({ state: ts.state, asins: ts.state === 'ok' ? ts.asins : undefined }) && parseJs(page(ID), OTHER).state === 'not-found', JSON.stringify(js))
+  check('SCOUT reads by fetch with no tab, at a person\'s pace, and stops at three robot checks',
+    /fetch\(`https:\/\/www\.amazon\.com\/vdp\/\$\{id\}`/.test(X.slice(b, b + 1500)) && !/chrome\.tabs\.create/.test(X.slice(b, b + 1500)) && /\+\+blockedRun >= 3\) break/.test(X))
+  check('SCOUT may fetch video pages', /"https:\/\/www\.amazon\.com\/vdp\/\*"/.test(read('extension/manifest.json')))
+  const F = read('lib/extension-frame.ts')
+  check('an older SCOUT is told to update instead of being waited on', /_cmpVersion\(st\.version, '1\.21\.20'\) < 0\) return \{ ok: false, error: 'needs-update' \}/.test(F))
+  const J = read('lib/amazon-video-products.ts')
+  check('what SCOUT reads only touches the creator\'s own videos, and a blocked read is not marked read',
+    /if \(!own\.has\(aci\)\) continue/.test(J) && /if \(r\.state === 'blocked'\) \{ out\.blocked\+\+; continue \}/.test(J))
+  check('Brand recap turns to SCOUT\'s page reads before any product-by-product lookup',
+    /const viaScout = await readVideoProductsViaScout/.test(read('components/brand-recap/BrandRecap.tsx')))
+  const B = read('lib/brand-content-server.ts')
+  check('every product\'s brand is looked up when the lookup function exists', /for \(let i = 0; i < lookFor\.length; i \+= 1000\)/.test(B) && !/missing\.slice\(0, 600\)/.test(B))
 }
 
 if (failures.length) {
