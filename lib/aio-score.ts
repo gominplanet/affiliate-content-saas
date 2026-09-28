@@ -105,7 +105,7 @@ export function scoreAio(input: AioInput): AioScore {
       label: 'Freshness signal',
       weight: 10,
       pass: !!input.hasFreshness,
-      hint: 'Carry a published/updated date so engines treat the post as current.',
+      hint: FRESHNESS_HINT,
     },
     {
       key: 'citations',
@@ -123,9 +123,33 @@ export function scoreAio(input: AioInput): AioScore {
     },
   ]
 
+  return totals(checks)
+}
+
+function totals(checks: AioCheck[]): AioScore {
   const earned = checks.reduce((s, c) => s + (c.pass ? c.weight : 0), 0)
   const total = checks.reduce((s, c) => s + c.weight, 0)
-  const score = Math.round((earned / total) * 100)
+  const score = total ? Math.round((earned / total) * 100) : 0
   const grade: AioScore['grade'] = score >= 85 ? 'A' : score >= 70 ? 'B' : score >= 50 ? 'C' : 'D'
   return { score, grade, checks }
+}
+
+/** How long a post counts as current after its last real change. */
+export const FRESH_FOR_DAYS = 180
+const FRESHNESS_HINT = 'Nothing in this post has changed for six months. Add what you have learned since, from your own use; a new date on the same text is not freshness.'
+
+/**
+ * FRESHNESS IS JUDGED WHEN IT IS READ, NOT WHEN THE POST WAS WRITTEN.
+ *
+ * The score is stored at generation, when every post is new, so the freshness
+ * check passed on every post forever and a two-year-old review kept its ten
+ * points. `lastChangedAt` is the later of publishing and the creator's last
+ * update (lib/post-refresh); the check passes only within FRESH_FOR_DAYS of it.
+ */
+export function withFreshnessNow(aio: AioScore, lastChangedAt: string | null | undefined, now: Date = new Date()): AioScore {
+  if (!aio || !Array.isArray(aio.checks)) return aio
+  const t = lastChangedAt ? new Date(lastChangedAt).getTime() : NaN
+  const fresh = Number.isFinite(t) && now.getTime() - t <= FRESH_FOR_DAYS * 86_400_000
+  const checks = aio.checks.map((c) => c.key === 'freshness' ? { ...c, pass: fresh, hint: FRESHNESS_HINT } : c)
+  return totals(checks)
 }

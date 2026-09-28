@@ -2,7 +2,8 @@
 //
 // /api/blog/refresh — review posts due a first-hand update (lib/post-refresh.ts).
 //
-// GET                                       posts due, and updates made in the last 30 days
+// GET                                       posts due, and updates made in the last 60 days
+//                                           with Search Console before and after each
 // POST { action: 'update', postId, note }   add the creator's line to the post on WordPress
 // POST { action: 'snooze', postId }         nothing new yet: ask again in 90 days
 //
@@ -20,6 +21,8 @@ import { isStalePostError } from '@/lib/wp-errors'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type LinkCandidate } from '@/lib/internal-links'
 import { REFRESH_AFTER_DAYS, cleanRefreshNote, sinceLabel, refreshedBody, withFreshRelated } from '@/lib/post-refresh'
+import { getValidGscToken, querySearchAnalyticsOrNull } from '@/lib/gsc'
+import { impactWindows, propertyCovers, sumRows, type Impact } from '@/lib/update-impact'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -66,18 +69,40 @@ export async function GET() {
   const due = rows.filter((r) =>
     (!r.refreshed_at || r.refreshed_at <= cutoff) &&
     (!r.refresh_snoozed_until || new Date(r.refresh_snoozed_until).getTime() < now))
-  const recentCut = new Date(now - 30 * DAY).toISOString()
+  const recentCut = new Date(now - 60 * DAY).toISOString()
   const { data: recentRows } = await admin.from('blog_posts')
     .select('id,title,wordpress_url,refreshed_at,refresh_note')
     .eq('user_id', g.ownerId).gte('refreshed_at', recentCut)
     .order('refreshed_at', { ascending: false }).limit(10)
+  const recent = (recentRows ?? []) as Row[]
+
+  // DID IT HELP: the same number of days either side of each update.
+  const impacts = new Map<string, Impact>()
+  if (recent.length) {
+    const { data: integ } = await admin.from('integrations').select('gsc_property').eq('user_id', g.ownerId).maybeSingle()
+    const property: string | null = integ?.gsc_property || null
+    const token = property ? await getValidGscToken(admin, g.ownerId) : null
+    await Promise.all(recent.map(async (r) => {
+      if (!property || !token) { impacts.set(r.id, { state: 'no-search-console' }); return }
+      if (!r.wordpress_url || !propertyCovers(property, r.wordpress_url)) { impacts.set(r.id, { state: 'other-site' }); return }
+      const w = impactWindows(r.refreshed_at as string)
+      if (!w.ready) { impacts.set(r.id, { state: 'waiting', readyInDays: w.readyInDays }); return }
+      const [before, after] = await Promise.all([
+        querySearchAnalyticsOrNull(token, property, { ...w.before, dimensions: ['page'], page: r.wordpress_url, rowLimit: 10 }),
+        querySearchAnalyticsOrNull(token, property, { ...w.after, dimensions: ['page'], page: r.wordpress_url, rowLimit: 10 }),
+      ])
+      impacts.set(r.id, before === null || after === null
+        ? { state: 'unavailable' }
+        : { state: 'measured', days: w.days, before: sumRows(before), after: sumRows(after) })
+    }))
+  }
   return NextResponse.json({
     dueCount: due.length,
     due: due.slice(0, 8).map((r) => ({
       id: r.id, title: r.title, url: r.wordpress_url, publishedAt: r.published_at,
       since: sinceLabel(r.published_at as string), lastUpdatedAt: r.refreshed_at,
     })),
-    recent: ((recentRows ?? []) as Row[]).map((r) => ({ id: r.id, title: r.title, url: r.wordpress_url, at: r.refreshed_at, note: r.refresh_note })),
+    recent: recent.map((r) => ({ id: r.id, title: r.title, url: r.wordpress_url, at: r.refreshed_at, note: r.refresh_note, impact: impacts.get(r.id) ?? null })),
   })
 }
 

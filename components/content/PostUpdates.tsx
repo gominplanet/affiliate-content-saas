@@ -8,9 +8,26 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { canUsePreview } from '@/lib/labs-preview'
+import type { Impact } from '@/lib/update-impact'
 
 interface Due { id: string; title: string | null; url: string | null; since: string; lastUpdatedAt: string | null }
-interface Recent { id: string; title: string | null; url: string | null; at: string; note: string | null }
+interface Recent { id: string; title: string | null; url: string | null; at: string; note: string | null; impact: Impact | null }
+
+/** What Search Console says happened after the update, in words that keep
+ *  "too soon", "no data" and "measured" apart. */
+function impactText(i: Impact | null): string {
+  if (!i) return ''
+  switch (i.state) {
+    case 'waiting': return `Search results in ${i.readyInDays} day${i.readyInDays === 1 ? '' : 's'}.`
+    case 'no-search-console': return 'Connect Search Console to see whether it helped.'
+    case 'other-site': return 'This post is on a site your Search Console property does not cover.'
+    case 'unavailable': return 'Search Console did not answer. Reload later.'
+    case 'measured': {
+      const n = (x: number) => x.toLocaleString()
+      return `${i.days} days before vs after: ${n(i.before.impressions)} → ${n(i.after.impressions)} impressions, ${n(i.before.clicks)} → ${n(i.after.clicks)} clicks.`
+    }
+  }
+}
 
 export function PostUpdates() {
   const tier = useEffectiveTier()
@@ -107,12 +124,13 @@ export function PostUpdates() {
       )}
       {recent.length > 0 && (
         <div className={due.length ? 'mt-4' : ''}>
-          <div className="text-[12.5px] font-semibold mb-1" style={{ color: 'var(--text)' }}>Updated in the last 30 days</div>
+          <div className="text-[12.5px] font-semibold mb-1" style={{ color: 'var(--text)' }}>Updated in the last 60 days</div>
           <ul className="text-[12.5px] flex flex-col gap-1" style={{ color: 'var(--text-soft)' }}>
             {recent.map((r) => (
               <li key={r.id}>
                 {r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{r.title || 'Untitled post'}</a> : (r.title || 'Untitled post')}
                 {r.note ? <>: “{r.note.length > 120 ? `${r.note.slice(0, 120)}…` : r.note}”</> : null}
+                {r.impact ? <div className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{impactText(r.impact)}</div> : null}
               </li>
             ))}
           </ul>

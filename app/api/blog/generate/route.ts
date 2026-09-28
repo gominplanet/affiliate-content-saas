@@ -3085,9 +3085,13 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     aio = scoreAio({
       html: content,
       faqCount: extractFaqFromHtml(content).length,
-      hasProductSchema: true, // this route emits Review/Product schema for the product
+      // The Product node is emitted exactly when there is a product to name
+      // (writeSeoMeta above); a post with none has no product facts to score.
+      hasProductSchema: !!(effectiveAsin || productUrl),
       hasAuthorAuthority: !!(authorBio && authorBio.trim()),
-      hasFreshness: true,     // the post carries a published/updated date
+      // True today because the post is new. It is judged again whenever it is
+      // read (lib/aio-score withFreshnessNow), so it expires with the post.
+      hasFreshness: true,
     })
   } catch { /* scoring is best-effort — never block a publish */ }
   if (savedPost?.id) {

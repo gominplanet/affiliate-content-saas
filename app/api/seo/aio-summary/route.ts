@@ -9,12 +9,12 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
-import type { AioScore } from '@/lib/aio-score'
+import { withFreshnessNow, type AioScore } from '@/lib/aio-score'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-interface PostRow { id: string; title: string | null; wordpress_url: string | null; aio: AioScore | null }
+interface PostRow { id: string; title: string | null; wordpress_url: string | null; aio: AioScore | null; published_at?: string | null; refreshed_at?: string | null }
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -24,16 +24,25 @@ export async function GET() {
 
   let rows: PostRow[] = []
   try {
+    // refreshed_at is migration 384; without it the post's publish date is
+    // its last change, which is still true for every post never updated.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase as any)
+    const read = (cols: string) => (supabase as any)
       .from('blog_posts')
-      .select('id,title,wordpress_url,aio')
+      .select(cols)
       .eq('user_id', ownerId)
       .not('aio', 'is', null)
       .order('published_at', { ascending: false, nullsFirst: false })
       .limit(500)
+    let { data, error } = await read('id,title,wordpress_url,aio,published_at,refreshed_at')
+    if (error && /refreshed_at/.test(error.message || '')) ({ data, error } = await read('id,title,wordpress_url,aio,published_at'))
     if (error) return NextResponse.json({ ok: true, scored: 0, note: 'aio column not present yet' })
-    rows = (data ?? []) as PostRow[]
+    // Freshness is judged today, not on the day the post was written.
+    rows = ((data ?? []) as PostRow[]).map((r) => {
+      if (!r.aio || typeof r.aio.score !== 'number') return r
+      const last = [r.published_at, r.refreshed_at].filter(Boolean).sort().pop() ?? null
+      return { ...r, aio: withFreshnessNow(r.aio, last) }
+    })
   } catch {
     return NextResponse.json({ ok: true, scored: 0 })
   }

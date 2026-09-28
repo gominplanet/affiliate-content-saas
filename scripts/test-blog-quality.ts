@@ -112,6 +112,34 @@ const check = (name: string, cond: boolean, detail?: string) => { if (!cond) fai
   check('the Content page shows it', /<PostUpdates \/>/.test(read('app/(dashboard)/content/page.tsx')))
 }
 
+// ── Fix 6: results measured, and scores that do not pass by default ──
+{
+  const G = read('app/api/blog/generate/route.ts')
+  check('no AIO check is passed by a hardcoded true about product schema', /hasProductSchema: !!\(effectiveAsin \|\| productUrl\)/.test(G) && !/hasProductSchema: true/.test(G))
+  const S = require('../lib/aio-score') as typeof import('../lib/aio-score')
+  const base = S.scoreAio({ html: '<p>x</p>', hasFreshness: true })
+  const now = new Date('2026-09-28T00:00:00Z')
+  const old = S.withFreshnessNow(base, '2025-01-01T00:00:00Z', now)
+  const fresh = S.withFreshnessNow(base, '2026-08-01T00:00:00Z', now)
+  check('freshness expires when the post is read, and an update restores it',
+    old.checks.find((c) => c.key === 'freshness')?.pass === false && fresh.checks.find((c) => c.key === 'freshness')?.pass === true && old.score < fresh.score)
+  check('a post with no date is not fresh', S.withFreshnessNow(base, null, now).checks.find((c) => c.key === 'freshness')?.pass === false)
+  check('the AIO summary judges freshness today, from the later of publish and update',
+    /withFreshnessNow\(r\.aio, last\)/.test(read('app/api/seo/aio-summary/route.ts')) && /\[r\.published_at, r\.refreshed_at\]/.test(read('app/api/seo/aio-summary/route.ts')))
+
+  const I = require('../lib/update-impact') as typeof import('../lib/update-impact')
+  const soon = I.impactWindows('2026-09-20T12:00:00Z', now)
+  check('too soon to measure says how long to wait', soon.ready === false && soon.readyInDays === 9)
+  const w = I.impactWindows('2026-08-01T12:00:00Z', now)
+  check('the windows are equal, either side of the update day, and end before data settles',
+    w.ready === true && w.days === 28 && w.before.startDate === '2026-07-04' && w.before.endDate === '2026-07-31' && w.after.startDate === '2026-08-02' && w.after.endDate === '2026-08-29')
+  check('a property only measures its own site',
+    I.propertyCovers('sc-domain:example.com', 'https://www.example.com/a') && I.propertyCovers('https://example.com/', 'https://example.com/b') && !I.propertyCovers('sc-domain:example.com', 'https://other.com/a'))
+  const A = read('app/api/blog/refresh/route.ts')
+  check('a failed Search Console call reads as unavailable, not as zero', /before === null \|\| after === null\s*\? \{ state: 'unavailable' \}/.test(A) && /querySearchAnalyticsOrNull/.test(A))
+  check('the panel says each state in its own words', ['waiting', 'no-search-console', 'other-site', 'unavailable', 'measured'].every((k) => read('components/content/PostUpdates.tsx').includes(`case '${k}'`)))
+}
+
 if (failures.length) {
   console.error(`\n❌ blog-quality: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)
