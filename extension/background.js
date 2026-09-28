@@ -3863,16 +3863,18 @@ async function harvestProductVideoInPage(asin) {
   const contentMade = () => /content made/i.test(document.body ? document.body.innerText : '')
 
   // OINK / Amazon inject asynchronously (an Amazon content API call first) —
-  // poll up to ~14s, and keep going a beat after the signal appears so the link
-  // can paint.
+  // poll for ~14s. Bounded by the CLOCK, not a count: in a background tab
+  // Chrome stretches every timer to a second, and 28 polls would take 28s.
   let vdp = null, sawOink = false, sawContentMade = false
-  for (let i = 0; i < 28; i++) {
+  const until = Date.now() + 14000
+  while (Date.now() < until) {
     if (!sawOink) sawOink = oinkEl()
     if (!sawContentMade) sawContentMade = contentMade()
     vdp = findVdp()
     if (vdp) break
     await sleep(500)
   }
+  if (!vdp) vdp = findVdp()
   return {
     ok: true,
     video: vdp ? { vdpUrl: vdp, asin: asinOf(vdp) || want } : null,
@@ -3888,8 +3890,94 @@ async function harvestProductVideoInPage(asin) {
   }
 }
 
+// ── Amazon video lookups: ONE background tab, reused ────────────────────────
+// Brand recap looks up every product, 174 of them for one creator, and each
+// used to open a FOREGROUND tab and then switch back: a tab flashing up every
+// few seconds for an hour, taking the screen from whatever the creator was
+// doing. That was for OINK, whose content script was unreliable in background
+// tabs. The link read now is Amazon's own "Content Made" one, so the lookups
+// run in a single background tab that is navigated from product to product and
+// closed when the run goes quiet.
+//
+// IF AMAZON ONLY PAINTS THE LINK IN A VISIBLE TAB, that is found out once,
+// not assumed: after a few background lookups that saw nothing at all, the
+// next one is repeated in the foreground. If the foreground finds what the
+// background could not, lookups go to the foreground for the rest of the run
+// and the reply says so, so the app can tell the creator why a tab is showing.
+const AMZ_VIDEO_TAB_KEY = 'amzVideoTabId'
+let amzVideoMode = 'background'   // 'background' | 'foreground'
+let amzBgVerified = false         // a background read has been shown to work
+let amzBgBlankRun = 0             // background reads in a row that saw nothing
+let amzVideoIdleTimer = null
+
+async function amzVideoTab(url) {
+  clearTimeout(amzVideoIdleTimer)
+  let tabId = null
+  try { tabId = (await chrome.storage.session.get(AMZ_VIDEO_TAB_KEY))[AMZ_VIDEO_TAB_KEY] ?? null } catch (e) {}
+  if (tabId != null) {
+    try {
+      await chrome.tabs.get(tabId)
+      const loaded = waitForTabLoad(tabId, 25000)
+      await chrome.tabs.update(tabId, { url, active: false })
+      await loaded
+      return tabId
+    } catch (e) { tabId = null }
+  }
+  const tab = await chrome.tabs.create({ url, active: false })
+  try { await chrome.storage.session.set({ [AMZ_VIDEO_TAB_KEY]: tab.id }) } catch (e) {}
+  await waitForTabLoad(tab.id, 25000)
+  return tab.id
+}
+
+function closeAmzVideoTabWhenQuiet() {
+  clearTimeout(amzVideoIdleTimer)
+  amzVideoIdleTimer = setTimeout(async () => {
+    try {
+      const id = (await chrome.storage.session.get(AMZ_VIDEO_TAB_KEY))[AMZ_VIDEO_TAB_KEY]
+      await chrome.storage.session.remove(AMZ_VIDEO_TAB_KEY)
+      if (id != null) await chrome.tabs.remove(id)
+    } catch (e) {}
+    // A new run starts by trusting the background again.
+    amzVideoMode = 'background'; amzBgVerified = false; amzBgBlankRun = 0
+  }, 45000)
+}
+
+async function scanAmazonVideoInBackground(asin) {
+  const tabId = await amzVideoTab(`https://www.amazon.com/dp/${asin}`)
+  await _sleep(1500)
+  const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestProductVideoInPage, args: [asin] })
+  return (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
+}
+
 async function scanAmazonVideoForAsin(asin, callerTabId) {
   if (!/^[A-Za-z0-9]{10}$/.test(asin || '')) return { ok: false, error: 'bad-asin' }
+  if (amzVideoMode === 'background') {
+    try {
+      const res = await scanAmazonVideoInBackground(asin)
+      const sawSomething = !!(res && (res.video || res.contentMadeSeen || res.oinkDetected))
+      if (sawSomething) { amzBgVerified = true; amzBgBlankRun = 0 }
+      else if (res && res.ok && !res.signedOut) amzBgBlankRun++
+      // Three blank reads in a row, never yet a sighting: check this one where
+      // the page is visible, once.
+      if (!amzBgVerified && amzBgBlankRun >= 3) {
+        const fg = await scanAmazonVideoForeground(asin, callerTabId)
+        if (fg && fg.ok && (fg.video || fg.contentMadeSeen)) {
+          amzVideoMode = 'foreground'
+          return { ...fg, mode: 'foreground', switchedToForeground: true }
+        }
+        amzBgVerified = true // the visible tab saw no more: the background is as good
+      }
+      return { ...res, mode: 'background' }
+    } catch (e) {
+      return { ok: false, error: 'scan-failed' }
+    } finally { closeAmzVideoTabWhenQuiet() }
+  }
+  const fg = await scanAmazonVideoForeground(asin, callerTabId)
+  closeAmzVideoTabWhenQuiet()
+  return { ...fg, mode: 'foreground' }
+}
+
+async function scanAmazonVideoForeground(asin, callerTabId) {
   const url = `https://www.amazon.com/dp/${asin}`
   let tabId = null
   try {

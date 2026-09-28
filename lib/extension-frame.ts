@@ -1058,6 +1058,12 @@ export interface AmazonVideoForAsinResult {
    *  OINK). Lets the app say "video exists but link unreadable" vs "no video". */
   contentMadeSeen?: boolean
   signedOut?: boolean
+  /** Where SCOUT read the page: a background tab (1.21.19+), or a visible one
+   *  because Amazon would not show the link in the background. Absent from an
+   *  older SCOUT, which always used a visible tab. */
+  mode?: 'background' | 'foreground'
+  /** Set on the one lookup where SCOUT found it had to use a visible tab. */
+  switchedToForeground?: boolean
   error?: string
 }
 
@@ -1069,13 +1075,14 @@ export interface AmazonVideoForAsinResult {
 export async function requestAmazonVideoForAsin(asin: string): Promise<AmazonVideoForAsinResult> {
   if (!asin) return { ok: false, error: 'no-asin' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; video?: AmazonVideo | null; oinkDetected?: boolean; contentMadeSeen?: boolean; signedOut?: boolean; error?: string }>(
+  const resp = await sendToExtension<{ ok?: boolean; video?: AmazonVideo | null; oinkDetected?: boolean; contentMadeSeen?: boolean; signedOut?: boolean; mode?: 'background' | 'foreground'; switchedToForeground?: boolean; error?: string }>(
     { type: 'MVP_AMZ_SCAN', asin },
-    60000,
+    // A lookup that has to confirm in a visible tab does two page reads.
+    90000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
   if (resp.ok) {
-    return { ok: true, video: resp.video ?? null, oinkDetected: !!resp.oinkDetected, contentMadeSeen: !!resp.contentMadeSeen, signedOut: resp.signedOut }
+    return { ok: true, video: resp.video ?? null, oinkDetected: !!resp.oinkDetected, contentMadeSeen: !!resp.contentMadeSeen, signedOut: resp.signedOut, mode: resp.mode, switchedToForeground: resp.switchedToForeground }
   }
   return { ok: false, error: resp.error || 'scan-failed' }
 }

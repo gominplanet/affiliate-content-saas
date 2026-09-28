@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 import { Loader2, Send, Copy, Mail, Check, ChevronDown, ChevronRight, RefreshCw, AlertTriangle, ExternalLink, Search, Film } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import { requestSendByAsin, requestSendByCampaign, requestAmazonVideoForAsin } from '@/lib/extension-frame'
+import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
 import {
   PLATFORM_LABEL, buildBrandRecapMessage, buildBrandRecapCcMessage, ccFromPlainText, ccGroupCount, ccSendReason, linkKey,
   type BrandGroup, type ContentLink,
@@ -104,6 +105,17 @@ export default function BrandRecap() {
     let movedAt = started
     const found: Array<{ vdpUrl: string; asin: string }> = []
     let none = 0, unreadable = 0, errors = 0, savedTotal = 0
+    // Where SCOUT is reading, said as it is: unknown until the first answer,
+    // then background, or a visible tab with the reason.
+    let where: 'unknown' | 'background' | 'foreground' | 'old-scout' = 'unknown'
+    const phaseText = () => {
+      const got = found.length + savedTotal
+      const tally = ` ${got} found so far.`
+      if (where === 'background') return `SCOUT reads each product page in one background tab, so you can keep working.${tally}`
+      if (where === 'foreground') return `Amazon only showed your video link in a visible tab, so SCOUT is using one and switches back after each product.${tally}`
+      if (where === 'old-scout') return `This SCOUT opens each product in front of you. Update SCOUT to ${SCOUT_LATEST_VERSION} and it works in a background tab instead.${tally}`
+      return `SCOUT is reading each product page for the Content Made link to your video.${tally}`
+    }
     const save = async () => {
       if (found.length === 0) return true
       const batch = found.splice(0, found.length)
@@ -119,9 +131,10 @@ export default function BrandRecap() {
       for (let i = 0; i < want.length; i++) {
         if (stopWatching.current) { setScanNote({ ok: true, text: `Stopped after ${i} of ${want.length} products. What was found is kept.` }); break }
         const p = want[i]
-        setProg({ step: 1, done: i, total: want.length, startedAt: started, movedAt, page: p.name, phase: 'SCOUT opens each product page in your Chrome and reads the Content Made link for your video.', quietOk: 120_000 })
+        setProg({ step: 1, done: i, total: want.length, startedAt: started, movedAt, page: p.name, phase: phaseText(), quietOk: 120_000 })
         const r = await requestAmazonVideoForAsin(p.asin)
         movedAt = Date.now()
+        if (r.ok) where = r.mode ?? 'old-scout'
         if (!r.ok) {
           if (r.error === 'not-installed') { setScanNote({ ok: false, text: 'This needs the SCOUT extension in this Chrome.' }); return }
           errors++
